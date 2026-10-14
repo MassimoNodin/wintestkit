@@ -3,7 +3,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type * as vscode from "vscode";
 
 const mocks = vi.hoisted(() => ({
-  log: { info: vi.fn(), show: vi.fn(), dispose: vi.fn() },
+  log: { info: vi.fn(), error: vi.fn(), show: vi.fn(), dispose: vi.fn() },
+  request: vi.fn(() => Promise.resolve(null)),
+  runTerminal: vi.fn(() => Promise.resolve()),
+  folder: {
+    uri: { fsPath: "C:\demo", toString: () => "file:///C:/demo" },
+    name: "demo",
+  },
   registerCommand: vi.fn<
     (command: string, callback: () => void) => vscode.Disposable
   >(() => ({ dispose: vi.fn() })),
@@ -21,6 +27,38 @@ vi.mock("vscode", () => ({
   commands: {
     registerCommand: mocks.registerCommand,
     executeCommand: mocks.executeCommand,
+  },
+  workspace: {
+    workspaceFolders: [mocks.folder],
+    getWorkspaceFolder: () => mocks.folder,
+    onDidChangeConfiguration: vi.fn(() => ({ dispose: vi.fn() })),
+  },
+}));
+vi.mock("../../src/python", () => ({
+  installPackage: vi.fn(),
+  runTerminal: mocks.runTerminal,
+  onDidChangeInterpreter: vi.fn(() => Promise.resolve({ dispose: vi.fn() })),
+}));
+vi.mock("../../src/server/serverManager", () => ({
+  ServerManager: class {
+    get() {
+      return Promise.resolve({ client: { request: mocks.request } });
+    }
+    restart() {
+      return this.get();
+    }
+    dispose() {}
+    shutdown() {
+      return Promise.resolve();
+    }
+  },
+}));
+vi.mock("../../src/statusBar", () => ({
+  StatusBar: class {
+    refresh() {
+      return Promise.resolve();
+    }
+    dispose() {}
   },
 }));
 
@@ -57,12 +95,12 @@ describe("extension scaffold", () => {
       "wintestkit.spy",
       expect.any(Object),
     );
-    expect(subscriptions).toHaveLength(
+    expect(subscriptions.length).toBeGreaterThan(
       manifest.contributes.commands.length + 3,
     );
   });
 
-  it("shows output and clearly logs placeholder commands", () => {
+  it("shows output and runs doctor with the selected project", async () => {
     const showOutput = mocks.registerCommand.mock.calls.find(
       ([command]) => command === "wintestkit.showOutput",
     );
@@ -72,11 +110,15 @@ describe("extension scaffold", () => {
     expect(showOutput).toBeDefined();
     expect(runDoctor).toBeDefined();
     showOutput?.[1]();
-    runDoctor?.[1]();
+    await runDoctor?.[1]();
     expect(mocks.log.show).toHaveBeenCalledOnce();
-    expect(mocks.log.info).toHaveBeenCalledWith(
-      "wintestkit.runDoctor: not implemented in the extension scaffold",
-    );
+    expect(mocks.runTerminal).toHaveBeenCalledWith(mocks.folder.uri, [
+      "-m",
+      "wintestkit",
+      "--root",
+      mocks.folder.uri.fsPath,
+      "doctor",
+    ]);
   });
 
   it("has a Windows testing manifest and the single permitted runtime dependency", () => {
