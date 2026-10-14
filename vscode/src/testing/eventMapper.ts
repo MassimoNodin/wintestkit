@@ -12,7 +12,7 @@ export type RunAction =
       message?: string;
     }
   | { kind: "output"; id?: string; text: string }
-  | { kind: "report"; path: string };
+  | { kind: "report"; path?: string; failed: number };
 
 export function terminalText(text: string): string {
   return text.replace(/\r?\n/g, "\r\n");
@@ -104,8 +104,9 @@ export class EventMapper {
               "). See output.",
           });
         this.pending.clear();
-        if (event.reportPath)
-          actions.push({ kind: "report", path: event.reportPath });
+        const failed = event.summary.failed + event.summary.errors;
+        if (event.reportPath || failed)
+          actions.push({ kind: "report", path: event.reportPath, failed });
         break;
     }
     return actions;
