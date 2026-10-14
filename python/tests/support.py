@@ -33,3 +33,25 @@ def window_props(app: Any, attribute: str) -> list[str]:
         except UIAError:
             continue
     return values
+
+
+def decode_png_rgb(png: bytes) -> tuple[int, int, bytes]:
+    """Decode PNGs produced by wintestkit.uia.png (8-bit RGB, filter 0) to raw RGB bytes."""
+    import struct
+    import zlib
+
+    assert png[:8] == b"\x89PNG\r\n\x1a\n"
+    position, idat, width, height = 8, b"", 0, 0
+    while position < len(png):
+        (length,) = struct.unpack(">I", png[position : position + 4])
+        kind = png[position + 4 : position + 8]
+        data = png[position + 8 : position + 8 + length]
+        if kind == b"IHDR":
+            width, height = struct.unpack(">II", data[:8])
+        elif kind == b"IDAT":
+            idat += data
+        position += 12 + length
+    raw = zlib.decompress(idat)
+    stride = width * 3 + 1
+    rows = b"".join(raw[y * stride + 1 : (y + 1) * stride] for y in range(height))
+    return width, height, rows
