@@ -10,6 +10,7 @@ import type { TestEntry } from "../protocol/generated";
 import { EventMapper, type RunAction, type TestEnd } from "./eventMapper";
 import { EventServer } from "./eventServer";
 import { runArguments, runProcess } from "./runner";
+import { runDebugSession } from "./debug";
 
 interface ItemData {
   project: Project;
@@ -76,6 +77,7 @@ export class TestController implements vscode.Disposable {
   private readonly active = new Set<vscode.CancellationTokenSource>();
   private readonly subscriptions: vscode.Disposable[];
   private readonly profile: vscode.TestRunProfile;
+  private readonly debugProfile: vscode.TestRunProfile;
   private disposed = false;
   constructor(
     private readonly projects: Projects,
@@ -89,6 +91,12 @@ export class TestController implements vscode.Disposable {
       (request, token) => this.run(request, token),
       true,
     );
+    this.debugProfile = this.controller.createRunProfile(
+      "Debug",
+      vscode.TestRunProfileKind.Debug,
+      (request, token) => this.run(request, token, true),
+      true,
+    );
     this.controller.refreshHandler = async () => {
       await projects.refresh();
       for (const project of projects.all) discovery.refresh(project);
@@ -99,6 +107,10 @@ export class TestController implements vscode.Disposable {
       vscode.commands.registerCommand(
         "wintestkit.runTest",
         (target?: TestTarget) => this.runTarget(target),
+      ),
+      vscode.commands.registerCommand(
+        "wintestkit.debugTest",
+        (target?: TestTarget) => this.runTarget(target, true),
       ),
     ];
     this.rebuild();
@@ -179,7 +191,7 @@ export class TestController implements vscode.Disposable {
       test.range.end.character,
     );
   }
-  async runTarget(target?: TestTarget): Promise<void> {
+  async runTarget(target?: TestTarget, debug = false): Promise<void> {
     if (!target) {
       const editor = vscode.window.activeTextEditor;
       const located =
@@ -205,8 +217,13 @@ export class TestController implements vscode.Disposable {
     const cancellation = new vscode.CancellationTokenSource();
     try {
       await this.run(
-        new vscode.TestRunRequest([item], undefined, this.profile),
+        new vscode.TestRunRequest(
+          [item],
+          undefined,
+          debug ? this.debugProfile : this.profile,
+        ),
         cancellation.token,
+        debug,
       );
     } finally {
       cancellation.dispose();
@@ -241,6 +258,7 @@ export class TestController implements vscode.Disposable {
   async run(
     request: vscode.TestRunRequest,
     token: vscode.CancellationToken,
+    debug = false,
   ): Promise<void> {
     const run = this.controller.createTestRun(request);
     const cancellation = new vscode.CancellationTokenSource();
@@ -264,7 +282,7 @@ export class TestController implements vscode.Disposable {
           const queued = previous
             .catch(() => {})
             .then(() =>
-              this.runProject(project, items, run, cancellation.token),
+              this.runProject(project, items, run, cancellation.token, debug),
             );
           this.queues.set(key, queued);
           return queued.finally(() => {
@@ -378,11 +396,19 @@ export class TestController implements vscode.Disposable {
     items: vscode.TestItem[],
     run: vscode.TestRun,
     token: vscode.CancellationToken,
+    debug = false,
   ): Promise<void> {
     const nodeids = items.map((item) => this.metadata.get(item)!.nodeid!);
     const mapper = new EventMapper(nodeids);
+    let ended!: () => void;
+    const sessionEnded = new Promise<void>((resolve) => {
+      ended = resolve;
+    });
     const listener = new EventServer(
-      (event) => this.apply(project, run, mapper.consume(event)),
+      (event) => {
+        this.apply(project, run, mapper.consume(event));
+        if (event.event === "session_end") ended();
+      },
       (error) => {
         this.log.error(String(error));
         run.appendOutput(String(error) + "\r\n");
@@ -406,9 +432,19 @@ export class TestController implements vscode.Disposable {
         settings.get<boolean>("run.highlightActions", false),
         settings.get<string[]>("run.extraArgs", []),
       );
-      const code = await runProcess(project, python, args, token, (text) =>
-        run.appendOutput(text),
-      );
+      const code = debug
+        ? await runDebugSession(
+            project,
+            python,
+            url,
+            nodeids,
+            run,
+            token,
+            sessionEnded,
+          )
+        : await runProcess(project, python, args, token, (text) =>
+            run.appendOutput(text),
+          );
       await listener.drain();
       this.apply(
         project,

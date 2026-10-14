@@ -10,6 +10,8 @@ Check All Elements actions; checks show gutter results and editor warnings.
 Test Explorer and Run Test CodeLens stream pytest progress, output, parameterized
 cases, and failure details. Cancellation stops the full test process tree. Runs
 queue per project. The Elements tree and Spy panel await their milestones.
+Debug Test uses Python Debugger (debugpy), supports normal source breakpoints,
+and streams results to the same Test Explorer. Debug waits allow up to one hour.
 
 Open the examples project folder in a trusted workspace and select an interpreter
 with `wintestkit` installed. A missing package produces an installation prompt; the

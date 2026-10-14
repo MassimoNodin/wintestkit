@@ -113,6 +113,7 @@ vi.mock("../../src/testing/controller", () => ({
   TestController: class {
     constructor() {
       mocks.registerCommand("wintestkit.runTest", () => {});
+      mocks.registerCommand("wintestkit.debugTest", () => {});
     }
     dispose() {}
   },
