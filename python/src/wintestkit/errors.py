@@ -16,7 +16,8 @@ class _DiagnosticLike(Protocol):
     instead of importing it.
     """
 
-    message: str
+    @property
+    def message(self) -> str: ...
 
     def to_dict(self) -> dict[str, Any]: ...
 
