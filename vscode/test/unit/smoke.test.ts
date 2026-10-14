@@ -109,6 +109,15 @@ vi.mock("../../src/editor/highlightCommands", () => ({
 }));
 
 import { activate } from "../../src/extension";
+vi.mock("../../src/init", () => ({
+  registerInitialize: () =>
+    mocks.registerCommand("wintestkit.initProject", () => {}),
+}));
+vi.mock("../../src/pytestConflict", () => ({
+  PytestConflict: class {
+    dispose() {}
+  },
+}));
 vi.mock("../../src/testing/controller", () => ({
   TestController: class {
     constructor() {

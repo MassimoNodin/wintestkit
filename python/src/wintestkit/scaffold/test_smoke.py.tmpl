@@ -1,0 +1,7 @@
+from screens.main import MainScreen
+
+from wintestkit import expect
+
+
+def test_main_window_is_visible(app):
+    expect(MainScreen(app).window).to_be_visible()

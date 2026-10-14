@@ -5,6 +5,14 @@ UI test automation for Windows WPF applications using Microsoft UI Automation an
 The package includes a UI Automation engine, screen/element model, pytest integration,
 static discovery, environment checks, and target-based highlighting and screen checks.
 
+## Initialize a project
+
+Run `wtk init my-tests --app "C:/Apps/My App.exe"` to create a starter screen,
+smoke test, pytest configuration, and report ignore entry. Existing metadata,
+configuration, and Python files are preserved. `--force` replaces starter Python
+files only; it does not overwrite application settings. Review the window title
+in `screens/main.py`, then run `wtk doctor` and `wtk run` from the new folder.
+
 ## Development
 
 From this directory, with Python 3.12+ and uv installed:

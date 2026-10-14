@@ -13,6 +13,10 @@ queue per project. The Elements tree and Spy panel await their milestones.
 Debug Test uses Python Debugger (debugpy), supports normal source breakpoints,
 and streams results to the same Test Explorer. Debug waits allow up to one hour.
 
+Initialize Project creates a starter screen and smoke test without overwriting
+existing files. If Python's pytest discovery is also enabled, WinTestKit offers
+to disable that workspace's duplicate test explorer; keeping both is supported.
+
 Open the examples project folder in a trusted workspace and select an interpreter
 with `wintestkit` installed. A missing package produces an installation prompt; the
 development repository can install `python/` in editable mode. Server crashes retry

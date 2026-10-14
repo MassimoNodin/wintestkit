@@ -9,6 +9,8 @@ import { CodeLenses } from "./editor/codeLens";
 import { CheckDecorations, CheckResultsStore } from "./editor/decorations";
 import { HighlightCommands } from "./editor/highlightCommands";
 import { TestController } from "./testing/controller";
+import { registerInitialize } from "./init";
+import { PytestConflict } from "./pytestConflict";
 
 interface CommandContribution {
   command: string;
@@ -31,6 +33,10 @@ export function activate(context: vscode.ExtensionContext): {
   const lenses = new CodeLenses(projects, discovery);
   const checks = new CheckResultsStore(discovery);
   const tests = new TestController(projects, discovery, lenses, log);
+  context.subscriptions.push(
+    registerInitialize(projects, log),
+    new PytestConflict(projects, context.workspaceState, log),
+  );
   context.subscriptions.push(tests);
   context.subscriptions.push(
     lenses,
@@ -146,6 +152,7 @@ export function activate(context: vscode.ExtensionContext): {
         "wintestkit.checkScreen",
         "wintestkit.runTest",
         "wintestkit.debugTest",
+        "wintestkit.initProject",
       ].includes(contribution.command)
     )
       continue;
