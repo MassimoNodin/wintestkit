@@ -15,7 +15,18 @@ Handler = Callable[[argparse.Namespace], int]
 
 
 def _command_modules() -> list[str]:
-    return ["run", "discover", "doctor", "highlight", "check", "inspect", "spy", "serve", "init"]
+    return [
+        "run",
+        "discover",
+        "doctor",
+        "highlight",
+        "check",
+        "inspect",
+        "spy",
+        "serve",
+        "init",
+        "report",
+    ]
 
 
 def build_parser() -> argparse.ArgumentParser:

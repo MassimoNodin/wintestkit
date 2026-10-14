@@ -1,6 +1,7 @@
 """Unit tests for expect() with patched element reads."""
 
 import re
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -302,7 +303,7 @@ def test_checked_selected_and_property(
     state = {"toggle": ToggleState.On, "selected": True}
     monkeypatch.setattr(model.patterns, "toggle_state", lambda el: state["toggle"])
     monkeypatch.setattr(model.patterns, "is_selected", lambda el: state["selected"])
-    import wintestkit.expect as expect_module
+    expect_module = sys.modules["wintestkit.expect"]
 
     monkeypatch.setattr(expect_module.patterns, "toggle_state", lambda el: state["toggle"])
     monkeypatch.setattr(expect_module.patterns, "is_selected", lambda el: state["selected"])
