@@ -66,3 +66,14 @@ picks a control without activating it and prints its window, required helpers,
 and element declaration. Esc or Ctrl+C exits and removes the hooks and overlay.
 Use `--all-processes` explicitly to inspect other applications. The command does
 not launch an application or change elevation; it requires an unlocked desktop.
+
+## Editor server
+
+`wtk serve --stdio` accepts one JSON-RPC 2.0 object per UTF-8 line. Send
+`initialize` with `{ "root": "absolute/project/path" }` first. It supports
+discovery, app lifecycle, target checks/highlights, inspector nodes, suggestions,
+and Spy notifications, as specified in `docs/plan/05-protocol.md`. Ordinary
+requests execute sequentially; Spy stop and shutdown bypass queued work.
+Standard output is protocol-only, including when user modules print. Shutdown
+and input EOF clean up Spy but leave the application open. Inspector node IDs
+are runtime IDs held in a bounded 5,000-entry LRU; stale IDs return `-32005`.
