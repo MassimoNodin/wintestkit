@@ -10,6 +10,8 @@ from pathlib import Path
 import pytest
 from support import DemoProcess, start_demo
 
+pytest_plugins = ["pytester"]
+
 
 def _default_demo_path() -> Path:
     return (
