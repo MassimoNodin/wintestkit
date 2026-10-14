@@ -38,3 +38,16 @@ the configured app only if it is not running, and closes only an app launched by
 and unrealized collection items can legitimately fail until the UI exposes them. Exit codes
 are 0 for found/all found, 1 for resolution failures, 2 for invalid targets/configuration,
 and 3 for an app that is not running. User modules reload when project Python files change.
+
+## Inspect the application
+
+`wtk inspect` dumps the configured app main window. Use `--window TITLE` or
+`--window /REGEX/` to select a window, `--all-windows` to inspect all app windows,
+and `--depth N` to bound tree expansion (0 to 50, default 12). `--json` emits a
+tree object, or a `windows` array for `--all-windows`.
+
+`wtk inspect --at X,Y --json` reports the app element and its nearest-first
+ancestor chain, including supported patterns. Coordinates are physical screen
+pixels; use `--at=-100,200` for negative coordinates. Button text is normalized
+to its containing button. Points outside the configured app fail without
+inspecting another process. Window and point selection options are mutually exclusive.
