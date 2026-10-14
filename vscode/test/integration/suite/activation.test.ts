@@ -50,11 +50,44 @@ suite("WinTestKit activation", () => {
         lens.command.arguments?.[0]?.qualname === "MainScreen.sign_in",
     );
     assert.ok(highlight, "discovery populates highlight CodeLens");
+    type TreeNode = {
+      label: string;
+      children: TreeNode[];
+      file?: string;
+      qualname?: string;
+    };
+    const elements = (
+      extension.exports as {
+        elements: {
+          getChildren(): TreeNode[];
+          getTreeItem(node: TreeNode): vscode.TreeItem;
+        };
+      }
+    ).elements;
+    const mainScreen = elements
+      .getChildren()
+      .find((node) => node.label === "MainScreen");
+    assert.ok(mainScreen);
+    const credentials = mainScreen.children.find(
+      (node) => node.label === "credentials",
+    );
+    const signIn = credentials?.children.find(
+      (node) => node.label === "sign_in",
+    );
+    assert.ok(signIn, "tree nests sign_in under credentials");
+    assert.equal(elements.getTreeItem(signIn).contextValue, "element");
+    await vscode.commands.executeCommand("wintestkit.elements.goTo", signIn);
+    assert.equal(
+      vscode.window.activeTextEditor?.document.uri.fsPath
+        .toLowerCase()
+        .replaceAll("\\", "/"),
+      signIn.file?.toLowerCase().replaceAll("\\", "/"),
+    );
     try {
       await vscode.commands.executeCommand("wintestkit.launchApp");
       await vscode.commands.executeCommand(
         "wintestkit.highlightElement",
-        ...highlight.command!.arguments!,
+        signIn,
       );
       const checks = (
         extension.exports as {

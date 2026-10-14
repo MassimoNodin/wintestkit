@@ -11,6 +11,7 @@ import { HighlightCommands } from "./editor/highlightCommands";
 import { TestController } from "./testing/controller";
 import { registerInitialize } from "./init";
 import { PytestConflict } from "./pytestConflict";
+import { ElementsTree } from "./views/elementsTree";
 
 interface CommandContribution {
   command: string;
@@ -23,6 +24,7 @@ interface ExtensionManifest {
 export function activate(context: vscode.ExtensionContext): {
   tests: TestController;
   checks: CheckResultsStore;
+  elements: ElementsTree;
 } {
   const log = createLog();
   context.subscriptions.push(log);
@@ -33,6 +35,8 @@ export function activate(context: vscode.ExtensionContext): {
   const discovery = new DiscoveryStore(projects, servers, log);
   const lenses = new CodeLenses(projects, discovery);
   const checks = new CheckResultsStore(discovery);
+  const elements = new ElementsTree(projects, discovery, checks);
+  context.subscriptions.push(elements);
   const tests = new TestController(projects, discovery, lenses, log);
   context.subscriptions.push(
     registerInitialize(projects, log),
@@ -154,6 +158,7 @@ export function activate(context: vscode.ExtensionContext): {
         "wintestkit.runTest",
         "wintestkit.debugTest",
         "wintestkit.initProject",
+        "wintestkit.elements.goTo",
       ].includes(contribution.command)
     )
       continue;
@@ -174,10 +179,6 @@ export function activate(context: vscode.ExtensionContext): {
   }
 
   context.subscriptions.push(
-    vscode.window.registerTreeDataProvider("wintestkit.elements", {
-      getTreeItem: (element: vscode.TreeItem) => element,
-      getChildren: () => [],
-    }),
     vscode.window.registerWebviewViewProvider("wintestkit.spy", {
       resolveWebviewView: (view: vscode.WebviewView) => {
         view.webview.html =
@@ -202,7 +203,7 @@ export function activate(context: vscode.ExtensionContext): {
     false,
   );
   void projects.refresh();
-  return { tests, checks };
+  return { tests, checks, elements };
 }
 
 let activeServers: ServerManager | undefined;

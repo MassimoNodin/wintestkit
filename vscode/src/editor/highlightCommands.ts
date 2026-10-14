@@ -56,7 +56,7 @@ export class HighlightCommands implements vscode.Disposable {
     }
   }
   private target(target?: ElementTarget): ElementTarget | undefined {
-    if (target) return target;
+    if (target) return { file: target.file, qualname: target.qualname };
     const editor = vscode.window.activeTextEditor;
     const located =
       editor &&
@@ -217,13 +217,14 @@ export class HighlightCommands implements vscode.Disposable {
       .get(project)
       ?.screens.find(
         (screen) =>
-          screen.file === target.file && screen.qualname === target.screen,
+          normalizedPath(screen.file) === normalizedPath(target.file) &&
+          screen.qualname === target.screen,
       );
     if (!screen) return;
     const result = await this.request<ScreenCheckResult>(
       project,
       "screen.check",
-      { ...target },
+      { file: target.file, screen: target.screen },
     );
     for (const checked of result.results) {
       if (filter && checked.qualname !== filter) continue;
