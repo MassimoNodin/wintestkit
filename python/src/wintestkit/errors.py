@@ -6,20 +6,10 @@ Every error is JSON-serialisable through :meth:`WtkError.to_dict`, which produce
 
 from __future__ import annotations
 
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any
 
-
-class _DiagnosticLike(Protocol):
-    """Structural view of ``wintestkit.engine.diagnose.Diagnostic``.
-
-    ``errors.py`` sits below the engine in the import graph, so it duck-types the diagnostic
-    instead of importing it.
-    """
-
-    @property
-    def message(self) -> str: ...
-
-    def to_dict(self) -> dict[str, Any]: ...
+if TYPE_CHECKING:
+    from wintestkit.engine.diagnose import Diagnostic
 
 
 class WtkError(Exception):
@@ -60,7 +50,7 @@ class AppNotRunningError(AppError):
 class LocatorError(WtkError):
     """An element or window locator could not be resolved to exactly one element."""
 
-    def __init__(self, diagnostic: _DiagnosticLike) -> None:
+    def __init__(self, diagnostic: Diagnostic) -> None:
         super().__init__(diagnostic.message)
         self.diagnostic = diagnostic
 

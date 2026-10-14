@@ -5,9 +5,11 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from difflib import SequenceMatcher
 from typing import TYPE_CHECKING, Any, Literal
 
-from wintestkit.engine.locator import WindowLocator, describe_matcher, match_value
+from wintestkit.engine.locator import Locator, WindowLocator, describe_matcher, match_value
+from wintestkit.engine.query import relaxed_descendants
 from wintestkit.uia.element import ElementInfo, UIAElement
 
 if TYPE_CHECKING:
@@ -131,8 +133,9 @@ def quote(value: str) -> str:
     return json.dumps(value, ensure_ascii=False)
 
 
-def _window_title(window: UIAElement) -> str:
-    return window.name
+def _window_label(window: UIAElement) -> str:
+    """Quoted title, or ``<class>`` for windows without one (popups, tool windows)."""
+    return quote(window.name) if window.name else f"<{window.class_name or 'untitled'}>"
 
 
 def diagnose_window(
@@ -161,7 +164,7 @@ def diagnose_window(
             match_count=len(matches),
             candidates=shown,
         )
-    titles = ", ".join(quote(_window_title(w)) for w in examined) or "none"
+    titles = ", ".join(_window_label(w) for w in examined) or "none"
     scored: list[tuple[int, Candidate]] = []
     for window in examined:
         info = window.info()
@@ -175,6 +178,146 @@ def diagnose_window(
         searched_in=f"Application {process}",
         match_count=0,
         candidates=tuple(c for _, c in scored[:MAX_CANDIDATES]),
+    )
+
+
+def _link_checks(link: Locator, info: ElementInfo) -> list[tuple[str, Any, str]]:
+    return [
+        ("id", link.automation_id, info.automation_id),
+        ("name", link.name, info.name),
+        ("class", link.class_name, info.class_name),
+        ("type", link.control_type, info.control_type),
+    ]
+
+
+def _score_link(link: Locator, info: ElementInfo) -> tuple[int, tuple[Mismatch, ...]]:
+    """Count the link's properties that ``info`` satisfies and describe the ones it does not."""
+    score = 0
+    mismatches: list[Mismatch] = []
+    for prop, expected, actual in _link_checks(link, info):
+        if expected is None:
+            continue
+        if prop == "type":
+            ok = expected == actual
+            expected_text, actual_text = str(expected), actual
+        else:
+            ok = match_value(expected, actual)
+            expected_text, actual_text = describe_matcher(expected), quote(actual)
+        if ok:
+            score += 1
+        else:
+            mismatches.append(Mismatch(prop, expected_text, actual_text))
+    return score, tuple(mismatches)
+
+
+def _name_similarity(link: Locator, info: ElementInfo) -> float:
+    """Similarity (0..1) between the expected and actual name; 0 unless the name is a string."""
+    if not isinstance(link.name, str) or not info.name:
+        return 0.0
+    return SequenceMatcher(None, link.name.lower(), info.name.lower()).ratio()
+
+
+def _specified_property_count(link: Locator) -> int:
+    return sum(
+        value is not None
+        for value in (link.automation_id, link.name, link.class_name, link.control_type)
+    )
+
+
+def _count_text(count: int) -> str:
+    return "1 element matches" if count == 1 else f"{count} elements match"
+
+
+def diagnose_not_found(
+    root: UIAElement, link: Locator, searched_in: str, full_locator: Locator
+) -> Diagnostic:
+    """Explain why ``link`` matched nothing under ``root`` and list the closest elements."""
+    scored: list[tuple[int, float, int, ElementInfo, tuple[Mismatch, ...]]] = []
+    for order, element in enumerate(relaxed_descendants(root, link.control_type)):
+        info = element.info()
+        score, mismatches = _score_link(link, info)
+        if score >= 1:
+            scored.append((score, _name_similarity(link, info), order, info, mismatches))
+    # Score first, then how close the name is (so typos rank their intended target high), then
+    # document order.
+    scored.sort(key=lambda item: (-item[0], -item[1], item[2]))
+    candidates = tuple(
+        Candidate(info, score, mismatches)
+        for score, _, _, info, mismatches in scored[:MAX_CANDIDATES]
+    )
+    message = f"No element matches {link.describe_link(include_item=False)} in {searched_in}"
+    if candidates:
+        best = candidates[0]
+        names = [m.property for m in best.mismatches[:2]]
+        hint = ""
+        if len(names) == 1:
+            hint = f" — {names[0]} differs"
+        elif len(names) == 2:
+            hint = f" — {names[0]} and {names[1]} differ"
+        message += f" (closest: {best.info.short()}{hint})"
+    return Diagnostic(
+        kind="not_found",
+        message=message,
+        locator=full_locator.describe(),
+        searched_in=searched_in,
+        match_count=0,
+        candidates=candidates,
+    )
+
+
+def _match_candidates(matches: Sequence[UIAElement], link: Locator) -> tuple[Candidate, ...]:
+    full_score = _specified_property_count(link)
+    return tuple(Candidate(m.info(), full_score, ()) for m in matches[:MAX_CANDIDATES])
+
+
+def diagnose_ambiguous(
+    matches: Sequence[UIAElement], link: Locator, searched_in: str, full_locator: Locator
+) -> Diagnostic:
+    """Explain why ``link`` matched several elements."""
+    described = link.describe_link(include_item=False)
+    return Diagnostic(
+        kind="ambiguous",
+        message=(
+            f"{_count_text(len(matches))} {described} in {searched_in}; "
+            "add within= or index= to pick one"
+        ),
+        locator=full_locator.describe(),
+        searched_in=searched_in,
+        match_count=len(matches),
+        candidates=_match_candidates(matches, link),
+    )
+
+
+def diagnose_index_out_of_range(
+    matches: Sequence[UIAElement], link: Locator, searched_in: str, full_locator: Locator
+) -> Diagnostic:
+    """Explain an ``index=`` that is beyond the number of matches."""
+    return Diagnostic(
+        kind="index_out_of_range",
+        message=(
+            f"index={link.index} is out of range: {_count_text(len(matches))} "
+            f"{link.describe_link(include_item=False, include_index=False)} in {searched_in}"
+        ),
+        locator=full_locator.describe(),
+        searched_in=searched_in,
+        match_count=len(matches),
+        candidates=_match_candidates(matches, link),
+    )
+
+
+def diagnose_within_failed(link: Locator, inner: Diagnostic, full_locator: Locator) -> Diagnostic:
+    """Wrap the failure of an ancestor link of ``full_locator``."""
+    return Diagnostic(
+        kind="within_failed",
+        message=(
+            f"Could not resolve {link.describe_link(include_item=False)} "
+            f"(needed by {full_locator.describe()}): {inner.message}"
+        ),
+        locator=full_locator.describe(),
+        searched_in=inner.searched_in,
+        match_count=inner.match_count,
+        candidates=inner.candidates,
+        within=inner,
     )
 
 

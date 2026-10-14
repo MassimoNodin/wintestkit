@@ -5,6 +5,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
+from support import window_props
 
 from wintestkit.app import App
 from wintestkit.engine.locator import WindowLocator
@@ -87,15 +88,15 @@ def test_attach_errors() -> None:
 def test_dialog_and_message_box_are_top_level_windows(app: App) -> None:
     main = app.main_window()
     click_button(app, "Open dialog")
-    assert wait_for(lambda: any(w.name == "WTK Demo - Dialog" for w in app.top_level_windows()))
+    assert wait_for(lambda: "WTK Demo - Dialog" in window_props(app, "name"))
     dialog = next(w for w in app.top_level_windows() if w.name == "WTK Demo - Dialog")
     assert win32.window_owner(dialog.native_window_handle) == main.native_window_handle
     assert app.main_window().name == "WTK Demo"  # owned windows are never the main window
     patterns.window_close(dialog)
-    assert wait_for(lambda: all(w.name != "WTK Demo - Dialog" for w in app.top_level_windows()))
+    assert wait_for(lambda: "WTK Demo - Dialog" not in window_props(app, "name"))
 
     click_button(app, "Show message")
-    assert wait_for(lambda: any(w.class_name == "#32770" for w in app.top_level_windows()))
+    assert wait_for(lambda: "#32770" in window_props(app, "class_name"))
     box = next(w for w in app.top_level_windows() if w.class_name == "#32770")
     assert box.name == "WTK Demo Message"
     assert win32.window_owner(box.native_window_handle) != 0
@@ -109,7 +110,7 @@ def test_close_exits_the_app(demo_app_path: Path) -> None:
 
 def test_close_dismisses_open_message_box(app: App) -> None:
     click_button(app, "Show message")
-    assert wait_for(lambda: any(w.class_name == "#32770" for w in app.top_level_windows()))
+    assert wait_for(lambda: "#32770" in window_props(app, "class_name"))
     started = time.monotonic()
     app.close(timeout=10)
     assert not app.is_running()
