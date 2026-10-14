@@ -9,10 +9,10 @@ import logging
 import re
 import threading
 import time
-from collections.abc import Callable, Generator, Iterable, Mapping
-from contextlib import contextmanager
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import PurePath
+from types import TracebackType
 from typing import Any, Literal, cast
 
 from wintestkit.config import WtkConfig, load_config
@@ -42,6 +42,7 @@ class StepRecord:
     screenshot: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
+        __tracebackhide__ = True
         data: dict[str, Any] = {
             "seq": self.seq,
             "action": self.action,
@@ -73,6 +74,7 @@ _seq = 0
 
 def get_config() -> WtkConfig:
     """The active configuration (loaded from the working directory on first use)."""
+    __tracebackhide__ = True
     global _config
     with _lock:
         if _config is None:
@@ -81,6 +83,7 @@ def get_config() -> WtkConfig:
 
 
 def set_config(cfg: WtkConfig) -> None:
+    __tracebackhide__ = True
     global _config
     with _lock:
         _config = cfg
@@ -91,10 +94,12 @@ def set_config(cfg: WtkConfig) -> None:
 
 def add_step_listener(fn: StepListener) -> Callable[[], None]:
     """Register ``fn`` to receive every finished step; returns a function that removes it."""
+    __tracebackhide__ = True
     with _lock:
         _listeners.append(fn)
 
     def remove() -> None:
+        __tracebackhide__ = True
         with _lock:
             if fn in _listeners:
                 _listeners.remove(fn)
@@ -104,6 +109,7 @@ def add_step_listener(fn: StepListener) -> Callable[[], None]:
 
 def begin_test(test_id: str) -> None:
     """Mark the start of a test and restart step numbering."""
+    __tracebackhide__ = True
     global _current_test, _seq
     with _lock:
         _current_test = test_id
@@ -111,18 +117,21 @@ def begin_test(test_id: str) -> None:
 
 
 def end_test() -> None:
+    __tracebackhide__ = True
     global _current_test
     with _lock:
         _current_test = None
 
 
 def current_test() -> str | None:
+    __tracebackhide__ = True
     with _lock:
         return _current_test
 
 
 def reset() -> None:
     """Forget configuration, listeners and the current test (for tests of WinTestKit itself)."""
+    __tracebackhide__ = True
     global _config, _current_test, _seq
     with _lock:
         _config = None
@@ -135,6 +144,7 @@ def reset() -> None:
 
 
 def _json_safe(value: Any) -> Any:
+    __tracebackhide__ = True
     if value is None or isinstance(value, bool | int | float | str):
         return value
     if isinstance(value, re.Pattern):
@@ -156,6 +166,7 @@ def _json_safe(value: Any) -> Any:
 
 
 def _redact(args: Mapping[str, Any] | None, secret: bool) -> dict[str, Any]:
+    __tracebackhide__ = True
     safe: dict[str, Any] = {}
     for key, value in (args or {}).items():
         sensitive = secret or any(part in key.lower() for part in _SECRET_NAME_PARTS)
@@ -164,6 +175,7 @@ def _redact(args: Mapping[str, Any] | None, secret: bool) -> dict[str, Any]:
 
 
 def _error_info(exc: BaseException) -> dict[str, Any]:
+    __tracebackhide__ = True
     to_dict = getattr(exc, "to_dict", None)
     if callable(to_dict):
         try:
@@ -176,6 +188,7 @@ def _error_info(exc: BaseException) -> dict[str, Any]:
 
 
 def _notify(record: StepRecord) -> None:
+    __tracebackhide__ = True
     with _lock:
         listeners = list(_listeners)
     for listener in listeners:
@@ -185,7 +198,43 @@ def _notify(record: StepRecord) -> None:
             log.exception("step listener %r failed", listener)
 
 
-@contextmanager
+class _StepContext:
+    """Context manager behind :func:`step`.
+
+    A class rather than ``@contextmanager`` so that no ``contextlib`` frames appear in the
+    tracebacks of failing tests (the frames of this module are hidden from pytest).
+    """
+
+    def __init__(self, record: StepRecord) -> None:
+        __tracebackhide__ = True
+        self._record = record
+        self._started = 0.0
+
+    def __enter__(self) -> StepRecord:
+        __tracebackhide__ = True
+        self._started = time.perf_counter()
+        return self._record
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None:
+        __tracebackhide__ = True
+        record = self._record
+        record.duration = time.perf_counter() - self._started
+        if exc is not None:
+            record.status = "failed"
+            record.error = _error_info(exc)
+            _notify(record)
+            return
+        _notify(record)
+        slow_mo = get_config().slow_mo_ms
+        if slow_mo > 0:
+            _sleep(slow_mo / 1000)
+
+
 def step(
     action: str,
     target: str,
@@ -193,32 +242,21 @@ def step(
     args: Mapping[str, Any] | None = None,
     *,
     secret: bool = False,
-) -> Generator[StepRecord]:
+) -> _StepContext:
     """Record one step. Arguments named like secrets (or all of them with ``secret=True``) are
     replaced by ``"***"`` before anything is stored or sent to listeners."""
+    __tracebackhide__ = True
     global _seq
     with _lock:
         _seq += 1
         seq = _seq
-    record = StepRecord(
-        seq=seq,
-        action=action,
-        target=target,
-        locator=locator,
-        args=_redact(args, secret),
-        start=time.time(),
+    return _StepContext(
+        StepRecord(
+            seq=seq,
+            action=action,
+            target=target,
+            locator=locator,
+            args=_redact(args, secret),
+            start=time.time(),
+        )
     )
-    started = time.perf_counter()
-    try:
-        yield record
-    except BaseException as exc:
-        record.status = "failed"
-        record.error = _error_info(exc)
-        record.duration = time.perf_counter() - started
-        _notify(record)
-        raise
-    record.duration = time.perf_counter() - started
-    _notify(record)
-    slow_mo = get_config().slow_mo_ms
-    if slow_mo > 0:
-        _sleep(slow_mo / 1000)

@@ -1,5 +1,24 @@
+[project]
+name = "demo-tests"
+version = "0.0.0"
+description = "Sample WinTestKit project that tests the WPF demo app"
+requires-python = ">=3.12"
+dependencies = ["wintestkit", "pytest>=8.3"]
+
+[tool.uv]
+package = false
+
+[tool.uv.sources]
+wintestkit = { path = "../../python", editable = true }
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+
 [tool.wintestkit]
 launch = "per-session"
+timeout = 10.0
+screenshots = "on-failure"
 
 [tool.wintestkit.app]
 path = "../../demo/DemoApp/bin/Release/net8.0-windows/DemoApp.exe"

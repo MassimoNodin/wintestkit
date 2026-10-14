@@ -31,6 +31,7 @@ MAX_LISTED_ITEMS = 5
 
 
 def _short(el: UIAElement) -> str:
+    __tracebackhide__ = True
     try:
         return el.info().short()
     except UIAError:
@@ -42,6 +43,7 @@ def _short(el: UIAElement) -> str:
 
 def ensure_visible(el: UIAElement) -> None:
     """Scroll a virtualized or scrolled-away element into view."""
+    __tracebackhide__ = True
     if not el.is_offscreen:
         return
     if patterns.has_pattern(el, "VirtualizedItem"):
@@ -53,6 +55,7 @@ def ensure_visible(el: UIAElement) -> None:
 
 
 def _top_level_hwnd(el: UIAElement) -> int:
+    __tracebackhide__ = True
     node: UIAElement | None = el
     while node is not None:
         handle = node.native_window_handle
@@ -63,6 +66,7 @@ def _top_level_hwnd(el: UIAElement) -> int:
 
 
 def _foreground(el: UIAElement) -> None:
+    __tracebackhide__ = True
     hwnd = _top_level_hwnd(el)
     if hwnd and not win32.bring_to_foreground(hwnd):
         log.debug("could not bring window %#x to the foreground", hwnd)
@@ -70,6 +74,7 @@ def _foreground(el: UIAElement) -> None:
 
 def focus(el: UIAElement) -> None:
     """Give the element keyboard focus (bringing its window forward first)."""
+    __tracebackhide__ = True
     _foreground(el)
     try:
         el.set_focus()
@@ -81,6 +86,7 @@ def focus(el: UIAElement) -> None:
 
 
 def _mouse_target(el: UIAElement) -> tuple[int, int]:
+    __tracebackhide__ = True
     ensure_visible(el)
     _foreground(el)
     waits.wait_for_state(lambda: el, "stable", _STABLE_TIMEOUT, f"{_short(el)} to stop moving")
@@ -91,12 +97,14 @@ def _mouse_target(el: UIAElement) -> tuple[int, int]:
 
 
 def _mouse_click(el: UIAElement, button: MouseButton = "left", count: int = 1) -> None:
+    __tracebackhide__ = True
     x, y = _mouse_target(el)
     input.click(x, y, button=button, count=count)
 
 
 def click(el: UIAElement, *, mode: InputMode = "pattern", button: MouseButton = "left") -> str:
     """Click the element; returns the strategy used (``invoke``, ``toggle``, ``mouse`` ...)."""
+    __tracebackhide__ = True
     if mode == "pattern" and button == "left":
         if patterns.has_pattern(el, "Invoke"):
             patterns.invoke(el)
@@ -118,14 +126,17 @@ def click(el: UIAElement, *, mode: InputMode = "pattern", button: MouseButton = 
 
 
 def double_click(el: UIAElement) -> None:
+    __tracebackhide__ = True
     _mouse_click(el, count=2)
 
 
 def right_click(el: UIAElement) -> None:
+    __tracebackhide__ = True
     _mouse_click(el, button="right")
 
 
 def hover(el: UIAElement) -> None:
+    __tracebackhide__ = True
     x, y = _mouse_target(el)
     input.move_mouse(x, y)
 
@@ -134,15 +145,18 @@ def hover(el: UIAElement) -> None:
 
 
 def _is_password(el: UIAElement) -> bool:
+    __tracebackhide__ = True
     return el.class_name == "PasswordBox"
 
 
 def _can_set_value(el: UIAElement) -> bool:
+    __tracebackhide__ = True
     return patterns.has_pattern(el, "Value") and not patterns.is_read_only(el)
 
 
 def type_text(el: UIAElement, text: str, *, clear: bool = True, keys: bool = False) -> str:
     """Enter text; returns ``"value"`` (ValuePattern) or ``"keys"`` (keyboard input)."""
+    __tracebackhide__ = True
     if not keys and _can_set_value(el) and (clear or not _is_password(el)):
         try:
             patterns.set_value(el, text if clear else patterns.get_value(el) + text)
@@ -158,6 +172,7 @@ def type_text(el: UIAElement, text: str, *, clear: bool = True, keys: bool = Fal
 
 def clear(el: UIAElement) -> None:
     """Remove all text from an edit control."""
+    __tracebackhide__ = True
     if _can_set_value(el):
         try:
             patterns.set_value(el, "")
@@ -170,12 +185,14 @@ def clear(el: UIAElement) -> None:
 
 def press(el: UIAElement, keys: str) -> None:
     """Focus the element and press key combinations such as ``"Ctrl+S"``."""
+    __tracebackhide__ = True
     focus(el)
     input.press(keys)
 
 
 def get_text(el: UIAElement) -> str:
     """The element's text: its value, document text or UIA name."""
+    __tracebackhide__ = True
     if patterns.has_pattern(el, "Value") and not _is_password(el):
         return patterns.get_value(el)
     if patterns.has_pattern(el, "Text"):
@@ -184,6 +201,7 @@ def get_text(el: UIAElement) -> str:
 
 
 def get_value(el: UIAElement) -> str:
+    __tracebackhide__ = True
     return patterns.get_value(el)
 
 
@@ -192,6 +210,7 @@ def get_value(el: UIAElement) -> str:
 
 def set_checked(el: UIAElement, checked: bool) -> None:
     """Toggle a check box or toggle button until it reaches the requested state."""
+    __tracebackhide__ = True
     target = ToggleState.On if checked else ToggleState.Off
     for _ in range(3):
         if patterns.toggle_state(el) == target:
@@ -202,19 +221,23 @@ def set_checked(el: UIAElement, checked: bool) -> None:
 
 
 def is_checked(el: UIAElement) -> bool:
+    __tracebackhide__ = True
     return patterns.toggle_state(el) == ToggleState.On
 
 
 def expand(el: UIAElement) -> None:
+    __tracebackhide__ = True
     patterns.expand(el)
 
 
 def collapse(el: UIAElement) -> None:
+    __tracebackhide__ = True
     patterns.collapse(el)
 
 
 def selected_items(el: UIAElement) -> list[str]:
     """Names of the selected items of a list-like element."""
+    __tracebackhide__ = True
     if patterns.has_pattern(el, "Selection"):
         return [item.name for item in patterns.selection(el)]
     if patterns.has_pattern(el, "SelectionItem"):
@@ -228,6 +251,7 @@ Item = str | int | re.Pattern[str]
 
 
 def _describe_item(item: Item) -> str:
+    __tracebackhide__ = True
     if isinstance(item, str):
         return quote(item)
     if isinstance(item, int):
@@ -236,12 +260,14 @@ def _describe_item(item: Item) -> str:
 
 
 def _item_matches(item: str | re.Pattern[str], name: str) -> bool:
+    __tracebackhide__ = True
     return item == name if isinstance(item, str) else item.search(name) is not None
 
 
 def _item_not_found(
     el: UIAElement, item: Item, available: list[UIAElement]
 ) -> ElementNotFoundError:
+    __tracebackhide__ = True
     names = ", ".join(quote(a.name) for a in available[:MAX_LISTED_ITEMS]) or "none"
     short = _short(el)
     return ElementNotFoundError(
@@ -257,6 +283,7 @@ def _item_not_found(
 
 
 def _popup_roots(el: UIAElement) -> list[UIAElement]:
+    __tracebackhide__ = True
     roots: list[UIAElement] = []
     for hwnd in win32.top_level_windows({el.process_id}):
         try:
@@ -269,6 +296,7 @@ def _popup_roots(el: UIAElement) -> list[UIAElement]:
 
 
 def _combo_items(combo: UIAElement) -> list[UIAElement]:
+    __tracebackhide__ = True
     locator = Locator(control_type="ListItem")
     items = query_all(combo, locator)
     if items:
@@ -279,6 +307,7 @@ def _combo_items(combo: UIAElement) -> list[UIAElement]:
 
 
 def _select_in_combo(el: UIAElement, item: Item) -> None:
+    __tracebackhide__ = True
     patterns.expand(el)
     try:
         items = waits.wait_until(
@@ -303,6 +332,7 @@ def _select_in_combo(el: UIAElement, item: Item) -> None:
 
 def _find_listed_item(el: UIAElement, item: str | re.Pattern[str]) -> UIAElement | None:
     """Find an item among the realized children, then ask a virtualized container for it."""
+    __tracebackhide__ = True
     for item_type in _ITEM_TYPES:
         for candidate in query_all(el, Locator(control_type=item_type)):
             if _item_matches(item, candidate.name):
@@ -316,6 +346,7 @@ def _find_listed_item(el: UIAElement, item: str | re.Pattern[str]) -> UIAElement
 
 
 def _item_by_index(el: UIAElement, index: int) -> UIAElement | None:
+    __tracebackhide__ = True
     if index < 0:
         return None
     if el.control_type == "DataGrid" or patterns.has_pattern(el, "Grid"):
@@ -336,6 +367,7 @@ def _item_by_index(el: UIAElement, index: int) -> UIAElement | None:
 
 def select(el: UIAElement, item: Item) -> None:
     """Select an item of a combo box, list, grid, tree or tab control by name, regex or index."""
+    __tracebackhide__ = True
     if el.control_type == "ComboBox":
         _select_in_combo(el, item)
         return

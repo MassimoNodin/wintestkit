@@ -61,6 +61,7 @@ _RETRY_ON = (ElementNotFoundError, WindowNotFoundError, UIAError)
 
 def _caller_source() -> tuple[str, int] | None:
     """``(file, 1-based line)`` of the first frame outside this module (the user's definition)."""
+    __tracebackhide__ = True
     frame: FrameType | None = inspect.currentframe()
     while frame is not None and frame.f_globals.get("__name__") == __name__:
         frame = frame.f_back
@@ -84,6 +85,7 @@ class Window:
         automation_id: Matcher | None = None,
         index: int | None = None,
     ) -> None:
+        __tracebackhide__ = True
         self.locator = WindowLocator(
             title=title,
             process=process,
@@ -97,11 +99,13 @@ class Window:
         self.source = _caller_source()
 
     def __set_name__(self, owner: type, name: str) -> None:
+        __tracebackhide__ = True
         self.owner = owner
         self.name = name
 
     @property
     def qualname(self) -> str:
+        __tracebackhide__ = True
         if self.owner is None or self.name is None:
             return "<anonymous>"
         return f"{self.owner.__qualname__}.{self.name}"
@@ -111,11 +115,13 @@ class Window:
     @overload
     def __get__(self, obj: object, owner: type | None = None) -> BoundWindow: ...
     def __get__(self, obj: object | None, owner: type | None = None) -> Window | BoundWindow:
+        __tracebackhide__ = True
         if obj is None:
             return self
         return BoundWindow(obj, self)
 
     def __repr__(self) -> str:
+        __tracebackhide__ = True
         return f"<Window {self.qualname} {self.locator.describe()}>"
 
 
@@ -135,6 +141,7 @@ class Element:
         window: Window | None = None,
         timeout: float | None = None,
     ) -> None:
+        __tracebackhide__ = True
         self._init(
             automation_id, name, control_type, class_name, index, depth, within, window, timeout
         )
@@ -151,6 +158,7 @@ class Element:
         window: Window | None,
         timeout: float | None,
     ) -> None:
+        __tracebackhide__ = True
         if within is not None and (
             not isinstance(within, Element)  # pyright: ignore[reportUnnecessaryIsInstance]
             or isinstance(within, Elements)
@@ -178,17 +186,20 @@ class Element:
         self.source = _caller_source()
 
     def __set_name__(self, owner: type, name: str) -> None:
+        __tracebackhide__ = True
         self.owner = owner
         self.name = name
 
     @property
     def qualname(self) -> str:
+        __tracebackhide__ = True
         if self.owner is None or self.name is None:
             return "<anonymous>"
         return f"{self.owner.__qualname__}.{self.name}"
 
     def locator(self, *, include_window: bool = True) -> Locator:
         """The locator for this element, including its ``within`` chain and window override."""
+        __tracebackhide__ = True
         within = self.within.locator(include_window=False) if self.within is not None else None
         window = self.window.locator if include_window and self.window is not None else None
         return dataclasses.replace(self._own, within=within, window=window)
@@ -198,11 +209,13 @@ class Element:
     @overload
     def __get__(self, obj: object, owner: type | None = None) -> BoundElement: ...
     def __get__(self, obj: object | None, owner: type | None = None) -> Element | BoundElement:
+        __tracebackhide__ = True
         if obj is None:
             return self
         return BoundElement(obj, self)
 
     def __repr__(self) -> str:
+        __tracebackhide__ = True
         return f"<{type(self).__name__} {self.qualname} {self.locator().describe()}>"
 
 
@@ -221,6 +234,7 @@ class Elements(Element):
         window: Window | None = None,
         timeout: float | None = None,
     ) -> None:
+        __tracebackhide__ = True
         self._init(
             automation_id, name, control_type, class_name, None, depth, within, window, timeout
         )
@@ -232,6 +246,7 @@ class Elements(Element):
     def __get__(  # pyright: ignore[reportIncompatibleMethodOverride]
         self, obj: object | None, owner: type | None = None
     ) -> Elements | BoundElements:
+        __tracebackhide__ = True
         if obj is None:
             return self
         return BoundElements(obj, self)
@@ -243,11 +258,13 @@ class Screen:
     window: ClassVar[Window | None] = None
 
     def __init__(self, app: App) -> None:
+        __tracebackhide__ = True
         self.app = app
 
     @classmethod
     def elements(cls) -> dict[str, Element]:
         """Declared ``Element``/``Elements`` attributes, base classes first."""
+        __tracebackhide__ = True
         found: dict[str, Element] = {}
         for klass in reversed(cls.__mro__):
             for name, value in vars(klass).items():
@@ -257,6 +274,7 @@ class Screen:
 
     def check(self) -> dict[str, BaseException | None]:
         """Resolve every element once without waiting; maps attribute name to its error."""
+        __tracebackhide__ = True
         results: dict[str, BaseException | None] = {}
         for name, definition in type(self).elements().items():
             try:
@@ -271,6 +289,7 @@ class Screen:
 
 
 def _scope(screen: Any) -> Scope:
+    __tracebackhide__ = True
     app: App = screen.app
     window: Any = getattr(type(screen), "window", None)  # pyright: ignore[reportUnknownArgumentType]
     locator = window.locator if isinstance(window, Window) else None
@@ -278,6 +297,7 @@ def _scope(screen: Any) -> Scope:
 
 
 def _default_timeout(definition: Element | None, per_call: float | None) -> float:
+    __tracebackhide__ = True
     if per_call is not None:
         return per_call
     if definition is not None and definition.timeout is not None:
@@ -286,6 +306,7 @@ def _default_timeout(definition: Element | None, per_call: float | None) -> floa
 
 
 def _matches_password(matcher: Matcher | None) -> bool:
+    __tracebackhide__ = True
     if matcher is None:
         return False
     if isinstance(matcher, str):
@@ -295,6 +316,7 @@ def _matches_password(matcher: Matcher | None) -> bool:
 
 def is_password_locator(locator: Locator) -> bool:
     """Whether any link of the locator targets a ``PasswordBox`` (its input is never logged)."""
+    __tracebackhide__ = True
     return any(_matches_password(link.class_name) for link in locator.chain())
 
 
@@ -308,20 +330,25 @@ class _BoundBase:
     definition: Any
 
     def _timeout(self, per_call: float | None) -> float:
+        __tracebackhide__ = True
         return _default_timeout(self.definition, per_call)
 
     def resolve_once(self) -> UIAElement:
+        __tracebackhide__ = True
         raise NotImplementedError
 
     @property
     def qualname(self) -> str:
+        __tracebackhide__ = True
         return str(self.definition.qualname)
 
     def _description(self) -> str:
+        __tracebackhide__ = True
         return self.qualname
 
     def resolve(self, timeout: float | None = None) -> UIAElement:
         """Wait until the element exists (strictly one match) and return it."""
+        __tracebackhide__ = True
         return waits.wait_until(
             self.resolve_once,
             self._timeout(timeout),
@@ -331,6 +358,7 @@ class _BoundBase:
 
     def exists(self, timeout: float = 0) -> bool:
         """Whether the element is found (``timeout`` > 0 waits for it to appear)."""
+        __tracebackhide__ = True
         try:
             waits.wait_until(
                 self.resolve_once,
@@ -346,16 +374,19 @@ class _BoundBase:
 
     def is_visible(self) -> bool:
         """Whether the element exists and is on screen (a single attempt, no waiting)."""
+        __tracebackhide__ = True
         try:
             return waits.element_state_ok(self.resolve_once(), "visible")
         except (LocatorError, UIAError):
             return False
 
     def info(self) -> ElementInfo:
+        __tracebackhide__ = True
         return self.resolve().info(with_patterns=True)
 
     def wait_for(self, state: State = "visible", *, timeout: float | None = None) -> Any:
         """Wait until the element reaches ``state`` and return ``self``."""
+        __tracebackhide__ = True
         waits.wait_for_state(
             self.resolve_once,
             state,
@@ -367,6 +398,7 @@ class _BoundBase:
 
     def highlight(self, duration_ms: int = 1500, *, timeout: float | None = None) -> None:
         """Flash an outline around the element (blocks for the duration)."""
+        __tracebackhide__ = True
         element = self.resolve(timeout)
         rect = element.rect
         if rect is None:
@@ -378,40 +410,50 @@ class BoundWindow(_BoundBase):
     """A ``Window`` definition bound to a screen's application."""
 
     def __init__(self, screen: Any, definition: Window) -> None:
+        __tracebackhide__ = True
         self.screen = screen
         self.definition = definition
 
     @property
     def locator(self) -> WindowLocator:
+        __tracebackhide__ = True
         return self.definition.locator  # type: ignore[no-any-return]
 
     def _description(self) -> str:
+        __tracebackhide__ = True
         return f"{self.qualname} {self.locator.describe()}"
 
     def resolve_once(self) -> UIAElement:
+        __tracebackhide__ = True
         return resolve_window(self.screen.app, self.locator)
 
     @property
     def title(self) -> str:
+        __tracebackhide__ = True
         return self.resolve().name
 
     def close(self, *, timeout: float | None = None) -> None:
+        __tracebackhide__ = True
         with runtime.step("window.close", self.qualname, self.locator.describe()):
             patterns.window_close(self.resolve(timeout))
 
     def maximize(self, *, timeout: float | None = None) -> None:
+        __tracebackhide__ = True
         with runtime.step("window.maximize", self.qualname, self.locator.describe()):
             patterns.window_set_state(self.resolve(timeout), "maximized")
 
     def minimize(self, *, timeout: float | None = None) -> None:
+        __tracebackhide__ = True
         with runtime.step("window.minimize", self.qualname, self.locator.describe()):
             patterns.window_set_state(self.resolve(timeout), "minimized")
 
     def restore(self, *, timeout: float | None = None) -> None:
+        __tracebackhide__ = True
         with runtime.step("window.restore", self.qualname, self.locator.describe()):
             patterns.window_set_state(self.resolve(timeout), "normal")
 
     def __repr__(self) -> str:
+        __tracebackhide__ = True
         return f"<BoundWindow {self.qualname} {self.locator.describe()}>"
 
 
@@ -421,6 +463,7 @@ class BoundElement(_BoundBase):
     def __init__(
         self, screen: Any, definition: Element, locator_override: Locator | None = None
     ) -> None:
+        __tracebackhide__ = True
         self.screen = screen
         self.definition = definition
         self._override = locator_override
@@ -429,28 +472,35 @@ class BoundElement(_BoundBase):
 
     @property
     def locator(self) -> Locator:
+        __tracebackhide__ = True
         return self._override if self._override is not None else self.definition.locator()
 
     def _description(self) -> str:
+        __tracebackhide__ = True
         return f"{self.qualname} {self.locator.describe()}"
 
     def _derive(self, locator: Locator) -> BoundElement:
+        __tracebackhide__ = True
         return BoundElement(self.screen, self.definition, locator)
 
     def __repr__(self) -> str:
+        __tracebackhide__ = True
         return f"<BoundElement {self.qualname} {self.locator.describe()}>"
 
     # -- resolution and waiting -----------------------------------------------------------------
 
     def resolve_once(self) -> UIAElement:
+        __tracebackhide__ = True
         return resolve(_scope(self.screen), self.locator)
 
     def _actionable(self, timeout: float | None) -> UIAElement:
         """Wait until the element is attached and enabled (and visible unless it can scroll)."""
+        __tracebackhide__ = True
         budget = self._timeout(timeout)
         unmet = ["to exist"]
 
         def poll() -> UIAElement | None:
+            __tracebackhide__ = True
             element = self.resolve_once()
             if not element.is_enabled:
                 unmet[0] = "to be enabled"
@@ -476,6 +526,7 @@ class BoundElement(_BoundBase):
 
     def _perform(self, timeout: float | None, act: Callable[[UIAElement], _T]) -> _T:
         """Resolve and act; if the element vanishes mid-action, resolve and act once more."""
+        __tracebackhide__ = True
         for attempt in range(2):
             element = self._actionable(timeout)
             self._maybe_highlight(element)
@@ -487,6 +538,7 @@ class BoundElement(_BoundBase):
         raise AssertionError("unreachable")  # pragma: no cover
 
     def _maybe_highlight(self, element: UIAElement) -> None:
+        __tracebackhide__ = True
         if runtime.get_config().highlight_actions:
             rect = element.rect
             if rect is not None:
@@ -495,11 +547,13 @@ class BoundElement(_BoundBase):
     def _step(
         self, action: str, args: Mapping[str, Any] | None = None, *, secret: bool = False
     ) -> AbstractContextManager[runtime.StepRecord]:
+        __tracebackhide__ = True
         return runtime.step(action, self.qualname, self.locator.describe(), args, secret=secret)
 
     # -- actions --------------------------------------------------------------------------------
 
     def click(self, *, mode: InputMode | None = None, timeout: float | None = None) -> None:
+        __tracebackhide__ = True
         effective = mode or runtime.get_config().input_mode
         with self._step("click", {"mode": effective}) as record:
             record.args["strategy"] = self._perform(
@@ -507,20 +561,24 @@ class BoundElement(_BoundBase):
             )
 
     def double_click(self, *, timeout: float | None = None) -> None:
+        __tracebackhide__ = True
         with self._step("double_click"):
             self._perform(timeout, actions.double_click)
 
     def right_click(self, *, timeout: float | None = None) -> None:
+        __tracebackhide__ = True
         with self._step("right_click"):
             self._perform(timeout, actions.right_click)
 
     def hover(self, *, timeout: float | None = None) -> None:
+        __tracebackhide__ = True
         with self._step("hover"):
             self._perform(timeout, actions.hover)
 
     def type(
         self, text: str, *, clear: bool = True, keys: bool = False, timeout: float | None = None
     ) -> None:
+        __tracebackhide__ = True
         secret = is_password_locator(self.locator)
         with self._step("type", {"text": text, "clear": clear, "keys": keys}, secret=secret) as rec:
             rec.args["strategy"] = self._perform(
@@ -528,38 +586,47 @@ class BoundElement(_BoundBase):
             )
 
     def clear(self, *, timeout: float | None = None) -> None:
+        __tracebackhide__ = True
         with self._step("clear"):
             self._perform(timeout, actions.clear)
 
     def press(self, keys: str, *, timeout: float | None = None) -> None:
+        __tracebackhide__ = True
         with self._step("press", {"keys": keys}):
             self._perform(timeout, lambda el: actions.press(el, keys))
 
     def select(self, item: str | int | re.Pattern[str], *, timeout: float | None = None) -> None:
+        __tracebackhide__ = True
         with self._step("select", {"item": item}):
             self._perform(timeout, lambda el: actions.select(el, item))
 
     def check(self, *, timeout: float | None = None) -> None:
+        __tracebackhide__ = True
         with self._step("check"):
             self._perform(timeout, lambda el: actions.set_checked(el, True))
 
     def uncheck(self, *, timeout: float | None = None) -> None:
+        __tracebackhide__ = True
         with self._step("uncheck"):
             self._perform(timeout, lambda el: actions.set_checked(el, False))
 
     def expand(self, *, timeout: float | None = None) -> None:
+        __tracebackhide__ = True
         with self._step("expand"):
             self._perform(timeout, actions.expand)
 
     def collapse(self, *, timeout: float | None = None) -> None:
+        __tracebackhide__ = True
         with self._step("collapse"):
             self._perform(timeout, actions.collapse)
 
     def focus(self, *, timeout: float | None = None) -> None:
+        __tracebackhide__ = True
         with self._step("focus"):
             self._perform(timeout, actions.focus)
 
     def scroll_into_view(self, *, timeout: float | None = None) -> None:
+        __tracebackhide__ = True
         with self._step("scroll_into_view"):
             element = self.resolve(timeout)
             if patterns.has_pattern(element, "VirtualizedItem"):
@@ -573,45 +640,56 @@ class BoundElement(_BoundBase):
 
     @property
     def text(self) -> str:
+        __tracebackhide__ = True
         return actions.get_text(self.resolve())
 
     @property
     def value(self) -> str:
+        __tracebackhide__ = True
         return actions.get_value(self.resolve())
 
     def is_enabled(self) -> bool:
+        __tracebackhide__ = True
         return self.resolve().is_enabled
 
     def is_checked(self) -> bool:
+        __tracebackhide__ = True
         return actions.is_checked(self.resolve())
 
     def selected_items(self) -> list[str]:
+        __tracebackhide__ = True
         return actions.selected_items(self.resolve())
 
     # -- derivation -----------------------------------------------------------------------------
 
     def nth(self, i: int) -> BoundElement:
         """The ``i``-th match (0-based) of this locator."""
+        __tracebackhide__ = True
         return self._derive(self.locator.with_index(i))
 
     def row(self, i: int) -> BoundElement:
         """Row ``i`` (0-based) of a grid element."""
+        __tracebackhide__ = True
         return self._derive(self.locator.with_item(ItemSelector("row", i)))
 
     def cell(self, row: int, column: int | str) -> BoundElement:
         """The cell at ``row`` and ``column`` (index or header name) of a grid element."""
+        __tracebackhide__ = True
         return self._derive(self.locator.with_item(ItemSelector("cell", row, column)))
 
     def row_count(self) -> int:
+        __tracebackhide__ = True
         return patterns.grid_size(self.resolve())[0]
 
     def column_count(self) -> int:
+        __tracebackhide__ = True
         return patterns.grid_size(self.resolve())[1]
 
     def find_row(
         self, column: int | str, value: Matcher, *, timeout: float | None = None
     ) -> BoundElement:
         """The first row whose ``column`` cell equals (or matches) ``value``."""
+        __tracebackhide__ = True
         grid = self.resolve(timeout)
         rows, columns = patterns.grid_size(grid)
         if rows > _MAX_FIND_ROW_ROWS:
@@ -637,6 +715,7 @@ class BoundElement(_BoundBase):
 
 
 def _find_row_diagnostic(bound: BoundElement, column: int | str, shown: str, rows: int) -> Any:
+    __tracebackhide__ = True
     from wintestkit.engine.diagnose import Diagnostic
 
     description = bound.locator.describe()
@@ -655,25 +734,31 @@ class BoundElements:
     def __init__(
         self, screen: Any, definition: Elements, locator_override: Locator | None = None
     ) -> None:
+        __tracebackhide__ = True
         self.screen = screen
         self.definition = definition
         self._override = locator_override
 
     @property
     def locator(self) -> Locator:
+        __tracebackhide__ = True
         return self._override if self._override is not None else self.definition.locator()
 
     @property
     def qualname(self) -> str:
+        __tracebackhide__ = True
         return self.definition.qualname
 
     def _description(self) -> str:
+        __tracebackhide__ = True
         return f"{self.qualname} {self.locator.describe()}"
 
     def __repr__(self) -> str:
+        __tracebackhide__ = True
         return f"<BoundElements {self.qualname} {self.locator.describe()}>"
 
     def resolve_all(self) -> list[UIAElement]:
+        __tracebackhide__ = True
         return resolve_all(_scope(self.screen), self.locator)
 
     def count(self, *, timeout: float = 0) -> int:
@@ -681,6 +766,7 @@ class BoundElements:
 
         For virtualized lists this counts only the items that are currently realized.
         """
+        __tracebackhide__ = True
         try:
             return len(
                 waits.wait_until(
@@ -693,21 +779,26 @@ class BoundElements:
             return 0
 
     def nth(self, i: int) -> BoundElement:
+        __tracebackhide__ = True
         return BoundElement(self.screen, self.definition, self.locator.with_index(i))
 
     def first(self) -> BoundElement:
+        __tracebackhide__ = True
         return self.nth(0)
 
     def last(self) -> BoundElement:
+        __tracebackhide__ = True
         total = self.count()
         if total == 0:
             raise ActionError(f"{self.qualname} matches no elements, so it has no last()")
         return self.nth(total - 1)
 
     def all(self) -> list[BoundElement]:
+        __tracebackhide__ = True
         return [self.nth(i) for i in range(self.count())]
 
     def texts(self) -> list[str]:
+        __tracebackhide__ = True
         return [actions.get_text(element) for element in self.resolve_all()]
 
     def filter(
@@ -718,6 +809,7 @@ class BoundElements:
         automation_id: Matcher | None = None,
     ) -> BoundElements:
         """A copy of this collection narrowed by additional properties of the final link."""
+        __tracebackhide__ = True
         changes = {
             key: value
             for key, value in (
@@ -732,7 +824,9 @@ class BoundElements:
         )
 
     def __iter__(self) -> Iterator[BoundElement]:
+        __tracebackhide__ = True
         return iter(self.all())
 
     def __len__(self) -> int:
+        __tracebackhide__ = True
         return self.count()

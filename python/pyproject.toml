@@ -31,6 +31,9 @@ target-version = "py312"
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]
 
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["E501"]  # tests embed source snippets and long expected messages
+
 [tool.pyright]
 include = ["src"]
 typeCheckingMode = "strict"

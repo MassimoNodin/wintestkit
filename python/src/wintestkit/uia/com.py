@@ -49,6 +49,7 @@ _warned_sta = False
 
 def ensure_com_initialized() -> None:
     """Initialise COM for the calling thread as MTA (once per thread)."""
+    __tracebackhide__ = True
     global _warned_sta
     if getattr(_local, "initialized", False):
         return
@@ -67,6 +68,7 @@ def ensure_com_initialized() -> None:
 
 def uia_module() -> Any:
     """Return the generated ``comtypes.gen.UIAutomationClient`` module."""
+    __tracebackhide__ = True
     ensure_com_initialized()
     try:
         return comtypes.client.GetModule("UIAutomationCore.dll")
@@ -76,6 +78,7 @@ def uia_module() -> Any:
 
 def get_uia() -> Any:
     """Return the shared ``IUIAutomation`` client object (created lazily)."""
+    __tracebackhide__ = True
     global _uia
     ensure_com_initialized()
     if _uia is not None:
@@ -102,6 +105,7 @@ def get_uia() -> Any:
 
 
 def _convert(exc: comtypes.COMError) -> UIAError:
+    __tracebackhide__ = True
     hresult = exc.hresult if isinstance(exc.hresult, int) else None
     if hresult == UIA_E_ELEMENTNOTAVAILABLE:
         return UIAError("The UI element is no longer available", hresult, element_gone=True)
@@ -114,8 +118,11 @@ class _WrapComErrors:
     """Converts ``comtypes.COMError`` to ``UIAError``; usable as decorator or context manager."""
 
     def __call__(self, fn: Callable[_P, _T]) -> Callable[_P, _T]:
+        __tracebackhide__ = True
+
         @functools.wraps(fn)
         def wrapper(*args: _P.args, **kwargs: _P.kwargs) -> _T:
+            __tracebackhide__ = True
             try:
                 return fn(*args, **kwargs)
             except comtypes.COMError as exc:
@@ -124,9 +131,11 @@ class _WrapComErrors:
         return wrapper
 
     def __enter__(self) -> None:
+        __tracebackhide__ = True
         return None
 
     def __exit__(self, exc_type: Any, exc: Any, tb: Any) -> None:
+        __tracebackhide__ = True
         if isinstance(exc, comtypes.COMError):
             raise _convert(exc) from exc
 
@@ -149,6 +158,7 @@ def create_condition(**props: Any) -> Any:
     Accepted keys: ``control_type`` (int id), ``automation_id``, ``name``, ``class_name``,
     ``process_id``, ``framework_id``. No properties yields a true condition.
     """
+    __tracebackhide__ = True
     for key in props:
         if key not in _CONDITION_PROPS:
             raise ValueError(f"unsupported condition property {key!r}")

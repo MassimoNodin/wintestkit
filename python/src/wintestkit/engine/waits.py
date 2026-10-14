@@ -35,6 +35,7 @@ def wait_until[T](
     the element diagnostic; otherwise ``WaitTimeoutError`` is raised. ``timeout == 0`` means a
     single attempt.
     """
+    __tracebackhide__ = True
     start = _clock()
     last_error: BaseException | None = None
     while True:
@@ -63,6 +64,7 @@ def wait_until[T](
 
 
 def _attached(el: UIAElement | None) -> bool:
+    __tracebackhide__ = True
     if el is None:
         return False
     try:
@@ -72,6 +74,7 @@ def _attached(el: UIAElement | None) -> bool:
 
 
 def _visible(el: UIAElement | None) -> bool:
+    __tracebackhide__ = True
     if not _attached(el):
         return False
     assert el is not None
@@ -84,6 +87,7 @@ def _visible(el: UIAElement | None) -> bool:
 
 def element_state_ok(el: UIAElement | None, state: State) -> bool:
     """Whether ``el`` is currently in ``state``."""
+    __tracebackhide__ = True
     if state == "attached":
         return _attached(el)
     if state == "detached":
@@ -119,9 +123,11 @@ def wait_for_state(
     ``get`` normally resolves a locator. For ``detached`` and ``hidden`` a failed resolution counts
     as success, because a missing element is both.
     """
+    __tracebackhide__ = True
     missing_is_ok = state in ("detached", "hidden")
 
     def check() -> tuple[UIAElement | None] | None:
+        __tracebackhide__ = True
         try:
             el = get()
         except LocatorError:

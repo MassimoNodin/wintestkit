@@ -234,6 +234,24 @@
     login success, Panel B OK, async Load → Continue (auto-wait on enabled), dialog Save flow,
     MessageBox OK (`window=Window(class_name="#32770")`).
 
+- **Findings (implemented):**
+  - `Element.name` is the **attribute name** (set by `__set_name__`); the UI Automation name
+    matcher passed as `name=` is stored in the element's locator, not on the attribute.
+  - `import wintestkit` is lazy (PEP 562 `__getattr__`): `Screen`, `expect`, … are imported on
+    first access, so the pytest plugin (loaded in *every* pytest run) never initialises COM.
+    `import wintestkit` alone does not import `comtypes` (unit-tested).
+  - The package exports a function `expect` from a submodule also named `expect`; once the
+    submodule is imported Python rebinds the package attribute to the module. The submodule
+    therefore replaces its own class with a **callable module**, so both spellings work.
+  - Ambiguous locators fail fast (no retry until the timeout) in actions, `wait_for` and
+    `expect`: an ambiguity is a mistake in the test, not a transient state. Only
+    `ElementNotFoundError`, `WindowNotFoundError` and `UIAError` are retried.
+  - `Window` has a `timeout` attribute (always `None`) so waits can treat windows like elements.
+  - Tracebacks: every function in the modules a user exception passes through starts with
+    `__tracebackhide__ = True` (enforced by `tests/unit/test_traceback_hiding.py`), and
+    `runtime.step` is a class-based context manager so no `contextlib` frames appear. A failing
+    test shows the user's line and the diagnostic; `--full-trace` shows everything.
+
 ---
 
 ## T2.4 — `Elements` collections + grid helpers <a id="t24"></a>
@@ -344,6 +362,19 @@
   (unit), and one integration test running a 2-test file against the demo in per-session mode
   (asserts single launch) and per-test mode (asserts two launches).
 
+- **Findings (implemented):**
+  - Hook implementations live on a per-config `_Controller` object registered in
+    `pytest_configure` only for WinTestKit runs (a `[tool.wintestkit]` table, a `WTK_*`
+    environment variable, or any `--wtk-*` option). Module-level hooks are limited to
+    `pytest_addoption`, `pytest_configure`, `pytest_unconfigure` and the fixtures. This keeps the
+    plugin inert for unrelated projects and works with several configs in one process
+    (`pytester`).
+  - pytest accumulates captured output on the item, so the *teardown* report already contains
+    the setup and call output; summing phases would duplicate it.
+  - Tests that use `pytester` need `pytest_plugins = ["pytester"]` in `tests/conftest.py`,
+    `--import-mode=importlib` (unit and integration folders share file names) and
+    `pythonpath = ["tests", "tests/unit", "tests/integration"]`.
+
 ---
 
 ## T2.7 — Failure artifacts <a id="t27"></a>
@@ -365,6 +396,11 @@
   - Capturing must never fail the test: wrap in try/except, log a warning.
 - **Done when:** a deliberately failing integration test produces the three files; every-step
   produces one PNG per step; artifact capture errors are swallowed.
+
+- **Findings (implemented):** `artifacts.capture_failure` captures `window.png`, `desktop.png`
+  and `tree.txt` independently (one failing never stops the others) and never raises. The
+  artifact directory is `<safe_id>` = sanitized node id (≤ 120 chars) + `-` + 8-char sha1 of the
+  original id, so ids that sanitize identically cannot collide.
 
 ---
 

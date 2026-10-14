@@ -33,23 +33,29 @@ class Rect:
 
     @property
     def right(self) -> int:
+        __tracebackhide__ = True
         return self.left + self.width
 
     @property
     def bottom(self) -> int:
+        __tracebackhide__ = True
         return self.top + self.height
 
     @property
     def center(self) -> tuple[int, int]:
+        __tracebackhide__ = True
         return (self.left + self.width // 2, self.top + self.height // 2)
 
     def is_empty(self) -> bool:
+        __tracebackhide__ = True
         return self.width <= 0 or self.height <= 0
 
     def inflate(self, d: int) -> Rect:
+        __tracebackhide__ = True
         return Rect(self.left - d, self.top - d, self.width + 2 * d, self.height + 2 * d)
 
     def to_dict(self) -> dict[str, int]:
+        __tracebackhide__ = True
         return {"left": self.left, "top": self.top, "width": self.width, "height": self.height}
 
 
@@ -71,6 +77,7 @@ class ElementInfo:
     patterns: tuple[str, ...] | None = None
 
     def to_dict(self) -> dict[str, Any]:
+        __tracebackhide__ = True
         data: dict[str, Any] = {
             "automationId": self.automation_id,
             "name": self.name,
@@ -90,6 +97,7 @@ class ElementInfo:
 
     @classmethod
     def from_dict(cls, d: Mapping[str, Any]) -> ElementInfo:
+        __tracebackhide__ = True
         rect = d.get("rect")
         patterns = d.get("patterns")
         return cls(
@@ -109,6 +117,7 @@ class ElementInfo:
 
     def short(self) -> str:
         """Compact label: ``Button "Sign in"``, ``Edit [TextBox]``, ``Text #StatusText "Ready"``."""
+        __tracebackhide__ = True
         parts = [self.control_type]
         if self.automation_id:
             parts.append(f"#{self.automation_id}")
@@ -139,6 +148,7 @@ _cache_request: Any = None
 
 
 def _get_cache_request() -> Any:
+    __tracebackhide__ = True
     global _cache_request
     if _cache_request is not None:
         return _cache_request
@@ -155,6 +165,7 @@ def _get_cache_request() -> Any:
 
 
 def _control_view_condition(condition: Any | None) -> Any:
+    __tracebackhide__ = True
     uia = com.get_uia()
     view = uia.ControlViewCondition
     if condition is None:
@@ -163,6 +174,7 @@ def _control_view_condition(condition: Any | None) -> Any:
 
 
 def array_to_list(array: Any, cached: bool = False) -> list[UIAElement]:
+    __tracebackhide__ = True
     if array is None:
         return []
     return [UIAElement(array.GetElement(i), cached=cached) for i in range(array.Length)]
@@ -178,55 +190,67 @@ class UIAElement:
     __slots__ = ("_cached", "raw")
 
     def __init__(self, raw: Any, cached: bool = False) -> None:
+        __tracebackhide__ = True
         self.raw = raw
         self._cached = cached
 
     def _read(self, attribute: str) -> Any:
+        __tracebackhide__ = True
         prefix = "Cached" if self._cached else "Current"
         with com.wrap_com_errors:
             return getattr(self.raw, prefix + attribute)
 
     def as_live(self) -> UIAElement:
         """The same element with live (uncached) property reads."""
+        __tracebackhide__ = True
         return UIAElement(self.raw) if self._cached else self
 
     # -- properties ---------------------------------------------------------------------------
 
     @property
     def automation_id(self) -> str:
+        __tracebackhide__ = True
         return self._read("AutomationId") or ""
 
     @property
     def name(self) -> str:
+        __tracebackhide__ = True
         return self._read("Name") or ""
 
     @property
     def control_type_id(self) -> int:
+        __tracebackhide__ = True
         return int(self._read("ControlType"))
 
     @property
     def control_type(self) -> str:
+        __tracebackhide__ = True
         ident = self.control_type_id
         return CONTROL_TYPE_NAMES.get(ident, f"Unknown({ident})")
 
     @property
     def class_name(self) -> str:
+        __tracebackhide__ = True
         return self._read("ClassName") or ""
 
     @property
     def framework_id(self) -> str:
+        __tracebackhide__ = True
         return self._read("FrameworkId") or ""
 
     @property
     def process_id(self) -> int:
+        __tracebackhide__ = True
         return int(self._read("ProcessId"))
 
     @property
     def native_window_handle(self) -> int:
+        __tracebackhide__ = True
         return int(self._read("NativeWindowHandle") or 0)
 
     @property
     def rect(self) -> Rect | None:
+        __tracebackhide__ = True
         raw_rect = self._read("BoundingRectangle")
         rect = Rect(
             raw_rect.left,
@@ -238,24 +262,29 @@ class UIAElement:
 
     @property
     def is_enabled(self) -> bool:
+        __tracebackhide__ = True
         return bool(self._read("IsEnabled"))
 
     @property
     def is_offscreen(self) -> bool:
+        __tracebackhide__ = True
         return bool(self._read("IsOffscreen"))
 
     @property
     def has_keyboard_focus(self) -> bool:
+        __tracebackhide__ = True
         return bool(self._read("HasKeyboardFocus"))
 
     @property
     def runtime_id(self) -> str:
+        __tracebackhide__ = True
         with com.wrap_com_errors:
             ids = self.raw.GetRuntimeId()
         return ".".join(str(i) for i in ids)
 
     def get_property(self, name: str) -> Any:
         """Read a property by its ``PROPERTY_IDS`` name; returns a Python value."""
+        __tracebackhide__ = True
         try:
             ident = PROPERTY_IDS[name]
         except KeyError:
@@ -265,6 +294,7 @@ class UIAElement:
 
     def supported_patterns(self) -> list[str]:
         """Names of the patterns the element supports."""
+        __tracebackhide__ = True
         supported: list[str] = []
         for name, ident in PATTERN_IDS.items():
             try:
@@ -276,6 +306,7 @@ class UIAElement:
         return supported
 
     def info(self, with_patterns: bool = False) -> ElementInfo:
+        __tracebackhide__ = True
         try:
             runtime_id = self.runtime_id
         except Exception:
@@ -298,18 +329,21 @@ class UIAElement:
     # -- tree navigation ----------------------------------------------------------------------
 
     def parent(self) -> UIAElement | None:
+        __tracebackhide__ = True
         uia = com.get_uia()
         with com.wrap_com_errors:
             parent = uia.ControlViewWalker.GetParentElement(self.raw)
         return UIAElement(parent) if parent else None
 
     def children(self) -> list[UIAElement]:
+        __tracebackhide__ = True
         return self.find_all(TreeScope.Children)
 
     def find_all(
         self, scope: TreeScope, condition: Any | None = None, cached: bool = False
     ) -> list[UIAElement]:
         """Find matching elements in the control view; ``cached`` preloads info() properties."""
+        __tracebackhide__ = True
         with com.wrap_com_errors:
             cond = _control_view_condition(condition)
             if cached:
@@ -319,19 +353,23 @@ class UIAElement:
             return array_to_list(array, cached=cached)
 
     def find_first(self, scope: TreeScope, condition: Any | None = None) -> UIAElement | None:
+        __tracebackhide__ = True
         with com.wrap_com_errors:
             found = self.raw.FindFirst(int(scope), _control_view_condition(condition))
         return UIAElement(found) if found else None
 
     def set_focus(self) -> None:
+        __tracebackhide__ = True
         with com.wrap_com_errors:
             self.raw.SetFocus()
 
     def same_as(self, other: UIAElement) -> bool:
+        __tracebackhide__ = True
         with com.wrap_com_errors:
             return bool(com.get_uia().CompareElements(self.raw, other.raw))
 
     def is_alive(self) -> bool:
+        __tracebackhide__ = True
         try:
             self.raw.CurrentProcessId  # noqa: B018 - the read itself is the liveness probe
         except comtypes.COMError:
@@ -339,6 +377,7 @@ class UIAElement:
         return True
 
     def __repr__(self) -> str:
+        __tracebackhide__ = True
         try:
             return f"<UIAElement {self.control_type} {self.name!r}>"
         except Exception:
@@ -350,11 +389,13 @@ class UIAElement:
 
 def root() -> UIAElement:
     """The desktop root element."""
+    __tracebackhide__ = True
     with com.wrap_com_errors:
         return UIAElement(com.get_uia().GetRootElement())
 
 
 def from_point(x: int, y: int) -> UIAElement | None:
+    __tracebackhide__ = True
     uia = com.get_uia()
     point = com.uia_module().tagPOINT(x, y)
     try:
@@ -365,11 +406,13 @@ def from_point(x: int, y: int) -> UIAElement | None:
 
 
 def from_handle(hwnd: int) -> UIAElement:
+    __tracebackhide__ = True
     with com.wrap_com_errors:
         return UIAElement(com.get_uia().ElementFromHandle(hwnd))
 
 
 def focused() -> UIAElement | None:
+    __tracebackhide__ = True
     try:
         raw = com.get_uia().GetFocusedElement()
     except comtypes.COMError:
