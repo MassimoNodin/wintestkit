@@ -1,0 +1,6 @@
+[tool.wintestkit]
+launch = "per-session"
+
+[tool.wintestkit.app]
+path = "../../demo/DemoApp/bin/Release/net8.0-windows/DemoApp.exe"
+args = []
