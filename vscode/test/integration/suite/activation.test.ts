@@ -275,6 +275,117 @@ suite("WinTestKit activation", () => {
       )!;
       assert.ok(selected.suggestion?.code.includes('name="Sign in"'));
       assert.equal(selected.suggestion?.unique, true);
+      const folder = vscode.workspace.workspaceFolders?.[0];
+      assert.ok(folder);
+      const scratch = vscode.Uri.joinPath(
+        folder.uri,
+        "screens",
+        "_wtk_spy_e2e.py",
+      );
+      assert.equal(
+        await vscode.workspace.fs.stat(scratch).then(
+          () => true,
+          () => false,
+        ),
+        false,
+        "scratch screen must not already exist",
+      );
+      const compute = (
+        extension.exports as {
+          computeInsertion(
+            source: string,
+            screen: null,
+            newScreen: { className: string },
+            suggestion: unknown,
+            attributeName: string,
+          ): {
+            edits: {
+              range: {
+                start: { line: number; character: number };
+                end: { line: number; character: number };
+              };
+              text: string;
+            }[];
+          };
+        }
+      ).computeInsertion;
+      const insertion = compute(
+        "",
+        null,
+        { className: "SpyIntegrationScreen" },
+        selected.suggestion,
+        "sign_in",
+      );
+      try {
+        const edit = new vscode.WorkspaceEdit();
+        edit.createFile(scratch, { overwrite: false });
+        for (const change of insertion.edits)
+          edit.replace(
+            scratch,
+            new vscode.Range(
+              change.range.start.line,
+              change.range.start.character,
+              change.range.end.line,
+              change.range.end.character,
+            ),
+            change.text,
+          );
+        assert.equal(await vscode.workspace.applyEdit(edit), true);
+        const document = await vscode.workspace.openTextDocument(scratch);
+        await vscode.window.showTextDocument(document);
+        assert.equal(await document.save(), true);
+        let insertedLens: vscode.CodeLens | undefined;
+        for (let attempt = 0; attempt < 40; attempt++) {
+          const lenses = await vscode.commands.executeCommand<
+            vscode.CodeLens[]
+          >("vscode.executeCodeLensProvider", scratch);
+          insertedLens = lenses?.find(
+            (lens) =>
+              lens.command?.command === "wintestkit.highlightElement" &&
+              lens.command.arguments?.[0]?.qualname ===
+                "SpyIntegrationScreen.sign_in",
+          );
+          if (insertedLens) break;
+          await new Promise((resolve) => setTimeout(resolve, 250));
+        }
+        assert.ok(
+          insertedLens,
+          "inserted Spy locator becomes a discovered element",
+        );
+        await vscode.commands.executeCommand(
+          "wintestkit.highlightElement",
+          ...insertedLens.command!.arguments!,
+        );
+        const checks = (
+          extension.exports as {
+            checks: {
+              results: Map<string, { qualname: string; status: string }>;
+            };
+          }
+        ).checks;
+        assert.ok(
+          [...checks.results.values()].some(
+            (result) =>
+              result.qualname === "SpyIntegrationScreen.sign_in" &&
+              result.status === "found",
+          ),
+        );
+      } finally {
+        if (
+          vscode.window.activeTextEditor?.document.uri.toString() ===
+          scratch.toString()
+        )
+          await vscode.commands.executeCommand(
+            "workbench.action.closeActiveEditor",
+          );
+        if (
+          await vscode.workspace.fs.stat(scratch).then(
+            () => true,
+            () => false,
+          )
+        )
+          await vscode.workspace.fs.delete(scratch);
+      }
       receive({ type: "pick" });
       await wait(() =>
         messages.some(

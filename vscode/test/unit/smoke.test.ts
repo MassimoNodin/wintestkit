@@ -113,6 +113,9 @@ vi.mock("../../src/editor/highlightCommands", () => ({
 }));
 
 import { activate } from "../../src/extension";
+vi.mock("../../src/spy/insertElement", () => ({
+  registerInsertElement: () => ({ dispose() {} }),
+}));
 vi.mock("../../src/spy/spyView", () => ({
   SpyView: class {
     constructor() {

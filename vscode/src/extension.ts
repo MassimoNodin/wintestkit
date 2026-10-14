@@ -13,6 +13,8 @@ import { registerInitialize } from "./init";
 import { PytestConflict } from "./pytestConflict";
 import { ElementsTree } from "./views/elementsTree";
 import { SpyView } from "./spy/spyView";
+import { registerInsertElement } from "./spy/insertElement";
+import { computeInsertion } from "./spy/insertionModel";
 
 interface CommandContribution {
   command: string;
@@ -27,6 +29,7 @@ export function activate(context: vscode.ExtensionContext): {
   checks: CheckResultsStore;
   elements: ElementsTree;
   spy: SpyView;
+  computeInsertion: typeof computeInsertion;
 } {
   const log = createLog();
   context.subscriptions.push(log);
@@ -41,6 +44,7 @@ export function activate(context: vscode.ExtensionContext): {
   context.subscriptions.push(elements);
   const spy = new SpyView(projects, servers, context.extensionUri, log);
   context.subscriptions.push(spy);
+  context.subscriptions.push(registerInsertElement(projects, discovery, log));
   const tests = new TestController(projects, discovery, lenses, log);
   context.subscriptions.push(
     registerInitialize(projects, log),
@@ -200,7 +204,7 @@ export function activate(context: vscode.ExtensionContext): {
     false,
   );
   void projects.refresh();
-  return { tests, checks, elements, spy };
+  return { tests, checks, elements, spy, computeInsertion };
 }
 
 let activeServers: ServerManager | undefined;
