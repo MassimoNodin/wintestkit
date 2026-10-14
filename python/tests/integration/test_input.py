@@ -3,7 +3,7 @@
 import time
 
 import pytest
-from conftest import DemoProcess
+from support import DemoProcess
 
 from wintestkit.errors import ActionError  # noqa: F401
 from wintestkit.uia import com, element, input, win32
