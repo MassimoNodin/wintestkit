@@ -1,0 +1,14 @@
+__pycache__/
+.venv/
+*.egg-info/
+dist/
+.pytest_cache/
+.ruff_cache/
+node_modules/
+vscode/dist/
+*.vsix
+demo/**/bin/
+demo/**/obj/
+wtk-report/
+wtk-results/
+.vscode-test/
