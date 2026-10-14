@@ -12,6 +12,7 @@ import { TestController } from "./testing/controller";
 import { registerInitialize } from "./init";
 import { PytestConflict } from "./pytestConflict";
 import { ElementsTree } from "./views/elementsTree";
+import { SpyView } from "./spy/spyView";
 
 interface CommandContribution {
   command: string;
@@ -25,6 +26,7 @@ export function activate(context: vscode.ExtensionContext): {
   tests: TestController;
   checks: CheckResultsStore;
   elements: ElementsTree;
+  spy: SpyView;
 } {
   const log = createLog();
   context.subscriptions.push(log);
@@ -37,6 +39,8 @@ export function activate(context: vscode.ExtensionContext): {
   const checks = new CheckResultsStore(discovery);
   const elements = new ElementsTree(projects, discovery, checks);
   context.subscriptions.push(elements);
+  const spy = new SpyView(projects, servers, context.extensionUri, log);
+  context.subscriptions.push(spy);
   const tests = new TestController(projects, discovery, lenses, log);
   context.subscriptions.push(
     registerInitialize(projects, log),
@@ -159,6 +163,8 @@ export function activate(context: vscode.ExtensionContext): {
         "wintestkit.debugTest",
         "wintestkit.initProject",
         "wintestkit.elements.goTo",
+        "wintestkit.spy.startPick",
+        "wintestkit.spy.refresh",
       ].includes(contribution.command)
     )
       continue;
@@ -178,15 +184,6 @@ export function activate(context: vscode.ExtensionContext): {
     );
   }
 
-  context.subscriptions.push(
-    vscode.window.registerWebviewViewProvider("wintestkit.spy", {
-      resolveWebviewView: (view: vscode.WebviewView) => {
-        view.webview.html =
-          "<!DOCTYPE html><html><body><p>The WinTestKit Spy is not implemented yet.</p></body></html>";
-      },
-    }),
-  );
-
   void vscode.commands.executeCommand(
     "setContext",
     "wintestkit.hasProject",
@@ -203,7 +200,7 @@ export function activate(context: vscode.ExtensionContext): {
     false,
   );
   void projects.refresh();
-  return { tests, checks, elements };
+  return { tests, checks, elements, spy };
 }
 
 let activeServers: ServerManager | undefined;

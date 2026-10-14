@@ -5,6 +5,11 @@ The Elements view mirrors discovered screens and nests elements under their
 highlight or check elements and check complete screens. Check results update the
 tree icons. Multiple project roots appear as separate groups.
 
+The Spy view lazily explores live UI Automation controls. Select a control to
+highlight it, inspect properties and patterns, and copy a suggested locator.
+Pick mode uses Ctrl+Click to select a hovered control; Esc cancels. Hiding the
+view stops picking. Stale controls refresh automatically.
+
 UI test automation for Windows WPF applications.
 
 The extension resolves the selected Python interpreter (or `wintestkit.pythonPath`),
