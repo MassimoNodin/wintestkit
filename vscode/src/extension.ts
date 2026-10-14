@@ -3,6 +3,8 @@ import { createLog } from "./log";
 import { installPackage, onDidChangeInterpreter, runTerminal } from "./python";
 import { ServerManager, type Project } from "./server/serverManager";
 import { StatusBar } from "./statusBar";
+import { Projects } from "./projects";
+import { DiscoveryStore } from "./discovery/store";
 
 interface CommandContribution {
   command: string;
@@ -18,15 +20,32 @@ export function activate(context: vscode.ExtensionContext): void {
   log.info("WinTestKit activated");
   const servers = new ServerManager(log);
   activeServers = servers;
+  const projects = new Projects(log);
+  const discovery = new DiscoveryStore(projects, servers, log);
   const currentProject = (): Project | undefined => {
     const document = vscode.window.activeTextEditor?.document.uri;
-    const folder = document
-      ? vscode.workspace.getWorkspaceFolder(document)
-      : vscode.workspace.workspaceFolders?.[0];
-    return folder ? { root: folder.uri, name: folder.name } : undefined;
+    return document ? projects.projectFor(document) : projects.all[0];
   };
   const status = new StatusBar(servers, currentProject);
-  context.subscriptions.push(servers, status);
+  context.subscriptions.push(servers, status, projects, discovery);
+  let previousProjects: readonly Project[] = [];
+  context.subscriptions.push(
+    projects.onDidChange((current) => {
+      for (const project of previousProjects) {
+        if (
+          !current.some(
+            (candidate) =>
+              candidate.root.toString() === project.root.toString(),
+          )
+        )
+          void servers
+            .release(project)
+            .catch((error) => log.error(String(error)));
+      }
+      previousProjects = current;
+      void status.refresh();
+    }),
+  );
   const withProject = async (
     action: (project: Project) => Promise<unknown>,
   ): Promise<void> => {
@@ -46,6 +65,7 @@ export function activate(context: vscode.ExtensionContext): void {
     }
   };
   const implemented: Record<string, () => unknown> = {
+    "wintestkit.elements.refresh": () => projects.refresh(),
     "wintestkit.showOutput": () => log.show(),
     "wintestkit.launchApp": () =>
       withProject(async (project) =>
@@ -71,14 +91,15 @@ export function activate(context: vscode.ExtensionContext): void {
       withProject((project) => installPackage(project.root)),
   };
   void onDidChangeInterpreter((folder) => {
-    const project = currentProject();
-    if (
-      project &&
-      (!folder ||
+    for (const project of projects.all) {
+      if (
+        !folder ||
         vscode.workspace.getWorkspaceFolder(project.root)?.uri.toString() ===
-          folder.toString())
-    ) {
-      void servers.restart(project).catch((error) => log.error(String(error)));
+          folder.toString()
+      )
+        void servers
+          .restart(project)
+          .catch((error) => log.error(String(error)));
     }
   })
     .then((subscription) => {
@@ -92,8 +113,7 @@ export function activate(context: vscode.ExtensionContext): void {
         event.affectsConfiguration("wintestkit.pythonPath") ||
         event.affectsConfiguration("wintestkit.server.logLevel")
       ) {
-        const project = currentProject();
-        if (project)
+        for (const project of projects.all)
           void servers
             .restart(project)
             .catch((error) => log.error(String(error)));
@@ -147,6 +167,7 @@ export function activate(context: vscode.ExtensionContext): void {
     "wintestkit.picking",
     false,
   );
+  void projects.refresh();
 }
 
 let activeServers: ServerManager | undefined;

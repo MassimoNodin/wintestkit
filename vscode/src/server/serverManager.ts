@@ -36,6 +36,13 @@ export class ServerManager implements vscode.Disposable {
   state(project: Project): ServerState {
     return this.entries.get(project.root.toString())?.state ?? "stopped";
   }
+  async release(project: Project): Promise<void> {
+    const key = project.root.toString();
+    const entry = this.entries.get(key);
+    if (!entry) return;
+    this.entries.delete(key);
+    await this.stop(entry);
+  }
   get(project: Project): Promise<ServerConnection> {
     if (this.disposed)
       return Promise.reject(new Error("server manager stopped"));
