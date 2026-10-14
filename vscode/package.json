@@ -1,0 +1,289 @@
+{
+  "name": "wintestkit",
+  "publisher": "wintestkit",
+  "displayName": "WinTestKit",
+  "description": "UI test automation for Windows WPF apps — highlight elements, run tests, inspect UI.",
+  "version": "0.1.0",
+  "license": "MIT",
+  "icon": "media/icon.png",
+  "engines": {
+    "vscode": "^1.95.0"
+  },
+  "categories": [
+    "Testing"
+  ],
+  "extensionKind": [
+    "ui"
+  ],
+  "extensionDependencies": [
+    "ms-python.python"
+  ],
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "workspaceContains:**/pyproject.toml"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "wintestkit.highlightElement",
+        "title": "Highlight Element",
+        "category": "WinTestKit",
+        "icon": "$(eye)"
+      },
+      {
+        "command": "wintestkit.checkElement",
+        "title": "Check Element",
+        "category": "WinTestKit",
+        "icon": "$(check)"
+      },
+      {
+        "command": "wintestkit.checkScreen",
+        "title": "Check All Elements",
+        "category": "WinTestKit",
+        "icon": "$(checklist)"
+      },
+      {
+        "command": "wintestkit.runTest",
+        "title": "Run Test",
+        "category": "WinTestKit",
+        "icon": "$(play)"
+      },
+      {
+        "command": "wintestkit.debugTest",
+        "title": "Debug Test",
+        "category": "WinTestKit",
+        "icon": "$(debug-alt)"
+      },
+      {
+        "command": "wintestkit.launchApp",
+        "title": "Launch App",
+        "category": "WinTestKit"
+      },
+      {
+        "command": "wintestkit.closeApp",
+        "title": "Close App",
+        "category": "WinTestKit"
+      },
+      {
+        "command": "wintestkit.restartServer",
+        "title": "Restart Server",
+        "category": "WinTestKit"
+      },
+      {
+        "command": "wintestkit.showOutput",
+        "title": "Show Output",
+        "category": "WinTestKit"
+      },
+      {
+        "command": "wintestkit.openReport",
+        "title": "Open Last Report",
+        "category": "WinTestKit"
+      },
+      {
+        "command": "wintestkit.runDoctor",
+        "title": "Check Environment (doctor)",
+        "category": "WinTestKit"
+      },
+      {
+        "command": "wintestkit.initProject",
+        "title": "Initialize Project",
+        "category": "WinTestKit"
+      },
+      {
+        "command": "wintestkit.installPackage",
+        "title": "Install wintestkit Package",
+        "category": "WinTestKit"
+      },
+      {
+        "command": "wintestkit.spy.startPick",
+        "title": "Pick Element",
+        "category": "WinTestKit",
+        "icon": "$(inspect)"
+      },
+      {
+        "command": "wintestkit.spy.refresh",
+        "title": "Refresh",
+        "category": "WinTestKit",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "wintestkit.elements.refresh",
+        "title": "Refresh",
+        "category": "WinTestKit",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "wintestkit.elements.goTo",
+        "title": "Go to Definition",
+        "category": "WinTestKit"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "wintestkit",
+          "title": "WinTestKit",
+          "icon": "media/activity.svg"
+        }
+      ]
+    },
+    "views": {
+      "wintestkit": [
+        {
+          "id": "wintestkit.elements",
+          "name": "Elements"
+        },
+        {
+          "id": "wintestkit.spy",
+          "name": "Spy",
+          "type": "webview"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "wintestkit.elements",
+        "contents": "No WinTestKit project found.\n[Initialize Project](command:wintestkit.initProject)",
+        "when": "!wintestkit.hasProject"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "wintestkit.elements.refresh",
+          "when": "view == wintestkit.elements",
+          "group": "navigation"
+        },
+        {
+          "command": "wintestkit.spy.startPick",
+          "when": "view == wintestkit.spy",
+          "group": "navigation"
+        },
+        {
+          "command": "wintestkit.spy.refresh",
+          "when": "view == wintestkit.spy",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "wintestkit.highlightElement",
+          "when": "view == wintestkit.elements && viewItem =~ /^(element|window)$/",
+          "group": "inline"
+        },
+        {
+          "command": "wintestkit.checkElement",
+          "when": "view == wintestkit.elements && viewItem == element",
+          "group": "inline"
+        },
+        {
+          "command": "wintestkit.checkScreen",
+          "when": "view == wintestkit.elements && viewItem == screen",
+          "group": "inline"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "wintestkit.highlightElement",
+          "when": "false"
+        },
+        {
+          "command": "wintestkit.checkElement",
+          "when": "false"
+        },
+        {
+          "command": "wintestkit.runTest",
+          "when": "false"
+        },
+        {
+          "command": "wintestkit.debugTest",
+          "when": "false"
+        },
+        {
+          "command": "wintestkit.elements.goTo",
+          "when": "false"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "WinTestKit",
+      "properties": {
+        "wintestkit.pythonPath": {
+          "type": "string",
+          "default": "",
+          "description": "Python interpreter to use. Empty = the Python extension's selected interpreter."
+        },
+        "wintestkit.codeLens.enabled": {
+          "type": "boolean",
+          "default": true
+        },
+        "wintestkit.highlight.durationMs": {
+          "type": "number",
+          "default": 1500,
+          "minimum": 200,
+          "maximum": 10000
+        },
+        "wintestkit.run.extraArgs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Extra arguments passed to `wtk run`."
+        },
+        "wintestkit.run.highlightActions": {
+          "type": "boolean",
+          "default": false,
+          "description": "Flash each element before acting during runs from VS Code."
+        },
+        "wintestkit.server.logLevel": {
+          "type": "string",
+          "enum": [
+            "debug",
+            "info",
+            "warning",
+            "error"
+          ],
+          "default": "info"
+        },
+        "wintestkit.promptDisablePytestExplorer": {
+          "type": "boolean",
+          "default": true
+        }
+      }
+    }
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/MassimoNodin/wintestkit.git"
+  },
+  "scripts": {
+    "build": "node esbuild.mjs",
+    "watch": "node esbuild.mjs --watch",
+    "typecheck": "tsc --noEmit && tsc -p test --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:integration": "tsc -p test && node ./out/test/integration/runTest.js",
+    "package": "npm run build && vsce package --target win32-x64 -o dist/",
+    "gen:types": "json2ts -i \"../schemas/*.schema.json\" -o src/protocol/generated.ts"
+  },
+  "dependencies": {
+    "@vscode/python-extension": "^1.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "esbuild": "^0.28.2",
+    "@types/vscode": "1.95.0",
+    "@types/node": "^20.0.0",
+    "eslint": "^9.0.0",
+    "typescript-eslint": "^8.0.0",
+    "prettier": "^3.0.0",
+    "vitest": "^4.1.11",
+    "@vscode/test-electron": "^2.4.0",
+    "mocha": "^11.0.0",
+    "@types/mocha": "^10.0.0",
+    "@vscode/vsce": "^3.0.0",
+    "ovsx": "^1.2.0",
+    "json-schema-to-typescript": "^15.0.0"
+  }
+}

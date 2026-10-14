@@ -6,6 +6,7 @@ dist/
 .ruff_cache/
 node_modules/
 vscode/dist/
+vscode/out/
 *.vsix
 demo/**/bin/
 demo/**/obj/

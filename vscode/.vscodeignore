@@ -1,0 +1,12 @@
+src/**
+test/**
+out/**
+node_modules/**
+.vscode-test/**
+*.ts
+*.mjs
+tsconfig.json
+eslint.config.mjs
+package-lock.json
+dist/*.map
+dist/*.vsix
