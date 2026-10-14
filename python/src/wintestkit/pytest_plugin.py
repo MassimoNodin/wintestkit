@@ -32,6 +32,8 @@ from wintestkit.config import (
 )
 from wintestkit.errors import ConfigError, WtkError
 from wintestkit.events import EventSink, open_sink
+from wintestkit.report.html import write_report
+from wintestkit.report.results import RunRecorder, prepare_directory
 
 if TYPE_CHECKING:
     from wintestkit.app import App
@@ -142,6 +144,7 @@ def _load(config: pytest.Config) -> WtkConfig:
 def _is_wintestkit_run(config: pytest.Config) -> bool:
     return (
         bool(_overrides(config))
+        or bool(config.getoption("wtk_no_report", False))
         or bool(config.getoption("wtk_events", None))
         or any(os.environ.get(name) for name in _ENV_VARS)
         or find_project_root(config.rootpath) is not None
@@ -206,6 +209,9 @@ class _Controller:
             except (OSError, ValueError) as exc:
                 raise pytest.UsageError(f"--wtk-events: {exc}") from exc
         self.started = time.time()
+        self.recorder = RunRecorder(self.config.report_dir)
+        self.report_enabled = not config.getoption("wtk_no_report", False)
+        self.report_path: str | None = None
         self.session_app = _SessionApp()
         self.runs: dict[str, _Run] = {}
         self.finished: list[_Finished] = []
@@ -223,8 +229,10 @@ class _Controller:
     # -- events ---------------------------------------------------------------------------------
 
     def _emit(self, event: dict[str, Any]) -> None:
+        event = {**event, "time": time.time()}
+        self.recorder.record(event)
         if self.sink is not None:
-            self.sink.emit({**event, "time": time.time()})
+            self.sink.emit(event)
 
     @staticmethod
     def _posix(path: str | Path) -> str:
@@ -232,6 +240,8 @@ class _Controller:
 
     def pytest_sessionstart(self, session: pytest.Session) -> None:
         self.started = time.time()
+        if self.report_enabled:
+            prepare_directory(self.config.report_dir)
         self._emit(
             {
                 "event": "session_start",
@@ -348,8 +358,6 @@ class _Controller:
         outcome = _outcome(run)
         duration = sum(r.duration for r in run.reports.values())
         self.finished.append(_Finished(report.nodeid, outcome, duration))
-        if self.sink is None:
-            return
         # pytest accumulates captured sections on the item, so the teardown report already
         # contains the output of the setup and call phases.
         for stream, text in (
@@ -385,20 +393,31 @@ class _Controller:
         counts = {"passed": 0, "failed": 0, "skipped": 0, "error": 0}
         for finished in self.finished:
             counts[finished.outcome] += 1
-        self._emit(
-            {
-                "event": "session_end",
-                "exitCode": int(exitstatus),
-                "summary": {
-                    "total": len(self.finished),
-                    "passed": counts["passed"],
-                    "failed": counts["failed"],
-                    "skipped": counts["skipped"],
-                    "errors": counts["error"],
-                    "duration": time.time() - self.started,
-                },
-            }
-        )
+        event: dict[str, Any] = {
+            "event": "session_end",
+            "exitCode": int(exitstatus),
+            "summary": {
+                "total": len(self.finished),
+                "passed": counts["passed"],
+                "failed": counts["failed"],
+                "skipped": counts["skipped"],
+                "errors": counts["error"],
+                "duration": time.time() - self.started,
+            },
+        }
+        if self.report_enabled:
+            event["reportPath"] = self._posix((self.config.report_dir / "index.html").resolve())
+        junit = self.pytest_config.getoption("xmlpath", None)
+        if junit:
+            event["junitPath"] = self._posix(Path(str(junit)).resolve())
+        self._emit(event)
+        if self.report_enabled:
+            write_report(self.config.report_dir, self.recorder.results())
+            self.report_path = str(event["reportPath"])
+
+    def pytest_terminal_summary(self, terminalreporter: Any) -> None:
+        if self.report_path:
+            terminalreporter.write_line(f"Report: {self.report_path}")
 
 
 ARTIFACTS_KEY = pytest.StashKey[artifact_files.ArtifactSet]()
