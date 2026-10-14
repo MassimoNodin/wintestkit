@@ -5,6 +5,9 @@ import { ServerManager, type Project } from "./server/serverManager";
 import { StatusBar } from "./statusBar";
 import { Projects } from "./projects";
 import { DiscoveryStore } from "./discovery/store";
+import { CodeLenses } from "./editor/codeLens";
+import { CheckDecorations, CheckResultsStore } from "./editor/decorations";
+import { HighlightCommands } from "./editor/highlightCommands";
 
 interface CommandContribution {
   command: string;
@@ -22,6 +25,14 @@ export function activate(context: vscode.ExtensionContext): void {
   activeServers = servers;
   const projects = new Projects(log);
   const discovery = new DiscoveryStore(projects, servers, log);
+  const lenses = new CodeLenses(projects, discovery);
+  const checks = new CheckResultsStore(discovery);
+  context.subscriptions.push(
+    lenses,
+    checks,
+    new CheckDecorations(checks, context.extensionUri),
+    new HighlightCommands(projects, discovery, servers, checks, log),
+  );
   const currentProject = (): Project | undefined => {
     const document = vscode.window.activeTextEditor?.document.uri;
     return document ? projects.projectFor(document) : projects.all[0];
@@ -123,6 +134,14 @@ export function activate(context: vscode.ExtensionContext): void {
 
   const manifest = context.extension.packageJSON as ExtensionManifest;
   for (const contribution of manifest.contributes.commands) {
+    if (
+      [
+        "wintestkit.highlightElement",
+        "wintestkit.checkElement",
+        "wintestkit.checkScreen",
+      ].includes(contribution.command)
+    )
+      continue;
     context.subscriptions.push(
       vscode.commands.registerCommand(contribution.command, () => {
         if (implemented[contribution.command])

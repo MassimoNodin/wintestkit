@@ -5,8 +5,9 @@ UI test automation for Windows WPF applications.
 The extension resolves the selected Python interpreter (or `wintestkit.pythonPath`),
 starts a per-project Python JSON-RPC server, and displays application state in the
 status bar. Launch App, Close App, Restart Server, Check Environment, Install Package,
-and Show Output are functional. Other editor commands, the Elements tree, and the
-Spy panel remain placeholders until their milestones are implemented.
+and Show Output are functional. Python CodeLens provides Highlight, Check, and
+Check All Elements actions; checks show gutter results and editor warnings.
+Test execution, the Elements tree, and the Spy panel await their milestones.
 
 Open the examples project folder in a trusted workspace and select an interpreter
 with `wintestkit` installed. A missing package produces an installation prompt; the

@@ -81,6 +81,32 @@ vi.mock("../../src/discovery/store", () => ({
     dispose() {}
   },
 }));
+vi.mock("../../src/editor/codeLens", () => ({
+  CodeLenses: class {
+    dispose() {}
+  },
+}));
+vi.mock("../../src/editor/decorations", () => ({
+  CheckResultsStore: class {
+    dispose() {}
+  },
+  CheckDecorations: class {
+    dispose() {}
+  },
+}));
+vi.mock("../../src/editor/highlightCommands", () => ({
+  HighlightCommands: class {
+    constructor() {
+      for (const command of [
+        "wintestkit.highlightElement",
+        "wintestkit.checkElement",
+        "wintestkit.checkScreen",
+      ])
+        mocks.registerCommand(command, () => {});
+    }
+    dispose() {}
+  },
+}));
 
 import { activate } from "../../src/extension";
 
@@ -101,11 +127,11 @@ describe("extension scaffold", () => {
   it("activates, logs, and registers every contributed command and view", () => {
     expect(mocks.log.info).toHaveBeenCalledWith("WinTestKit activated");
     expect(
-      mocks.registerCommand.mock.calls.map(([command]) => command),
+      mocks.registerCommand.mock.calls.map(([command]) => command).sort(),
     ).toEqual(
-      manifest.contributes.commands.map(
-        (command: { command: string }) => command.command,
-      ),
+      manifest.contributes.commands
+        .map((command: { command: string }) => command.command)
+        .sort(),
     );
     expect(mocks.registerTreeDataProvider).toHaveBeenCalledWith(
       "wintestkit.elements",
