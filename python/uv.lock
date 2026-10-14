@@ -298,6 +298,7 @@ dev = [
     { name = "jsonschema" },
     { name = "pyright" },
     { name = "pytest" },
+    { name = "referencing" },
     { name = "ruff" },
 ]
 
@@ -309,5 +310,6 @@ dev = [
     { name = "jsonschema", specifier = ">=4.23" },
     { name = "pyright", specifier = ">=1.1.390" },
     { name = "pytest", specifier = ">=8.3" },
+    { name = "referencing", specifier = ">=0.35" },
     { name = "ruff", specifier = ">=0.7" },
 ]

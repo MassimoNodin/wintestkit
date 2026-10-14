@@ -1,0 +1,117 @@
+{
+  "version": 1,
+  "root": "C:/wtk/examples/demo-tests",
+  "tests": [
+    {
+      "id": "tests/test_login.py::test_sign_in",
+      "file": "C:/wtk/examples/demo-tests/tests/test_login.py",
+      "name": "test_sign_in",
+      "kind": "function",
+      "parent": null,
+      "range": {
+        "start": {
+          "line": 0,
+          "character": 0
+        },
+        "end": {
+          "line": 4,
+          "character": 0
+        }
+      },
+      "nameRange": {
+        "start": {
+          "line": 1,
+          "character": 4
+        },
+        "end": {
+          "line": 1,
+          "character": 16
+        }
+      }
+    }
+  ],
+  "screens": [
+    {
+      "id": "screens/main.py::MainScreen",
+      "file": "C:/wtk/examples/demo-tests/screens/main.py",
+      "name": "MainScreen",
+      "qualname": "MainScreen",
+      "bases": [
+        "Screen"
+      ],
+      "range": {
+        "start": {
+          "line": 0,
+          "character": 0
+        },
+        "end": {
+          "line": 4,
+          "character": 0
+        }
+      },
+      "nameRange": {
+        "start": {
+          "line": 0,
+          "character": 6
+        },
+        "end": {
+          "line": 0,
+          "character": 16
+        }
+      },
+      "elements": [
+        {
+          "id": "screens/main.py::MainScreen.sign_in",
+          "name": "sign_in",
+          "qualname": "MainScreen.sign_in",
+          "kind": "element",
+          "range": {
+            "start": {
+              "line": 0,
+              "character": 0
+            },
+            "end": {
+              "line": 4,
+              "character": 0
+            }
+          },
+          "nameRange": {
+            "start": {
+              "line": 2,
+              "character": 4
+            },
+            "end": {
+              "line": 2,
+              "character": 11
+            }
+          },
+          "locator": {
+            "name": "Sign in",
+            "controlType": "Button",
+            "within": {
+              "name": "Credentials",
+              "controlType": "Group"
+            },
+            "window": {
+              "title": {
+                "regex": "^WTK Demo",
+                "flags": "i"
+              },
+              "process": "DemoApp.exe"
+            }
+          },
+          "withinName": "credentials",
+          "windowName": "window",
+          "dynamic": false
+        }
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "file": "C:/wtk/examples/demo-tests/tests/test_broken.py",
+      "message": "invalid syntax",
+      "line": 2
+    }
+  ]
+}

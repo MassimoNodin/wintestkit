@@ -1,0 +1,165 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wintestkit.dev/schemas/results.schema.json",
+  "$ref": "#/$defs/Results",
+  "$defs": {
+    "Results": {
+      "type": "object",
+      "properties": {
+        "version": {
+          "const": 1
+        },
+        "startedAt": {
+          "type": "number"
+        },
+        "finishedAt": {
+          "type": "number"
+        },
+        "duration": {
+          "type": "number",
+          "minimum": 0
+        },
+        "environment": {
+          "type": "object",
+          "properties": {
+            "python": {
+              "type": "string"
+            },
+            "wintestkit": {
+              "type": "string"
+            },
+            "windows": {
+              "type": "string"
+            },
+            "machine": {
+              "type": "string"
+            },
+            "screen": {
+              "type": "object",
+              "properties": {
+                "width": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "height": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "scale": {
+                  "type": "number",
+                  "exclusiveMinimum": 0
+                }
+              },
+              "required": ["width", "height", "scale"],
+              "additionalProperties": false
+            }
+          },
+          "required": ["python", "wintestkit", "windows", "machine", "screen"],
+          "additionalProperties": false
+        },
+        "summary": {
+          "$ref": "events.schema.json#/$defs/Summary"
+        },
+        "tests": {
+          "type": "array",
+          "items": {
+            "$ref": "results.schema.json#/$defs/TestResult"
+          }
+        }
+      },
+      "required": [
+        "version",
+        "startedAt",
+        "finishedAt",
+        "duration",
+        "environment",
+        "summary",
+        "tests"
+      ],
+      "additionalProperties": false
+    },
+    "TestResult": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "file": {
+          "type": "string"
+        },
+        "line": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "name": {
+          "type": "string"
+        },
+        "outcome": {
+          "$ref": "events.schema.json#/$defs/TestOutcome"
+        },
+        "duration": {
+          "type": "number",
+          "minimum": 0
+        },
+        "message": {
+          "type": "string"
+        },
+        "location": {
+          "type": "object",
+          "properties": {
+            "file": {
+              "type": "string"
+            },
+            "line": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": ["file", "line"],
+          "additionalProperties": false
+        },
+        "error": {
+          "$ref": "common.schema.json#/$defs/ErrorInfo"
+        },
+        "steps": {
+          "type": "array",
+          "items": {
+            "$ref": "step.schema.json#/$defs/StepEvent"
+          }
+        },
+        "screenshots": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "treeDump": {
+          "type": "string"
+        },
+        "stdout": {
+          "type": "string"
+        },
+        "stderr": {
+          "type": "string"
+        },
+        "log": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "file",
+        "line",
+        "name",
+        "outcome",
+        "duration",
+        "steps",
+        "screenshots",
+        "stdout",
+        "stderr",
+        "log"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

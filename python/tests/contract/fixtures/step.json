@@ -1,0 +1,14 @@
+{
+  "seq": 1,
+  "action": "type",
+  "target": "MainScreen.password",
+  "locator": "Edit class=PasswordBox",
+  "args": {
+    "text": "***",
+    "clear": true
+  },
+  "start": 1791936000,
+  "duration": 0.05,
+  "status": "passed",
+  "screenshot": "artifacts/sign-in/step-1.png"
+}

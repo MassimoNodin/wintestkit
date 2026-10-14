@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wintestkit.dev/schemas/step.schema.json",
+  "$ref": "#/$defs/StepEvent",
+  "$defs": {
+    "StepEvent": {
+      "type": "object",
+      "properties": {
+        "seq": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "action": {
+          "type": "string"
+        },
+        "target": {
+          "type": "string"
+        },
+        "locator": {
+          "type": "string"
+        },
+        "args": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "start": {
+          "type": "number"
+        },
+        "duration": {
+          "type": "number",
+          "minimum": 0
+        },
+        "status": {
+          "type": "string",
+          "enum": ["passed", "failed"]
+        },
+        "error": {
+          "$ref": "common.schema.json#/$defs/ErrorInfo"
+        },
+        "screenshot": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "seq",
+        "action",
+        "target",
+        "locator",
+        "args",
+        "start",
+        "duration",
+        "status"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

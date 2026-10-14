@@ -313,7 +313,8 @@ interface Suggestion {
     `<Method>Result` for every method (method dots become nothing and next letter uppercase:
     `element.highlight` → `ElementHighlightParams` / `ElementHighlightResult`), plus notification
     payloads `SpyHoverNotification` etc.
-  - `additionalProperties: false` everywhere except `StepEvent.args` and `properties` maps.
+  - `additionalProperties: false` everywhere except the declared dictionary maps:
+    `StepEvent.args`, `InspectPropertiesResult.properties`, and `DiscoverParams.overrides`.
   - Hand-write one valid example per top-level type in `python/tests/contract/fixtures/`
     (`element-info.json`, `diagnostic.json`, `discovery.json`, `events.ndjson`, `results.json`,
     `suggestion.json`) — used by both Python and TS tests.

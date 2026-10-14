@@ -1,0 +1,192 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wintestkit.dev/schemas/discovery.schema.json",
+  "$ref": "#/$defs/DiscoveryResult",
+  "$defs": {
+    "DiscoveryResult": {
+      "type": "object",
+      "properties": {
+        "version": {
+          "const": 1
+        },
+        "root": {
+          "type": "string"
+        },
+        "tests": {
+          "type": "array",
+          "items": {
+            "$ref": "discovery.schema.json#/$defs/TestEntry"
+          }
+        },
+        "screens": {
+          "type": "array",
+          "items": {
+            "$ref": "discovery.schema.json#/$defs/ScreenEntry"
+          }
+        },
+        "errors": {
+          "type": "array",
+          "items": {
+            "$ref": "discovery.schema.json#/$defs/DiscoveryError"
+          }
+        }
+      },
+      "required": ["version", "root", "tests", "screens", "errors"],
+      "additionalProperties": false
+    },
+    "TestEntry": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "file": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string",
+          "enum": ["class", "function"]
+        },
+        "parent": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "range": {
+          "$ref": "common.schema.json#/$defs/Range"
+        },
+        "nameRange": {
+          "$ref": "common.schema.json#/$defs/Range"
+        }
+      },
+      "required": [
+        "id",
+        "file",
+        "name",
+        "kind",
+        "parent",
+        "range",
+        "nameRange"
+      ],
+      "additionalProperties": false
+    },
+    "ScreenEntry": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "file": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "qualname": {
+          "type": "string"
+        },
+        "bases": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "range": {
+          "$ref": "common.schema.json#/$defs/Range"
+        },
+        "nameRange": {
+          "$ref": "common.schema.json#/$defs/Range"
+        },
+        "elements": {
+          "type": "array",
+          "items": {
+            "$ref": "discovery.schema.json#/$defs/ElementEntry"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "file",
+        "name",
+        "qualname",
+        "bases",
+        "range",
+        "nameRange",
+        "elements"
+      ],
+      "additionalProperties": false
+    },
+    "ElementEntry": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "qualname": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string",
+          "enum": ["window", "element", "elements"]
+        },
+        "range": {
+          "$ref": "common.schema.json#/$defs/Range"
+        },
+        "nameRange": {
+          "$ref": "common.schema.json#/$defs/Range"
+        },
+        "locator": {
+          "$ref": "common.schema.json#/$defs/LocatorData"
+        },
+        "withinName": {
+          "type": "string"
+        },
+        "windowName": {
+          "type": "string"
+        },
+        "dynamic": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "qualname",
+        "kind",
+        "range",
+        "nameRange",
+        "locator",
+        "dynamic"
+      ],
+      "additionalProperties": false
+    },
+    "DiscoveryError": {
+      "type": "object",
+      "properties": {
+        "file": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "line": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": ["file", "message", "line"],
+      "additionalProperties": false
+    }
+  }
+}

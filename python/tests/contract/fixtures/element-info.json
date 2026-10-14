@@ -1,0 +1,21 @@
+{
+  "automationId": "",
+  "name": "Sign in",
+  "controlType": "Button",
+  "className": "Button",
+  "frameworkId": "WPF",
+  "processId": 1234,
+  "rect": {
+    "left": 10,
+    "top": 20,
+    "width": 80,
+    "height": 30
+  },
+  "isEnabled": true,
+  "isOffscreen": false,
+  "hasKeyboardFocus": false,
+  "runtimeId": "42.1234.4.17",
+  "patterns": [
+    "Invoke"
+  ]
+}

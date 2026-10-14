@@ -1,0 +1,286 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wintestkit.dev/schemas/events.schema.json",
+  "$ref": "#/$defs/RunEvent",
+  "$defs": {
+    "TestOutcome": {
+      "type": "string",
+      "enum": ["passed", "failed", "skipped", "error"]
+    },
+    "CollectedTest": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "file": {
+          "type": "string"
+        },
+        "line": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "name": {
+          "type": "string"
+        },
+        "parent": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": ["id", "file", "line", "name", "parent"],
+      "additionalProperties": false
+    },
+    "CollectError": {
+      "type": "object",
+      "properties": {
+        "file": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": ["file", "message"],
+      "additionalProperties": false
+    },
+    "Summary": {
+      "type": "object",
+      "properties": {
+        "total": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "passed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "failed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "skipped": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "errors": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "duration": {
+          "type": "number",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "total",
+        "passed",
+        "failed",
+        "skipped",
+        "errors",
+        "duration"
+      ],
+      "additionalProperties": false
+    },
+    "RunEvent": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "event": {
+              "const": "session_start"
+            },
+            "time": {
+              "type": "number"
+            },
+            "root": {
+              "type": "string"
+            },
+            "pid": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "wintestkitVersion": {
+              "type": "string"
+            }
+          },
+          "required": ["event", "time", "root", "pid", "wintestkitVersion"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "event": {
+              "const": "collected"
+            },
+            "time": {
+              "type": "number"
+            },
+            "tests": {
+              "type": "array",
+              "items": {
+                "$ref": "events.schema.json#/$defs/CollectedTest"
+              }
+            },
+            "errors": {
+              "type": "array",
+              "items": {
+                "$ref": "events.schema.json#/$defs/CollectError"
+              }
+            }
+          },
+          "required": ["event", "time", "tests", "errors"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "event": {
+              "const": "test_start"
+            },
+            "time": {
+              "type": "number"
+            },
+            "id": {
+              "type": "string"
+            }
+          },
+          "required": ["event", "time", "id"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "event": {
+              "const": "step"
+            },
+            "time": {
+              "type": "number"
+            },
+            "id": {
+              "type": "string"
+            },
+            "step": {
+              "$ref": "step.schema.json#/$defs/StepEvent"
+            }
+          },
+          "required": ["event", "time", "id", "step"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "event": {
+              "const": "test_output"
+            },
+            "time": {
+              "type": "number"
+            },
+            "id": {
+              "type": "string"
+            },
+            "stream": {
+              "type": "string",
+              "enum": ["stdout", "stderr", "log"]
+            },
+            "text": {
+              "type": "string"
+            }
+          },
+          "required": ["event", "time", "id", "stream", "text"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "event": {
+              "const": "test_end"
+            },
+            "time": {
+              "type": "number"
+            },
+            "id": {
+              "type": "string"
+            },
+            "outcome": {
+              "$ref": "events.schema.json#/$defs/TestOutcome"
+            },
+            "duration": {
+              "type": "number",
+              "minimum": 0
+            },
+            "message": {
+              "type": "string"
+            },
+            "location": {
+              "type": "object",
+              "properties": {
+                "file": {
+                  "type": "string"
+                },
+                "line": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "required": ["file", "line"],
+              "additionalProperties": false
+            },
+            "error": {
+              "$ref": "common.schema.json#/$defs/ErrorInfo"
+            },
+            "screenshots": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "artifactsDir": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "event",
+            "time",
+            "id",
+            "outcome",
+            "duration",
+            "screenshots"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "event": {
+              "const": "session_end"
+            },
+            "time": {
+              "type": "number"
+            },
+            "exitCode": {
+              "type": "integer"
+            },
+            "summary": {
+              "$ref": "events.schema.json#/$defs/Summary"
+            },
+            "reportPath": {
+              "type": "string"
+            },
+            "junitPath": {
+              "type": "string"
+            }
+          },
+          "required": ["event", "time", "exitCode", "summary"],
+          "additionalProperties": false
+        }
+      ]
+    }
+  }
+}
