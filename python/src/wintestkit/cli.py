@@ -15,7 +15,7 @@ Handler = Callable[[argparse.Namespace], int]
 
 
 def _command_modules() -> list[str]:
-    return ["run", "discover", "doctor"]
+    return ["run", "discover", "doctor", "highlight", "check"]
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -87,8 +87,9 @@ def _report_exception(exc: Exception, log_level: str) -> int:
         EnvironmentNotReadyError,
         WtkError,
     )
+    from wintestkit.targets import TargetError
 
-    if isinstance(exc, ConfigError):
+    if isinstance(exc, ConfigError | TargetError):
         print(f"wtk: {exc}", file=sys.stderr)
         return common.EXIT_USAGE
     if isinstance(exc, EnvironmentNotReadyError | AppNotRunningError):
