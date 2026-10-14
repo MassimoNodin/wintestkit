@@ -58,3 +58,11 @@ ancestors, and finally positional indices. Helpers precede dependent declaration
 index suggestions are fragile if the UI order changes. In the current demo the
 username TextBox is globally unique, so the documented candidate ordering selects
 `class_name` rather than the plan example expected `within=credentials`.
+
+## Pick locators
+
+`wtk spy` highlights hovered controls in the configured application. Ctrl+Click
+picks a control without activating it and prints its window, required helpers,
+and element declaration. Esc or Ctrl+C exits and removes the hooks and overlay.
+Use `--all-processes` explicitly to inspect other applications. The command does
+not launch an application or change elevation; it requires an unlocked desktop.
