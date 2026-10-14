@@ -260,12 +260,12 @@
   "scripts": {
     "build": "node esbuild.mjs",
     "watch": "node esbuild.mjs --watch",
-    "typecheck": "tsc --noEmit && tsc -p test --noEmit",
+    "typecheck": "tsc --noEmit && tsc -p test --noEmit && tsc -p test/tsconfig.unit.json",
     "lint": "eslint .",
     "test": "vitest run",
     "test:integration": "tsc -p test && node ./out/test/integration/runTest.js",
     "package": "npm run build && vsce package --target win32-x64 -o dist/",
-    "gen:types": "json2ts -i \"../schemas/*.schema.json\" -o src/protocol/generated.ts"
+    "gen:types": "node scripts/gen-types.mjs"
   },
   "dependencies": {
     "@vscode/python-extension": "^1.0.0"

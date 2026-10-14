@@ -1,0 +1,355 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wintestkit.dev/schemas/common.schema.json",
+  "$defs": {
+    "Position": {
+      "type": "object",
+      "properties": {
+        "line": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "character": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": ["line", "character"],
+      "additionalProperties": false
+    },
+    "Range": {
+      "type": "object",
+      "properties": {
+        "start": {
+          "$ref": "common.schema.json#/$defs/Position"
+        },
+        "end": {
+          "$ref": "common.schema.json#/$defs/Position"
+        }
+      },
+      "required": ["start", "end"],
+      "additionalProperties": false
+    },
+    "Rect": {
+      "type": "object",
+      "properties": {
+        "left": {
+          "type": "number"
+        },
+        "top": {
+          "type": "number"
+        },
+        "width": {
+          "type": "number",
+          "minimum": 0
+        },
+        "height": {
+          "type": "number",
+          "minimum": 0
+        }
+      },
+      "required": ["left", "top", "width", "height"],
+      "additionalProperties": false
+    },
+    "ElementInfo": {
+      "type": "object",
+      "properties": {
+        "automationId": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "controlType": {
+          "type": "string"
+        },
+        "className": {
+          "type": "string"
+        },
+        "frameworkId": {
+          "type": "string"
+        },
+        "processId": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "rect": {
+          "anyOf": [
+            {
+              "$ref": "common.schema.json#/$defs/Rect"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "isEnabled": {
+          "type": "boolean"
+        },
+        "isOffscreen": {
+          "type": "boolean"
+        },
+        "hasKeyboardFocus": {
+          "type": "boolean"
+        },
+        "runtimeId": {
+          "type": "string"
+        },
+        "patterns": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "automationId",
+        "name",
+        "controlType",
+        "className",
+        "frameworkId",
+        "processId",
+        "rect",
+        "isEnabled",
+        "isOffscreen",
+        "hasKeyboardFocus",
+        "runtimeId"
+      ],
+      "additionalProperties": false
+    },
+    "Matcher": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "regex": {
+              "type": "string"
+            },
+            "flags": {
+              "type": "string",
+              "pattern": "^[imsx]*$"
+            }
+          },
+          "required": ["regex"],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "WindowLocatorData": {
+      "type": "object",
+      "properties": {
+        "title": {
+          "$ref": "common.schema.json#/$defs/Matcher"
+        },
+        "process": {
+          "type": "string"
+        },
+        "className": {
+          "$ref": "common.schema.json#/$defs/Matcher"
+        },
+        "automationId": {
+          "$ref": "common.schema.json#/$defs/Matcher"
+        },
+        "index": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "ItemSelectorData": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "row"
+            },
+            "row": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "column": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "required": ["kind", "row"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "cell"
+            },
+            "row": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "column": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "required": ["kind", "row", "column"],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "LocatorData": {
+      "type": "object",
+      "properties": {
+        "automationId": {
+          "$ref": "common.schema.json#/$defs/Matcher"
+        },
+        "name": {
+          "$ref": "common.schema.json#/$defs/Matcher"
+        },
+        "controlType": {
+          "type": "string"
+        },
+        "className": {
+          "$ref": "common.schema.json#/$defs/Matcher"
+        },
+        "index": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "depth": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "within": {
+          "$ref": "common.schema.json#/$defs/LocatorData"
+        },
+        "window": {
+          "$ref": "common.schema.json#/$defs/WindowLocatorData"
+        },
+        "item": {
+          "$ref": "common.schema.json#/$defs/ItemSelectorData"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "Mismatch": {
+      "type": "object",
+      "properties": {
+        "property": {
+          "type": "string"
+        },
+        "expected": {
+          "type": "string"
+        },
+        "actual": {
+          "type": "string"
+        }
+      },
+      "required": ["property", "expected", "actual"],
+      "additionalProperties": false
+    },
+    "Candidate": {
+      "type": "object",
+      "properties": {
+        "info": {
+          "$ref": "common.schema.json#/$defs/ElementInfo"
+        },
+        "score": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "mismatches": {
+          "type": "array",
+          "items": {
+            "$ref": "common.schema.json#/$defs/Mismatch"
+          }
+        }
+      },
+      "required": ["info", "score", "mismatches"],
+      "additionalProperties": false
+    },
+    "Diagnostic": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "not_found",
+            "ambiguous",
+            "window_not_found",
+            "within_failed",
+            "index_out_of_range",
+            "app_not_running"
+          ]
+        },
+        "message": {
+          "type": "string"
+        },
+        "locator": {
+          "type": "string"
+        },
+        "searchedIn": {
+          "type": "string"
+        },
+        "matchCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "candidates": {
+          "type": "array",
+          "items": {
+            "$ref": "common.schema.json#/$defs/Candidate"
+          },
+          "maxItems": 5
+        },
+        "within": {
+          "$ref": "common.schema.json#/$defs/Diagnostic"
+        }
+      },
+      "required": [
+        "kind",
+        "message",
+        "locator",
+        "searchedIn",
+        "matchCount",
+        "candidates"
+      ],
+      "additionalProperties": false
+    },
+    "ErrorInfo": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "diagnostic": {
+          "$ref": "common.schema.json#/$defs/Diagnostic"
+        }
+      },
+      "required": ["type", "message"],
+      "additionalProperties": false
+    }
+  }
+}

@@ -66,7 +66,9 @@ jobs check Python lint, formatting, types, and unit tests; lint, typecheck, test
 extension; and build the demo with warnings treated as errors. Artifacts include Python JUnit
 results, the Windows x64 VSIX, and the demo executable with its runtime files.
 
-The generated protocol-type check activates when T0.5 introduces JSON schemas. Desktop
+Shared [JSON schemas](schemas/README.md) define the Python/editor contracts. Run
+`npm run gen:types` in `vscode/` after schema changes and commit the generated types. CI checks
+generation drift, Python contract validation, and statically checked TypeScript examples. Desktop
 integration tests remain local until the dedicated T7.3 integration job is implemented.
 
 Created in [T3 Code](https://t3.codes).

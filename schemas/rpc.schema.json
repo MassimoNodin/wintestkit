@@ -1,0 +1,476 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wintestkit.dev/schemas/rpc.schema.json",
+  "$defs": {
+    "ElementResult": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["found", "not_found", "ambiguous", "error"]
+        },
+        "element": {
+          "$ref": "common.schema.json#/$defs/ElementInfo"
+        },
+        "diagnostic": {
+          "$ref": "common.schema.json#/$defs/Diagnostic"
+        },
+        "message": {
+          "type": "string"
+        },
+        "durationMs": {
+          "type": "number",
+          "minimum": 0
+        }
+      },
+      "required": ["status", "durationMs"],
+      "additionalProperties": false
+    },
+    "NodeInfo": {
+      "type": "object",
+      "properties": {
+        "nodeId": {
+          "type": "string"
+        },
+        "info": {
+          "$ref": "common.schema.json#/$defs/ElementInfo"
+        },
+        "hasChildren": {
+          "type": "boolean"
+        }
+      },
+      "required": ["nodeId", "info", "hasChildren"],
+      "additionalProperties": false
+    },
+    "Suggestion": {
+      "type": "object",
+      "properties": {
+        "locator": {
+          "$ref": "common.schema.json#/$defs/LocatorData"
+        },
+        "code": {
+          "type": "string"
+        },
+        "attributeName": {
+          "type": "string"
+        },
+        "helpers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "attributeName": {
+                "type": "string"
+              },
+              "code": {
+                "type": "string"
+              },
+              "locator": {
+                "$ref": "common.schema.json#/$defs/LocatorData"
+              }
+            },
+            "required": ["attributeName", "code", "locator"],
+            "additionalProperties": false
+          }
+        },
+        "unique": {
+          "type": "boolean"
+        },
+        "matchCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "strategy": {
+          "type": "string",
+          "enum": ["automation_id", "name", "class_name", "within", "index"]
+        },
+        "window": {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string"
+            },
+            "locator": {
+              "$ref": "common.schema.json#/$defs/WindowLocatorData"
+            }
+          },
+          "required": ["code", "locator"],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "locator",
+        "code",
+        "attributeName",
+        "helpers",
+        "unique",
+        "matchCount",
+        "strategy"
+      ],
+      "additionalProperties": false
+    },
+    "CheckResult": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["found", "not_found", "ambiguous", "error"]
+        },
+        "element": {
+          "$ref": "common.schema.json#/$defs/ElementInfo"
+        },
+        "diagnostic": {
+          "$ref": "common.schema.json#/$defs/Diagnostic"
+        },
+        "message": {
+          "type": "string"
+        },
+        "durationMs": {
+          "type": "number",
+          "minimum": 0
+        },
+        "qualname": {
+          "type": "string"
+        }
+      },
+      "required": ["status", "durationMs", "qualname"],
+      "additionalProperties": false
+    },
+    "InitializeParams": {
+      "type": "object",
+      "properties": {
+        "root": {
+          "type": "string"
+        }
+      },
+      "required": ["root"],
+      "additionalProperties": false
+    },
+    "InitializeResult": {
+      "type": "object",
+      "properties": {
+        "protocolVersion": {
+          "const": 1
+        },
+        "wintestkitVersion": {
+          "type": "string"
+        },
+        "python": {
+          "type": "string"
+        },
+        "config": {
+          "type": "object",
+          "properties": {
+            "found": {
+              "type": "boolean"
+            },
+            "app": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string"
+                },
+                "process": {
+                  "type": "string"
+                }
+              },
+              "required": ["path", "process"],
+              "additionalProperties": false
+            },
+            "launch": {
+              "type": "string"
+            },
+            "timeout": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "reportDir": {
+              "type": "string"
+            }
+          },
+          "required": ["found", "launch", "timeout", "reportDir"],
+          "additionalProperties": false
+        }
+      },
+      "required": ["protocolVersion", "wintestkitVersion", "python", "config"],
+      "additionalProperties": false
+    },
+    "ShutdownParams": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    },
+    "ShutdownResult": {
+      "type": "null"
+    },
+    "DiscoverParams": {
+      "type": "object",
+      "properties": {
+        "overrides": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "DiscoverResult": {
+      "$ref": "discovery.schema.json#/$defs/DiscoveryResult"
+    },
+    "AppStatusParams": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    },
+    "AppStatusResult": {
+      "type": "object",
+      "properties": {
+        "running": {
+          "type": "boolean"
+        },
+        "pids": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "mainWindowTitle": {
+          "type": "string"
+        }
+      },
+      "required": ["running", "pids"],
+      "additionalProperties": false
+    },
+    "AppLaunchParams": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    },
+    "AppLaunchResult": {
+      "type": "object",
+      "properties": {
+        "pids": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "required": ["pids"],
+      "additionalProperties": false
+    },
+    "AppCloseParams": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    },
+    "AppCloseResult": {
+      "type": "null"
+    },
+    "ElementHighlightParams": {
+      "type": "object",
+      "properties": {
+        "file": {
+          "type": "string"
+        },
+        "qualname": {
+          "type": "string"
+        },
+        "durationMs": {
+          "type": "number",
+          "minimum": 0
+        }
+      },
+      "required": ["file", "qualname"],
+      "additionalProperties": false
+    },
+    "ElementHighlightResult": {
+      "$ref": "rpc.schema.json#/$defs/ElementResult"
+    },
+    "ScreenCheckParams": {
+      "type": "object",
+      "properties": {
+        "file": {
+          "type": "string"
+        },
+        "screen": {
+          "type": "string"
+        }
+      },
+      "required": ["file", "screen"],
+      "additionalProperties": false
+    },
+    "ScreenCheckResult": {
+      "type": "object",
+      "properties": {
+        "results": {
+          "type": "array",
+          "items": {
+            "$ref": "rpc.schema.json#/$defs/CheckResult"
+          }
+        }
+      },
+      "required": ["results"],
+      "additionalProperties": false
+    },
+    "InspectRootsParams": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    },
+    "InspectRootsResult": {
+      "type": "array",
+      "items": {
+        "$ref": "rpc.schema.json#/$defs/NodeInfo"
+      }
+    },
+    "InspectChildrenParams": {
+      "type": "object",
+      "properties": {
+        "nodeId": {
+          "type": "string"
+        }
+      },
+      "required": ["nodeId"],
+      "additionalProperties": false
+    },
+    "InspectChildrenResult": {
+      "type": "array",
+      "items": {
+        "$ref": "rpc.schema.json#/$defs/NodeInfo"
+      }
+    },
+    "InspectPropertiesParams": {
+      "type": "object",
+      "properties": {
+        "nodeId": {
+          "type": "string"
+        }
+      },
+      "required": ["nodeId"],
+      "additionalProperties": false
+    },
+    "InspectPropertiesResult": {
+      "type": "object",
+      "properties": {
+        "info": {
+          "$ref": "common.schema.json#/$defs/ElementInfo"
+        },
+        "properties": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "ancestors": {
+          "type": "array",
+          "items": {
+            "$ref": "rpc.schema.json#/$defs/NodeInfo"
+          }
+        }
+      },
+      "required": ["info", "properties", "ancestors"],
+      "additionalProperties": false
+    },
+    "InspectHighlightParams": {
+      "type": "object",
+      "properties": {
+        "nodeId": {
+          "type": "string"
+        },
+        "durationMs": {
+          "type": "number",
+          "minimum": 0
+        }
+      },
+      "required": ["nodeId"],
+      "additionalProperties": false
+    },
+    "InspectHighlightResult": {
+      "type": "null"
+    },
+    "SuggestLocatorParams": {
+      "type": "object",
+      "properties": {
+        "nodeId": {
+          "type": "string"
+        }
+      },
+      "required": ["nodeId"],
+      "additionalProperties": false
+    },
+    "SuggestLocatorResult": {
+      "$ref": "rpc.schema.json#/$defs/Suggestion"
+    },
+    "SpyStartParams": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    },
+    "SpyStartResult": {
+      "type": "null"
+    },
+    "SpyStopParams": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    },
+    "SpyStopResult": {
+      "type": "null"
+    },
+    "SpyHoverNotification": {
+      "type": "object",
+      "properties": {
+        "node": {
+          "$ref": "rpc.schema.json#/$defs/NodeInfo"
+        }
+      },
+      "required": ["node"],
+      "additionalProperties": false
+    },
+    "SpyPickedNotification": {
+      "type": "object",
+      "properties": {
+        "node": {
+          "$ref": "rpc.schema.json#/$defs/NodeInfo"
+        },
+        "suggestion": {
+          "$ref": "rpc.schema.json#/$defs/Suggestion"
+        }
+      },
+      "required": ["node", "suggestion"],
+      "additionalProperties": false
+    },
+    "SpyCancelledNotification": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    },
+    "LogNotification": {
+      "type": "object",
+      "properties": {
+        "level": {
+          "type": "string",
+          "enum": ["debug", "info", "warning", "error"]
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": ["level", "message"],
+      "additionalProperties": false
+    }
+  }
+}

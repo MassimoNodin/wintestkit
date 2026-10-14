@@ -1,0 +1,7 @@
+{"event":"session_start","time":1791936000,"root":"C:/wtk/examples/demo-tests","pid":1234,"wintestkitVersion":"0.1.0"}
+{"event":"collected","time":1791936000.1,"tests":[{"id":"tests/test_login.py::test_sign_in[admin-secret]","file":"C:/wtk/examples/demo-tests/tests/test_login.py","line":1,"name":"test_sign_in[admin-secret]","parent":"tests/test_login.py::test_sign_in"}],"errors":[]}
+{"event":"test_start","time":1791936000.2,"id":"tests/test_login.py::test_sign_in[admin-secret]"}
+{"event":"step","time":1791936000.25,"id":"tests/test_login.py::test_sign_in[admin-secret]","step":{"seq":1,"action":"type","target":"MainScreen.password","locator":"Edit class=PasswordBox","args":{"text":"***","clear":true},"start":1791936000,"duration":0.05,"status":"passed","screenshot":"artifacts/sign-in/step-1.png"}}
+{"event":"test_output","time":1791936000.3,"id":"tests/test_login.py::test_sign_in[admin-secret]","stream":"stdout","text":"Signed in\n"}
+{"event":"test_end","time":1791936000.4,"id":"tests/test_login.py::test_sign_in[admin-secret]","outcome":"passed","duration":0.2,"location":{"file":"C:/wtk/examples/demo-tests/tests/test_login.py","line":1},"screenshots":["C:/wtk/examples/demo-tests/wtk-report/artifacts/sign-in/step-1.png"],"artifactsDir":"C:/wtk/examples/demo-tests/wtk-report/artifacts/sign-in"}
+{"event":"session_end","time":1791936000.5,"exitCode":0,"summary":{"total":1,"passed":1,"failed":0,"skipped":0,"errors":0,"duration":0.5},"reportPath":"C:/wtk/examples/demo-tests/wtk-report/index.html","junitPath":"C:/wtk/examples/demo-tests/junit.xml"}

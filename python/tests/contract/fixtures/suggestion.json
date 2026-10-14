@@ -1,0 +1,32 @@
+{
+  "locator": {
+    "name": "Sign in",
+    "controlType": "Button",
+    "within": {
+      "name": "Credentials",
+      "controlType": "Group"
+    }
+  },
+  "code": "Element(control_type=\"Button\", name=\"Sign in\", within=credentials)",
+  "attributeName": "sign_in",
+  "helpers": [
+    {
+      "attributeName": "credentials",
+      "code": "Element(control_type=\"Group\", name=\"Credentials\")",
+      "locator": {
+        "controlType": "Group",
+        "name": "Credentials"
+      }
+    }
+  ],
+  "unique": true,
+  "matchCount": 1,
+  "strategy": "within",
+  "window": {
+    "code": "Window(title=\"WTK Demo\")",
+    "locator": {
+      "title": "WTK Demo",
+      "process": "DemoApp.exe"
+    }
+  }
+}

@@ -22,7 +22,7 @@ build-backend = "hatchling.build"
 path = "src/wintestkit/__init__.py"
 
 [dependency-groups]
-dev = ["pytest>=8.3", "ruff>=0.7", "pyright>=1.1.390", "jsonschema>=4.23"]
+dev = ["pytest>=8.3", "ruff>=0.7", "pyright>=1.1.390", "jsonschema>=4.23", "referencing>=0.35"]
 
 [tool.ruff]
 line-length = 100

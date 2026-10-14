@@ -1,0 +1,58 @@
+{
+  "version": 1,
+  "startedAt": 1791936000,
+  "finishedAt": 1791936000.5,
+  "duration": 0.5,
+  "environment": {
+    "python": "3.12.0",
+    "wintestkit": "0.1.0",
+    "windows": "Windows 11",
+    "machine": "DEMO",
+    "screen": {
+      "width": 1920,
+      "height": 1080,
+      "scale": 1.25
+    }
+  },
+  "summary": {
+    "total": 1,
+    "passed": 1,
+    "failed": 0,
+    "skipped": 0,
+    "errors": 0,
+    "duration": 0.5
+  },
+  "tests": [
+    {
+      "id": "tests/test_login.py::test_sign_in[admin-secret]",
+      "file": "C:/wtk/examples/demo-tests/tests/test_login.py",
+      "line": 1,
+      "name": "test_sign_in[admin-secret]",
+      "outcome": "passed",
+      "duration": 0.2,
+      "steps": [
+        {
+          "seq": 1,
+          "action": "type",
+          "target": "MainScreen.password",
+          "locator": "Edit class=PasswordBox",
+          "args": {
+            "text": "***",
+            "clear": true
+          },
+          "start": 1791936000,
+          "duration": 0.05,
+          "status": "passed",
+          "screenshot": "artifacts/sign-in/step-1.png"
+        }
+      ],
+      "screenshots": [
+        "artifacts/sign-in/step-1.png"
+      ],
+      "treeDump": "artifacts/sign-in/tree.txt",
+      "stdout": "Signed in\n",
+      "stderr": "",
+      "log": ""
+    }
+  ]
+}
