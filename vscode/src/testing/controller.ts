@@ -11,6 +11,7 @@ import { EventMapper, type RunAction, type TestEnd } from "./eventMapper";
 import { EventServer } from "./eventServer";
 import { runArguments, runProcess } from "./runner";
 import { runDebugSession } from "./debug";
+import type { Reports } from "../report";
 
 interface ItemData {
   project: Project;
@@ -67,7 +68,6 @@ export class TestController implements vscode.Disposable {
     "wintestkit",
     "WinTestKit",
   );
-  readonly lastReports = new Map<string, string>();
   readonly lastMessages = new Map<string, vscode.TestMessage[]>();
   get lastResults() {
     return this.lenses.lastResults;
@@ -85,6 +85,7 @@ export class TestController implements vscode.Disposable {
     private readonly discovery: DiscoveryStore,
     private readonly lenses: CodeLenses,
     private readonly log: vscode.LogOutputChannel,
+    private readonly reports: Reports,
   ) {
     this.profile = this.controller.createRunProfile(
       "Run",
@@ -305,7 +306,7 @@ export class TestController implements vscode.Disposable {
   ): void {
     for (const action of actions) {
       if (action.kind === "report") {
-        this.lastReports.set(project.root.toString(), action.path);
+        this.reports.record(project, action.path, action.failed);
         continue;
       }
       const key = action.id && this.key(project, action.id);

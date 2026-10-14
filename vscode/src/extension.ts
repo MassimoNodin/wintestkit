@@ -12,6 +12,7 @@ import { TestController } from "./testing/controller";
 import { registerInitialize } from "./init";
 import { PytestConflict } from "./pytestConflict";
 import { ElementsTree } from "./views/elementsTree";
+import { Reports } from "./report";
 import { SpyView } from "./spy/spyView";
 import { registerInsertElement } from "./spy/insertElement";
 import { computeInsertion } from "./spy/insertionModel";
@@ -45,7 +46,8 @@ export function activate(context: vscode.ExtensionContext): {
   const spy = new SpyView(projects, servers, context.extensionUri, log);
   context.subscriptions.push(spy);
   context.subscriptions.push(registerInsertElement(projects, discovery, log));
-  const tests = new TestController(projects, discovery, lenses, log);
+  const reports = new Reports(servers, log);
+  const tests = new TestController(projects, discovery, lenses, log, reports);
   context.subscriptions.push(
     registerInitialize(projects, log),
     new PytestConflict(projects, context.workspaceState, log),
@@ -102,6 +104,7 @@ export function activate(context: vscode.ExtensionContext): {
   const implemented: Record<string, () => unknown> = {
     "wintestkit.elements.refresh": () => projects.refresh(),
     "wintestkit.showOutput": () => log.show(),
+    "wintestkit.openReport": () => reports.open(currentProject()),
     "wintestkit.launchApp": () =>
       withProject(async (project) =>
         (await servers.get(project)).client.request("app.launch"),
