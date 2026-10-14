@@ -26,5 +26,43 @@ suite("WinTestKit activation", () => {
     await vscode.commands.executeCommand("wintestkit.elements.refresh");
     await vscode.commands.executeCommand("wintestkit.showOutput");
     await vscode.commands.executeCommand("wintestkit.runDoctor");
+    const uri = vscode.Uri.joinPath(folder.uri, "screens", "main.py");
+    await vscode.window.showTextDocument(uri);
+    let lenses: vscode.CodeLens[] = [];
+    for (let attempt = 0; attempt < 20; attempt++) {
+      lenses =
+        (await vscode.commands.executeCommand<vscode.CodeLens[]>(
+          "vscode.executeCodeLensProvider",
+          uri,
+        )) ?? [];
+      if (
+        lenses.some(
+          (lens) => lens.command?.command === "wintestkit.highlightElement",
+        )
+      )
+        break;
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+    const highlight = lenses.find(
+      (lens) =>
+        lens.command?.command === "wintestkit.highlightElement" &&
+        lens.command.arguments?.[0]?.qualname === "MainScreen.sign_in",
+    );
+    assert.ok(highlight, "discovery populates highlight CodeLens");
+    try {
+      await vscode.commands.executeCommand("wintestkit.launchApp");
+      await vscode.commands.executeCommand(
+        "wintestkit.highlightElement",
+        ...highlight.command!.arguments!,
+      );
+      assert.equal(
+        vscode.languages
+          .getDiagnostics(uri)
+          .filter((diagnostic) => diagnostic.source === "WinTestKit").length,
+        0,
+      );
+    } finally {
+      await vscode.commands.executeCommand("wintestkit.closeApp");
+    }
   });
 });
