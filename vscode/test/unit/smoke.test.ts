@@ -61,6 +61,26 @@ vi.mock("../../src/statusBar", () => ({
     dispose() {}
   },
 }));
+vi.mock("../../src/projects", () => ({
+  Projects: class {
+    all = [{ root: mocks.folder.uri, name: mocks.folder.name }];
+    projectFor() {
+      return this.all[0];
+    }
+    onDidChange() {
+      return { dispose: vi.fn() };
+    }
+    refresh() {
+      return Promise.resolve();
+    }
+    dispose() {}
+  },
+}));
+vi.mock("../../src/discovery/store", () => ({
+  DiscoveryStore: class {
+    dispose() {}
+  },
+}));
 
 import { activate } from "../../src/extension";
 

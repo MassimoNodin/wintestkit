@@ -15,6 +15,11 @@ with backoff and stop after three crashes in a minute. Use Restart Server after
 installing the package or changing its configuration. Deactivation shuts down
 servers without closing your application.
 
+Projects are detected from pyproject.toml files with a tool.wintestkit table,
+including nested projects and multi-root workspaces. Discovery refreshes on file
+changes and uses unsaved Python document contents after a 400 ms debounce.
+Discovery errors appear as editor warnings. Elements Refresh rescans projects.
+
 ## Development
 
 Run `npm ci`, then `npm run build`, `npm run typecheck`, `npm run lint`, and `npm test`.
