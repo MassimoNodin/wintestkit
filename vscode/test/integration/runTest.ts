@@ -30,7 +30,10 @@ async function main(): Promise<void> {
     vscodeExecutablePath,
     extensionDevelopmentPath,
     extensionTestsPath: path.resolve(__dirname, "suite/index"),
-    extensionTestsEnv: { ELECTRON_RUN_AS_NODE: undefined },
+    extensionTestsEnv: {
+      ELECTRON_RUN_AS_NODE: undefined,
+      WTK_DEMO_FAILURES: "1",
+    },
     launchArgs: [
       path.resolve(extensionDevelopmentPath, "../examples/demo-tests"),
       "--disable-workspace-trust",

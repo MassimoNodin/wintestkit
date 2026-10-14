@@ -56,6 +56,20 @@ suite("WinTestKit activation", () => {
         "wintestkit.highlightElement",
         ...highlight.command!.arguments!,
       );
+      const checks = (
+        extension.exports as {
+          checks: {
+            results: Map<string, { status: string; qualname: string }>;
+          };
+        }
+      ).checks;
+      assert.ok(
+        [...checks.results.values()].some(
+          (result) =>
+            result.qualname === "MainScreen.sign_in" &&
+            result.status === "found",
+        ),
+      );
       assert.equal(
         vscode.languages
           .getDiagnostics(uri)
@@ -74,6 +88,51 @@ suite("WinTestKit activation", () => {
     assert.equal(
       tests.lastResults.get("tests/test_panels.py::test_panel_a_ok"),
       "passed",
+    );
+  });
+  test("runs login and exposes locator failure messages", async function () {
+    this.timeout(120000);
+    const extension = vscode.extensions.getExtension("wintestkit.wintestkit");
+    assert.ok(extension);
+    const folder = vscode.workspace.workspaceFolders?.[0];
+    assert.ok(folder);
+    const uri = vscode.Uri.joinPath(folder.uri, "tests", "test_login.py");
+    await vscode.window.showTextDocument(uri);
+    const lenses = await vscode.commands.executeCommand<vscode.CodeLens[]>(
+      "vscode.executeCodeLensProvider",
+      uri,
+    );
+    assert.ok(
+      lenses?.some((lens) => lens.command?.command === "wintestkit.runTest"),
+    );
+    const tests = (
+      extension.exports as {
+        tests: {
+          lastResults: Map<string, string>;
+          lastMessages: Map<string, vscode.TestMessage[]>;
+        };
+      }
+    ).tests;
+    const login = "tests/test_login.py::test_valid_login";
+    await vscode.commands.executeCommand("wintestkit.runTest", { id: login });
+    assert.equal(tests.lastResults.get(login), "passed");
+    const failure = "tests/test_expected_failure.py::test_misspelled_locator";
+    await vscode.commands.executeCommand("wintestkit.runTest", { id: failure });
+    assert.equal(tests.lastResults.get(failure), "failed");
+    const messages = tests.lastMessages.get(failure);
+    assert.ok(
+      messages?.some((message) => {
+        const text =
+          typeof message.message === "string"
+            ? message.message
+            : message.message.value;
+        return text.includes("No element matches");
+      }),
+    );
+    assert.ok(
+      messages?.some((message) =>
+        message.location?.uri.fsPath.endsWith("test_expected_failure.py"),
+      ),
     );
   });
   test("debugs tests and stops at user-code breakpoints", async function () {

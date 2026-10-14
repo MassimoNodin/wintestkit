@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import type { Projects } from "../projects";
+import { normalizedPath } from "../projects";
 import type { DiscoveryStore } from "../discovery/store";
 import type {
   ElementHighlightResult,
@@ -125,7 +126,7 @@ export class HighlightCommands implements vscode.Disposable {
         .get(project)
         ?.screens.find(
           (screen) =>
-            screen.file === target.file &&
+            normalizedPath(screen.file) === normalizedPath(target.file) &&
             screen.elements.some(
               (element) => element.qualname === target.qualname,
             ),
@@ -177,7 +178,7 @@ export class HighlightCommands implements vscode.Disposable {
       .get(project)
       ?.screens.find(
         (screen) =>
-          screen.file === target.file &&
+          normalizedPath(screen.file) === normalizedPath(target.file) &&
           screen.elements.some(
             (element) => element.qualname === target.qualname,
           ),
@@ -202,7 +203,8 @@ export class HighlightCommands implements vscode.Disposable {
           .get(project)
           ?.screens.find(
             (screen) =>
-              screen.file === editor?.document.uri.fsPath &&
+              normalizedPath(screen.file) ===
+                normalizedPath(editor.document.uri.fsPath) &&
               screen.range.start.line <= editor.selection.active.line &&
               screen.range.end.line >= editor.selection.active.line,
           );
