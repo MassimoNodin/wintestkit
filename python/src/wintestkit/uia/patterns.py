@@ -232,6 +232,16 @@ def column_headers(el: UIAElement) -> list[UIAElement]:
         return array_to_list(pattern.GetCurrentColumnHeaders())
 
 
+# -- Text -----------------------------------------------------------------------------------------
+
+
+def document_text(el: UIAElement) -> str:
+    """The full text of an element supporting the Text pattern."""
+    pattern = _pattern(el, "Text")
+    with com.wrap_com_errors:
+        return pattern.DocumentRange.GetText(-1) or ""
+
+
 # -- Window and legacy ----------------------------------------------------------------------------
 
 
