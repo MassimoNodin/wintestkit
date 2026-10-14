@@ -141,7 +141,9 @@ wintestkit/
   (`__version__ = "0.1.0"`), read by hatch (`[tool.hatch.version] path = ...`).
 - Lint/format: **ruff** (`line-length = 100`, rules `E,F,W,I,UP,B,SIM,RUF`), `ruff format`.
 - Types: **pyright strict** for `src/`. Files that talk to `comtypes` directly (`uia/com.py`,
-  `uia/element.py`, `uia/patterns.py`) may start with `# pyright: basic` — nothing else may.
+  `uia/element.py`, `uia/patterns.py`) and files that declare raw Win32 APIs through `ctypes` (`uia/win32.py`,
+  `uia/input.py`, `uia/screenshot.py`, `uia/dpi.py`, `engine/overlay.py`, `engine/spy.py` hooks) may
+  start with `# pyright: basic` — nothing else may.
 - All public functions/classes have type hints. Use `@dataclass(frozen=True, slots=True)` for value
   objects. No global mutable state except where specified (`runtime.py`).
 - Errors: only raise exceptions from `wintestkit.errors` (or built-in `ValueError`/`TypeError` for

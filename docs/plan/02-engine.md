@@ -175,6 +175,11 @@ Layering rule (enforced in review): `uia/` imports nothing from `engine/`, `app.
   (`control_type == "Text"`, `automation_id == "StatusText"`, `name == "Ready"`), cached and live
   reads agree, `from_point(center of Sign in)` returns the Sign in button (or its child text —
   record which in the PR).
+- **Findings (implemented):** `from_point(center of Sign in)` returns the button's child
+  `Text "Sign in"`, not the `Button`. `FindAll`/`FindFirst` on the **desktop root** can take ~5 s on
+  machines with a slow top-level UIA provider (measured: one `GetNextSiblingElement` took 4.6 s), so
+  nothing in the engine may enumerate the desktop root's children to find an app's windows — use
+  `win32.top_level_windows(pids)` (EnumWindows) plus `from_handle(hwnd)` instead (see T1.6).
 
 ---
 
@@ -326,7 +331,7 @@ Layering rule (enforced in review): `uia/` imports nothing from `engine/`, `app.
       @property
       def pids(self) -> list[int]: ...            # live: launched pid + all pids named process_name (if given) that are running
       def is_running(self) -> bool: ...
-      def top_level_windows(self) -> list[UIAElement]: ...  # UIA root children whose ProcessId in pids (visible, any owner)
+      def top_level_windows(self) -> list[UIAElement]: ...  # visible top-level windows of pids via win32.top_level_windows (EnumWindows, z-order) + element.from_handle — never FindAll on the UIA root (slow, see T1.2 findings)
       def main_window(self, timeout: float = 0.0) -> UIAElement: ...
       def close(self, timeout: float = 10.0) -> None: ...
       def kill(self) -> None: ...
