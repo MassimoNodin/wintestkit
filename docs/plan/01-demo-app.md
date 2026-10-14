@@ -8,7 +8,8 @@ virtualized grid, async enabling, a modal WPF dialog, a Win32 MessageBox and a m
 - **Depends on:** —
 - **Size:** M
 - **Files:** `demo/DemoApp/DemoApp.csproj`, `App.xaml`, `App.xaml.cs`, `MainWindow.xaml`,
-  `MainWindow.xaml.cs`, `NoteDialog.xaml`, `NoteDialog.xaml.cs`, `Product.cs`, `demo/README.md`.
+  `MainWindow.xaml.cs`, `NoteDialog.xaml`, `NoteDialog.xaml.cs`, `Product.cs`, `app.manifest`,
+  `demo/README.md`.
 
 ## Project
 
@@ -22,6 +23,7 @@ virtualized grid, async enabling, a modal WPF dialog, a Win32 MessageBox and a m
     <AssemblyName>DemoApp</AssemblyName>
     <RootNamespace>DemoApp</RootNamespace>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
 </Project>
 ```
@@ -92,7 +94,8 @@ Unknown args are ignored. Exit code 0 on normal close.
 |---|---|---|---|
 | S1 | `TextBlock` | initial `Ready` | `StatusText` |
 
-`StatusText` is the **only** element in the main window with an AutomationId besides `ColorCombo`.
+`StatusText` and `ColorCombo` are the only application-defined AutomationIds. WPF templates and
+the native window chrome also expose framework-generated IDs; see `demo/README.md`.
 
 ### Menu (docked top)
 

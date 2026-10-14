@@ -5,7 +5,7 @@
 WinTestKit is UI test automation for Windows WPF applications, built around Microsoft UI
 Automation, Python screen and element definitions, and pytest. The planned toolkit includes a
 `wtk` command-line interface and a VS Code extension for inspecting elements, running tests,
-and viewing reports. The Python package and VS Code extension scaffolds are available;
+and viewing reports. The Python package, VS Code extension scaffolds, and WPF demo are available;
 the UI Automation engine and functional editor integrations are not implemented yet.
 
 See the [implementation plan](docs/plan/README.md) and [background research](docs/research.md).
@@ -28,7 +28,19 @@ uv run pyright
 Both CLI entry points currently print `wintestkit 0.1.0`. Unit tests do not need an interactive
 desktop. Integration tests require Windows and, when using the demo app fixture, a built demo app
 at `demo/DemoApp/bin/Release/net8.0-windows/DemoApp.exe` or the path set in `WTK_DEMO_APP`.
-The demo app is developed separately in task T0.3.
+See [the demo guide](demo/README.md) for controls and UI Automation observations.
+
+### WPF demo app
+
+On Windows with the .NET 8 SDK installed, run from the repository root:
+
+```powershell
+dotnet build demo/DemoApp/DemoApp.csproj -c Release
+& ./demo/DemoApp/bin/Release/net8.0-windows/DemoApp.exe
+```
+
+The demo has credentials, duplicate buttons, asynchronous loading, virtualized lists and grids,
+and modal dialogs. It deliberately exposes very few application-defined AutomationIds.
 
 ### VS Code extension
 
