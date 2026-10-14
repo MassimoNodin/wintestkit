@@ -38,7 +38,7 @@ pythonVersion = "3.12"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["tests", "tests/unit"]
+pythonpath = ["tests", "tests/unit", "tests/integration"]
 markers = [
     "integration: needs an interactive desktop and the built demo app",
     "slow: takes more than 5 seconds",

@@ -112,6 +112,7 @@ def wait_for_state(
     state: State,
     timeout: float,
     description: str,
+    retry_on: tuple[type[BaseException], ...] = (LocatorError, UIAError),
 ) -> UIAElement | None:
     """Wait until the element returned by ``get`` is in ``state``; returns it (``None`` if gone).
 
@@ -129,4 +130,4 @@ def wait_for_state(
             el = None
         return (el,) if element_state_ok(el, state) else None
 
-    return wait_until(check, timeout, description=description)[0]
+    return wait_until(check, timeout, description=description, retry_on=retry_on)[0]
