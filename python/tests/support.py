@@ -3,6 +3,7 @@
 import subprocess
 from collections.abc import Sequence
 from pathlib import Path
+from typing import Any
 
 
 class DemoProcess:
@@ -19,3 +20,16 @@ class DemoProcess:
 
 def start_demo(path: Path, args: Sequence[str] = ()) -> DemoProcess:
     return DemoProcess(subprocess.Popen([str(path), *args]))
+
+
+def window_props(app: Any, attribute: str) -> list[str]:
+    """Property of every top-level window, skipping windows that close mid-enumeration."""
+    from wintestkit.errors import UIAError
+
+    values: list[str] = []
+    for window in app.top_level_windows():
+        try:
+            values.append(getattr(window, attribute))
+        except UIAError:
+            continue
+    return values

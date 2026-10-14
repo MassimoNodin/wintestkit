@@ -259,7 +259,8 @@ class Locator:
             props["class_name"] = self.class_name
         return props
 
-    def _describe_link(self) -> str:
+    def describe_link(self, include_item: bool = True, include_index: bool = True) -> str:
+        """Describe this locator alone, without its ``within`` chain or window prefix."""
         parts: list[str] = []
         if self.automation_id is not None:
             parts.append(f"id={describe_matcher(self.automation_id)}")
@@ -267,19 +268,19 @@ class Locator:
             parts.append(f"name={describe_matcher(self.name)}")
         if self.class_name is not None:
             parts.append(f"class={describe_matcher(self.class_name)}")
-        if self.index is not None:
+        if include_index and self.index is not None:
             parts.append(f"index={self.index}")
         if self.depth is not None:
             parts.append(f"depth={self.depth}")
         head = self.control_type or "*"
         text = f"{head}[{', '.join(parts)}]" if parts else head
-        if self.item is not None:
+        if include_item and self.item is not None:
             text += f" > {self.item.describe()}"
         return text
 
     def describe(self) -> str:
         """Stable human-readable form, e.g. ``Group[name="A"] > Button[name="OK"]``."""
-        text = " > ".join(link._describe_link() for link in self.chain())
+        text = " > ".join(link.describe_link() for link in self.chain())
         if self.window is not None:
             text = f"{self.window.describe()} >> {text}"
         return text

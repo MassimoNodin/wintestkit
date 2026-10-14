@@ -503,7 +503,22 @@ Layering rule (enforced in review): `uia/` imports nothing from `engine/`, `app.
     whether found via ComboBox children or popup fallback; record in PR).
   - Performance: resolving `Button[name="Sign in"]` takes < 150 ms on the demo (log timings in test
     output; not a hard assertion in CI).
-
+- **Findings (implemented):**
+  - Shared query primitives (`query_all`, the injectable `make_condition` hook, relaxed
+    descendants for diagnostics) live in `engine/query.py`; `resolve.py` re-exports `query_all`.
+    Unit tests patch `query.make_condition` with a factory returning plain dicts so the resolver
+    runs against `tests/unit/fakes.py`.
+  - Resolved elements are returned **live** (`UIAElement.as_live()`), never as the cached copies
+    used for searching, so later `rect`/`name` reads are never stale.
+  - WPF `Popup` windows (menus, drop-downs) are attached to the UIA tree below their owner window,
+    and `FindAll` can reach the same popup element twice. `query_all` therefore de-duplicates by
+    runtime id. Menu items (`File > Reset`) resolve uniquely without any popup fallback.
+  - A ComboBox item is exposed by WPF as **two distinct elements** (a child of the ComboBox and a
+    child of the Popup window) with identical rectangles, so an unscoped `ListItem[name="Blue"]` is
+    legitimately ambiguous (2 matches). `within=<the combo locator>` resolves it to the ComboBox
+    child. The popup fallback is only used when nothing is found in the window subtree.
+  - `Locator.describe_link(include_item=True, include_index=True)` describes one link without its
+    `within` chain (used in messages).
 ---
 
 ## T1.9 — Resolution diagnostics <a id="t19"></a>
@@ -548,6 +563,13 @@ Layering rule (enforced in review): `uia/` imports nothing from `engine/`, `app.
   - Wire into `resolve.py` (replace minimal diagnostics) and `App.main_window`.
 - **Done when:** unit tests on fake trees assert messages exactly; integration test on demo for a
   misspelled `Sign In` finds `Sign in` as top candidate.
+
+- **Findings (implemented):** candidates are ranked by score, then by name similarity
+  (`difflib.SequenceMatcher` ratio of expected vs actual name, so a misspelled `Panel C` suggests
+  `Panel A` rather than whichever group comes first), then by document order. Windows without a
+  title appear as `<class>` (e.g. `<Popup>`) in the "open windows" list. `Diagnostic`,
+  `Candidate` and `Mismatch` (data, `to_dict`/`from_dict`, `format`) plus `diagnose_window` were
+  implemented with T1.6 because `App.main_window` needs them.
 
 ---
 
@@ -653,6 +675,11 @@ Layering rule (enforced in review): `uia/` imports nothing from `engine/`, `app.
   `select("Item 450")` (virtualized); DataGrid `select(120)` → status `Row: Product 121`; menu
   `File > Reset` via click on `File` then `Reset`; `press("Alt+F4")` on NoteDialog closes it;
   `double_click`/`right_click` don't raise; `get_text(status)` returns status text.
+- **Findings (implemented):** `type_text(..., clear=False)` with the keys strategy presses
+  `Ctrl+End` first (after `SetValue`/focus WPF leaves the caret at the start, so appended text
+  would land in front). `PasswordBox` accepts `ValuePattern.SetValue`; only appending needs keys.
+  `focus()` on a non-focusable element (e.g. a `TextBlock`) raises `ActionError`. `SendInput` is
+  asynchronous: tests that read state straight after typing must poll.
 
 ---
 

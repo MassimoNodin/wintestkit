@@ -186,6 +186,10 @@ class UIAElement:
         with com.wrap_com_errors:
             return getattr(self.raw, prefix + attribute)
 
+    def as_live(self) -> UIAElement:
+        """The same element with live (uncached) property reads."""
+        return UIAElement(self.raw) if self._cached else self
+
     # -- properties ---------------------------------------------------------------------------
 
     @property
