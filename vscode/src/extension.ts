@@ -22,6 +22,7 @@ interface ExtensionManifest {
 
 export function activate(context: vscode.ExtensionContext): {
   tests: TestController;
+  checks: CheckResultsStore;
 } {
   const log = createLog();
   context.subscriptions.push(log);
@@ -201,7 +202,7 @@ export function activate(context: vscode.ExtensionContext): {
     false,
   );
   void projects.refresh();
-  return { tests };
+  return { tests, checks };
 }
 
 let activeServers: ServerManager | undefined;

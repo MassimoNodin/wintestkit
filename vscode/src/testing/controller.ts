@@ -68,6 +68,7 @@ export class TestController implements vscode.Disposable {
     "WinTestKit",
   );
   readonly lastReports = new Map<string, string>();
+  readonly lastMessages = new Map<string, vscode.TestMessage[]>();
   get lastResults() {
     return this.lenses.lastResults;
   }
@@ -362,18 +363,13 @@ export class TestController implements vscode.Disposable {
       else if (action.kind === "started") run.started(item);
       else if (action.kind === "skipped") run.skipped(item);
       else if (action.kind === "passed") run.passed(item, action.duration);
-      else if (action.kind === "failed")
-        run.failed(
-          item,
-          failureMessages(action.end, action.message),
-          action.duration,
-        );
-      else if (action.kind === "errored")
-        run.errored(
-          item,
-          failureMessages(action.end, action.message),
-          action.duration,
-        );
+      else if (action.kind === "failed" || action.kind === "errored") {
+        const messages = failureMessages(action.end, action.message);
+        this.lastMessages.set(action.id, messages);
+        if (action.kind === "failed")
+          run.failed(item, messages, action.duration);
+        else run.errored(item, messages, action.duration);
+      }
       if (
         action.kind === "passed" ||
         action.kind === "failed" ||
@@ -381,6 +377,8 @@ export class TestController implements vscode.Disposable {
         action.kind === "skipped"
       ) {
         const outcome = action.kind === "errored" ? "error" : action.kind;
+        if (action.kind === "passed" || action.kind === "skipped")
+          this.lastMessages.delete(action.id);
         this.lenses.lastResults.set(action.id, outcome);
         if (action.id.includes("["))
           this.lenses.lastResults.set(
