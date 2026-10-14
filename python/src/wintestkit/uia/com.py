@@ -126,10 +126,9 @@ class _WrapComErrors:
     def __enter__(self) -> None:
         return None
 
-    def __exit__(self, exc_type: Any, exc: Any, tb: Any) -> bool:
+    def __exit__(self, exc_type: Any, exc: Any, tb: Any) -> None:
         if isinstance(exc, comtypes.COMError):
             raise _convert(exc) from exc
-        return False
 
 
 wrap_com_errors = _WrapComErrors()
