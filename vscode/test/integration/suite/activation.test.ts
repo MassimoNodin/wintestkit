@@ -64,5 +64,15 @@ suite("WinTestKit activation", () => {
     } finally {
       await vscode.commands.executeCommand("wintestkit.closeApp");
     }
+    await vscode.commands.executeCommand("wintestkit.runTest", {
+      id: "tests/test_panels.py::test_panel_a_ok",
+    });
+    const tests = (
+      extension.exports as { tests: { lastResults: Map<string, string> } }
+    ).tests;
+    assert.equal(
+      tests.lastResults.get("tests/test_panels.py::test_panel_a_ok"),
+      "passed",
+    );
   });
 });

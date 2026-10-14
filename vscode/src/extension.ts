@@ -8,6 +8,7 @@ import { DiscoveryStore } from "./discovery/store";
 import { CodeLenses } from "./editor/codeLens";
 import { CheckDecorations, CheckResultsStore } from "./editor/decorations";
 import { HighlightCommands } from "./editor/highlightCommands";
+import { TestController } from "./testing/controller";
 
 interface CommandContribution {
   command: string;
@@ -17,7 +18,9 @@ interface ExtensionManifest {
   contributes: { commands: CommandContribution[] };
 }
 
-export function activate(context: vscode.ExtensionContext): void {
+export function activate(context: vscode.ExtensionContext): {
+  tests: TestController;
+} {
   const log = createLog();
   context.subscriptions.push(log);
   log.info("WinTestKit activated");
@@ -27,6 +30,8 @@ export function activate(context: vscode.ExtensionContext): void {
   const discovery = new DiscoveryStore(projects, servers, log);
   const lenses = new CodeLenses(projects, discovery);
   const checks = new CheckResultsStore(discovery);
+  const tests = new TestController(projects, discovery, lenses, log);
+  context.subscriptions.push(tests);
   context.subscriptions.push(
     lenses,
     checks,
@@ -139,6 +144,7 @@ export function activate(context: vscode.ExtensionContext): void {
         "wintestkit.highlightElement",
         "wintestkit.checkElement",
         "wintestkit.checkScreen",
+        "wintestkit.runTest",
       ].includes(contribution.command)
     )
       continue;
@@ -187,6 +193,7 @@ export function activate(context: vscode.ExtensionContext): void {
     false,
   );
   void projects.refresh();
+  return { tests };
 }
 
 let activeServers: ServerManager | undefined;

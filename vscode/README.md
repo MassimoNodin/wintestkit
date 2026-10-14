@@ -7,7 +7,9 @@ starts a per-project Python JSON-RPC server, and displays application state in t
 status bar. Launch App, Close App, Restart Server, Check Environment, Install Package,
 and Show Output are functional. Python CodeLens provides Highlight, Check, and
 Check All Elements actions; checks show gutter results and editor warnings.
-Test execution, the Elements tree, and the Spy panel await their milestones.
+Test Explorer and Run Test CodeLens stream pytest progress, output, parameterized
+cases, and failure details. Cancellation stops the full test process tree. Runs
+queue per project. The Elements tree and Spy panel await their milestones.
 
 Open the examples project folder in a trusted workspace and select an interpreter
 with `wintestkit` installed. A missing package produces an installation prompt; the
