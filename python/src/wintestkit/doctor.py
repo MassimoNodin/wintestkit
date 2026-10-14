@@ -120,9 +120,10 @@ def _monitor_scales() -> list[float]:
 
 def _comtypes_cache() -> tuple[str, bool]:
     """Directory where comtypes writes generated wrappers and whether it is writable."""
-    import comtypes.gen
+    import importlib
 
-    directory = Path(next(iter(comtypes.gen.__path__)))
+    generated = importlib.import_module("comtypes.gen")
+    directory = Path(next(iter(generated.__path__)))
     return str(directory), os.access(directory, os.W_OK)
 
 
