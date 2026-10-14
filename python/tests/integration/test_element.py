@@ -1,7 +1,7 @@
 """Integration tests for UIAElement against the demo app."""
 
 import pytest
-from conftest import DemoProcess
+from support import DemoProcess
 
 from wintestkit.uia import com, element, win32
 from wintestkit.uia.constants import TreeScope

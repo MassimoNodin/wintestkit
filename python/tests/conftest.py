@@ -4,10 +4,11 @@ import os
 import subprocess
 import sys
 import time
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
+from support import DemoProcess, start_demo
 
 
 def _default_demo_path() -> Path:
@@ -31,26 +32,11 @@ def demo_app_path() -> Path:
     return app_path
 
 
-class DemoProcess:
-    """A demo app subprocess started by a test, without using wintestkit.app."""
-
-    def __init__(self, process: "subprocess.Popen[bytes]") -> None:
-        self.process = process
-        self.hwnd = 0
-
-    @property
-    def pid(self) -> int:
-        return self.process.pid
-
-
-def start_demo(path: Path, args: Sequence[str] = ()) -> DemoProcess:
-    return DemoProcess(subprocess.Popen([str(path), *args]))
-
-
 @pytest.fixture
 def demo_process(demo_app_path: Path) -> Iterator[DemoProcess]:
     """Start a fresh demo app and wait for its main window to appear."""
-    from wintestkit.uia import win32
+    from wintestkit.uia import com, element, win32
+    from wintestkit.uia.constants import TreeScope
 
     demo = start_demo(demo_app_path)
     deadline = time.monotonic() + 20
@@ -65,6 +51,15 @@ def demo_process(demo_app_path: Path) -> Iterator[DemoProcess]:
             time.sleep(0.1)
         else:
             pytest.fail("demo app main window did not appear")
+        # The title shows up before WPF has published its UIA tree; wait until it is usable.
+        status = com.create_condition(automation_id="StatusText")
+        while time.monotonic() < deadline:
+            window = element.from_handle(demo.hwnd)
+            if window.find_first(TreeScope.Descendants, status) is not None:
+                break
+            time.sleep(0.1)
+        else:
+            pytest.fail("demo app UI Automation tree did not become ready")
         yield demo
     finally:
         subprocess.run(
