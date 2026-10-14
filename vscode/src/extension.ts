@@ -145,6 +145,7 @@ export function activate(context: vscode.ExtensionContext): {
         "wintestkit.checkElement",
         "wintestkit.checkScreen",
         "wintestkit.runTest",
+        "wintestkit.debugTest",
       ].includes(contribution.command)
     )
       continue;

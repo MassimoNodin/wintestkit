@@ -1,6 +1,7 @@
 import * as assert from "node:assert/strict";
 import * as vscode from "vscode";
 import * as path from "node:path";
+import { readFileSync } from "node:fs";
 
 suite("WinTestKit activation", () => {
   test("activates and exposes working scaffold commands", async () => {
@@ -74,5 +75,89 @@ suite("WinTestKit activation", () => {
       tests.lastResults.get("tests/test_panels.py::test_panel_a_ok"),
       "passed",
     );
+  });
+  test("debugs tests and stops at user-code breakpoints", async function () {
+    this.timeout(120000);
+    const extension = vscode.extensions.getExtension("wintestkit.wintestkit");
+    assert.ok(extension);
+    const folder = vscode.workspace.workspaceFolders?.[0];
+    assert.ok(folder);
+    const testUri = vscode.Uri.joinPath(folder.uri, "tests", "test_panels.py");
+    const fixtureUri = vscode.Uri.joinPath(folder.uri, "conftest.py");
+    const testLine = readFileSync(testUri.fsPath, "utf8")
+      .split("\n")
+      .findIndex((line) => line.includes("main.ok_a.click()"));
+    const fixtureLine = readFileSync(fixtureUri.fsPath, "utf8")
+      .split("\n")
+      .findIndex((line) => line.includes("main.menu_file.click()"));
+    const breakpoints = [
+      new vscode.SourceBreakpoint(
+        new vscode.Location(testUri, new vscode.Position(testLine, 0)),
+      ),
+      new vscode.SourceBreakpoint(
+        new vscode.Location(fixtureUri, new vscode.Position(fixtureLine, 0)),
+      ),
+    ];
+    const stoppedFiles = new Set<string>();
+    let trackerError: unknown;
+    const tracker = vscode.debug.registerDebugAdapterTrackerFactory("debugpy", {
+      createDebugAdapterTracker(session) {
+        return {
+          onDidSendMessage(message: unknown) {
+            const event = message as {
+              type?: string;
+              event?: string;
+              body?: { threadId?: number };
+            };
+            if (
+              event.type !== "event" ||
+              event.event !== "stopped" ||
+              !session.configuration.wintestkitRunId
+            )
+              return;
+            void (async () => {
+              const stack = (await session.customRequest("stackTrace", {
+                threadId: event.body?.threadId,
+              })) as { stackFrames: { source?: { path?: string } }[] };
+              for (const frame of stack.stackFrames)
+                if (frame.source?.path)
+                  stoppedFiles.add(
+                    path.resolve(frame.source.path).toLowerCase(),
+                  );
+              await session.customRequest("continue", {
+                threadId: event.body?.threadId,
+              });
+            })().catch((error) => {
+              trackerError = error;
+              void vscode.debug.stopDebugging(session);
+            });
+          },
+        };
+      },
+    });
+    vscode.debug.addBreakpoints(breakpoints);
+    try {
+      await vscode.commands.executeCommand("wintestkit.debugTest", {
+        id: "tests/test_panels.py::test_panel_a_ok",
+      });
+      assert.equal(trackerError, undefined);
+      assert.ok(
+        stoppedFiles.has(path.resolve(testUri.fsPath).toLowerCase()),
+        "test breakpoint is hit",
+      );
+      assert.ok(
+        stoppedFiles.has(path.resolve(fixtureUri.fsPath).toLowerCase()),
+        "user fixture breakpoint is hit",
+      );
+      assert.equal(
+        (
+          extension.exports as { tests: { lastResults: Map<string, string> } }
+        ).tests.lastResults.get("tests/test_panels.py::test_panel_a_ok"),
+        "passed",
+      );
+    } finally {
+      vscode.debug.removeBreakpoints(breakpoints);
+      tracker.dispose();
+    }
   });
 });

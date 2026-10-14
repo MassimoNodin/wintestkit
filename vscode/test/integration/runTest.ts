@@ -13,7 +13,14 @@ async function main(): Promise<void> {
     resolveCliArgsFromVSCodeExecutablePath(vscodeExecutablePath);
   const install = spawnSync(
     cli,
-    [...cliArgs, "--install-extension", "ms-python.python", "--force"],
+    [
+      ...cliArgs,
+      "--install-extension",
+      "ms-python.python",
+      "--install-extension",
+      "ms-python.debugpy",
+      "--force",
+    ],
     { encoding: "utf8", stdio: "inherit", shell: process.platform === "win32" },
   );
   if (install.error) throw install.error;
