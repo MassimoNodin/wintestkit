@@ -109,6 +109,14 @@ vi.mock("../../src/editor/highlightCommands", () => ({
 }));
 
 import { activate } from "../../src/extension";
+vi.mock("../../src/testing/controller", () => ({
+  TestController: class {
+    constructor() {
+      mocks.registerCommand("wintestkit.runTest", () => {});
+    }
+    dispose() {}
+  },
+}));
 
 const manifest = JSON.parse(readFileSync("package.json", "utf8"));
 
