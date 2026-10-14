@@ -42,6 +42,7 @@ class Scope:
 
 def resolve_window(app: App, wl: WindowLocator | None) -> UIAElement:
     """Find the top-level window described by ``wl`` (``None``/empty → the main window)."""
+    __tracebackhide__ = True
     if wl is None or wl.is_empty():
         return app.main_window()
     source = app
@@ -74,6 +75,7 @@ def resolve_window(app: App, wl: WindowLocator | None) -> UIAElement:
 
 def _popup_matches(scope: Scope, window_root: UIAElement, link: Locator) -> list[UIAElement]:
     """Matches inside the app's popup windows (WPF context menus, drop-downs, tool tips)."""
+    __tracebackhide__ = True
     found: list[UIAElement] = []
     for window in scope.app.top_level_windows():
         if window.same_as(window_root):
@@ -86,6 +88,7 @@ def _popup_matches(scope: Scope, window_root: UIAElement, link: Locator) -> list
 def _match_link(
     scope: Scope, root: UIAElement, link: Locator, full: Locator, first: bool
 ) -> list[UIAElement]:
+    __tracebackhide__ = True
     matches = query_all(root, link)
     if not matches and first and full.window is None:
         matches = _popup_matches(scope, root, link)
@@ -95,6 +98,7 @@ def _match_link(
 def _resolve_link(
     scope: Scope, root: UIAElement, link: Locator, searched_in: str, full: Locator, first: bool
 ) -> UIAElement:
+    __tracebackhide__ = True
     matches = _match_link(scope, root, link, full, first)
     if link.index is not None:
         if link.index >= len(matches):
@@ -110,6 +114,7 @@ def _resolve_link(
 
 
 def _walk(scope: Scope, locator: Locator, final_all: bool) -> list[UIAElement]:
+    __tracebackhide__ = True
     window_root = resolve_window(scope.app, locator.window or scope.window)
     links = locator.chain()
     root = window_root
@@ -134,11 +139,13 @@ def _walk(scope: Scope, locator: Locator, final_all: bool) -> list[UIAElement]:
 
 def resolve(scope: Scope, locator: Locator) -> UIAElement:
     """Resolve ``locator`` to exactly one live element, or raise a ``LocatorError``."""
+    __tracebackhide__ = True
     return _walk(scope, locator, final_all=False)[0]
 
 
 def resolve_all(scope: Scope, locator: Locator) -> list[UIAElement]:
     """All matches of the locator's final link (``index`` and ``item`` ignored); may be empty."""
+    __tracebackhide__ = True
     return _walk(scope, locator, final_all=True)
 
 
@@ -146,6 +153,7 @@ def resolve_all(scope: Scope, locator: Locator) -> list[UIAElement]:
 
 
 def _item_error(message: str, searched_in: str, full: Locator, count: int) -> ElementNotFoundError:
+    __tracebackhide__ = True
     return ElementNotFoundError(
         Diagnostic(
             kind="index_out_of_range",
@@ -158,6 +166,7 @@ def _item_error(message: str, searched_in: str, full: Locator, count: int) -> El
 
 
 def _apply_item(element: UIAElement, link: Locator, searched_in: str, full: Locator) -> UIAElement:
+    __tracebackhide__ = True
     item: ItemSelector | None = link.item
     if item is None:
         return element

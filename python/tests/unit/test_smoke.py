@@ -1,4 +1,4 @@
-"""Smoke tests for the initial Python package scaffold."""
+"""Smoke tests for the package and its entry points."""
 
 import subprocess
 import sys
@@ -13,14 +13,22 @@ def test_version() -> None:
     assert wintestkit.__version__ == "0.1.0"
 
 
-def test_cli_main(capsys: pytest.CaptureFixture[str]) -> None:
-    assert main() == 0
+def test_cli_version_flag(capsys: pytest.CaptureFixture[str]) -> None:
+    assert main(["--version"]) == 0
     assert capsys.readouterr().out == "wintestkit 0.1.0\n"
+
+
+def test_cli_without_a_command_prints_help(capsys: pytest.CaptureFixture[str]) -> None:
+    assert main([]) == 0
+    out = capsys.readouterr().out
+    assert out.startswith("usage: wtk")
+    for command in ("run", "discover", "doctor"):
+        assert command in out
 
 
 def test_module_entry_point() -> None:
     result = subprocess.run(
-        [sys.executable, "-m", "wintestkit"],
+        [sys.executable, "-m", "wintestkit", "--version"],
         capture_output=True,
         text=True,
         check=False,

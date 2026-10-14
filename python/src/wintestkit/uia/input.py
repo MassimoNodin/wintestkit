@@ -73,6 +73,7 @@ class KeyCombo:
 
 
 def _key_code(token: str) -> int | None:
+    __tracebackhide__ = True
     lower = token.lower()
     if lower in _NAMED_KEYS:
         return _NAMED_KEYS[lower]
@@ -85,6 +86,7 @@ def _key_code(token: str) -> int | None:
 
 def parse_keys(keys: str) -> list[KeyCombo]:
     """Parse ``"Ctrl+S"``, ``"Ctrl+A Delete"`` etc. into key combos."""
+    __tracebackhide__ = True
     combos: list[KeyCombo] = []
     for combo_text in keys.split():
         tokens = combo_text.split("+")
@@ -111,6 +113,7 @@ def parse_keys(keys: str) -> list[KeyCombo]:
 
 
 def _send(events: list[win32.INPUT]) -> None:
+    __tracebackhide__ = True
     if not events:
         return
     array = (win32.INPUT * len(events))(*events)
@@ -123,6 +126,7 @@ def _send(events: list[win32.INPUT]) -> None:
 
 
 def _mouse_event(flags: int, dx: int = 0, dy: int = 0, data: int = 0) -> win32.INPUT:
+    __tracebackhide__ = True
     event = win32.INPUT()
     event.type = win32.INPUT_MOUSE
     event.mi.dx = dx
@@ -133,6 +137,7 @@ def _mouse_event(flags: int, dx: int = 0, dy: int = 0, data: int = 0) -> win32.I
 
 
 def _key_event(vk: int, up: bool) -> win32.INPUT:
+    __tracebackhide__ = True
     event = win32.INPUT()
     event.type = win32.INPUT_KEYBOARD
     event.ki.wVk = vk
@@ -145,6 +150,7 @@ def _key_event(vk: int, up: bool) -> win32.INPUT:
 
 
 def _unicode_event(unit: int, up: bool) -> win32.INPUT:
+    __tracebackhide__ = True
     event = win32.INPUT()
     event.type = win32.INPUT_KEYBOARD
     event.ki.wVk = 0
@@ -154,6 +160,7 @@ def _unicode_event(unit: int, up: bool) -> win32.INPUT:
 
 
 def _absolute(x: int, y: int) -> tuple[int, int]:
+    __tracebackhide__ = True
     screen = win32.virtual_screen_rect()
     nx = round((x - screen.left) * 65535 / max(screen.width - 1, 1))
     ny = round((y - screen.top) * 65535 / max(screen.height - 1, 1))
@@ -161,6 +168,7 @@ def _absolute(x: int, y: int) -> tuple[int, int]:
 
 
 def _move_event(x: int, y: int) -> win32.INPUT:
+    __tracebackhide__ = True
     nx, ny = _absolute(x, y)
     flags = win32.MOUSEEVENTF_MOVE | win32.MOUSEEVENTF_ABSOLUTE | win32.MOUSEEVENTF_VIRTUALDESK
     return _mouse_event(flags, nx, ny)
@@ -171,11 +179,13 @@ def _move_event(x: int, y: int) -> win32.INPUT:
 
 def move_mouse(x: int, y: int) -> None:
     """Move the cursor to physical screen coordinates."""
+    __tracebackhide__ = True
     _send([_move_event(x, y)])
 
 
 def click(x: int, y: int, button: MouseButton = "left", count: int = 1) -> None:
     """Click ``count`` times at physical screen coordinates."""
+    __tracebackhide__ = True
     down, up = _BUTTON_FLAGS[button]
     events = [_move_event(x, y)]
     for _ in range(count):
@@ -186,15 +196,18 @@ def click(x: int, y: int, button: MouseButton = "left", count: int = 1) -> None:
 
 
 def mouse_down(button: MouseButton = "left") -> None:
+    __tracebackhide__ = True
     _send([_mouse_event(_BUTTON_FLAGS[button][0])])
 
 
 def mouse_up(button: MouseButton = "left") -> None:
+    __tracebackhide__ = True
     _send([_mouse_event(_BUTTON_FLAGS[button][1])])
 
 
 def scroll_wheel(x: int, y: int, clicks: int) -> None:
     """Scroll the wheel at a position; positive ``clicks`` scroll up."""
+    __tracebackhide__ = True
     _send([_move_event(x, y), _mouse_event(win32.MOUSEEVENTF_WHEEL, data=clicks * WHEEL_DELTA)])
     time.sleep(INPUT_SETTLE_S)
 
@@ -204,6 +217,7 @@ def scroll_wheel(x: int, y: int, clicks: int) -> None:
 
 def press(keys: str) -> None:
     """Press key combos such as ``"Ctrl+S"`` or ``"Ctrl+A Delete"``."""
+    __tracebackhide__ = True
     for combo in parse_keys(keys):
         events = [_key_event(vk, up=False) for vk in combo.modifiers]
         events.append(_key_event(combo.key, up=False))
@@ -214,12 +228,14 @@ def press(keys: str) -> None:
 
 
 def _utf16_units(char: str) -> list[int]:
+    __tracebackhide__ = True
     data = char.encode("utf-16-le")
     return [int.from_bytes(data[i : i + 2], "little") for i in range(0, len(data), 2)]
 
 
 def type_text(text: str, interval: float = 0.0) -> None:
     """Type text using Unicode key events; ``\\n`` presses Enter and ``\\t`` presses Tab."""
+    __tracebackhide__ = True
     for char in text:
         if char == "\n":
             events = [_key_event(0x0D, up=False), _key_event(0x0D, up=True)]

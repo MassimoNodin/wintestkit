@@ -60,7 +60,10 @@ class Server:
         self.thread.start()
 
     def _serve(self) -> None:
-        connection, _ = self.listener.accept()
+        try:
+            connection, _ = self.listener.accept()
+        except OSError:
+            return  # the listener was closed before anyone connected
         self.connected.set()
         buffer = b""
         with connection:

@@ -19,6 +19,7 @@ make_condition: Callable[..., Any] = com.create_condition
 
 def _within_depth(element: UIAElement, root: UIAElement, limit: int) -> bool:
     """True if ``element`` is at most ``limit`` levels below ``root`` (children are depth 1)."""
+    __tracebackhide__ = True
     node = element
     for _ in range(limit):
         parent = node.parent()
@@ -36,6 +37,7 @@ def _unique(elements: list[UIAElement]) -> list[UIAElement]:
     WPF menus and drop-downs live in ``Popup`` windows that UI Automation attaches to the tree in
     more than one place, so a plain ``FindAll`` can return the very same element twice.
     """
+    __tracebackhide__ = True
     if len(elements) < 2:
         return elements
     seen: set[str] = set()
@@ -55,6 +57,7 @@ def query_all(root: UIAElement, locator: Locator) -> list[UIAElement]:
     Ignores ``index``, ``within``, ``window`` and ``item``. Returned elements carry cached
     property values; call ``as_live()`` before handing them to actions.
     """
+    __tracebackhide__ = True
     condition = make_condition(**locator.exact_props())
     depth = locator.depth
     scope = TreeScope.Children if depth == 1 else TreeScope.Descendants
@@ -69,6 +72,7 @@ def query_all(root: UIAElement, locator: Locator) -> list[UIAElement]:
 
 def relaxed_descendants(root: UIAElement, control_type: str | None) -> list[UIAElement]:
     """Descendants for diagnostics: of one control type when given, otherwise everything."""
+    __tracebackhide__ = True
     props: dict[str, int] = {"control_type": CONTROL_TYPES[control_type]} if control_type else {}
     found = root.find_all(TreeScope.Descendants, make_condition(**props), cached=True)
     return found[:MAX_RELAXED_CANDIDATES]

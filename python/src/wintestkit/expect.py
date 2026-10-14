@@ -42,6 +42,7 @@ class _Outcome:
 
 
 def _describe(value: Any) -> str:
+    __tracebackhide__ = True
     if isinstance(value, str):
         return json.dumps(value, ensure_ascii=False)
     if isinstance(value, re.Pattern):
@@ -50,16 +51,19 @@ def _describe(value: Any) -> str:
 
 
 def _needs(element: UIAElement | None, check: Callable[[UIAElement], _Outcome]) -> _Outcome:
+    __tracebackhide__ = True
     if element is None:
         return _Outcome(False, _NOT_FOUND, missing=True)
     return check(element)
 
 
 def _exists(element: UIAElement | None) -> _Outcome:
+    __tracebackhide__ = True
     return _Outcome(element is not None, "exists" if element is not None else "does not exist")
 
 
 def _state(element: UIAElement | None, state: waits.State) -> _Outcome:
+    __tracebackhide__ = True
     ok = waits.element_state_ok(element, state)
     if element is None:
         return _Outcome(ok, "does not exist")
@@ -67,6 +71,7 @@ def _state(element: UIAElement | None, state: waits.State) -> _Outcome:
 
 
 def _text_matches(expected: str | re.Pattern[str], actual: str) -> bool:
+    __tracebackhide__ = True
     if isinstance(expected, str):
         return actual == expected
     return expected.search(actual) is not None
@@ -76,6 +81,7 @@ class Expectation:
     """Assertions about one target. Each assertion polls until it holds or times out."""
 
     def __init__(self, target: Target, timeout: float | None = None, negate: bool = False) -> None:
+        __tracebackhide__ = True
         self._target = target
         self._timeout = timeout
         self._negate = negate
@@ -84,11 +90,13 @@ class Expectation:
     @property
     def not_(self) -> Expectation:
         """The same assertions, but waiting for the opposite to hold."""
+        __tracebackhide__ = True
         return Expectation(self._target, self._timeout, not self._negate)
 
     # -- target access --------------------------------------------------------------------------
 
     def _budget(self) -> float:
+        __tracebackhide__ = True
         if self._timeout is not None:
             return self._timeout
         definition: Any = getattr(self._target, "definition", None)
@@ -98,6 +106,7 @@ class Expectation:
 
     def _element(self) -> UIAElement | None:
         """Resolve once; ``None`` if nothing matches. Ambiguity is a test bug and propagates."""
+        __tracebackhide__ = True
         target = self._target
         if isinstance(target, BoundElements):
             raise TypeError("this assertion needs a single element, not Elements")
@@ -119,6 +128,7 @@ class Expectation:
         *,
         wanted: str | None = None,
     ) -> None:
+        __tracebackhide__ = True
         target = self._target
         qualname = target.qualname
         has_argument = expected is not _NO_ARGUMENT
@@ -131,6 +141,7 @@ class Expectation:
         latest: list[_Outcome] = []
 
         def poll() -> bool | None:
+            __tracebackhide__ = True
             self._locator_error = None
             try:
                 outcome = evaluate(self._element() if method != "to_have_count" else None)
@@ -167,20 +178,26 @@ class Expectation:
     # -- assertions -----------------------------------------------------------------------------
 
     def to_exist(self) -> None:
+        __tracebackhide__ = True
         self._assert("to_exist", _NO_ARGUMENT, _exists, wanted="to exist")
 
     def to_be_visible(self) -> None:
+        __tracebackhide__ = True
         self._assert(
             "to_be_visible", _NO_ARGUMENT, lambda e: _state(e, "visible"), wanted="to be visible"
         )
 
     def to_be_hidden(self) -> None:
+        __tracebackhide__ = True
         self._assert(
             "to_be_hidden", _NO_ARGUMENT, lambda e: _state(e, "hidden"), wanted="to be hidden"
         )
 
     def to_be_enabled(self) -> None:
+        __tracebackhide__ = True
+
         def check(element: UIAElement) -> _Outcome:
+            __tracebackhide__ = True
             enabled = element.is_enabled
             return _Outcome(enabled, "enabled" if enabled else "disabled")
 
@@ -189,7 +206,10 @@ class Expectation:
         )
 
     def to_be_disabled(self) -> None:
+        __tracebackhide__ = True
+
         def check(element: UIAElement) -> _Outcome:
+            __tracebackhide__ = True
             enabled = element.is_enabled
             return _Outcome(not enabled, "enabled" if enabled else "disabled")
 
@@ -198,7 +218,10 @@ class Expectation:
         )
 
     def to_be_checked(self) -> None:
+        __tracebackhide__ = True
+
         def check(element: UIAElement) -> _Outcome:
+            __tracebackhide__ = True
             state = patterns.toggle_state(element)
             return _Outcome(state == ToggleState.On, state.name)
 
@@ -207,32 +230,43 @@ class Expectation:
         )
 
     def to_have_text(self, expected: str | re.Pattern[str]) -> None:
+        __tracebackhide__ = True
+
         def check(element: UIAElement) -> _Outcome:
+            __tracebackhide__ = True
             actual = actions.get_text(element).strip()
             return _Outcome(_text_matches(expected, actual), _describe(actual))
 
         self._assert("to_have_text", expected, lambda e: _needs(e, check))
 
     def to_contain_text(self, expected: str) -> None:
+        __tracebackhide__ = True
+
         def check(element: UIAElement) -> _Outcome:
+            __tracebackhide__ = True
             actual = actions.get_text(element)
             return _Outcome(expected in actual, _describe(actual))
 
         self._assert("to_contain_text", expected, lambda e: _needs(e, check))
 
     def to_have_value(self, expected: str | re.Pattern[str]) -> None:
+        __tracebackhide__ = True
+
         def check(element: UIAElement) -> _Outcome:
+            __tracebackhide__ = True
             actual = actions.get_value(element)
             return _Outcome(_text_matches(expected, actual), _describe(actual))
 
         self._assert("to_have_value", expected, lambda e: _needs(e, check))
 
     def to_have_count(self, n: int) -> None:
+        __tracebackhide__ = True
         target = self._target
         if not isinstance(target, BoundElements):
             raise TypeError("to_have_count() needs an Elements target")
 
         def evaluate(_: UIAElement | None) -> _Outcome:
+            __tracebackhide__ = True
             try:
                 found = len(target.resolve_all())
             except LocatorError as exc:
@@ -243,7 +277,10 @@ class Expectation:
         self._assert("to_have_count", n, evaluate)
 
     def to_be_selected(self) -> None:
+        __tracebackhide__ = True
+
         def check(element: UIAElement) -> _Outcome:
+            __tracebackhide__ = True
             selected = patterns.is_selected(element)
             return _Outcome(selected, "selected" if selected else "not selected")
 
@@ -252,7 +289,10 @@ class Expectation:
         )
 
     def to_have_property(self, name: str, expected: Any) -> None:
+        __tracebackhide__ = True
+
         def check(element: UIAElement) -> _Outcome:
+            __tracebackhide__ = True
             actual = element.get_property(name)
             return _Outcome(actual == expected, _describe(actual))
 
@@ -266,6 +306,7 @@ class Expectation:
 
 def expect(target: Target, *, timeout: float | None = None) -> Expectation:
     """Start an assertion about a bound element, elements or window."""
+    __tracebackhide__ = True
     return Expectation(target, timeout)
 
 
@@ -278,6 +319,7 @@ class _CallableModule(types.ModuleType):
     """
 
     def __call__(self, target: Target, *, timeout: float | None = None) -> Expectation:
+        __tracebackhide__ = True
         return expect(target, timeout=timeout)
 
 

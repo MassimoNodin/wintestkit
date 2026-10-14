@@ -36,10 +36,12 @@ class Mismatch:
     actual: str
 
     def to_dict(self) -> dict[str, Any]:
+        __tracebackhide__ = True
         return {"property": self.property, "expected": self.expected, "actual": self.actual}
 
     @classmethod
     def from_dict(cls, d: Mapping[str, Any]) -> Mismatch:
+        __tracebackhide__ = True
         return cls(d["property"], d["expected"], d["actual"])
 
 
@@ -52,6 +54,7 @@ class Candidate:
     mismatches: tuple[Mismatch, ...]
 
     def to_dict(self) -> dict[str, Any]:
+        __tracebackhide__ = True
         return {
             "info": self.info.to_dict(),
             "score": self.score,
@@ -60,6 +63,7 @@ class Candidate:
 
     @classmethod
     def from_dict(cls, d: Mapping[str, Any]) -> Candidate:
+        __tracebackhide__ = True
         return cls(
             ElementInfo.from_dict(d["info"]),
             d["score"],
@@ -67,6 +71,7 @@ class Candidate:
         )
 
     def format(self, position: int) -> str:
+        __tracebackhide__ = True
         info = self.info
         text = f"  {position}. {info.short()}"
         if info.class_name:
@@ -95,6 +100,7 @@ class Diagnostic:
     within: Diagnostic | None = None
 
     def to_dict(self) -> dict[str, Any]:
+        __tracebackhide__ = True
         data: dict[str, Any] = {
             "kind": self.kind,
             "message": self.message,
@@ -109,6 +115,7 @@ class Diagnostic:
 
     @classmethod
     def from_dict(cls, d: Mapping[str, Any]) -> Diagnostic:
+        __tracebackhide__ = True
         return cls(
             kind=d["kind"],
             message=d["message"],
@@ -121,6 +128,7 @@ class Diagnostic:
 
     def format(self) -> str:
         """Multi-line human-readable text for the CLI, pytest failures and the editor."""
+        __tracebackhide__ = True
         lines = [self.message, f"  Locator: {self.locator}", f"  Searched in: {self.searched_in}"]
         if self.candidates:
             lines.append("  Candidates:")
@@ -130,11 +138,13 @@ class Diagnostic:
 
 def quote(value: str) -> str:
     """Display form of a string value (JSON-quoted, matching ``describe()`` output)."""
+    __tracebackhide__ = True
     return json.dumps(value, ensure_ascii=False)
 
 
 def _window_label(window: UIAElement) -> str:
     """Quoted title, or ``<class>`` for windows without one (popups, tool windows)."""
+    __tracebackhide__ = True
     return quote(window.name) if window.name else f"<{window.class_name or 'untitled'}>"
 
 
@@ -149,6 +159,7 @@ def diagnose_window(
     ``matches`` are the windows that satisfied the locator (none → not found, several →
     ambiguous). ``candidates`` are all windows that were examined (defaults to the app's windows).
     """
+    __tracebackhide__ = True
     examined = list(candidates) if candidates is not None else app.top_level_windows()
     process = wl.process or app.process_name
     described = wl.describe()
@@ -182,6 +193,7 @@ def diagnose_window(
 
 
 def _link_checks(link: Locator, info: ElementInfo) -> list[tuple[str, Any, str]]:
+    __tracebackhide__ = True
     return [
         ("id", link.automation_id, info.automation_id),
         ("name", link.name, info.name),
@@ -192,6 +204,7 @@ def _link_checks(link: Locator, info: ElementInfo) -> list[tuple[str, Any, str]]
 
 def _score_link(link: Locator, info: ElementInfo) -> tuple[int, tuple[Mismatch, ...]]:
     """Count the link's properties that ``info`` satisfies and describe the ones it does not."""
+    __tracebackhide__ = True
     score = 0
     mismatches: list[Mismatch] = []
     for prop, expected, actual in _link_checks(link, info):
@@ -212,12 +225,14 @@ def _score_link(link: Locator, info: ElementInfo) -> tuple[int, tuple[Mismatch, 
 
 def _name_similarity(link: Locator, info: ElementInfo) -> float:
     """Similarity (0..1) between the expected and actual name; 0 unless the name is a string."""
+    __tracebackhide__ = True
     if not isinstance(link.name, str) or not info.name:
         return 0.0
     return SequenceMatcher(None, link.name.lower(), info.name.lower()).ratio()
 
 
 def _specified_property_count(link: Locator) -> int:
+    __tracebackhide__ = True
     return sum(
         value is not None
         for value in (link.automation_id, link.name, link.class_name, link.control_type)
@@ -225,6 +240,7 @@ def _specified_property_count(link: Locator) -> int:
 
 
 def _count_text(count: int) -> str:
+    __tracebackhide__ = True
     return "1 element matches" if count == 1 else f"{count} elements match"
 
 
@@ -232,6 +248,7 @@ def diagnose_not_found(
     root: UIAElement, link: Locator, searched_in: str, full_locator: Locator
 ) -> Diagnostic:
     """Explain why ``link`` matched nothing under ``root`` and list the closest elements."""
+    __tracebackhide__ = True
     scored: list[tuple[int, float, int, ElementInfo, tuple[Mismatch, ...]]] = []
     for order, element in enumerate(relaxed_descendants(root, link.control_type)):
         info = element.info()
@@ -266,6 +283,7 @@ def diagnose_not_found(
 
 
 def _match_candidates(matches: Sequence[UIAElement], link: Locator) -> tuple[Candidate, ...]:
+    __tracebackhide__ = True
     full_score = _specified_property_count(link)
     return tuple(Candidate(m.info(), full_score, ()) for m in matches[:MAX_CANDIDATES])
 
@@ -274,6 +292,7 @@ def diagnose_ambiguous(
     matches: Sequence[UIAElement], link: Locator, searched_in: str, full_locator: Locator
 ) -> Diagnostic:
     """Explain why ``link`` matched several elements."""
+    __tracebackhide__ = True
     described = link.describe_link(include_item=False)
     return Diagnostic(
         kind="ambiguous",
@@ -292,6 +311,7 @@ def diagnose_index_out_of_range(
     matches: Sequence[UIAElement], link: Locator, searched_in: str, full_locator: Locator
 ) -> Diagnostic:
     """Explain an ``index=`` that is beyond the number of matches."""
+    __tracebackhide__ = True
     return Diagnostic(
         kind="index_out_of_range",
         message=(
@@ -307,6 +327,7 @@ def diagnose_index_out_of_range(
 
 def diagnose_within_failed(link: Locator, inner: Diagnostic, full_locator: Locator) -> Diagnostic:
     """Wrap the failure of an ancestor link of ``full_locator``."""
+    __tracebackhide__ = True
     return Diagnostic(
         kind="within_failed",
         message=(
@@ -322,6 +343,7 @@ def diagnose_within_failed(link: Locator, inner: Diagnostic, full_locator: Locat
 
 
 def _score_window(wl: WindowLocator, info: ElementInfo) -> tuple[int, tuple[Mismatch, ...]]:
+    __tracebackhide__ = True
     score = 0
     mismatches: list[Mismatch] = []
     checks = (

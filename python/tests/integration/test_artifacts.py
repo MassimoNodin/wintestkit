@@ -43,7 +43,7 @@ def project(pytester: pytest.Pytester, demo_app_path: Path, launch: str = "per-s
         path = "{demo_app_path.as_posix()}"
         """
     )
-    pytester.makepyfile(screens=SCREEN)
+    pytester.makepyfile(inner_screens=SCREEN)
 
 
 def artifact_dirs(pytester: pytest.Pytester) -> list[Path]:
@@ -57,7 +57,7 @@ def test_failure_produces_window_desktop_and_tree(
     project(pytester, demo_app_path)
     pytester.makepyfile(
         test_ui="""
-        from screens import Main
+        from inner_screens import Main
 
         def test_fails(app):
             Main(app).typo.click()
@@ -85,7 +85,7 @@ def test_screenshots_off_captures_nothing(pytester: pytest.Pytester, demo_app_pa
     project(pytester, demo_app_path)
     pytester.makepyfile(
         test_ui="""
-        from screens import Main
+        from inner_screens import Main
 
         def test_fails(app):
             Main(app).typo.click()
@@ -109,7 +109,7 @@ def test_artifact_failures_never_fail_the_test(
     project(pytester, demo_app_path)
     pytester.makepyfile(
         test_ui="""
-        from screens import Main
+        from inner_screens import Main
 
         def test_fails(app):
             Main(app).typo.click()
@@ -128,7 +128,7 @@ def test_failure_artifacts_are_reported_in_the_event_stream(
     project(pytester, demo_app_path)
     pytester.makepyfile(
         test_ui="""
-        from screens import Main
+        from inner_screens import Main
 
         def test_fails(app):
             Main(app).typo.click()
@@ -153,7 +153,7 @@ def test_every_step_mode_captures_one_png_per_step(
     project(pytester, demo_app_path)
     pytester.makepyfile(
         test_ui="""
-        from screens import Main
+        from inner_screens import Main
         from wintestkit import expect
 
         def test_steps(app):
@@ -189,7 +189,7 @@ def test_per_session_launches_the_app_once(
     project(pytester, demo_app_path, launch="per-session")
     pytester.makepyfile(
         test_ui="""
-        from screens import Main
+        from inner_screens import Main
 
         def test_one(app):
             Main(app).sign_in.wait_for("visible")
@@ -213,7 +213,7 @@ def test_per_test_launches_twice(
     project(pytester, demo_app_path, launch="per-test")
     pytester.makepyfile(
         test_ui="""
-        from screens import Main
+        from inner_screens import Main
 
         def test_one(app):
             Main(app).sign_in.wait_for("visible")
