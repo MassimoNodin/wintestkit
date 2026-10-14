@@ -1,0 +1,120 @@
+[
+  {
+    "locator": { "controlType": "Button", "name": "Sign in" },
+    "describe": "Button[name=\"Sign in\"]"
+  },
+  {
+    "locator": { "controlType": "Edit", "className": "TextBox", "index": 0 },
+    "describe": "Edit[class=\"TextBox\", index=0]"
+  },
+  {
+    "locator": { "automationId": "StatusText" },
+    "describe": "*[id=\"StatusText\"]"
+  },
+  {
+    "locator": { "controlType": "Text", "name": { "regex": "invalid", "flags": "i" } },
+    "describe": "Text[name=/invalid/i]"
+  },
+  {
+    "locator": { "controlType": "ListItem", "name": { "regex": "^Item \\d+$" } },
+    "describe": "ListItem[name=/^Item \\d+$/]"
+  },
+  {
+    "locator": {
+      "controlType": "Edit",
+      "className": "PasswordBox",
+      "within": { "controlType": "Group", "name": "Credentials" }
+    },
+    "describe": "Group[name=\"Credentials\"] > Edit[class=\"PasswordBox\"]"
+  },
+  {
+    "locator": {
+      "controlType": "Button",
+      "name": "OK",
+      "within": {
+        "controlType": "Group",
+        "name": "Panel B",
+        "within": { "controlType": "Pane", "automationId": "Content" }
+      }
+    },
+    "describe": "Pane[id=\"Content\"] > Group[name=\"Panel B\"] > Button[name=\"OK\"]"
+  },
+  {
+    "locator": { "controlType": "DataGrid", "item": { "kind": "row", "row": 3 } },
+    "describe": "DataGrid > row(3)"
+  },
+  {
+    "locator": {
+      "controlType": "DataGrid",
+      "automationId": "ProductsGrid",
+      "item": { "kind": "cell", "row": 5, "column": "Name" }
+    },
+    "describe": "DataGrid[id=\"ProductsGrid\"] > cell(5, \"Name\")"
+  },
+  {
+    "locator": {
+      "controlType": "DataGrid",
+      "item": { "kind": "cell", "row": 2, "column": 1 }
+    },
+    "describe": "DataGrid > cell(2, 1)"
+  },
+  {
+    "locator": {
+      "controlType": "Button",
+      "name": "Save",
+      "window": { "title": "WTK Demo - Dialog" }
+    },
+    "describe": "Window[title=\"WTK Demo - Dialog\"] >> Button[name=\"Save\"]"
+  },
+  {
+    "locator": {
+      "controlType": "Button",
+      "name": "OK",
+      "window": { "className": "#32770" }
+    },
+    "describe": "Window[class=\"#32770\"] >> Button[name=\"OK\"]"
+  },
+  {
+    "locator": { "controlType": "Button", "index": 1 },
+    "describe": "Button[index=1]"
+  },
+  {
+    "locator": { "index": 0 },
+    "describe": "*[index=0]"
+  },
+  {
+    "locator": { "controlType": "Button", "name": "Go", "depth": 2 },
+    "describe": "Button[name=\"Go\", depth=2]"
+  },
+  {
+    "locator": {
+      "automationId": "A",
+      "name": "B",
+      "className": "C",
+      "controlType": "CheckBox",
+      "index": 2,
+      "depth": 3
+    },
+    "describe": "CheckBox[id=\"A\", name=\"B\", class=\"C\", index=2, depth=3]"
+  },
+  {
+    "locator": { "name": "Say \"hi\"\\now" },
+    "describe": "*[name=\"Say \\\"hi\\\"\\\\now\"]"
+  },
+  {
+    "locator": { "name": "héllo ✓" },
+    "describe": "*[name=\"héllo ✓\"]"
+  },
+  {
+    "locator": {
+      "controlType": "Button",
+      "name": { "regex": "a.b", "flags": "ims" },
+      "window": { "process": "DemoApp.exe", "title": { "regex": "^WTK" }, "index": 1 }
+    },
+    "describe": "Window[title=/^WTK/, process=\"DemoApp.exe\", index=1] >> Button[name=/a.b/ims]"
+  },
+  {
+    "locator": { "controlType": "Edit", "window": {}, "className": "TextBox" },
+    "describe": "Window >> Edit[class=\"TextBox\"]"
+  }
+]
