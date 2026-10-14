@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta
+            http-equiv="Content-Security-Policy"
+            content="default-src 'none'; style-src {{cspSource}}; font-src {{cspSource}}; script-src 'nonce-{{nonce}}'"
+        />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <link rel="stylesheet" href="{{icons}}" />
+        <link rel="stylesheet" href="{{css}}" />
+        <title>WinTestKit Spy</title>
+    </head>
+    <body>
+        <header>
+            <button id="pick">
+                <span class="codicon codicon-inspect" aria-hidden="true"></span>
+                Pick</button
+            ><button id="refresh" aria-label="Refresh">
+                <span
+                    class="codicon codicon-refresh"
+                    aria-hidden="true"
+                ></span></button
+            ><span id="state"></span><button id="launch">Launch app</button>
+        </header>
+        <p id="hint" role="status" aria-live="polite"></p>
+        <section id="tree-region">
+            <ul id="tree" role="tree" aria-label="Application controls"></ul>
+        </section>
+        <div
+            id="splitter"
+            role="separator"
+            tabindex="0"
+            aria-label="Resize control tree"
+            aria-orientation="horizontal"
+        ></div>
+        <section id="details">
+            <h2>Properties</h2>
+            <table>
+                <tbody id="properties"></tbody>
+            </table>
+            <details>
+                <summary>All properties</summary>
+                <table>
+                    <tbody id="all-properties"></tbody>
+                </table>
+            </details>
+            <h2>Suggested locator</h2>
+            <p id="badge"></p>
+            <pre><code id="code"></code></pre>
+            <div>
+                <button id="copy" disabled>Copy</button
+                ><button id="add" disabled>Add to screen…</button
+                ><button id="highlight" disabled>Highlight</button>
+            </div>
+        </section>
+        <script nonce="{{nonce}}" src="{{js}}"></script>
+    </body>
+</html>

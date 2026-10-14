@@ -168,6 +168,130 @@ suite("WinTestKit activation", () => {
       ),
     );
   });
+  test("inspects live controls through the Spy bridge", async function () {
+    this.timeout(120000);
+    const extension = vscode.extensions.getExtension("wintestkit.wintestkit");
+    assert.ok(extension);
+    const spy = (
+      extension.exports as {
+        spy: {
+          resolveWebviewView(view: vscode.WebviewView): Promise<void>;
+          refresh(): Promise<void>;
+        };
+      }
+    ).spy;
+    type Node = {
+      nodeId: string;
+      hasChildren: boolean;
+      info: { name: string; controlType: string };
+    };
+    type Message = {
+      type: string;
+      nodeId?: string;
+      nodes?: Node[];
+      suggestion?: { code: string; unique: boolean };
+      picking?: boolean;
+    };
+    const messages: Message[] = [];
+    let receive: (value: unknown) => void = () => {};
+    let disposeView: () => void = () => {};
+    const disposable = () => ({ dispose() {} });
+    const webview = {
+      options: {},
+      html: "",
+      cspSource: "vscode-resource:",
+      asWebviewUri: (uri: vscode.Uri) => uri,
+      postMessage: (message: Message) => {
+        messages.push(message);
+        return Promise.resolve(true);
+      },
+      onDidReceiveMessage: (callback: (value: unknown) => void) => {
+        receive = callback;
+        return disposable();
+      },
+    };
+    const view = {
+      webview,
+      visible: true,
+      onDidChangeVisibility: disposable,
+      onDidDispose: (callback: () => void) => {
+        disposeView = callback;
+        return disposable();
+      },
+    };
+    const wait = async (predicate: () => boolean) => {
+      for (let attempt = 0; attempt < 100; attempt++) {
+        if (predicate()) return;
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      assert.fail(
+        "Spy message did not arrive: " + JSON.stringify(messages.slice(-3)),
+      );
+    };
+    try {
+      await vscode.commands.executeCommand("wintestkit.launchApp");
+      await spy.resolveWebviewView(view as unknown as vscode.WebviewView);
+      await spy.refresh();
+      assert.ok(webview.html.includes("default-src 'none'"));
+      const pending = [
+        ...(messages.find((message) => message.type === "roots")?.nodes ?? []),
+      ];
+      let signIn: Node | undefined;
+      for (let visited = 0; pending.length && visited < 150; visited++) {
+        const node = pending.shift()!;
+        if (
+          node.info.controlType === "Button" &&
+          node.info.name === "Sign in"
+        ) {
+          signIn = node;
+          break;
+        }
+        if (!node.hasChildren) continue;
+        receive({ type: "expand", nodeId: node.nodeId });
+        await wait(() =>
+          messages.some(
+            (message) =>
+              message.type === "children" && message.nodeId === node.nodeId,
+          ),
+        );
+        pending.push(
+          ...messages.find(
+            (message) =>
+              message.type === "children" && message.nodeId === node.nodeId,
+          )!.nodes!,
+        );
+      }
+      assert.ok(signIn, "Spy finds the demo Sign in button");
+      receive({ type: "select", nodeId: signIn.nodeId });
+      await wait(() =>
+        messages.some(
+          (message) =>
+            message.type === "selected" && message.nodeId === signIn!.nodeId,
+        ),
+      );
+      const selected = messages.find(
+        (message) =>
+          message.type === "selected" && message.nodeId === signIn!.nodeId,
+      )!;
+      assert.ok(selected.suggestion?.code.includes('name="Sign in"'));
+      assert.equal(selected.suggestion?.unique, true);
+      receive({ type: "pick" });
+      await wait(() =>
+        messages.some(
+          (message) => message.type === "state" && message.picking === true,
+        ),
+      );
+      receive({ type: "stopPick" });
+      await wait(
+        () =>
+          messages.at(-1)?.type === "state" &&
+          messages.at(-1)?.picking === false,
+      );
+    } finally {
+      disposeView();
+      await vscode.commands.executeCommand("wintestkit.closeApp");
+    }
+  });
   test("debugs tests and stops at user-code breakpoints", async function () {
     this.timeout(120000);
     const extension = vscode.extensions.getExtension("wintestkit.wintestkit");

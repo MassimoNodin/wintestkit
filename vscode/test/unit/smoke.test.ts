@@ -17,7 +17,9 @@ const mocks = vi.hoisted(() => ({
   registerTreeDataProvider: vi.fn<
     (id: string, provider: unknown) => vscode.Disposable
   >(() => ({ dispose: vi.fn() })),
-  registerWebviewViewProvider: vi.fn(() => ({ dispose: vi.fn() })),
+  registerWebviewViewProvider: vi.fn<
+    (id: string, provider: unknown) => vscode.Disposable
+  >(() => ({ dispose: vi.fn() })),
 }));
 
 vi.mock("vscode", () => ({
@@ -111,6 +113,16 @@ vi.mock("../../src/editor/highlightCommands", () => ({
 }));
 
 import { activate } from "../../src/extension";
+vi.mock("../../src/spy/spyView", () => ({
+  SpyView: class {
+    constructor() {
+      mocks.registerWebviewViewProvider("wintestkit.spy", {});
+      mocks.registerCommand("wintestkit.spy.startPick", () => {});
+      mocks.registerCommand("wintestkit.spy.refresh", () => {});
+    }
+    dispose() {}
+  },
+}));
 vi.mock("../../src/views/elementsTree", () => ({
   ElementsTree: class {
     constructor() {

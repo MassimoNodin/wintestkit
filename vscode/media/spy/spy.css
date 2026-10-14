@@ -1,0 +1,125 @@
+body {
+    padding: 8px;
+    font-family: var(--vscode-font-family);
+    font-size: var(--vscode-font-size);
+    color: var(--vscode-foreground);
+    background: var(--vscode-sideBar-background);
+}
+header {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+button {
+    color: var(--vscode-button-foreground);
+    background: var(--vscode-button-background);
+    border: 1px solid var(--vscode-contrastBorder, transparent);
+    padding: 4px 8px;
+    cursor: pointer;
+}
+button:hover {
+    background: var(--vscode-button-hoverBackground);
+}
+button:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+button:focus-visible,
+[tabindex]:focus-visible,
+summary:focus-visible {
+    outline: 1px solid var(--vscode-focusBorder);
+    outline-offset: 1px;
+}
+[hidden] {
+    display: none !important;
+}
+#state,
+#hint,
+.metadata {
+    color: var(--vscode-descriptionForeground);
+}
+#hint {
+    min-height: 2em;
+}
+#tree-region {
+    height: 42vh;
+    min-height: 80px;
+    overflow: auto;
+}
+ul {
+    list-style: none;
+    padding-left: 16px;
+    margin: 0;
+}
+#tree {
+    padding-left: 0;
+}
+.node {
+    display: flex;
+    align-items: center;
+    min-width: max-content;
+}
+.node button {
+    background: transparent;
+    color: var(--vscode-foreground);
+    border: none;
+    text-align: left;
+}
+.node .toggle {
+    width: 22px;
+    padding: 3px;
+}
+.node .label {
+    padding: 3px;
+}
+.node.selected {
+    background: var(--vscode-list-activeSelectionBackground);
+    color: var(--vscode-list-activeSelectionForeground);
+    outline: 1px solid var(--vscode-contrastActiveBorder, transparent);
+}
+.node.selected button {
+    color: var(--vscode-list-activeSelectionForeground);
+}
+.metadata {
+    padding-left: 5px;
+}
+#splitter {
+    height: 6px;
+    cursor: ns-resize;
+    background: var(--vscode-panel-border);
+    margin: 6px 0;
+}
+h2 {
+    font-size: inherit;
+    margin: 12px 0 6px;
+}
+table {
+    border-collapse: collapse;
+    width: 100%;
+}
+th,
+td {
+    text-align: left;
+    vertical-align: top;
+    padding: 3px;
+    border-bottom: 1px solid var(--vscode-panel-border);
+    overflow-wrap: anywhere;
+}
+th {
+    font-weight: normal;
+    color: var(--vscode-descriptionForeground);
+}
+pre {
+    padding: 8px;
+    overflow: auto;
+    background: var(--vscode-textCodeBlock-background);
+    font-family: var(--vscode-editor-font-family);
+}
+#badge {
+    color: var(--vscode-descriptionForeground);
+}
+summary {
+    cursor: pointer;
+    padding: 6px 0;
+}
