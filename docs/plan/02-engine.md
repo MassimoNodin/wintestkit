@@ -226,6 +226,11 @@ Layering rule (enforced in review): `uia/` imports nothing from `engine/`, `app.
   `(200, 3)`; `grid_item(grid, 150, 1)` returns a cell whose name is `Product 151` (record whether
   GetItem realizes/scrolls the row in the PR); `column_headers` names are `Id, Name, Qty`;
   `window_close` on the NoteDialog closes it.
+- **Findings (implemented):** `grid_item(grid, 150, 1)` returns a `Custom`-typed cell named
+  `Product 151` that is already on screen — `GetItem` realizes and scrolls the row into view.
+  `find_item_by_property(list, None, None, None)` returns the first item (`ListItem "Item 1"`).
+  Patterns are obtained with `GetCurrentPattern(id).QueryInterface(IUIAutomation<Name>Pattern)`
+  because `GetCurrentPatternAs` takes a raw GUID pointer that comtypes does not marshal well.
 
 ---
 

@@ -162,7 +162,7 @@ def _control_view_condition(condition: Any | None) -> Any:
     return uia.CreateAndCondition(view, condition)
 
 
-def _array_to_list(array: Any, cached: bool = False) -> list[UIAElement]:
+def array_to_list(array: Any, cached: bool = False) -> list[UIAElement]:
     if array is None:
         return []
     return [UIAElement(array.GetElement(i), cached=cached) for i in range(array.Length)]
@@ -312,7 +312,7 @@ class UIAElement:
                 array = self.raw.FindAllBuildCache(int(scope), cond, _get_cache_request())
             else:
                 array = self.raw.FindAll(int(scope), cond)
-            return _array_to_list(array, cached=cached)
+            return array_to_list(array, cached=cached)
 
     def find_first(self, scope: TreeScope, condition: Any | None = None) -> UIAElement | None:
         with com.wrap_com_errors:
