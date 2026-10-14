@@ -1,0 +1,45 @@
+[project]
+name = "wintestkit"
+dynamic = ["version"]
+description = "UI test automation for Windows WPF applications"
+readme = "README.md"
+requires-python = ">=3.12"
+license = "MIT"
+dependencies = ["comtypes>=1.4.8"]
+classifiers = ["Operating System :: Microsoft :: Windows", "Framework :: Pytest"]
+
+[project.scripts]
+wtk = "wintestkit.cli:main"
+
+[project.entry-points.pytest11]
+wintestkit = "wintestkit.pytest_plugin"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "src/wintestkit/__init__.py"
+
+[dependency-groups]
+dev = ["pytest>=8.3", "ruff>=0.7", "pyright>=1.1.390", "jsonschema>=4.23"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]
+
+[tool.pyright]
+include = ["src"]
+typeCheckingMode = "strict"
+pythonVersion = "3.12"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "integration: needs an interactive desktop and the built demo app",
+    "slow: takes more than 5 seconds",
+]
+addopts = "-p no:wintestkit"

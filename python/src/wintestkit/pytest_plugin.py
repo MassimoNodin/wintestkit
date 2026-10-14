@@ -1,0 +1,1 @@
+"""WinTestKit pytest plugin placeholder."""
