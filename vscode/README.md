@@ -10,6 +10,11 @@ highlight it, inspect properties and patterns, and copy a suggested locator.
 Pick mode uses Ctrl+Click to select a hovered control; Esc cancels. Hiding the
 view stops picking. Stale controls refresh automatically.
 
+Use **Add to screen…** to insert a picked locator into an existing screen or a
+new screen file. The editor adds required imports, reuses matching container
+helpers, preserves indentation, and reveals the new attribute. The change stays
+in the editor so you can review it before saving.
+
 UI test automation for Windows WPF applications.
 
 The extension resolves the selected Python interpreter (or `wintestkit.pythonPath`),
