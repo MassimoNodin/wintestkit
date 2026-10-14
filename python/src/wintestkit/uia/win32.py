@@ -82,6 +82,7 @@ BI_RGB = 0
 
 WM_PAINT = 0x000F
 WM_DESTROY = 0x0002
+WM_CLOSE = 0x0010
 WM_QUIT = 0x0012
 WM_APP = 0x8000
 
@@ -286,6 +287,7 @@ GetMessageW = _declare(user32, "GetMessageW", _I, ctypes.POINTER(MSG), HWND, _U,
 PeekMessageW = _declare(user32, "PeekMessageW", _B, ctypes.POINTER(MSG), HWND, _U, _U, _U)
 TranslateMessage = _declare(user32, "TranslateMessage", _B, ctypes.POINTER(MSG))
 DispatchMessageW = _declare(user32, "DispatchMessageW", LRESULT, ctypes.POINTER(MSG))
+PostMessageW = _declare(user32, "PostMessageW", _B, HWND, _U, WPARAM, LPARAM)
 PostThreadMessageW = _declare(user32, "PostThreadMessageW", _B, _D, _U, WPARAM, LPARAM)
 CreateWindowExW = _declare(
     user32,
