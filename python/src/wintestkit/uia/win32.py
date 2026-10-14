@@ -61,6 +61,7 @@ SM_CXVIRTUALSCREEN = 78
 SM_CYVIRTUALSCREEN = 79
 
 GW_OWNER = 4
+GA_ROOT = 2
 SW_RESTORE = 9
 ASFW_ANY = 0xFFFFFFFF
 
@@ -259,6 +260,7 @@ SetForegroundWindow = _declare(user32, "SetForegroundWindow", _B, HWND)
 AllowSetForegroundWindow = _declare(user32, "AllowSetForegroundWindow", _B, _D)
 ShowWindow = _declare(user32, "ShowWindow", _B, HWND, _I)
 IsWindowVisible = _declare(user32, "IsWindowVisible", _B, HWND)
+GetAncestor = _declare(user32, "GetAncestor", HWND, HWND, _U)
 GetWindow = _declare(user32, "GetWindow", HWND, HWND, _U)
 GetWindowThreadProcessId = _declare(
     user32, "GetWindowThreadProcessId", _D, HWND, ctypes.POINTER(_D)
@@ -421,6 +423,11 @@ def top_level_windows(pid_set: set[int] | None = None, visible_only: bool = True
 
     EnumWindows(callback, 0)
     return found
+
+
+def root_window(hwnd: int) -> int:
+    """The top-level ancestor of ``hwnd`` (the window itself if it is top level)."""
+    return int(GetAncestor(hwnd, GA_ROOT) or hwnd)
 
 
 def window_owner(hwnd: int) -> int:
