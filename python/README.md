@@ -51,3 +51,10 @@ ancestor chain, including supported patterns. Coordinates are physical screen
 pixels; use `--at=-100,200` for negative coordinates. Button text is normalized
 to its containing button. Points outside the configured app fail without
 inspecting another process. Window and point selection options are mutually exclusive.
+
+The suggestion engine (`wintestkit.engine.suggest`) verifies generated locators
+against the selected element, prioritizing stable IDs, names, classes, scoped
+ancestors, and finally positional indices. Helpers precede dependent declarations;
+index suggestions are fragile if the UI order changes. In the current demo the
+username TextBox is globally unique, so the documented candidate ordering selects
+`class_name` rather than the plan example expected `within=credentials`.
