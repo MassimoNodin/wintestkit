@@ -14,7 +14,9 @@ const mocks = vi.hoisted(() => ({
     (command: string, callback: () => void) => vscode.Disposable
   >(() => ({ dispose: vi.fn() })),
   executeCommand: vi.fn(() => Promise.resolve()),
-  registerTreeDataProvider: vi.fn(() => ({ dispose: vi.fn() })),
+  registerTreeDataProvider: vi.fn<
+    (id: string, provider: unknown) => vscode.Disposable
+  >(() => ({ dispose: vi.fn() })),
   registerWebviewViewProvider: vi.fn(() => ({ dispose: vi.fn() })),
 }));
 
@@ -109,6 +111,15 @@ vi.mock("../../src/editor/highlightCommands", () => ({
 }));
 
 import { activate } from "../../src/extension";
+vi.mock("../../src/views/elementsTree", () => ({
+  ElementsTree: class {
+    constructor() {
+      mocks.registerTreeDataProvider("wintestkit.elements", {});
+      mocks.registerCommand("wintestkit.elements.goTo", () => {});
+    }
+    dispose() {}
+  },
+}));
 vi.mock("../../src/init", () => ({
   registerInitialize: () =>
     mocks.registerCommand("wintestkit.initProject", () => {}),

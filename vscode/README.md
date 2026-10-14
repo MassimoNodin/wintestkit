@@ -1,5 +1,10 @@
 # WinTestKit
 
+The Elements view mirrors discovered screens and nests elements under their
+`within` containers. Click an entry to jump to its definition; inline actions
+highlight or check elements and check complete screens. Check results update the
+tree icons. Multiple project roots appear as separate groups.
+
 UI test automation for Windows WPF applications.
 
 The extension resolves the selected Python interpreter (or `wintestkit.pythonPath`),
