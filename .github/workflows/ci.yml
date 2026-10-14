@@ -1,0 +1,94 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: python
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+          enable-cache: true
+          cache-dependency-glob: python/uv.lock
+      - name: Install dependencies
+        working-directory: .
+        run: uv sync --directory python --locked
+      - name: Lint
+        run: uv run ruff check .
+      - name: Check formatting
+        run: uv run ruff format --check .
+      - name: Check types
+        run: uv run pyright
+      - name: Run unit tests
+        run: uv run pytest -m "not integration" --junitxml=junit-python.xml
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-test-results
+          path: python/junit-python.xml
+          if-no-files-found: warn
+
+  extension:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: vscode
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: vscode/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Check generated protocol types
+        if: hashFiles('schemas/*.schema.json') != ''
+        run: |
+          git ls-files --error-unmatch src/protocol/generated.ts
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run gen:types
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          git diff --exit-code src/protocol/generated.ts
+      - name: Lint
+        run: npm run lint
+      - name: Check types
+        run: npm run typecheck
+      - name: Run unit tests
+        run: npm test
+      - name: Package extension
+        run: npm run package
+      - name: Upload extension
+        uses: actions/upload-artifact@v4
+        with:
+          name: vscode-extension
+          path: vscode/dist/*.vsix
+          if-no-files-found: error
+
+  demo:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Build demo
+        run: dotnet build demo/DemoApp/DemoApp.csproj -c Release -warnaserror
+      - name: Upload demo
+        uses: actions/upload-artifact@v4
+        with:
+          name: demo-app
+          path: demo/DemoApp/bin/Release/net8.0-windows/
+          if-no-files-found: error

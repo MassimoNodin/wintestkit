@@ -59,4 +59,14 @@ Open the repository in VS Code and use the Run Extension launch configuration (F
 The scaffold logs `WinTestKit activated` to the WinTestKit output channel; commands other than
 Show Output are placeholders. Packaging writes a Windows x64 VSIX into `vscode/dist/`.
 
+### Continuous integration
+
+The CI workflow runs on Windows for pushes to `main`/`master` and pull requests. Independent
+jobs check Python lint, formatting, types, and unit tests; lint, typecheck, test, and package the
+extension; and build the demo with warnings treated as errors. Artifacts include Python JUnit
+results, the Windows x64 VSIX, and the demo executable with its runtime files.
+
+The generated protocol-type check activates when T0.5 introduces JSON schemas. Desktop
+integration tests remain local until the dedicated T7.3 integration job is implemented.
+
 Created in [T3 Code](https://t3.codes).
