@@ -39,6 +39,9 @@ jobs:
           name: python-test-results
           path: python/junit-python.xml
           if-no-files-found: warn
+      - name: Check wheel
+        working-directory: .
+        run: ./scripts/check_wheel.ps1
 
   extension:
     runs-on: windows-latest
