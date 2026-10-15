@@ -263,6 +263,212 @@ describe("Spy view bridge", () => {
     ).toBe(true);
     fixture.provider.dispose();
   });
+  it("shows basic properties before a slow locator is ready", async () => {
+    let finishLocator: (value: unknown) => void = () => {};
+    mocks.request.mockImplementation((method: string) => {
+      if (method === "inspect.properties")
+        return Promise.resolve({
+          info: { name: "Save" },
+          properties: {},
+          ancestors: [],
+        });
+      if (method === "suggest.locator")
+        return new Promise((resolve) => {
+          finishLocator = resolve;
+        });
+      return Promise.resolve(undefined);
+    });
+    const fixture = await create();
+    fixture.receive({ type: "select", nodeId: "control" });
+    await vi.waitFor(() =>
+      expect(fixture.sent.some((message) => message.type === "selected")).toBe(
+        true,
+      ),
+    );
+    expect(mocks.request).toHaveBeenCalledWith("inspect.properties", {
+      nodeId: "control",
+    });
+    expect(
+      fixture.sent.find((message) => message.type === "selected"),
+    ).not.toHaveProperty("suggestion");
+    expect(fixture.sent.some((message) => message.type === "suggestion")).toBe(
+      false,
+    );
+    finishLocator({ helpers: [], code: "Element()" });
+    await vi.waitFor(() =>
+      expect(
+        fixture.sent.some((message) => message.type === "suggestion"),
+      ).toBe(true),
+    );
+    fixture.provider.dispose();
+  });
+  it("requests ancestors only when revealing a picked control", async () => {
+    mocks.request.mockImplementation((method: string) =>
+      Promise.resolve(
+        method === "inspect.properties"
+          ? { info: {}, properties: {}, ancestors: [] }
+          : method === "inspect.roots"
+            ? []
+            : undefined,
+      ),
+    );
+    const fixture = await create();
+    fixture.receive({ type: "pick" });
+    await vi.waitFor(() =>
+      expect(mocks.notifications.has("spy.picked")).toBe(true),
+    );
+    mocks.notifications.get("spy.picked")?.({
+      node: { nodeId: "picked", info: { controlType: "Button", name: "Save" } },
+      suggestion: { helpers: [], code: "Element()" },
+    });
+    await vi.waitFor(() =>
+      expect(fixture.sent.some((message) => message.type === "selected")).toBe(
+        true,
+      ),
+    );
+    expect(mocks.request).toHaveBeenCalledWith("inspect.properties", {
+      nodeId: "picked",
+      includeAncestors: true,
+    });
+    fixture.provider.dispose();
+  });
+  it("reveals a picked control from fresh roots down through unloaded ancestors", async () => {
+    const node = (nodeId: string) => ({
+      nodeId,
+      hasChildren: true,
+      info: { name: nodeId, controlType: "Pane", processId: 123 },
+    });
+    const desktop = node("desktop");
+    const root = node("app");
+    const panel = node("panel");
+    const picked = node("picked");
+    mocks.request.mockImplementation(
+      (method: string, params?: { nodeId: string }) => {
+        if (method === "inspect.properties")
+          return Promise.resolve({
+            info: picked.info,
+            properties: {},
+            ancestors: [desktop, root, panel],
+          });
+        if (method === "inspect.roots") return Promise.resolve([root]);
+        if (method === "inspect.children")
+          return Promise.resolve(params?.nodeId === "app" ? [panel] : [picked]);
+        return Promise.resolve(undefined);
+      },
+    );
+    const fixture = await create();
+    fixture.receive({ type: "pick" });
+    await vi.waitFor(() =>
+      expect(mocks.notifications.has("spy.picked")).toBe(true),
+    );
+    mocks.notifications.get("spy.picked")?.({
+      node: picked,
+      suggestion: { helpers: [], code: "Element()" },
+    });
+    await vi.waitFor(() =>
+      expect(fixture.sent.some((message) => message.type === "selected")).toBe(
+        true,
+      ),
+    );
+    expect(
+      fixture.sent.filter((message) =>
+        ["roots", "children", "picked"].includes(message.type),
+      ),
+    ).toEqual([
+      { type: "roots", nodes: [root] },
+      { type: "children", nodeId: "app", nodes: [panel] },
+      { type: "children", nodeId: "panel", nodes: [picked] },
+      {
+        type: "picked",
+        node: picked,
+        suggestion: { helpers: [], code: "Element()" },
+        ancestors: [desktop, root, panel],
+      },
+    ]);
+    expect(mocks.request).not.toHaveBeenCalledWith("inspect.children", {
+      nodeId: "desktop",
+    });
+    expect(mocks.icons).toHaveBeenCalledWith([123]);
+    fixture.provider.dispose();
+  });
+  it("loads full properties only for the explicit button request", async () => {
+    mocks.request.mockResolvedValue({
+      info: {},
+      properties: { Name: "Save" },
+      ancestors: [],
+    });
+    const fixture = await create();
+    expect(mocks.request).not.toHaveBeenCalled();
+    fixture.receive({ type: "loadProperties", nodeId: "control" });
+    await vi.waitFor(() =>
+      expect(
+        fixture.sent.some((message) => message.type === "allProperties"),
+      ).toBe(true),
+    );
+    expect(mocks.request).toHaveBeenCalledWith("inspect.properties", {
+      nodeId: "control",
+      full: true,
+    });
+    expect(
+      fixture.sent.filter((message) => message.type === "propertiesLoading"),
+    ).toEqual([
+      { type: "propertiesLoading", nodeId: "control", loading: true },
+      { type: "propertiesLoading", nodeId: "control", loading: false },
+    ]);
+    fixture.provider.dispose();
+  });
+  it("allows retrying a failed full-property request", async () => {
+    mocks.request.mockRejectedValue(new Error("properties unavailable"));
+    const fixture = await create();
+    fixture.receive({ type: "loadProperties", nodeId: "control" });
+    await vi.waitFor(() =>
+      expect(fixture.sent.some((message) => message.type === "error")).toBe(
+        true,
+      ),
+    );
+    expect(
+      fixture.sent
+        .filter((message) => message.type === "propertiesLoading")
+        .at(-1),
+    ).toMatchObject({ loading: false, nodeId: "control" });
+    fixture.provider.dispose();
+  });
+  it("discards full properties after another object is selected", async () => {
+    let finishProperties: (value: unknown) => void = () => {};
+    mocks.request.mockImplementation(
+      (method: string, params: { full?: boolean }) => {
+        if (method === "inspect.properties" && params.full)
+          return new Promise((resolve) => {
+            finishProperties = resolve;
+          });
+        return Promise.resolve(
+          method === "inspect.properties"
+            ? { info: {}, properties: {}, ancestors: [] }
+            : { helpers: [], code: "Element()" },
+        );
+      },
+    );
+    const fixture = await create();
+    fixture.receive({ type: "loadProperties", nodeId: "old" });
+    await vi.waitFor(() =>
+      expect(mocks.request).toHaveBeenCalledWith("inspect.properties", {
+        nodeId: "old",
+        full: true,
+      }),
+    );
+    fixture.receive({ type: "select", nodeId: "new" });
+    await vi.waitFor(() =>
+      expect(fixture.sent.some((message) => message.type === "selected")).toBe(
+        true,
+      ),
+    );
+    finishProperties({ info: {}, properties: {}, ancestors: [] });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(
+      fixture.sent.some((message) => message.type === "allProperties"),
+    ).toBe(false);
+    fixture.provider.dispose();
+  });
   it("scopes successful inspection progress to the selected-object pane", async () => {
     mocks.request.mockImplementation((method: string) =>
       Promise.resolve(

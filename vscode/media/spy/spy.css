@@ -220,6 +220,17 @@ summary {
 }
 .empty-state[data-loading="true"] > .codicon {
     color: var(--accent);
+    width: 28px;
+    height: 28px;
+    line-height: 28px;
+    flex-shrink: 0;
+    transform-origin: center;
+    animation: empty-state-spin 1s linear infinite;
+}
+@keyframes empty-state-spin {
+    to {
+        transform: rotate(360deg);
+    }
 }
 .pane-loading {
     flex: 1;
@@ -360,6 +371,9 @@ ul {
     }
 }
 @media (prefers-reduced-motion: reduce) {
+    .empty-state[data-loading="true"] > .codicon {
+        animation: none;
+    }
     .pane-loading progress:indeterminate {
         animation: none;
     }
@@ -447,6 +461,13 @@ ul {
 }
 summary {
     cursor: pointer;
+}
+.property-loading-actions {
+    padding: 10px 12px;
+}
+.property-loading-actions p {
+    margin: 8px 0 0;
+    font-size: 11px;
 }
 table {
     border-collapse: collapse;

@@ -178,8 +178,28 @@
                                 <tbody id="automation-properties"></tbody>
                             </table>
                         </section>
-                        <details class="property-group">
+                        <details
+                            id="all-properties-section"
+                            class="property-group"
+                        >
                             <summary>All properties</summary>
+                            <div class="property-loading-actions">
+                                <button
+                                    id="load-properties"
+                                    class="secondary"
+                                    disabled
+                                >
+                                    Load all properties
+                                </button>
+                                <p
+                                    id="properties-status"
+                                    class="muted"
+                                    role="status"
+                                >
+                                    Additional properties and supported patterns
+                                    load on demand.
+                                </p>
+                            </div>
                             <table>
                                 <tbody id="all-properties"></tbody>
                             </table>
