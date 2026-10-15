@@ -76,7 +76,7 @@ The **Spy** view explores the live UI Automation tree of the application.
 
 ## Projects
 
-Every folder with a `pyproject.toml` that contains `[tool.wintestkit]` is a project, including
+Every folder with `wintestkit.yaml` or a `pyproject.toml` containing `[tool.wintestkit]` is a project, including
 nested folders and multi-root workspaces. Each project has its own server, tests and elements.
 **WinTestKit: Initialize Project** creates the starter files described in
 [Getting started](getting-started.md).
@@ -86,7 +86,24 @@ supported patterns, expand **All properties** and click **Load all properties**.
 state stays inside the inspector, and you can retry if the request fails. Locator generation
 does not block the basic property display.
 
-## Settings
+## Project Configuration
+
+**Current Setup**, above Pages, shows the application name and executable icon (with a
+generic fallback). Click the row or gear to configure it. In multi-project workspaces,
+it follows the active source file.
+
+The custom YAML editor offers **This machine** and **Shared project** tabs. Override
+checkboxes control inheritance. Save with the toolbar or Ctrl+S; **Open YAML** switches
+to raw text for advanced settings. Comments and other settings are preserved. Saving
+reloads the backend and refreshes Current Setup. Invalid settings show actionable errors.
+
+Executable paths, working directories, arguments and viewing preferences are edited in
+ignored `wintestkit.local.yaml`; shareable defaults go in `wintestkit.yaml`. Missing files
+and ignore rules are created without replacing existing configuration. Files already
+tracked by Git are not automatically untracked. Environment and CLI options still override
+file settings when running tests. See [configuration](running-tests.md#configuration).
+
+## Extension Settings
 
 | Setting | Default | Description |
 |---|---|---|

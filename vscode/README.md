@@ -23,6 +23,11 @@ def test_sign_in(app):
 
 ## Features
 
+- **Current Setup and YAML configuration.** See the current application icon/name above
+  Pages and use its gear to open a custom settings editor. Shared defaults live in
+  `wintestkit.yaml`; executable paths and personal overrides stay in Git-ignored
+  `wintestkit.local.yaml`. Save to reload the backend, or open raw YAML for advanced edits.
+
 - **Highlight and check elements from the editor.** CodeLens actions above every `Element`
   definition flash the matching control on screen or report why it can't be found (no match,
   several matches, closest candidates). **Check All Elements** verifies a whole page at once;

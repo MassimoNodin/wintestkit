@@ -1,4 +1,6 @@
 __pycache__/
+wintestkit.local.toml
+wintestkit.local.yaml
 .venv/
 *.egg-info/
 dist/

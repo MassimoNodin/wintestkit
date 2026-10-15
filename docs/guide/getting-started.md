@@ -10,6 +10,15 @@ It covers:
 5. Writing a pytest test with the `app` fixture and `expect` assertions.
 6. Running the suite and reading its HTML report.
 
+Project initialization creates or extends `.gitignore` without replacing existing rules.
+It ignores `wintestkit.local.yaml`, `wintestkit.local.toml`, `.venv/`, `__pycache__/`,
+`.pytest_cache/`, `.ruff_cache/`, `wtk-report/` and `wtk-results/`.
+Rerunning initialization adds missing rules without duplicating them. Shared defaults live
+in `wintestkit.yaml`; `--app` writes the executable path to ignored `wintestkit.local.yaml`.
+Existing configuration is preserved. In VS Code, use the gear in **Current Setup** to edit
+these YAML files with the configuration form.
+Ignore rules do not untrack files already committed to Git.
+
 Use your own application's executable, window titles and locators. No example applications
 are bundled. The [Calculator example](../../examples/calculator-tests) provides page classes,
 navigation flows and tests for Windows Calculator, which must be installed and opened separately.
