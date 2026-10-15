@@ -21,5 +21,5 @@ timeout = 10.0
 screenshots = "on-failure"
 
 [tool.wintestkit.app]
-path = "../../demo/DemoApp/bin/Release/net8.0-windows/DemoApp.exe"
+process = "DemoApp.exe"
 args = []

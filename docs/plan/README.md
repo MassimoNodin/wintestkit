@@ -1,5 +1,9 @@
 # WinTestKit — Implementation Plan (for implementing agents)
 
+> Historical design document: the example application described here has been removed.
+> Use the [user guide](../../README.md) for setup and the [development guide](../development.md)
+> for current build and test instructions.
+
 This directory is the complete build plan for WinTestKit v1. It is written so that **independent
 agents can each pick up one task**, implement it without needing the others' context, and still end
 up with parts that fit together.

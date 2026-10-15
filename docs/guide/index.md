@@ -18,9 +18,10 @@ application under test.
 | [Troubleshooting](troubleshooting.md) | `wtk doctor`, common failures, logs |
 | [Migrating from TestComplete](migrating-from-testcomplete.md) | Concept mapping |
 
-The [`examples/demo-tests`](../../examples/demo-tests) project tests the small WPF application in
-[`demo/`](../../demo) and is the reference for everything in this guide: every Python sample here
-is an excerpt of that project, which runs in CI.
+Start with the [installation and first-test walkthrough](../../README.md). The
+[`examples/demo-tests`](../../examples/demo-tests) project preserves reference test code for
+the former WTK Demo application; no example app is bundled. App-specific examples in this
+guide must be adapted to your application's window titles, controls and behavior.
 
 ## Requirements
 

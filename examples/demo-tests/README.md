@@ -1,20 +1,32 @@
-# demo-tests
+# Example test code
 
-A sample WinTestKit project that tests the WPF demo app in [`../../demo`](../../demo). It is
-also the reference for how to write screens and tests.
+This project preserves screen models and pytest examples originally written for the
+**WTK Demo** application. The application source and binaries are no longer bundled.
+These tests are a reference, not an out-of-the-box runnable sample.
 
-## Run it
+## Adapt the examples to your application
 
-Build the demo app once, then run the tests (Windows, interactive unlocked desktop):
+Start with the [installation and first-test guide](../../README.md), then copy the patterns
+you need from this project. Update the executable path, window titles, element locators,
+test data, assertions and reset fixture for your own application. Merely changing the
+executable path will not make these app-specific tests work against an unrelated app.
+
+The `main` fixture in `conftest.py` binds the screen to the app. Its autouse reset fixture
+uses **File > Reset** before each test; replace that with your application's reset flow
+or choose a fresh process per test.
+
+## Run against an external legacy fixture
+
+If you already have a compatible WTK Demo executable outside the repository:
 
 ```powershell
-dotnet build ../../demo/DemoApp/DemoApp.csproj -c Release
-uv sync
-uv run pytest
+$env:WTK_APP_PATH = "C:\ExternalFixtures\DemoApp.exe"
+uv sync --locked
+uv run wtk run
 ```
 
-`launch = "per-session"` starts the app once for the whole run. An autouse fixture in
-`conftest.py` resets it with **File > Reset** before every test, so tests stay independent.
+Run these commands from this directory on an interactive, unlocked Windows desktop.
+The executable must implement the expected WTK Demo controls and behavior.
 
 ## Layout
 
@@ -31,16 +43,14 @@ uv run pytest
 | `tests/test_menu.py` | Menu items. |
 | `tests/test_expected_failure.py` | A deliberately failing test (skipped unless asked). |
 
-## See a failure
+## See a deliberate failure
+
+With the compatible external application configured:
 
 ```powershell
 $env:WTK_DEMO_FAILURES = "1"
-uv run pytest tests/test_expected_failure.py
+uv run wtk run tests/test_expected_failure.py
 ```
 
-The failure explains what was searched, the closest elements and what differs, and saves a
-window screenshot, a desktop screenshot and a UI tree dump under `wtk-report/artifacts/`:
-
-```text
-No element matches Button[name="Sign In"] in Window "WTK Demo" (closest: Button "Sign in" — name differs) (waited 1.0s)
-```
+The report explains what was searched, the closest elements and what differs, and captures
+screenshots and a UI tree dump under `wtk-report/artifacts/` when possible.

@@ -116,8 +116,7 @@ collected. See [Running tests](running-tests.md#exit-codes).
 
 ## GitHub-hosted runners
 
-GitHub's `windows-latest` runners do run an interactive session, and the WinTestKit repository
-itself runs its integration tests there (the `integration` job in `.github/workflows/ci.yml`). The
-resolution can't be changed and the desktop is occasionally unavailable, so that job is allowed to
-fail until it has a track record. For your own application, a self-hosted runner you control is
-the reliable choice; the steps above are the same.
+The repository CI checks the Python package and extension without building an example app or
+running the legacy app-dependent suites. For your own UI tests, use a self-hosted Windows
+runner with your application installed and an interactive, unlocked session. Keep your UI
+pipeline separate from checks that do not require a desktop.

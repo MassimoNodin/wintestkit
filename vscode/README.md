@@ -133,5 +133,7 @@ locator strategies, CI setup and migrating from TestComplete.
 ## Development
 
 Run `npm ci`, then `npm run build`, `npm run typecheck`, `npm run lint` and `npm test`. Use the
-repository's **Run Extension** launch configuration for an Extension Development Host;
-`npm run test:integration` runs the end-to-end tests against the demo application.
+repository's **Run Extension** launch configuration for an Extension Development Host.
+No example application is bundled. The legacy end-to-end suite requires an external compatible
+WTK Demo executable via `WTK_DEMO_APP`; see the repository's
+[development guide](https://github.com/MassimoNodin/wintestkit/blob/master/docs/development.md).
