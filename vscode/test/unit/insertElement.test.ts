@@ -8,7 +8,7 @@ import {
 } from "../../src/spy/insertionModel";
 import type {
   ElementEntry,
-  ScreenEntry,
+  PageEntry,
   Suggestion,
 } from "../../src/protocol/generated";
 
@@ -25,15 +25,15 @@ const suggestion: Suggestion = {
   matchCount: 1,
   strategy: "name",
 };
-const screen = (source: string, elements: ElementEntry[] = []): ScreenEntry => {
+const page = (source: string, elements: ElementEntry[] = []): PageEntry => {
   const lines = source.split(/\r?\n/);
   const line = lines.findIndex((line) => line.startsWith("class Main"));
   return {
     id: "Main",
     name: "Main",
     qualname: "Main",
-    file: "screen.py",
-    bases: ["Screen"],
+    file: "page.py",
+    bases: ["Page"],
     range: range(line, lines.length - 1),
     nameRange: range(line),
     elements,
@@ -51,14 +51,14 @@ const entry = (name: string, line: number, locator = {}): ElementEntry => ({
 });
 const insert = (
   source: string,
-  selected: ScreenEntry | null,
+  selected: PageEntry | null,
   next = suggestion,
-  newScreen?: { className: string },
+  newPage?: { className: string },
 ): string => {
   const result = computeInsertion(
     source,
     selected,
-    newScreen,
+    newPage,
     next,
     next.attributeName,
   );
@@ -90,22 +90,22 @@ const insert = (
 describe("Spy element insertion", () => {
   it("appends after multiline declarations and extends imports", () => {
     const source =
-      'from wintestkit import Screen, Window\n\nclass Main(Screen):\n    window = Window(title="Demo")\n    button = Element(\n        name="Other",\n    )\n\n    def helper(self):\n        return self.button\n';
+      'from wintestkit import Page, Window\n\nclass Main(Page):\n    window = Window(title="Demo")\n    button = Element(\n        name="Other",\n    )\n\n    def helper(self):\n        return self.button\n';
     const multiline = entry("button", 4);
     multiline.range.end.line = 6;
     const updated = insert(
       source,
-      screen(source, [entry("window", 3), multiline]),
+      page(source, [entry("window", 3), multiline]),
     );
-    expect(updated).toContain("from wintestkit import Screen, Window, Element");
+    expect(updated).toContain("from wintestkit import Page, Window, Element");
     expect(updated).toContain(
       '    )\n    ok = Element(control_type="Button", name="OK")\n\n    def helper',
     );
   });
   it("keeps class docstrings and inserts windows before new declarations", () => {
     const source =
-      'from wintestkit import Screen\n\nclass Main(Screen):\n    """A screen.\n    More detail.\n    """\n    pass\n';
-    const updated = insert(source, screen(source), {
+      'from wintestkit import Page\n\nclass Main(Page):\n    """A page.\n    More detail.\n    """\n    pass\n';
+    const updated = insert(source, page(source), {
       ...suggestion,
       window: { code: 'Window(title="Demo")', locator: { title: "Demo" } },
     });
@@ -115,7 +115,7 @@ describe("Spy element insertion", () => {
   });
   it("reuses equivalent helpers with different locator key order", () => {
     const source =
-      'from wintestkit import Screen, Element\n\nclass Main(Screen):\n    container = Element(name="Panel", control_type="Group")\n';
+      'from wintestkit import Page, Element\n\nclass Main(Page):\n    container = Element(name="Panel", control_type="Group")\n';
     const next = {
       ...suggestion,
       code: 'Element(name="OK", within=panel)',
@@ -129,7 +129,7 @@ describe("Spy element insertion", () => {
     };
     const updated = insert(
       source,
-      screen(source, [
+      page(source, [
         entry("container", 3, { controlType: "Group", name: "Panel" }),
       ]),
       next,
@@ -139,7 +139,7 @@ describe("Spy element insertion", () => {
   });
   it("renames colliding helper attributes and rewrites within references", () => {
     const source =
-      'from wintestkit import Screen, Element\n\nclass Main(Screen):\n    panel = Element(name="Other")\n';
+      'from wintestkit import Page, Element\n\nclass Main(Page):\n    panel = Element(name="Other")\n';
     const next = {
       ...suggestion,
       code: 'Element(name="OK", within=panel)',
@@ -153,7 +153,7 @@ describe("Spy element insertion", () => {
     };
     const updated = insert(
       source,
-      screen(source, [entry("panel", 3, { name: "Other" })]),
+      page(source, [entry("panel", 3, { name: "Other" })]),
       next,
     );
     expect(updated).toContain('panel_2 = Element(name="Panel")');
@@ -161,15 +161,15 @@ describe("Spy element insertion", () => {
   });
   it("adds regex imports once and handles parenthesized imports", () => {
     const source =
-      "from wintestkit import (\n    Screen,\n    Element,\n)\n\nclass Main(Screen):\n    pass\n";
+      "from wintestkit import (\n    Page,\n    Element,\n)\n\nclass Main(Page):\n    pass\n";
     const next = { ...suggestion, code: 'Element(name=re.compile("OK.*"))' };
-    const updated = insert(source, screen(source), next);
+    const updated = insert(source, page(source), next);
     expect(updated).toContain("import re\n");
     expect(updated.match(/from wintestkit import/g)).toHaveLength(1);
     expect(
       insert(
         updated,
-        screen(updated, [
+        page(updated, [
           entry(
             "ok",
             updated.split("\n").findIndex((line) => line.includes("ok =")),
@@ -179,21 +179,20 @@ describe("Spy element insertion", () => {
       ).match(/import re/g),
     ).toHaveLength(1);
   });
-  it("creates a screen in an empty file or appends to an existing module", () => {
-    expect(insert("", null, suggestion, { className: "NewScreen" })).toContain(
-      "class NewScreen(Screen):",
+  it("creates a page in an empty file or appends to an existing module", () => {
+    expect(insert("", null, suggestion, { className: "NewPage" })).toContain(
+      "class NewPage(Page):",
     );
     const source = '"""Module docs."""\nfrom __future__ import annotations\n';
     const updated = insert(source, null, suggestion, {
-      className: "NewScreen",
+      className: "NewPage",
     });
     expect(updated.startsWith(source)).toBe(true);
-    expect(updated).toContain("from wintestkit import Screen, Element");
+    expect(updated).toContain("from wintestkit import Page, Element");
   });
   it("preserves module docstrings, tab indentation and CRLF", () => {
-    const source =
-      '"""Module docs."""\r\n\r\nclass Main(Screen):\r\n\tpass\r\n';
-    const updated = insert(source, screen(source));
+    const source = '"""Module docs."""\r\n\r\nclass Main(Page):\r\n\tpass\r\n';
+    const updated = insert(source, page(source));
     expect(updated.startsWith('"""Module docs."""\r\n')).toBe(true);
     expect(updated).toContain("\tok = Element");
     expect(updated.replaceAll("\r\n", "")).not.toContain("\n");
@@ -201,11 +200,11 @@ describe("Spy element insertion", () => {
   it("rejects keywords, duplicate attributes and stale discovery ranges", () => {
     expect(validIdentifier("class")).toBe(false);
     expect(validIdentifier("has-space")).toBe(false);
-    const source = "class Main(Screen):\n    pass\n";
+    const source = "class Main(Page):\n    pass\n";
     expect(() =>
       computeInsertion(
         source,
-        screen(source, [entry("ok", 1)]),
+        page(source, [entry("ok", 1)]),
         undefined,
         suggestion,
         "ok",
@@ -214,11 +213,11 @@ describe("Spy element insertion", () => {
     expect(() =>
       computeInsertion(
         source.replace("Main", "Renamed"),
-        screen(source),
+        page(source),
         undefined,
         suggestion,
         "ok",
       ),
-    ).toThrow("screen changed");
+    ).toThrow("page changed");
   });
 });

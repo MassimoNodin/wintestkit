@@ -25,18 +25,18 @@ def test_methods_and_nodes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> N
     )
     assert request(server, output, "app.status")["result"]["running"]
     assert request(server, output, "app.launch")["result"]["pids"] == [1]
-    assert request(server, output, "discover")["result"]["screens"]
+    assert request(server, output, "discover")["result"]["pages"]
     assert (
         request(
             server,
             output,
             "element.highlight",
-            {"file": "screen.py", "qualname": "Main.ok", "durationMs": 0},
+            {"file": "page.py", "qualname": "Main.ok", "durationMs": 0},
         )["result"]["status"]
         == "found"
     )
     assert (
-        request(server, output, "screen.check", {"file": "screen.py", "screen": "Main"})["result"][
+        request(server, output, "page.check", {"file": "page.py", "page": "Main"})["result"][
             "results"
         ][0]["status"]
         == "found"
@@ -147,7 +147,7 @@ def test_transport_eof_order_and_stdout(
             "jsonrpc": "2.0",
             "id": 2,
             "method": "element.highlight",
-            "params": {"file": "screen.py", "qualname": "Main.ok"},
+            "params": {"file": "page.py", "qualname": "Main.ok"},
         },
         {"jsonrpc": "2.0", "method": "app.status"},
         None,

@@ -9,8 +9,8 @@ locator:
 
 ```python
 # examples/demo-tests/tests/test_panels.py
-def test_an_ambiguous_locator_fails_fast_with_a_clear_message(main: MainScreen) -> None:
-    class Ambiguous(MainScreen):
+def test_an_ambiguous_locator_fails_fast_with_a_clear_message(main: MainPage) -> None:
+    class Ambiguous(MainPage):
         either_ok = Element(control_type="Button", name="OK")
 
     with pytest.raises(AmbiguousElementError) as error:
@@ -53,10 +53,10 @@ Prefer, in this order:
 5. **`index`**: the n-th of several matches. Use it last; it breaks when controls are added or
    reordered.
 
-The demo application exposes only two AutomationIds, so its screen shows each strategy:
+The demo application exposes only two AutomationIds, so its page shows each strategy:
 
 ```python
-# examples/demo-tests/screens/main.py
+# examples/demo-tests/pages/main.py
     # asynchronous loading
     load = Element(control_type="Button", name="Load")
     continue_button = Element(control_type="Button", name="Continue")
@@ -89,7 +89,7 @@ WPF opens menus, combo box drop-downs and context menus in separate popup window
 searches the application's popups too, so menu items are declared like any other element:
 
 ```python
-# examples/demo-tests/screens/main.py
+# examples/demo-tests/pages/main.py
     # menu
     menu_file = Element(control_type="MenuItem", name="File")
     menu_reset = Element(control_type="MenuItem", name="Reset")
@@ -99,7 +99,7 @@ For combo boxes, `select()` opens the drop-down when needed and selects by name,
 
 ```python
 # examples/demo-tests/tests/test_choices.py
-def test_select_a_color_by_index_and_by_pattern(main: MainScreen) -> None:
+def test_select_a_color_by_index_and_by_pattern(main: MainPage) -> None:
     main.color.select(0)
     expect(main.status).to_have_text("Color: Red")
     main.color.select(re.compile("^Gr"))
@@ -120,31 +120,31 @@ instead:
 
 ```python
 # examples/demo-tests/tests/test_lists.py
-def test_select_a_far_away_list_item(main: MainScreen) -> None:
+def test_select_a_far_away_list_item(main: MainPage) -> None:
     main.items.select("Item 450")  # not realized yet: WinTestKit asks the container for it
     expect(main.status).to_have_text("Selected: Item 450")
 ```
 
 ```python
 # examples/demo-tests/tests/test_lists.py
-def test_read_grid_cells(main: MainScreen) -> None:
+def test_read_grid_cells(main: MainPage) -> None:
     assert main.products.cell(5, "Name").text == "Product 6"
     assert main.products.cell(9, "Qty").text == "1"  # Product 10: (10 * 7) mod 23
 
 
-def test_find_a_row_by_value(main: MainScreen) -> None:
+def test_find_a_row_by_value(main: MainPage) -> None:
     main.products.find_row("Name", "Product 180").click()
     expect(main.status).to_have_text("Row: Product 180")
 ```
 
 ## Dialogs and message boxes
 
-Give each dialog its own screen with its own `Window(...)`. Owned WPF windows are found by title;
+Give each dialog its own page with its own `Window(...)`. Owned WPF windows are found by title;
 native message boxes (`MessageBox.Show`) are Win32 dialogs with class `#32770`:
 
 ```python
 # examples/demo-tests/tests/test_dialogs.py
-def test_message_box(main: MainScreen) -> None:
+def test_message_box(main: MainPage) -> None:
     main.show_message.click()
     box = MessageBox(main.app)
     expect(box.window).to_exist()

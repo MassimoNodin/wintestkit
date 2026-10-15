@@ -20,7 +20,7 @@ from wintestkit.errors import ElementNotFoundError
 
 def test_pass():
     print("hello from the test")
-    with runtime.step("click", "Screen.button", 'Button[name="OK"]', {"mode": "pattern"}):
+    with runtime.step("click", "Page.button", 'Button[name="OK"]', {"mode": "pattern"}):
         pass
 
 

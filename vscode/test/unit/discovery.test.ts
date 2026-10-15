@@ -70,7 +70,7 @@ describe("discovery store", () => {
     vi.useFakeTimers();
     const root = { fsPath: "C:/demo", toString: () => "demo" };
     const project = { root, name: "demo" } as Project;
-    const uri = { fsPath: "C:/demo/screen.py", scheme: "file" } as vscode.Uri;
+    const uri = { fsPath: "C:/demo/page.py", scheme: "file" } as vscode.Uri;
     let source = "first";
     const document = {
       uri,
@@ -83,7 +83,7 @@ describe("discovery store", () => {
       version: 1,
       root: "C:/demo",
       tests: [],
-      screens: [],
+      pages: [],
       errors: [{ file: uri.fsPath, line: 2, message: "Invalid declaration" }],
     };
     const request = vi.fn(async () => result);

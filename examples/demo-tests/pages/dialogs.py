@@ -1,9 +1,9 @@
 """Secondary windows of the demo app."""
 
-from wintestkit import Element, Screen, Window
+from wintestkit import Element, Page, Window
 
 
-class NoteDialog(Screen):
+class NoteDialog(Page):
     """The modal dialog opened by "Open dialog" (an owned WPF window)."""
 
     window = Window(title="WTK Demo - Dialog")
@@ -13,7 +13,7 @@ class NoteDialog(Screen):
     cancel = Element(control_type="Button", name="Cancel")
 
 
-class MessageBox(Screen):
+class MessageBox(Page):
     """A native Win32 message box (window class ``#32770``)."""
 
     window = Window(class_name="#32770")

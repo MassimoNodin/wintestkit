@@ -120,13 +120,13 @@ const discovery = {
       },
     },
   ],
-  screens: [
+  pages: [
     {
-      id: "screens/main.py::MainScreen",
-      file: "C:/wtk/examples/demo-tests/screens/main.py",
-      name: "MainScreen",
-      qualname: "MainScreen",
-      bases: ["Screen"],
+      id: "pages/main.py::MainPage",
+      file: "C:/wtk/examples/demo-tests/pages/main.py",
+      name: "MainPage",
+      qualname: "MainPage",
+      bases: ["Page"],
       range: {
         start: {
           line: 0,
@@ -149,9 +149,9 @@ const discovery = {
       },
       elements: [
         {
-          id: "screens/main.py::MainScreen.sign_in",
+          id: "pages/main.py::MainPage.sign_in",
           name: "sign_in",
-          qualname: "MainScreen.sign_in",
+          qualname: "MainPage.sign_in",
           kind: "element",
           range: {
             start: {
@@ -207,7 +207,7 @@ const discovery = {
 const step = {
   seq: 1,
   action: "type",
-  target: "MainScreen.password",
+  target: "MainPage.password",
   locator: "Edit class=PasswordBox",
   args: {
     text: "***",
@@ -255,7 +255,7 @@ const results = {
         {
           seq: 1,
           action: "type",
-          target: "MainScreen.password",
+          target: "MainPage.password",
           locator: "Edit class=PasswordBox",
           args: {
             text: "***",
@@ -343,7 +343,7 @@ const events = [
     step: {
       seq: 1,
       action: "type",
-      target: "MainScreen.password",
+      target: "MainPage.password",
       locator: "Edit class=PasswordBox",
       args: {
         text: "***",

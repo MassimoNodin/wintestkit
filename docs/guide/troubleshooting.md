@@ -35,7 +35,7 @@ No element matches Button[name="Sign In"] in Window "WTK Demo" (closest: Button 
 
 - Compare the locator with the closest candidate; names are case-sensitive and must match exactly
   unless you use a regular expression.
-- Check you're searching the right window: elements of a dialog belong on a screen whose `window`
+- Check you're searching the right window: elements of a dialog belong on a page whose `window`
   matches the dialog.
 - The element might not exist yet or anymore: increase the timeout, or wait for the step that
   creates it.

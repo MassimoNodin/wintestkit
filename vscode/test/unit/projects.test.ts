@@ -7,7 +7,7 @@ describe("project selection", () => {
     expect(
       pickProject(
         ["C:/repo", "C:/repo/nested"],
-        "C:/repo/nested/screen.py",
+        "C:/repo/nested/page.py",
         true,
       ),
     ).toBe("C:/repo/nested");

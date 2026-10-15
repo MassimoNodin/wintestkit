@@ -47,11 +47,11 @@ def test_seq_numbers_restart_per_test() -> None:
 
 def test_record_fields_and_to_dict() -> None:
     records, _ = collect()
-    with step("type", "MainScreen.username", 'Edit[class="TextBox"]', {"text": "admin"}):
+    with step("type", "MainPage.username", 'Edit[class="TextBox"]', {"text": "admin"}):
         pass
     (record,) = records
     assert record.action == "type"
-    assert record.target == "MainScreen.username"
+    assert record.target == "MainPage.username"
     assert record.locator == 'Edit[class="TextBox"]'
     assert record.status == "passed"
     assert record.error is None

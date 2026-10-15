@@ -7,7 +7,7 @@ import type {
 export type SpyRequest =
   | {
       type:
-        "ready" | "pick" | "stopPick" | "refresh" | "launchApp" | "addToScreen";
+        "ready" | "pick" | "stopPick" | "refresh" | "launchApp" | "addToPage";
     }
   | { type: "expand" | "select" | "highlight"; nodeId: string }
   | { type: "copy"; text: string };
@@ -52,18 +52,13 @@ export function parseSpyRequest(value: unknown): SpyRequest | undefined {
   if (!value || typeof value !== "object") return;
   const message = value as Record<string, unknown>;
   if (
-    [
-      "ready",
-      "pick",
-      "stopPick",
-      "refresh",
-      "launchApp",
-      "addToScreen",
-    ].includes(String(message.type))
+    ["ready", "pick", "stopPick", "refresh", "launchApp", "addToPage"].includes(
+      String(message.type),
+    )
   )
     return {
       type: message.type as
-        "ready" | "pick" | "stopPick" | "refresh" | "launchApp" | "addToScreen",
+        "ready" | "pick" | "stopPick" | "refresh" | "launchApp" | "addToPage",
     };
   if (
     ["expand", "select", "highlight"].includes(String(message.type)) &&

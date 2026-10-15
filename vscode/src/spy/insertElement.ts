@@ -2,7 +2,7 @@ import * as vscode from "vscode";
 import * as path from "node:path";
 import type { Projects } from "../projects";
 import type { DiscoveryStore } from "../discovery/store";
-import type { ScreenEntry, Suggestion } from "../protocol/generated";
+import type { PageEntry, Suggestion } from "../protocol/generated";
 import type { Project } from "../server/serverManager";
 import { computeInsertion, validIdentifier } from "./insertionModel";
 
@@ -12,33 +12,33 @@ export function registerInsertElement(
   log: vscode.LogOutputChannel,
 ): vscode.Disposable {
   return vscode.commands.registerCommand(
-    "wintestkit.spy.addToScreen",
+    "wintestkit.spy.addToPage",
     async (suggestion: Suggestion) => {
       try {
         if (!vscode.workspace.isTrusted)
-          throw new Error("Trust the workspace before adding screen elements.");
+          throw new Error("Trust the workspace before adding page elements.");
         if (!suggestion || typeof suggestion.code !== "string") return;
         const choices: (vscode.QuickPickItem & {
           project?: Project;
-          screen?: ScreenEntry;
+          page?: PageEntry;
         })[] = projects.all.flatMap((project) =>
-          (discovery.get(project)?.screens ?? []).map((screen) => ({
-            label: screen.name,
-            description: path.relative(project.root.fsPath, screen.file),
+          (discovery.get(project)?.pages ?? []).map((page) => ({
+            label: page.name,
+            description: path.relative(project.root.fsPath, page.file),
             detail: project.name,
             project,
-            screen,
+            page,
           })),
         );
-        choices.push({ label: "$(add) New screen…" });
+        choices.push({ label: "$(add) New page…" });
         const choice = await vscode.window.showQuickPick(choices, {
-          placeHolder: "Add the picked element to a screen",
+          placeHolder: "Add the picked element to a page",
         });
         if (!choice) return;
         let project = choice.project;
         let uri: vscode.Uri;
-        let newScreen: { className: string; window?: string } | undefined;
-        if (choice.screen) uri = vscode.Uri.file(choice.screen.file);
+        let newPage: { className: string; window?: string } | undefined;
+        if (choice.page) uri = vscode.Uri.file(choice.page.file);
         else {
           project =
             projects.all.length === 1
@@ -55,8 +55,8 @@ export function registerInsertElement(
                 )?.project;
           if (!project) return;
           const className = await vscode.window.showInputBox({
-            prompt: "Screen class name",
-            value: "MainScreen",
+            prompt: "Page class name",
+            value: "MainPage",
             validateInput: (value) =>
               /^[A-Z][A-Za-z0-9]*$/.test(value)
                 ? undefined
@@ -64,7 +64,7 @@ export function registerInsertElement(
           });
           if (!className) return;
           const files = await vscode.workspace.findFiles(
-            new vscode.RelativePattern(project.root, "screens/*.py"),
+            new vscode.RelativePattern(project.root, "pages/*.py"),
           );
           const file = await vscode.window.showQuickPick(
             [
@@ -74,13 +74,13 @@ export function registerInsertElement(
               })),
               { label: "$(add) New file…", uri: undefined },
             ],
-            { placeHolder: "Choose a screen file" },
+            { placeHolder: "Choose a page file" },
           );
           if (!file) return;
           if (file.uri) uri = file.uri;
           else {
             const filename = await vscode.window.showInputBox({
-              prompt: "New screen filename",
+              prompt: "New page filename",
               value: "main.py",
               validateInput: (value) =>
                 /^[A-Za-z_][A-Za-z0-9_]*\.py$/.test(value)
@@ -88,18 +88,18 @@ export function registerInsertElement(
                   : "Use a Python filename such as main.py.",
             });
             if (!filename) return;
-            uri = vscode.Uri.joinPath(project.root, "screens", filename);
+            uri = vscode.Uri.joinPath(project.root, "pages", filename);
           }
           if (
-            (discovery.get(project)?.screens ?? []).some(
-              (screen) =>
-                screen.file.replaceAll("\\", "/").toLowerCase() ===
+            (discovery.get(project)?.pages ?? []).some(
+              (page) =>
+                page.file.replaceAll("\\", "/").toLowerCase() ===
                   uri.fsPath.replaceAll("\\", "/").toLowerCase() &&
-                screen.name === className,
+                page.name === className,
             )
           )
-            throw new Error("That screen class already exists in this file.");
-          newScreen = { className, window: suggestion.window?.code };
+            throw new Error("That page class already exists in this file.");
+          newPage = { className, window: suggestion.window?.code };
         }
         const attributeName = await vscode.window.showInputBox({
           prompt: "Element attribute name",
@@ -107,9 +107,7 @@ export function registerInsertElement(
           validateInput: (value) =>
             !validIdentifier(value)
               ? "Use a Python identifier that is not a keyword."
-              : choice.screen?.elements.some(
-                    (element) => element.name === value,
-                  )
+              : choice.page?.elements.some((element) => element.name === value)
                 ? "That attribute is already defined."
                 : undefined,
         });
@@ -122,20 +120,20 @@ export function registerInsertElement(
           ? await vscode.workspace.openTextDocument(uri)
           : undefined;
         const source = document?.getText() ?? "";
-        const screen = choice.screen
-          ? (discovery.screenById(choice.screen.id, project) ?? choice.screen)
+        const page = choice.page
+          ? (discovery.pageById(choice.page.id, project) ?? choice.page)
           : null;
         const insertion = computeInsertion(
           source,
-          screen,
-          newScreen,
+          page,
+          newPage,
           suggestion,
           attributeName,
         );
         const edit = new vscode.WorkspaceEdit();
         if (!document) {
           await vscode.workspace.fs.createDirectory(
-            vscode.Uri.joinPath(project.root, "screens"),
+            vscode.Uri.joinPath(project.root, "pages"),
           );
           edit.createFile(uri, { overwrite: false });
         }
@@ -156,7 +154,7 @@ export function registerInsertElement(
         const lines = updated.getText().split(/\r?\n/);
         const classLine = lines.findIndex((text) =>
           new RegExp(
-            "^\\s*class\\s+" + (screen?.name ?? newScreen!.className) + "\\b",
+            "^\\s*class\\s+" + (page?.name ?? newPage!.className) + "\\b",
           ).test(text),
         );
         const relativeLine = lines

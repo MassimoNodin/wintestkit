@@ -49,7 +49,7 @@ screenshots = "on-failure"    # off | on-failure | every-step
 report_dir = "wtk-report"
 highlight_actions = false
 slow_mo_ms = 0
-python_paths = ["."]          # where the CLI and VS Code import screens from
+python_paths = ["."]          # where the CLI and VS Code import pages from
 
 [tool.wintestkit.app]
 path = "C:/Program Files/Contoso/Orders.exe"
@@ -92,7 +92,7 @@ state. Put the reset in an autouse fixture; the demo project uses the applicatio
 ```python
 # examples/demo-tests/conftest.py
 @pytest.fixture(autouse=True)
-def reset_demo(main: MainScreen) -> None:
+def reset_demo(main: MainPage) -> None:
     """Start every test from a clean app: the app is shared by the whole session."""
     main.menu_file.click()
     main.menu_reset.click()
@@ -107,7 +107,7 @@ database, or use `per-test` for the few tests that need a fresh process.
 | Fixture | Scope | Provides |
 |---|---|---|
 | `app` | test | The `App` under test, according to the launch mode |
-| `screen` | test | A factory: `screen(MainScreen)` returns `MainScreen(app)` |
+| `page` | test | A factory: `page(MainPage)` returns `MainPage(app)` |
 | `wtk_config` | session | The effective `WtkConfig` |
 
 `@pytest.mark.wtk(launch=..., timeout=...)` overrides the launch mode or default timeout for one

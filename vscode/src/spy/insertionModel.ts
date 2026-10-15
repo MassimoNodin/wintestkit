@@ -1,7 +1,7 @@
 import type {
   LocatorData,
   Range,
-  ScreenEntry,
+  PageEntry,
   Suggestion,
 } from "../protocol/generated";
 
@@ -35,20 +35,17 @@ export interface Insertion {
 
 export function computeInsertion(
   source: string,
-  screen: ScreenEntry | null,
-  newScreen: { className: string; window?: string } | undefined,
+  page: PageEntry | null,
+  newPage: { className: string; window?: string } | undefined,
   suggestion: Suggestion,
   attributeName: string,
 ): Insertion {
   if (!validIdentifier(attributeName))
     throw new Error("Use a Python identifier that is not a keyword.");
-  if (
-    !screen &&
-    (!newScreen || !/^[A-Z][A-Za-z0-9]*$/.test(newScreen.className))
-  )
-    throw new Error("Use a PascalCase screen class name.");
-  if (screen?.elements.some((element) => element.name === attributeName))
-    throw new Error("That attribute is already defined in the screen.");
+  if (!page && (!newPage || !/^[A-Z][A-Za-z0-9]*$/.test(newPage.className)))
+    throw new Error("Use a PascalCase page class name.");
+  if (page?.elements.some((element) => element.name === attributeName))
+    throw new Error("That attribute is already defined in the page.");
   const newline = source.includes("\r\n") ? "\r\n" : "\n";
   const lines = source.split(/\r?\n/);
   const edits: Insertion["edits"] = [];
@@ -71,7 +68,7 @@ export function computeInsertion(
     else
       edits.push({ range: { start: position, end: position }, text: content });
   };
-  const existing = screen?.elements ?? [];
+  const existing = page?.elements ?? [];
   const used = new Set([
     ...existing.map((element) => element.name),
     attributeName,
@@ -105,12 +102,12 @@ export function computeInsertion(
     declarations.push(name + " = " + code);
   }
   declarations.push(attributeName + " = " + rewrite(suggestion.code));
-  const window = newScreen?.window ?? suggestion.window?.code;
+  const window = newPage?.window ?? suggestion.window?.code;
   const needsWindow =
     !!window && !existing.some((element) => element.name === "window");
   const allCode = declarations.join("\n") + (needsWindow ? window : "");
   const required = [
-    "Screen",
+    "Page",
     ...["Window", "Element", "Elements"].filter((name) =>
       new RegExp("\\b" + name + "\\s*\\(").test(allCode),
     ),
@@ -178,7 +175,7 @@ export function computeInsertion(
     !/^import\s+re(?:\s|,|$)/m.test(source)
   )
     insert(importLine, "import re" + newline);
-  if (!screen) {
+  if (!page) {
     const body = [
       ...(needsWindow ? ["window = " + window] : []),
       ...declarations,
@@ -189,25 +186,25 @@ export function computeInsertion(
       lines.length,
       newline +
         "class " +
-        newScreen!.className +
-        "(Screen):" +
+        newPage!.className +
+        "(Page):" +
         newline +
         body +
         newline,
     );
   } else {
-    const classLine = screen.nameRange.start.line;
+    const classLine = page.nameRange.start.line;
     if (
-      !new RegExp("^\\s*class\\s+" + screen.name + "\\b").test(
+      !new RegExp("^\\s*class\\s+" + page.name + "\\b").test(
         lines[classLine] ?? "",
       )
     )
       throw new Error(
-        "The screen changed while selecting. Refresh discovery and try again.",
+        "The page changed while selecting. Refresh discovery and try again.",
       );
     if (/:\s*\S/.test(lines[classLine]))
       throw new Error(
-        "Expand the screen class body onto separate lines before adding an element.",
+        "Expand the page class body onto separate lines before adding an element.",
       );
     let headerEnd = classLine;
     while (
@@ -219,7 +216,7 @@ export function computeInsertion(
       /^\s+/.test(lines[element.range.start.line] ?? ""),
     );
     const firstBody = lines
-      .slice(headerEnd + 1, screen.range.end.line + 1)
+      .slice(headerEnd + 1, page.range.end.line + 1)
       .find((line) => line.trim());
     const indent =
       /^\s+/.exec(

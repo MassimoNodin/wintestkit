@@ -22,8 +22,8 @@ describe("Spy message contract", () => {
   });
   it("does not accept caller-controlled suggestion code for insertion", () => {
     expect(
-      parseSpyRequest({ type: "addToScreen", suggestion: { code: "unsafe" } }),
-    ).toEqual({ type: "addToScreen" });
+      parseSpyRequest({ type: "addToPage", suggestion: { code: "unsafe" } }),
+    ).toEqual({ type: "addToPage" });
   });
   it("formats helpers before the picked element", () => {
     expect(

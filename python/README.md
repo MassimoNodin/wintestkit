@@ -2,16 +2,16 @@
 
 UI test automation for Windows WPF applications using Microsoft UI Automation and pytest.
 
-The package includes a UI Automation engine, screen/element model, pytest integration,
-static discovery, environment checks, and target-based highlighting and screen checks.
+The package includes a UI Automation engine, page/element model, pytest integration,
+static discovery, environment checks, and target-based highlighting and page checks.
 
 ## Initialize a project
 
-Run `wtk init my-tests --app "C:/Apps/My App.exe"` to create a starter screen,
+Run `wtk init my-tests --app "C:/Apps/My App.exe"` to create a starter page,
 smoke test, pytest configuration, and report ignore entry. Existing metadata,
 configuration, and Python files are preserved. `--force` replaces starter Python
 files only; it does not overwrite application settings. Review the window title
-in `screens/main.py`, then run `wtk doctor` and `wtk run` from the new folder.
+in `pages/main.py`, then run `wtk doctor` and `wtk run` from the new folder.
 
 ## Development
 
@@ -35,12 +35,12 @@ WTK Demo executable configured through `WTK_DEMO_APP`; they skip when it is unse
 
 For the retained legacy examples, set `WTK_APP_PATH` to a compatible external WTK Demo
 executable and start it before running these commands from this directory. For your own
-application, replace the project root and screen targets:
+application, replace the project root and page targets:
 
 ```powershell
-uv run wtk --root ../examples/demo-tests highlight screens/main.py::MainScreen.sign_in --json
-uv run wtk --root ../examples/demo-tests highlight screens/main.py::MainScreen --launch --duration 1000
-uv run wtk --root ../examples/demo-tests check screens/main.py::MainScreen --json
+uv run wtk --root ../examples/demo-tests highlight pages/main.py::MainPage.sign_in --json
+uv run wtk --root ../examples/demo-tests highlight pages/main.py::MainPage --launch --duration 1000
+uv run wtk --root ../examples/demo-tests check pages/main.py::MainPage --json
 ```
 
 `highlight` resolves immediately by default; `--timeout S` enables polling. `--launch` starts
@@ -58,7 +58,7 @@ and `--depth N` to bound tree expansion (0 to 50, default 12). `--json` emits a
 tree object, or a `windows` array for `--all-windows`.
 
 `wtk inspect --at X,Y --json` reports the app element and its nearest-first
-ancestor chain, including supported patterns. Coordinates are physical screen
+ancestor chain, including supported patterns. Coordinates are physical page
 pixels; use `--at=-100,200` for negative coordinates. Button text is normalized
 to its containing button. Points outside the configured app fail without
 inspecting another process. Window and point selection options are mutually exclusive.

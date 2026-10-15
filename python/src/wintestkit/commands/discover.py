@@ -1,4 +1,4 @@
-"""``wtk discover``: list tests and screen definitions without importing user code."""
+"""``wtk discover``: list tests and page definitions without importing user code."""
 
 from __future__ import annotations
 
@@ -16,8 +16,8 @@ if TYPE_CHECKING:
 def add_parser(subparsers: Any) -> None:
     parser = subparsers.add_parser(
         "discover",
-        help="list tests and screens",
-        description="Statically discover tests and screen definitions (no user code is imported).",
+        help="list tests and pages",
+        description="Statically discover tests and page definitions (no user code is imported).",
     )
     parser.add_argument("paths", nargs="*", metavar="PATHS", help="files or folders to report")
     parser.add_argument("--json", action="store_true", help="print JSON (default when piped)")
@@ -52,13 +52,13 @@ def format_human(result: DiscoveryResult) -> str:
     width = max((len(t.id) for t in result.tests), default=0)
     for test in result.tests:
         lines.append(f"  {test.id.ljust(width)}  (line {test.range.start.line + 1})")
-    lines.append(f"Screens ({len(result.screens)})")
-    for screen in result.screens:
-        lines.append(f"  {screen.qualname}  {relative(screen.file)}:{screen.range.start.line + 1}")
-        name_width = max((len(e.name) for e in screen.elements), default=0)
+    lines.append(f"Pages ({len(result.pages)})")
+    for page in result.pages:
+        lines.append(f"  {page.qualname}  {relative(page.file)}:{page.range.start.line + 1}")
+        name_width = max((len(e.name) for e in page.elements), default=0)
         lines.extend(
             f"    {element.name.ljust(name_width)}  {describe_element(element)}"
-            for element in screen.elements
+            for element in page.elements
         )
     for error in result.errors:
         lines.append(f"error: {relative(error.file)}:{error.line + 1}: {error.message}")

@@ -14,7 +14,7 @@ EXPECTED = {
     "BoundWindow",
     "Element",
     "Elements",
-    "Screen",
+    "Page",
     "Window",
     "WtkConfig",
     "__version__",
@@ -37,7 +37,8 @@ def test_every_public_name_resolves(name: str) -> None:
 def test_names_point_at_their_implementations() -> None:
     from wintestkit import app, config, errors, expect, model
 
-    assert wintestkit.Screen is model.Screen
+    assert wintestkit.Page is model.Page
+    assert not hasattr(model, "Screen")
     assert wintestkit.Element is model.Element
     assert wintestkit.App is app.App
     assert wintestkit.load_config is config.load_config
@@ -47,9 +48,10 @@ def test_names_point_at_their_implementations() -> None:
     assert expect is not None  # the submodule stays importable under its package path
 
 
-def test_unknown_attribute_raises() -> None:
-    with pytest.raises(AttributeError, match="nope"):
-        _ = wintestkit.nope  # type: ignore[attr-defined]
+@pytest.mark.parametrize("name", ["nope", "Screen"])
+def test_unknown_attribute_raises(name: str) -> None:
+    with pytest.raises(AttributeError, match=name):
+        getattr(wintestkit, name)
 
 
 def test_importing_the_package_does_not_load_ui_automation() -> None:

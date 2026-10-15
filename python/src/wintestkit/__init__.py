@@ -18,7 +18,7 @@ if TYPE_CHECKING:
     from wintestkit.model import BoundWindow as BoundWindow
     from wintestkit.model import Element as Element
     from wintestkit.model import Elements as Elements
-    from wintestkit.model import Screen as Screen
+    from wintestkit.model import Page as Page
     from wintestkit.model import Window as Window
 
 __all__ = [
@@ -28,7 +28,7 @@ __all__ = [
     "BoundWindow",
     "Element",
     "Elements",
-    "Screen",
+    "Page",
     "Window",
     "WtkConfig",
     "__version__",
@@ -46,7 +46,7 @@ _LAZY: dict[str, tuple[str, str]] = {
     "BoundWindow": ("wintestkit.model", "BoundWindow"),
     "Element": ("wintestkit.model", "Element"),
     "Elements": ("wintestkit.model", "Elements"),
-    "Screen": ("wintestkit.model", "Screen"),
+    "Page": ("wintestkit.model", "Page"),
     "Window": ("wintestkit.model", "Window"),
     "WtkConfig": ("wintestkit.config", "WtkConfig"),
     "expect": ("wintestkit.expect", "expect"),

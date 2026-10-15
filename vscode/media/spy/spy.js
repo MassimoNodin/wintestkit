@@ -433,7 +433,7 @@
     post("copy", { text: element("code").textContent }),
   );
   element("add").addEventListener("click", () => {
-    if (suggestion) post("addToScreen");
+    if (suggestion) post("addToPage");
   });
   element("highlight").addEventListener("click", () => {
     if (selected) post("highlight", { nodeId: selected });

@@ -18,10 +18,10 @@
             "$ref": "discovery.schema.json#/$defs/TestEntry"
           }
         },
-        "screens": {
+        "pages": {
           "type": "array",
           "items": {
-            "$ref": "discovery.schema.json#/$defs/ScreenEntry"
+            "$ref": "discovery.schema.json#/$defs/PageEntry"
           }
         },
         "errors": {
@@ -31,7 +31,7 @@
           }
         }
       },
-      "required": ["version", "root", "tests", "screens", "errors"],
+      "required": ["version", "root", "tests", "pages", "errors"],
       "additionalProperties": false
     },
     "TestEntry": {
@@ -78,7 +78,7 @@
       ],
       "additionalProperties": false
     },
-    "ScreenEntry": {
+    "PageEntry": {
       "type": "object",
       "properties": {
         "id": {

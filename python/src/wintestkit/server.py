@@ -35,7 +35,7 @@ _PARAMS: dict[str, tuple[set[str], set[str]]] = {
     "app.launch": (set(), set()),
     "app.close": (set(), set()),
     "element.highlight": ({"file", "qualname"}, {"durationMs"}),
-    "screen.check": ({"file", "screen"}, set()),
+    "page.check": ({"file", "page"}, set()),
     "inspect.roots": (set(), set()),
     "inspect.children": ({"nodeId"}, set()),
     "inspect.properties": ({"nodeId"}, set()),
@@ -227,7 +227,7 @@ class Server:
 
     def dispatch(self, method: str, params: dict[str, Any], spy_epoch: int | None = None) -> Any:
         from wintestkit.engine import overlay
-        from wintestkit.targets import ModuleLoader, Target, check_screen, resolve_target
+        from wintestkit.targets import ModuleLoader, Target, check_page, resolve_target
 
         if method == "shutdown":
             self.stop_spy()
@@ -290,16 +290,16 @@ class Server:
                 with self._node_lock:
                     self.nodes.clear()
             return None
-        if method in ("element.highlight", "screen.check"):
+        if method in ("element.highlight", "page.check"):
             app = self._app()
             assert app is not None
             file = Path(params["file"])
             file = (self.cfg.root / file).resolve()
-            if method == "screen.check":
+            if method == "page.check":
                 return {
                     "results": [
                         result.to_dict()
-                        for result in check_screen(app, self.loader, file, params["screen"])
+                        for result in check_page(app, self.loader, file, params["page"])
                     ]
                 }
             result = resolve_target(app, self.loader, Target(file, params["qualname"]), timeout=0)

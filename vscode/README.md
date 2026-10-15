@@ -6,16 +6,16 @@ image matching. This extension is the editor side of the
 [`wintestkit`](https://pypi.org/project/wintestkit/) Python package.
 
 ```python
-from wintestkit import Element, Screen, Window, expect
+from wintestkit import Element, Page, Window, expect
 
-class MainScreen(Screen):
+class MainPage(Page):
     window = Window(title="WTK Demo")
     username = Element(control_type="Edit", class_name="TextBox")
     sign_in = Element(control_type="Button", name="Sign in")
     status = Element(automation_id="StatusText")
 
 def test_sign_in(app):
-    main = MainScreen(app)
+    main = MainPage(app)
     main.username.type("admin")
     main.sign_in.click()
     expect(main.status).to_have_text("Welcome, admin")
@@ -25,17 +25,17 @@ def test_sign_in(app):
 
 - **Highlight and check elements from the editor.** CodeLens actions above every `Element`
   definition flash the matching control on screen or report why it can't be found (no match,
-  several matches, closest candidates). **Check All Elements** verifies a whole screen at once;
+  several matches, closest candidates). **Check All Elements** verifies a whole page at once;
   results appear in the gutter and as editor warnings.
 - **Test Explorer.** Tests are discovered from your project and run with live progress,
   captured output, parameterized cases and failure details including expected/actual diffs.
   **Run Test** and **Debug Test** CodeLens appear above each test. Debugging uses the Python
   Debugger with normal breakpoints.
-- **Elements view.** Browse every screen and its elements, nested by `within` containers. Jump to
+- **Elements view.** Browse every page and its elements, nested by `within` containers. Jump to
   definitions, highlight or check entries inline, and see the last check result as an icon.
 - **Spy.** Explore the live UI Automation tree, or press **Pick Element** and Ctrl+Click a control
   in your application. The Spy shows properties, supported patterns and a suggested locator, and
-  **Add to screen…** inserts it into a screen class for you.
+  **Add to page…** inserts it into a page class for you.
 - **Reports.** Every run writes a self-contained HTML report with steps, screenshots and failure
   diagnostics. After a failing run, a notification opens it; **WinTestKit: Open Last Report** opens
   it any time.
@@ -86,9 +86,9 @@ updated Python package as well as the extension; after updating, run
 ## Quick start
 
 1. Open a folder and select a Python interpreter.
-2. Run **WinTestKit: Initialize Project** to create `pyproject.toml` settings, a starter screen
+2. Run **WinTestKit: Initialize Project** to create `pyproject.toml` settings, a starter page
    and a smoke test. Set `[tool.wintestkit.app] path` to your application's executable.
-3. Run **WinTestKit: Launch App**, open the **Spy** view and pick controls to build your screens.
+3. Run **WinTestKit: Launch App**, open the **Spy** view and pick controls to build your pages.
 4. Use the **Highlight Element** CodeLens to confirm each locator.
 5. Run tests from the Test Explorer, the **Run Test** CodeLens or `wtk run` in a terminal.
 

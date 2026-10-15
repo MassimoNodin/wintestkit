@@ -1,4 +1,4 @@
-"""Static discovery of tests and screen definitions.
+"""Static discovery of tests and page definitions.
 
 Pure ``ast`` analysis: user code is never imported and UI Automation is never touched, so the
 editor can call this on every keystroke. Positions follow the protocol: 0-based lines and
@@ -27,9 +27,9 @@ __all__ = [
     "DiscoveryError",
     "DiscoveryResult",
     "ElementEntry",
+    "PageEntry",
     "Position",
     "Range",
-    "ScreenEntry",
     "TestEntry",
     "discover",
     "discover_file",
@@ -164,7 +164,7 @@ class ElementEntry:
 
 
 @dataclass(frozen=True)
-class ScreenEntry:
+class PageEntry:
     id: str
     file: str
     name: str
@@ -201,7 +201,7 @@ class DiscoveryError:
 class DiscoveryResult:
     root: str
     tests: tuple[TestEntry, ...] = ()
-    screens: tuple[ScreenEntry, ...] = ()
+    pages: tuple[PageEntry, ...] = ()
     errors: tuple[DiscoveryError, ...] = ()
     version: int = 1
 
@@ -210,7 +210,7 @@ class DiscoveryResult:
             "version": self.version,
             "root": self.root,
             "tests": [t.to_dict() for t in self.tests],
-            "screens": [s.to_dict() for s in self.screens],
+            "pages": [s.to_dict() for s in self.pages],
             "errors": [e.to_dict() for e in self.errors],
         }
 
@@ -625,8 +625,8 @@ def _resolve_window(node: ast.expr, built: _Built, cls: _ClassInfo, index: _Inde
 # -- per-file analysis ----------------------------------------------------------------------------
 
 
-def _screen_names(classes: Sequence[_ClassInfo]) -> set[str]:
-    names = {"Screen"}
+def _page_names(classes: Sequence[_ClassInfo]) -> set[str]:
+    names = {"Page"}
     changed = True
     while changed:
         changed = False
@@ -637,12 +637,12 @@ def _screen_names(classes: Sequence[_ClassInfo]) -> set[str]:
     return names
 
 
-def _screen_entries(
-    source: _Source, classes: Sequence[_ClassInfo], screens: set[str], index: _Index
-) -> list[ScreenEntry]:
-    entries: list[ScreenEntry] = []
+def _page_entries(
+    source: _Source, classes: Sequence[_ClassInfo], pages: set[str], index: _Index
+) -> list[PageEntry]:
+    entries: list[PageEntry] = []
     for info in classes:
-        if info.source is not source or info.name not in screens or info.name == "Screen":
+        if info.source is not source or info.name not in pages or info.name == "Page":
             continue
         elements: list[ElementEntry] = []
         for stmt in info.node.body:
@@ -673,7 +673,7 @@ def _screen_entries(
                 )
             )
         entries.append(
-            ScreenEntry(
+            PageEntry(
                 id=f"{source.rel}::{info.qualname}",
                 file=source.path.as_posix(),
                 name=info.name,
@@ -810,10 +810,10 @@ def discover(
     paths: Sequence[Path] | None = None,
     overrides: Mapping[Path, str] | None = None,
 ) -> DiscoveryResult:
-    """Discover tests and screens under ``root``.
+    """Discover tests and pages under ``root``.
 
     ``paths`` restricts which files are *reported*; the whole project is still read (from a
-    cache) so screens that inherit from a screen in another file are recognized. ``overrides``
+    cache) so pages that inherit from a page in another file are recognized. ``overrides``
     maps absolute paths to unsaved editor contents, which win over the files on disk.
     """
     root = root.resolve()
@@ -838,11 +838,11 @@ def discover(
     for source in parsed:
         assert source.tree is not None
         classes.extend(_collect_classes(source, source.tree.body))
-    screens = _screen_names(classes)
+    pages = _page_names(classes)
     index = _Index(classes)
 
     tests: list[TestEntry] = []
-    screen_entries: list[ScreenEntry] = []
+    page_entries: list[PageEntry] = []
     errors: list[DiscoveryError] = []
     for source in sources:
         if selected is not None and not _within(source.path, selected):
@@ -854,11 +854,11 @@ def discover(
             testpath_roots is None or _within(source.path, testpath_roots)
         ):
             tests.extend(_test_entries(source, rules))
-        screen_entries.extend(_screen_entries(source, classes, screens, index))
+        page_entries.extend(_page_entries(source, classes, pages, index))
     return DiscoveryResult(
         root=root.as_posix(),
         tests=tuple(tests),
-        screens=tuple(screen_entries),
+        pages=tuple(page_entries),
         errors=tuple(errors),
     )
 
@@ -869,8 +869,8 @@ def _is_under(path: Path, root: Path) -> bool:
 
 def discover_file(
     root: Path, file: Path, source: str
-) -> tuple[list[TestEntry], list[ScreenEntry], list[DiscoveryError]]:
-    """Analyse one file in isolation (screens are recognized only through bases in this file)."""
+) -> tuple[list[TestEntry], list[PageEntry], list[DiscoveryError]]:
+    """Analyse one file in isolation (pages are recognized only through bases in this file)."""
     root = root.resolve()
     path = file.resolve()
     rel = path.relative_to(root).as_posix() if _is_under(path, root) else path.name
@@ -881,4 +881,4 @@ def discover_file(
     classes = _collect_classes(parsed, parsed.tree.body)
     index = _Index(classes)
     tests = _test_entries(parsed, rules) if _is_test_file(rel, rules) else []
-    return tests, _screen_entries(parsed, classes, _screen_names(classes), index), []
+    return tests, _page_entries(parsed, classes, _page_names(classes), index), []

@@ -3,6 +3,14 @@
 All notable changes to WinTestKit (the `wintestkit` Python package and this extension, which are
 released together with the same version) are documented here.
 
+## [Unreleased]
+
+- Breaking: page objects now use `Page`, the `page` fixture, and the `pages/` folder.
+  Update imports, class names and project paths; the former screen API is removed.
+- Discovery returns `pages` and `PageEntry`; checks use `page.check` with a `page` parameter.
+  Update the Python backend and extension together. Spy insertion and editor commands use
+  page terminology throughout.
+
 ## [0.1.0]
 
 First release.

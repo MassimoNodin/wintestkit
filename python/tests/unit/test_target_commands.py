@@ -25,8 +25,8 @@ def command_setup(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, 
     record["app"] = app
     monkeypatch.setattr(common, "attach_app", lambda cfg, **kwargs: app)
     monkeypatch.setattr(targets.ModuleLoader, "get_element", lambda self, target: (object, "ok"))
-    monkeypatch.setattr(targets.ModuleLoader, "get_screen", lambda self, target: object)
-    monkeypatch.setattr(targets.ModuleLoader, "screens_in", lambda self, file: {"Main": object})
+    monkeypatch.setattr(targets.ModuleLoader, "get_page", lambda self, target: object)
+    monkeypatch.setattr(targets.ModuleLoader, "pages_in", lambda self, file: {"Main": object})
     monkeypatch.setattr(
         overlay, "flash", lambda *args, **kwargs: record["flashes"].append((args, kwargs))
     )
@@ -147,19 +147,19 @@ def test_check_json_and_exit_status(
     code: int,
 ) -> None:
     result = CheckResult(status, 0, qualname="Main.ok", locator='Button[name="OK"]')
-    monkeypatch.setattr(targets, "check_screen", lambda *args: [result])
+    monkeypatch.setattr(targets, "check_page", lambda *args: [result])
     assert invoke(command_setup, "check", "main.py::Main", "--json") == code
     assert json.loads(capsys.readouterr().out) == {"results": [result.to_dict()]}
 
 
-def test_check_human_output_and_no_screens(
+def test_check_human_output_and_no_pages(
     command_setup: dict[str, Any],
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     result = CheckResult("found", 0, qualname="Main.ok", locator='Button[name="OK"]')
-    monkeypatch.setattr(targets, "check_screen", lambda *args: [result])
+    monkeypatch.setattr(targets, "check_page", lambda *args: [result])
     assert invoke(command_setup, "check", "main.py") == 0
     assert 'Button[name="OK"]' in capsys.readouterr().out
-    monkeypatch.setattr(targets.ModuleLoader, "screens_in", lambda *args: {})
+    monkeypatch.setattr(targets.ModuleLoader, "pages_in", lambda *args: {})
     assert invoke(command_setup, "check", "main.py") == 2

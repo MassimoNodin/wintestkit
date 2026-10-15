@@ -165,7 +165,7 @@ export function activate(context: vscode.ExtensionContext): {
       [
         "wintestkit.highlightElement",
         "wintestkit.checkElement",
-        "wintestkit.checkScreen",
+        "wintestkit.checkPage",
         "wintestkit.runTest",
         "wintestkit.debugTest",
         "wintestkit.initProject",

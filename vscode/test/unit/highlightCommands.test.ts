@@ -52,8 +52,8 @@ const discovery = JSON.parse(
 const diagnostic = JSON.parse(
   readFileSync("../python/tests/contract/fixtures/diagnostic.json", "utf8"),
 ) as Diagnostic;
-const screen = discovery.screens[0];
-const target = { file: screen.file, qualname: screen.elements[0].qualname };
+const page = discovery.pages[0];
+const target = { file: page.file, qualname: page.elements[0].qualname };
 let commands: HighlightCommands;
 beforeEach(() => {
   vi.clearAllMocks();
@@ -91,7 +91,7 @@ describe("editor highlight commands", () => {
     });
     expect(mocks.progress).not.toHaveBeenCalled();
     expect(mocks.set).toHaveBeenCalledWith(
-      expect.objectContaining({ element: screen.elements[0] }),
+      expect.objectContaining({ element: page.elements[0] }),
     );
     expect(mocks.status).toHaveBeenCalledWith(
       '$(eye) Found Button "Sign in"',
@@ -141,9 +141,9 @@ describe("editor highlight commands", () => {
       ],
     });
     await mocks.commands.get("wintestkit.checkElement")?.(target);
-    expect(mocks.request).toHaveBeenCalledWith("screen.check", {
-      file: screen.file,
-      screen: screen.qualname,
+    expect(mocks.request).toHaveBeenCalledWith("page.check", {
+      file: page.file,
+      page: page.qualname,
     });
     expect(mocks.set).toHaveBeenCalledOnce();
     expect(mocks.status).not.toHaveBeenCalled();

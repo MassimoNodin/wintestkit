@@ -4,12 +4,12 @@
 
 Write and run UI tests for **Windows WPF applications** with Python, pytest and VS Code.
 WinTestKit finds controls through Microsoft UI Automation, not image matching. You describe
-windows and controls in reusable screen classes, interact with them, and assert their state.
+windows and controls in reusable page classes, interact with them, and assert their state.
 You do not need to modify the application under test.
 
 This guide takes you from installation to a basic test suite against **your own application**.
 No example applications or application binaries are bundled. The [example test code](examples/demo-tests)
-is kept as a reference for screen models, fixtures and common interactions.
+is kept as a reference for page models, fixtures and common interactions.
 
 ## 1. Prepare your machine
 
@@ -74,7 +74,7 @@ From your test folder, point WinTestKit at the application you want to test:
 wtk init --app "C:/Program Files/Contoso/Orders.exe"
 ```
 
-This creates a starter screen, a smoke test and project settings without overwriting existing
+This creates a starter page, a smoke test and project settings without overwriting existing
 files. You can also use **WinTestKit: Initialize Project** in VS Code.
 
 Your project will look like this:
@@ -83,7 +83,7 @@ Your project will look like this:
 orders-tests/
   .venv/
   pyproject.toml
-  screens/
+  pages/
     __init__.py
     main.py
   tests/
@@ -124,7 +124,7 @@ Launch your application manually, or run **WinTestKit: Launch App** in VS Code.
 
 In the **Spy** view, browse the object tree or use the picker to select a control in your
 application. Inspect its properties and suggested locator, then insert or copy that locator
-into your screen class. Selecting an object highlights it and attempts to bring its owning
+into your page class. Selecting an object highlights it and attempts to bring its owning
 window to the foreground.
 
 You can also inspect from the terminal:
@@ -140,16 +140,16 @@ Prefer a stable `automation_id` when available. Otherwise combine properties suc
 `control_type`, `name`, `class_name` and a containing element (`within=`). Locators are strict:
 if several controls match, narrow the locator instead of relying on an arbitrary match.
 
-## 5. Describe a screen
+## 5. Describe a page
 
-Replace the generated `screens/main.py` with a model of your actual window and controls.
+Replace the generated `pages/main.py` with a model of your actual window and controls.
 For an application with a login form, it might look like this:
 
 ```python
-from wintestkit import Element, Screen, Window
+from wintestkit import Element, Page, Window
 
 
-class MainScreen(Screen):
+class MainPage(Page):
     window = Window(title="Contoso Orders")
 
     username = Element(automation_id="UsernameTextBox")
@@ -164,27 +164,27 @@ Spy for your own application. Do not assume it exposes these AutomationIds.
 With the application open, verify the locators:
 
 ```powershell
-wtk highlight screens/main.py::MainScreen.sign_in
-wtk check screens/main.py
+wtk highlight pages/main.py::MainPage.sign_in
+wtk check pages/main.py
 ```
 
-In VS Code, use the **Highlight** and **Check** CodeLens actions above your screen elements.
-See [screens and elements](docs/guide/screens-and-elements.md) and
+In VS Code, use the **Highlight** and **Check** CodeLens actions above your page elements.
+See [pages and elements](docs/guide/pages-and-elements.md) and
 [locator strategies](docs/guide/locators-for-wpf.md) for nested controls, lists and dialogs.
 
 ## 6. Create a basic test suite
 
-Keep the generated smoke test, updating its screen or expectations if needed. Add
+Keep the generated smoke test, updating its page or expectations if needed. Add
 `tests/test_login.py` for a first interaction test:
 
 ```python
 from wintestkit import expect
 
-from screens.main import MainScreen
+from pages.main import MainPage
 
 
 def test_valid_login(app):
-    main = MainScreen(app)
+    main = MainPage(app)
     main.username.type("test-user")
     main.password.type("test-password")
     main.sign_in.click()
@@ -196,7 +196,7 @@ using your project settings. Actions and assertions wait automatically; avoid fi
 Use a dedicated test account and do not commit real credentials.
 
 Add more `test_*.py` files under `tests/` and share reusable window/control definitions under
-`screens/`. Tests should start from a known state: reset the app through a fixture or choose
+`pages/`. Tests should start from a known state: reset the app through a fixture or choose
 `launch = "per-test"` when a fresh process provides the isolation you need. See the
 [reference tests](examples/demo-tests) for fixture and parametrization patterns; their legacy
 app-specific locators must be adapted before use.
