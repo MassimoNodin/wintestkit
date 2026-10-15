@@ -16,6 +16,8 @@ import { Reports } from "./report";
 import { SpyView } from "./spy/spyView";
 import { registerInsertElement } from "./spy/insertElement";
 import { computeInsertion } from "./spy/insertionModel";
+import { ConfigurationEditor, settingsEditorId } from "./settings/editor";
+import { CurrentSetup } from "./settings/currentSetup";
 
 interface CommandContribution {
   command: string;
@@ -30,6 +32,7 @@ export function activate(context: vscode.ExtensionContext): {
   checks: CheckResultsStore;
   elements: ElementsTree;
   spy: SpyView;
+  setup: CurrentSetup;
   computeInsertion: typeof computeInsertion;
 } {
   const log = createLog();
@@ -38,6 +41,62 @@ export function activate(context: vscode.ExtensionContext): {
   const servers = new ServerManager(log);
   activeServers = servers;
   const projects = new Projects(log);
+  const configuration = new ConfigurationEditor(projects, context.extensionUri);
+  const setup = new CurrentSetup(projects);
+  context.subscriptions.push(
+    setup,
+    vscode.window.registerCustomEditorProvider(
+      settingsEditorId,
+      configuration,
+      {
+        webviewOptions: { retainContextWhenHidden: true },
+        supportsMultipleEditorsPerDocument: false,
+      },
+    ),
+    vscode.commands.registerCommand(
+      "wintestkit.openSettings",
+      (target?: vscode.Uri | vscode.TreeItem) =>
+        configuration
+          .open(target instanceof vscode.Uri ? target : target?.resourceUri)
+          .catch((error) => vscode.window.showErrorMessage(String(error))),
+    ),
+  );
+  const configWatcher = vscode.workspace.createFileSystemWatcher(
+    "**/{pyproject.toml,wintestkit.yaml,wintestkit.local.yaml,wintestkit.local.toml}",
+  );
+  const configTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  const reloadConfig = (uri: vscode.Uri) => {
+    const project = projects.projectFor(uri);
+    if (!project) return;
+    const key = project.root.toString();
+    const previous = configTimers.get(key);
+    if (previous) clearTimeout(previous);
+    configTimers.set(
+      key,
+      setTimeout(() => {
+        configTimers.delete(key);
+        setup.refresh();
+        if (vscode.workspace.isTrusted)
+          void servers
+            .restart(project)
+            .catch((error) =>
+              log.error("Configuration reload failed: " + String(error)),
+            );
+      }, 350),
+    );
+  };
+  context.subscriptions.push(
+    configWatcher,
+    configWatcher.onDidCreate(reloadConfig),
+    configWatcher.onDidChange(reloadConfig),
+    configWatcher.onDidDelete(reloadConfig),
+    {
+      dispose: () => {
+        for (const timer of configTimers.values()) clearTimeout(timer);
+        configTimers.clear();
+      },
+    },
+  );
   const discovery = new DiscoveryStore(projects, servers, log);
   const lenses = new CodeLenses(projects, discovery);
   const checks = new CheckResultsStore(discovery);
@@ -169,6 +228,7 @@ export function activate(context: vscode.ExtensionContext): {
         "wintestkit.runTest",
         "wintestkit.debugTest",
         "wintestkit.initProject",
+        "wintestkit.openSettings",
         "wintestkit.elements.goTo",
         "wintestkit.tests.run",
         "wintestkit.tests.debug",
@@ -209,7 +269,7 @@ export function activate(context: vscode.ExtensionContext): {
     false,
   );
   void projects.refresh();
-  return { tests, checks, elements, spy, computeInsertion };
+  return { tests, checks, elements, spy, setup, computeInsertion };
 }
 
 let activeServers: ServerManager | undefined;

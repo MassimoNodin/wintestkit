@@ -24,6 +24,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("vscode", () => ({
   window: {
+    registerCustomEditorProvider: vi.fn(() => ({ dispose: vi.fn() })),
     createOutputChannel: () => mocks.log,
     registerTreeDataProvider: mocks.registerTreeDataProvider,
     registerWebviewViewProvider: mocks.registerWebviewViewProvider,
@@ -33,6 +34,12 @@ vi.mock("vscode", () => ({
     executeCommand: mocks.executeCommand,
   },
   workspace: {
+    createFileSystemWatcher: vi.fn(() => ({
+      dispose: vi.fn(),
+      onDidCreate: vi.fn(() => ({ dispose: vi.fn() })),
+      onDidChange: vi.fn(() => ({ dispose: vi.fn() })),
+      onDidDelete: vi.fn(() => ({ dispose: vi.fn() })),
+    })),
     workspaceFolders: [mocks.folder],
     getWorkspaceFolder: () => mocks.folder,
     onDidChangeConfiguration: vi.fn(() => ({ dispose: vi.fn() })),
@@ -42,6 +49,18 @@ vi.mock("../../src/python", () => ({
   installPackage: vi.fn(),
   runTerminal: mocks.runTerminal,
   onDidChangeInterpreter: vi.fn(() => Promise.resolve({ dispose: vi.fn() })),
+}));
+vi.mock("../../src/settings/editor", () => ({
+  settingsEditorId: "wintestkit.configuration",
+  ConfigurationEditor: class {
+    open = vi.fn(() => Promise.resolve());
+  },
+}));
+vi.mock("../../src/settings/currentSetup", () => ({
+  CurrentSetup: class {
+    refresh() {}
+    dispose() {}
+  },
 }));
 vi.mock("../../src/server/serverManager", () => ({
   ServerManager: class {
@@ -189,7 +208,8 @@ describe("extension scaffold", () => {
       "wintestkit.spy",
       expect.any(Object),
     );
-    expect(manifest.contributes.views.wintestkit.slice(0, 3)).toEqual([
+    expect(manifest.contributes.views.wintestkit.slice(0, 4)).toEqual([
+      { id: "wintestkit.setup", name: "Current Setup" },
       { id: "wintestkit.elements", name: "Pages" },
       { id: "wintestkit.flows", name: "Flows" },
       { id: "wintestkit.tests", name: "Tests" },
@@ -220,11 +240,13 @@ describe("extension scaffold", () => {
     ]);
   });
 
-  it("has a Windows testing manifest and the single permitted runtime dependency", () => {
+  it("has a Windows testing manifest and configuration parser dependencies", () => {
     expect(manifest.engines.vscode).toBe("^1.95.0");
     expect(manifest.extensionDependencies).toContain("ms-python.python");
     expect(Object.keys(manifest.dependencies)).toEqual([
       "@vscode/python-extension",
+      "smol-toml",
+      "yaml",
     ]);
     const commandIds = manifest.contributes.commands.map(
       (command: { command: string }) => command.command,

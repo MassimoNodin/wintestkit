@@ -40,8 +40,9 @@ export class Projects implements vscode.Disposable {
   readonly onDidChange = this.changed.event;
   private readonly subscriptions: vscode.Disposable[];
   constructor(private readonly log: vscode.LogOutputChannel) {
-    const watcher =
-      vscode.workspace.createFileSystemWatcher("**/pyproject.toml");
+    const watcher = vscode.workspace.createFileSystemWatcher(
+      "**/{pyproject.toml,wintestkit.yaml,wintestkit.local.yaml,wintestkit.local.toml}",
+    );
     const refresh = () => {
       void this.refresh();
     };
@@ -67,7 +68,7 @@ export class Projects implements vscode.Disposable {
     const revision = ++this.revision;
     try {
       const files = await vscode.workspace.findFiles(
-        "**/pyproject.toml",
+        "**/{pyproject.toml,wintestkit.yaml}",
         "**/{node_modules,.venv,venv,.git,site-packages}/**",
       );
       const projects: Project[] = [];
@@ -76,9 +77,19 @@ export class Projects implements vscode.Disposable {
           const source = Buffer.from(
             await vscode.workspace.fs.readFile(file),
           ).toString("utf8");
-          if (/^\s*\[tool\.wintestkit(?:\.app)?\]\s*(?:#.*)?$/m.test(source)) {
+          if (
+            path.basename(file.fsPath) === "wintestkit.yaml" ||
+            /^\s*\[tool\.wintestkit(?:\.app)?\]\s*(?:#.*)?$/m.test(source)
+          ) {
             const root = vscode.Uri.file(path.dirname(file.fsPath));
-            projects.push({ root, name: path.basename(root.fsPath) });
+            if (
+              !projects.some(
+                (project) =>
+                  normalizedPath(project.root.fsPath) ===
+                  normalizedPath(root.fsPath),
+              )
+            )
+              projects.push({ root, name: path.basename(root.fsPath) });
           }
         } catch (error) {
           this.log.debug(

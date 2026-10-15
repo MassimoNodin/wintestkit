@@ -41,6 +41,11 @@ suite("WinTestKit activation", () => {
       highlight,
       "discovery populates highlight CodeLens for Calculator",
     );
+    const setup = await api.setup.getChildren();
+    assert.equal(setup.length, 1);
+    assert.equal(setup[0].label, "CalculatorApp");
+    assert.equal(setup[0].command.command, "wintestkit.openSettings");
+    assert.ok(setup[0].iconPath);
     const pages = api.elements.getChildren();
     assert.ok(
       pages.some((node: { label: string }) => node.label === "ScientificPage"),

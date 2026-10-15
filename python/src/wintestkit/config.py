@@ -1,13 +1,16 @@
-"""Configuration: ``[tool.wintestkit]`` in ``pyproject.toml`` plus environment and overrides."""
+"""Layered shared/local YAML, legacy TOML, environment and CLI configuration."""
 
 from __future__ import annotations
 
+import math
 import os
 import tomllib
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal, cast
+
+import yaml
 
 from wintestkit.errors import ConfigError
 
@@ -18,6 +21,29 @@ ScreenshotMode = Literal["off", "on-failure", "every-step"]
 LAUNCH_MODES = ("per-test", "per-session", "attach")
 INPUT_MODES = ("pattern", "mouse")
 SCREENSHOT_MODES = ("off", "on-failure", "every-step")
+
+LOCAL_IGNORE_PATTERNS = (
+    "wintestkit.local.toml",
+    "wintestkit.local.yaml",
+    ".venv/",
+    "__pycache__/",
+    ".pytest_cache/",
+    ".ruff_cache/",
+    "wtk-report/",
+    "wtk-results/",
+)
+
+
+def ensure_local_ignores(root: Path) -> None:
+    """Append missing local file rules without replacing existing ignore rules."""
+    path = root / ".gitignore"
+    ignore = path.read_text(encoding="utf-8") if path.exists() else ""
+    existing = set(ignore.splitlines())
+    missing = [pattern for pattern in LOCAL_IGNORE_PATTERNS if pattern not in existing]
+    if missing:
+        separator = "\n" if ignore and not ignore.endswith("\n") else ""
+        path.write_text(ignore + separator + "\n".join(missing) + "\n", encoding="utf-8")
+
 
 _TOP_LEVEL_KEYS = {
     "launch",
@@ -102,9 +128,11 @@ def _wtk_table(data: Mapping[str, Any]) -> Mapping[str, Any] | None:
 
 
 def find_project_root(start: Path) -> Path | None:
-    """Nearest ancestor of ``start`` whose ``pyproject.toml`` has a ``[tool.wintestkit]`` table."""
+    """Nearest ancestor with shared YAML or a legacy ``[tool.wintestkit]`` table."""
     start = start.resolve()
     for directory in (start, *start.parents):
+        if (directory / "wintestkit.yaml").is_file():
+            return directory
         data = _read_pyproject(directory / "pyproject.toml")
         if data is not None and _wtk_table(data) is not None:
             return directory
@@ -129,7 +157,7 @@ def _number(key: str, value: Any, *, positive: bool) -> float:
     if isinstance(value, bool) or not isinstance(value, int | float):
         raise _fail(key, f"expected a number, got {value!r}")
     number = float(value)
-    if positive and number <= 0:
+    if not math.isfinite(number) or (positive and number <= 0):
         raise _fail(key, f"must be greater than 0, got {value!r}")
     return number
 
@@ -214,6 +242,41 @@ def _environment_values(environ: Mapping[str, str]) -> dict[str, Any]:
 # -- loading --------------------------------------------------------------------------------------
 
 
+class _ConfigLoader(yaml.SafeLoader):
+    pass
+
+
+def _yaml_mapping(loader: yaml.SafeLoader, node: yaml.MappingNode) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    construct: Callable[[yaml.Node], Any] = cast("Any", loader).construct_object
+    for key_node, value_node in node.value:
+        key = construct(key_node)
+        if not isinstance(key, str):
+            raise ConfigError("YAML configuration keys must be strings")
+        if key in result:
+            raise ConfigError(f"duplicate YAML configuration key: {key}")
+        result[key] = construct(value_node)
+    return result
+
+
+_ConfigLoader.add_constructor(yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, _yaml_mapping)
+
+
+def _read_yaml(path: Path) -> dict[str, Any]:
+    try:
+        with path.open(encoding="utf-8") as handle:
+            value = yaml.load(handle, Loader=_ConfigLoader)
+    except FileNotFoundError:
+        return {}
+    except (OSError, yaml.YAMLError, ConfigError) as error:
+        raise ConfigError(f"cannot read {path}: {error}") from error
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise ConfigError(f"{path}: expected a YAML mapping")
+    return cast("dict[str, Any]", value)
+
+
 def _resolve_path(root: Path, value: str) -> Path:
     path = Path(value)
     return path if path.is_absolute() else (root / path).resolve()
@@ -237,7 +300,7 @@ def _build_app(root: Path, values: Mapping[str, Any]) -> AppConfig | None:
 
 
 def load_config(start: Path | None = None, overrides: Mapping[str, Any] | None = None) -> WtkConfig:
-    """Load configuration. Precedence: defaults < pyproject < environment < ``overrides``."""
+    """Load defaults < pyproject < shared YAML < local TOML < local YAML < env < overrides."""
     start_dir = (start or Path.cwd()).resolve()
     if start_dir.is_file():
         start_dir = start_dir.parent
@@ -250,6 +313,15 @@ def load_config(start: Path | None = None, overrides: Mapping[str, Any] | None =
         data = _read_pyproject(root / "pyproject.toml") or {}
         table = _wtk_table(data) or {}
         values.update(_flatten(table))
+        shared = _flatten(_read_yaml(root / "wintestkit.yaml"))
+        if "app.path" in shared:
+            raise ConfigError(
+                "Store app.path in ignored wintestkit.local.yaml, not wintestkit.yaml"
+            )
+        values.update(shared)
+        local_toml = _read_pyproject(root / "wintestkit.local.toml") or {}
+        values.update(_flatten(_wtk_table(local_toml) or {}))
+        values.update(_flatten(_read_yaml(root / "wintestkit.local.yaml")))
     values.update(_environment_values(os.environ))
     if overrides:
         _check_override_keys(overrides)

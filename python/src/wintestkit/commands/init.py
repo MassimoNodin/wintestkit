@@ -11,6 +11,7 @@ from string import Template
 from typing import Any, cast
 
 from wintestkit.commands import common
+from wintestkit.config import ensure_local_ignores
 
 
 def add_parser(subparsers: Any) -> None:
@@ -48,7 +49,6 @@ def run(args: argparse.Namespace) -> int:
             f"cannot update invalid pyproject.toml: {error}", common.EXIT_USAGE
         ) from error
     app_path = Path(args.app or "C:/path/to/YourApp.exe")
-    app_value = json.dumps(app_path.as_posix(), ensure_ascii=False)
     title = json.dumps(app_path.stem, ensure_ascii=False)
     additions: list[str] = []
     tool_value: object = config.get("tool", {})
@@ -62,10 +62,6 @@ def run(args: argparse.Namespace) -> int:
         )
     if "ini_options" not in tool.get("pytest", {}):
         additions.append(_template("pytest.toml.tmpl"))
-    if "wintestkit" not in tool:
-        additions.append(_template("wintestkit.toml.tmpl", app_path=app_value))
-    elif "app" not in tool["wintestkit"]:
-        additions.append("[tool.wintestkit.app]\npath = " + app_value + "\n")
     if additions:
         combined = original + ("\n" if original and not original.endswith("\n") else "")
         combined += "\n".join(additions)
@@ -87,11 +83,24 @@ def run(args: argparse.Namespace) -> int:
         "tests/test_smoke.py": _template("test_smoke.py.tmpl"),
     }.items():
         _write(root / relative, content, force=args.force)
-    ignore_path = root / ".gitignore"
-    ignore = ignore_path.read_text(encoding="utf-8") if ignore_path.exists() else ""
-    if "wtk-report/" not in ignore.splitlines():
-        separator = "\n" if ignore and not ignore.endswith("\n") else ""
-        ignore_path.write_text(ignore + separator + "wtk-report/\n", encoding="utf-8")
-    print("\nNext: install wintestkit and pytest, select your app/window in pyproject.toml and")
+    ensure_local_ignores(root)
+    _write(
+        root / "wintestkit.yaml",
+        "# Shared project settings. Machine paths belong in wintestkit.local.yaml.\n"
+        + (
+            "{}\n"
+            if "wintestkit" in tool
+            else "launch: per-session\ntimeout: 10\nscreenshots: on-failure\n"
+        ),
+        force=False,
+    )
+    local = (
+        "# Machine-specific settings. Do not commit this file.\napp:\n  path: "
+        + json.dumps(app_path.as_posix(), ensure_ascii=False)
+        + "\n"
+    )
+    if args.app or "wintestkit" not in tool:
+        _write(root / "wintestkit.local.yaml", local, force=False)
+    print("\nNext: install wintestkit and pytest, select your app in wintestkit.local.yaml and")
     print("pages/main.py, then run wtk doctor and wtk run from the project directory.")
     return common.EXIT_OK

@@ -83,6 +83,9 @@ Your project will look like this:
 orders-tests/
   .venv/
   pyproject.toml
+  wintestkit.yaml
+  wintestkit.local.yaml
+  .gitignore
   pages/
     __init__.py
     main.py
@@ -90,21 +93,24 @@ orders-tests/
     test_smoke.py
 ```
 
-Check the generated `pyproject.toml`. A minimal configuration is:
+Shared settings go in `wintestkit.yaml`:
 
-```toml
-[tool.pytest.ini_options]
-pythonpath = ["."]
-testpaths = ["tests"]
-
-[tool.wintestkit]
-launch = "per-session"
-
-[tool.wintestkit.app]
-path = "C:/Program Files/Contoso/Orders.exe"
+```yaml
+launch: per-session
+timeout: 10
 ```
 
-Use your real executable path. Relative paths are resolved from `pyproject.toml`.
+Machine-specific settings go in Git-ignored `wintestkit.local.yaml`:
+
+```yaml
+app:
+  path: C:/Program Files/Contoso/Orders.exe
+```
+
+In VS Code, use the **Current Setup** gear above Pages to edit these files with the custom
+YAML configuration editor. `pyproject.toml` retains pytest configuration, and legacy
+`[tool.wintestkit]` settings remain supported. Use your real executable path; relative paths
+resolve from the project directory.
 `per-session` launches the app once for the test run and closes it afterwards. Use `per-test`
 for a fresh application per test, or `attach` to use an application that is already running.
 See [configuration and launch modes](docs/guide/running-tests.md).

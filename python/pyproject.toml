@@ -5,7 +5,10 @@ description = "UI test automation for Windows WPF applications"
 readme = "README.md"
 requires-python = ">=3.12"
 license = "MIT"
-dependencies = ["comtypes>=1.4.8"]
+dependencies = [
+    "comtypes>=1.4.8",
+    "pyyaml>=6.0.2",
+]
 classifiers = ["Operating System :: Microsoft :: Windows", "Framework :: Pytest"]
 
 [project.scripts]
@@ -22,7 +25,14 @@ build-backend = "hatchling.build"
 path = "src/wintestkit/__init__.py"
 
 [dependency-groups]
-dev = ["pytest>=8.3", "ruff>=0.7", "pyright>=1.1.390", "jsonschema>=4.23", "referencing>=0.35"]
+dev = [
+    "pytest>=8.3",
+    "ruff>=0.7",
+    "pyright>=1.1.390",
+    "jsonschema>=4.23",
+    "referencing>=0.35",
+    "types-pyyaml>=6.0.12.20260906",
+]
 
 [tool.ruff]
 line-length = 100

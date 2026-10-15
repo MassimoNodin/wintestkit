@@ -31,37 +31,47 @@ wtk run -- -p no:cacheprovider --maxfail=3  # raw pytest arguments after --
 | `--events URL` | Stream run events (see below) |
 | `-k EXPR`, `-m EXPR`, `-x`, `--lf` | As in pytest |
 
-Plain `pytest` works the same way: the plugin activates in any project with a `[tool.wintestkit]`
-table and has matching `--wtk-*` options (`pytest --wtk-launch per-test --wtk-timeout 20`). Run
+Plain `pytest` works the same way: the plugin activates in projects with `wintestkit.yaml`
+or a legacy `[tool.wintestkit]` table, with matching `--wtk-*` options. Run
 `pytest --help` to see them.
 
 ## Configuration
 
-Settings live in `pyproject.toml`. Precedence, highest first: command-line options, `WTK_*`
-environment variables, `[tool.wintestkit]`, defaults.
+Shared settings live in `wintestkit.yaml`; machine overrides live in ignored
+`wintestkit.local.yaml`. The Current Setup gear opens their custom YAML editor.
+Precedence, highest first: CLI, environment, local YAML, local TOML, shared YAML,
+legacy `[tool.wintestkit]` in `pyproject.toml`, defaults. Local TOML uses that same table.
 
-```toml
-[tool.wintestkit]
-launch = "per-session"        # per-test | per-session | attach
-timeout = 10.0                # default auto-wait in seconds
-input_mode = "pattern"        # pattern | mouse
-screenshots = "on-failure"    # off | on-failure | every-step
-report_dir = "wtk-report"
-highlight_actions = false
-slow_mo_ms = 0
-python_paths = ["."]          # where the CLI and VS Code import pages from
+Shared `wintestkit.yaml` (commit this):
 
-[tool.wintestkit.app]
-path = "C:/Program Files/Contoso/Orders.exe"
-args = ["--no-splash"]
-cwd = "C:/Program Files/Contoso"
-env = { ORDERS_ENV = "test" }
-process = "Orders.exe"        # process to attach to (default: the exe name of path)
-startup_timeout = 30.0
-close_timeout = 10.0
+```yaml
+launch: per-session
+timeout: 10
+input_mode: pattern
+screenshots: on-failure
+report_dir: wtk-report
+python_paths: ["."]
+app:
+  process: Orders.exe
+  startup_timeout: 30
+  close_timeout: 10
 ```
 
-Relative paths are relative to the directory of `pyproject.toml`. The environment variables are
+Local `wintestkit.local.yaml` (do not commit this):
+
+```yaml
+app:
+  path: C:/Program Files/Contoso/Orders.exe
+  args: ["--no-splash"]
+  cwd: C:/Program Files/Contoso
+highlight_actions: false
+slow_mo_ms: 0
+```
+
+Shared YAML rejects application paths. Legacy paths remain supported; move them from
+`pyproject.toml` to local YAML to keep them machine-specific. Keep secrets out of shared
+configuration; advanced `app.env` settings accept string values in local YAML.
+Relative paths resolve from the project directory. Environment variables include
 `WTK_APP_PATH`, `WTK_LAUNCH`, `WTK_TIMEOUT`, `WTK_INPUT_MODE` and `WTK_SCREENSHOTS`; `WTK_LOG`
 sets the log level of the `wintestkit` logger (`DEBUG`, `INFO`, …).
 
