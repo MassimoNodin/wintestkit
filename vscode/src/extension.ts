@@ -136,7 +136,7 @@ export function activate(context: vscode.ExtensionContext): {
           folder.toString()
       )
         void servers
-          .restart(project)
+          .restartIfInterpreterChanged(project)
           .catch((error) => log.error(String(error)));
     }
   })
@@ -170,6 +170,8 @@ export function activate(context: vscode.ExtensionContext): {
         "wintestkit.debugTest",
         "wintestkit.initProject",
         "wintestkit.elements.goTo",
+        "wintestkit.tests.run",
+        "wintestkit.tests.debug",
         "wintestkit.spy.startPick",
         "wintestkit.spy.refresh",
       ].includes(contribution.command)

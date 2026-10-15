@@ -7,7 +7,7 @@
       "request": "launch",
       "args": [
         "--extensionDevelopmentPath=${workspaceFolder}/vscode",
-        "${workspaceFolder}/examples/demo-tests"
+        "${workspaceFolder}/examples/calculator-tests"
       ],
       "outFiles": [
         "${workspaceFolder}/vscode/dist/**/*.js"

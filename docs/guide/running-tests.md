@@ -90,7 +90,7 @@ state. Put the reset in an autouse fixture; the demo project uses the applicatio
 **File > Reset**:
 
 ```python
-# examples/demo-tests/conftest.py
+# pseudo-code
 @pytest.fixture(autouse=True)
 def reset_demo(main: MainPage) -> None:
     """Start every test from a clean app: the app is shared by the whole session."""

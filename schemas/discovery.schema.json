@@ -24,6 +24,12 @@
             "$ref": "discovery.schema.json#/$defs/PageEntry"
           }
         },
+        "flows": {
+          "type": "array",
+          "items": {
+            "$ref": "discovery.schema.json#/$defs/FlowEntry"
+          }
+        },
         "errors": {
           "type": "array",
           "items": {
@@ -32,6 +38,18 @@
         }
       },
       "required": ["version", "root", "tests", "pages", "errors"],
+      "additionalProperties": false
+    },
+    "FlowEntry": {
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "file": { "type": "string" },
+        "name": { "type": "string" },
+        "range": { "$ref": "common.schema.json#/$defs/Range" },
+        "nameRange": { "$ref": "common.schema.json#/$defs/Range" }
+      },
+      "required": ["id", "file", "name", "range", "nameRange"],
       "additionalProperties": false
     },
     "TestEntry": {

@@ -215,6 +215,23 @@ export class ServerManager implements vscode.Disposable {
     this.changed.fire(entry.project);
     return entry.connection;
   }
+  async restartIfInterpreterChanged(project: Project): Promise<void> {
+    const entry = this.entries.get(project.root.toString());
+    if (!entry?.promise) return;
+    let connection: ServerConnection;
+    try {
+      connection = await entry.promise;
+    } catch {
+      return;
+    }
+    const python = await getInterpreter(project.root);
+    if (
+      !this.disposed &&
+      entry.connection === connection &&
+      python !== connection.python
+    )
+      await this.restart(project);
+  }
   async restart(project: Project): Promise<ServerConnection> {
     const entry = this.entries.get(project.root.toString());
     if (entry) {

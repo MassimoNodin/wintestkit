@@ -10,21 +10,22 @@ import pytest
 from wintestkit.discovery import discover
 
 Validate = Callable[[str, str, Any], None]
-EXAMPLES = Path(__file__).resolve().parents[3] / "examples" / "demo-tests"
+EXAMPLES = Path(__file__).resolve().parents[3] / "examples" / "calculator-tests"
 
 
 def test_the_examples_project_validates(validate: Validate) -> None:
     result = discover(EXAMPLES)
     validate("discovery.schema.json", "DiscoveryResult", result.to_dict())
     assert result.errors == ()
-    assert len(result.tests) >= 15
+    assert len(result.tests) == 4
+    assert {flow.name for flow in result.flows} == {"open_page", "tour_calculator"}
     names = {s.name for s in result.pages}
-    assert {"MainPage", "NoteDialog", "MessageBox"} <= names
-    main = next(s for s in result.pages if s.name == "MainPage")
+    assert {"CalculatorPage", "StandardPage", "ScientificPage", "ProgrammerPage"} <= names
+    main = next(s for s in result.pages if s.name == "CalculatorPage")
     window = next(e for e in main.elements if e.name == "window")
-    assert window.locator == {"window": {"title": "WTK Demo"}}
-    sign_in = next(e for e in main.elements if e.name == "sign_in")
-    assert sign_in.locator["within"] == {"controlType": "Group", "name": "Credentials"}
+    assert window.locator == {}
+    navigation = next(e for e in main.elements if e.name == "navigation")
+    assert navigation.locator == {"automationId": "TogglePaneButton"}
     assert not any(e.dynamic for s in result.pages for e in s.elements)
 
 

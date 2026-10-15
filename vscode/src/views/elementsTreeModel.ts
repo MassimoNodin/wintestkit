@@ -6,7 +6,16 @@ export interface ElementNode {
   id: string;
   label: string;
   description: string;
-  kind: "project" | "page" | "window" | "element" | "elements";
+  kind:
+    | "project"
+    | "page"
+    | "window"
+    | "element"
+    | "elements"
+    | "file"
+    | "flow"
+    | "test"
+    | "test-class";
   icon: string;
   children: ElementNode[];
   file?: string;
@@ -15,6 +24,8 @@ export interface ElementNode {
   page?: string;
   elementId?: string;
   tooltip?: string;
+  root?: string;
+  testId?: string;
 }
 
 export function buildTree(discoveries: DiscoveryResult[]): ElementNode[] {

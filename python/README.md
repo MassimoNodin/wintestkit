@@ -27,20 +27,20 @@ uv run ruff format --check .
 uv run pyright
 ```
 
-No example app is bundled. App-dependent desktop tests require an externally supplied legacy
-WTK Demo executable configured through `WTK_DEMO_APP`; they skip when it is unset. See the
-[development guide](../docs/development.md) for opt-in desktop tests and packaging.
+No example app is bundled. Native desktop tests require an interactive, unlocked Windows
+session, but no external demo executable. See the [development guide](../docs/development.md)
+for desktop tests and packaging, and the [Calculator example](../examples/calculator-tests)
+for application-level scenarios.
 
 ## Resolve targets
 
-For the retained legacy examples, set `WTK_APP_PATH` to a compatible external WTK Demo
-executable and start it before running these commands from this directory. For your own
-application, replace the project root and page targets:
+Open Windows Calculator in Standard mode before running these commands from this directory.
+For your own application, replace the project root and page targets:
 
 ```powershell
-uv run wtk --root ../examples/demo-tests highlight pages/main.py::MainPage.sign_in --json
-uv run wtk --root ../examples/demo-tests highlight pages/main.py::MainPage --launch --duration 1000
-uv run wtk --root ../examples/demo-tests check pages/main.py::MainPage --json
+uv run wtk --root ../examples/calculator-tests highlight pages/calculator.py::CalculatorPage.one --json
+uv run wtk --root ../examples/calculator-tests highlight pages/standard.py::StandardPage --duration 1000
+uv run wtk --root ../examples/calculator-tests check pages/standard.py::StandardPage --json
 ```
 
 `highlight` resolves immediately by default; `--timeout S` enables polling. `--launch` starts

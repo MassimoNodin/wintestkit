@@ -266,6 +266,7 @@ GetWindowThreadProcessId = _declare(
     user32, "GetWindowThreadProcessId", _D, HWND, ctypes.POINTER(_D)
 )
 EnumWindows = _declare(user32, "EnumWindows", _B, WNDENUMPROC, LPARAM)
+EnumChildWindows = _declare(user32, "EnumChildWindows", _B, HWND, WNDENUMPROC, LPARAM)
 GetClassNameW = _declare(user32, "GetClassNameW", _I, HWND, wintypes.LPWSTR, _I)
 GetWindowTextW = _declare(user32, "GetWindowTextW", _I, HWND, wintypes.LPWSTR, _I)
 IsIconic = _declare(user32, "IsIconic", _B, HWND)
@@ -417,7 +418,19 @@ def top_level_windows(pid_set: set[int] | None = None, visible_only: bool = True
     def callback(hwnd: Any, _lparam: Any) -> bool:
         if visible_only and not IsWindowVisible(hwnd):
             return True
-        if pid_set is None or window_pid(hwnd) in pid_set:
+        matches = pid_set is None or window_pid(hwnd) in pid_set
+        if not matches and window_class_name(hwnd) == "ApplicationFrameWindow":
+
+            @WNDENUMPROC
+            def child_callback(child: Any, _child_lparam: Any) -> bool:
+                nonlocal matches
+                if pid_set is not None and window_pid(child) in pid_set:
+                    matches = True
+                    return False
+                return True
+
+            EnumChildWindows(hwnd, child_callback, 0)
+        if matches:
             found.append(int(hwnd))
         return True
 

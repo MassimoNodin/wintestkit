@@ -185,6 +185,7 @@ export interface ProtocolContracts {
   ElementInfo?: ElementInfo;
   ElementResult?: ElementResult;
   ErrorInfo?: ErrorInfo;
+  FlowEntry?: FlowEntry;
   InitializeParams?: InitializeParams;
   InitializeResult?: InitializeResult;
   InspectChildrenParams?: InspectChildrenParams;
@@ -363,6 +364,7 @@ export interface DiscoverResult {
   root: string;
   tests: TestEntry[];
   pages: PageEntry[];
+  flows?: FlowEntry[];
   errors: DiscoveryError[];
 }
 /**
@@ -452,6 +454,17 @@ export interface WindowLocatorData {
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "FlowEntry".
+ */
+export interface FlowEntry {
+  id: string;
+  file: string;
+  name: string;
+  range: Range;
+  nameRange: Range;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
  * via the `definition` "DiscoveryError".
  */
 export interface DiscoveryError {
@@ -468,6 +481,7 @@ export interface DiscoveryResult {
   root: string;
   tests: TestEntry[];
   pages: PageEntry[];
+  flows?: FlowEntry[];
   errors: DiscoveryError[];
 }
 /**
@@ -751,6 +765,7 @@ export interface DiscoveryResult1 {
   root: string;
   tests: TestEntry[];
   pages: PageEntry[];
+  flows?: FlowEntry[];
   errors: DiscoveryError[];
 }
 /**

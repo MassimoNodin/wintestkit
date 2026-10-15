@@ -1,7 +1,7 @@
 # VS Code
 
 The **WinTestKit** extension (`wintestkit.wintestkit`) adds editor actions, Test Explorer
-integration, an Elements view and a Spy. It needs the
+integration, separate Pages, Flows and Tests sections, and a Spy. It needs the
 [Python extension](https://marketplace.visualstudio.com/items?itemName=ms-python.python) and the
 `wintestkit` package in the selected interpreter. When the package is missing, the extension
 offers to install it (**WinTestKit: Install wintestkit Package**).
@@ -45,12 +45,21 @@ The Python extension can also discover your tests with pytest, which shows every
 WinTestKit offers to disable the Python extension's pytest discovery for the workspace; keeping
 both is supported. Turn the prompt off with `wintestkit.promptDisablePytestExplorer`.
 
-## Elements view
+## Pages, Flows and Tests
 
-The **Elements** view in the WinTestKit activity bar lists every page of every project, with
-elements nested under their `within` containers. Click an entry to go to its definition. Inline
-actions highlight or check an element and check a whole page; the icons show the last check
-result. Pages are found statically while you type, without running your code.
+The WinTestKit activity bar has three independently collapsible sections:
+
+- **Pages** lists page classes, with elements nested under their `within` containers.
+  Inline actions highlight/check elements or check a whole page; icons show the last check result.
+- **Flows** lists public, module-level Python functions (including async functions) under
+  `flows/` directories, grouped by source file. Private helpers and class methods are omitted.
+  Flows are ordinary Python helpers, not independently runnable tests.
+- **Tests** lists pytest tests by file and class, with inline **Run Tests** and **Debug Tests**
+  actions for a test, class, file or project. These use the same runner as the Test Explorer.
+
+Click an entry to open its definition. Each section has its own refresh action and groups
+entries by project in multi-project workspaces. Discovery updates while you type without
+importing or running your code. The built-in Test Explorer remains available.
 
 ## Spy
 

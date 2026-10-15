@@ -1,9 +1,11 @@
 import * as vscode from "vscode";
 import type { Projects } from "../projects";
+import { normalizedPath } from "../projects";
 import type { DiscoveryStore } from "../discovery/store";
 import type { CheckResultsStore } from "../editor/decorations";
 import type { DiscoveryResult } from "../protocol/generated";
 import { buildTree, type ElementNode } from "./elementsTreeModel";
+import { buildProjectTree, type ProjectSection } from "./projectTreeModel";
 
 export class ElementsTree
   implements vscode.TreeDataProvider<ElementNode>, vscode.Disposable
@@ -22,15 +24,46 @@ export class ElementsTree
       discovery.onDidChange(refresh),
       checks.onDidChange(refresh),
       vscode.window.registerTreeDataProvider("wintestkit.elements", this),
+      ...(["flows", "tests"] as const).map((section) =>
+        vscode.window.registerTreeDataProvider("wintestkit." + section, {
+          onDidChangeTreeData: this.onDidChangeTreeData,
+          getChildren: (node?: ElementNode) => this.getChildren(node, section),
+          getTreeItem: (node: ElementNode) => this.getTreeItem(node),
+        }),
+      ),
+      ...(["run", "debug"] as const).map((action) =>
+        vscode.commands.registerCommand(
+          "wintestkit.tests." + action,
+          async (node: ElementNode) => {
+            if (node?.testId === undefined || !node.root) return;
+            const project = this.projects.all.find(
+              (candidate) =>
+                normalizedPath(candidate.root.fsPath) ===
+                normalizedPath(node.root!),
+            );
+            if (project)
+              await vscode.commands.executeCommand(
+                action === "run"
+                  ? "wintestkit.runTest"
+                  : "wintestkit.debugTest",
+                { id: node.testId, project },
+              );
+          },
+        ),
+      ),
       vscode.commands.registerCommand(
         "wintestkit.elements.goTo",
         async (node: ElementNode) => {
-          if (!node?.file || !node.range) return;
+          if (!node?.file) return;
+          const location = node.range ?? {
+            start: { line: 0, character: 0 },
+            end: { line: 0, character: 0 },
+          };
           const range = new vscode.Range(
-            node.range.start.line,
-            node.range.start.character,
-            node.range.end.line,
-            node.range.end.character,
+            location.start.line,
+            location.start.character,
+            location.end.line,
+            location.end.character,
           );
           const editor = await vscode.window.showTextDocument(
             vscode.Uri.file(node.file),
@@ -44,15 +77,14 @@ export class ElementsTree
       ),
     ];
   }
-  getChildren(node?: ElementNode): ElementNode[] {
-    return (
-      node?.children ??
-      buildTree(
-        this.projects.all
-          .map((project) => this.discovery.get(project))
-          .filter((result): result is DiscoveryResult => result !== undefined),
-      )
-    );
+  getChildren(node?: ElementNode, section?: ProjectSection): ElementNode[] {
+    if (node) return node.children;
+    const discoveries = this.projects.all
+      .map((project) => this.discovery.get(project))
+      .filter((result): result is DiscoveryResult => result !== undefined);
+    return section
+      ? buildProjectTree(discoveries, section)
+      : buildTree(discoveries);
   }
   getTreeItem(node: ElementNode): vscode.TreeItem {
     const item = new vscode.TreeItem(
@@ -64,7 +96,11 @@ export class ElementsTree
     item.id = node.id;
     item.description = node.description;
     item.tooltip = node.tooltip ?? node.description;
-    item.contextValue = node.kind;
+    item.contextValue =
+      node.testId !== undefined &&
+      (node.kind === "file" || node.kind === "project")
+        ? "test-" + node.kind
+        : node.kind;
     item.iconPath = new vscode.ThemeIcon(node.icon);
     const result = node.elementId && this.checks.results.get(node.elementId);
     if (result) {

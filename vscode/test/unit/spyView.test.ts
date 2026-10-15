@@ -43,7 +43,7 @@ describe("Spy view bridge", () => {
     vi.clearAllMocks();
     mocks.notifications.clear();
   });
-  const create = async () => {
+  const create = async (connect?: () => Promise<unknown>) => {
     const project = {
       root: { fsPath: "C:/demo", toString: () => "demo" },
       name: "demo",
@@ -61,14 +61,20 @@ describe("Spy view bridge", () => {
         };
       },
     };
+    let serverChanged = () => {};
+    let serverState = "ready";
     const provider = new SpyView(
       {
         all: [project],
         onDidChange: () => ({ dispose() {} }),
       } as unknown as Projects,
       {
-        get: () => Promise.resolve({ client }),
-        onDidChange: () => ({ dispose() {} }),
+        get: connect || (() => Promise.resolve({ client })),
+        state: () => serverState,
+        onDidChange: (callback: (value: typeof project) => void) => {
+          serverChanged = () => callback(project);
+          return { dispose() {} };
+        },
       } as unknown as ServerManager,
       { fsPath: path.resolve(".") } as vscode.Uri,
       { error: vi.fn() } as unknown as vscode.LogOutputChannel,
@@ -107,8 +113,41 @@ describe("Spy view bridge", () => {
       view,
       visibility: () => visibility(),
       notificationDisposals,
+      serverChanged: (state: string) => {
+        serverState = state;
+        serverChanged();
+      },
     };
   };
+  it("reloads the tree when the server becomes ready after a failed startup", async () => {
+    let rejectConnection: (error: Error) => void = () => {};
+    const connect = vi.fn().mockImplementationOnce(
+      () =>
+        new Promise((resolve, reject) => {
+          rejectConnection = reject;
+        }),
+    );
+    const fixture = await create(connect);
+    mocks.request.mockImplementation((method: string) =>
+      Promise.resolve(method === "app.status" ? { running: true } : []),
+    );
+    fixture.receive({ type: "ready" });
+    await vi.waitFor(() => expect(connect).toHaveBeenCalledOnce());
+    fixture.serverChanged("error");
+    fixture.serverChanged("ready");
+    connect.mockResolvedValue({
+      client: {
+        request: mocks.request,
+        onNotification: () => ({ dispose() {} }),
+      },
+    });
+    rejectConnection(new Error("server stopped"));
+    await vi.waitFor(() =>
+      expect(fixture.sent).toContainEqual({ type: "roots", nodes: [] }),
+    );
+    expect(connect).toHaveBeenCalledTimes(2);
+    fixture.provider.dispose();
+  });
   it("uses a restrictive CSP, validates messages and copies text", async () => {
     const fixture = await create();
     expect(fixture.view.webview.html).toContain("default-src 'none'");

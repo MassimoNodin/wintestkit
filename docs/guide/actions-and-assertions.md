@@ -24,7 +24,7 @@ Windows have `close()`, `maximize()`, `minimize()` and `restore()`.
 Text typed into a `PasswordBox` is never written to logs, reports or events.
 
 ```python
-# examples/demo-tests/tests/test_guide.py
+# pseudo-code
 def test_typing_and_keys(main: MainPage) -> None:
     main.username.type("adm")
     main.username.type("in", clear=False)  # append instead of replacing
@@ -41,7 +41,7 @@ reacts to real mouse events (custom controls, drag-sensitive areas) or to reprod
 does exactly. Set it per call, or for the whole project with `input_mode = "mouse"`:
 
 ```python
-# examples/demo-tests/tests/test_guide.py
+# pseudo-code
 def test_mouse_mode_and_nth(main: MainPage) -> None:
     main.sign_in.click(mode="mouse")  # a real mouse click instead of the Invoke pattern
     expect(main.status).to_have_text("Invalid credentials")
@@ -67,7 +67,7 @@ An ambiguous locator never waits; it fails immediately (see
 [strict matching](locators-for-wpf.md#strict-matching)).
 
 ```python
-# examples/demo-tests/tests/test_async.py
+# pseudo-code
 def test_continue_waits_until_it_is_enabled(main: MainPage) -> None:
     expect(main.continue_button).to_be_disabled()
     main.load.click()
@@ -81,7 +81,7 @@ def test_continue_waits_until_it_is_enabled(main: MainPage) -> None:
 Reads return the current value without asserting anything:
 
 ```python
-# examples/demo-tests/tests/test_guide.py
+# pseudo-code
 def test_reading_state(main: MainPage) -> None:
     assert main.sign_in.exists()
     assert not main.data_loaded.exists()
@@ -111,7 +111,7 @@ once, `expect` keeps checking until the timeout.
 | `to_have_property(name, expected)` | a UI Automation property has the expected value |
 
 ```python
-# examples/demo-tests/tests/test_login.py
+# pseudo-code
 def test_remember_me_can_be_checked_and_unchecked(main: MainPage) -> None:
     main.remember_me.check()
     expect(main.remember_me).to_be_checked()
@@ -135,7 +135,7 @@ The time an action or assertion waits is, from highest to lowest precedence:
    `timeout` in `[tool.wintestkit]`, then the default of **10 seconds**.
 
 ```python
-# examples/demo-tests/tests/test_guide.py
+# pseudo-code
 def test_timeouts(main: MainPage) -> None:
     main.load.click()
     main.continue_button.click(timeout=5)  # per-call: wait up to 5 s for this action

@@ -1,7 +1,7 @@
 [project]
-name = "demo-tests"
+name = "calculator-tests"
 version = "0.0.0"
-description = "Sample WinTestKit project that tests the WPF demo app"
+description = "Windows Calculator pages, reusable flows and pytest scenarios"
 requires-python = ">=3.12"
 dependencies = ["wintestkit", "pytest>=8.3"]
 
@@ -14,12 +14,15 @@ wintestkit = { path = "../../python", editable = true }
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
+markers = [
+    "smoke: basic Calculator interactions",
+    "navigation: moving between Calculator pages",
+]
 
 [tool.wintestkit]
-launch = "per-session"
+launch = "attach"
 timeout = 10.0
 screenshots = "on-failure"
 
 [tool.wintestkit.app]
-process = "DemoApp.exe"
-args = []
+process = "CalculatorApp.exe"

@@ -37,38 +37,31 @@ npm run package
 Packaging writes the Windows x64 VSIX to `vscode/dist/`. Use the repository's
 **Run Extension** launch configuration to open an Extension Development Host.
 
-## Legacy desktop test fixtures
+## Desktop tests and Calculator example
 
-No example application source or binaries are included. The Python desktop tests and
-extension end-to-end tests retain scenarios for the former **WTK Demo** application.
-An arbitrary executable will not satisfy those scenarios: they require that application's
-window titles, controls and behavior.
-
-If you maintain a compatible copy outside this repository, opt in explicitly:
+The Python desktop tests exercise native application error handling, overlay lifecycle and
+screenshots without a fixture application:
 
 ```powershell
-$env:WTK_DEMO_APP = "C:\ExternalFixtures\DemoApp.exe"
 cd python
 uv run pytest -m integration
 ```
 
-App-dependent Python tests skip when `WTK_DEMO_APP` is unset and fail if an explicitly
-configured file is missing. Some native desktop tests do not require that app. All desktop
-tests still require an interactive, unlocked Windows session.
+Desktop tests require an interactive, unlocked Windows session.
 
-For the extension end-to-end tests, first prepare the backend with `uv sync --directory python`
-and the reference project with `uv sync --directory examples/demo-tests`, then run
-`npm run test:integration` from `vscode/` with `WTK_DEMO_APP` set to an absolute executable path.
-The runner passes that path to the reference project's backend as `WTK_APP_PATH`.
+For the extension end-to-end tests, prepare the backend with `uv sync --directory python`,
+then run `npm run test:integration` from `vscode/`. The suite opens the
+[Calculator project](../examples/calculator-tests) and checks static discovery and CodeLens;
+it does not launch Calculator or require a demo executable.
 
-The [reference test project](../examples/demo-tests) can also be adapted to your own app.
-Keep externally supplied fixture apps outside this repository.
+To run the example UI scenarios, follow the [Calculator example instructions](../examples/calculator-tests).
+No application source or binaries are bundled.
 
 ## Continuous integration
 
 The [CI workflow](../.github/workflows/ci.yml) checks Python lint, formatting, types and
 non-desktop tests, smoke-tests the wheel, and checks and packages the extension. It does
-not build an example app or run the legacy app-dependent suites.
+not build an example app or run desktop suites.
 
 Shared [JSON schemas](../schemas/README.md) define the Python/editor contracts. Run
 `npm run gen:types` in `vscode/` after changing schemas and commit the generated types.

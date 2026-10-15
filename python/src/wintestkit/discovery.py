@@ -27,6 +27,7 @@ __all__ = [
     "DiscoveryError",
     "DiscoveryResult",
     "ElementEntry",
+    "FlowEntry",
     "PageEntry",
     "Position",
     "Range",
@@ -133,6 +134,24 @@ class TestEntry:
 
 
 @dataclass(frozen=True)
+class FlowEntry:
+    id: str
+    file: str
+    name: str
+    range: Range
+    name_range: Range
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "file": self.file,
+            "name": self.name,
+            "range": self.range.to_dict(),
+            "nameRange": self.name_range.to_dict(),
+        }
+
+
+@dataclass(frozen=True)
 class ElementEntry:
     id: str
     name: str
@@ -204,6 +223,7 @@ class DiscoveryResult:
     pages: tuple[PageEntry, ...] = ()
     errors: tuple[DiscoveryError, ...] = ()
     version: int = 1
+    flows: tuple[FlowEntry, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -211,6 +231,7 @@ class DiscoveryResult:
             "root": self.root,
             "tests": [t.to_dict() for t in self.tests],
             "pages": [s.to_dict() for s in self.pages],
+            "flows": [flow.to_dict() for flow in self.flows],
             "errors": [e.to_dict() for e in self.errors],
         }
 
@@ -810,7 +831,7 @@ def discover(
     paths: Sequence[Path] | None = None,
     overrides: Mapping[Path, str] | None = None,
 ) -> DiscoveryResult:
-    """Discover tests and pages under ``root``.
+    """Discover tests, pages and public functions in ``flows/`` directories under ``root``.
 
     ``paths`` restricts which files are *reported*; the whole project is still read (from a
     cache) so pages that inherit from a page in another file are recognized. ``overrides``
@@ -843,6 +864,7 @@ def discover(
 
     tests: list[TestEntry] = []
     page_entries: list[PageEntry] = []
+    flows: list[FlowEntry] = []
     errors: list[DiscoveryError] = []
     for source in sources:
         if selected is not None and not _within(source.path, selected):
@@ -855,11 +877,26 @@ def discover(
         ):
             tests.extend(_test_entries(source, rules))
         page_entries.extend(_page_entries(source, classes, pages, index))
+        if "flows" in Path(source.rel).parts[:-1]:
+            assert source.tree is not None
+            flows.extend(
+                FlowEntry(
+                    id=f"{source.rel}::{node.name}",
+                    file=source.path.as_posix(),
+                    name=node.name,
+                    range=source.range_of(node),
+                    name_range=source.name_range(node),
+                )
+                for node in source.tree.body
+                if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
+                and not node.name.startswith("_")
+            )
     return DiscoveryResult(
         root=root.as_posix(),
         tests=tuple(tests),
         pages=tuple(page_entries),
         errors=tuple(errors),
+        flows=tuple(flows),
     )
 
 

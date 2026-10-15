@@ -5,7 +5,7 @@ window it lives in and how to find each control. Tests use pages instead of raw 
 changed control is fixed in one place.
 
 ```python
-# examples/demo-tests/pages/dialogs.py
+# pseudo-code
 class NoteDialog(Page):
     """The modal dialog opened by "Open dialog" (an owned WPF window)."""
 
@@ -35,7 +35,7 @@ elements are searched in the application's main window.
 A page for a native message box matches the Win32 dialog class:
 
 ```python
-# examples/demo-tests/pages/dialogs.py
+# pseudo-code
 class MessageBox(Page):
     """A native Win32 message box (window class ``#32770``)."""
 
@@ -68,7 +68,7 @@ An element is found by its UI Automation properties:
 a compiled regular expression, which matches with `re.search`:
 
 ```python
-# examples/demo-tests/tests/test_guide.py
+# pseudo-code
 class AnyDemoWindow(Page):
     # Regular expressions match with re.search; plain strings must match exactly.
     window = Window(title=re.compile(r"^WTK Demo$"))
@@ -85,7 +85,7 @@ and how to choose properties.
 AutomationIds: find a uniquely named container, then the control inside it.
 
 ```python
-# examples/demo-tests/pages/main.py
+# pseudo-code
     # two groups that each contain an "OK" button
     panel_a = Element(control_type="Group", name="Panel A")
     panel_b = Element(control_type="Group", name="Panel B")
@@ -103,7 +103,7 @@ AutomationIds: find a uniquely named container, then the control inside it.
 `all()`, `texts()`, `filter(name=..., class_name=..., automation_id=...)`, iteration and `len()`.
 
 ```python
-# examples/demo-tests/tests/test_choices.py
+# pseudo-code
 def test_the_dropdown_items(main: MainPage) -> None:
     main.color.expand()
     assert main.color_items.texts() == ["Red", "Green", "Blue"]
@@ -117,7 +117,7 @@ Pages are classes, so they inherit. A subclass has every element of its base and
 override elements:
 
 ```python
-# examples/demo-tests/tests/test_guide.py
+# pseudo-code
 class SignedInPage(MainPage):
     """Inherits every element of MainPage and adds its own."""
 
@@ -138,7 +138,7 @@ Use this for windows that share a menu or toolbar, or for states of the same win
   page keeps tests short:
 
 ```python
-# examples/demo-tests/conftest.py
+# pseudo-code
 @pytest.fixture(autouse=True)
 def reset_demo(main: MainPage) -> None:
     """Start every test from a clean app: the app is shared by the whole session."""
@@ -148,4 +148,4 @@ def reset_demo(main: MainPage) -> None:
 ```
 
 Pages are discovered statically (without importing your code) by `wtk discover`, the VS Code
-Elements view and CodeLens, so define them as plain class attributes at class level.
+Pages section and CodeLens, so define them as plain class attributes at class level.
