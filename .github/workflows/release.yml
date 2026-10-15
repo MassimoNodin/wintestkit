@@ -1,0 +1,149 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Build all artifacts without creating a release or publishing
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  version:
+    runs-on: windows-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+      - name: Verify versions
+        id: version
+        run: |
+          if ("${{ github.ref_type }}" -eq "tag") {
+            $version = "${{ github.ref_name }}".TrimStart("v")
+          } else {
+            $version = (Select-String -Path python/src/wintestkit/__init__.py -Pattern '__version__ = "(.+)"').Matches[0].Groups[1].Value
+          }
+          uv run --no-project python scripts/bump_version.py --check $version
+          if ($LASTEXITCODE -ne 0) { throw "Tag and file versions differ; run scripts/bump_version.py $version" }
+          "version=$version" >> $env:GITHUB_OUTPUT
+
+  python:
+    needs: version
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+      - name: Build and check wheel
+        run: ./scripts/check_wheel.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: python-dist
+          path: python/dist/*
+          if-no-files-found: error
+
+  vsix:
+    needs: version
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        target: [win32-x64, win32-arm64]
+    defaults:
+      run:
+        working-directory: vscode
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: vscode/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - name: Package
+        run: npx vsce package --target ${{ matrix.target }} -o dist/wintestkit-${{ matrix.target }}-${{ needs.version.outputs.version }}.vsix
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vsix-${{ matrix.target }}
+          path: vscode/dist/*.vsix
+          if-no-files-found: error
+
+  github-release:
+    needs: [version, python, vsix]
+    if: github.ref_type == 'tag' && !(github.event_name == 'workflow_dispatch' && inputs.dry_run)
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - name: Extract changelog section
+        run: |
+          $version = "${{ needs.version.outputs.version }}"
+          $text = Get-Content vscode/CHANGELOG.md -Raw
+          $pattern = "(?ms)^## \[?$([regex]::Escape($version))\]?[^\n]*\n(.*?)(?=^## |\z)"
+          $match = [regex]::Match($text, $pattern)
+          if (-not $match.Success) { throw "vscode/CHANGELOG.md has no section for $version" }
+          Set-Content -Path release-notes.md -Value $match.Groups[1].Value.Trim() -Encoding utf8
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${{ github.ref_name }}" (Get-ChildItem artifacts -File).FullName --title "WinTestKit ${{ needs.version.outputs.version }}" --notes-file release-notes.md
+
+  publish:
+    needs: [version, python, vsix, github-release]
+    if: github.ref_type == 'tag' && !(github.event_name == 'workflow_dispatch' && inputs.dry_run)
+    runs-on: windows-latest
+    environment: release
+    permissions:
+      contents: read
+      id-token: write # PyPI trusted publishing and Azure federated credentials
+    env:
+      PUBLISH_PYPI: ${{ vars.PUBLISH_PYPI }}
+      HAS_AZURE: ${{ secrets.AZURE_CLIENT_ID != '' }}
+      HAS_OVSX: ${{ secrets.OVSX_TOKEN != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - uses: astral-sh/setup-uv@v6
+        if: env.PUBLISH_PYPI == 'true'
+      - name: Publish to PyPI
+        if: env.PUBLISH_PYPI == 'true'
+        run: uv publish --trusted-publishing always (Get-ChildItem artifacts -Include *.whl, *.tar.gz -Recurse).FullName
+      - uses: actions/setup-node@v4
+        if: env.HAS_AZURE == 'true' || env.HAS_OVSX == 'true'
+        with:
+          node-version: "22"
+      - uses: azure/login@v2
+        if: env.HAS_AZURE == 'true'
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          allow-no-subscriptions: true
+      - name: Publish to the Visual Studio Marketplace
+        if: env.HAS_AZURE == 'true'
+        run: npx --yes @vscode/vsce@3 publish --azure-credential --packagePath (Get-ChildItem artifacts -Filter *.vsix).FullName
+      - name: Publish to Open VSX
+        if: env.HAS_OVSX == 'true'
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_TOKEN }}
+        run: |
+          foreach ($vsix in Get-ChildItem artifacts -Filter *.vsix) {
+            npx --yes ovsx@0 publish --packagePath $vsix.FullName
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
