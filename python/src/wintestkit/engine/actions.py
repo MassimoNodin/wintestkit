@@ -65,11 +65,21 @@ def _top_level_hwnd(el: UIAElement) -> int:
     return 0
 
 
-def _foreground(el: UIAElement) -> None:
+def bring_to_front(el: UIAElement) -> bool:
+    """Raise the owning window without clicking or focusing the control itself."""
     __tracebackhide__ = True
     hwnd = _top_level_hwnd(el)
-    if hwnd and not win32.bring_to_foreground(hwnd):
+    if not hwnd:
+        return False
+    raised = win32.bring_to_foreground(hwnd)
+    if not raised:
         log.debug("could not bring window %#x to the foreground", hwnd)
+    return raised
+
+
+def _foreground(el: UIAElement) -> None:
+    __tracebackhide__ = True
+    bring_to_front(el)
 
 
 def focus(el: UIAElement) -> None:

@@ -359,8 +359,12 @@ class Server:
         if method == "inspect.children":
             return [self._register(child) for child in node.children()]
         if method == "inspect.highlight":
-            if node.rect is not None:
-                overlay.flash(node.rect, int(params.get("durationMs", 1500)), block=False)
+            from wintestkit.engine.actions import bring_to_front
+
+            bring_to_front(node)
+            rect = node.rect
+            if rect is not None:
+                overlay.flash(rect, int(params.get("durationMs", 1500)), block=False)
             return None
         if method == "suggest.locator":
             from wintestkit.engine.suggest import suggest_locator

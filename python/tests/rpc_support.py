@@ -8,7 +8,7 @@ from typing import Any
 import pytest
 from fakes import FakeApp, FakeElement
 
-from wintestkit.engine import overlay, query
+from wintestkit.engine import actions, overlay, query
 from wintestkit.server import Server
 from wintestkit.uia.constants import TreeScope
 
@@ -40,6 +40,7 @@ def make_server(
     server.app = FakeApp([window])
     monkeypatch.setattr(query, "make_condition", lambda **props: props)
     monkeypatch.setattr(overlay, "flash", lambda *args, **kwargs: None)
+    monkeypatch.setattr(actions, "bring_to_front", lambda element: True)
     return server, output, button
 
 

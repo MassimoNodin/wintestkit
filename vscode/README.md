@@ -40,6 +40,39 @@ def test_sign_in(app):
   diagnostics. After a failing run, a notification opens it; **WinTestKit: Open Last Report** opens
   it any time.
 
+### Spy object browser
+
+The Spy uses control-type icons, chevrons and dotted branch guides to make the live
+hierarchy easier to navigate. A wide view places the object tree beside the inspector;
+a narrow sidebar stacks them vertically. Drag the divider, or focus it and use the
+arrow keys, to resize the panes. Colours follow your VS Code theme.
+
+Use **Filter loaded objects** to search names, control types, classes and automation
+IDs. Filtering retains matching ancestors but only searches controls already loaded;
+expand branches to load more. **Collapse all** clears the filter and closes branches.
+The inspector groups properties into Identity, State, Geometry and Automation, with
+raw values under **All properties** and locator quality beside **Suggested locator**.
+
+Root windows show their application's executable icon when Windows permits access
+to the process, with control-type icons as a fallback. Icons load separately so the
+object tree remains usable while they are retrieved. Loading indicators show the
+current phases for connection, refresh, icon loading, expansion, inspection, picking
+and application launch inside the existing pane headers, without shifting either
+pane. Header bars count completed phases and are indeterminate before the first
+phase completes. Expanding controls also show an inline loading indicator. Empty
+panes explain missing projects, stopped apps, missing windows, filters with no
+matches, unselected objects and loading or inspection failures. Existing content
+stays visible during refresh; selecting another object replaces stale properties
+with an in-place loading state. No estimated percentages are used for UI Automation calls.
+
+Selecting an object or pressing **Highlight** asks the Python backend to bring the
+control's owning application window to the foreground before drawing its outline.
+Child controls raise their containing window; minimized windows are restored. This
+does not click the control or explicitly change its keyboard focus. Activation is
+best-effort: if Windows denies it, highlighting still proceeds. This requires the
+updated Python package as well as the extension; after updating, run
+**WinTestKit: Restart Server**.
+
 ## Requirements
 
 - Windows 10 or 11 with an interactive, unlocked desktop while tests run.

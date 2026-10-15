@@ -59,7 +59,7 @@ class Overlay:
     # -- public API -----------------------------------------------------------------------------
 
     def show(self, rect: Rect) -> None:
-        """Show (or move) the outline around ``rect`` in screen coordinates."""
+        """Show (or move) the outline inside ``rect`` in screen coordinates."""
         self._request(_WM_SHOW, rect)
 
     def hide(self) -> None:
@@ -206,14 +206,13 @@ class Overlay:
         try:
             assert kind == message
             if kind == _WM_SHOW and rect is not None:
-                outer = rect.inflate(self._thickness)
                 win32.SetWindowPos(
                     hwnd,
                     win32.HWND_TOPMOST,
-                    outer.left,
-                    outer.top,
-                    outer.width,
-                    outer.height,
+                    rect.left,
+                    rect.top,
+                    rect.width,
+                    rect.height,
                     win32.SWP_NOACTIVATE | win32.SWP_SHOWWINDOW,
                 )
                 win32.InvalidateRect(hwnd, None, True)
