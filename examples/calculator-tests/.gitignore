@@ -1,0 +1,8 @@
+wintestkit.local.toml
+wintestkit.local.yaml
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+wtk-report/
+wtk-results/
