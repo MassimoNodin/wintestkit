@@ -1,9 +1,9 @@
-"""Screens for the WPF demo app, written in the black-box style users will write them."""
+"""Pages for the WPF demo app, written in the black-box style users will write them."""
 
-from wintestkit import Element, Elements, Screen, Window
+from wintestkit import Element, Elements, Page, Window
 
 
-class MainScreen(Screen):
+class MainPage(Page):
     window = Window(title="WTK Demo")
 
     menu_file = Element(control_type="MenuItem", name="File")
@@ -35,7 +35,7 @@ class MainScreen(Screen):
     status = Element(automation_id="StatusText")
 
 
-class NoteDialogScreen(Screen):
+class NoteDialogPage(Page):
     window = Window(title="WTK Demo - Dialog")
 
     note = Element(control_type="Edit")
@@ -43,7 +43,7 @@ class NoteDialogScreen(Screen):
     cancel = Element(control_type="Button", name="Cancel")
 
 
-class MessageBoxScreen(Screen):
+class MessageBoxPage(Page):
     window = Window(class_name="#32770")
 
     ok = Element(control_type="Button", name="OK")

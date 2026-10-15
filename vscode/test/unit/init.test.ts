@@ -63,7 +63,7 @@ beforeEach(() => {
   );
 });
 describe("Initialize Project", () => {
-  it("supports skipping app selection and refreshes before opening the screen", async () => {
+  it("supports skipping app selection and refreshes before opening the page", async () => {
     await mocks.handler?.();
     expect(mocks.execute).toHaveBeenCalledWith(
       "python.exe",
@@ -75,7 +75,7 @@ describe("Initialize Project", () => {
     );
     expect(mocks.refresh).toHaveBeenCalledOnce();
     expect(mocks.show).toHaveBeenCalledWith({
-      fsPath: "C:/project with spaces/screens/main.py",
+      fsPath: "C:/project with spaces/pages/main.py",
     });
   });
   it("passes selected executable paths without shell concatenation", async () => {

@@ -33,4 +33,4 @@ def test_target_result_contracts(validate: Any, status: str) -> None:
         locator="Button",
     )
     validate("rpc.schema.json", "CheckResult", checked.to_dict())
-    validate("rpc.schema.json", "ScreenCheckResult", {"results": [checked.to_dict()]})
+    validate("rpc.schema.json", "PageCheckResult", {"results": [checked.to_dict()]})

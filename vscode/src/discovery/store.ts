@@ -3,7 +3,7 @@ import { Projects, normalizedPath } from "../projects";
 import type {
   DiscoveryResult,
   ElementEntry,
-  ScreenEntry,
+  PageEntry,
   TestEntry,
 } from "../protocol/generated";
 import { ServerManager, type Project } from "../server/serverManager";
@@ -11,7 +11,7 @@ import { LatestRefresh } from "./refresh";
 
 export interface LocatedElement {
   project: Project;
-  screen: ScreenEntry;
+  page: PageEntry;
   element: ElementEntry;
 }
 export interface LocatedTest {
@@ -121,13 +121,13 @@ export class DiscoveryStore implements vscode.Disposable {
   elementAt(uri: vscode.Uri, line: number): LocatedElement | undefined {
     const project = this.projects.projectFor(uri);
     if (!project) return;
-    for (const screen of this.get(project)?.screens ?? []) {
-      if (normalizedPath(screen.file) !== normalizedPath(uri.fsPath)) continue;
-      const element = screen.elements.find(
+    for (const page of this.get(project)?.pages ?? []) {
+      if (normalizedPath(page.file) !== normalizedPath(uri.fsPath)) continue;
+      const element = page.elements.find(
         (element) =>
           element.range.start.line <= line && element.range.end.line >= line,
       );
-      if (element) return { project, screen, element };
+      if (element) return { project, page, element };
     }
   }
   testAt(uri: vscode.Uri, line: number): LocatedTest | undefined {
@@ -145,10 +145,10 @@ export class DiscoveryStore implements vscode.Disposable {
       )[0];
     if (test) return { project, test };
   }
-  screenById(id: string, project?: Project): ScreenEntry | undefined {
+  pageById(id: string, project?: Project): PageEntry | undefined {
     return this.selected(project)
-      .flatMap((result) => result.screens)
-      .find((screen) => screen.id === id);
+      .flatMap((result) => result.pages)
+      .find((page) => page.id === id);
   }
   testById(id: string, project?: Project): TestEntry | undefined {
     return this.selected(project)
@@ -157,7 +157,7 @@ export class DiscoveryStore implements vscode.Disposable {
   }
   elementById(id: string, project?: Project): ElementEntry | undefined {
     return this.selected(project)
-      .flatMap((result) => result.screens.flatMap((screen) => screen.elements))
+      .flatMap((result) => result.pages.flatMap((page) => page.elements))
       .find((element) => element.id === id);
   }
   private selected(project?: Project): DiscoveryResult[] {

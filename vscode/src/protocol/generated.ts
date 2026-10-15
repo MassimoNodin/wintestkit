@@ -201,14 +201,14 @@ export interface ProtocolContracts {
   Matcher?: Matcher;
   Mismatch?: Mismatch;
   NodeInfo?: NodeInfo;
+  PageCheckParams?: PageCheckParams;
+  PageCheckResult?: PageCheckResult;
+  PageEntry?: PageEntry;
   Position?: Position;
   Range?: Range;
   Rect?: Rect;
   Results?: Results;
   RunEvent?: RunEvent;
-  ScreenCheckParams?: ScreenCheckParams;
-  ScreenCheckResult?: ScreenCheckResult;
-  ScreenEntry?: ScreenEntry;
   ShutdownParams?: ShutdownParams;
   ShutdownResult?: ShutdownResult;
   SpyCancelledNotification?: SpyCancelledNotification;
@@ -362,7 +362,7 @@ export interface DiscoverResult {
   version: 1;
   root: string;
   tests: TestEntry[];
-  screens: ScreenEntry[];
+  pages: PageEntry[];
   errors: DiscoveryError[];
 }
 /**
@@ -396,9 +396,9 @@ export interface Position {
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
- * via the `definition` "ScreenEntry".
+ * via the `definition` "PageEntry".
  */
-export interface ScreenEntry {
+export interface PageEntry {
   id: string;
   file: string;
   name: string;
@@ -467,7 +467,7 @@ export interface DiscoveryResult {
   version: 1;
   root: string;
   tests: TestEntry[];
-  screens: ScreenEntry[];
+  pages: PageEntry[];
   errors: DiscoveryError[];
 }
 /**
@@ -584,6 +584,21 @@ export interface LogNotification {
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "PageCheckParams".
+ */
+export interface PageCheckParams {
+  file: string;
+  page: string;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "PageCheckResult".
+ */
+export interface PageCheckResult {
+  results: CheckResult[];
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
  * via the `definition` "Results".
  */
 export interface Results {
@@ -661,21 +676,6 @@ export interface StepEvent {
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
- * via the `definition` "ScreenCheckParams".
- */
-export interface ScreenCheckParams {
-  file: string;
-  screen: string;
-}
-/**
- * This interface was referenced by `ProtocolContracts`'s JSON-Schema
- * via the `definition` "ScreenCheckResult".
- */
-export interface ScreenCheckResult {
-  results: CheckResult[];
-}
-/**
- * This interface was referenced by `ProtocolContracts`'s JSON-Schema
  * via the `definition` "SpyHoverNotification".
  */
 export interface SpyHoverNotification {
@@ -742,7 +742,7 @@ export interface DiscoveryResult1 {
   version: 1;
   root: string;
   tests: TestEntry[];
-  screens: ScreenEntry[];
+  pages: PageEntry[];
   errors: DiscoveryError[];
 }
 /**

@@ -4,7 +4,7 @@ import { normalizedPath } from "../projects";
 import type { DiscoveryStore } from "../discovery/store";
 import type {
   ElementHighlightResult,
-  ScreenCheckResult,
+  PageCheckResult,
 } from "../protocol/generated";
 import { ServerManager, type Project } from "../server/serverManager";
 import { RpcError } from "../server/jsonrpc";
@@ -15,9 +15,9 @@ export interface ElementTarget {
   file: string;
   qualname: string;
 }
-export interface ScreenTarget {
+export interface PageTarget {
   file: string;
-  screen: string;
+  page: string;
 }
 export class HighlightCommands implements vscode.Disposable {
   private readonly subscriptions: vscode.Disposable[];
@@ -38,8 +38,8 @@ export class HighlightCommands implements vscode.Disposable {
         (target?: ElementTarget) => this.safe(() => this.checkElement(target)),
       ),
       vscode.commands.registerCommand(
-        "wintestkit.checkScreen",
-        (target?: ScreenTarget) => this.safe(() => this.checkScreen(target)),
+        "wintestkit.checkPage",
+        (target?: PageTarget) => this.safe(() => this.checkPage(target)),
       ),
     ];
   }
@@ -65,7 +65,7 @@ export class HighlightCommands implements vscode.Disposable {
         editor.selection.active.line,
       );
     return located
-      ? { file: located.screen.file, qualname: located.element.qualname }
+      ? { file: located.page.file, qualname: located.element.qualname }
       : undefined;
   }
   private async request<Result>(
@@ -122,22 +122,22 @@ export class HighlightCommands implements vscode.Disposable {
             () => operation,
           )
         : await operation;
-      const screen = this.discovery
+      const page = this.discovery
         .get(project)
-        ?.screens.find(
-          (screen) =>
-            normalizedPath(screen.file) === normalizedPath(target.file) &&
-            screen.elements.some(
+        ?.pages.find(
+          (page) =>
+            normalizedPath(page.file) === normalizedPath(target.file) &&
+            page.elements.some(
               (element) => element.qualname === target.qualname,
             ),
         );
-      const element = screen?.elements.find(
+      const element = page?.elements.find(
         (element) => element.qualname === target.qualname,
       );
-      if (screen && element)
+      if (page && element)
         this.checks.set({
           project,
-          screen,
+          page,
           element,
           result: { ...result, qualname: target.qualname },
         });
@@ -174,65 +174,58 @@ export class HighlightCommands implements vscode.Disposable {
     if (!target) return;
     const project = this.projects.projectFor(vscode.Uri.file(target.file));
     if (!project) return;
-    const screen = this.discovery
+    const page = this.discovery
       .get(project)
-      ?.screens.find(
-        (screen) =>
-          normalizedPath(screen.file) === normalizedPath(target.file) &&
-          screen.elements.some(
-            (element) => element.qualname === target.qualname,
-          ),
+      ?.pages.find(
+        (page) =>
+          normalizedPath(page.file) === normalizedPath(target.file) &&
+          page.elements.some((element) => element.qualname === target.qualname),
       );
-    if (screen)
-      await this.checkScreen(
-        { file: screen.file, screen: screen.qualname },
+    if (page)
+      await this.checkPage(
+        { file: page.file, page: page.qualname },
         target.qualname,
       );
   }
-  private async checkScreen(
-    input?: ScreenTarget,
-    filter?: string,
-  ): Promise<void> {
+  private async checkPage(input?: PageTarget, filter?: string): Promise<void> {
     let target = input;
     if (!target) {
       const editor = vscode.window.activeTextEditor;
       const project = editor && this.projects.projectFor(editor.document.uri);
-      const screen =
+      const page =
         project &&
         this.discovery
           .get(project)
-          ?.screens.find(
-            (screen) =>
-              normalizedPath(screen.file) ===
+          ?.pages.find(
+            (page) =>
+              normalizedPath(page.file) ===
                 normalizedPath(editor.document.uri.fsPath) &&
-              screen.range.start.line <= editor.selection.active.line &&
-              screen.range.end.line >= editor.selection.active.line,
+              page.range.start.line <= editor.selection.active.line &&
+              page.range.end.line >= editor.selection.active.line,
           );
-      if (screen) target = { file: screen.file, screen: screen.qualname };
+      if (page) target = { file: page.file, page: page.qualname };
     }
     if (!target) return;
     const project = this.projects.projectFor(vscode.Uri.file(target.file));
     if (!project) return;
-    const screen = this.discovery
+    const page = this.discovery
       .get(project)
-      ?.screens.find(
-        (screen) =>
-          normalizedPath(screen.file) === normalizedPath(target.file) &&
-          screen.qualname === target.screen,
+      ?.pages.find(
+        (page) =>
+          normalizedPath(page.file) === normalizedPath(target.file) &&
+          page.qualname === target.page,
       );
-    if (!screen) return;
-    const result = await this.request<ScreenCheckResult>(
-      project,
-      "screen.check",
-      { file: target.file, screen: target.screen },
-    );
+    if (!page) return;
+    const result = await this.request<PageCheckResult>(project, "page.check", {
+      file: target.file,
+      page: target.page,
+    });
     for (const checked of result.results) {
       if (filter && checked.qualname !== filter) continue;
-      const element = screen.elements.find(
+      const element = page.elements.find(
         (element) => element.qualname === checked.qualname,
       );
-      if (element)
-        this.checks.set({ project, screen, element, result: checked });
+      if (element) this.checks.set({ project, page, element, result: checked });
     }
     if (!filter) {
       const found = result.results.filter(

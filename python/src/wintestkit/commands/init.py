@@ -81,8 +81,8 @@ def run(args: argparse.Namespace) -> int:
     else:
         print("Skipped existing pyproject.toml configuration")
     for relative, content in {
-        "screens/__init__.py": "",
-        "screens/main.py": _template("main.py.tmpl", title=title),
+        "pages/__init__.py": "",
+        "pages/main.py": _template("main.py.tmpl", title=title),
         "tests/__init__.py": "",
         "tests/test_smoke.py": _template("test_smoke.py.tmpl"),
     }.items():
@@ -93,5 +93,5 @@ def run(args: argparse.Namespace) -> int:
         separator = "\n" if ignore and not ignore.endswith("\n") else ""
         ignore_path.write_text(ignore + separator + "wtk-report/\n", encoding="utf-8")
     print("\nNext: install wintestkit and pytest, select your app/window in pyproject.toml and")
-    print("screens/main.py, then run wtk doctor and wtk run from the project directory.")
+    print("pages/main.py, then run wtk doctor and wtk run from the project directory.")
     return common.EXIT_OK

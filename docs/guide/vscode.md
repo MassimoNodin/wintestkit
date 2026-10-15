@@ -15,7 +15,7 @@ whether the application is running; click it for **Launch App**, **Close App**, 
 - Above every `Element` and `Window`: **Highlight** draws a frame around the control in the running
   application; **Check** resolves it and shows the result in the gutter. A failed check becomes an
   editor warning with the full diagnostic (closest candidates and what differs).
-- Above every `Screen`: **Check All Elements** checks the whole screen.
+- Above every `Page`: **Check All Elements** checks the whole page.
 - Above every test: **Run Test** and **Debug Test**.
 
 If the application isn't running, **Highlight** offers to launch it. Turn the CodeLens off with
@@ -35,7 +35,7 @@ and **Show Test Results**. **WinTestKit: Open Last Report** opens the latest rep
 
 **Debug Test** (or the Debug profile in the Test Explorer) runs the test under the
 [Python Debugger](https://marketplace.visualstudio.com/items?itemName=ms-python.debugpy). Normal
-breakpoints work in tests, screens and fixtures. Debug runs raise the default auto-wait to one
+breakpoints work in tests, pages and fixtures. Debug runs raise the default auto-wait to one
 hour so a test paused at a breakpoint doesn't time out. Debug runs don't write a
 report.
 
@@ -47,10 +47,10 @@ both is supported. Turn the prompt off with `wintestkit.promptDisablePytestExplo
 
 ## Elements view
 
-The **Elements** view in the WinTestKit activity bar lists every screen of every project, with
+The **Elements** view in the WinTestKit activity bar lists every page of every project, with
 elements nested under their `within` containers. Click an entry to go to its definition. Inline
-actions highlight or check an element and check a whole screen; the icons show the last check
-result. Screens are found statically while you type, without running your code.
+actions highlight or check an element and check a whole page; the icons show the last check
+result. Pages are found statically while you type, without running your code.
 
 ## Spy
 
@@ -61,7 +61,7 @@ The **Spy** view explores the live UI Automation tree of the application.
   application. **Esc** cancels.
 - The details show the control's properties, supported patterns and a **suggested locator** that
   is marked unique, or not unique with the number of matches.
-- **Add to screen…** inserts the locator into an existing screen or a new screen file, adds
+- **Add to page…** inserts the locator into an existing page or a new page file, adds
   imports, reuses an existing element as `within=` when it matches the container, and reveals the
   new line. The change stays unsaved so you can review it.
 

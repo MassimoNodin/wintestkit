@@ -32,13 +32,13 @@ const discovery = (
   root,
   errors: [],
   tests: [],
-  screens: [
+  pages: [
     {
       id: "Main",
       name: "Main",
       qualname: "Main",
-      file: root + "/screens/main.py",
-      bases: ["Screen"],
+      file: root + "/pages/main.py",
+      bases: ["Page"],
       range: range(1),
       nameRange: range(1),
       elements,
@@ -72,7 +72,7 @@ describe("Elements tree model", () => {
   it("adds project roots only for multi-project workspaces", () => {
     const tree = buildTree([discovery([]), discovery([], "C:/second")]);
     expect(tree.map((node) => node.kind)).toEqual(["project", "project"]);
-    expect(tree[1].children[0].file).toBe("C:/second/screens/main.py");
+    expect(tree[1].children[0].file).toBe("C:/second/pages/main.py");
     expect(tree[0].children[0].id).not.toBe(tree[1].children[0].id);
   });
   it("keeps missing parents and cycles visible", () => {
@@ -95,14 +95,14 @@ describe("Elements tree model", () => {
     );
     expect(node.tooltip).toContain("main.py:5");
   });
-  it("sorts screens by name without changing discovery", () => {
+  it("sorts pages by name without changing discovery", () => {
     const result = discovery([]);
-    result.screens.unshift({ ...result.screens[0], id: "Zulu", name: "Zulu" });
+    result.pages.unshift({ ...result.pages[0], id: "Zulu", name: "Zulu" });
     expect(buildTree([result]).map((node) => node.label)).toEqual([
       "Main",
       "Zulu",
     ]);
-    expect(result.screens[0].name).toBe("Zulu");
+    expect(result.pages[0].name).toBe("Zulu");
     expect(buildTree([])).toEqual([]);
   });
 });

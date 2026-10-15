@@ -74,16 +74,16 @@ export function buildLenses(
     tooltip: string,
   ) =>
     lenses.push({ line, title, command, args: command ? [args] : [], tooltip });
-  for (const screen of discovery.screens) {
-    if (normalize(screen.file) !== normalize(file)) continue;
+  for (const page of discovery.pages) {
+    if (normalize(page.file) !== normalize(file)) continue;
     add(
-      screen.range.start.line,
+      page.range.start.line,
       "$(checklist) Check all elements",
-      "wintestkit.checkScreen",
-      { file, screen: screen.qualname },
-      screen.qualname,
+      "wintestkit.checkPage",
+      { file, page: page.qualname },
+      page.qualname,
     );
-    for (const element of screen.elements) {
+    for (const element of page.elements) {
       const tooltip =
         element.kind === "window"
           ? describeWindow(element.locator.window ?? {})

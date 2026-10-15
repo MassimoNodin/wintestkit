@@ -5,10 +5,10 @@ The demo is a black box: it sets an AutomationId on only two controls (``StatusT
 its position in the tree (``within=``).
 """
 
-from wintestkit import Element, Elements, Screen, Window
+from wintestkit import Element, Elements, Page, Window
 
 
-class MainScreen(Screen):
+class MainPage(Page):
     window = Window(title="WTK Demo")
 
     # menu

@@ -28,9 +28,9 @@ def make_server(
     (tmp_path / "pyproject.toml").write_text(
         "[tool.wintestkit]\n[tool.wintestkit.app]\nprocess = 'Demo.exe'\n", encoding="utf-8"
     )
-    (tmp_path / "screen.py").write_text(
-        "from wintestkit import Screen, Element\nprint('user module print')\n"
-        "class Main(Screen):\n    ok = Element(control_type='Button', name='OK')\n",
+    (tmp_path / "page.py").write_text(
+        "from wintestkit import Page, Element\nprint('user module print')\n"
+        "class Main(Page):\n    ok = Element(control_type='Button', name='OK')\n",
         encoding="utf-8",
     )
     button = RpcElement("Button", "OK")

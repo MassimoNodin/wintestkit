@@ -15,10 +15,10 @@ from wintestkit.engine.diagnose import Diagnostic
 from wintestkit.engine.locator import Locator
 from wintestkit.errors import AmbiguousElementError, ElementNotFoundError
 from wintestkit.expect import expect
-from wintestkit.model import Element, Elements, Screen, Window
+from wintestkit.model import Element, Elements, Page, Window
 
 
-class MainScreen(Screen):
+class MainPage(Page):
     window = Window(title="WTK Demo")
     status = Element(automation_id="StatusText")
     password = Element(control_type="Edit", class_name="PasswordBox")
@@ -51,8 +51,8 @@ def steps(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> list[runtime.StepR
 
 
 @pytest.fixture
-def screen() -> MainScreen:
-    return MainScreen(FakeApp([FakeElement("Window", "WTK Demo")]))  # type: ignore[arg-type]
+def page() -> MainPage:
+    return MainPage(FakeApp([FakeElement("Window", "WTK Demo")]))  # type: ignore[arg-type]
 
 
 class World:
@@ -100,20 +100,18 @@ def not_found(
     )
 
 
-def test_passes_immediately(
-    screen: MainScreen, world: World, steps: list[runtime.StepRecord]
-) -> None:
-    expect(screen.status).to_have_text("Ready")
+def test_passes_immediately(page: MainPage, world: World, steps: list[runtime.StepRecord]) -> None:
+    expect(page.status).to_have_text("Ready")
     assert world.resolves == 1
     assert steps[0].action == "expect.to_have_text"
-    assert steps[0].target == "MainScreen.status"
+    assert steps[0].target == "MainPage.status"
     assert steps[0].locator == '*[id="StatusText"]'
     assert steps[0].args == {"expected": "Ready"}
     assert steps[0].status == "passed"
 
 
 def test_passes_after_a_delay(
-    screen: MainScreen,
+    page: MainPage,
     world: World,
     monkeypatch: pytest.MonkeyPatch,
     steps: list[runtime.StepRecord],
@@ -125,19 +123,19 @@ def test_passes_after_a_delay(
         return "Welcome, admin" if polls[0] >= 4 else "Invalid credentials"
 
     monkeypatch.setattr(actions, "get_text", text)
-    expect(screen.status).to_have_text("Welcome, admin")
+    expect(page.status).to_have_text("Welcome, admin")
     assert polls[0] == 4
     assert steps[0].status == "passed"
 
 
 def test_failure_message_is_exact(
-    screen: MainScreen, world: World, steps: list[runtime.StepRecord]
+    page: MainPage, world: World, steps: list[runtime.StepRecord]
 ) -> None:
     world.text = "Invalid credentials"
     with pytest.raises(AssertionError) as exc_info:
-        expect(screen.status).to_have_text("Welcome, admin")
+        expect(page.status).to_have_text("Welcome, admin")
     assert str(exc_info.value) == (
-        'expect(MainScreen.status).to_have_text("Welcome, admin") failed after 2.0s\n'
+        'expect(MainPage.status).to_have_text("Welcome, admin") failed after 2.0s\n'
         '  Expected: "Welcome, admin"\n'
         '  Actual: "Invalid credentials"\n'
         '  Locator: *[id="StatusText"]'
@@ -148,21 +146,21 @@ def test_failure_message_is_exact(
 
 
 def test_failure_after_custom_timeout(
-    screen: MainScreen, world: World, steps: list[runtime.StepRecord]
+    page: MainPage, world: World, steps: list[runtime.StepRecord]
 ) -> None:
     world.text = "no"
     with pytest.raises(AssertionError, match=r"failed after 0\.5s"):
-        expect(screen.status, timeout=0.5).to_have_text("yes")
+        expect(page.status, timeout=0.5).to_have_text("yes")
     with pytest.raises(AssertionError, match=r"failed after 1\.0s"):
-        expect(screen.slow).to_have_text("yes")  # Element(timeout=1.0)
+        expect(page.slow).to_have_text("yes")  # Element(timeout=1.0)
 
 
 def test_never_found_appends_the_diagnostic(
-    screen: MainScreen, world: World, steps: list[runtime.StepRecord]
+    page: MainPage, world: World, steps: list[runtime.StepRecord]
 ) -> None:
     world.error = not_found()
     with pytest.raises(AssertionError) as exc_info:
-        expect(screen.status).to_have_text("x")
+        expect(page.status).to_have_text("x")
     message = str(exc_info.value)
     assert "  Actual: <element not found>" in message
     assert 'No element matches *[id="StatusText"] in Window "WTK Demo"' in message
@@ -170,42 +168,42 @@ def test_never_found_appends_the_diagnostic(
 
 
 def test_negation_waits_for_the_opposite(
-    screen: MainScreen, world: World, steps: list[runtime.StepRecord]
+    page: MainPage, world: World, steps: list[runtime.StepRecord]
 ) -> None:
     world.text = "Loading"
     with pytest.raises(AssertionError) as exc_info:
-        expect(screen.status).not_.to_have_text("Loading")
+        expect(page.status).not_.to_have_text("Loading")
     assert str(exc_info.value).startswith(
-        'expect(MainScreen.status).not_.to_have_text("Loading") failed after 2.0s\n'
+        'expect(MainPage.status).not_.to_have_text("Loading") failed after 2.0s\n'
         '  Expected: not "Loading"'
     )
     world.text = "Ready"
-    expect(screen.status).not_.to_have_text("Loading")
+    expect(page.status).not_.to_have_text("Loading")
 
 
 def test_negation_does_not_pass_for_a_missing_element(
-    screen: MainScreen, world: World, steps: list[runtime.StepRecord]
+    page: MainPage, world: World, steps: list[runtime.StepRecord]
 ) -> None:
     world.error = not_found()
     with pytest.raises(AssertionError):
-        expect(screen.status).not_.to_have_text("x")
+        expect(page.status).not_.to_have_text("x")
 
 
-def test_not_to_exist(screen: MainScreen, world: World, steps: list[runtime.StepRecord]) -> None:
+def test_not_to_exist(page: MainPage, world: World, steps: list[runtime.StepRecord]) -> None:
     world.error = not_found()
-    expect(screen.status).not_.to_exist()
+    expect(page.status).not_.to_exist()
     with pytest.raises(AssertionError, match="to_exist"):
-        expect(screen.status).to_exist()
+        expect(page.status).to_exist()
     world.error = None
-    expect(screen.status).to_exist()
+    expect(page.status).to_exist()
     with pytest.raises(AssertionError) as exc_info:
-        expect(screen.status).not_.to_exist()
+        expect(page.status).not_.to_exist()
     assert "Expected: not to exist" in str(exc_info.value)
     assert "Actual: exists" in str(exc_info.value)
 
 
 def test_ambiguous_locator_fails_fast(
-    screen: MainScreen, world: World, steps: list[runtime.StepRecord]
+    page: MainPage, world: World, steps: list[runtime.StepRecord]
 ) -> None:
     world.error = AmbiguousElementError(
         Diagnostic(
@@ -217,83 +215,83 @@ def test_ambiguous_locator_fails_fast(
         )
     )
     with pytest.raises(AmbiguousElementError):
-        expect(screen.status).to_have_text("x")
+        expect(page.status).to_have_text("x")
     assert world.resolves == 1  # no polling
-    expect(screen.status).to_exist()  # an ambiguous locator still exists
+    expect(page.status).to_exist()  # an ambiguous locator still exists
 
 
 def test_visibility_and_hidden(
-    screen: MainScreen, world: World, steps: list[runtime.StepRecord]
+    page: MainPage, world: World, steps: list[runtime.StepRecord]
 ) -> None:
-    expect(screen.status).to_be_visible()
-    expect(screen.status).not_.to_be_hidden()
+    expect(page.status).to_be_visible()
+    expect(page.status).not_.to_be_hidden()
     assert world.element is not None
     world.element.is_offscreen = True
-    expect(screen.status).to_be_hidden()
+    expect(page.status).to_be_hidden()
     with pytest.raises(AssertionError, match="to be visible"):
-        expect(screen.status, timeout=0).to_be_visible()
+        expect(page.status, timeout=0).to_be_visible()
     world.error = not_found()
-    expect(screen.status).to_be_hidden()
-    expect(screen.status).not_.to_be_visible()
+    expect(page.status).to_be_hidden()
+    expect(page.status).not_.to_be_visible()
 
 
 def test_enabled_and_disabled(
-    screen: MainScreen, world: World, steps: list[runtime.StepRecord]
+    page: MainPage, world: World, steps: list[runtime.StepRecord]
 ) -> None:
-    expect(screen.status).to_be_enabled()
+    expect(page.status).to_be_enabled()
     assert world.element is not None
     world.element.is_enabled = False
-    expect(screen.status).to_be_disabled()
+    expect(page.status).to_be_disabled()
     with pytest.raises(AssertionError) as exc_info:
-        expect(screen.status, timeout=0).to_be_enabled()
+        expect(page.status, timeout=0).to_be_enabled()
     assert "  Actual: disabled" in str(exc_info.value)
 
 
 def test_text_matching_variants(
-    screen: MainScreen, world: World, steps: list[runtime.StepRecord]
+    page: MainPage, world: World, steps: list[runtime.StepRecord]
 ) -> None:
     world.text = "  Welcome, admin \n"
-    expect(screen.status).to_have_text("Welcome, admin")  # strips
-    expect(screen.status).to_have_text(re.compile(r"^Welcome"))
-    expect(screen.status).to_contain_text("come, ad")
+    expect(page.status).to_have_text("Welcome, admin")  # strips
+    expect(page.status).to_have_text(re.compile(r"^Welcome"))
+    expect(page.status).to_contain_text("come, ad")
     with pytest.raises(AssertionError, match=r"Expected: /\^Bye/"):
-        expect(screen.status, timeout=0).to_have_text(re.compile("^Bye"))
+        expect(page.status, timeout=0).to_have_text(re.compile("^Bye"))
     assert steps[1].args == {"expected": "/^Welcome/"}
 
 
-def test_value_assertion(screen: MainScreen, world: World, steps: list[runtime.StepRecord]) -> None:
+def test_value_assertion(page: MainPage, world: World, steps: list[runtime.StepRecord]) -> None:
     world.value = "abc"
-    expect(screen.status).to_have_value("abc")
-    expect(screen.status).to_have_value(re.compile("b"))
+    expect(page.status).to_have_value("abc")
+    expect(page.status).to_have_value(re.compile("b"))
     with pytest.raises(AssertionError, match='Actual: "abc"'):
-        expect(screen.status, timeout=0).to_have_value("nope")
+        expect(page.status, timeout=0).to_have_value("nope")
 
 
-def test_count_assertion(screen: MainScreen, world: World, steps: list[runtime.StepRecord]) -> None:
-    expect(screen.oks).to_have_count(2)
+def test_count_assertion(page: MainPage, world: World, steps: list[runtime.StepRecord]) -> None:
+    expect(page.oks).to_have_count(2)
     with pytest.raises(AssertionError) as exc_info:
-        expect(screen.oks, timeout=0).to_have_count(3)
+        expect(page.oks, timeout=0).to_have_count(3)
     assert str(exc_info.value) == (
-        "expect(MainScreen.oks).to_have_count(3) failed after 0.0s\n"
+        "expect(MainPage.oks).to_have_count(3) failed after 0.0s\n"
         "  Expected: 3\n"
         "  Actual: 2\n"
         '  Locator: Button[name="OK"]'
     )
     world.count = 0
-    expect(screen.oks).not_.to_have_count(2)
+    expect(page.oks).not_.to_have_count(2)
 
 
 def test_count_needs_elements_and_other_assertions_need_one_element(
-    screen: MainScreen, world: World, steps: list[runtime.StepRecord]
+    page: MainPage, world: World, steps: list[runtime.StepRecord]
 ) -> None:
     with pytest.raises(TypeError, match="Elements"):
-        expect(screen.status).to_have_count(1)
+        expect(page.status).to_have_count(1)
     with pytest.raises(TypeError, match="single element"):
-        expect(screen.oks).to_have_text("x")
+        expect(page.oks).to_have_text("x")
 
 
 def test_checked_selected_and_property(
-    screen: MainScreen,
+    page: MainPage,
     world: World,
     monkeypatch: pytest.MonkeyPatch,
     steps: list[runtime.StepRecord],
@@ -307,33 +305,33 @@ def test_checked_selected_and_property(
 
     monkeypatch.setattr(expect_module.patterns, "toggle_state", lambda el: state["toggle"])
     monkeypatch.setattr(expect_module.patterns, "is_selected", lambda el: state["selected"])
-    expect(screen.status).to_be_checked()
-    expect(screen.status).to_be_selected()
+    expect(page.status).to_be_checked()
+    expect(page.status).to_be_selected()
     state["toggle"] = ToggleState.Off
     state["selected"] = False
-    expect(screen.status).not_.to_be_checked()
-    expect(screen.status).not_.to_be_selected()
+    expect(page.status).not_.to_be_checked()
+    expect(page.status).not_.to_be_selected()
     with pytest.raises(AssertionError, match="Actual: Off"):
-        expect(screen.status, timeout=0).to_be_checked()
+        expect(page.status, timeout=0).to_be_checked()
     assert world.element is not None
     monkeypatch.setattr(
         type(world.element), "get_property", lambda self, name: "StatusText", raising=False
     )
-    expect(screen.status).to_have_property("AutomationId", "StatusText")
+    expect(page.status).to_have_property("AutomationId", "StatusText")
     with pytest.raises(AssertionError, match="Expected: AutomationId = "):
-        expect(screen.status, timeout=0).to_have_property("AutomationId", "Other")
+        expect(page.status, timeout=0).to_have_property("AutomationId", "Other")
 
 
 def test_password_expectations_are_redacted(
-    screen: MainScreen, world: World, steps: list[runtime.StepRecord]
+    page: MainPage, world: World, steps: list[runtime.StepRecord]
 ) -> None:
     world.value = "hunter2"
-    expect(screen.password).to_have_value("hunter2")
+    expect(page.password).to_have_value("hunter2")
     assert steps[-1].args == {"expected": "***"}
 
 
 def test_element_gone_during_evaluation_is_retried(
-    screen: MainScreen,
+    page: MainPage,
     world: World,
     monkeypatch: pytest.MonkeyPatch,
     steps: list[runtime.StepRecord],
@@ -349,17 +347,17 @@ def test_element_gone_during_evaluation_is_retried(
         return "Ready"
 
     monkeypatch.setattr(actions, "get_text", text)
-    expect(screen.status).to_have_text("Ready")
+    expect(page.status).to_have_text("Ready")
     assert calls[0] == 3
 
 
 def test_window_target(
-    screen: MainScreen, monkeypatch: pytest.MonkeyPatch, steps: list[runtime.StepRecord]
+    page: MainPage, monkeypatch: pytest.MonkeyPatch, steps: list[runtime.StepRecord]
 ) -> None:
     window = FakeElement("Window", "WTK Demo")
     monkeypatch.setattr(model, "resolve_window", lambda app, wl: window)
     monkeypatch.setattr(actions, "get_text", lambda el: el.name)
-    expect(screen.window).to_exist()
-    expect(screen.window).to_be_visible()
-    expect(screen.window).to_have_text("WTK Demo")
+    expect(page.window).to_exist()
+    expect(page.window).to_be_visible()
+    expect(page.window).to_have_text("WTK Demo")
     assert steps[0].locator == 'Window[title="WTK Demo"]'

@@ -25,7 +25,7 @@ Text typed into a `PasswordBox` is never written to logs, reports or events.
 
 ```python
 # examples/demo-tests/tests/test_guide.py
-def test_typing_and_keys(main: MainScreen) -> None:
+def test_typing_and_keys(main: MainPage) -> None:
     main.username.type("adm")
     main.username.type("in", clear=False)  # append instead of replacing
     expect(main.username).to_have_value("admin")
@@ -42,7 +42,7 @@ does exactly. Set it per call, or for the whole project with `input_mode = "mous
 
 ```python
 # examples/demo-tests/tests/test_guide.py
-def test_mouse_mode_and_nth(main: MainScreen) -> None:
+def test_mouse_mode_and_nth(main: MainPage) -> None:
     main.sign_in.click(mode="mouse")  # a real mouse click instead of the Invoke pattern
     expect(main.status).to_have_text("Invalid credentials")
     main.all_ok_buttons.nth(1).click()  # 0-based
@@ -68,7 +68,7 @@ An ambiguous locator never waits; it fails immediately (see
 
 ```python
 # examples/demo-tests/tests/test_async.py
-def test_continue_waits_until_it_is_enabled(main: MainScreen) -> None:
+def test_continue_waits_until_it_is_enabled(main: MainPage) -> None:
     expect(main.continue_button).to_be_disabled()
     main.load.click()
     expect(main.status).to_have_text("Loading...")
@@ -82,7 +82,7 @@ Reads return the current value without asserting anything:
 
 ```python
 # examples/demo-tests/tests/test_guide.py
-def test_reading_state(main: MainScreen) -> None:
+def test_reading_state(main: MainPage) -> None:
     assert main.sign_in.exists()
     assert not main.data_loaded.exists()
     assert main.sign_in.is_enabled()
@@ -112,7 +112,7 @@ once, `expect` keeps checking until the timeout.
 
 ```python
 # examples/demo-tests/tests/test_login.py
-def test_remember_me_can_be_checked_and_unchecked(main: MainScreen) -> None:
+def test_remember_me_can_be_checked_and_unchecked(main: MainPage) -> None:
     main.remember_me.check()
     expect(main.remember_me).to_be_checked()
     expect(main.status).to_have_text("Remember: True")
@@ -136,14 +136,14 @@ The time an action or assertion waits is, from highest to lowest precedence:
 
 ```python
 # examples/demo-tests/tests/test_guide.py
-def test_timeouts(main: MainScreen) -> None:
+def test_timeouts(main: MainPage) -> None:
     main.load.click()
     main.continue_button.click(timeout=5)  # per-call: wait up to 5 s for this action
     expect(main.status, timeout=5).to_contain_text("Continued")
 
 
 @pytest.mark.wtk(timeout=20)  # default auto-wait for this test only
-def test_a_slow_test(main: MainScreen) -> None:
+def test_a_slow_test(main: MainPage) -> None:
     main.load.click()
     expect(main.data_loaded).to_be_visible()
 ```

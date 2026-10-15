@@ -295,20 +295,20 @@
     "ElementHighlightResult": {
       "$ref": "rpc.schema.json#/$defs/ElementResult"
     },
-    "ScreenCheckParams": {
+    "PageCheckParams": {
       "type": "object",
       "properties": {
         "file": {
           "type": "string"
         },
-        "screen": {
+        "page": {
           "type": "string"
         }
       },
-      "required": ["file", "screen"],
+      "required": ["file", "page"],
       "additionalProperties": false
     },
-    "ScreenCheckResult": {
+    "PageCheckResult": {
       "type": "object",
       "properties": {
         "results": {

@@ -274,18 +274,20 @@ def test_attach_without_an_app_section_errors(pytester: pytest.Pytester) -> None
     result.stderr.fnmatch_lines(["*attach*needs*"])
 
 
-def test_screen_factory_binds_a_screen_class(
-    pytester: pytest.Pytester, fake_apps: list[str]
-) -> None:
+def test_page_factory_binds_a_page_class(pytester: pytest.Pytester, fake_apps: list[str]) -> None:
     project(
         pytester,
         tests="""
-        def test_factory(app, screen):
+        import pytest
+
+        def test_factory(app, page, request):
             class Dummy:
                 def __init__(self, app):
                     self.app = app
-            made = screen(Dummy)
+            made = page(Dummy)
             assert made.app is app
+            with pytest.raises(pytest.FixtureLookupError):
+                request.getfixturevalue("screen")
         """,
     )
     pytester.runpytest("-p", "no:cacheprovider").assert_outcomes(passed=1)

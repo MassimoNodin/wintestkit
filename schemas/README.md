@@ -6,7 +6,7 @@ encode its interfaces, unions, method parameters/results, and notification paylo
 | Schema | Definitions |
 |---|---|
 | `common.schema.json` | Positions, ranges, rectangles, UIA snapshots, locators, diagnostics, errors |
-| `discovery.schema.json` | Discovery results, test/screen/element entries, discovery errors |
+| `discovery.schema.json` | Discovery results, test/page/element entries, discovery errors |
 | `step.schema.json` | Per-test action events |
 | `events.schema.json` | All seven run-event variants, collection records, outcomes, summaries |
 | `results.schema.json` | Report results and per-test results |

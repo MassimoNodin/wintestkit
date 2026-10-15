@@ -1,6 +1,6 @@
 # Example test code
 
-This project preserves screen models and pytest examples originally written for the
+This project preserves page models and pytest examples originally written for the
 **WTK Demo** application. The application source and binaries are no longer bundled.
 These tests are a reference, not an out-of-the-box runnable sample.
 
@@ -11,7 +11,7 @@ you need from this project. Update the executable path, window titles, element l
 test data, assertions and reset fixture for your own application. Merely changing the
 executable path will not make these app-specific tests work against an unrelated app.
 
-The `main` fixture in `conftest.py` binds the screen to the app. Its autouse reset fixture
+The `main` fixture in `conftest.py` binds the page to the app. Its autouse reset fixture
 uses **File > Reset** before each test; replace that with your application's reset flow
 or choose a fresh process per test.
 
@@ -32,8 +32,8 @@ The executable must implement the expected WTK Demo controls and behavior.
 
 | Path | What it shows |
 |---|---|
-| `screens/main.py` | The main window as a `Screen`: locating controls without AutomationIds (`within=`, class names) and the two ids the demo does expose. |
-| `screens/dialogs.py` | A modal WPF dialog and a native message box, each on its own `Screen` with its own `Window(...)`. |
+| `pages/main.py` | The main window as a `Page`: locating controls without AutomationIds (`within=`, class names) and the two ids the demo does expose. |
+| `pages/dialogs.py` | A modal WPF dialog and a native message box, each on its own `Page` with its own `Window(...)`. |
 | `tests/test_login.py` | Typing, clicking, a parametrized login matrix, check boxes. |
 | `tests/test_panels.py` | Duplicate "OK" buttons: `within=`, `Elements`, and the ambiguity diagnostic. |
 | `tests/test_async.py` | Auto-waiting: `click()` waits for a disabled button, `expect()` waits for text. |

@@ -525,10 +525,10 @@ def app(
 
 
 @pytest.fixture
-def screen(app: App) -> Callable[[type[Any]], Any]:
-    """Factory binding a ``Screen`` subclass to the application: ``screen(MainScreen)``."""
+def page(app: App) -> Callable[[type[Any]], Any]:
+    """Factory binding a ``Page`` subclass to the application: ``page(MainPage)``."""
 
-    def make(screen_class: type[Any]) -> Any:
-        return screen_class(app)
+    def make(page_class: type[Any]) -> Any:
+        return page_class(app)
 
     return make

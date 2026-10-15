@@ -1,11 +1,11 @@
-"""Integration tests for the Screen / Element model against the demo app."""
+"""Integration tests for the Page / Element model against the demo app."""
 
 import re
 from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
-from screens import MainScreen, MessageBoxScreen, NoteDialogScreen
+from pages import MainPage, MessageBoxPage, NoteDialogPage
 from support import DemoProcess
 
 from wintestkit import Element, expect, runtime
@@ -25,8 +25,8 @@ def app(demo_process: DemoProcess, tmp_path: Path) -> Iterator[App]:
 
 
 @pytest.fixture
-def main(app: App) -> MainScreen:
-    return MainScreen(app)
+def main(app: App) -> MainPage:
+    return MainPage(app)
 
 
 @pytest.fixture
@@ -36,7 +36,7 @@ def steps() -> list[runtime.StepRecord]:
     return records
 
 
-def test_login_success_and_failure(main: MainScreen, steps: list[runtime.StepRecord]) -> None:
+def test_login_success_and_failure(main: MainPage, steps: list[runtime.StepRecord]) -> None:
     main.username.type("admin")
     main.password.type("wrong")
     main.sign_in.click()
@@ -46,21 +46,21 @@ def test_login_success_and_failure(main: MainScreen, steps: list[runtime.StepRec
     expect(main.status).to_have_text("Welcome, admin")
 
     actions = [(s.action, s.target) for s in steps]
-    assert ("type", "MainScreen.username") in actions
-    assert ("click", "MainScreen.sign_in") in actions
-    password_steps = [s for s in steps if s.target == "MainScreen.password"]
+    assert ("type", "MainPage.username") in actions
+    assert ("click", "MainPage.sign_in") in actions
+    password_steps = [s for s in steps if s.target == "MainPage.password"]
     assert password_steps
     assert all(s.args["text"] == "***" for s in password_steps)
     assert "secret" not in str([s.to_dict() for s in steps])
 
 
-def test_panel_ok_buttons_and_ambiguity(main: MainScreen) -> None:
+def test_panel_ok_buttons_and_ambiguity(main: MainPage) -> None:
     main.ok_b.click()
     expect(main.status).to_have_text("B OK")
     main.ok_a.click()
     expect(main.status).to_have_text("A OK")
 
-    class Ambiguous(MainScreen):
+    class Ambiguous(MainPage):
         either_ok = Element(control_type="Button", name="OK", timeout=0.2)
 
     with pytest.raises(AmbiguousElementError) as exc_info:
@@ -72,7 +72,7 @@ def test_panel_ok_buttons_and_ambiguity(main: MainScreen) -> None:
     expect(main.status).to_have_text("B OK")
 
 
-def test_async_load_then_continue_auto_waits_for_enabled(main: MainScreen) -> None:
+def test_async_load_then_continue_auto_waits_for_enabled(main: MainPage) -> None:
     expect(main.data_loaded).not_.to_exist()
     main.load.click()
     expect(main.status).to_have_text("Loading...")
@@ -81,9 +81,9 @@ def test_async_load_then_continue_auto_waits_for_enabled(main: MainScreen) -> No
     expect(main.data_loaded).to_exist()
 
 
-def test_dialog_save_flow(main: MainScreen) -> None:
+def test_dialog_save_flow(main: MainPage) -> None:
     main.open_dialog.click()
-    dialog = NoteDialogScreen(main.app)
+    dialog = NoteDialogPage(main.app)
     dialog.window.wait_for("visible")
     dialog.note.type("hello note")
     dialog.save.click()
@@ -91,22 +91,22 @@ def test_dialog_save_flow(main: MainScreen) -> None:
     expect(dialog.window).not_.to_exist()
 
 
-def test_dialog_cancel_flow(main: MainScreen) -> None:
+def test_dialog_cancel_flow(main: MainPage) -> None:
     main.open_dialog.click()
-    dialog = NoteDialogScreen(main.app)
+    dialog = NoteDialogPage(main.app)
     dialog.cancel.click()
     expect(main.status).to_have_text("Note cancelled")
 
 
-def test_message_box_ok(main: MainScreen) -> None:
+def test_message_box_ok(main: MainPage) -> None:
     main.show_message.click()
-    box = MessageBoxScreen(main.app)
+    box = MessageBoxPage(main.app)
     expect(box.window).to_exist()
     box.ok.click()
     expect(main.status).to_have_text("Message closed")
 
 
-def test_remember_me_and_menu_reset(main: MainScreen) -> None:
+def test_remember_me_and_menu_reset(main: MainPage) -> None:
     main.remember.check()
     expect(main.status).to_have_text("Remember: True")
     assert main.remember.is_checked()
@@ -119,7 +119,7 @@ def test_remember_me_and_menu_reset(main: MainScreen) -> None:
     expect(main.username).to_have_value("")
 
 
-def test_select_in_combo_list_and_grid(main: MainScreen) -> None:
+def test_select_in_combo_list_and_grid(main: MainPage) -> None:
     main.color.select("Green")
     expect(main.status).to_have_text("Color: Green")
     main.items.select("Item 450")
@@ -128,7 +128,7 @@ def test_select_in_combo_list_and_grid(main: MainScreen) -> None:
     expect(main.status).to_have_text("Row: Product 121")
 
 
-def test_screen_check_reports_missing_elements(main: MainScreen) -> None:
+def test_page_check_reports_missing_elements(main: MainPage) -> None:
     results = main.check()
     assert results["sign_in"] is None
     assert results["username"] is None
@@ -137,8 +137,8 @@ def test_screen_check_reports_missing_elements(main: MainScreen) -> None:
     assert isinstance(results["menu_reset"], ElementNotFoundError)  # menu closed
 
 
-def test_failure_diagnostic_for_a_misspelled_locator(main: MainScreen) -> None:
-    class Typo(MainScreen):
+def test_failure_diagnostic_for_a_misspelled_locator(main: MainPage) -> None:
+    class Typo(MainPage):
         sign_in = Element(control_type="Button", name="Sign In", timeout=0.3)
 
     with pytest.raises(ElementNotFoundError) as exc_info:
@@ -147,18 +147,18 @@ def test_failure_diagnostic_for_a_misspelled_locator(main: MainScreen) -> None:
     assert "(waited 0.3s)" in str(exc_info.value)
 
 
-def test_expect_failure_message(main: MainScreen) -> None:
+def test_expect_failure_message(main: MainPage) -> None:
     with pytest.raises(AssertionError) as exc_info:
         expect(main.status, timeout=0.3).to_have_text("Welcome, nobody")
     assert str(exc_info.value) == (
-        'expect(MainScreen.status).to_have_text("Welcome, nobody") failed after 0.3s\n'
+        'expect(MainPage.status).to_have_text("Welcome, nobody") failed after 0.3s\n'
         '  Expected: "Welcome, nobody"\n'
         '  Actual: "Ready"\n'
         '  Locator: *[id="StatusText"]'
     )
 
 
-def test_text_value_info_and_waits(main: MainScreen) -> None:
+def test_text_value_info_and_waits(main: MainPage) -> None:
     assert main.status.text == "Ready"
     main.username.type("abc")
     assert main.username.value == "abc"
@@ -173,10 +173,10 @@ def test_text_value_info_and_waits(main: MainScreen) -> None:
     assert main.sign_in.wait_for("enabled") is not None
     main.username.clear()
     assert main.username.value == ""
-    assert re.fullmatch(r"<BoundElement MainScreen\.sign_in .*>", repr(main.sign_in))
+    assert re.fullmatch(r"<BoundElement MainPage\.sign_in .*>", repr(main.sign_in))
 
 
-def test_window_operations(main: MainScreen) -> None:
+def test_window_operations(main: MainPage) -> None:
     assert main.window.title == "WTK Demo"
     main.window.minimize()
     main.window.restore()

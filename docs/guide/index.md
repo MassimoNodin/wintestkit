@@ -9,7 +9,7 @@ application under test.
 | Page | What it covers |
 |---|---|
 | [Getting started](getting-started.md) | Install, create a project, write and run the first test |
-| [Screens and elements](screens-and-elements.md) | `Screen`, `Window`, `Element`, `Elements`, `within`, organizing screens |
+| [Pages and elements](pages-and-elements.md) | `Page`, `Window`, `Element`, `Elements`, `within`, organizing pages |
 | [Locators for WPF](locators-for-wpf.md) | Strict matching, diagnostics, locator strategies, lists, grids, dialogs |
 | [Actions and assertions](actions-and-assertions.md) | Every action, auto-waiting, `expect`, timeouts |
 | [Running tests](running-tests.md) | `wtk run`, launch modes, fixtures, reports, JUnit, exit codes |

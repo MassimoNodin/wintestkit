@@ -1,19 +1,19 @@
 """Signing in: valid and invalid credentials."""
 
 import pytest
-from screens import MainScreen
+from pages import MainPage
 
 from wintestkit import expect
 
 
-def test_valid_login(main: MainScreen) -> None:
+def test_valid_login(main: MainPage) -> None:
     main.username.type("admin")
     main.password.type("secret")
     main.sign_in.click()
     expect(main.status).to_have_text("Welcome, admin")
 
 
-def test_invalid_login(main: MainScreen) -> None:
+def test_invalid_login(main: MainPage) -> None:
     main.username.type("admin")
     main.password.type("wrong")
     main.sign_in.click()
@@ -29,7 +29,7 @@ def test_invalid_login(main: MainScreen) -> None:
         ("", "", "Invalid credentials"),
     ],
 )
-def test_login_matrix(main: MainScreen, username: str, password: str, message: str) -> None:
+def test_login_matrix(main: MainPage, username: str, password: str, message: str) -> None:
     if username:
         main.username.type(username)
     if password:
@@ -38,7 +38,7 @@ def test_login_matrix(main: MainScreen, username: str, password: str, message: s
     expect(main.status).to_have_text(message)
 
 
-def test_remember_me_can_be_checked_and_unchecked(main: MainScreen) -> None:
+def test_remember_me_can_be_checked_and_unchecked(main: MainPage) -> None:
     main.remember_me.check()
     expect(main.remember_me).to_be_checked()
     expect(main.status).to_have_text("Remember: True")
@@ -47,6 +47,6 @@ def test_remember_me_can_be_checked_and_unchecked(main: MainScreen) -> None:
     expect(main.status).to_have_text("Remember: False")
 
 
-def test_the_password_is_never_readable(main: MainScreen) -> None:
+def test_the_password_is_never_readable(main: MainPage) -> None:
     main.password.type("secret")
     assert "secret" not in main.password.text

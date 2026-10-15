@@ -27,7 +27,7 @@ suite("WinTestKit activation", () => {
     await vscode.commands.executeCommand("wintestkit.elements.refresh");
     await vscode.commands.executeCommand("wintestkit.showOutput");
     await vscode.commands.executeCommand("wintestkit.runDoctor");
-    const uri = vscode.Uri.joinPath(folder.uri, "screens", "main.py");
+    const uri = vscode.Uri.joinPath(folder.uri, "pages", "main.py");
     await vscode.window.showTextDocument(uri);
     let lenses: vscode.CodeLens[] = [];
     for (let attempt = 0; attempt < 20; attempt++) {
@@ -47,7 +47,7 @@ suite("WinTestKit activation", () => {
     const highlight = lenses.find(
       (lens) =>
         lens.command?.command === "wintestkit.highlightElement" &&
-        lens.command.arguments?.[0]?.qualname === "MainScreen.sign_in",
+        lens.command.arguments?.[0]?.qualname === "MainPage.sign_in",
     );
     assert.ok(highlight, "discovery populates highlight CodeLens");
     type TreeNode = {
@@ -64,11 +64,11 @@ suite("WinTestKit activation", () => {
         };
       }
     ).elements;
-    const mainScreen = elements
+    const mainPage = elements
       .getChildren()
-      .find((node) => node.label === "MainScreen");
-    assert.ok(mainScreen);
-    const credentials = mainScreen.children.find(
+      .find((node) => node.label === "MainPage");
+    assert.ok(mainPage);
+    const credentials = mainPage.children.find(
       (node) => node.label === "credentials",
     );
     const signIn = credentials?.children.find(
@@ -99,8 +99,7 @@ suite("WinTestKit activation", () => {
       assert.ok(
         [...checks.results.values()].some(
           (result) =>
-            result.qualname === "MainScreen.sign_in" &&
-            result.status === "found",
+            result.qualname === "MainPage.sign_in" && result.status === "found",
         ),
       );
       assert.equal(
@@ -279,7 +278,7 @@ suite("WinTestKit activation", () => {
       assert.ok(folder);
       const scratch = vscode.Uri.joinPath(
         folder.uri,
-        "screens",
+        "pages",
         "_wtk_spy_e2e.py",
       );
       assert.equal(
@@ -288,14 +287,14 @@ suite("WinTestKit activation", () => {
           () => false,
         ),
         false,
-        "scratch screen must not already exist",
+        "scratch page must not already exist",
       );
       const compute = (
         extension.exports as {
           computeInsertion(
             source: string,
-            screen: null,
-            newScreen: { className: string },
+            page: null,
+            newPage: { className: string },
             suggestion: unknown,
             attributeName: string,
           ): {
@@ -312,7 +311,7 @@ suite("WinTestKit activation", () => {
       const insertion = compute(
         "",
         null,
-        { className: "SpyIntegrationScreen" },
+        { className: "SpyIntegrationPage" },
         selected.suggestion,
         "sign_in",
       );
@@ -343,7 +342,7 @@ suite("WinTestKit activation", () => {
             (lens) =>
               lens.command?.command === "wintestkit.highlightElement" &&
               lens.command.arguments?.[0]?.qualname ===
-                "SpyIntegrationScreen.sign_in",
+                "SpyIntegrationPage.sign_in",
           );
           if (insertedLens) break;
           await new Promise((resolve) => setTimeout(resolve, 250));
@@ -366,7 +365,7 @@ suite("WinTestKit activation", () => {
         assert.ok(
           [...checks.results.values()].some(
             (result) =>
-              result.qualname === "SpyIntegrationScreen.sign_in" &&
+              result.qualname === "SpyIntegrationPage.sign_in" &&
               result.status === "found",
           ),
         );

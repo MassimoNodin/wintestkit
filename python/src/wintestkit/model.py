@@ -1,6 +1,6 @@
-"""The test-facing model: ``Screen``, ``Window``, ``Element`` and their bound counterparts.
+"""The test-facing model: ``Page``, ``Window``, ``Element`` and their bound counterparts.
 
-Users declare elements as class attributes of a ``Screen`` subclass. Accessing an attribute on the
+Users declare elements as class attributes of a ``Page`` subclass. Accessing an attribute on the
 class returns the definition; accessing it on an instance returns a *bound* object that resolves
 the locator lazily and auto-waits before every action.
 """
@@ -45,7 +45,7 @@ __all__ = [
     "BoundWindow",
     "Element",
     "Elements",
-    "Screen",
+    "Page",
     "Window",
     "is_password_locator",
 ]
@@ -252,7 +252,7 @@ class Elements(Element):
         return BoundElements(obj, self)
 
 
-class Screen:
+class Page:
     """A page or dialog of the application: a collection of window and element definitions."""
 
     window: ClassVar[Window | None] = None
@@ -288,10 +288,10 @@ class Screen:
         return results
 
 
-def _scope(screen: Any) -> Scope:
+def _scope(page: Any) -> Scope:
     __tracebackhide__ = True
-    app: App = screen.app
-    window: Any = getattr(type(screen), "window", None)  # pyright: ignore[reportUnknownArgumentType]
+    app: App = page.app
+    window: Any = getattr(type(page), "window", None)  # pyright: ignore[reportUnknownArgumentType]
     locator = window.locator if isinstance(window, Window) else None
     return Scope(app, locator)
 
@@ -326,7 +326,7 @@ def is_password_locator(locator: Locator) -> bool:
 class _BoundBase:
     """Shared resolution logic of bound single elements and windows."""
 
-    screen: Any
+    page: Any
     definition: Any
 
     def _timeout(self, per_call: float | None) -> float:
@@ -407,11 +407,11 @@ class _BoundBase:
 
 
 class BoundWindow(_BoundBase):
-    """A ``Window`` definition bound to a screen's application."""
+    """A ``Window`` definition bound to a page's application."""
 
-    def __init__(self, screen: Any, definition: Window) -> None:
+    def __init__(self, page: Any, definition: Window) -> None:
         __tracebackhide__ = True
-        self.screen = screen
+        self.page = page
         self.definition = definition
 
     @property
@@ -425,7 +425,7 @@ class BoundWindow(_BoundBase):
 
     def resolve_once(self) -> UIAElement:
         __tracebackhide__ = True
-        return resolve_window(self.screen.app, self.locator)
+        return resolve_window(self.page.app, self.locator)
 
     @property
     def title(self) -> str:
@@ -458,13 +458,13 @@ class BoundWindow(_BoundBase):
 
 
 class BoundElement(_BoundBase):
-    """An ``Element`` definition bound to a screen: resolves lazily and auto-waits."""
+    """An ``Element`` definition bound to a page: resolves lazily and auto-waits."""
 
     def __init__(
-        self, screen: Any, definition: Element, locator_override: Locator | None = None
+        self, page: Any, definition: Element, locator_override: Locator | None = None
     ) -> None:
         __tracebackhide__ = True
-        self.screen = screen
+        self.page = page
         self.definition = definition
         self._override = locator_override
 
@@ -481,7 +481,7 @@ class BoundElement(_BoundBase):
 
     def _derive(self, locator: Locator) -> BoundElement:
         __tracebackhide__ = True
-        return BoundElement(self.screen, self.definition, locator)
+        return BoundElement(self.page, self.definition, locator)
 
     def __repr__(self) -> str:
         __tracebackhide__ = True
@@ -491,7 +491,7 @@ class BoundElement(_BoundBase):
 
     def resolve_once(self) -> UIAElement:
         __tracebackhide__ = True
-        return resolve(_scope(self.screen), self.locator)
+        return resolve(_scope(self.page), self.locator)
 
     def _actionable(self, timeout: float | None) -> UIAElement:
         """Wait until the element is attached and enabled (and visible unless it can scroll)."""
@@ -729,13 +729,13 @@ def _find_row_diagnostic(bound: BoundElement, column: int | str, shown: str, row
 
 
 class BoundElements:
-    """An ``Elements`` definition bound to a screen: all matches of one locator."""
+    """An ``Elements`` definition bound to a page: all matches of one locator."""
 
     def __init__(
-        self, screen: Any, definition: Elements, locator_override: Locator | None = None
+        self, page: Any, definition: Elements, locator_override: Locator | None = None
     ) -> None:
         __tracebackhide__ = True
-        self.screen = screen
+        self.page = page
         self.definition = definition
         self._override = locator_override
 
@@ -759,7 +759,7 @@ class BoundElements:
 
     def resolve_all(self) -> list[UIAElement]:
         __tracebackhide__ = True
-        return resolve_all(_scope(self.screen), self.locator)
+        return resolve_all(_scope(self.page), self.locator)
 
     def count(self, *, timeout: float = 0) -> int:
         """Number of matches; waits up to ``timeout`` seconds for at least one.
@@ -780,7 +780,7 @@ class BoundElements:
 
     def nth(self, i: int) -> BoundElement:
         __tracebackhide__ = True
-        return BoundElement(self.screen, self.definition, self.locator.with_index(i))
+        return BoundElement(self.page, self.definition, self.locator.with_index(i))
 
     def first(self) -> BoundElement:
         __tracebackhide__ = True
@@ -820,7 +820,7 @@ class BoundElements:
             if value is not None
         }
         return BoundElements(
-            self.screen, self.definition, dataclasses.replace(self.locator, **changes)
+            self.page, self.definition, dataclasses.replace(self.locator, **changes)
         )
 
     def __iter__(self) -> Iterator[BoundElement]:

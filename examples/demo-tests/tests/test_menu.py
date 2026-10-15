@@ -1,11 +1,11 @@
 """The menu bar."""
 
-from screens import MainScreen, MessageBox
+from pages import MainPage, MessageBox
 
 from wintestkit import expect
 
 
-def test_reset_clears_the_form(main: MainScreen) -> None:
+def test_reset_clears_the_form(main: MainPage) -> None:
     main.username.type("someone")
     main.remember_me.check()
     main.menu_file.click()
@@ -15,7 +15,7 @@ def test_reset_clears_the_form(main: MainScreen) -> None:
     expect(main.remember_me).not_.to_be_checked()
 
 
-def test_about_box(main: MainScreen) -> None:
+def test_about_box(main: MainPage) -> None:
     main.menu_help.click()
     main.menu_about.click()
     box = MessageBox(main.app)

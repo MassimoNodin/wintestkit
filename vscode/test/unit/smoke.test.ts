@@ -104,7 +104,7 @@ vi.mock("../../src/editor/highlightCommands", () => ({
       for (const command of [
         "wintestkit.highlightElement",
         "wintestkit.checkElement",
-        "wintestkit.checkScreen",
+        "wintestkit.checkPage",
       ])
         mocks.registerCommand(command, () => {});
     }

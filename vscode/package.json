@@ -37,7 +37,7 @@
         "icon": "$(check)"
       },
       {
-        "command": "wintestkit.checkScreen",
+        "command": "wintestkit.checkPage",
         "title": "Check All Elements",
         "category": "WinTestKit",
         "icon": "$(checklist)"
@@ -177,8 +177,8 @@
           "group": "inline"
         },
         {
-          "command": "wintestkit.checkScreen",
-          "when": "view == wintestkit.elements && viewItem == screen",
+          "command": "wintestkit.checkPage",
+          "when": "view == wintestkit.elements && viewItem == page",
           "group": "inline"
         }
       ],

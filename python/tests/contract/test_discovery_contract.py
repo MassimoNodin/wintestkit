@@ -18,14 +18,14 @@ def test_the_examples_project_validates(validate: Validate) -> None:
     validate("discovery.schema.json", "DiscoveryResult", result.to_dict())
     assert result.errors == ()
     assert len(result.tests) >= 15
-    names = {s.name for s in result.screens}
-    assert {"MainScreen", "NoteDialog", "MessageBox"} <= names
-    main = next(s for s in result.screens if s.name == "MainScreen")
+    names = {s.name for s in result.pages}
+    assert {"MainPage", "NoteDialog", "MessageBox"} <= names
+    main = next(s for s in result.pages if s.name == "MainPage")
     window = next(e for e in main.elements if e.name == "window")
     assert window.locator == {"window": {"title": "WTK Demo"}}
     sign_in = next(e for e in main.elements if e.name == "sign_in")
     assert sign_in.locator["within"] == {"controlType": "Group", "name": "Credentials"}
-    assert not any(e.dynamic for s in result.screens for e in s.elements)
+    assert not any(e.dynamic for s in result.pages for e in s.elements)
 
 
 def test_every_feature_validates(tmp_path: Path, validate: Validate) -> None:
@@ -45,11 +45,11 @@ def test_every_feature_validates(tmp_path: Path, validate: Validate) -> None:
                     def test_i(self): pass
             """,
         "tests/test_syntax.py": "def broken(:\n",
-        "screens/s.py": """
+        "pages/s.py": """
             import re
-            from wintestkit import Element, Elements, Screen, Window
+            from wintestkit import Element, Elements, Page, Window
 
-            class S(Screen):
+            class S(Page):
                 window = Window(title=re.compile("^W", re.I), process="App.exe")
                 g = Element(control_type="Group", name="G")
                 b: Element = Element(control_type="Button", name=dynamic(), within=g, window=window)
@@ -63,9 +63,9 @@ def test_every_feature_validates(tmp_path: Path, validate: Validate) -> None:
     result = discover(tmp_path)
     payload = result.to_dict()
     validate("discovery.schema.json", "DiscoveryResult", payload)
-    assert payload["errors"] and payload["screens"] and payload["tests"]
-    (screen,) = payload["screens"]
-    button = next(e for e in screen["elements"] if e["name"] == "b")
+    assert payload["errors"] and payload["pages"] and payload["tests"]
+    (page,) = payload["pages"]
+    button = next(e for e in page["elements"] if e["name"] == "b")
     assert button["dynamic"] is True
     assert button["withinName"] == "g"
     assert button["windowName"] == "window"

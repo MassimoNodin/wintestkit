@@ -6,7 +6,7 @@ It covers:
 1. Preparing Windows, Python and your application.
 2. Installing the Python backend and optional VS Code extension.
 3. Creating a test project with `wtk init --app "C:/Apps/Orders.exe"`.
-4. Using Spy to find controls and build a screen class.
+4. Using Spy to find controls and build a page class.
 5. Writing a pytest test with the `app` fixture and `expect` assertions.
 6. Running the suite and reading its HTML report.
 
@@ -14,6 +14,6 @@ Use your own application's executable, window titles and locators. No example ap
 are bundled. The [example test code](../../examples/demo-tests) is retained as a reference,
 not a ready-to-run suite for an included app.
 
-After your first test, continue with [screens and elements](screens-and-elements.md),
+After your first test, continue with [pages and elements](pages-and-elements.md),
 [locator strategies](locators-for-wpf.md), [actions and assertions](actions-and-assertions.md),
 and [running tests](running-tests.md).

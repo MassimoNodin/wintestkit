@@ -67,7 +67,7 @@ export function registerInitialize(
       if (result.stderr) log.warn(result.stderr);
       await projects.refresh();
       await vscode.window.showTextDocument(
-        vscode.Uri.joinPath(folder.uri, "screens", "main.py"),
+        vscode.Uri.joinPath(folder.uri, "pages", "main.py"),
       );
     } catch (error) {
       log.error(String(error));

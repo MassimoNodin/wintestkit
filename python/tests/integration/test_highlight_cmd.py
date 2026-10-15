@@ -15,12 +15,12 @@ from wintestkit.targets import ModuleLoader, Target, resolve_target
 pytestmark = pytest.mark.integration
 
 SOURCE = (
-    "from wintestkit import Screen, Window, Element, Elements\n"
-    "class Main(Screen):\n"
+    "from wintestkit import Page, Window, Element, Elements\n"
+    "class Main(Page):\n"
     "    window = Window(title='WTK Demo')\n"
     "    sign_in = Element(control_type='Button', name='Sign in')\n"
     "    oks = Elements(control_type='Button', name='OK')\n"
-    "class Failures(Screen):\n"
+    "class Failures(Page):\n"
     "    window = Window(title='WTK Demo')\n"
     "    ambiguous = Element(control_type='Button', name='OK')\n"
     "    missing = Element(control_type='Button', name='Not a button')\n"
@@ -75,7 +75,7 @@ def test_highlight_live_targets(
         assert result["diagnostic"]["matchCount"] == (2 if status == "ambiguous" else 0)
 
 
-def test_check_live_screen_and_failures(
+def test_check_live_page_and_failures(
     command_project: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     assert main(["--root", str(command_project), "check", "command_demo.py::Main", "--json"]) == 0
@@ -98,7 +98,7 @@ def test_highlight_examples_target(
     root = Path(__file__).resolve().parents[3] / "examples" / "demo-tests"
     monkeypatch.syspath_prepend(str(root))
     loader = ModuleLoader(load_config(root))
-    target = Target(root / "screens" / "main.py", "MainScreen.sign_in")
+    target = Target(root / "pages" / "main.py", "MainPage.sign_in")
     result = resolve_target(App.attach(pid=demo_process.pid), loader, target)
     assert result.status == "found"
     assert result.element is not None

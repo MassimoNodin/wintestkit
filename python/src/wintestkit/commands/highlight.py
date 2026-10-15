@@ -1,4 +1,4 @@
-"""Resolve a screen target and briefly outline its physical bounds."""
+"""Resolve a page target and briefly outline its physical bounds."""
 
 from __future__ import annotations
 
@@ -27,8 +27,8 @@ def nonnegative_milliseconds(value: str) -> int:
 
 
 def add_parser(subparsers: Any) -> None:
-    parser = subparsers.add_parser("highlight", help="find and outline a screen or element")
-    parser.add_argument("target", metavar="FILE::Screen[.element]")
+    parser = subparsers.add_parser("highlight", help="find and outline a page or element")
+    parser.add_argument("target", metavar="FILE::Page[.element]")
     parser.add_argument("--duration", type=nonnegative_milliseconds, default=1500, metavar="MS")
     parser.add_argument("--timeout", type=nonnegative_seconds, default=0.0, metavar="S")
     parser.add_argument("--launch", action="store_true", help="launch the app if it is not running")

@@ -49,10 +49,10 @@ def test_rpc_results(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, validate: 
         ("app.launch", {}, "AppLaunchResult"),
         (
             "element.highlight",
-            {"file": "screen.py", "qualname": "Main.ok"},
+            {"file": "page.py", "qualname": "Main.ok"},
             "ElementHighlightResult",
         ),
-        ("screen.check", {"file": "screen.py", "screen": "Main"}, "ScreenCheckResult"),
+        ("page.check", {"file": "page.py", "page": "Main"}, "PageCheckResult"),
         ("inspect.roots", {}, "InspectRootsResult"),
         ("inspect.children", {"nodeId": node["nodeId"]}, "InspectChildrenResult"),
         ("inspect.properties", {"nodeId": node["nodeId"]}, "InspectPropertiesResult"),

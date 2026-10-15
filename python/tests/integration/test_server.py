@@ -21,9 +21,9 @@ def test_stdio_server(tmp_path: Path, demo_process: DemoProcess) -> None:
     (tmp_path / "pyproject.toml").write_text(
         "[tool.wintestkit]\n[tool.wintestkit.app]\nprocess = 'DemoApp.exe'\n", encoding="utf-8"
     )
-    (tmp_path / "rpc_screen.py").write_text(
-        "from wintestkit import Screen, Element\nprint('stray print from user module')\n"
-        "class Main(Screen):\n"
+    (tmp_path / "rpc_page.py").write_text(
+        "from wintestkit import Page, Element\nprint('stray print from user module')\n"
+        "class Main(Page):\n"
         "    sign_in = Element(control_type='Button', name='Sign in')\n"
         "    missing = Element(name='not present')\n",
         encoding="utf-8",
@@ -63,20 +63,18 @@ def test_stdio_server(tmp_path: Path, demo_process: DemoProcess) -> None:
 
     try:
         assert call("initialize", {"root": str(tmp_path)})["protocolVersion"] == 1
-        assert call("discover")["screens"]
+        assert call("discover")["pages"]
         assert call("app.status")["running"]
         found = call(
             "element.highlight",
-            {"file": "rpc_screen.py", "qualname": "Main.sign_in", "durationMs": 10},
+            {"file": "rpc_page.py", "qualname": "Main.sign_in", "durationMs": 10},
         )
         assert found["status"] == "found"
         assert (
-            call("element.highlight", {"file": "rpc_screen.py", "qualname": "Main.missing"})[
-                "status"
-            ]
+            call("element.highlight", {"file": "rpc_page.py", "qualname": "Main.missing"})["status"]
             == "not_found"
         )
-        assert call("screen.check", {"file": "rpc_screen.py", "screen": "Main"})["results"]
+        assert call("page.check", {"file": "rpc_page.py", "page": "Main"})["results"]
         roots = call("inspect.roots")
         root = next(node for node in roots if node["info"]["name"] == "WTK Demo")
         assert call("inspect.children", {"nodeId": root["nodeId"]})

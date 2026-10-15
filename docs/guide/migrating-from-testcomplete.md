@@ -9,8 +9,8 @@ pytest instead of a proprietary IDE and project format.
 |---|---|
 | Project suite / project | A folder with `pyproject.toml` containing `[tool.wintestkit]` |
 | Tested Applications | `[tool.wintestkit.app]` (`path`, `args`, `cwd`, `env`) and the launch mode |
-| NameMapping | `Screen` classes with `Element` attributes |
-| Aliases | Screen attribute names (`main.sign_in`) |
+| NameMapping | `Page` classes with `Element` attributes |
+| Aliases | Page attribute names (`main.sign_in`) |
 | Mapping criteria (properties) | `automation_id`, `name`, `control_type`, `class_name`, `index` |
 | Mapped object hierarchy | `within=` |
 | Conditional / extended find | Regular expressions in `name=` and friends, `Elements(...).filter()` |
@@ -34,18 +34,18 @@ pytest instead of a proprietary IDE and project format.
   surface at the line that is wrong. Expect to add `within=` scopes while migrating.
 - **UI Automation only.** There is no image-based or OCR recognition. Controls a screen reader can't
   see can't be tested; for WPF that is rare.
-- **No recorder.** Use the Spy to build screens and write tests in Python; the editor
-  completes element names from your screens.
-- **Code review and version control.** Screens and tests are plain Python files that diff, review
+- **No recorder.** Use the Spy to build pages and write tests in Python; the editor
+  completes element names from your pages.
+- **Code review and version control.** Pages and tests are plain Python files that diff, review
   and merge like any other code.
 
 ## A migrated test
 
-A keyword test that signs in and checks the welcome text becomes a screen and a test function:
+A keyword test that signs in and checks the welcome text becomes a page and a test function:
 
 ```python
 # examples/demo-tests/tests/test_login.py
-def test_invalid_login(main: MainScreen) -> None:
+def test_invalid_login(main: MainPage) -> None:
     main.username.type("admin")
     main.password.type("wrong")
     main.sign_in.click()
@@ -70,7 +70,7 @@ A data-driven loop over a table becomes a parametrized test:
 ## Suggested order
 
 1. Configure the application in `pyproject.toml` and check the machine with `wtk doctor`.
-2. Translate the NameMapping for one window into a `Screen`, using the Spy to confirm each
+2. Translate the NameMapping for one window into a `Page`, using the Spy to confirm each
    locator. Run **Check All Elements** in VS Code (or `wtk check`) until it is green.
 3. Move the tests that use that window, replacing checkpoints with `expect` and removing explicit
    waits.

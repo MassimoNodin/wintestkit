@@ -8,7 +8,7 @@ reports the closest elements and what differs, and saves screenshots and a UI tr
 import os
 
 import pytest
-from screens import MainScreen
+from pages import MainPage
 
 from wintestkit import Element
 
@@ -17,8 +17,8 @@ from wintestkit import Element
     os.environ.get("WTK_DEMO_FAILURES") != "1",
     reason="set WTK_DEMO_FAILURES=1 to run the intentionally failing demo test",
 )
-def test_misspelled_locator(main: MainScreen) -> None:
-    class Typo(MainScreen):
+def test_misspelled_locator(main: MainPage) -> None:
+    class Typo(MainPage):
         sign_in = Element(control_type="Button", name="Sign In", timeout=1)  # real name: "Sign in"
 
     Typo(main.app).sign_in.click()

@@ -17,15 +17,15 @@ from wintestkit.errors import AmbiguousElementError, ElementNotFoundError, UIAEr
 from wintestkit.targets import ModuleLoader, Target, TargetError, parse_target
 
 SOURCE = (
-    "from wintestkit import Screen, Window, Element, Elements\n"
-    "class Main(Screen):\n"
+    "from wintestkit import Page, Window, Element, Elements\n"
+    "class Main(Page):\n"
     "    window = Window(title='Demo')\n"
     "    ok = Element(name='OK')\n"
     "    many = Elements(name='OK')\n"
     "class Child(Main):\n"
     "    ok = None\n"
     "    extra = Element(name='Extra')\n"
-    "class Bare(Screen):\n"
+    "class Bare(Page):\n"
     "    button = Element(name='Button')\n"
 )
 
@@ -33,7 +33,7 @@ SOURCE = (
 @pytest.fixture
 def project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[tuple[ModuleLoader, Path]]:
     monkeypatch.syspath_prepend(str(tmp_path))
-    package = tmp_path / "target_screens"
+    package = tmp_path / "target_pages"
     package.mkdir()
     (package / "__init__.py").write_text("", encoding="utf-8")
     file = package / "main.py"
@@ -44,14 +44,14 @@ def project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[tuple[M
 
 
 def test_parse_relative_absolute_and_windows_paths(tmp_path: Path) -> None:
-    target = parse_target("screens/main.py::Main.ok", tmp_path)
-    assert target == Target((tmp_path / "screens/main.py").resolve(), "Main.ok")
-    assert target.display(tmp_path) == "screens/main.py::Main.ok"
+    target = parse_target("pages/main.py::Main.ok", tmp_path)
+    assert target == Target((tmp_path / "pages/main.py").resolve(), "Main.ok")
+    assert target.display(tmp_path) == "pages/main.py::Main.ok"
     assert parse_target(f"{target.file}::Main", tmp_path).file == target.file
-    assert parse_target("screens/main.py", tmp_path).qualname == ""
+    assert parse_target("pages/main.py", tmp_path).qualname == ""
     if os.name == "nt":
-        assert parse_target(r"C:\wtk\screens\main.py::Main.ok", tmp_path).file == Path(
-            r"C:\wtk\screens\main.py"
+        assert parse_target(r"C:\wtk\pages\main.py::Main.ok", tmp_path).file == Path(
+            r"C:\wtk\pages\main.py"
         )
 
 
@@ -63,25 +63,25 @@ def test_bad_target_syntax(tmp_path: Path, text: str) -> None:
         parse_target(text, tmp_path)
 
 
-def test_highlight_requires_screen_name(tmp_path: Path) -> None:
+def test_highlight_requires_page_name(tmp_path: Path) -> None:
     with pytest.raises(TargetError):
         parse_target("main.py", tmp_path, require_qualname=True)
 
 
 def test_module_names_and_lookup(project: tuple[ModuleLoader, Path]) -> None:
     loader, file = project
-    assert loader.module_name(file) == "target_screens.main"
-    assert loader.module_name(file.parent / "__init__.py") == "target_screens"
+    assert loader.module_name(file) == "target_pages.main"
+    assert loader.module_name(file.parent / "__init__.py") == "target_pages"
     assert loader.load(file).__file__ == str(file)
-    screen = loader.get_screen(Target(file, "Main"))
-    assert loader.get_element(Target(file, "Main.ok")) == (screen, "ok")
-    assert loader.get_element(Target(file, "Main")) == (screen, "window")
-    assert loader.element_names(loader.get_screen(Target(file, "Child"))) == [
+    page = loader.get_page(Target(file, "Main"))
+    assert loader.get_element(Target(file, "Main.ok")) == (page, "ok")
+    assert loader.get_element(Target(file, "Main")) == (page, "window")
+    assert loader.element_names(loader.get_page(Target(file, "Child"))) == [
         "window",
         "many",
         "extra",
     ]
-    assert set(loader.screens_in(file)) == {"Main", "Child", "Bare"}
+    assert set(loader.pages_in(file)) == {"Main", "Child", "Bare"}
 
 
 @pytest.mark.parametrize("qualname", ["Missing", "Main.missing", "Main.ok.extra"])
@@ -91,10 +91,10 @@ def test_bad_element_name(project: tuple[ModuleLoader, Path], qualname: str) -> 
         loader.get_element(Target(file, qualname))
 
 
-def test_element_is_not_a_screen(project: tuple[ModuleLoader, Path]) -> None:
+def test_element_is_not_a_page(project: tuple[ModuleLoader, Path]) -> None:
     loader, file = project
-    with pytest.raises(TargetError, match="not a screen"):
-        loader.get_screen(Target(file, "Main.ok"))
+    with pytest.raises(TargetError, match="not a page"):
+        loader.get_page(Target(file, "Main.ok"))
 
 
 def test_reload_same_size_within_one_timestamp_second(project: tuple[ModuleLoader, Path]) -> None:
@@ -130,14 +130,14 @@ def test_namespace_and_conflicting_project_modules(
     loader, file = project
     loader.load(file)
     other = tmp_path / "other"
-    package = other / "target_screens"
+    package = other / "target_pages"
     package.mkdir(parents=True)
     (package / "__init__.py").write_text("", encoding="utf-8")
     other_file = package / "second.py"
     other_file.write_text("VALUE = 42\n", encoding="utf-8")
     other_loader = ModuleLoader(load_config(other))
     assert other_loader.load(other_file).VALUE == 42
-    assert Path(sys.modules["target_screens"].__file__).parent == package
+    assert Path(sys.modules["target_pages"].__file__).parent == package
     namespace = other / "namespace"
     namespace.mkdir()
     namespace_file = namespace / "main.py"
@@ -183,7 +183,7 @@ def test_bound_resolution_and_checks(
     assert "uia" not in result.to_dict()
     assert targets.resolve_target(app, loader, Target(file, "Main.many")).status == "found"
     assert targets.resolve_target(app, loader, Target(file, "Bare")).element.name == "Demo"
-    results = targets.check_screen(app, loader, file, "Main")
+    results = targets.check_page(app, loader, file, "Main")
     assert [result.qualname for result in results] == ["Main.window", "Main.ok", "Main.many"]
     assert all(result.status == "found" for result in results)
     assert results[1].to_dict()["qualname"] == "Main.ok"
@@ -210,8 +210,8 @@ def test_resolution_errors(error_type: type[Exception], status: str) -> None:
     assert result.message
 
 
-def test_check_rejects_no_screens(project: tuple[ModuleLoader, Path]) -> None:
+def test_check_rejects_no_pages(project: tuple[ModuleLoader, Path]) -> None:
     loader, file = project
     file.write_text("VALUE = 1\n", encoding="utf-8")
-    with pytest.raises(TargetError, match="no screens"):
-        targets.check_screen(SimpleNamespace(), loader, file)
+    with pytest.raises(TargetError, match="no pages"):
+        targets.check_page(SimpleNamespace(), loader, file)

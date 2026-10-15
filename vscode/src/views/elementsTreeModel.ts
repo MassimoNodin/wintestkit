@@ -6,23 +6,23 @@ export interface ElementNode {
   id: string;
   label: string;
   description: string;
-  kind: "project" | "screen" | "window" | "element" | "elements";
+  kind: "project" | "page" | "window" | "element" | "elements";
   icon: string;
   children: ElementNode[];
   file?: string;
   range?: Range;
   qualname?: string;
-  screen?: string;
+  page?: string;
   elementId?: string;
   tooltip?: string;
 }
 
 export function buildTree(discoveries: DiscoveryResult[]): ElementNode[] {
   return discoveries.flatMap<ElementNode>((discovery) => {
-    const screens = [...discovery.screens]
+    const pages = [...discovery.pages]
       .sort((first, second) => first.name.localeCompare(second.name))
-      .map((screen) => {
-        const ordered = [...screen.elements].sort(
+      .map((page) => {
+        const ordered = [...page.elements].sort(
           (first, second) =>
             Number(second.kind === "window") -
               Number(first.kind === "window") ||
@@ -51,16 +51,16 @@ export function buildTree(discoveries: DiscoveryResult[]): ElementNode[] {
                     ? "list-flat"
                     : "symbol-field",
               children: [],
-              file: screen.file,
+              file: page.file,
               qualname: element.qualname,
-              screen: screen.qualname,
+              page: page.qualname,
               range: element.nameRange,
               tooltip:
                 (element.kind === "window"
                   ? description
                   : describeLocator(element.locator)) +
                 "\n" +
-                screen.file +
+                page.file +
                 ":" +
                 (element.nameRange.start.line + 1),
             };
@@ -93,15 +93,15 @@ export function buildTree(discoveries: DiscoveryResult[]): ElementNode[] {
           else children.push(node);
         }
         return {
-          id: discovery.root + "|" + screen.id,
-          label: screen.name,
-          description: path.relative(discovery.root, screen.file),
-          kind: "screen" as const,
+          id: discovery.root + "|" + page.id,
+          label: page.name,
+          description: path.relative(discovery.root, page.file),
+          kind: "page" as const,
           icon: "symbol-class",
           children,
-          file: screen.file,
-          range: screen.nameRange,
-          screen: screen.qualname,
+          file: page.file,
+          range: page.nameRange,
+          page: page.qualname,
         };
       });
     return discoveries.length > 1
@@ -112,9 +112,9 @@ export function buildTree(discoveries: DiscoveryResult[]): ElementNode[] {
             description: discovery.root,
             kind: "project" as const,
             icon: "root-folder",
-            children: screens,
+            children: pages,
           },
         ]
-      : screens;
+      : pages;
   });
 }

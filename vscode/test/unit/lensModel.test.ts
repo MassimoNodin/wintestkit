@@ -24,13 +24,13 @@ describe("editor lens model", () => {
       version: 1,
       root: "C:/demo",
       errors: [],
-      screens: [
+      pages: [
         {
           id: "Main",
-          file: "C:/demo/screen.py",
+          file: "C:/demo/page.py",
           name: "Main",
           qualname: "Main",
-          bases: ["Screen"],
+          bases: ["Page"],
           range: range(1),
           nameRange: range(1),
           elements: [
@@ -70,7 +70,7 @@ describe("editor lens model", () => {
       tests: [
         {
           id: "test",
-          file: "C:/demo/screen.py",
+          file: "C:/demo/page.py",
           name: "test",
           kind: "function",
           parent: null,
@@ -79,7 +79,7 @@ describe("editor lens model", () => {
         },
         {
           id: "class",
-          file: "C:/demo/screen.py",
+          file: "C:/demo/page.py",
           name: "TestClass",
           kind: "class",
           parent: null,
@@ -90,7 +90,7 @@ describe("editor lens model", () => {
     };
     const lenses = buildLenses(
       result,
-      "C:/demo/screen.py",
+      "C:/demo/page.py",
       new Map([["test", "passed"]]),
     );
     expect(lenses).toHaveLength(11);

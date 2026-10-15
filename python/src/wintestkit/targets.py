@@ -1,7 +1,7 @@
-"""Targets: how the CLI and the editor refer to a screen or element definition in user code.
+"""Targets: how the CLI and the editor refer to a page or element definition in user code.
 
-A target is ``path/to/screens/main.py::MainScreen.sign_in`` (or ``...::MainScreen`` for a whole
-screen). The module loader imports the user's modules and reloads them when files change, so
+A target is ``path/to/pages/main.py::MainPage.sign_in`` (or ``...::MainPage`` for a whole
+page). The module loader imports the user's modules and reloads them when files change, so
 edits in the editor take effect without restarting the server.
 """
 
@@ -29,19 +29,19 @@ from wintestkit.errors import (
 if TYPE_CHECKING:
     from wintestkit.app import App
     from wintestkit.engine.diagnose import Diagnostic
-    from wintestkit.model import Screen
+    from wintestkit.model import Page
     from wintestkit.uia.element import ElementInfo, UIAElement
 
 _SCAN_INTERVAL = 0.2
 
 
 class TargetError(WtkError):
-    """A target that cannot be resolved to a screen or element definition."""
+    """A target that cannot be resolved to a page or element definition."""
 
 
 @dataclass(frozen=True)
 class Target:
-    """A screen or element definition: a file plus a dotted qualified name inside it."""
+    """A page or element definition: a file plus a dotted qualified name inside it."""
 
     file: Path
     qualname: str
@@ -55,14 +55,14 @@ class Target:
 
 
 def parse_target(text: str, root: Path, *, require_qualname: bool = False) -> Target:
-    """Parse ``FILE::Screen.element``. Relative files are resolved against ``root``."""
+    """Parse ``FILE::Page.element``. Relative files are resolved against ``root``."""
     file_part, separator, qualname = text.partition("::")
     if not file_part.strip():
-        raise TargetError(f"invalid target {text!r}: expected FILE::Screen.element")
+        raise TargetError(f"invalid target {text!r}: expected FILE::Page.element")
     if (separator and not qualname.strip()) or (require_qualname and not separator):
-        raise TargetError(f"invalid target {text!r}: expected FILE::Screen.element")
+        raise TargetError(f"invalid target {text!r}: expected FILE::Page.element")
     if qualname and not all(part.isidentifier() for part in qualname.strip().split(".")):
-        raise TargetError(f"invalid target {text!r}: expected a dotted screen attribute")
+        raise TargetError(f"invalid target {text!r}: expected a dotted page attribute")
     path = Path(file_part)
     file = path if path.is_absolute() else root / path
     return Target(file.resolve(), qualname.strip())
@@ -95,7 +95,7 @@ class ElementResult:
 
 @dataclass
 class CheckResult(ElementResult):
-    """An :class:`ElementResult` for one element of a screen."""
+    """An :class:`ElementResult` for one element of a page."""
 
     qualname: str = ""
     locator: str = ""
@@ -239,31 +239,31 @@ class ModuleLoader:
 
     # -- lookup ---------------------------------------------------------------------------------
 
-    def screens_in(self, file: Path) -> dict[str, type[Screen]]:
-        """Screen classes defined in ``file`` (not merely imported there), by name."""
-        from wintestkit.model import Screen
+    def pages_in(self, file: Path) -> dict[str, type[Page]]:
+        """Page classes defined in ``file`` (not merely imported there), by name."""
+        from wintestkit.model import Page
 
         module = self.load(file)
         return {
             name: value
             for name, value in vars(module).items()
             if isinstance(value, type)
-            and issubclass(value, Screen)
-            and value is not Screen
+            and issubclass(value, Page)
+            and value is not Page
             and value.__module__ == module.__name__
         }
 
-    def _walk(self, target: Target) -> tuple[type[Screen], list[str]]:
-        """The deepest ``Screen`` class on the qualified name and the remaining attributes."""
-        from wintestkit.model import Screen
+    def _walk(self, target: Target) -> tuple[type[Page], list[str]]:
+        """The deepest ``Page`` class on the qualified name and the remaining attributes."""
+        from wintestkit.model import Page
 
         module = self.load(target.file)
         parts = [p for p in target.qualname.split(".") if p]
         if not parts:
-            raise TargetError(f"{target.file.name}: the target names no screen")
+            raise TargetError(f"{target.file.name}: the target names no page")
         obj: Any = module
-        screen: type[Screen] | None = None
-        screen_parts = 0
+        page: type[Page] | None = None
+        page_parts = 0
         consumed = 0
         for index, part in enumerate(parts):
             try:
@@ -271,48 +271,48 @@ class ModuleLoader:
             except AttributeError:
                 break
             consumed = index + 1
-            if isinstance(obj, type) and issubclass(obj, Screen):
-                screen = obj
-                screen_parts = consumed
-            elif screen is not None:
+            if isinstance(obj, type) and issubclass(obj, Page):
+                page = obj
+                page_parts = consumed
+            elif page is not None:
                 break
-        if screen is None:
-            names = ", ".join(sorted(self.screens_in(target.file))) or "none"
+        if page is None:
+            names = ", ".join(sorted(self.pages_in(target.file))) or "none"
             raise TargetError(
-                f"{target.file.name} has no screen {parts[0]!r} (screens in this file: {names})"
+                f"{target.file.name} has no page {parts[0]!r} (pages in this file: {names})"
             )
-        return screen, parts[screen_parts:]
+        return page, parts[page_parts:]
 
-    def get_screen(self, target: Target) -> type[Screen]:
-        screen, remaining = self._walk(target)
+    def get_page(self, target: Target) -> type[Page]:
+        page, remaining = self._walk(target)
         if remaining:
             raise TargetError(
-                f"{target.qualname!r} names an element, not a screen; use FILE::{screen.__name__}"
+                f"{target.qualname!r} names an element, not a page; use FILE::{page.__name__}"
             )
-        return screen
+        return page
 
-    def get_element(self, target: Target) -> tuple[type[Screen], str]:
-        """The screen class and attribute name; a bare screen means its ``window``."""
+    def get_element(self, target: Target) -> tuple[type[Page], str]:
+        """The page class and attribute name; a bare page means its ``window``."""
         from wintestkit.model import Element, Window
 
-        screen, remaining = self._walk(target)
+        page, remaining = self._walk(target)
         if not remaining:
-            return screen, "window"
+            return page, "window"
         if len(remaining) != 1:
-            raise TargetError(f"{target.qualname!r} is not a screen attribute")
+            raise TargetError(f"{target.qualname!r} is not a page attribute")
         attribute = remaining[0]
-        definition: Any = getattr(screen, attribute, None)
+        definition: Any = getattr(page, attribute, None)
         if not isinstance(definition, Element | Window):
-            known = ", ".join(sorted(self.element_names(screen))) or "none"
-            raise TargetError(f"{screen.__name__} has no element {attribute!r} (elements: {known})")
-        return screen, attribute
+            known = ", ".join(sorted(self.element_names(page))) or "none"
+            raise TargetError(f"{page.__name__} has no element {attribute!r} (elements: {known})")
+        return page, attribute
 
     @staticmethod
-    def element_names(screen: type[Screen]) -> list[str]:
+    def element_names(page: type[Page]) -> list[str]:
         from wintestkit.model import Element, Window
 
         names: dict[str, None] = {}
-        for klass in reversed(screen.__mro__):
+        for klass in reversed(page.__mro__):
             for name, value in vars(klass).items():
                 if isinstance(value, Element | Window):
                     names[name] = None
@@ -324,13 +324,13 @@ class ModuleLoader:
 # -- resolving ------------------------------------------------------------------------------------
 
 
-def _bound_for(app: App, screen_class: type[Screen], attribute: str) -> Any:
+def _bound_for(app: App, page_class: type[Page], attribute: str) -> Any:
     from wintestkit.model import BoundWindow, Window
 
-    screen = screen_class(app)
-    bound: Any = getattr(screen, attribute, None) if hasattr(screen_class, attribute) else None
+    page = page_class(app)
+    bound: Any = getattr(page, attribute, None) if hasattr(page_class, attribute) else None
     if bound is None:
-        return BoundWindow(screen, Window())  # no window declared: the application's main window
+        return BoundWindow(page, Window())  # no window declared: the application's main window
     return bound
 
 
@@ -359,28 +359,28 @@ def resolve_bound(bound: Any, timeout: float, started: float | None = None) -> E
 def resolve_target(
     app: App, loader: ModuleLoader, target: Target, timeout: float = 0.0
 ) -> ElementResult:
-    """Bind the target's screen to ``app`` and resolve the element (``timeout`` 0: immediately)."""
+    """Bind the target's page to ``app`` and resolve the element (``timeout`` 0: immediately)."""
     started = time.perf_counter()
-    screen_class, attribute = loader.get_element(target)  # TargetError propagates
-    return resolve_bound(_bound_for(app, screen_class, attribute), timeout, started)
+    page_class, attribute = loader.get_element(target)  # TargetError propagates
+    return resolve_bound(_bound_for(app, page_class, attribute), timeout, started)
 
 
-def check_screen(
-    app: App, loader: ModuleLoader, file: Path, screen_name: str | None = None, timeout: float = 0.0
+def check_page(
+    app: App, loader: ModuleLoader, file: Path, page_name: str | None = None, timeout: float = 0.0
 ) -> list[CheckResult]:
-    """Resolve every element of one screen (or every screen of ``file``) once, in source order."""
-    screens = loader.screens_in(file)
-    if not screens:
-        raise TargetError(f"{file.name} defines no screens")
-    if screen_name:
-        if screen_name not in screens:
-            known = ", ".join(sorted(screens)) or "none"
-            raise TargetError(f"{file.name} has no screen {screen_name!r} (screens: {known})")
-        screens = {screen_name: screens[screen_name]}
+    """Resolve every element of one page (or every page of ``file``) once, in source order."""
+    pages = loader.pages_in(file)
+    if not pages:
+        raise TargetError(f"{file.name} defines no pages")
+    if page_name:
+        if page_name not in pages:
+            known = ", ".join(sorted(pages)) or "none"
+            raise TargetError(f"{file.name} has no page {page_name!r} (pages: {known})")
+        pages = {page_name: pages[page_name]}
     results: list[CheckResult] = []
-    for name, screen_class in screens.items():
-        for attribute in loader.element_names(screen_class):
-            bound = _bound_for(app, screen_class, attribute)
+    for name, page_class in pages.items():
+        for attribute in loader.element_names(page_class):
+            bound = _bound_for(app, page_class, attribute)
             outcome = resolve_bound(bound, timeout)
             locator = getattr(bound, "locator", None)
             results.append(

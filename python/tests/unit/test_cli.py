@@ -24,11 +24,11 @@ def project(tmp_path: Path) -> Path:
     tests = tmp_path / "tests"
     tests.mkdir()
     (tests / "test_a.py").write_text("def test_a():\n    pass\n", encoding="utf-8")
-    screens = tmp_path / "screens"
-    screens.mkdir()
-    (screens / "main.py").write_text(
-        "from wintestkit import Element, Screen, Window\n\n"
-        "class Main(Screen):\n"
+    pages = tmp_path / "pages"
+    pages.mkdir()
+    (pages / "main.py").write_text(
+        "from wintestkit import Element, Page, Window\n\n"
+        "class Main(Page):\n"
         '    window = Window(title="App")\n'
         '    ok = Element(control_type="Button", name="OK")\n'
         '    dyn = Element(control_type="Edit", name=NAME)\n',
@@ -254,7 +254,7 @@ def test_discover_prints_json_when_piped(project: Path, capsys: pytest.CaptureFi
     data = json.loads(out)
     assert data["version"] == 1
     assert [t["id"] for t in data["tests"]] == ["tests/test_a.py::test_a"]
-    assert data["screens"][0]["name"] == "Main"
+    assert data["pages"][0]["name"] == "Main"
 
 
 def test_discover_pretty_and_json_flags(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -274,18 +274,18 @@ def test_discover_human_tree_on_a_terminal(
     out = capsys.readouterr().out.splitlines()
     assert out[0] == "Tests (1)"
     assert out[1] == "  tests/test_a.py::test_a  (line 1)"
-    assert out[2] == "Screens (1)"
-    assert out[3] == "  Main  screens/main.py:3"
+    assert out[2] == "Pages (1)"
+    assert out[3] == "  Main  pages/main.py:3"
     assert out[4] == '    window  Window[title="App"]'
     assert out[5] == '    ok      Button[name="OK"]'
     assert out[6] == "    dyn     Edit (dynamic)"
 
 
 def test_discover_restricts_to_paths(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    assert main(["--root", str(project), "discover", str(project / "screens")]) == 0
+    assert main(["--root", str(project), "discover", str(project / "pages")]) == 0
     data = json.loads(capsys.readouterr().out)
     assert data["tests"] == []
-    assert len(data["screens"]) == 1
+    assert len(data["pages"]) == 1
 
 
 def test_discover_human_output_shows_errors(

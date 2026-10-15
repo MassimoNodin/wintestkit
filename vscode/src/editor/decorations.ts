@@ -15,7 +15,7 @@ export class CheckResultsStore implements vscode.Disposable {
     this.subscriptions = [
       vscode.workspace.onDidChangeTextDocument((event) => {
         for (const [id, entry] of this.entries) {
-          if (entry.screen.file !== event.document.uri.fsPath) continue;
+          if (entry.page.file !== event.document.uri.fsPath) continue;
           if (
             event.contentChanges.some(
               (change) =>
@@ -102,9 +102,9 @@ export class CheckDecorations implements vscode.Disposable {
         vscode.DiagnosticSeverity.Warning,
       );
       diagnostic.source = "WinTestKit";
-      const list = diagnostics.get(entry.screen.file) ?? [];
+      const list = diagnostics.get(entry.page.file) ?? [];
       list.push(diagnostic);
-      diagnostics.set(entry.screen.file, list);
+      diagnostics.set(entry.page.file, list);
     }
     for (const [file, list] of diagnostics)
       this.diagnostics.set(vscode.Uri.file(file), list);
@@ -113,7 +113,7 @@ export class CheckDecorations implements vscode.Disposable {
         const options: vscode.DecorationOptions[] = [];
         for (const entry of this.results.entries.values()) {
           if (
-            entry.screen.file !== editor.document.uri.fsPath ||
+            entry.page.file !== editor.document.uri.fsPath ||
             entry.result.status !== status
           )
             continue;

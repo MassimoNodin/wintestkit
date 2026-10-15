@@ -397,10 +397,10 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
       await vscode.env.clipboard.writeText(message.text);
       return;
     }
-    if (message.type === "addToScreen") {
+    if (message.type === "addToPage") {
       if (this.suggestion)
         await vscode.commands.executeCommand(
-          "wintestkit.spy.addToScreen",
+          "wintestkit.spy.addToPage",
           this.suggestion,
         );
       return;

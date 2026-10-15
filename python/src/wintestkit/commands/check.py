@@ -1,4 +1,4 @@
-"""Check every declared element of a screen or a Python module."""
+"""Check every declared element of a page or a Python module."""
 
 from __future__ import annotations
 
@@ -12,8 +12,8 @@ if TYPE_CHECKING:
 
 
 def add_parser(subparsers: Any) -> None:
-    parser = subparsers.add_parser("check", help="resolve every element in a screen or file")
-    parser.add_argument("target", metavar="FILE[::Screen]")
+    parser = subparsers.add_parser("check", help="resolve every element in a page or file")
+    parser.add_argument("target", metavar="FILE[::Page]")
     parser.add_argument("--json", action="store_true", help="print the results as JSON")
     parser.set_defaults(handler=run)
 
@@ -28,17 +28,17 @@ def format_results(results: list[CheckResult]) -> str:
 
 
 def run(args: argparse.Namespace) -> int:
-    from wintestkit.targets import ModuleLoader, TargetError, check_screen, parse_target
+    from wintestkit.targets import ModuleLoader, TargetError, check_page, parse_target
 
     cfg = common.load(args)
     target = parse_target(args.target, cfg.root)
     loader = ModuleLoader(cfg)
     if target.qualname:
-        loader.get_screen(target)
-    elif not loader.screens_in(target.file):
-        raise TargetError(f"{target.file.name} defines no screens")
+        loader.get_page(target)
+    elif not loader.pages_in(target.file):
+        raise TargetError(f"{target.file.name} defines no pages")
     app = common.attach_app(cfg)
-    results = check_screen(app, loader, target.file, target.qualname or None)
+    results = check_page(app, loader, target.file, target.qualname or None)
     if args.json:
         common.print_json({"results": [result.to_dict() for result in results]})
     else:
