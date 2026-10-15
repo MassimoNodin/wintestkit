@@ -46,7 +46,9 @@ def test_methods_and_nodes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> N
     child = request(server, output, "inspect.children", {"nodeId": root["nodeId"]})["result"][0]
     assert child["nodeId"] == button.runtime_id
     params = {"nodeId": child["nodeId"]}
-    properties = request(server, output, "inspect.properties", params)["result"]
+    properties = request(
+        server, output, "inspect.properties", {**params, "full": True, "includeAncestors": True}
+    )["result"]
     assert properties["properties"]["Name"] == "OK"
     assert properties["ancestors"][0]["info"]["name"] == "Demo"
     assert request(server, output, "inspect.highlight", params)["result"] is None
@@ -55,6 +57,46 @@ def test_methods_and_nodes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> N
         request(server, output, "inspect.children", {"nodeId": "stale"})["error"]["code"] == -32005
     )
     assert request(server, output, "initialize", {"root": str(tmp_path)})["error"]["code"] == -32600
+
+
+@pytest.mark.parametrize("full", [False, True])
+@pytest.mark.parametrize("ancestors", [False, True])
+def test_inspection_expensive_reads_are_opt_in(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, full: bool, ancestors: bool
+) -> None:
+    from wintestkit.uia.constants import PROPERTY_IDS
+
+    server, output, button = make_server(tmp_path, monkeypatch)
+    request(server, output, "initialize", {"root": str(tmp_path)})
+    node = server._register(button)
+    property_reads: list[str] = []
+    pattern_reads: list[bool] = []
+    parent_reads: list[bool] = []
+    original_info = button.info
+    original_parent = button.parent
+
+    def info(with_patterns: bool = False) -> Any:
+        pattern_reads.append(with_patterns)
+        return original_info(with_patterns)
+
+    def parent() -> Any:
+        parent_reads.append(True)
+        return original_parent()
+
+    monkeypatch.setattr(button, "get_property", lambda name: property_reads.append(name) or "value")
+    monkeypatch.setattr(button, "info", info)
+    monkeypatch.setattr(button, "parent", parent)
+    params = {"nodeId": node["nodeId"]}
+    if full:
+        params["full"] = True
+    if ancestors:
+        params["includeAncestors"] = True
+    result = request(server, output, "inspect.properties", params)["result"]
+    assert property_reads == (list(PROPERTY_IDS) if full else [])
+    assert pattern_reads == [full]
+    assert bool(parent_reads) is ancestors
+    assert bool(result["ancestors"]) is ancestors
+    assert result["info"]["name"] == "OK"
 
 
 @pytest.mark.parametrize("activated", [True, False])
@@ -98,6 +140,8 @@ def test_highlight_raises_window_before_reading_bounds(
         ("discover", {"overrides": []}),
         ("discover", {"overrides": {"file": 1}}),
         ("inspect.children", {}),
+        ("inspect.properties", {"nodeId": "x", "full": "true"}),
+        ("inspect.properties", {"nodeId": "x", "includeAncestors": 1}),
         ("inspect.highlight", {"nodeId": "x", "durationMs": -1}),
         ("inspect.highlight", {"nodeId": "x", "durationMs": True}),
         ("inspect.highlight", {"nodeId": "x", "durationMs": float("nan")}),

@@ -9,7 +9,10 @@ export type SpyRequest =
       type:
         "ready" | "pick" | "stopPick" | "refresh" | "launchApp" | "addToPage";
     }
-  | { type: "expand" | "select" | "highlight"; nodeId: string }
+  | {
+      type: "expand" | "select" | "highlight" | "loadProperties";
+      nodeId: string;
+    }
   | { type: "copy"; text: string };
 export type SpyResponse =
   | { type: "rootIcons"; icons: Record<string, string> }
@@ -37,8 +40,15 @@ export type SpyResponse =
       type: "selected";
       nodeId: string;
       properties: InspectPropertiesResult;
-      suggestion: Suggestion;
+      suggestion?: Suggestion;
     }
+  | { type: "suggestion"; nodeId: string; suggestion: Suggestion }
+  | {
+      type: "allProperties";
+      nodeId: string;
+      properties: InspectPropertiesResult;
+    }
+  | { type: "propertiesLoading"; nodeId: string; loading: boolean }
   | { type: "hover"; node: NodeInfo }
   | {
       type: "picked";
@@ -61,12 +71,15 @@ export function parseSpyRequest(value: unknown): SpyRequest | undefined {
         "ready" | "pick" | "stopPick" | "refresh" | "launchApp" | "addToPage",
     };
   if (
-    ["expand", "select", "highlight"].includes(String(message.type)) &&
+    ["expand", "select", "highlight", "loadProperties"].includes(
+      String(message.type),
+    ) &&
     typeof message.nodeId === "string" &&
     message.nodeId.length <= 512
   )
     return {
-      type: message.type as "expand" | "select" | "highlight",
+      type: message.type as
+        "expand" | "select" | "highlight" | "loadProperties",
       nodeId: message.nodeId,
     };
   if (

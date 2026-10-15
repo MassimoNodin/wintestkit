@@ -7,6 +7,13 @@ describe("Spy message contract", () => {
       parseSpyRequest({ type: "select", nodeId: "node:1", extra: "ignored" }),
     ).toEqual({ type: "select", nodeId: "node:1" });
     expect(
+      parseSpyRequest({
+        type: "loadProperties",
+        nodeId: "node:1",
+        full: false,
+      }),
+    ).toEqual({ type: "loadProperties", nodeId: "node:1" });
+    expect(
       parseSpyRequest({ type: "copy", text: "button = Element()" }),
     ).toBeDefined();
     for (const invalid of [
@@ -15,6 +22,7 @@ describe("Spy message contract", () => {
       {},
       { type: "execute" },
       { type: "select", nodeId: 1 },
+      { type: "loadProperties", nodeId: 1 },
       { type: "select", nodeId: "x".repeat(513) },
       { type: "copy", text: "x".repeat(100001) },
     ])

@@ -562,6 +562,14 @@ export interface InspectHighlightParams {
  */
 export interface InspectPropertiesParams {
   nodeId: string;
+  /**
+   * Read the complete property list and supported patterns; defaults to false.
+   */
+  full?: boolean;
+  /**
+   * Include ancestors for revealing a picked object; defaults to false.
+   */
+  includeAncestors?: boolean;
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema

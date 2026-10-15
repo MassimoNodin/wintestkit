@@ -91,7 +91,7 @@ def test_stdio_server(tmp_path: Path, demo_process: DemoProcess) -> None:
                 pending.extend(call("inspect.children", {"nodeId": node["nodeId"]}))
         assert button is not None
         params = {"nodeId": button["nodeId"]}
-        assert "Invoke" in call("inspect.properties", params)["info"]["patterns"]
+        assert "Invoke" in call("inspect.properties", {**params, "full": True})["info"]["patterns"]
         assert call("suggest.locator", params)["strategy"] == "name"
         assert call("inspect.highlight", {**params, "durationMs": 10}) is None
         assert call("shutdown") is None

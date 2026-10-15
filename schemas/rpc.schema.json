@@ -354,6 +354,14 @@
       "properties": {
         "nodeId": {
           "type": "string"
+        },
+        "full": {
+          "type": "boolean",
+          "description": "Read the complete property list and supported patterns; defaults to false."
+        },
+        "includeAncestors": {
+          "type": "boolean",
+          "description": "Include ancestors for revealing a picked object; defaults to false."
         }
       },
       "required": ["nodeId"],

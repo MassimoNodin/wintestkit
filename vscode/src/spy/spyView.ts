@@ -278,6 +278,7 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
               return phase("Reading picked control properties", () =>
                 client.request<InspectPropertiesResult>("inspect.properties", {
                   nodeId: picked.node.nodeId,
+                  includeAncestors: true,
                 }),
               );
             },
@@ -286,9 +287,24 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
           );
           await this.loading(
             "Revealing picked object",
-            Math.max(1, properties.ancestors.length),
+            properties.ancestors.length + 2,
             async (phase) => {
-              for (const ancestor of [...properties.ancestors].reverse()) {
+              const roots = await phase("Reading root windows", () =>
+                client.request<NodeInfo[]>("inspect.roots"),
+              );
+              if (this.client !== client) return;
+              this.post({ type: "roots", nodes: roots });
+              const icons = await phase("Loading application icons", () =>
+                readApplicationIcons(roots.map((node) => node.info.processId)),
+              );
+              if (this.client !== client) return;
+              this.post({ type: "rootIcons", icons });
+              const rootIndex = properties.ancestors.findIndex((ancestor) =>
+                roots.some((root) => root.nodeId === ancestor.nodeId),
+              );
+              const ancestors =
+                rootIndex < 0 ? [] : properties.ancestors.slice(rootIndex);
+              for (const ancestor of ancestors) {
                 if (this.client !== client) return;
                 const nodes = await phase(
                   "Loading " +
@@ -301,8 +317,6 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
                 if (this.client !== client) return;
                 this.post({ type: "children", nodeId: ancestor.nodeId, nodes });
               }
-              if (!properties.ancestors.length)
-                await phase("Object already visible", async () => {});
             },
             picked.node.nodeId,
           );
@@ -406,6 +420,7 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
       return;
     }
     const nodeId = "nodeId" in message ? message.nodeId : undefined;
+    if (message.type === "select") this.suggestion = undefined;
     const title =
       message.type === "launchApp"
         ? "Launching application"
@@ -413,14 +428,19 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
           ? "Loading children"
           : message.type === "select"
             ? "Inspecting object"
-            : "Highlighting object";
+            : message.type === "loadProperties"
+              ? "Loading all properties"
+              : "Highlighting object";
     await this.loading(
       title,
       message.type === "select" ? 4 : 2,
       async (phase) => {
-        const client = await phase("Connecting to automation server", () =>
+        const connection = phase("Connecting to automation server", () =>
           this.connect(),
         );
+        const selection =
+          message.type === "select" ? ++this.selection : this.selection;
+        const client = await connection;
         if (!client) return;
         if (message.type === "launchApp") {
           await phase("Starting application", () =>
@@ -429,6 +449,11 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
           return;
         }
         if (!nodeId) return;
+        if (
+          (message.type === "select" || message.type === "loadProperties") &&
+          selection !== this.selection
+        )
+          return;
         if (message.type === "expand") {
           const nodes = await phase("Reading child controls", () =>
             client.request<NodeInfo[]>("inspect.children", { nodeId }),
@@ -439,19 +464,51 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
           await phase("Highlighting control", () =>
             client.request("inspect.highlight", { nodeId }),
           );
+        } else if (message.type === "loadProperties") {
+          this.post({ type: "propertiesLoading", nodeId, loading: true });
+          try {
+            const properties = await phase(
+              "Reading all properties and patterns",
+              () =>
+                client.request<InspectPropertiesResult>("inspect.properties", {
+                  nodeId,
+                  full: true,
+                }),
+            );
+            if (
+              !this.disposed &&
+              selection === this.selection &&
+              client === this.client
+            )
+              this.post({ type: "allProperties", nodeId, properties });
+          } finally {
+            if (
+              !this.disposed &&
+              selection === this.selection &&
+              client === this.client
+            )
+              this.post({ type: "propertiesLoading", nodeId, loading: false });
+          }
         } else if (message.type === "select") {
-          const selection = ++this.selection;
-          const [properties, suggestion] = await Promise.all([
-            phase("Reading properties", () =>
-              client.request<InspectPropertiesResult>("inspect.properties", {
-                nodeId,
-              }),
+          if (selection !== this.selection) return;
+          const properties = await phase("Reading basic properties", () =>
+            client.request<InspectPropertiesResult>("inspect.properties", {
+              nodeId,
+            }),
+          );
+          if (
+            this.disposed ||
+            selection !== this.selection ||
+            client !== this.client
+          )
+            return;
+          this.post({ type: "selected", nodeId, properties });
+          const [, suggestion] = await Promise.all([
+            phase("Highlighting control", () =>
+              client.request("inspect.highlight", { nodeId }),
             ),
             phase("Generating locator", () =>
               client.request<Suggestion>("suggest.locator", { nodeId }),
-            ),
-            phase("Highlighting control", () =>
-              client.request("inspect.highlight", { nodeId }),
             ),
           ]);
           if (
@@ -461,11 +518,13 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
           )
             return;
           this.suggestion = suggestion;
-          this.post({ type: "selected", nodeId, properties, suggestion });
+          this.post({ type: "suggestion", nodeId, suggestion });
         }
       },
       nodeId,
-      message.type === "select" || message.type === "highlight"
+      message.type === "select" ||
+        message.type === "highlight" ||
+        message.type === "loadProperties"
         ? "details"
         : "tree",
     );

@@ -9,6 +9,8 @@
   let treeHasMatches = false;
   let hasDetails = false;
   let selecting = false;
+  let fullPropertiesLoaded = false;
+  let fullPropertiesLoading = false;
   let treeError = "";
   let detailsError = "";
   let failureTarget;
@@ -71,6 +73,20 @@
     element(target + "-empty").dataset.loading = String(loading);
   };
   const renderStatus = () => {
+    const load = element("load-properties");
+    load.disabled =
+      !hasDetails || fullPropertiesLoading || fullPropertiesLoaded;
+    load.textContent = fullPropertiesLoading
+      ? "Loading properties…"
+      : fullPropertiesLoaded
+        ? "All properties loaded"
+        : "Load all properties";
+    load.setAttribute("aria-busy", String(fullPropertiesLoading));
+    element("properties-status").textContent = fullPropertiesLoading
+      ? "Reading additional properties and supported patterns."
+      : fullPropertiesLoaded
+        ? "Complete property list loaded for this object."
+        : "Additional properties and supported patterns load on demand.";
     const active = [...tasks.values()];
     for (const target of ["tree", "details"]) {
       const scoped = active.filter(
@@ -293,6 +309,10 @@
     suggestion = undefined;
     hasDetails = false;
     selecting = true;
+    fullPropertiesLoaded = false;
+    fullPropertiesLoading = false;
+    element("all-properties-section").open = false;
+    table("all-properties", {});
     detailsError = "";
     const info = nodes.get(nodeId).node.info;
     element("selection-name").textContent =
@@ -406,6 +426,31 @@
       body.append(row);
     }
   };
+  const renderSuggestion = (value) => {
+    suggestion = value;
+    element("badge").hidden = !value;
+    element("highlight").disabled = !hasDetails;
+    for (const id of ["copy", "add"]) element(id).disabled = !value;
+    if (!value) {
+      element("code").textContent = "Generating locator…";
+      return;
+    }
+    element("code").textContent = [
+      ...value.helpers.map(
+        (helper) => helper.attributeName + " = " + helper.code,
+      ),
+      value.attributeName + " = " + value.code,
+    ].join("\n");
+    element("badge").dataset.quality =
+      value.unique && value.strategy !== "index" ? "unique" : "warning";
+    element("badge").textContent =
+      value.strategy === "index"
+        ? "Index-based · fragile"
+        : value.unique
+          ? "Unique locator"
+          : "Ambiguous · " + value.matchCount + " matches";
+    element("badge").title = "Strategy: " + value.strategy;
+  };
   const focusSelected = (nodeId) => {
     selected = nodeId;
     for (const [id, entry] of nodes) {
@@ -437,6 +482,18 @@
   });
   element("highlight").addEventListener("click", () => {
     if (selected) post("highlight", { nodeId: selected });
+  });
+  element("load-properties").addEventListener("click", () => {
+    if (
+      !selected ||
+      !hasDetails ||
+      fullPropertiesLoading ||
+      fullPropertiesLoaded
+    )
+      return;
+    fullPropertiesLoading = true;
+    renderStatus();
+    post("loadProperties", { nodeId: selected });
   });
   element("tree").addEventListener("keydown", (event) => {
     const row = event.target.closest(".node");
@@ -553,6 +610,9 @@
       rootsLoaded = true;
       hasDetails = false;
       selecting = false;
+      fullPropertiesLoaded = false;
+      fullPropertiesLoading = false;
+      element("all-properties-section").open = false;
       treeError = "";
       detailsError = "";
       renderNodes(element("tree"), message.nodes);
@@ -587,11 +647,32 @@
         }
         renderStatus();
       }
+    } else if (message.type === "suggestion") {
+      if (message.nodeId !== selected) return;
+      renderSuggestion(message.suggestion);
+    } else if (message.type === "propertiesLoading") {
+      if (message.nodeId !== selected) return;
+      fullPropertiesLoading = message.loading;
+      renderStatus();
+    } else if (message.type === "allProperties") {
+      if (message.nodeId !== selected) return;
+      fullPropertiesLoaded = true;
+      fullPropertiesLoading = false;
+      table("all-properties", message.properties.properties);
+      const info = message.properties.info;
+      table("automation-properties", {
+        Framework: info.frameworkId,
+        "Process ID": info.processId,
+        Patterns: info.patterns?.join(", ") || "None",
+      });
+      renderStatus();
     } else if (message.type === "selected") {
       hint("");
       focusSelected(message.nodeId);
       hasDetails = true;
       selecting = false;
+      fullPropertiesLoaded = false;
+      fullPropertiesLoading = false;
       detailsError = "";
       const info = message.properties.info;
       element("selection-name").textContent =
@@ -622,30 +703,12 @@
       table("automation-properties", {
         Framework: info.frameworkId,
         "Process ID": info.processId,
-        Patterns: info.patterns?.join(", ") || "None",
+        Patterns: info.patterns
+          ? info.patterns.join(", ") || "None"
+          : "Not loaded",
       });
       table("all-properties", message.properties.properties);
-      suggestion = message.suggestion;
-      element("code").textContent = [
-        ...suggestion.helpers.map(
-          (helper) => helper.attributeName + " = " + helper.code,
-        ),
-        suggestion.attributeName + " = " + suggestion.code,
-      ].join("\n");
-      element("badge").hidden = false;
-      element("badge").dataset.quality =
-        suggestion.unique && suggestion.strategy !== "index"
-          ? "unique"
-          : "warning";
-      element("badge").textContent =
-        suggestion.strategy === "index"
-          ? "Index-based · fragile"
-          : suggestion.unique
-            ? "Unique locator"
-            : "Ambiguous · " + suggestion.matchCount + " matches";
-      element("badge").title = "Strategy: " + suggestion.strategy;
-      for (const id of ["copy", "add", "highlight"])
-        element(id).disabled = false;
+      renderSuggestion(message.suggestion);
       renderStatus();
     } else if (message.type === "hover") {
       hint(

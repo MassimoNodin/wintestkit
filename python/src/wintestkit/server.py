@@ -38,7 +38,7 @@ _PARAMS: dict[str, tuple[set[str], set[str]]] = {
     "page.check": ({"file", "page"}, set()),
     "inspect.roots": (set(), set()),
     "inspect.children": ({"nodeId"}, set()),
-    "inspect.properties": ({"nodeId"}, set()),
+    "inspect.properties": ({"nodeId"}, {"full", "includeAncestors"}),
     "inspect.highlight": ({"nodeId"}, {"durationMs"}),
     "suggest.locator": ({"nodeId"}, set()),
     "spy.start": (set(), set()),
@@ -115,6 +115,9 @@ class Server:
                     or value < 0
                 ):
                     raise RpcError(-32602, "durationMs must be a finite nonnegative number")
+            elif key in ("full", "includeAncestors"):
+                if not isinstance(value, bool):
+                    raise RpcError(-32602, f"{key} must be a boolean")
             elif key == "overrides":
                 if not isinstance(value, dict):
                     raise RpcError(-32602, "overrides must map paths to source strings")
@@ -374,7 +377,8 @@ class Server:
             from wintestkit.uia.constants import PROPERTY_IDS
 
             properties: dict[str, str] = {}
-            for name in PROPERTY_IDS:
+            full = params.get("full", False)
+            for name in PROPERTY_IDS if full else ():
                 try:
                     value = node.get_property(name)
                     properties[name] = (
@@ -385,7 +389,7 @@ class Server:
                 except Exception:
                     continue
             ancestors: list[dict[str, Any]] = []
-            parent = node.parent()
+            parent = node.parent() if params.get("includeAncestors", False) else None
             seen = {node.runtime_id}
             while parent is not None and len(ancestors) < 100:
                 if parent.runtime_id in seen:
@@ -394,7 +398,7 @@ class Server:
                 ancestors.append(self._register(parent))
                 parent = parent.parent()
             return {
-                "info": node.info(with_patterns=True).to_dict(),
+                "info": node.info(with_patterns=full).to_dict(),
                 "properties": properties,
                 "ancestors": list(reversed(ancestors)),
             }

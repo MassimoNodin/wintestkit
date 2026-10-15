@@ -52,6 +52,10 @@ IDs. Filtering retains matching ancestors but only searches controls already loa
 expand branches to load more. **Collapse all** clears the filter and closes branches.
 The inspector groups properties into Identity, State, Geometry and Automation, with
 raw values under **All properties** and locator quality beside **Suggested locator**.
+Selection first reads only the essential identity, state and geometry information and displays
+it before locator generation finishes. Open **All properties** and click **Load all properties**
+to fetch the complete property list and supported patterns. These expensive reads are not
+performed on ordinary selection; ancestor collection is reserved for revealing picked objects.
 
 Root windows show their application's executable icon when Windows permits access
 to the process, with control-type icons as a fallback. Icons load separately so the

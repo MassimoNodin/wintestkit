@@ -72,6 +72,11 @@ nested folders and multi-root workspaces. Each project has its own server, tests
 **WinTestKit: Initialize Project** creates the starter files described in
 [Getting started](getting-started.md).
 
+The inspector loads essential properties first. To read the complete property list and
+supported patterns, expand **All properties** and click **Load all properties**. Its loading
+state stays inside the inspector, and you can retry if the request fails. Locator generation
+does not block the basic property display.
+
 ## Settings
 
 | Setting | Default | Description |
