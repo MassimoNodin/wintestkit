@@ -61,12 +61,14 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
           void this.safe(() => this.refresh());
       }),
       servers.onDidChange((project) => {
-        if (
-          this.client &&
-          project.root.toString() === this.project?.root.toString()
-        ) {
-          this.unbind();
-          if (this.view?.visible) void this.safe(() => this.refresh());
+        if (project.root.toString() !== this.currentProject()?.root.toString())
+          return;
+        if (this.client) this.unbind();
+        if (this.view?.visible && servers.state(project) === "ready") {
+          void this.safe(async () => {
+            await this.connecting?.promise.catch(() => undefined);
+            if (!this.disposed && this.view?.visible) await this.refresh();
+          });
         }
       }),
     ];

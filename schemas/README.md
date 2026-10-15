@@ -6,7 +6,7 @@ encode its interfaces, unions, method parameters/results, and notification paylo
 | Schema | Definitions |
 |---|---|
 | `common.schema.json` | Positions, ranges, rectangles, UIA snapshots, locators, diagnostics, errors |
-| `discovery.schema.json` | Discovery results, test/page/element entries, discovery errors |
+| `discovery.schema.json` | Discovery results, test/page/flow/element entries, discovery errors |
 | `step.schema.json` | Per-test action events |
 | `events.schema.json` | All seven run-event variants, collection records, outcomes, summaries |
 | `results.schema.json` | Report results and per-test results |
@@ -16,6 +16,9 @@ Every definition is in `$defs` under its contract name. For dotted RPC names, ca
 part: `element.highlight` becomes `ElementHighlightParams` / `ElementHighlightResult`.
 Methods without parameters use a closed empty object; methods without results use JSON null.
 RPC schemas describe the payload, not the JSON-RPC transport envelope.
+
+Discovery results optionally include `flows`, an array of public module-level functions
+under `flows/` directories. Older backends may omit this field; editors treat it as empty.
 
 Discovery, step, events, and results documents reference their primary type at the root.
 Common and RPC documents are definition libraries; select a named definition to validate them.

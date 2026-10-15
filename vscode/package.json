@@ -25,6 +25,18 @@
   "contributes": {
     "commands": [
       {
+        "command": "wintestkit.tests.run",
+        "title": "Run Tests",
+        "category": "WinTestKit",
+        "icon": "$(play)"
+      },
+      {
+        "command": "wintestkit.tests.debug",
+        "title": "Debug Tests",
+        "category": "WinTestKit",
+        "icon": "$(debug-alt)"
+      },
+      {
         "command": "wintestkit.highlightElement",
         "title": "Highlight Element",
         "category": "WinTestKit",
@@ -131,7 +143,15 @@
       "wintestkit": [
         {
           "id": "wintestkit.elements",
-          "name": "Elements"
+          "name": "Pages"
+        },
+        {
+          "id": "wintestkit.flows",
+          "name": "Flows"
+        },
+        {
+          "id": "wintestkit.tests",
+          "name": "Tests"
         },
         {
           "id": "wintestkit.spy",
@@ -142,6 +162,26 @@
     },
     "viewsWelcome": [
       {
+        "view": "wintestkit.flows",
+        "contents": "No WinTestKit project found.\n[Initialize Project](command:wintestkit.initProject)",
+        "when": "!wintestkit.hasProject"
+      },
+      {
+        "view": "wintestkit.flows",
+        "contents": "Add reusable Python functions under flows/ to see them here.",
+        "when": "wintestkit.hasProject"
+      },
+      {
+        "view": "wintestkit.tests",
+        "contents": "No WinTestKit project found.\n[Initialize Project](command:wintestkit.initProject)",
+        "when": "!wintestkit.hasProject"
+      },
+      {
+        "view": "wintestkit.tests",
+        "contents": "No tests found. Add pytest tests to your project.",
+        "when": "wintestkit.hasProject"
+      },
+      {
         "view": "wintestkit.elements",
         "contents": "No WinTestKit project found.\n[Initialize Project](command:wintestkit.initProject)",
         "when": "!wintestkit.hasProject"
@@ -151,7 +191,7 @@
       "view/title": [
         {
           "command": "wintestkit.elements.refresh",
-          "when": "view == wintestkit.elements",
+          "when": "view =~ /^wintestkit\\.(elements|flows|tests)$/",
           "group": "navigation"
         },
         {
@@ -166,6 +206,16 @@
         }
       ],
       "view/item/context": [
+        {
+          "command": "wintestkit.tests.run",
+          "when": "view == wintestkit.tests && viewItem =~ /^test(-class|-file|-project)?$/",
+          "group": "inline@1"
+        },
+        {
+          "command": "wintestkit.tests.debug",
+          "when": "view == wintestkit.tests && viewItem =~ /^test(-class|-file|-project)?$/",
+          "group": "inline@2"
+        },
         {
           "command": "wintestkit.highlightElement",
           "when": "view == wintestkit.elements && viewItem =~ /^(element|window)$/",
@@ -183,6 +233,14 @@
         }
       ],
       "commandPalette": [
+        {
+          "command": "wintestkit.tests.run",
+          "when": "false"
+        },
+        {
+          "command": "wintestkit.tests.debug",
+          "when": "false"
+        },
         {
           "command": "wintestkit.highlightElement",
           "when": "false"

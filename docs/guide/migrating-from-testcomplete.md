@@ -44,7 +44,7 @@ pytest instead of a proprietary IDE and project format.
 A keyword test that signs in and checks the welcome text becomes a page and a test function:
 
 ```python
-# examples/demo-tests/tests/test_login.py
+# pseudo-code
 def test_invalid_login(main: MainPage) -> None:
     main.username.type("admin")
     main.password.type("wrong")
@@ -55,7 +55,7 @@ def test_invalid_login(main: MainPage) -> None:
 A data-driven loop over a table becomes a parametrized test:
 
 ```python
-# examples/demo-tests/tests/test_login.py
+# pseudo-code
 @pytest.mark.parametrize(
     ("username", "password", "message"),
     [

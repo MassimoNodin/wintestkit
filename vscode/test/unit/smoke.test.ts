@@ -130,6 +130,10 @@ vi.mock("../../src/views/elementsTree", () => ({
   ElementsTree: class {
     constructor() {
       mocks.registerTreeDataProvider("wintestkit.elements", {});
+      mocks.registerTreeDataProvider("wintestkit.flows", {});
+      mocks.registerTreeDataProvider("wintestkit.tests", {});
+      mocks.registerCommand("wintestkit.tests.run", () => {});
+      mocks.registerCommand("wintestkit.tests.debug", () => {});
       mocks.registerCommand("wintestkit.elements.goTo", () => {});
     }
     dispose() {}
@@ -185,6 +189,11 @@ describe("extension scaffold", () => {
       "wintestkit.spy",
       expect.any(Object),
     );
+    expect(manifest.contributes.views.wintestkit.slice(0, 3)).toEqual([
+      { id: "wintestkit.elements", name: "Pages" },
+      { id: "wintestkit.flows", name: "Flows" },
+      { id: "wintestkit.tests", name: "Tests" },
+    ]);
     expect(subscriptions.length).toBeGreaterThan(
       manifest.contributes.commands.length + 3,
     );

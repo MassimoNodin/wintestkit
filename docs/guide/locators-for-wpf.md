@@ -8,7 +8,7 @@ fails **immediately** with `AmbiguousElementError`, because waiting cannot fix a
 locator:
 
 ```python
-# examples/demo-tests/tests/test_panels.py
+# pseudo-code
 def test_an_ambiguous_locator_fails_fast_with_a_clear_message(main: MainPage) -> None:
     class Ambiguous(MainPage):
         either_ok = Element(control_type="Button", name="OK")
@@ -56,7 +56,7 @@ Prefer, in this order:
 The demo application exposes only two AutomationIds, so its page shows each strategy:
 
 ```python
-# examples/demo-tests/pages/main.py
+# pseudo-code
     # asynchronous loading
     load = Element(control_type="Button", name="Load")
     continue_button = Element(control_type="Button", name="Continue")
@@ -89,7 +89,7 @@ WPF opens menus, combo box drop-downs and context menus in separate popup window
 searches the application's popups too, so menu items are declared like any other element:
 
 ```python
-# examples/demo-tests/pages/main.py
+# pseudo-code
     # menu
     menu_file = Element(control_type="MenuItem", name="File")
     menu_reset = Element(control_type="MenuItem", name="Reset")
@@ -98,7 +98,7 @@ searches the application's popups too, so menu items are declared like any other
 For combo boxes, `select()` opens the drop-down when needed and selects by name, index or pattern:
 
 ```python
-# examples/demo-tests/tests/test_choices.py
+# pseudo-code
 def test_select_a_color_by_index_and_by_pattern(main: MainPage) -> None:
     main.color.select(0)
     expect(main.status).to_have_text("Color: Red")
@@ -119,14 +119,14 @@ instead:
 - `row_count()` and `column_count()` read the grid size.
 
 ```python
-# examples/demo-tests/tests/test_lists.py
+# pseudo-code
 def test_select_a_far_away_list_item(main: MainPage) -> None:
     main.items.select("Item 450")  # not realized yet: WinTestKit asks the container for it
     expect(main.status).to_have_text("Selected: Item 450")
 ```
 
 ```python
-# examples/demo-tests/tests/test_lists.py
+# pseudo-code
 def test_read_grid_cells(main: MainPage) -> None:
     assert main.products.cell(5, "Name").text == "Product 6"
     assert main.products.cell(9, "Qty").text == "1"  # Product 10: (10 * 7) mod 23
@@ -143,7 +143,7 @@ Give each dialog its own page with its own `Window(...)`. Owned WPF windows are 
 native message boxes (`MessageBox.Show`) are Win32 dialogs with class `#32770`:
 
 ```python
-# examples/demo-tests/tests/test_dialogs.py
+# pseudo-code
 def test_message_box(main: MainPage) -> None:
     main.show_message.click()
     box = MessageBox(main.app)

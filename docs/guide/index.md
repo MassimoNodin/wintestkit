@@ -13,15 +13,16 @@ application under test.
 | [Locators for WPF](locators-for-wpf.md) | Strict matching, diagnostics, locator strategies, lists, grids, dialogs |
 | [Actions and assertions](actions-and-assertions.md) | Every action, auto-waiting, `expect`, timeouts |
 | [Running tests](running-tests.md) | `wtk run`, launch modes, fixtures, reports, JUnit, exit codes |
-| [VS Code](vscode.md) | CodeLens, Test Explorer, debugging, Elements view, Spy |
+| [VS Code](vscode.md) | CodeLens, Test Explorer, debugging, Pages/Flows/Tests sections, Spy |
 | [CI](ci.md) | Running UI tests on a build agent |
 | [Troubleshooting](troubleshooting.md) | `wtk doctor`, common failures, logs |
 | [Migrating from TestComplete](migrating-from-testcomplete.md) | Concept mapping |
 
 Start with the [installation and first-test walkthrough](../../README.md). The
-[`examples/demo-tests`](../../examples/demo-tests) project preserves reference test code for
-the former WTK Demo application; no example app is bundled. App-specific examples in this
-guide must be adapted to your application's window titles, controls and behavior.
+[`examples/calculator-tests`](../../examples/calculator-tests) project demonstrates pages,
+reusable navigation flows and tests against Windows Calculator; no example app is bundled.
+Other app-specific snippets in this guide are illustrative and must be adapted to your
+application's window titles, controls and behavior.
 
 ## Requirements
 

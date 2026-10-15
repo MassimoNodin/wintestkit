@@ -11,8 +11,8 @@ It covers:
 6. Running the suite and reading its HTML report.
 
 Use your own application's executable, window titles and locators. No example applications
-are bundled. The [example test code](../../examples/demo-tests) is retained as a reference,
-not a ready-to-run suite for an included app.
+are bundled. The [Calculator example](../../examples/calculator-tests) provides page classes,
+navigation flows and tests for Windows Calculator, which must be installed and opened separately.
 
 After your first test, continue with [pages and elements](pages-and-elements.md),
 [locator strategies](locators-for-wpf.md), [actions and assertions](actions-and-assertions.md),

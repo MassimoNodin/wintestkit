@@ -8,8 +8,8 @@ windows and controls in reusable page classes, interact with them, and assert th
 You do not need to modify the application under test.
 
 This guide takes you from installation to a basic test suite against **your own application**.
-No example applications or application binaries are bundled. The [example test code](examples/demo-tests)
-is kept as a reference for page models, fixtures and common interactions.
+No example applications or application binaries are bundled. The [Calculator example](examples/calculator-tests)
+demonstrates page models, reusable navigation flows, fixtures and parametrized tests against Windows Calculator.
 
 ## 1. Prepare your machine
 
@@ -198,8 +198,8 @@ Use a dedicated test account and do not commit real credentials.
 Add more `test_*.py` files under `tests/` and share reusable window/control definitions under
 `pages/`. Tests should start from a known state: reset the app through a fixture or choose
 `launch = "per-test"` when a fresh process provides the isolation you need. See the
-[reference tests](examples/demo-tests) for fixture and parametrization patterns; their legacy
-app-specific locators must be adapted before use.
+[Calculator tests](examples/calculator-tests) for fixture and parametrization patterns;
+adapt their app-specific locators when targeting your own application.
 
 ## 7. Run tests and read the results
 
@@ -225,7 +225,7 @@ discovery for this workspace or accept WinTestKit's prompt to do so.
 - [User guide](docs/guide/index.md): actions, assertions, timeouts and advanced configuration.
 - [VS Code guide](docs/guide/vscode.md): Spy, CodeLens, settings and test debugging.
 - [CI guide](docs/guide/ci.md): run UI suites on an interactive Windows test machine.
-- [Example test code](examples/demo-tests): reference patterns only; no example app is included.
+- [Calculator example](examples/calculator-tests): pages, navigation flows and tests for Windows Calculator.
 - [Development guide](docs/development.md): build, validate and package this repository.
 
 Created in [T3 Code](https://t3.codes).

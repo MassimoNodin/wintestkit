@@ -31,8 +31,9 @@ def test_sign_in(app):
   captured output, parameterized cases and failure details including expected/actual diffs.
   **Run Test** and **Debug Test** CodeLens appear above each test. Debugging uses the Python
   Debugger with normal breakpoints.
-- **Elements view.** Browse every page and its elements, nested by `within` containers. Jump to
-  definitions, highlight or check entries inline, and see the last check result as an icon.
+- **Pages, Flows and Tests sections.** Browse page elements nested by `within` containers,
+  reusable flow functions grouped by file, and pytest tests grouped by file and class.
+  Jump to definitions, highlight/check page elements, or run/debug tests inline.
 - **Spy.** Explore the live UI Automation tree, or press **Pick Element** and Ctrl+Click a control
   in your application. The Spy shows properties, supported patterns and a suggested locator, and
   **Add to page…** inserts it into a page class for you.
@@ -138,6 +139,6 @@ locator strategies, CI setup and migrating from TestComplete.
 
 Run `npm ci`, then `npm run build`, `npm run typecheck`, `npm run lint` and `npm test`. Use the
 repository's **Run Extension** launch configuration for an Extension Development Host.
-No example application is bundled. The legacy end-to-end suite requires an external compatible
-WTK Demo executable via `WTK_DEMO_APP`; see the repository's
+No example application is bundled. The end-to-end suite checks static discovery and CodeLens
+against the Calculator example without launching an app; see the repository's
 [development guide](https://github.com/MassimoNodin/wintestkit/blob/master/docs/development.md).

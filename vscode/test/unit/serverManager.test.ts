@@ -112,6 +112,35 @@ describe("server manager", () => {
     expect(mocks.interpreter).not.toHaveBeenCalled();
     expect(mocks.spawn).not.toHaveBeenCalled();
   });
+  it("ignores duplicate interpreter events while the initial server is starting", async () => {
+    let resolveInterpreter: (value: string) => void = () => {};
+    mocks.interpreter.mockImplementationOnce(
+      () =>
+        new Promise<string>((resolve) => {
+          resolveInterpreter = resolve;
+        }),
+    );
+    const starting = manager.get(project);
+    const changed = manager.restartIfInterpreterChanged(project);
+    resolveInterpreter("python.exe");
+    const connection = await starting;
+    await changed;
+    expect(mocks.spawn).toHaveBeenCalledOnce();
+    expect(
+      (mocks.spawn.mock.results[0].value as Child).kill,
+    ).not.toHaveBeenCalled();
+    expect(await manager.get(project)).toBe(connection);
+  });
+  it("restarts the server when the interpreter actually changes", async () => {
+    await manager.get(project);
+    mocks.interpreter.mockResolvedValue("other-python.exe");
+    await manager.restartIfInterpreterChanged(project);
+    expect(mocks.spawn).toHaveBeenCalledTimes(2);
+    expect(
+      (mocks.spawn.mock.results[0].value as Child).kill,
+    ).toHaveBeenCalledOnce();
+    expect((await manager.get(project)).python).toBe("other-python.exe");
+  });
   it("reports a missing package once without spawning", async () => {
     mocks.installed.mockResolvedValue({ installed: false });
     await expect(manager.get(project)).rejects.toThrow("not installed");

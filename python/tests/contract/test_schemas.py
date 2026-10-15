@@ -160,6 +160,13 @@ def definition_examples() -> dict[str, dict[str, Any]]:
         "discovery.schema.json": {
             "DiscoveryResult": discovery,
             "TestEntry": discovery["tests"][0],
+            "FlowEntry": {
+                "id": "flows/navigation.py::open_page",
+                "file": discovery["root"] + "/flows/navigation.py",
+                "name": "open_page",
+                "range": common["Range"],
+                "nameRange": common["Range"],
+            },
             "PageEntry": discovery["pages"][0],
             "ElementEntry": discovery["pages"][0]["elements"][0],
             "DiscoveryError": discovery["errors"][0],
