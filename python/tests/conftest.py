@@ -13,24 +13,15 @@ from support import DemoProcess, start_demo
 pytest_plugins = ["pytester"]
 
 
-def _default_demo_path() -> Path:
-    return (
-        Path(__file__).resolve().parents[2]
-        / "demo"
-        / "DemoApp"
-        / "bin"
-        / "Release"
-        / "net8.0-windows"
-        / "DemoApp.exe"
-    )
-
-
 @pytest.fixture(scope="session")
 def demo_app_path() -> Path:
-    """Locate the built demo app, skipping tests when it is unavailable."""
-    app_path = Path(os.environ.get("WTK_DEMO_APP", str(_default_demo_path())))
+    """Locate an externally supplied legacy test app, skipping when unconfigured."""
+    configured = os.environ.get("WTK_DEMO_APP")
+    if not configured:
+        pytest.skip("set WTK_DEMO_APP to an external legacy WTK Demo executable")
+    app_path = Path(configured)
     if not app_path.is_file():
-        pytest.skip("demo app not built: run dotnet build demo/DemoApp -c Release")
+        pytest.fail(f"WTK_DEMO_APP does not point to a file: {app_path}")
     return app_path
 
 

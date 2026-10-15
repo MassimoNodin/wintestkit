@@ -27,12 +27,15 @@ uv run ruff format --check .
 uv run pyright
 ```
 
-Use `uv run pytest -m integration` with an unlocked Windows desktop and the built demo app
-to run desktop tests. See the repository's root README and `docs/plan/` for the full plan.
+No example app is bundled. App-dependent desktop tests require an externally supplied legacy
+WTK Demo executable configured through `WTK_DEMO_APP`; they skip when it is unset. See the
+[development guide](../docs/development.md) for opt-in desktop tests and packaging.
 
 ## Resolve targets
 
-Run from this directory after starting the demo app:
+For the retained legacy examples, set `WTK_APP_PATH` to a compatible external WTK Demo
+executable and start it before running these commands from this directory. For your own
+application, replace the project root and screen targets:
 
 ```powershell
 uv run wtk --root ../examples/demo-tests highlight screens/main.py::MainScreen.sign_in --json
