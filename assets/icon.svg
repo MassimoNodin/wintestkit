@@ -1,4 +1,220 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <rect width="64" height="64" rx="14" fill="#db2777"/>
-  <text x="32" y="32" dy="0.35em" text-anchor="middle" font-family="ui-sans-serif, system-ui, -apple-system, sans-serif" font-size="32" font-weight="600" fill="#ffffff">W</text>
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg"
+     xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+     width="1254" height="1254" viewBox="0 0 1254 1254"
+     fill="none" role="img" aria-labelledby="logo-title logo-description">
+  <title id="logo-title">WinTestKit — T / W / K isometric cube</title>
+  <desc id="logo-description">Editable vector reconstruction of the supplied WinTestKit cube logo. A blue T sits on the top face, a blue W forms the left face, and a charcoal K forms the right face. White separators, graduated bevels, and a soft blue-grey cast shadow preserve the reference appearance. The partially obscured top T has been reconstructed as a clean isometric shape. Every visible element is an SVG path, rectangle, or ellipse; no raster image or font is embedded. Hide the Canvas group for a transparent background.</desc>
+
+  <defs>
+    <!-- All gradients use canvas coordinates, so the component paths remain editable. -->
+    <linearGradient id="grad-cube-top" gradientUnits="userSpaceOnUse" x1="520" y1="200" x2="697" y2="618">
+      <stop stop-color="#ffffff"/><stop offset=".57" stop-color="#fbfdff"/><stop offset="1" stop-color="#f1f6fc"/>
+    </linearGradient>
+    <linearGradient id="grad-cube-left" gradientUnits="userSpaceOnUse" x1="340" y1="441" x2="568" y2="1000">
+      <stop stop-color="#f0f5fb"/><stop offset=".31" stop-color="#e9f0f8"/><stop offset=".61" stop-color="#f9fcff"/><stop offset="1" stop-color="#e4eefb"/>
+    </linearGradient>
+    <linearGradient id="grad-cube-right" gradientUnits="userSpaceOnUse" x1="1026" y1="483" x2="652" y2="986">
+      <stop stop-color="#f5f9fe"/><stop offset=".45" stop-color="#e8f0fa"/><stop offset=".74" stop-color="#f9fcff"/><stop offset="1" stop-color="#e2ecf9"/>
+    </linearGradient>
+    <linearGradient id="grad-front-seam-left" gradientUnits="userSpaceOnUse" x1="599" y1="800" x2="627" y2="800">
+      <stop stop-color="#ffffff"/><stop offset="1" stop-color="#f4f9ff"/>
+    </linearGradient>
+    <linearGradient id="grad-front-seam-right" gradientUnits="userSpaceOnUse" x1="627" y1="800" x2="653" y2="800">
+      <stop stop-color="#edf4fd"/><stop offset="1" stop-color="#ffffff"/>
+    </linearGradient>
+
+    <linearGradient id="grad-t-face" gradientUnits="userSpaceOnUse" x1="581" y1="209" x2="792" y2="488">
+      <stop stop-color="#05c7f5"/><stop offset=".38" stop-color="#00aeff"/><stop offset=".72" stop-color="#0095fa"/><stop offset="1" stop-color="#0077ef"/>
+    </linearGradient>
+    <linearGradient id="grad-t-front-bevel" gradientUnits="userSpaceOnUse" x1="415" y1="439" x2="579" y2="536">
+      <stop stop-color="#0069f2"/><stop offset="1" stop-color="#003acc"/>
+    </linearGradient>
+    <linearGradient id="grad-t-right-bevel" gradientUnits="userSpaceOnUse" x1="796" y1="398" x2="884" y2="454">
+      <stop stop-color="#006de9"/><stop offset="1" stop-color="#0043c4"/>
+    </linearGradient>
+    <linearGradient id="grad-t-plane-light" gradientUnits="userSpaceOnUse" x1="601" y1="278" x2="810" y2="426">
+      <stop stop-color="#52e4ff" stop-opacity=".28"/><stop offset="1" stop-color="#00b4ff" stop-opacity="0"/>
+    </linearGradient>
+
+    <linearGradient id="grad-w-upright-left" gradientUnits="userSpaceOnUse" x1="369.12" y1="504.12" x2="136.12" y2="737.12">
+      <stop offset="0.0000" stop-color="#0057e4"/>
+      <stop offset="0.1667" stop-color="#0052e2"/>
+      <stop offset="0.3333" stop-color="#005cee"/>
+      <stop offset="0.5000" stop-color="#005bee"/>
+      <stop offset="0.6667" stop-color="#0052e9"/>
+      <stop offset="0.8333" stop-color="#004ce8"/>
+      <stop offset="1.0000" stop-color="#004be8"/>
+    </linearGradient>
+    <linearGradient id="grad-w-left-diagonal" gradientUnits="userSpaceOnUse" x1="421.90" y1="757.77" x2="220.08" y2="768.35">
+      <stop offset="0.0000" stop-color="#003dba"/>
+      <stop offset="0.1667" stop-color="#0043c8"/>
+      <stop offset="0.3333" stop-color="#0049d2"/>
+      <stop offset="0.5000" stop-color="#004ad6"/>
+      <stop offset="0.6667" stop-color="#004cd9"/>
+      <stop offset="0.8333" stop-color="#004cd9"/>
+      <stop offset="1.0000" stop-color="#004ad7"/>
+    </linearGradient>
+    <linearGradient id="grad-w-left-inner-bevel" gradientUnits="userSpaceOnUse" x1="431.60" y1="781.74" x2="315.08" y2="876.10">
+      <stop offset="0.0000" stop-color="#01126e"/>
+      <stop offset="0.1667" stop-color="#002899"/>
+      <stop offset="0.3333" stop-color="#002da7"/>
+      <stop offset="0.5000" stop-color="#0033af"/>
+      <stop offset="0.6667" stop-color="#0037b6"/>
+      <stop offset="0.8333" stop-color="#0039b7"/>
+      <stop offset="1.0000" stop-color="#0040c1"/>
+    </linearGradient>
+    <linearGradient id="grad-w-centre-diagonal" gradientUnits="userSpaceOnUse" x1="497.53" y1="610.65" x2="406.64" y2="949.86">
+      <stop offset="0.0000" stop-color="#06c7fd"/>
+      <stop offset="0.1667" stop-color="#009afe"/>
+      <stop offset="0.3333" stop-color="#0086fe"/>
+      <stop offset="0.5000" stop-color="#0085fe"/>
+      <stop offset="0.6667" stop-color="#007efe"/>
+      <stop offset="0.8333" stop-color="#0069f9"/>
+      <stop offset="1.0000" stop-color="#005af0"/>
+    </linearGradient>
+    <linearGradient id="grad-w-upright-right" gradientUnits="userSpaceOnUse" x1="536.20" y1="552.00" x2="536.20" y2="1030.00">
+      <stop offset="0.0000" stop-color="#006cf8"/>
+      <stop offset="0.1667" stop-color="#006af6"/>
+      <stop offset="0.3333" stop-color="#007afd"/>
+      <stop offset="0.5000" stop-color="#0078fd"/>
+      <stop offset="0.6667" stop-color="#006af9"/>
+      <stop offset="0.8333" stop-color="#005af4"/>
+      <stop offset="1.0000" stop-color="#000000"/>
+    </linearGradient>
+    <linearGradient id="grad-w-right-fold" gradientUnits="userSpaceOnUse" x1="452.62" y1="899.71" x2="623.63" y2="945.53">
+      <stop offset="0.0000" stop-color="#003cc0"/>
+      <stop offset="0.1667" stop-color="#0039c1"/>
+      <stop offset="0.3333" stop-color="#003dcb"/>
+      <stop offset="0.5000" stop-color="#0042d4"/>
+      <stop offset="0.6667" stop-color="#0048de"/>
+      <stop offset="0.8333" stop-color="#0049e1"/>
+      <stop offset="1.0000" stop-color="#014de7"/>
+    </linearGradient>
+    <linearGradient id="grad-w-left-edge" gradientUnits="userSpaceOnUse" x1="222" y1="407" x2="222" y2="825">
+      <stop stop-color="#008cff"/><stop offset="1" stop-color="#0045e6"/>
+    </linearGradient>
+
+    <linearGradient id="grad-k-stem" gradientUnits="userSpaceOnUse" x1="604.59" y1="646.35" x2="814.17" y2="934.82">
+      <stop offset="0.0000" stop-color="#293748"/>
+      <stop offset="0.1667" stop-color="#2c3b4d"/>
+      <stop offset="0.3333" stop-color="#2b3b4e"/>
+      <stop offset="0.5000" stop-color="#243345"/>
+      <stop offset="0.6667" stop-color="#1a293a"/>
+      <stop offset="0.8333" stop-color="#142438"/>
+      <stop offset="1.0000" stop-color="#122134"/>
+    </linearGradient>
+    <linearGradient id="grad-k-upper-arm" gradientUnits="userSpaceOnUse" x1="989.93" y1="381.56" x2="784.01" y2="785.70">
+      <stop offset="0.0000" stop-color="#1f2c3b"/>
+      <stop offset="0.1667" stop-color="#202e3e"/>
+      <stop offset="0.3333" stop-color="#253344"/>
+      <stop offset="0.5000" stop-color="#1f2e3f"/>
+      <stop offset="0.6667" stop-color="#213143"/>
+      <stop offset="0.8333" stop-color="#1c2c3e"/>
+      <stop offset="1.0000" stop-color="#152435"/>
+    </linearGradient>
+    <linearGradient id="grad-k-upper-fold" gradientUnits="userSpaceOnUse" x1="956" y1="568" x2="801" y2="730">
+      <stop stop-color="#243444" stop-opacity="0"/><stop offset="1" stop-color="#091a2b" stop-opacity=".44"/>
+    </linearGradient>
+    <linearGradient id="grad-k-lower-arm" gradientUnits="userSpaceOnUse" x1="816.67" y1="708.72" x2="1001.52" y2="858.41">
+      <stop offset="0.0000" stop-color="#0e1a2a"/>
+      <stop offset="0.1667" stop-color="#122030"/>
+      <stop offset="0.3333" stop-color="#172639"/>
+      <stop offset="0.5000" stop-color="#1a293c"/>
+      <stop offset="0.6667" stop-color="#1b2a3d"/>
+      <stop offset="0.8333" stop-color="#1a293c"/>
+      <stop offset="1.0000" stop-color="#1c2a3a"/>
+    </linearGradient>
+    <linearGradient id="grad-k-lower-fold" gradientUnits="userSpaceOnUse" x1="768" y1="773" x2="903" y2="889">
+      <stop stop-color="#0e1c2b"/><stop offset="1" stop-color="#111e2c"/>
+    </linearGradient>
+    <linearGradient id="grad-k-top-bevel" gradientUnits="userSpaceOnUse" x1="652" y1="608" x2="759" y2="548">
+      <stop stop-color="#566575"/><stop offset=".5" stop-color="#6a7785"/><stop offset="1" stop-color="#40505f"/>
+    </linearGradient>
+    <linearGradient id="grad-k-arm-top-bevel" gradientUnits="userSpaceOnUse" x1="896" y1="476" x2="1031" y2="402">
+      <stop stop-color="#5c6976"/><stop offset="1" stop-color="#82909f"/>
+    </linearGradient>
+    <linearGradient id="grad-k-left-bevel" gradientUnits="userSpaceOnUse" x1="650" y1="812" x2="657" y2="812">
+      <stop stop-color="#182432"/><stop offset="1" stop-color="#3c4a59"/>
+    </linearGradient>
+
+    <filter id="shadow-ambient" x="-35%" y="-130%" width="170%" height="360%" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="38"/>
+    </filter>
+    <filter id="shadow-contact" x="-35%" y="-160%" width="170%" height="420%" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="24"/>
+    </filter>
+    <filter id="t-shadow" x="-20%" y="-30%" width="140%" height="170%" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="4"/>
+    </filter>
+  </defs>
+
+  <!-- Hide or delete this group when exporting onto a transparent canvas. -->
+  <g id="canvas" inkscape:groupmode="layer" inkscape:label="Canvas — hide for transparency">
+    <rect id="white-background" width="1254" height="1254" fill="#ffffff"/>
+  </g>
+
+  <g id="ground-shadow" inkscape:groupmode="layer" inkscape:label="Soft ground shadow">
+    <ellipse id="ambient-blue-shadow" cx="632" cy="942" rx="365" ry="107" fill="#6a9ed5" opacity=".28" filter="url(#shadow-ambient)"/>
+    <ellipse id="middle-shadow" cx="632" cy="986" rx="266" ry="66" fill="#729bcc" opacity=".21" filter="url(#shadow-ambient)"/>
+    <ellipse id="contact-shadow" cx="629" cy="1018" rx="154" ry="31" fill="#5589bf" opacity=".19" filter="url(#shadow-contact)"/>
+  </g>
+
+  <g id="white-cube" inkscape:groupmode="layer" inkscape:label="White cube and separators">
+    <path id="left-white-face" d="M222 406 627 622 627 1044 223 824Z" fill="url(#grad-cube-left)"/>
+    <path id="right-white-face" d="M627 622 1031 400 1031 822 627 1044Z" fill="url(#grad-cube-right)"/>
+    <path id="top-white-face" d="M222 406 626 177 1031 400 627 622Z" fill="url(#grad-cube-top)"/>
+    <path id="left-top-rim" d="M222 406 627 622" stroke="#ffffff" stroke-width="1.5"/>
+    <path id="right-top-rim" d="M627 622 1031 400" stroke="#ffffff" stroke-width="1.5"/>
+    <path id="left-front-separator" d="M600 607 627 622 627 1044 600 1030Z" fill="url(#grad-front-seam-left)"/>
+    <path id="right-front-separator" d="M627 622 650 609 650 1031 627 1044Z" fill="url(#grad-front-seam-right)"/>
+    <path id="front-corner-highlight" d="M627 623V1043" stroke="#ffffff" stroke-opacity=".65" stroke-width="1"/>
+  </g>
+
+  <g id="top-t" inkscape:groupmode="layer" inkscape:label="T — top blue face">
+    <!-- Symmetric T on the same two isometric axes as the cube. -->
+    <path id="t-cast-shadow" d="M657.9 200.5 993 385.4 876.9 451.5 795.1 406.3 572.5 532.9 401.1 438.3 623.7 311.7 541.8 266.5Z" fill="#2165b5" opacity=".15" filter="url(#t-shadow)"/>
+    <path id="t-depth" d="M657.9 202.5 993 387.4 876.9 453.5 795.1 408.3 572.5 534.9 401.1 440.3 623.7 313.7 541.8 268.5Z" fill="#0052da"/>
+    <path id="t-crossbar-right-bevel" d="M993 377.4 876.9 443.5 876.9 453.5 993 387.4Z" fill="url(#grad-t-right-bevel)"/>
+    <path id="t-stem-right-bevel" d="M795.1 398.3 572.5 524.9 572.5 534.9 795.1 408.3Z" fill="url(#grad-t-right-bevel)"/>
+    <path id="t-stem-front-bevel" d="M401.1 430.3 572.5 524.9 572.5 534.9 401.1 440.3Z" fill="url(#grad-t-front-bevel)"/>
+    <path id="t-left-crossbar-bevel" d="M541.8 258.5 623.7 303.7 623.7 313.7 541.8 268.5Z" fill="url(#grad-t-front-bevel)"/>
+    <path id="t-main-surface" d="M657.9 192.5 993 377.4 876.9 443.5 795.1 398.3 572.5 524.9 401.1 430.3 623.7 303.7 541.8 258.5Z" fill="url(#grad-t-face)"/>
+    <path id="t-subtle-surface-light" d="M657.9 192.5 993 377.4 876.9 443.5 795.1 398.3 572.5 524.9 401.1 430.3 623.7 303.7 541.8 258.5Z" fill="url(#grad-t-plane-light)"/>
+    <path id="t-back-edge-glint" d="M542.3 258.4 657.9 192.9 992.2 377.3" stroke="#55d8ff" stroke-opacity=".65" stroke-width="1.5" stroke-linejoin="round"/>
+    <path id="t-front-edge-glint" d="M401.8 430.2 572.5 524.3 794.6 398.3" stroke="#00c5ff" stroke-opacity=".56" stroke-width="1.2" stroke-linejoin="round"/>
+  </g>
+
+  <g id="left-w" inkscape:groupmode="layer" inkscape:label="W — left blue face">
+    <path id="w-left-upright" d="M223 407 328 463 328 697 223 824Z" fill="url(#grad-w-upright-left)"/>
+    <path id="w-left-diagonal" d="M223 824 413 588 414 760 315 876Z" fill="url(#grad-w-left-diagonal)"/>
+    <path id="w-left-lower-bevel" d="M315 876 414 760 414 792 345 892Z" fill="url(#grad-w-left-inner-bevel)"/>
+    <path id="w-right-upright" d="M493 552 601 607 601 1030 493 973 493 749Z" fill="url(#grad-w-upright-right)"/>
+    <path id="w-centre-sloping-face" d="M413 588 421 591 493 749 493 973 484 968 414 792Z" fill="url(#grad-w-centre-diagonal)"/>
+    <path id="w-right-diagonal-fold" d="M493 749 601 948 601 1030 493 973Z" fill="url(#grad-w-right-fold)"/>
+    <path id="w-outer-left-bevel" d="M222 406 225 410 225 824 223 824Z" fill="url(#grad-w-left-edge)"/>
+    <path id="w-left-top-bevel" d="M223 407 328 463 328 468 223 411Z" fill="#54d4ff"/>
+    <path id="w-left-inner-edge" d="M324.5 463 328 464.8 328 697 324.5 701.4Z" fill="#0064f0"/>
+    <path id="w-right-top-bevel" d="M493 552 601 607 598 612 493 557Z" fill="#27d1ff"/>
+    <path id="w-centre-ridge-bevel" d="M413 588 421 591 496 746 493 749Z" fill="#10c7ff"/>
+    <path id="w-centre-left-ridge" d="M223.7 823.1 413 588.9" stroke="#008dff" stroke-width="1.5"/>
+    <path id="w-centre-fold-line" d="M414 591V790" stroke="#00a1ff" stroke-opacity=".58" stroke-width="1.2"/>
+    <path id="w-right-outer-edge" d="M598 612 601 607 601 1030 598 1028.4Z" fill="#0054f0"/>
+    <path id="w-top-outer-glint" d="M223 407 327.4 462.9M493.3 552.8 600 607.2" stroke="#87eaff" stroke-opacity=".76" stroke-width=".9"/>
+  </g>
+
+  <g id="right-k" inkscape:groupmode="layer" inkscape:label="K — right charcoal face">
+    <path id="k-lower-arm" d="M763 775 871 682 1031 790 1031 822 904 893Z" fill="url(#grad-k-lower-arm)"/>
+    <path id="k-lower-arm-bottom-bevel" d="M763 775 904 888 1031 817 1031 822 904 893Z" fill="url(#grad-k-lower-fold)"/>
+    <path id="k-upper-arm" d="M763 672 893 477 1032 403 1032 521 775 779 763 775Z" fill="url(#grad-k-upper-arm)"/>
+    <path id="k-upper-arm-fold" opacity=".18" d="M893 477 969 584 775 779 763 775 763 672Z" fill="url(#grad-k-upper-fold)"/>
+    <path id="k-upper-arm-top-bevel" d="M890 474 1027 399 1032 403 895 480 763 679 763 671Z" fill="url(#grad-k-arm-top-bevel)"/>
+    <path id="k-upper-diagonal-edge-glint" d="M892.3 477.5 764.4 673.6" stroke="#8995a1" stroke-opacity=".24" stroke-width="1.1"/>
+    <path id="k-stem-front" d="M656 609 763 551 763 972 656 1031Z" fill="url(#grad-k-stem)"/>
+    <path id="k-stem-left-bevel" d="M650 606 656 609 656 1031 650 1027Z" fill="url(#grad-k-left-bevel)"/>
+    <path id="k-stem-top-bevel" d="M650 606 757 547 763 551 656 610Z" fill="url(#grad-k-top-bevel)"/>
+    <path id="k-stem-right-edge" d="M760.8 552.2 763 551 763 972 760.8 973.2Z" fill="#122335" opacity=".55"/>
+    <path id="k-stem-top-glint" d="M650.7 606 756.9 547.5" stroke="#a5b1bc" stroke-opacity=".63" stroke-width="1"/>
+    <path id="k-arm-top-glint" d="M895 475 1027.5 400" stroke="#b1beca" stroke-opacity=".58" stroke-width="1"/>
+  </g>
 </svg>
