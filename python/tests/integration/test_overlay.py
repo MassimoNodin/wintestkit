@@ -74,11 +74,11 @@ def test_overlay_geometry_and_rendering(demo_process: DemoProcess) -> None:
         shown.show(rect)
         window_rect = wintypes.RECT()
         win32.user32.GetWindowRect(wintypes.HWND(shown.hwnd), ctypes.byref(window_rect))
-        outer = rect.inflate(4)
-        assert (window_rect.left, window_rect.top) == (outer.left, outer.top)
-        assert window_rect.right - window_rect.left == outer.width
+        assert (window_rect.left, window_rect.top) == (rect.left, rect.top)
+        assert window_rect.right - window_rect.left == rect.width
+        assert window_rect.bottom - window_rect.top == rect.height
         time.sleep(0.2)  # let DWM compose the layered window
-        png = screenshot.capture(outer)
+        png = screenshot.capture(rect)
         _, _, pixels = decode_png_rgb(png)
         triples = {pixels[i : i + 3] for i in range(0, len(pixels), 3)}
         assert b"\xff\x00\x00" in triples, "outline colour was not drawn"

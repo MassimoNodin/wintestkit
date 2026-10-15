@@ -13,6 +13,7 @@ import type {
   Suggestion,
 } from "../protocol/generated";
 import { parseSpyRequest, type SpyRequest, type SpyResponse } from "./messages";
+import { readApplicationIcons } from "./appIcons";
 
 export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
   private view?: vscode.WebviewView;
@@ -23,6 +24,7 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
   private revision = 0;
   private selection = 0;
   private pickRevision = 0;
+  private taskId = 0;
   private connecting?: {
     root: string;
     promise: Promise<JsonRpcClient | undefined>;
@@ -135,6 +137,60 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
       this.picking,
     );
   }
+  private async loading<T>(
+    title: string,
+    total: number,
+    action: (
+      phase: <Value>(
+        label: string,
+        work: () => Promise<Value>,
+      ) => Promise<Value>,
+    ) => Promise<T>,
+    nodeId?: string,
+    target: "tree" | "details" = "tree",
+  ): Promise<T> {
+    const taskId = ++this.taskId;
+    let completed = 0;
+    let finished = false;
+    let failed = false;
+    const active = new Set<string>();
+    const update = (done = false) => {
+      if (finished && !done) return;
+      this.post({
+        type: "progress",
+        taskId,
+        title,
+        phase: [...active].join(" · "),
+        completed,
+        total,
+        done,
+        nodeId,
+        target,
+        failed,
+      });
+    };
+    update();
+    try {
+      return await action(async (label, work) => {
+        active.add(label);
+        update();
+        try {
+          const result = await work();
+          completed++;
+          return result;
+        } finally {
+          active.delete(label);
+          update();
+        }
+      });
+    } catch (error) {
+      failed = true;
+      throw error;
+    } finally {
+      finished = true;
+      update(true);
+    }
+  }
   private async safe(action: () => Promise<void>): Promise<void> {
     try {
       await action();
@@ -214,18 +270,42 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
         void this.safe(async () => {
           const picked = value as SpyPickedNotification;
           if (this.client !== client) return;
-          await this.stopPick();
-          const properties = await client.request<InspectPropertiesResult>(
-            "inspect.properties",
-            { nodeId: picked.node.nodeId },
+          const properties = await this.loading(
+            "Inspecting picked object",
+            2,
+            async (phase) => {
+              await phase("Stopping element picker", () => this.stopPick());
+              return phase("Reading picked control properties", () =>
+                client.request<InspectPropertiesResult>("inspect.properties", {
+                  nodeId: picked.node.nodeId,
+                }),
+              );
+            },
+            picked.node.nodeId,
+            "details",
           );
-          for (const ancestor of [...properties.ancestors].reverse()) {
-            const nodes = await client.request<NodeInfo[]>("inspect.children", {
-              nodeId: ancestor.nodeId,
-            });
-            if (this.client !== client) return;
-            this.post({ type: "children", nodeId: ancestor.nodeId, nodes });
-          }
+          await this.loading(
+            "Revealing picked object",
+            Math.max(1, properties.ancestors.length),
+            async (phase) => {
+              for (const ancestor of [...properties.ancestors].reverse()) {
+                if (this.client !== client) return;
+                const nodes = await phase(
+                  "Loading " +
+                    (ancestor.info.name || ancestor.info.controlType),
+                  () =>
+                    client.request<NodeInfo[]>("inspect.children", {
+                      nodeId: ancestor.nodeId,
+                    }),
+                );
+                if (this.client !== client) return;
+                this.post({ type: "children", nodeId: ancestor.nodeId, nodes });
+              }
+              if (!properties.ancestors.length)
+                await phase("Object already visible", async () => {});
+            },
+            picked.node.nodeId,
+          );
           if (this.client !== client) return;
           this.suggestion = picked.suggestion;
           this.post({
@@ -255,34 +335,52 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
     return client;
   }
   async refresh(): Promise<void> {
-    const client = await this.connect();
-    if (!client) {
-      this.post({ type: "roots", nodes: [] });
-      return;
-    }
-    const revision = ++this.revision;
-    this.selection++;
-    this.suggestion = undefined;
-    const status = await client.request<AppStatusResult>("app.status");
-    const nodes = await client.request<NodeInfo[]>("inspect.roots");
-    if (this.disposed || revision !== this.revision) return;
-    this.appRunning = status.running;
-    this.state();
-    this.post({ type: "roots", nodes });
+    await this.loading("Loading objects", 4, async (phase) => {
+      const client = await phase("Connecting to automation server", () =>
+        this.connect(),
+      );
+      if (!client) {
+        this.post({ type: "roots", nodes: [] });
+        return;
+      }
+      const revision = ++this.revision;
+      this.selection++;
+      this.suggestion = undefined;
+      const status = await phase("Checking application", () =>
+        client.request<AppStatusResult>("app.status"),
+      );
+      if (this.disposed || revision !== this.revision) return;
+      const nodes = await phase("Reading root windows", () =>
+        client.request<NodeInfo[]>("inspect.roots"),
+      );
+      if (this.disposed || revision !== this.revision) return;
+      this.appRunning = status.running;
+      this.state();
+      this.post({ type: "roots", nodes });
+      const icons = await phase("Loading application icons", () =>
+        readApplicationIcons(nodes.map((node) => node.info.processId)),
+      );
+      if (this.disposed || revision !== this.revision) return;
+      this.post({ type: "rootIcons", icons });
+    });
   }
   private async startPick(): Promise<void> {
-    const client = await this.connect();
-    if (!client) return;
-    const revision = ++this.pickRevision;
-    await client.request("spy.start");
-    if (
-      revision !== this.pickRevision ||
-      this.client !== client ||
-      this.disposed
-    )
-      return;
-    this.picking = true;
-    this.state();
+    await this.loading("Starting picker", 2, async (phase) => {
+      const client = await phase("Connecting to automation server", () =>
+        this.connect(),
+      );
+      if (!client) return;
+      const revision = ++this.pickRevision;
+      await phase("Starting element picker", () => client.request("spy.start"));
+      if (
+        revision !== this.pickRevision ||
+        this.client !== client ||
+        this.disposed
+      )
+        return;
+      this.picking = true;
+      this.state();
+    });
   }
   private async stopPick(): Promise<void> {
     this.pickRevision++;
@@ -307,39 +405,71 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
         );
       return;
     }
-    const client = await this.connect();
-    if (!client) return;
-    if (message.type === "launchApp") {
-      await client.request("app.launch");
-      return this.refresh();
-    }
-    if (!("nodeId" in message)) return;
-    const nodeId = message.nodeId;
-    if (message.type === "expand") {
-      const nodes = await client.request<NodeInfo[]>("inspect.children", {
-        nodeId,
-      });
-      this.post({ type: "children", nodeId, nodes });
-    } else if (message.type === "highlight")
-      await client.request("inspect.highlight", { nodeId });
-    else if (message.type === "select") {
-      const selection = ++this.selection;
-      const [properties, suggestion] = await Promise.all([
-        client.request<InspectPropertiesResult>("inspect.properties", {
-          nodeId,
-        }),
-        client.request<Suggestion>("suggest.locator", { nodeId }),
-        client.request("inspect.highlight", { nodeId }),
-      ]);
-      if (
-        this.disposed ||
-        selection !== this.selection ||
-        client !== this.client
-      )
-        return;
-      this.suggestion = suggestion;
-      this.post({ type: "selected", nodeId, properties, suggestion });
-    }
+    const nodeId = "nodeId" in message ? message.nodeId : undefined;
+    const title =
+      message.type === "launchApp"
+        ? "Launching application"
+        : message.type === "expand"
+          ? "Loading children"
+          : message.type === "select"
+            ? "Inspecting object"
+            : "Highlighting object";
+    await this.loading(
+      title,
+      message.type === "select" ? 4 : 2,
+      async (phase) => {
+        const client = await phase("Connecting to automation server", () =>
+          this.connect(),
+        );
+        if (!client) return;
+        if (message.type === "launchApp") {
+          await phase("Starting application", () =>
+            client.request("app.launch"),
+          );
+          return;
+        }
+        if (!nodeId) return;
+        if (message.type === "expand") {
+          const nodes = await phase("Reading child controls", () =>
+            client.request<NodeInfo[]>("inspect.children", { nodeId }),
+          );
+          if (this.client === client)
+            this.post({ type: "children", nodeId, nodes });
+        } else if (message.type === "highlight") {
+          await phase("Highlighting control", () =>
+            client.request("inspect.highlight", { nodeId }),
+          );
+        } else if (message.type === "select") {
+          const selection = ++this.selection;
+          const [properties, suggestion] = await Promise.all([
+            phase("Reading properties", () =>
+              client.request<InspectPropertiesResult>("inspect.properties", {
+                nodeId,
+              }),
+            ),
+            phase("Generating locator", () =>
+              client.request<Suggestion>("suggest.locator", { nodeId }),
+            ),
+            phase("Highlighting control", () =>
+              client.request("inspect.highlight", { nodeId }),
+            ),
+          ]);
+          if (
+            this.disposed ||
+            selection !== this.selection ||
+            client !== this.client
+          )
+            return;
+          this.suggestion = suggestion;
+          this.post({ type: "selected", nodeId, properties, suggestion });
+        }
+      },
+      nodeId,
+      message.type === "select" || message.type === "highlight"
+        ? "details"
+        : "tree",
+    );
+    if (message.type === "launchApp") await this.refresh();
   }
   dispose(): void {
     this.unbind();

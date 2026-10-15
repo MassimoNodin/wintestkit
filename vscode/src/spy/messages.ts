@@ -12,6 +12,19 @@ export type SpyRequest =
   | { type: "expand" | "select" | "highlight"; nodeId: string }
   | { type: "copy"; text: string };
 export type SpyResponse =
+  | { type: "rootIcons"; icons: Record<string, string> }
+  | {
+      type: "progress";
+      taskId: number;
+      title: string;
+      phase: string;
+      completed: number;
+      total: number;
+      done: boolean;
+      target: "tree" | "details";
+      failed: boolean;
+      nodeId?: string;
+    }
   | {
       type: "state";
       picking: boolean;

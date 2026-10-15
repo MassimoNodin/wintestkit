@@ -4,7 +4,7 @@
         <meta charset="utf-8" />
         <meta
             http-equiv="Content-Security-Policy"
-            content="default-src 'none'; style-src {{cspSource}}; font-src {{cspSource}}; script-src 'nonce-{{nonce}}'"
+            content="default-src 'none'; img-src data:; style-src {{cspSource}}; font-src {{cspSource}}; script-src 'nonce-{{nonce}}'"
         />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <link rel="stylesheet" href="{{icons}}" />
@@ -12,48 +12,209 @@
         <title>WinTestKit Spy</title>
     </head>
     <body>
-        <header>
+        <header class="toolbar">
             <button id="pick">
-                <span class="codicon codicon-inspect" aria-hidden="true"></span>
-                Pick</button
-            ><button id="refresh" aria-label="Refresh">
+                <span class="codicon codicon-inspect" aria-hidden="true"></span
+                ><span id="pick-label">Pick element</span>
+            </button>
+            <button
+                id="refresh"
+                class="icon-button secondary"
+                aria-label="Refresh objects"
+                title="Refresh objects"
+            >
+                <span class="codicon codicon-refresh" aria-hidden="true"></span>
+            </button>
+            <button
+                id="collapse"
+                class="icon-button secondary"
+                aria-label="Collapse all"
+                title="Collapse all"
+            >
                 <span
-                    class="codicon codicon-refresh"
+                    class="codicon codicon-collapse-all"
                     aria-hidden="true"
-                ></span></button
-            ><span id="state"></span><button id="launch">Launch app</button>
+                ></span>
+            </button>
+            <span class="toolbar-spacer"></span
+            ><span id="state" role="status">Connecting</span>
+            <button id="launch" class="secondary" hidden>Launch app</button>
         </header>
-        <p id="hint" role="status" aria-live="polite"></p>
-        <section id="tree-region">
-            <ul id="tree" role="tree" aria-label="Application controls"></ul>
-        </section>
-        <div
-            id="splitter"
-            role="separator"
-            tabindex="0"
-            aria-label="Resize control tree"
-            aria-orientation="horizontal"
-        ></div>
-        <section id="details">
-            <h2>Properties</h2>
-            <table>
-                <tbody id="properties"></tbody>
-            </table>
-            <details>
-                <summary>All properties</summary>
-                <table>
-                    <tbody id="all-properties"></tbody>
-                </table>
-            </details>
-            <h2>Suggested locator</h2>
-            <p id="badge"></p>
-            <pre><code id="code"></code></pre>
-            <div>
-                <button id="copy" disabled>Copy</button
-                ><button id="add" disabled>Add to screen…</button
-                ><button id="highlight" disabled>Highlight</button>
-            </div>
-        </section>
+        <main id="workspace">
+            <section id="tree-pane" class="pane" aria-label="Object browser">
+                <div class="pane-heading">
+                    <h1>Objects</h1>
+                    <div
+                        id="tree-loading"
+                        class="pane-loading"
+                        role="status"
+                        hidden
+                    >
+                        <span id="tree-phase"></span>
+                        <progress
+                            id="tree-progress"
+                            aria-label="Object loading progress"
+                        ></progress>
+                    </div>
+                    <span id="object-count" class="muted">0 loaded</span>
+                </div>
+                <label class="search-box"
+                    ><span
+                        class="codicon codicon-search"
+                        aria-hidden="true"
+                    ></span
+                    ><input
+                        id="search"
+                        type="search"
+                        aria-label="Filter loaded objects"
+                        placeholder="Filter loaded objects…"
+                /></label>
+                <section id="tree-region">
+                    <div id="tree-empty" class="empty-state" role="status">
+                        <span
+                            id="tree-empty-icon"
+                            class="codicon codicon-list-tree"
+                            aria-hidden="true"
+                        ></span>
+                        <h2 id="tree-empty-title">No objects loaded</h2>
+                        <p id="tree-empty-description">
+                            Pick an element or refresh to explore your
+                            application.
+                        </p>
+                        <button id="clear-filter" class="secondary" hidden>
+                            Clear filter
+                        </button>
+                    </div>
+                    <ul
+                        id="tree"
+                        role="tree"
+                        aria-label="Application controls"
+                    ></ul>
+                </section>
+                <p id="hint" role="status" aria-live="polite" hidden></p>
+            </section>
+            <div
+                id="splitter"
+                role="separator"
+                tabindex="0"
+                aria-label="Resize object browser"
+                aria-orientation="vertical"
+            ></div>
+            <section
+                id="details"
+                class="pane"
+                aria-label="Selected object inspector"
+            >
+                <div class="pane-heading">
+                    <h2>Selected object</h2>
+                    <div
+                        id="details-loading"
+                        class="pane-loading"
+                        role="status"
+                        hidden
+                    >
+                        <span id="details-phase"></span>
+                        <progress
+                            id="details-progress"
+                            aria-label="Object inspection progress"
+                        ></progress>
+                    </div>
+                    <button id="highlight" class="secondary" disabled>
+                        <span
+                            class="codicon codicon-go-to-file"
+                            aria-hidden="true"
+                        ></span
+                        >Highlight
+                    </button>
+                </div>
+                <div id="selection-summary" hidden>
+                    <span
+                        id="selection-icon"
+                        class="control-icon codicon codicon-inspect"
+                        aria-hidden="true"
+                    ></span>
+                    <div>
+                        <h2 id="selection-name">No object selected</h2>
+                        <p id="selection-type" class="muted">
+                            Select a control to inspect its properties.
+                        </p>
+                    </div>
+                </div>
+                <div class="properties-scroll">
+                    <div id="details-empty" class="empty-state" role="status">
+                        <span
+                            id="details-empty-icon"
+                            class="codicon codicon-inspect"
+                            aria-hidden="true"
+                        ></span>
+                        <h2 id="details-empty-title">No object selected</h2>
+                        <p id="details-empty-description">
+                            Select a control in the object tree or use Pick
+                            element to inspect it.
+                        </p>
+                    </div>
+                    <div id="property-groups" hidden>
+                        <section class="property-group">
+                            <h3>Identity</h3>
+                            <table>
+                                <tbody id="properties"></tbody>
+                            </table>
+                        </section>
+                        <section class="property-group">
+                            <h3>State</h3>
+                            <table>
+                                <tbody id="state-properties"></tbody>
+                            </table>
+                        </section>
+                        <section class="property-group">
+                            <h3>Geometry</h3>
+                            <table>
+                                <tbody id="geometry-properties"></tbody>
+                            </table>
+                        </section>
+                        <section class="property-group">
+                            <h3>Automation</h3>
+                            <table>
+                                <tbody id="automation-properties"></tbody>
+                            </table>
+                        </section>
+                        <details class="property-group">
+                            <summary>All properties</summary>
+                            <table>
+                                <tbody id="all-properties"></tbody>
+                            </table>
+                        </details>
+                    </div>
+                </div>
+                <section
+                    id="locator-panel"
+                    class="locator-panel"
+                    aria-label="Suggested locator"
+                    hidden
+                >
+                    <div class="locator-heading">
+                        <h2>Suggested locator</h2>
+                        <span id="badge" hidden></span>
+                    </div>
+                    <pre><code id="code">Select an object to generate a locator.</code></pre>
+                    <div class="actions">
+                        <button id="copy" class="secondary" disabled>
+                            <span
+                                class="codicon codicon-copy"
+                                aria-hidden="true"
+                            ></span
+                            >Copy locator</button
+                        ><button id="add" disabled>
+                            <span
+                                class="codicon codicon-add"
+                                aria-hidden="true"
+                            ></span
+                            >Add to screen…
+                        </button>
+                    </div>
+                </section>
+            </section>
+        </main>
         <script nonce="{{nonce}}" src="{{js}}"></script>
     </body>
 </html>

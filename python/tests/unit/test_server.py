@@ -10,8 +10,10 @@ from typing import Any
 import pytest
 from rpc_support import make_server, request
 
+from wintestkit.engine import actions, overlay
 from wintestkit.errors import AppNotRunningError, EnvironmentNotReadyError
 from wintestkit.targets import TargetError
+from wintestkit.uia.element import Rect
 
 
 def test_methods_and_nodes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -53,6 +55,40 @@ def test_methods_and_nodes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> N
         request(server, output, "inspect.children", {"nodeId": "stale"})["error"]["code"] == -32005
     )
     assert request(server, output, "initialize", {"root": str(tmp_path)})["error"]["code"] == -32600
+
+
+@pytest.mark.parametrize("activated", [True, False])
+def test_highlight_raises_window_before_reading_bounds(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, activated: bool
+) -> None:
+    server, output, button = make_server(tmp_path, monkeypatch)
+    request(server, output, "initialize", {"root": str(tmp_path)})
+    node = server._register(button)
+    button.rect = None
+    calls: list[str] = []
+    restored_rect = Rect(20, 30, 100, 50)
+
+    def foreground(element: Any) -> bool:
+        assert element is button
+        calls.append("foreground")
+        button.rect = restored_rect
+        return activated
+
+    def flash(rect: Rect, duration: int, *, block: bool) -> None:
+        assert rect == restored_rect
+        assert duration == 800
+        assert not block
+        calls.append("highlight")
+
+    monkeypatch.setattr(actions, "bring_to_front", foreground)
+    monkeypatch.setattr(overlay, "flash", flash)
+    assert (
+        request(server, output, "inspect.highlight", {"nodeId": node["nodeId"], "durationMs": 800})[
+            "result"
+        ]
+        is None
+    )
+    assert calls == ["foreground", "highlight"]
 
 
 @pytest.mark.parametrize(
