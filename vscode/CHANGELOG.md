@@ -5,6 +5,15 @@ released together with the same version) are documented here.
 
 ## [Unreleased]
 
+## [0.1.1]
+
+- Elements, typed controls, collections and windows accept `where={...}` constraints on scalar
+  UI Automation properties, with exact values and compiled regular expressions.
+- Shared and local configuration support `property_aliases` for TestComplete property names.
+  Spy and inspection expose matching properties; editor discovery and locator displays preserve them.
+- Add a test-build WPF guide for exposing full .NET type names and update migration skills.
+- Checks report every missing declaration as broken/moved, show relocation details when available,
+  and share a bounded search budget across a run.
 - Spy loads basic properties first, with a **Load all properties** button for the full list
   and supported patterns. Basic details appear before locator generation completes, and normal
   tree selection no longer collects the ancestor hierarchy.

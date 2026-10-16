@@ -40,7 +40,7 @@ Install a WinTestKit wheel from a release or your local build, together with pyt
 Replace the wheel path with the actual file you downloaded or built:
 
 ```powershell
-python -m pip install "C:\Downloads\wintestkit-0.1.0-py3-none-any.whl" pytest
+python -m pip install "C:\Downloads\wintestkit-0.1.1-py3-none-any.whl" pytest
 wtk --version
 ```
 

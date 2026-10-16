@@ -43,6 +43,7 @@ from wintestkit.engine.locator import (
     WindowLocator,
     match_value,
 )
+from wintestkit.engine.properties import WhereValue, normalize_where
 from wintestkit.engine.resolve import Scope, resolve, resolve_all, resolve_window
 from wintestkit.engine.waits import State
 from wintestkit.errors import (
@@ -113,6 +114,7 @@ class Window:
         class_name: Matcher | None = None,
         automation_id: Matcher | None = None,
         index: int | None = None,
+        where: Mapping[str, WhereValue] | None = None,
     ) -> None:
         __tracebackhide__ = True
         self.locator = WindowLocator(
@@ -121,6 +123,7 @@ class Window:
             class_name=class_name,
             automation_id=automation_id,
             index=index,
+            where=normalize_where(where, {}),
         )
         self.timeout: float | None = None  # windows use the configured default timeout
         self.name: str | None = None
@@ -1246,6 +1249,7 @@ class Element(Generic[B]):  # noqa: UP046  (a type-parameter default needs Pytho
         window: Window | None = None,
         timeout: float | None = None,
         validate: bool = True,
+        where: Mapping[str, WhereValue] | None = None,
     ) -> None:
         __tracebackhide__ = True
         self._init(
@@ -1259,6 +1263,7 @@ class Element(Generic[B]):  # noqa: UP046  (a type-parameter default needs Pytho
             window,
             timeout,
             validate,
+            where,
         )
 
     def _init(
@@ -1273,6 +1278,7 @@ class Element(Generic[B]):  # noqa: UP046  (a type-parameter default needs Pytho
         window: Window | None,
         timeout: float | None,
         validate: bool = True,
+        where: Mapping[str, WhereValue] | None = None,
     ) -> None:
         __tracebackhide__ = True
         if within is not None and (
@@ -1297,6 +1303,7 @@ class Element(Generic[B]):  # noqa: UP046  (a type-parameter default needs Pytho
             class_name=class_name,
             index=index,
             depth=depth,
+            where=normalize_where(where, {}),
         )
         self.name: str | None = None
         self.owner: type | None = None
@@ -1350,10 +1357,20 @@ class Elements(Element[BoundElement]):
         within: _AnyElement | None = None,
         window: Window | None = None,
         timeout: float | None = None,
+        where: Mapping[str, WhereValue] | None = None,
     ) -> None:
         __tracebackhide__ = True
         self._init(
-            automation_id, name, control_type, class_name, None, depth, within, window, timeout
+            automation_id,
+            name,
+            control_type,
+            class_name,
+            None,
+            depth,
+            within,
+            window,
+            timeout,
+            where=where,
         )
 
     @overload  # type: ignore[override]

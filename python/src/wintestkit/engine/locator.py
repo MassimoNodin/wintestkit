@@ -13,6 +13,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from typing import Any, Literal, cast
 
+from wintestkit.engine.properties import Where, normalize_where
 from wintestkit.uia.constants import CONTROL_TYPES, normalize_control_type
 
 Matcher = str | re.Pattern[str]
@@ -74,6 +75,39 @@ def _check_unknown_keys(kind: str, data: Mapping[str, Any], allowed: set[str]) -
         raise ValueError(f"unknown {kind} key(s): {', '.join(unknown)}")
 
 
+def describe_where(where: Where) -> list[str]:
+    parts: list[str] = []
+    for key, value in where:
+        rendered = (
+            describe_matcher(value) if isinstance(value, str | re.Pattern) else json.dumps(value)
+        )
+        parts.append(f"{key}={rendered}")
+    return parts
+
+
+def where_to_data(where: Where) -> dict[str, Any]:
+    return {
+        key: matcher_to_data(value) if isinstance(value, str | re.Pattern) else value
+        for key, value in where
+    }
+
+
+def where_from_data(data: Any) -> Where:
+    if not isinstance(data, Mapping):
+        raise ValueError("where must be an object")
+    return normalize_where(
+        {
+            key: matcher_from_data(value) if isinstance(value, Mapping) else value
+            for key, value in cast("Mapping[str, Any]", data).items()
+        },
+        {},
+    )
+
+
+def taken_properties(**values: tuple[str, Any]) -> dict[str, str]:
+    return {key: value[0] for key, value in values.items() if value[1] is not None}
+
+
 def _check_index(name: str, value: int | None, minimum: int = 0) -> None:
     if value is None:
         return
@@ -92,9 +126,18 @@ class WindowLocator:
     class_name: Matcher | None = None
     automation_id: Matcher | None = None
     index: int | None = None
+    where: Where = ()
 
     def __post_init__(self) -> None:
         _check_index("window index", self.index)
+        object.__setattr__(self, "where", normalize_where(dict(self.where), self.taken()))
+
+    def taken(self) -> dict[str, str]:
+        return taken_properties(
+            Name=("title", self.title),
+            ClassName=("class_name", self.class_name),
+            AutomationId=("automation_id", self.automation_id),
+        )
 
     def is_empty(self) -> bool:
         return (
@@ -103,6 +146,7 @@ class WindowLocator:
             and self.class_name is None
             and self.automation_id is None
             and self.index is None
+            and not self.where
         )
 
     def describe(self) -> str:
@@ -117,10 +161,13 @@ class WindowLocator:
             parts.append(f"id={describe_matcher(self.automation_id)}")
         if self.index is not None:
             parts.append(f"index={self.index}")
+        parts.extend(describe_where(self.where))
         return f"Window[{', '.join(parts)}]" if parts else "Window"
 
     def to_dict(self) -> dict[str, Any]:
         data: dict[str, Any] = {}
+        if self.where:
+            data["where"] = where_to_data(self.where)
         if self.title is not None:
             data["title"] = matcher_to_data(self.title)
         if self.process is not None:
@@ -136,7 +183,9 @@ class WindowLocator:
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> WindowLocator:
         _check_unknown_keys(
-            "window locator", data, {"title", "process", "className", "automationId", "index"}
+            "window locator",
+            data,
+            {"title", "process", "className", "automationId", "index", "where"},
         )
         return cls(
             title=matcher_from_data(data["title"]) if "title" in data else None,
@@ -146,6 +195,7 @@ class WindowLocator:
                 matcher_from_data(data["automationId"]) if "automationId" in data else None
             ),
             index=data.get("index"),
+            where=where_from_data(data["where"]) if "where" in data else (),
         )
 
 
@@ -201,8 +251,10 @@ class Locator:
     within: Locator | None = None
     window: WindowLocator | None = None
     item: ItemSelector | None = None
+    where: Where = ()
 
     def __post_init__(self) -> None:
+        object.__setattr__(self, "where", normalize_where(dict(self.where), self.taken()))
         if self.control_type is not None:
             object.__setattr__(self, "control_type", normalize_control_type(self.control_type))
         _check_index("index", self.index)
@@ -217,6 +269,15 @@ class Locator:
             and self.name is None
             and self.control_type is None
             and self.class_name is None
+            and not self.where
+        )
+
+    def taken(self) -> dict[str, str]:
+        return taken_properties(
+            Name=("name", self.name),
+            ClassName=("class_name", self.class_name),
+            AutomationId=("automation_id", self.automation_id),
+            ControlType=("control_type", self.control_type),
         )
 
     def chain(self) -> list[Locator]:
@@ -272,6 +333,7 @@ class Locator:
             parts.append(f"index={self.index}")
         if self.depth is not None:
             parts.append(f"depth={self.depth}")
+        parts.extend(describe_where(self.where))
         head = self.control_type or "*"
         text = f"{head}[{', '.join(parts)}]" if parts else head
         if include_item and self.item is not None:
@@ -287,6 +349,8 @@ class Locator:
 
     def to_dict(self) -> dict[str, Any]:
         data: dict[str, Any] = {}
+        if self.where:
+            data["where"] = where_to_data(self.where)
         if self.automation_id is not None:
             data["automationId"] = matcher_to_data(self.automation_id)
         if self.name is not None:
@@ -322,6 +386,7 @@ class Locator:
                 "within",
                 "window",
                 "item",
+                "where",
             },
         )
         return cls(
@@ -336,4 +401,5 @@ class Locator:
             within=cls.from_dict(data["within"]) if "within" in data else None,
             window=WindowLocator.from_dict(data["window"]) if "window" in data else None,
             item=ItemSelector.from_dict(data["item"]) if "item" in data else None,
+            where=where_from_data(data["where"]) if "where" in data else (),
         )

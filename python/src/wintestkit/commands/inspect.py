@@ -69,9 +69,11 @@ def _ancestors(element: UIAElement) -> list[UIAElement]:
 def run(args: argparse.Namespace) -> int:
     from wintestkit.engine import treedump
     from wintestkit.engine.locator import match_value
+    from wintestkit.engine.properties import inspection_values
     from wintestkit.uia.element import from_point
 
-    app = common.attach_app(common.load(args))
+    cfg = common.load(args)
+    app = common.attach_app(cfg)
     if args.at is not None:
         element = from_point(*args.at)
         if element is None or element.process_id not in app.pids:
@@ -84,11 +86,17 @@ def run(args: argparse.Namespace) -> int:
         ancestors = [parent.info(with_patterns=True) for parent in _ancestors(element)]
         if args.json:
             common.print_json(
-                {"element": info.to_dict(), "ancestors": [parent.to_dict() for parent in ancestors]}
+                {
+                    "element": info.to_dict(),
+                    "ancestors": [parent.to_dict() for parent in ancestors],
+                    "properties": inspection_values(element, cfg.property_aliases),
+                }
             )
         else:
             print(treedump.format_node(info))
             print("Patterns: " + (", ".join(info.patterns or ()) or "none"))
+            for key, value in inspection_values(element, cfg.property_aliases).items():
+                print(f"{key}: {value}")
             for depth, parent in enumerate(ancestors, start=1):
                 print("  " * depth + treedump.format_node(parent))
         return common.EXIT_OK
@@ -103,8 +111,16 @@ def run(args: argparse.Namespace) -> int:
     else:
         windows = [app.main_window()]
     if args.json:
-        trees = [treedump.dump_json(window, max_depth=args.depth) for window in windows]
+        trees = [
+            treedump.dump_json(window, max_depth=args.depth, property_aliases=cfg.property_aliases)
+            for window in windows
+        ]
         common.print_json({"windows": trees} if args.all_windows else trees[0])
     else:
-        print("\n\n".join(treedump.dump(window, max_depth=args.depth) for window in windows))
+        print(
+            "\n\n".join(
+                treedump.dump(window, max_depth=args.depth, property_aliases=cfg.property_aliases)
+                for window in windows
+            )
+        )
     return common.EXIT_OK

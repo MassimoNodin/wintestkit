@@ -83,10 +83,12 @@ _LOCATOR_KEYS = {
     "class_name": "className",
     "index": "index",
     "depth": "depth",
+    "where": "where",
 }
 _WINDOW_KEYS = {
     "title": "title",
     "process": "process",
+    "where": "where",
     "class_name": "className",
     "automation_id": "automationId",
     "index": "index",
@@ -727,6 +729,46 @@ def _matcher(node: ast.expr) -> Any:
     return value if isinstance(value, str) or value is None else _NOT_LITERAL
 
 
+def _where_data(node: ast.expr) -> Any:
+    if isinstance(node, ast.Constant) and node.value is None:
+        return None
+    if not isinstance(node, ast.Dict):
+        return _NOT_LITERAL
+    data: dict[str, Any] = {}
+    for key_node, value_node in zip(node.keys, node.values, strict=True):
+        if key_node is None:
+            return _NOT_LITERAL
+        key = _literal(key_node)
+        if not isinstance(key, str) or not key:
+            return _NOT_LITERAL
+        if isinstance(value_node, ast.Constant) and isinstance(
+            value_node.value, str | bool | int | float
+        ):
+            value = value_node.value
+        elif isinstance(value_node, ast.UnaryOp):
+            try:
+                value = ast.literal_eval(value_node)
+            except (ValueError, TypeError, SyntaxError):
+                return _NOT_LITERAL
+            if not isinstance(value, int | float):
+                return _NOT_LITERAL
+        else:
+            value = _matcher(value_node)
+            if value is _NOT_LITERAL or value is None:
+                return _NOT_LITERAL
+        if key == "ControlType" and isinstance(value, str):
+            with contextlib.suppress(ValueError):
+                value = normalize_control_type(value)
+        data[key] = value
+    return data
+
+
+def _locator_value(key: str, node: ast.expr) -> Any:
+    if key == "where":
+        return _where_data(node)
+    return _matcher(node) if key in _MATCHER_KEYS else _literal(node)
+
+
 def _window_data(call: ast.Call) -> tuple[dict[str, Any], bool]:
     data: dict[str, Any] = {}
     dynamic = False
@@ -736,7 +778,7 @@ def _window_data(call: ast.Call) -> tuple[dict[str, Any], bool]:
             if keyword.arg != "timeout":
                 dynamic = dynamic or keyword.arg is None or keyword.arg not in _WINDOW_KEYS
             continue
-        value = _matcher(keyword.value) if key in _MATCHER_KEYS else _literal(keyword.value)
+        value = _locator_value(key, keyword.value)
         if value is _NOT_LITERAL or (key == "index" and not isinstance(value, int | None)):
             dynamic = True
         elif value is not None:
@@ -772,7 +814,7 @@ def _build(
             _resolve_window(keyword.value, built, cls, index)
         elif arg in _LOCATOR_KEYS:
             key = _LOCATOR_KEYS[arg]
-            value = _matcher(keyword.value) if key in _MATCHER_KEYS else _literal(keyword.value)
+            value = _locator_value(key, keyword.value)
             if value is _NOT_LITERAL or (
                 key in ("index", "depth") and not isinstance(value, int | None)
             ):

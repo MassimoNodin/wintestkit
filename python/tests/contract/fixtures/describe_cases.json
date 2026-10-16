@@ -1,5 +1,18 @@
 [
   {
+    "locator": {
+      "where": { "HelpText": "Save", "IsEnabled": true, "RangeValueValue": 2.5 }
+    },
+    "describe": "*[HelpText=\"Save\", IsEnabled=true, RangeValueValue=2.5]"
+  },
+  {
+    "locator": {
+      "where": { "ClrFullClassName": { "regex": "AddressBox$", "flags": "i" } },
+      "window": { "where": { "FrameworkId": "WPF" } }
+    },
+    "describe": "Window[FrameworkId=\"WPF\"] >> *[ClrFullClassName=/AddressBox$/i]"
+  },
+  {
     "locator": { "controlType": "Button", "name": "Sign in" },
     "describe": "Button[name=\"Sign in\"]"
   },

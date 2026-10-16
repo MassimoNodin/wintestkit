@@ -1,5 +1,7 @@
 # Locators for WPF
 
+For additional UIA properties and TestComplete aliases, see [property matching](property-matching.md).
+
 ## Strict matching
 
 Every `Element` locator must match **exactly one** control. When nothing matches, WinTestKit waits

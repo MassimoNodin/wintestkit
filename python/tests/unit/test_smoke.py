@@ -1,5 +1,6 @@
 """Smoke tests for the package and its entry points."""
 
+import re
 import subprocess
 import sys
 
@@ -10,12 +11,12 @@ from wintestkit.cli import main
 
 
 def test_version() -> None:
-    assert wintestkit.__version__ == "0.1.0"
+    assert re.fullmatch(r"\d+\.\d+\.\d+", wintestkit.__version__)
 
 
 def test_cli_version_flag(capsys: pytest.CaptureFixture[str]) -> None:
     assert main(["--version"]) == 0
-    assert capsys.readouterr().out == "wintestkit 0.1.0\n"
+    assert capsys.readouterr().out == f"wintestkit {wintestkit.__version__}\n"
 
 
 def test_cli_without_a_command_prints_help(capsys: pytest.CaptureFixture[str]) -> None:
@@ -34,5 +35,5 @@ def test_module_entry_point() -> None:
         check=False,
     )
     assert result.returncode == 0
-    assert result.stdout == "wintestkit 0.1.0\n"
+    assert result.stdout == f"wintestkit {wintestkit.__version__}\n"
     assert result.stderr == ""

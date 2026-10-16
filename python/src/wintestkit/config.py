@@ -54,6 +54,7 @@ _TOP_LEVEL_KEYS = {
     "highlight_actions",
     "slow_mo_ms",
     "python_paths",
+    "property_aliases",
 }
 _APP_KEYS = {"path", "args", "cwd", "env", "process", "startup_timeout", "close_timeout"}
 
@@ -103,6 +104,7 @@ class WtkConfig:
     highlight_actions: bool
     slow_mo_ms: int
     python_paths: tuple[Path, ...]
+    property_aliases: Mapping[str, str] = field(default_factory=lambda: {})
 
 
 # -- project discovery ----------------------------------------------------------------------------
@@ -193,6 +195,42 @@ def _string_dict(key: str, value: Any) -> dict[str, str]:
     ):
         raise _fail(key, f"expected a table of strings, got {value!r}")
     return dict(cast("Mapping[str, str]", value))
+
+
+def _property_aliases(value: Any) -> dict[str, str]:
+    """Alias -> UIA property name; an alias must not shadow a real UIA property name."""
+    from wintestkit.engine.properties import SUPPORTED
+    from wintestkit.uia.constants import PROPERTY_IDS
+
+    key = "property_aliases"
+    if not isinstance(value, Mapping):
+        raise _fail(key, f"expected a table of alias: UIA property name, got {value!r}")
+    aliases: dict[str, str] = {}
+    for alias, target in cast("Mapping[Any, Any]", value).items():
+        if not isinstance(alias, str) or not alias or not isinstance(target, str):
+            raise _fail(key, f"expected alias: UIA property name pairs, got {alias!r}: {target!r}")
+        if alias in SUPPORTED or alias in PROPERTY_IDS:
+            raise _fail(key, f"{alias!r} is a UIA property name and cannot be used as an alias")
+        if target not in SUPPORTED:
+            raise _fail(
+                key,
+                f"{alias!r} maps to unsupported property {target!r}; "
+                f"supported: {', '.join(SUPPORTED)}",
+            )
+        aliases[alias] = target
+    return aliases
+
+
+def _layer(values: dict[str, Any], layer: Mapping[str, Any]) -> None:
+    """Apply one configuration layer; ``property_aliases`` merge instead of replacing."""
+    previous = values.get("property_aliases")
+    added = layer.get("property_aliases")
+    values.update(layer)
+    if isinstance(previous, Mapping) and isinstance(added, Mapping):
+        values["property_aliases"] = {
+            **cast("Mapping[str, Any]", previous),
+            **cast("Mapping[str, Any]", added),
+        }
 
 
 def _flatten(table: Mapping[str, Any]) -> dict[str, Any]:
@@ -312,20 +350,20 @@ def load_config(start: Path | None = None, overrides: Mapping[str, Any] | None =
     if found:
         data = _read_pyproject(root / "pyproject.toml") or {}
         table = _wtk_table(data) or {}
-        values.update(_flatten(table))
+        _layer(values, _flatten(table))
         shared = _flatten(_read_yaml(root / "wintestkit.yaml"))
         if "app.path" in shared:
             raise ConfigError(
                 "Store app.path in ignored wintestkit.local.yaml, not wintestkit.yaml"
             )
-        values.update(shared)
+        _layer(values, shared)
         local_toml = _read_pyproject(root / "wintestkit.local.toml") or {}
-        values.update(_flatten(_wtk_table(local_toml) or {}))
-        values.update(_flatten(_read_yaml(root / "wintestkit.local.yaml")))
+        _layer(values, _flatten(_wtk_table(local_toml) or {}))
+        _layer(values, _flatten(_read_yaml(root / "wintestkit.local.yaml")))
     values.update(_environment_values(os.environ))
     if overrides:
         _check_override_keys(overrides)
-        values.update({k: v for k, v in overrides.items() if v is not None})
+        _layer(values, {k: v for k, v in overrides.items() if v is not None})
 
     launch = _enum("launch", values.get("launch", "per-session"), LAUNCH_MODES)
     app = _build_app(root, values)
@@ -353,4 +391,5 @@ def load_config(start: Path | None = None, overrides: Mapping[str, Any] | None =
         highlight_actions=_boolean("highlight_actions", values.get("highlight_actions", False)),
         slow_mo_ms=_non_negative_int("slow_mo_ms", values.get("slow_mo_ms", 0)),
         python_paths=tuple(_resolve_path(root, p) for p in python_paths),
+        property_aliases=_property_aliases(values.get("property_aliases", {})),
     )

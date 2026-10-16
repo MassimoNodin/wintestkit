@@ -18,6 +18,14 @@ const matcher = (value: Matcher): string =>
   typeof value === "string"
     ? JSON.stringify(value)
     : "/" + value.regex + "/" + (value.flags ?? "");
+const whereParts = (where: LocatorData["where"]): string[] =>
+  Object.entries(where ?? {}).map(
+    ([key, value]) =>
+      key + "=" +
+      (typeof value === "boolean" || typeof value === "number"
+        ? JSON.stringify(value)
+        : matcher(value)),
+  );
 export function describeWindow(window: WindowLocatorData): string {
   const parts: string[] = [];
   if (window.title !== undefined) parts.push("title=" + matcher(window.title));
@@ -28,6 +36,7 @@ export function describeWindow(window: WindowLocatorData): string {
   if (window.process !== undefined)
     parts.push("process=" + JSON.stringify(window.process));
   if (window.index !== undefined) parts.push("index=" + window.index);
+  parts.push(...whereParts(window.where));
   return "Window" + (parts.length ? "[" + parts.join(", ") + "]" : "");
 }
 export function describeLocator(locator: LocatorData): string {
@@ -39,6 +48,7 @@ export function describeLocator(locator: LocatorData): string {
     parts.push("class=" + matcher(locator.className));
   if (locator.index !== undefined) parts.push("index=" + locator.index);
   if (locator.depth !== undefined) parts.push("depth=" + locator.depth);
+  parts.push(...whereParts(locator.where));
   let result =
     (locator.controlType ?? "*") +
     (parts.length ? "[" + parts.join(", ") + "]" : "");

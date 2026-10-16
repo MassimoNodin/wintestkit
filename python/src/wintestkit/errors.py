@@ -60,6 +60,11 @@ class LocatorError(WtkError):
         return data
 
 
+class InvalidLocatorError(WtkError):
+    """A locator cannot be evaluated: it names a property that is neither a UIA property nor a
+    configured alias, or gives a value of the wrong type for it."""
+
+
 class ElementNotFoundError(LocatorError):
     """No element matched the locator."""
 

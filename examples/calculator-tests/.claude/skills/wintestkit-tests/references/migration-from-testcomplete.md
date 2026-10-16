@@ -14,7 +14,7 @@ scripts or keyword tests. Output: pages, components, flows, tests.
 | A leaf (button, edit, ...) | a typed element on the page or component |
 | Alias | the attribute name (`customer.address.street`) |
 | `WPFControlName` | `automation_id` (usually; verify in Spy) |
-| `ClrFullClassName` | `class_name`, **short name only**; see below |
+| `ClrFullClassName` | `where={"ClrFullClassName": ...}` with a configured UIA alias; see below |
 | `WPFControlText`, `Content`, `Caption` | `name` |
 | ordinal number | `index` (0-based; avoid) |
 | mapped parent chain | the component root; never a `within=` chain |
@@ -29,16 +29,20 @@ scripts or keyword tests. Output: pages, components, flows, tests.
 
 ## ClrFullClassName
 
-UIA exposes only the short WPF type name as `ClassName`. A mapping like
-`ClrFullClassName = "Acme.Views.AddressBox"` becomes `class_name="AddressBox"`. If the namespace
-was there to tell two same-named controls apart:
+Do not translate a full .NET name directly to `class_name=`: UIA `ClassName` is commonly only a
+short name. Preserve namespace identity by exposing the full name in an existing UIA property
+(for example `ItemStatus` in a test build), then configure:
 
-1. If they are different boxes, give each its own component (or a mount with `root=` that differs
-   by `within=` a named container of the window).
-2. If they are siblings in one container, scope with that container (the component root).
-3. As a last resort use `index=` with a comment saying which control it is.
+```yaml
+property_aliases:
+  ClrFullClassName: ItemStatus
+```
 
-Never silently drop the namespace and hope: strict matching fails on ambiguity, which is the signal.
+Declare `Element(where={"ClrFullClassName": "Acme.Views.AddressBox"})`, or use a compiled regex
+for a pattern. Aliases only rename UIA properties; they cannot read arbitrary .NET properties.
+Verify the value in Spy or `wtk inspect` before migrating. If the application cannot expose it,
+use a verified short `class_name` and scope to a distinct component/container; never silently drop
+the namespace or add an index to hide ambiguity.
 
 ## Procedure
 
