@@ -152,6 +152,39 @@ def test_check_json_and_exit_status(
     assert json.loads(capsys.readouterr().out) == {"results": [result.to_dict()]}
 
 
+def test_check_summary_counts_broken_moved_and_exits_nonzero(
+    command_setup: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    results = [
+        CheckResult("found", 0, qualname="Main.ok", locator="OK"),
+        CheckResult("not_found", 0, qualname="Main.nav", locator="Nav", message="No element"),
+        CheckResult(
+            "not_found",
+            0,
+            qualname="Main.moved",
+            locator="Moved",
+            message="No element\nfound in Other",
+        ),
+    ]
+    monkeypatch.setattr(targets, "check_page", lambda *args: results)
+    assert invoke(command_setup, "check", "main.py::Main") == 1
+    lines = capsys.readouterr().out.splitlines()
+    assert lines[1].startswith("✗ Main.nav  No element")
+    assert "    found in Other" in lines
+    assert lines[-1] == "1 found, 2 broken/moved"
+
+
+def test_check_summary_lists_other_errors_and_all_found() -> None:
+    from wintestkit.commands.check import summary
+
+    ok = CheckResult("found", 0, qualname="a")
+    assert summary([ok, ok]) == "2 found, 0 broken/moved"
+    mixed = [ok, CheckResult("ambiguous", 0), CheckResult("error", 0), CheckResult("not_found", 0)]
+    assert summary(mixed) == "1 found, 1 broken/moved, 2 errors"
+
+
 def test_check_human_output_and_no_pages(
     command_setup: dict[str, Any],
     monkeypatch: pytest.MonkeyPatch,

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from collections import Counter
 from typing import TYPE_CHECKING, Any
 
 from wintestkit.commands import common
@@ -31,6 +32,14 @@ def format_results(results: list[CheckResult]) -> str:
     )
 
 
+def summary(results: list[CheckResult]) -> str:
+    """``25 found, 4 broken/moved`` (plus ``, 1 errors`` for ambiguous or failed checks)."""
+    count = Counter(result.status for result in results)
+    line = f"{count['found']} found, {count['not_found']} broken/moved"
+    errors = count["ambiguous"] + count["error"]
+    return f"{line}, {errors} errors" if errors else line
+
+
 def run(args: argparse.Namespace) -> int:
     from wintestkit.targets import ModuleLoader, TargetError, check_page, parse_target
 
@@ -47,5 +56,6 @@ def run(args: argparse.Namespace) -> int:
         common.print_json({"results": [result.to_dict() for result in results]})
     else:
         print(format_results(results))
+        print(summary(results))
     passed = all(result.status == "found" for result in results)
     return common.EXIT_OK if passed else common.EXIT_FAILURE

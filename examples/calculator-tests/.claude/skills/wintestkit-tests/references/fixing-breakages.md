@@ -25,6 +25,13 @@ No element matches Edit#Street in Window "Customer" (waited 5.0s)
 - `declared`: the line that defines the failing element.
 - The same data is in `wtk check --json` (`relocations`), the editor and the HTML report.
 
+## `✗` in `wtk check`
+
+Every `✗` is broken/moved (the summary counts it as such). With `found in …` lines the element
+went there. Without them it was not visible in the current app state, which does not mean it did
+not move: open the dialog or pane where it should exist and re-run `wtk check`, or use the Spy,
+before changing the locator.
+
 ## What to change
 
 | Diagnostic | Change |

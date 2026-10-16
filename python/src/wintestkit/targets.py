@@ -398,6 +398,20 @@ def resolve_target(
 def check_page(
     app: App, loader: ModuleLoader, file: Path, page_name: str | None = None, timeout: float = 0.0
 ) -> list[CheckResult]:
+    """Resolve every element of one page (or every page of ``file``) once, in source order.
+
+    A not-found element is always a failure ("broken/moved"); its message says where it went when
+    the relocation search found it. All searches share one time budget.
+    """
+    from wintestkit.engine import relocate
+
+    with relocate.shared_budget():
+        return _check_page(app, loader, file, page_name, timeout)
+
+
+def _check_page(
+    app: App, loader: ModuleLoader, file: Path, page_name: str | None, timeout: float
+) -> list[CheckResult]:
     """Resolve every element of one page (or every page of ``file``) once, in source order."""
     pages = loader.pages_in(file)
     if not pages:

@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import dataclasses
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Generator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -23,6 +25,7 @@ if TYPE_CHECKING:
     from wintestkit.app import App
 
 RELOCATE_BUDGET = 2.0
+CHECK_BUDGET = 10.0
 MAX_MATCHES = 5
 MAX_WINDOWS = 20
 MAX_ANCESTORS = 3
@@ -49,10 +52,30 @@ def leaf_only(locator: Locator) -> Locator:
     return dataclasses.replace(locator, within=None, window=None, index=None, depth=None, item=None)
 
 
+_shared_deadline: ContextVar[float | None] = ContextVar("wtk_relocate_deadline", default=None)
+
+
+@contextmanager
+def shared_budget(budget: float = CHECK_BUDGET) -> Generator[None]:
+    """Make every search inside the block stop at one common deadline.
+
+    A page check with a missing window or component root would otherwise let each member burn a
+    full ``RELOCATE_BUDGET`` on its own search.
+    """
+    __tracebackhide__ = True
+    token = _shared_deadline.set(_clock() + budget)
+    try:
+        yield
+    finally:
+        _shared_deadline.reset(token)
+
+
 def new_deadline(budget: float = RELOCATE_BUDGET) -> float:
     """The clock reading at which a search that starts now must stop."""
     __tracebackhide__ = True
-    return _clock() + budget
+    own = _clock() + budget
+    shared = _shared_deadline.get()
+    return own if shared is None else min(own, shared)
 
 
 def _ancestor_labels(

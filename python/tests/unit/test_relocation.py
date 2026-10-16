@@ -9,7 +9,7 @@ import pytest
 from fakes import FakeApp, FakeElement
 
 from wintestkit import model, targets
-from wintestkit.commands.check import format_results
+from wintestkit.commands.check import format_results, summary
 from wintestkit.config import load_config
 from wintestkit.engine import query, relocate
 from wintestkit.engine.diagnose import Diagnostic
@@ -280,6 +280,17 @@ def test_search_stops_when_the_budget_runs_out(monkeypatch: pytest.MonkeyPatch) 
     assert ticks[0] <= relocate.RELOCATE_BUDGET + 3  # a few more reads after the deadline
 
 
+def test_shared_budget_caps_every_search_inside_it(monkeypatch: pytest.MonkeyPatch) -> None:
+    now = [100.0]
+    monkeypatch.setattr(relocate, "_clock", lambda: now[0])
+    assert relocate.new_deadline() == 100.0 + relocate.RELOCATE_BUDGET
+    with relocate.shared_budget(budget=1.0):
+        assert relocate.new_deadline() == 101.0
+        now[0] = 100.9
+        assert relocate.new_deadline() == 101.0  # later searches share the same deadline
+    assert relocate.new_deadline() == 100.9 + relocate.RELOCATE_BUDGET
+
+
 def test_only_a_bounded_number_of_windows_is_visited() -> None:
     found = relocate.find_elsewhere(
         many_windows(relocate.MAX_WINDOWS + 10),  # type: ignore[arg-type]
@@ -345,6 +356,32 @@ def test_whole_file_check_skips_mounted_components(
     explicit = targets.check_page(app, loader, file, "Box")
     assert [r.qualname for r in explicit] == ["Box.root", "Box.field"]
     assert loader.get_page(Target(file, "Box")) in loader.mounted_components()
+
+
+def test_not_found_anywhere_is_still_a_failure(
+    project: tuple[ModuleLoader, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    loader, file = project
+
+    def missing(self: Any, timeout: float) -> Any:
+        raise ElementNotFoundError(
+            Diagnostic(
+                kind="not_found",
+                message="No element matches",
+                locator="x",
+                searched_in="w",
+                match_count=0,
+            )
+        )
+
+    monkeypatch.setattr(model.BoundElement, "resolve", missing)
+    monkeypatch.setattr(model.BoundWindow, "resolve", lambda self, timeout: FakeElement("Window"))
+    monkeypatch.setattr(relocate, "find_elsewhere", lambda *args, **kwargs: [])
+    results = targets.check_page(FakeApp([]), loader, file)  # type: ignore[arg-type]
+    broken = [r for r in results if r.status == "not_found"]
+    assert [r.qualname for r in broken] == ["Host.box.root", "Host.box.field"]
+    assert all("found in" not in (r.message or "") for r in broken)
+    assert summary(results) == "1 found, 2 broken/moved"
 
 
 # -- window on a component instance ---------------------------------------------------------------
