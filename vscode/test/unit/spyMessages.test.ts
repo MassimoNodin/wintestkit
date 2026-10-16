@@ -16,11 +16,25 @@ describe("Spy message contract", () => {
     expect(
       parseSpyRequest({ type: "copy", text: "button = Element()" }),
     ).toBeDefined();
+    expect(parseSpyRequest({ type: "ready", showOtherApps: true })).toEqual({
+      type: "ready",
+      showOtherApps: true,
+    });
+    expect(parseSpyRequest({ type: "ready", showOtherApps: "yes" })).toEqual({
+      type: "ready",
+    });
+    expect(parseSpyRequest({ type: "showOtherApps", enabled: false })).toEqual({
+      type: "showOtherApps",
+      enabled: false,
+    });
     for (const invalid of [
       null,
       "pick",
       {},
       { type: "execute" },
+      { type: "launchApp" },
+      { type: "showOtherApps" },
+      { type: "showOtherApps", enabled: "yes" },
       { type: "select", nodeId: 1 },
       { type: "loadProperties", nodeId: 1 },
       { type: "select", nodeId: "x".repeat(513) },

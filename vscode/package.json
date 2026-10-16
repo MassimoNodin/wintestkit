@@ -69,12 +69,26 @@
       {
         "command": "wintestkit.launchApp",
         "title": "Launch App",
-        "category": "WinTestKit"
+        "category": "WinTestKit",
+        "icon": "$(play)"
       },
       {
         "command": "wintestkit.closeApp",
         "title": "Close App",
-        "category": "WinTestKit"
+        "category": "WinTestKit",
+        "icon": "$(debug-stop)"
+      },
+      {
+        "command": "wintestkit.restartApp",
+        "title": "Restart App",
+        "category": "WinTestKit",
+        "icon": "$(debug-restart)"
+      },
+      {
+        "command": "wintestkit.refreshApp",
+        "title": "Refresh App Status",
+        "category": "WinTestKit",
+        "icon": "$(refresh)"
       },
       {
         "command": "wintestkit.restartServer",
@@ -152,16 +166,9 @@
           "name": "Current Setup"
         },
         {
-          "id": "wintestkit.elements",
-          "name": "Pages"
-        },
-        {
-          "id": "wintestkit.flows",
-          "name": "Flows"
-        },
-        {
-          "id": "wintestkit.tests",
-          "name": "Tests"
+          "id": "wintestkit.navigation",
+          "name": "Explorer",
+          "type": "webview"
         },
         {
           "id": "wintestkit.spy",
@@ -171,31 +178,6 @@
       ]
     },
     "viewsWelcome": [
-      {
-        "view": "wintestkit.flows",
-        "contents": "No WinTestKit project found.\n[Initialize Project](command:wintestkit.initProject)",
-        "when": "!wintestkit.hasProject"
-      },
-      {
-        "view": "wintestkit.flows",
-        "contents": "Add reusable Python functions under flows/ to see them here.",
-        "when": "wintestkit.hasProject"
-      },
-      {
-        "view": "wintestkit.tests",
-        "contents": "No WinTestKit project found.\n[Initialize Project](command:wintestkit.initProject)",
-        "when": "!wintestkit.hasProject"
-      },
-      {
-        "view": "wintestkit.tests",
-        "contents": "No tests found. Add pytest tests to your project.",
-        "when": "wintestkit.hasProject"
-      },
-      {
-        "view": "wintestkit.elements",
-        "contents": "No WinTestKit project found.\n[Initialize Project](command:wintestkit.initProject)",
-        "when": "!wintestkit.hasProject"
-      },
       {
         "view": "wintestkit.setup",
         "contents": "[Initialize Project](command:wintestkit.initProject)",
@@ -211,50 +193,62 @@
         },
         {
           "command": "wintestkit.elements.refresh",
-          "when": "view =~ /^wintestkit\\.(elements|flows|tests)$/",
-          "group": "navigation"
-        },
-        {
-          "command": "wintestkit.spy.startPick",
-          "when": "view == wintestkit.spy",
-          "group": "navigation"
-        },
-        {
-          "command": "wintestkit.spy.refresh",
-          "when": "view == wintestkit.spy",
+          "when": "view == wintestkit.navigation",
           "group": "navigation"
         }
       ],
       "view/item/context": [
         {
-          "command": "wintestkit.openSettings",
-          "when": "view == wintestkit.setup && viewItem == current-setup",
-          "group": "inline"
-        },
-        {
-          "command": "wintestkit.tests.run",
-          "when": "view == wintestkit.tests && viewItem =~ /^test(-class|-file|-project)?$/",
+          "command": "wintestkit.launchApp",
+          "when": "view == wintestkit.setup && isWorkspaceTrusted && viewItem == current-setup-stopped-launchable",
           "group": "inline@1"
         },
         {
-          "command": "wintestkit.tests.debug",
-          "when": "view == wintestkit.tests && viewItem =~ /^test(-class|-file|-project)?$/",
+          "command": "wintestkit.closeApp",
+          "when": "view == wintestkit.setup && isWorkspaceTrusted && viewItem =~ /^current-setup-running-/",
+          "group": "inline@1"
+        },
+        {
+          "command": "wintestkit.restartApp",
+          "when": "view == wintestkit.setup && isWorkspaceTrusted && viewItem == current-setup-running-launchable",
           "group": "inline@2"
         },
         {
+          "command": "wintestkit.refreshApp",
+          "when": "view == wintestkit.setup && isWorkspaceTrusted && viewItem =~ /^current-setup/",
+          "group": "inline@3"
+        },
+        {
+          "command": "wintestkit.openSettings",
+          "when": "view == wintestkit.setup && viewItem =~ /^current-setup/",
+          "group": "inline@4"
+        }
+      ],
+      "webview/context": [
+        {
           "command": "wintestkit.highlightElement",
-          "when": "view == wintestkit.elements && viewItem =~ /^(element|window)$/",
-          "group": "inline"
+          "when": "webviewId == 'wintestkit.navigation' && webviewSection =~ /^(element|window)$/",
+          "group": "navigation@1"
         },
         {
           "command": "wintestkit.checkElement",
-          "when": "view == wintestkit.elements && viewItem == element",
-          "group": "inline"
+          "when": "webviewId == 'wintestkit.navigation' && webviewSection == element",
+          "group": "navigation@2"
         },
         {
           "command": "wintestkit.checkPage",
-          "when": "view == wintestkit.elements && viewItem == page",
-          "group": "inline"
+          "when": "webviewId == 'wintestkit.navigation' && webviewSection == page",
+          "group": "navigation@3"
+        },
+        {
+          "command": "wintestkit.tests.run",
+          "when": "webviewId == 'wintestkit.navigation' && webviewSection =~ /^test(-class|-file|-project)?$/",
+          "group": "navigation@1"
+        },
+        {
+          "command": "wintestkit.tests.debug",
+          "when": "webviewId == 'wintestkit.navigation' && webviewSection =~ /^test(-class|-file|-project)?$/",
+          "group": "navigation@2"
         }
       ],
       "commandPalette": [

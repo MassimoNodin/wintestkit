@@ -11,8 +11,9 @@ from fakes import FakeElement
 from wintestkit import targets
 from wintestkit.cli import main
 from wintestkit.commands import common
-from wintestkit.engine import overlay
+from wintestkit.engine import actions, overlay
 from wintestkit.targets import CheckResult, ElementResult, TargetError
+from wintestkit.uia.element import Rect
 
 
 @pytest.fixture
@@ -68,6 +69,28 @@ def test_highlight_json_and_overlay_options(
     assert record["flashes"] == [((record["info"].rect, 25), {"block": True})]
     assert json.loads(capsys.readouterr().out)["element"]["name"] == "OK"
     assert not record["closed"]
+
+
+def test_highlight_raises_window_before_reading_bounds(
+    command_setup: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    record = command_setup
+    live = FakeElement("Button", "OK", rect=None)
+    restored = Rect(4, 5, 60, 20)
+
+    def raise_window(element: Any) -> bool:
+        assert element is live
+        element.rect = restored
+        return False
+
+    monkeypatch.setattr(actions, "bring_to_front", raise_window)
+    monkeypatch.setattr(
+        targets,
+        "resolve_target",
+        lambda *args: ElementResult("found", 1.0, element=live.info(), uia=live),
+    )
+    assert invoke(record, "highlight", "main.py::Main.ok", "--duration", "10") == 0
+    assert record["flashes"] == [((restored, 10), {"block": True})]
 
 
 @pytest.mark.parametrize("status", ["not_found", "ambiguous", "error"])

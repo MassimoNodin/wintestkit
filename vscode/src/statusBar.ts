@@ -2,7 +2,15 @@ import * as vscode from "vscode";
 import type { AppStatusResult } from "./protocol/generated";
 import { ServerManager, type Project } from "./server/serverManager";
 
+export interface ApplicationState {
+  running: boolean;
+  error?: string;
+}
+
 export class StatusBar implements vscode.Disposable {
+  private readonly changed = new vscode.EventEmitter<Project>();
+  readonly onDidChangeApplication = this.changed.event;
+  private readonly applications = new Map<string, ApplicationState>();
   private readonly item = vscode.window.createStatusBarItem(
     vscode.StatusBarAlignment.Left,
     100,
@@ -10,6 +18,7 @@ export class StatusBar implements vscode.Disposable {
   private readonly subscriptions: vscode.Disposable[];
   private readonly timer: ReturnType<typeof setInterval>;
   private updating = false;
+  private pendingRefresh = false;
   private disposed = false;
   constructor(
     private readonly servers: ServerManager,
@@ -48,7 +57,11 @@ export class StatusBar implements vscode.Disposable {
     void this.refresh();
   }
   async refresh(): Promise<void> {
-    if (this.updating || this.disposed) return;
+    if (this.disposed) return;
+    if (this.updating) {
+      this.pendingRefresh = true;
+      return;
+    }
     const project = this.project();
     if (!project || !vscode.workspace.isTrusted) {
       this.item.hide();
@@ -66,8 +79,14 @@ export class StatusBar implements vscode.Disposable {
       const status =
         await connection.client.request<AppStatusResult>("app.status");
       running = status.running;
+      this.applications.set(project.root.toString(), { running });
       this.item.text = `$(beaker) WTK: ${running ? "$(circle-filled) app running" : "$(circle-outline) app stopped"}`;
-    } catch {
+    } catch (error) {
+      this.applications.set(project.root.toString(), {
+        running: false,
+        error: this.servers.state(project) === "not-installed"
+          ? "Python package not installed" : String(error),
+      });
       this.item.text =
         this.servers.state(project) === "not-installed"
           ? "$(beaker) WTK: $(warning) not installed"
@@ -75,19 +94,30 @@ export class StatusBar implements vscode.Disposable {
     } finally {
       this.updating = false;
       if (!this.disposed) {
-        this.item.show();
-        await vscode.commands.executeCommand(
-          "setContext",
-          "wintestkit.appRunning",
-          running,
-        );
+        this.changed.fire(project);
+        if (this.project()?.root.toString() === project.root.toString()) {
+          this.item.show();
+          await vscode.commands.executeCommand(
+            "setContext", "wintestkit.appRunning", running,
+          );
+        } else {
+          this.pendingRefresh = true;
+        }
+        if (this.pendingRefresh) {
+          this.pendingRefresh = false;
+          void this.refresh();
+        }
       }
     }
+  }
+  applicationState(project: Project): ApplicationState | undefined {
+    return this.applications.get(project.root.toString());
   }
   dispose(): void {
     this.disposed = true;
     clearInterval(this.timer);
     this.item.dispose();
+    this.changed.dispose();
     this.subscriptions.forEach((subscription) => subscription.dispose());
   }
 }

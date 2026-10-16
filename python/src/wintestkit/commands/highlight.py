@@ -1,4 +1,4 @@
-"""Resolve a page target and briefly outline its physical bounds."""
+"""Resolve a page target, raise its window, and briefly outline its bounds."""
 
 from __future__ import annotations
 
@@ -62,8 +62,14 @@ def run(args: argparse.Namespace) -> int:
     app = common.attach_app(cfg, launch=args.launch)
     try:
         result = resolve_target(app, loader, target, args.timeout)
-        if result.status == "found" and result.element is not None:
-            rect = result.element.rect
+        if result.status == "found":
+            if result.uia is not None:
+                from wintestkit.engine.actions import bring_to_front
+
+                bring_to_front(result.uia)
+                rect = result.uia.rect
+            else:
+                rect = result.element.rect if result.element is not None else None
             if rect is not None and not rect.is_empty():
                 overlay.flash(rect, args.duration, block=True)
         if args.json:

@@ -1,6 +1,7 @@
 import * as path from "node:path";
 import type {
   DiscoveryResult,
+  ElementHighlightResult,
   LocatorData,
   Matcher,
   TestOutcome,
@@ -14,6 +15,43 @@ export interface LensSpec {
   args: unknown[];
   tooltip: string;
 }
+export type ElementAction = "highlight" | "check";
+export type ActionStatus = ElementHighlightResult | { status: "running" };
+export type ActionFeedback = Partial<Record<ElementAction, ActionStatus>>;
+
+function actionLabel(action: ElementAction, result?: ActionStatus): string {
+  if (!result) return "";
+  if (result.status === "running")
+    return (
+      "$(loading~spin) " +
+      (action === "highlight" ? "Highlighting…" : "Checking…")
+    );
+  if (result.status === "found")
+    return (
+      "$(pass-filled) " +
+      (action === "highlight" ? "Highlighted" : "Check: Found")
+    );
+  if (result.status === "ambiguous")
+    return (
+      "$(warning) " +
+      (action === "highlight" ? "Highlight: " : "Check: ") +
+      (result.diagnostic?.matchCount ?? "Multiple") +
+      " matches"
+    );
+  return (
+    "$(error) " +
+    (action === "highlight" ? "Highlight: " : "Check: ") +
+    (result.status === "not_found" ? "Not found" : "Failed")
+  );
+}
+
+function actionTooltip(
+  result: ActionStatus | undefined,
+  fallback: string,
+): string {
+  if (!result || result.status === "running") return fallback;
+  return result.diagnostic?.message ?? result.message ?? fallback;
+}
 const matcher = (value: Matcher): string =>
   typeof value === "string"
     ? JSON.stringify(value)
@@ -21,7 +59,8 @@ const matcher = (value: Matcher): string =>
 const whereParts = (where: LocatorData["where"]): string[] =>
   Object.entries(where ?? {}).map(
     ([key, value]) =>
-      key + "=" +
+      key +
+      "=" +
       (typeof value === "boolean" || typeof value === "number"
         ? JSON.stringify(value)
         : matcher(value)),
@@ -67,6 +106,7 @@ export function buildLenses(
   discovery: DiscoveryResult,
   file: string,
   lastResults: Map<string, TestOutcome>,
+  feedback: ReadonlyMap<string, ActionFeedback> = new Map(),
 ): LensSpec[] {
   const normalize = (value: string): string => {
     const resolved =
@@ -83,7 +123,13 @@ export function buildLenses(
     args: unknown,
     tooltip: string,
   ) =>
-    lenses.push({ line, title, command, args: command ? [args] : [], tooltip });
+    lenses.push({
+      line,
+      title: title.replace(/(\$\([^)]+\)) /g, "$1\u00a0\u00a0"),
+      command,
+      args: command ? [args] : [],
+      tooltip,
+    });
   for (const page of discovery.pages) {
     if (normalize(page.file) !== normalize(file)) continue;
     add(
@@ -94,25 +140,27 @@ export function buildLenses(
       page.qualname,
     );
     for (const element of page.elements) {
+      const status = feedback.get(element.id);
       const tooltip =
         element.kind === "window"
           ? describeWindow(element.locator.window ?? {})
           : describeLocator(element.locator);
       add(
         element.range.start.line,
-        "$(eye) Highlight " +
-          (element.kind === "window" ? "window" : "element"),
+        actionLabel("highlight", status?.highlight) ||
+          "$(eye) Highlight " +
+            (element.kind === "window" ? "window" : "element"),
         "wintestkit.highlightElement",
         { file, qualname: element.qualname },
-        tooltip,
+        actionTooltip(status?.highlight, tooltip),
       );
       if (element.kind !== "window")
         add(
           element.range.start.line,
-          "$(check) Check",
+          actionLabel("check", status?.check) || "$(check) Check",
           "wintestkit.checkElement",
           { file, qualname: element.qualname },
-          tooltip,
+          actionTooltip(status?.check, tooltip),
         );
     }
   }

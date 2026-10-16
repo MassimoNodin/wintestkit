@@ -11,6 +11,7 @@ import { RpcError } from "../server/jsonrpc";
 import { summarizeChecks } from "./checkStatus";
 import { CheckResultsStore } from "./decorations";
 import { formatDiagnostic, shortElement } from "./diagnostics";
+import type { ActionStatus } from "./lensModel";
 
 export interface ElementTarget {
   file: string;
@@ -19,6 +20,11 @@ export interface ElementTarget {
 export interface PageTarget {
   file: string;
   page: string;
+}
+class AppNotRunningError extends Error {
+  constructor(readonly launch: () => Promise<unknown>) {
+    super("The app isn't running.");
+  }
 }
 export class HighlightCommands implements vscode.Disposable {
   private readonly subscriptions: vscode.Disposable[];
@@ -44,10 +50,22 @@ export class HighlightCommands implements vscode.Disposable {
       ),
     ];
   }
-  private async safe(action: () => Promise<void>): Promise<void> {
+  private async safe(action: () => Promise<void>, retry = true): Promise<void> {
     try {
       await action();
     } catch (error) {
+      if (retry && error instanceof AppNotRunningError) {
+        const choice = await vscode.window.showInformationMessage(
+          error.message,
+          "Launch App",
+        );
+        if (choice === "Launch App")
+          await this.safe(async () => {
+            await error.launch();
+            await action();
+          }, false);
+        return;
+      }
       this.log.error(String(error));
       const choice = await vscode.window.showErrorMessage(
         error instanceof Error ? error.message : String(error),
@@ -73,22 +91,15 @@ export class HighlightCommands implements vscode.Disposable {
     project: Project,
     method: string,
     params: Record<string, unknown>,
-    retry = true,
   ): Promise<Result> {
     const connection = await this.servers.get(project);
     try {
       return await connection.client.request<Result>(method, params);
     } catch (error) {
-      if (retry && error instanceof RpcError && error.code === -32002) {
-        const choice = await vscode.window.showInformationMessage(
-          "The app isn't running.",
-          "Launch App",
+      if (error instanceof RpcError && error.code === -32002)
+        throw new AppNotRunningError(() =>
+          connection.client.request("app.launch"),
         );
-        if (choice) {
-          await connection.client.request("app.launch");
-          return this.request(project, method, params, false);
-        }
-      }
       throw error;
     }
   }
@@ -98,6 +109,19 @@ export class HighlightCommands implements vscode.Disposable {
     const uri = vscode.Uri.file(target.file);
     const project = this.projects.projectFor(uri);
     if (!project) return;
+    const page = this.discovery
+      .get(project)
+      ?.pages.find(
+        (page) =>
+          normalizedPath(page.file) === normalizedPath(target.file) &&
+          page.elements.some((element) => element.qualname === target.qualname),
+      );
+    const element = page?.elements.find(
+      (element) => element.qualname === target.qualname,
+    );
+    const located = page && element ? { project, page, element } : undefined;
+    const pendingStatus: ActionStatus = { status: "running" };
+    if (located) this.checks.setFeedback(located, "highlight", pendingStatus);
     const durationMs = vscode.workspace
       .getConfiguration("wintestkit", uri)
       .get<number>("highlight.durationMs", 1500);
@@ -123,23 +147,12 @@ export class HighlightCommands implements vscode.Disposable {
             () => operation,
           )
         : await operation;
-      const page = this.discovery
-        .get(project)
-        ?.pages.find(
-          (page) =>
-            normalizedPath(page.file) === normalizedPath(target.file) &&
-            page.elements.some(
-              (element) => element.qualname === target.qualname,
-            ),
-        );
-      const element = page?.elements.find(
-        (element) => element.qualname === target.qualname,
-      );
-      if (page && element)
+      if (
+        located &&
+        this.checks.setFeedback(located, "highlight", result, pendingStatus)
+      )
         this.checks.set({
-          project,
-          page,
-          element,
+          ...located,
           result: { ...result, qualname: target.qualname },
         });
       if (result.status === "found" && result.element)
@@ -166,6 +179,19 @@ export class HighlightCommands implements vscode.Disposable {
         if (choice === "Open Spy")
           await vscode.commands.executeCommand("wintestkit.spy.focus");
       }
+    } catch (error) {
+      const result = {
+        status: "error" as const,
+        message: error instanceof Error ? error.message : String(error),
+        durationMs: 0,
+        qualname: target.qualname,
+      };
+      if (
+        located &&
+        this.checks.setFeedback(located, "highlight", result, pendingStatus)
+      )
+        this.checks.set({ ...located, result });
+      throw error;
     } finally {
       if (timer) clearTimeout(timer);
     }
@@ -217,19 +243,56 @@ export class HighlightCommands implements vscode.Disposable {
           page.qualname === target.page,
       );
     if (!page) return;
-    const result = await this.request<PageCheckResult>(project, "page.check", {
-      file: target.file,
-      page: target.page,
-    });
-    for (const checked of result.results) {
-      if (filter && checked.qualname !== filter) continue;
-      const element = page.elements.find(
-        (element) => element.qualname === checked.qualname,
+    const elements = page.elements.filter((element) =>
+      filter ? element.qualname === filter : element.kind !== "window",
+    );
+    const pendingStatus: ActionStatus = { status: "running" };
+    for (const element of elements)
+      this.checks.setFeedback(
+        { project, page, element },
+        "check",
+        pendingStatus,
       );
-      if (element) this.checks.set({ project, page, element, result: checked });
-    }
-    if (!filter) {
-      vscode.window.setStatusBarMessage(summarizeChecks(result.results), 5000);
+    try {
+      const result = await this.request<PageCheckResult>(
+        project,
+        "page.check",
+        {
+          file: target.file,
+          page: target.page,
+        },
+      );
+      for (const element of elements) {
+        const checked = result.results.find(
+          (checked) => checked.qualname === element.qualname,
+        ) ?? {
+          qualname: element.qualname,
+          status: "error" as const,
+          message: "The server returned no check result for this element.",
+          durationMs: 0,
+        };
+        const located = { project, page, element };
+        if (this.checks.setFeedback(located, "check", checked, pendingStatus))
+          this.checks.set({ ...located, result: checked });
+      }
+      if (!filter)
+        vscode.window.setStatusBarMessage(
+          summarizeChecks(result.results),
+          5000,
+        );
+    } catch (error) {
+      for (const element of elements) {
+        const result = {
+          qualname: element.qualname,
+          status: "error" as const,
+          message: error instanceof Error ? error.message : String(error),
+          durationMs: 0,
+        };
+        const located = { project, page, element };
+        if (this.checks.setFeedback(located, "check", result, pendingStatus))
+          this.checks.set({ ...located, result });
+      }
+      throw error;
     }
   }
   dispose(): void {

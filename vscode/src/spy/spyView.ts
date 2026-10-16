@@ -15,19 +15,24 @@ import type {
 import { parseSpyRequest, type SpyRequest, type SpyResponse } from "./messages";
 import { readApplicationIcons } from "./appIcons";
 
+type SpyConnection = { client?: JsonRpcClient; revision: number };
+
 export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
   private view?: vscode.WebviewView;
   private client?: JsonRpcClient;
   private project?: Project;
   private picking = false;
   private appRunning = false;
+  private showOtherApps = false;
   private revision = 0;
+  private scopeRevision = 0;
   private selection = 0;
   private pickRevision = 0;
   private taskId = 0;
   private connecting?: {
     root: string;
-    promise: Promise<JsonRpcClient | undefined>;
+    scopeRevision: number;
+    promise: Promise<SpyConnection>;
   };
   private disposed = false;
   private suggestion?: Suggestion;
@@ -132,6 +137,7 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
       picking: this.picking,
       appRunning: this.appRunning,
       hasProject: !!this.currentProject(),
+      showOtherApps: this.showOtherApps,
     });
     void vscode.commands.executeCommand(
       "setContext",
@@ -228,22 +234,30 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
     if (client) void client.request("spy.stop").catch(() => {});
     this.state();
   }
-  private async connect(): Promise<JsonRpcClient | undefined> {
+  private async connect(): Promise<SpyConnection> {
     const project = this.currentProject();
     if (!project) {
       this.unbind();
       this.project = undefined;
       this.state();
-      return;
+      return { revision: this.revision };
     }
     if (
       this.client &&
       this.project?.root.toString() === project.root.toString()
     )
-      return this.client;
+      return { client: this.client, revision: this.revision };
     const root = project.root.toString();
-    if (this.connecting?.root === root) return this.connecting.promise;
-    const connecting = { root, promise: this.openConnection(project) };
+    if (
+      this.connecting?.root === root &&
+      this.connecting.scopeRevision === this.scopeRevision
+    )
+      return this.connecting.promise;
+    const connecting = {
+      root,
+      scopeRevision: this.scopeRevision,
+      promise: this.openConnection(project),
+    };
     this.connecting = connecting;
     try {
       return await connecting.promise;
@@ -251,14 +265,12 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
       if (this.connecting === connecting) this.connecting = undefined;
     }
   }
-  private async openConnection(
-    project: Project,
-  ): Promise<JsonRpcClient | undefined> {
+  private async openConnection(project: Project): Promise<SpyConnection> {
     this.unbind();
     this.project = project;
     const revision = this.revision;
     const client = (await this.servers.get(project)).client;
-    if (this.disposed || revision !== this.revision) return;
+    if (this.disposed || revision !== this.revision) return { revision };
     this.client = client;
     this.notifications = [
       client.onNotification("spy.hover", (value) =>
@@ -270,8 +282,11 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
       }),
       client.onNotification("spy.picked", (value) => {
         void this.safe(async () => {
-          const picked = value as SpyPickedNotification;
           if (this.client !== client) return;
+          const picked = value as SpyPickedNotification;
+          const selection = ++this.selection;
+          let treeRevision = this.revision;
+          const pickedScope = this.showOtherApps;
           const properties = await this.loading(
             "Inspecting picked object",
             2,
@@ -287,19 +302,23 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
             picked.node.nodeId,
             "details",
           );
-          await this.loading(
+          if (!this.sameReveal(client, treeRevision, selection)) return;
+          const revealed = await this.loading(
             "Revealing picked object",
             properties.ancestors.length + 2,
             async (phase) => {
               const roots = await phase("Reading root windows", () =>
-                client.request<NodeInfo[]>("inspect.roots"),
+                this.requestRoots(client, pickedScope),
               );
-              if (this.client !== client) return;
+              if (!this.sameReveal(client, treeRevision, selection))
+                return false;
+              treeRevision = ++this.revision;
               this.post({ type: "roots", nodes: roots });
               const icons = await phase("Loading application icons", () =>
                 readApplicationIcons(roots.map((node) => node.info.processId)),
               );
-              if (this.client !== client) return;
+              if (!this.sameReveal(client, treeRevision, selection))
+                return false;
               this.post({ type: "rootIcons", icons });
               const rootIndex = properties.ancestors.findIndex((ancestor) =>
                 roots.some((root) => root.nodeId === ancestor.nodeId),
@@ -307,7 +326,8 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
               const ancestors =
                 rootIndex < 0 ? [] : properties.ancestors.slice(rootIndex);
               for (const ancestor of ancestors) {
-                if (this.client !== client) return;
+                if (!this.sameReveal(client, treeRevision, selection))
+                  return false;
                 const nodes = await phase(
                   "Loading " +
                     (ancestor.info.name || ancestor.info.controlType),
@@ -316,13 +336,16 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
                       nodeId: ancestor.nodeId,
                     }),
                 );
-                if (this.client !== client) return;
+                if (!this.sameReveal(client, treeRevision, selection))
+                  return false;
                 this.post({ type: "children", nodeId: ancestor.nodeId, nodes });
               }
+              return true;
             },
             picked.node.nodeId,
           );
-          if (this.client !== client) return;
+          if (!revealed || !this.sameReveal(client, treeRevision, selection))
+            return;
           this.suggestion = picked.suggestion;
           this.post({
             type: "picked",
@@ -348,44 +371,82 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
         });
       }),
     ];
-    return client;
+    return { client, revision };
   }
   async refresh(): Promise<void> {
+    const scopeRevision = this.scopeRevision;
+    const showOtherApps = this.showOtherApps;
     await this.loading("Loading objects", 4, async (phase) => {
-      const client = await phase("Connecting to automation server", () =>
+      const attempt = await phase("Connecting to automation server", () =>
         this.connect(),
       );
-      if (!client) {
+      if (this.disposed || scopeRevision !== this.scopeRevision) return;
+      if (!attempt.client) {
+        if (attempt.revision !== this.revision) return;
         this.post({ type: "roots", nodes: [] });
         return;
       }
+      const client = attempt.client;
       const revision = ++this.revision;
       this.selection++;
       this.suggestion = undefined;
       const status = await phase("Checking application", () =>
         client.request<AppStatusResult>("app.status"),
       );
-      if (this.disposed || revision !== this.revision) return;
+      if (this.disposed || !this.sameScope(scopeRevision, revision)) return;
       const nodes = await phase("Reading root windows", () =>
-        client.request<NodeInfo[]>("inspect.roots"),
+        this.requestRoots(client, showOtherApps),
       );
-      if (this.disposed || revision !== this.revision) return;
+      if (this.disposed || !this.sameScope(scopeRevision, revision)) return;
       this.appRunning = status.running;
       this.state();
       this.post({ type: "roots", nodes });
       const icons = await phase("Loading application icons", () =>
         readApplicationIcons(nodes.map((node) => node.info.processId)),
       );
-      if (this.disposed || revision !== this.revision) return;
+      if (this.disposed || !this.sameScope(scopeRevision, revision)) return;
       this.post({ type: "rootIcons", icons });
     });
   }
+  private sameScope(scopeRevision: number, revision: number): boolean {
+    return scopeRevision === this.scopeRevision && revision === this.revision;
+  }
+  private sameReveal(
+    client: JsonRpcClient,
+    treeRevision: number,
+    selection: number,
+  ): boolean {
+    return (
+      this.client === client &&
+      treeRevision === this.revision &&
+      selection === this.selection
+    );
+  }
+  private invalidateScope(): void {
+    this.scopeRevision++;
+    this.revision++;
+    this.selection++;
+    this.suggestion = undefined;
+  }
+  private requestRoots(
+    client: JsonRpcClient,
+    showOtherApps = this.showOtherApps,
+  ): Promise<NodeInfo[]> {
+    return showOtherApps
+      ? client.request<NodeInfo[]>("inspect.roots", { includeOtherApps: true })
+      : client.request<NodeInfo[]>("inspect.roots");
+  }
+  async refreshForProject(project: Project): Promise<void> {
+    if (this.view?.visible && this.currentProject()?.root.toString() === project.root.toString())
+      await this.safe(() => this.refresh());
+  }
   private async startPick(): Promise<void> {
     await this.loading("Starting picker", 2, async (phase) => {
-      const client = await phase("Connecting to automation server", () =>
+      const attempt = await phase("Connecting to automation server", () =>
         this.connect(),
       );
-      if (!client) return;
+      if (!attempt.client) return;
+      const client = attempt.client;
       const revision = ++this.pickRevision;
       await phase("Starting element picker", () => client.request("spy.start"));
       if (
@@ -405,8 +466,19 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
     if (this.client) await this.client.request("spy.stop");
   }
   private async handle(message: SpyRequest): Promise<void> {
-    if (message.type === "ready" || message.type === "refresh")
+    if (message.type === "ready") {
+      if (typeof message.showOtherApps === "boolean")
+        this.showOtherApps = message.showOtherApps;
+      this.invalidateScope();
       return this.refresh();
+    }
+    if (message.type === "showOtherApps") {
+      if (this.showOtherApps === message.enabled) return;
+      this.showOtherApps = message.enabled;
+      this.invalidateScope();
+      return this.refresh();
+    }
+    if (message.type === "refresh") return this.refresh();
     if (message.type === "pick") return this.startPick();
     if (message.type === "stopPick") return this.stopPick();
     if (message.type === "copy") {
@@ -424,9 +496,7 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
     const nodeId = "nodeId" in message ? message.nodeId : undefined;
     if (message.type === "select") this.suggestion = undefined;
     const title =
-      message.type === "launchApp"
-        ? "Launching application"
-        : message.type === "expand"
+      message.type === "expand"
           ? "Loading children"
           : message.type === "select"
             ? "Inspecting object"
@@ -442,14 +512,9 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
         );
         const selection =
           message.type === "select" ? ++this.selection : this.selection;
-        const client = await connection;
-        if (!client) return;
-        if (message.type === "launchApp") {
-          await phase("Starting application", () =>
-            client.request("app.launch"),
-          );
-          return;
-        }
+        const attempt = await connection;
+        if (!attempt.client) return;
+        const client = attempt.client;
         if (!nodeId) return;
         if (
           (message.type === "select" || message.type === "loadProperties") &&
@@ -457,10 +522,16 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
         )
           return;
         if (message.type === "expand") {
+          const scopeRevision = this.scopeRevision;
+          const treeRevision = this.revision;
           const nodes = await phase("Reading child controls", () =>
             client.request<NodeInfo[]>("inspect.children", { nodeId }),
           );
-          if (this.client === client)
+          if (
+            this.client === client &&
+            scopeRevision === this.scopeRevision &&
+            treeRevision === this.revision
+          )
             this.post({ type: "children", nodeId, nodes });
         } else if (message.type === "highlight") {
           await phase("Highlighting control", () =>
@@ -530,7 +601,6 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
         ? "details"
         : "tree",
     );
-    if (message.type === "launchApp") await this.refresh();
   }
   dispose(): void {
     this.unbind();

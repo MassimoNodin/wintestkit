@@ -5,6 +5,12 @@
   const nodes = new Map();
   const tasks = new Map();
   let appState;
+  const persisted = vscode.getState();
+  let showOtherApps = !!(
+    persisted &&
+    typeof persisted === "object" &&
+    persisted.showOtherApps
+  );
   let rootsLoaded = false;
   let treeHasMatches = false;
   let hasDetails = false;
@@ -73,6 +79,14 @@
     element(target + "-empty").dataset.loading = String(loading);
   };
   const renderStatus = () => {
+    const otherApps = element("other-apps");
+    const running = !!(appState && appState.appRunning);
+    otherApps.hidden = !running;
+    otherApps.setAttribute("aria-pressed", String(showOtherApps));
+    otherApps.title = showOtherApps
+      ? "Hide other apps' objects"
+      : "Show other apps' objects";
+    otherApps.setAttribute("aria-label", otherApps.title);
     const load = element("load-properties");
     load.disabled =
       !hasDetails || fullPropertiesLoading || fullPropertiesLoaded;
@@ -169,7 +183,7 @@
           "tree",
           "window",
           "Application not running",
-          "Use Launch app, then refresh or pick a control to begin.",
+          "Use the app controls in Current Setup, then refresh or pick a control.",
         );
       else
         emptyState(
@@ -275,6 +289,7 @@
     const query = element("search").value.trim().toLowerCase();
     const visit = (parent) => {
       let any = false;
+      let lastVisible;
       for (const item of parent.children) {
         const entry = nodes.get(item.firstElementChild.dataset.nodeId);
         const childMatch = visit(entry.children);
@@ -282,6 +297,7 @@
           !!query &&
           !entry.row.title.toLowerCase().includes(query) &&
           !childMatch;
+        item.classList.remove("last-branch");
         const open = entry.open || (!!query && childMatch);
         entry.children.hidden = !open;
         if (entry.node.hasChildren) {
@@ -293,8 +309,10 @@
             (open ? "Collapse " : "Expand ") + entry.name,
           );
         }
+        if (!item.hidden) lastVisible = item;
         any = any || !item.hidden;
       }
+      if (lastVisible) lastVisible.classList.add("last-branch");
       return any;
     };
     treeHasMatches = visit(element("tree"));
@@ -473,7 +491,12 @@
     for (const entry of nodes.values()) entry.open = false;
     filter();
   });
-  element("launch").addEventListener("click", () => post("launchApp"));
+  element("other-apps").addEventListener("click", () => {
+    showOtherApps = !showOtherApps;
+    vscode.setState({ ...(vscode.getState() || {}), showOtherApps });
+    renderStatus();
+    post("showOtherApps", { enabled: showOtherApps });
+  });
   element("copy").addEventListener("click", () =>
     post("copy", { text: element("code").textContent }),
   );
@@ -583,6 +606,8 @@
       for (const entry of nodes.values()) rootIcon(entry);
     } else if (message.type === "state") {
       appState = message;
+      if (typeof message.showOtherApps === "boolean")
+        showOtherApps = message.showOtherApps;
       picking = message.picking;
       element("pick-label").textContent = picking
         ? "Stop picking"
@@ -590,13 +615,6 @@
       element("pick").setAttribute("aria-pressed", String(picking));
       element("pick").disabled = !message.hasProject;
       element("refresh").disabled = !message.hasProject;
-      element("launch").hidden = message.appRunning || !message.hasProject;
-      element("state").textContent = !message.hasProject
-        ? "No project"
-        : message.appRunning
-          ? "App running"
-          : "App stopped";
-      element("state").classList.toggle("running", message.appRunning);
       hint(
         picking ? "Hover over the app. Ctrl+Click to pick, Esc to cancel." : "",
       );
@@ -739,5 +757,5 @@
     }
   });
   renderStatus();
-  post("ready");
+  post("ready", { showOtherApps });
 })();

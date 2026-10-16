@@ -323,7 +323,11 @@
     },
     "InspectRootsParams": {
       "type": "object",
-      "properties": {},
+      "properties": {
+        "includeOtherApps": {
+          "type": "boolean"
+        }
+      },
       "required": [],
       "additionalProperties": false
     },

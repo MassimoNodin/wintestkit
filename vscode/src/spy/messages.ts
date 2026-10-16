@@ -6,8 +6,15 @@ import type {
 
 export type SpyRequest =
   | {
-      type:
-        "ready" | "pick" | "stopPick" | "refresh" | "launchApp" | "addToPage";
+      type: "pick" | "stopPick" | "refresh" | "addToPage";
+    }
+  | {
+      type: "ready";
+      showOtherApps?: boolean;
+    }
+  | {
+      type: "showOtherApps";
+      enabled: boolean;
     }
   | {
       type: "expand" | "select" | "highlight" | "loadProperties";
@@ -33,6 +40,7 @@ export type SpyResponse =
       picking: boolean;
       appRunning: boolean;
       hasProject: boolean;
+      showOtherApps: boolean;
     }
   | { type: "roots"; nodes: NodeInfo[] }
   | { type: "children"; nodeId: string; nodes: NodeInfo[] }
@@ -61,14 +69,19 @@ export type SpyResponse =
 export function parseSpyRequest(value: unknown): SpyRequest | undefined {
   if (!value || typeof value !== "object") return;
   const message = value as Record<string, unknown>;
+  if (message.type === "ready")
+    return typeof message.showOtherApps === "boolean"
+      ? { type: "ready", showOtherApps: message.showOtherApps }
+      : { type: "ready" };
+  if (message.type === "showOtherApps")
+    return typeof message.enabled === "boolean"
+      ? { type: "showOtherApps", enabled: message.enabled }
+      : undefined;
   if (
-    ["ready", "pick", "stopPick", "refresh", "launchApp", "addToPage"].includes(
-      String(message.type),
-    )
+    ["pick", "stopPick", "refresh", "addToPage"].includes(String(message.type))
   )
     return {
-      type: message.type as
-        "ready" | "pick" | "stopPick" | "refresh" | "launchApp" | "addToPage",
+      type: message.type as "pick" | "stopPick" | "refresh" | "addToPage",
     };
   if (
     ["expand", "select", "highlight", "loadProperties"].includes(

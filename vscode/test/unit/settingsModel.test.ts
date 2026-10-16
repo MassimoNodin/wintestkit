@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   flattenSettings,
   parseSettings,
+  settingFields,
+  settingSections,
   settingsScope,
   updateSetting,
 } from "../../src/settings/model";
@@ -85,6 +87,34 @@ describe("YAML configuration editing", () => {
         "shared",
       ).toJS(),
     ).toEqual({ timeout: 15 });
+  });
+  it("shows only the executable path as a local app-start essential", () => {
+    const local = settingSections("local");
+    expect(local.essentials.map((field) => field.key)).toEqual(["app.path"]);
+    expect(local.advanced.map((section) => section.group)).toEqual([
+      "Application",
+      "Test runs",
+      "Debugging",
+    ]);
+    const keys = [
+      ...local.essentials,
+      ...local.advanced.flatMap((section) => section.fields),
+    ].map((field) => field.key);
+    expect(keys.sort()).toEqual(settingFields.map((field) => field.key).sort());
+  });
+  it("keeps machine-only options out of shared sections", () => {
+    const shared = settingSections("shared");
+    expect(shared.essentials).toEqual([]);
+    const keys = shared.advanced.flatMap((section) =>
+      section.fields.map((field) => field.key),
+    );
+    expect(keys).toContain("timeout");
+    expect(keys).toContain("app.process");
+    for (const field of settingFields.filter((field) => field.localOnly))
+      expect(keys).not.toContain(field.key);
+    expect(shared.advanced.map((section) => section.group)).not.toContain(
+      "Debugging",
+    );
   });
   it("distinguishes shared and ignored local files", () => {
     expect(settingsScope("/project/wintestkit.local.yaml")).toBe("local");

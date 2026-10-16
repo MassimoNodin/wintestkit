@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { buildLenses, describeLocator } from "../../src/editor/lensModel";
 import { formatDiagnostic } from "../../src/editor/diagnostics";
+import type { ActionFeedback, ActionStatus } from "../../src/editor/lensModel";
 import type {
   DiscoveryResult,
   LocatorData,
@@ -16,6 +17,64 @@ const range = (line: number): Range => ({
   end: { line: line + 1, character: 5 },
 });
 describe("editor lens model", () => {
+  const discovery = JSON.parse(
+    readFileSync("../python/tests/contract/fixtures/discovery.json", "utf8"),
+  ) as DiscoveryResult;
+  const page = discovery.pages[0];
+  const element = page.elements.find((element) => element.kind !== "window")!;
+  it.each([
+    ["running", "Highlighting…", "Checking…"],
+    ["found", "Highlighted", "Check: Found"],
+    ["not_found", "Highlight: Not found", "Check: Not found"],
+    ["ambiguous", "Highlight: Multiple matches", "Check: Multiple matches"],
+    ["error", "Highlight: Failed", "Check: Failed"],
+  ] as const)(
+    "shows %s feedback and preserves retry actions",
+    (status, highlight, check) => {
+      const result: ActionStatus =
+        status === "running"
+          ? { status }
+          : { status, durationMs: 1, message: "Details" };
+      const feedback = new Map<string, ActionFeedback>([
+        [element.id, { highlight: result, check: result }],
+      ]);
+      const lenses = buildLenses(discovery, page.file, new Map(), feedback);
+      for (const [command, label] of [
+        ["highlightElement", highlight],
+        ["checkElement", check],
+      ]) {
+        const lens = lenses.find(
+          (lens) =>
+            lens.command === "wintestkit." + command &&
+            (lens.args[0] as { qualname?: string }).qualname ===
+              element.qualname,
+        )!;
+        expect(lens.title).toContain(label);
+        expect(lens.title).toMatch(/^\$\([^)]+\)\u00a0\u00a0\S/);
+        expect(lens.args).toEqual([
+          { file: page.file, qualname: element.qualname },
+        ]);
+        if (status !== "running") expect(lens.tooltip).toBe("Details");
+      }
+    },
+  );
+  it("keeps highlight and check feedback independent", () => {
+    const lenses = buildLenses(
+      discovery,
+      page.file,
+      new Map(),
+      new Map([
+        [element.id, { highlight: { status: "found", durationMs: 1 } }],
+      ]),
+    );
+    expect(
+      lenses.find(
+        (lens) =>
+          lens.line === element.range.start.line &&
+          lens.command === "wintestkit.checkElement",
+      )?.title,
+    ).toBe("$(check)\u00a0\u00a0Check");
+  });
   it.each(cases)("matches the Python locator format: $describe", (fixture) => {
     expect(describeLocator(fixture.locator)).toBe(fixture.describe);
   });
@@ -96,13 +155,14 @@ describe("editor lens model", () => {
     expect(lenses).toHaveLength(11);
     expect(lenses.filter((lens) => lens.line === 2)).toHaveLength(1);
     expect(
-      lenses.find((lens) => lens.title === "$(pass-filled) Passed")?.command,
+      lenses.find((lens) => lens.title === "$(pass-filled)\u00a0\u00a0Passed")
+        ?.command,
     ).toBe("");
     expect(
       lenses.find((lens) => lens.command === "wintestkit.runTest")?.line,
     ).toBe(8);
     expect(
-      lenses.find((lens) => lens.title === "$(play) Run tests"),
+      lenses.find((lens) => lens.title === "$(play)\u00a0\u00a0Run tests"),
     ).toBeDefined();
     expect(buildLenses(result, "C:/elsewhere.py", new Map())).toEqual([]);
   });

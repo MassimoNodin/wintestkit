@@ -65,9 +65,98 @@ small {
     color: var(--vscode-errorForeground);
     border-color: var(--vscode-errorForeground);
 }
+h2 {
+    margin: 28px 0 4px;
+    font-size: 18px;
+    font-weight: 600;
+}
+h3 {
+    margin: 26px 0 0;
+    color: var(--vscode-descriptionForeground);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+}
+.help {
+    margin: 4px 0 0;
+}
 .setting {
     padding: 17px 0;
     border-bottom: 1px solid var(--vscode-panel-border);
+}
+.group .setting:last-child {
+    border-bottom: none;
+}
+.essential {
+    padding-top: 12px;
+}
+.description {
+    margin: 0 0 3px;
+    line-height: 1.5;
+}
+.note {
+    margin-top: 12px;
+    padding: 12px;
+    border: 1px solid var(--vscode-panel-border);
+    border-radius: 3px;
+}
+.note p {
+    margin: 0 0 8px;
+}
+button.link {
+    padding: 0;
+    background: none;
+    color: var(--vscode-textLink-foreground);
+    text-decoration: underline;
+}
+button.link:hover {
+    background: none;
+    color: var(--vscode-textLink-activeForeground);
+}
+.advanced {
+    margin-top: 32px;
+    border-top: 1px solid var(--vscode-panel-border);
+}
+.advanced > summary {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    padding: 16px 0;
+    cursor: pointer;
+    list-style: none;
+}
+.advanced > summary::-webkit-details-marker {
+    display: none;
+}
+.advanced > summary::before {
+    content: "";
+    width: 6px;
+    height: 6px;
+    border-right: 1.5px solid currentColor;
+    border-bottom: 1.5px solid currentColor;
+    transform: rotate(-45deg);
+    transition: transform 0.1s;
+}
+.advanced[open] > summary::before {
+    transform: rotate(45deg);
+}
+.summary-title {
+    font-size: 15px;
+    font-weight: 600;
+}
+.badge {
+    padding: 2px 8px;
+    border-radius: 10px;
+    background: var(--vscode-badge-background);
+    color: var(--vscode-badge-foreground);
+    font-size: 11px;
+}
+@media (prefers-reduced-motion: reduce) {
+    .advanced > summary::before {
+        transition: none;
+    }
 }
 .setting > label {
     display: block;

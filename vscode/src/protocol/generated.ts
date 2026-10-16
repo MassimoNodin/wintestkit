@@ -55,11 +55,6 @@ export type InspectChildrenResult = NodeInfo[];
 export type InspectHighlightResult = null;
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
- * via the `definition` "InspectRootsParams".
- */
-export type InspectRootsParams = Record<string, never>;
-/**
- * This interface was referenced by `ProtocolContracts`'s JSON-Schema
  * via the `definition` "InspectRootsResult".
  */
 export type InspectRootsResult = NodeInfo[];
@@ -641,6 +636,13 @@ export interface InspectPropertiesResult {
     [k: string]: string;
   };
   ancestors: NodeInfo[];
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "InspectRootsParams".
+ */
+export interface InspectRootsParams {
+  includeOtherApps?: boolean;
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema

@@ -43,7 +43,9 @@ uv run wtk --root ../examples/calculator-tests highlight pages/standard.py::Stan
 uv run wtk --root ../examples/calculator-tests check pages/standard.py::StandardPage --json
 ```
 
-`highlight` resolves immediately by default; `--timeout S` enables polling. `--launch` starts
+`highlight` resolves immediately by default; `--timeout S` enables polling. It brings the
+owning window to the foreground before drawing the outline. If Windows denies that, the
+outline is still drawn. `--launch` starts
 the configured app only if it is not running, and closes only an app launched by that command.
 `check` resolves every declared element without waiting. Hidden menu items, collapsed content
 and unrealized collection items can legitimately fail until the UI exposes them. Exit codes

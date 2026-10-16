@@ -24,9 +24,12 @@ def test_sign_in(app):
 ## Features
 
 - **Current Setup and YAML configuration.** See the current application icon/name above
-  Pages and use its gear to open a custom settings editor. Shared defaults live in
-  `wintestkit.yaml`; executable paths and personal overrides stay in Git-ignored
-  `wintestkit.local.yaml`. Save to reload the backend, or open raw YAML for advanced edits.
+  the Explorer and use its gear to open a custom settings editor. **This machine** shows
+  only **Application executable** under **Start the application**, with **Browse…**. Other
+  settings are under collapsed **Advanced options** (**Application**, **Test runs**,
+  **Debugging**). Shared defaults live in `wintestkit.yaml`; the executable and other
+  machine-specific values stay in Git-ignored `wintestkit.local.yaml`. Save to reload the
+  backend, or open raw YAML for settings the form does not show.
 
 - **Highlight and check elements from the editor.** CodeLens actions above every `Element`
   definition flash the matching control on screen or report why it can't be found (no match,
@@ -36,12 +39,14 @@ def test_sign_in(app):
   captured output, parameterized cases and failure details including expected/actual diffs.
   **Run Test** and **Debug Test** CodeLens appear above each test. Debugging uses the Python
   Debugger with normal breakpoints.
-- **Pages, Flows and Tests sections.** Browse page elements nested by `within` containers,
-  reusable flow functions grouped by file, and pytest tests grouped by file and class.
-  Jump to definitions, highlight/check page elements, or run/debug tests inline.
-- **Spy.** Explore the live UI Automation tree, or press **Pick Element** and Ctrl+Click a control
-  in your application. The Spy shows properties, supported patterns and a suggested locator, and
-  **Add to page…** inserts it into a page class for you.
+- **Explorer.** One view, with **Spy** below it, and a **Pages | Flows | Tests** control that
+  remembers the selected tab. Browse page elements nested by `within` containers, reusable flow
+  functions grouped by file, and pytest tests grouped by file and class. Jump to definitions,
+  highlight/check page elements, or run/debug tests inline.
+- **Spy.** Explore the live UI Automation tree. **Pick element** and **Refresh objects** stay in
+  the Spy toolbar. Hold **Ctrl** and click a control, or press **Esc** to cancel. The Spy shows
+  properties, supported patterns and a suggested locator, and **Add to page…** inserts it into a
+  page class for you.
 - **Reports.** Every run writes a self-contained HTML report with steps, screenshots and failure
   diagnostics. After a failing run, a notification opens it; **WinTestKit: Open Last Report** opens
   it any time.
@@ -56,6 +61,11 @@ arrow keys, to resize the panes. Colours follow your VS Code theme.
 Use **Filter loaded objects** to search names, control types, classes and automation
 IDs. Filtering retains matching ancestors but only searches controls already loaded;
 expand branches to load more. **Collapse all** clears the filter and closes branches.
+While the application is running, **Other apps** follows **Collapse all**. It is off by
+default and lists the current application's windows; turn it on to append other desktop
+windows after those. The choice is remembered. **Pick element** and **Refresh objects**
+stay in this toolbar.
+
 The inspector groups properties into Identity, State, Geometry and Automation, with
 raw values under **All properties** and locator quality beside **Suggested locator**.
 Selection first reads only the essential identity, state and geometry information and displays
@@ -79,7 +89,8 @@ Selecting an object or pressing **Highlight** asks the Python backend to bring t
 control's owning application window to the foreground before drawing its outline.
 Child controls raise their containing window; minimized windows are restored. This
 does not click the control or explicitly change its keyboard focus. Activation is
-best-effort: if Windows denies it, highlighting still proceeds. This requires the
+best-effort: if Windows denies it, highlighting still proceeds. CodeLens **Highlight**,
+`wtk highlight` and `Element.highlight()` use the same foreground step. This requires the
 updated Python package as well as the extension; after updating, run
 **WinTestKit: Restart Server**.
 
