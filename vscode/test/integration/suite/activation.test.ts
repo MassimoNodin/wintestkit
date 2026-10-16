@@ -50,6 +50,10 @@ suite("WinTestKit activation", () => {
     assert.ok(
       pages.some((node: { label: string }) => node.label === "ScientificPage"),
     );
+    assert.ok(
+      pages.some((node: { label: string }) => node.label === "NavigationPane"),
+      "components are listed as pages",
+    );
     const flows = api.elements.getChildren(undefined, "flows");
     assert.ok(
       flows.some((node: { children: { label: string }[] }) =>

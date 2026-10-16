@@ -1,8 +1,8 @@
 """The Scientific calculator page."""
 
-from pages.calculator import CalculatorPage
-from wintestkit import Element
+from pages.calculator import CalculatorModePage
+from wintestkit import Button
 
 
-class ScientificPage(CalculatorPage):
-    pi = Element(automation_id="piButton")
+class ScientificPage(CalculatorModePage):
+    pi = Button(automation_id="piButton")

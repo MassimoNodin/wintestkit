@@ -190,6 +190,7 @@ const discovery = {
           },
           withinName: "credentials",
           windowName: "window",
+          elementType: "Button",
           dynamic: false,
         },
       ],

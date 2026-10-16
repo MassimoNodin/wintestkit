@@ -172,6 +172,7 @@ export interface ProtocolContracts {
   AppStatusResult?: AppStatusResult;
   Candidate?: Candidate;
   CheckResult?: CheckResult;
+  ChildPageEntry?: ChildPageEntry;
   CollectError?: CollectError;
   CollectedTest?: CollectedTest;
   Diagnostic?: Diagnostic;
@@ -208,6 +209,7 @@ export interface ProtocolContracts {
   Position?: Position;
   Range?: Range;
   Rect?: Rect;
+  Relocation?: Relocation;
   Results?: Results;
   RunEvent?: RunEvent;
   ShutdownParams?: ShutdownParams;
@@ -330,6 +332,55 @@ export interface Diagnostic {
     | [Candidate, Candidate, Candidate, Candidate]
     | [Candidate, Candidate, Candidate, Candidate, Candidate];
   within?: Diagnostic;
+  /**
+   * @maxItems 5
+   */
+  relocations?:
+    | []
+    | [Relocation]
+    | [Relocation, Relocation]
+    | [Relocation, Relocation, Relocation]
+    | [Relocation, Relocation, Relocation, Relocation]
+    | [Relocation, Relocation, Relocation, Relocation, Relocation];
+  hint?: string;
+  declared?: string;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "Relocation".
+ */
+export interface Relocation {
+  kind: "element" | "component_root";
+  target: string;
+  window: string;
+  path: string;
+  sameWindow?: boolean;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "ChildPageEntry".
+ */
+export interface ChildPageEntry {
+  name: string;
+  pageId: string;
+  range: Range;
+  nameRange: Range;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "Range".
+ */
+export interface Range {
+  start: Position;
+  end: Position;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "Position".
+ */
+export interface Position {
+  line: number;
+  character: number;
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
@@ -382,22 +433,6 @@ export interface TestEntry {
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
- * via the `definition` "Range".
- */
-export interface Range {
-  start: Position;
-  end: Position;
-}
-/**
- * This interface was referenced by `ProtocolContracts`'s JSON-Schema
- * via the `definition` "Position".
- */
-export interface Position {
-  line: number;
-  character: number;
-}
-/**
- * This interface was referenced by `ProtocolContracts`'s JSON-Schema
  * via the `definition` "PageEntry".
  */
 export interface PageEntry {
@@ -409,6 +444,7 @@ export interface PageEntry {
   range: Range;
   nameRange: Range;
   elements: ElementEntry[];
+  children?: ChildPageEntry[];
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
@@ -424,6 +460,10 @@ export interface ElementEntry {
   locator: LocatorData;
   withinName?: string;
   windowName?: string;
+  /**
+   * The class the element is declared with: Element, Elements, a built-in typed element such as ComboBox, or a user-defined subclass of Element. Absent for windows.
+   */
+  elementType?: string;
   dynamic: boolean;
 }
 /**

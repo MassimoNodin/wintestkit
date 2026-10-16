@@ -1,30 +1,39 @@
-"""Shared controls and actions across Calculator modes."""
+"""The Calculator window and the page shared by its calculating modes."""
 
-from wintestkit import Element, Page, Window
+from pages.components.display_controls import DisplayControls
+from pages.components.navigation import NavigationPane
+from pages.components.number_pad import NumberPad
+from pages.components.operators import StandardOperators
+from wintestkit import Page, Text, Window
 
 
-class CalculatorPage(Page):
+class CalculatorWindow(Page):
+    """The one window; what every mode has in common is declared or mounted here."""
+
     window = Window()
 
-    navigation = Element(automation_id="TogglePaneButton")
-    standard_menu_item = Element(automation_id="Standard")
-    scientific_menu_item = Element(automation_id="Scientific")
-    programmer_menu_item = Element(automation_id="Programmer")
-    heading = Element(automation_id="Header")
-    result = Element(automation_id="CalculatorResults")
-    clear = Element(automation_id="clearButton")
-    one = Element(automation_id="num1Button")
-    two = Element(automation_id="num2Button")
-    three = Element(automation_id="num3Button")
-    plus = Element(automation_id="plusButton")
-    equals = Element(automation_id="equalButton")
+    navigation = NavigationPane()
+    heading = Text(automation_id="Header")
+    result = Text(automation_id="CalculatorResults")
+
+
+class CalculatorModePage(CalculatorWindow):
+    """A mode with a keypad: Standard, Scientific and Programmer."""
+
+    number_pad = NumberPad()
+    operators = StandardOperators()
+    display_controls = DisplayControls()
+
+    def clear(self) -> None:
+        self.display_controls.clear.click()
+
+    def add(self, first: int, second: int) -> None:
+        """Calculate ``first + second`` from a cleared display; read the answer from ``result``."""
+        self.clear()
+        self.number_pad.enter(first)
+        self.operators.plus.click()
+        self.number_pad.enter(second)
+        self.operators.equals.click()
 
     def add_one_to(self, number: int) -> None:
-        buttons = {1: self.one, 2: self.two, 3: self.three}
-        if number not in buttons:
-            raise ValueError("This introductory example accepts 1, 2 or 3")
-        self.clear.click()
-        buttons[number].click()
-        self.plus.click()
-        self.one.click()
-        self.equals.click()
+        self.add(number, 1)

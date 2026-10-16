@@ -20,12 +20,24 @@ def test_the_examples_project_validates(validate: Validate) -> None:
     assert len(result.tests) == 4
     assert {flow.name for flow in result.flows} == {"open_page", "tour_calculator"}
     names = {s.name for s in result.pages}
-    assert {"CalculatorPage", "StandardPage", "ScientificPage", "ProgrammerPage"} <= names
-    main = next(s for s in result.pages if s.name == "CalculatorPage")
+    assert {"CalculatorWindow", "StandardPage", "ScientificPage", "ProgrammerPage"} <= names
+    assert {"NavigationPane", "NumberPad", "StandardOperators", "DisplayControls"} <= names
+    main = next(s for s in result.pages if s.name == "CalculatorWindow")
     window = next(e for e in main.elements if e.name == "window")
     assert window.locator == {}
-    navigation = next(e for e in main.elements if e.name == "navigation")
-    assert navigation.locator == {"automationId": "TogglePaneButton"}
+    assert {e.name: e.element_type for e in main.elements if e.name != "window"} == {
+        "heading": "Text",
+        "result": "Text",
+    }
+    assert [child.name for child in main.children] == ["navigation"]
+    pane = next(s for s in result.pages if s.name == "NavigationPane")
+    assert {c.page_id for c in main.children} == {pane.id}
+    toggle = next(e for e in pane.elements if e.name == "toggle")
+    assert toggle.element_type == "Button"
+    assert toggle.locator == {"automationId": "TogglePaneButton"}
+    assert next(e for e in pane.elements if e.name == "standard").element_type == "ListItem"
+    programmer = next(s for s in result.pages if s.name == "ProgrammerPage")
+    assert {child.name for child in programmer.children} >= {"navigation", "number_pad", "radix"}
     assert not any(e.dynamic for s in result.pages for e in s.elements)
 
 
@@ -70,6 +82,9 @@ def test_every_feature_validates(tmp_path: Path, validate: Validate) -> None:
     assert button["dynamic"] is True
     assert button["withinName"] == "g"
     assert button["windowName"] == "window"
+    assert button["elementType"] == "Element"
+    assert next(e for e in page["elements"] if e["name"] == "items")["elementType"] == "Elements"
+    assert "elementType" not in next(e for e in page["elements"] if e["name"] == "window")
 
 
 @pytest.mark.parametrize("source", ["", "# nothing here\n", "x = 1\n"])

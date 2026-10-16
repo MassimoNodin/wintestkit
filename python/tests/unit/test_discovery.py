@@ -733,3 +733,145 @@ def test_performance_of_500_files(tmp_path: Path) -> None:
     warm = discover(tmp_path)
     assert len(warm.tests) == 500 * 3
     assert time.perf_counter() - started < 1.0  # parsed trees come from the cache
+
+
+# -- typed elements -------------------------------------------------------------------------------
+
+
+def test_built_in_typed_elements_report_their_type(tmp_path: Path) -> None:
+    write(
+        tmp_path,
+        "pages/typed.py",
+        """
+        from wintestkit import Button, ComboBox, Element, Elements, Page, Text, Window
+
+        class Typed(Page):
+            window = Window(title="Demo")
+            plain = Element(automation_id="P")
+            many = Elements(control_type="ListItem")
+            save = Button(automation_id="Save", timeout=3)
+            country = ComboBox(automation_id="Country", validate=False)
+            caption: Text = Text(name="Caption", within=plain)
+        """,
+    )
+    (page,) = discover(tmp_path).pages
+    by_name = {e.name: e for e in page.elements}
+    assert {n: e.element_type for n, e in by_name.items()} == {
+        "window": None,
+        "plain": "Element",
+        "many": "Elements",
+        "save": "Button",
+        "country": "ComboBox",
+        "caption": "Text",
+    }
+    assert by_name["save"].kind == "element"
+    assert by_name["save"].locator == {"automationId": "Save"}
+    assert by_name["country"].dynamic is False  # validate= is not a locator property
+    assert by_name["caption"].locator == {"name": "Caption", "within": {"automationId": "P"}}
+    assert "elementType" not in by_name["window"].to_dict()
+    assert by_name["save"].to_dict()["elementType"] == "Button"
+
+
+def test_user_defined_element_types_are_resolved_statically(tmp_path: Path) -> None:
+    write(
+        tmp_path,
+        "controls/date.py",
+        """
+        from wintestkit import BoundControl, Element
+
+        class BoundDatePicker(BoundControl):
+            pass
+
+        class DatePicker(Element[BoundDatePicker]):
+            pass
+
+        class FancyDatePicker(DatePicker):
+            pass
+        """,
+    )
+    write(
+        tmp_path,
+        "controls/__init__.py",
+        "from controls.date import DatePicker as DatePicker, FancyDatePicker\n",
+    )
+    write(
+        tmp_path,
+        "pages/booking.py",
+        """
+        import controls
+        from controls import FancyDatePicker
+        from controls.date import DatePicker
+        from wintestkit import Page, Window
+
+        class NotAnElement:
+            pass
+
+        class Booking(Page):
+            window = Window(title="Booking")
+            start = DatePicker(automation_id="Start")
+            end = FancyDatePicker(automation_id="End", within=start)
+            third = controls.DatePicker(name="Third")
+            other = NotAnElement()
+            unknown = Mystery(name="x")
+        """,
+    )
+    result = discover(tmp_path)
+    assert result.errors == ()
+    page = next(p for p in result.pages if p.name == "Booking")
+    by_name = {e.name: e for e in page.elements}
+    assert set(by_name) == {"window", "start", "end", "third"}
+    assert by_name["start"].element_type == "DatePicker"
+    assert by_name["start"].kind == "element"
+    assert by_name["end"].element_type == "FancyDatePicker"
+    assert by_name["end"].locator == {"automationId": "End", "within": {"automationId": "Start"}}
+    assert by_name["end"].dynamic is False
+    assert by_name["third"].element_type == "DatePicker"
+
+
+def test_a_user_subclass_of_a_built_in_type_and_of_elements(tmp_path: Path) -> None:
+    write(
+        tmp_path,
+        "pages/own.py",
+        """
+        from wintestkit import ComboBox, Elements, Page, Window
+
+        class StateCombo(ComboBox):
+            pass
+
+        class Rows(Elements):
+            pass
+
+        class Own(Page):
+            window = Window(title="Own")
+            state = StateCombo(automation_id="State")
+            rows = Rows(control_type="ListItem")
+        """,
+    )
+    (page,) = discover(tmp_path).pages
+    by_name = {e.name: e for e in page.elements}
+    assert (by_name["state"].kind, by_name["state"].element_type) == ("element", "StateCombo")
+    assert (by_name["rows"].kind, by_name["rows"].element_type) == ("elements", "Rows")
+
+
+def test_a_component_mount_is_not_mistaken_for_an_element(tmp_path: Path) -> None:
+    write(
+        tmp_path,
+        "pages/mount.py",
+        """
+        from wintestkit import Button, Element, Page, Window
+
+        class Box(Page):
+            root = Element(class_name="Box")
+            ok = Button(name="OK")
+
+        class Home(Page):
+            window = Window(title="Home")
+            box = Box()
+        """,
+    )
+    result = discover(tmp_path)
+    home = next(p for p in result.pages if p.name == "Home")
+    assert [e.name for e in home.elements] == ["window"]
+    assert [c.name for c in home.children] == ["box"]
+    box = next(p for p in result.pages if p.name == "Box")
+    assert {e.name: e.element_type for e in box.elements} == {"root": "Element", "ok": "Button"}

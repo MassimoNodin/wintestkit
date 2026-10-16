@@ -411,3 +411,20 @@ def test_internal_errors_hint_at_debug_logging(
     assert "Traceback" not in err
     assert main(["--root", str(project), "--log-level", "DEBUG", "discover"]) == 4
     assert "Traceback" in capsys.readouterr().err
+
+
+def test_streams_are_reconfigured_to_utf8_when_piped(monkeypatch: pytest.MonkeyPatch) -> None:
+    import io
+    import sys
+
+    from wintestkit.cli import _configure_streams
+
+    raw = io.BytesIO()
+    piped = io.TextIOWrapper(raw, encoding="cp1252", errors="strict")
+    monkeypatch.setattr(sys, "stdout", piped)
+    monkeypatch.setattr(sys, "stderr", io.StringIO())  # no reconfigure(): left alone
+    _configure_streams()
+    print("\u2713 \u2717 \u2192 \u203a")
+    piped.flush()
+    assert raw.getvalue().decode("utf-8").strip() == "\u2713 \u2717 \u2192 \u203a"
+    assert piped.errors == "replace"

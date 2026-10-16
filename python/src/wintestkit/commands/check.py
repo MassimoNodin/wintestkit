@@ -22,7 +22,11 @@ def format_results(results: list[CheckResult]) -> str:
     icons = {"found": "\u2713", "ambiguous": "\u26a0", "not_found": "\u2717", "error": "\u2717"}
     return "\n".join(
         f"{icons[result.status]} {result.qualname}  "
-        f"{result.locator if result.status == 'found' else result.message or result.status}"
+        + (
+            result.locator
+            if result.status == "found"
+            else (result.message or result.status).replace("\n", "\n    ")
+        )
         for result in results
     )
 

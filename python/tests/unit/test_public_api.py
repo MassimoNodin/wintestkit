@@ -9,12 +9,36 @@ import wintestkit
 
 EXPECTED = {
     "App",
+    "BoundButton",
+    "BoundCheckBox",
+    "BoundComboBox",
+    "BoundControl",
+    "BoundDataGrid",
     "BoundElement",
     "BoundElements",
+    "BoundListBox",
+    "BoundListItem",
+    "BoundRadioButton",
+    "BoundTabControl",
+    "BoundText",
+    "BoundTextBox",
+    "BoundTreeView",
     "BoundWindow",
+    "Button",
+    "CheckBox",
+    "ComboBox",
+    "DataGrid",
     "Element",
     "Elements",
+    "ListBox",
+    "ListItem",
     "Page",
+    "PageObject",
+    "RadioButton",
+    "TabControl",
+    "Text",
+    "TextBox",
+    "TreeView",
     "Window",
     "WtkConfig",
     "__version__",
@@ -35,11 +59,15 @@ def test_every_public_name_resolves(name: str) -> None:
 
 
 def test_names_point_at_their_implementations() -> None:
-    from wintestkit import app, config, errors, expect, model
+    from wintestkit import app, config, controls, errors, expect, model
 
     assert wintestkit.Page is model.Page
+    assert wintestkit.PageObject is model.PageObject
+    assert model.Page is model.PageObject
     assert not hasattr(model, "Screen")
     assert wintestkit.Element is model.Element
+    assert wintestkit.BoundControl is model.BoundControl
+    assert wintestkit.ComboBox is controls.ComboBox
     assert wintestkit.App is app.App
     assert wintestkit.load_config is config.load_config
     assert wintestkit.WtkConfig is config.WtkConfig

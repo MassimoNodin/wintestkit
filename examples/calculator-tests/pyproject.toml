@@ -26,3 +26,8 @@ screenshots = "on-failure"
 
 [tool.wintestkit.app]
 process = "CalculatorApp.exe"
+
+[tool.pyright]
+include = ["conftest.py", "pages", "flows", "tests"]
+typeCheckingMode = "strict"
+pythonVersion = "3.12"

@@ -30,11 +30,40 @@ uv run pytest --collect-only
 
 ## Structure
 
-- `pages/calculator.py`: shared window, navigation controls and arithmetic actions.
-- `pages/standard.py`, `pages/scientific.py`, `pages/programmer.py`: mode-specific pages.
-- `flows/navigation.py`: ordinary Python helpers that switch pages or tour all three modes.
-- `conftest.py`: fixtures that establish a known starting state.
-- `tests/`: arithmetic and navigation scenarios.
+The suite is the reference implementation of the agent skill in `.claude/skills/wintestkit-tests`
+(canonical copy: `skills/wintestkit-tests` in the repository). Read `SKILL.md` for the rules;
+this is how they look here:
+
+```text
+pages/
+  calculator.py          CalculatorWindow (the one Page, declares the window) and
+                         CalculatorModePage (mounts the keypad components, intent methods)
+  standard.py            StandardPage, ScientificPage, ProgrammerPage: one page per mode,
+  scientific.py          inheriting CalculatorModePage
+  programmer.py
+  components/
+    navigation.py        NavigationPane: root = NavView; open_standard/open_scientific/open_programmer
+    number_pad.py        NumberPad: digits and enter(number)
+    operators.py         StandardOperators: plus, minus, ..., equals
+    display_controls.py  DisplayControls: clear, backspace
+    radix.py             RadixSelection: Programmer's hex/decimal/octal/binary selector
+flows/navigation.py      open_page(app, ScientificPage), tour_calculator(app)
+conftest.py              session app fixture, `standard` fixture, autouse reset
+tests/                   intent calls (`standard.add_one_to(n)`, `open_page`) and `expect(...)`
+```
+
+- Elements are typed (`Button`, `RadioButton`, `Text`); every box that could move is a component
+  with a `root`, mounted once per page (`navigation = NavigationPane()`).
+- Tests never act on elements and never use `getattr`; they use intent methods and flows, and reach
+  into element paths only inside `expect(...)`.
+- Locators were confirmed with `uv run wtk inspect --depth 8` against Windows Calculator. Operator
+  and display-control groups have an AutomationId in Standard and Scientific but only a name in
+  Programmer, so their roots use `control_type="Group"` plus `name`.
+- `uv run wtk check pages/standard.py` (and `scientific.py`, `programmer.py` with that mode
+  open) resolves every element; the three navigation items exist only while the navigation pane is
+  open, so open it first to check them. `uv run wtk discover` lists the pages, components and
+  element types without importing the code.
+- `[tool.pyright]` in `pyproject.toml` type-checks the suite in strict mode.
 
 The VS Code **Run Extension** configuration opens this project. For normal development,
 open this folder in VS Code and select its `.venv` interpreter after running `uv sync`.

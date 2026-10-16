@@ -25,6 +25,7 @@ DiagnosticKind = Literal[
 ]
 
 MAX_CANDIDATES = 5
+MAX_RELOCATIONS = 5
 
 
 @dataclass(frozen=True)
@@ -88,6 +89,38 @@ class Candidate:
 
 
 @dataclass(frozen=True)
+class Relocation:
+    """Where an element (or the root of its component) was found instead.
+
+    ``same_window`` is true for a match in the window the element is declared for (it sits under a
+    different container); otherwise the match is in another window and ``path`` starts with it.
+    """
+
+    kind: Literal["element", "component_root"]
+    target: str
+    window: str
+    path: str
+    same_window: bool = False
+
+    def to_dict(self) -> dict[str, Any]:
+        __tracebackhide__ = True
+        data: dict[str, Any] = {
+            "kind": self.kind,
+            "target": self.target,
+            "window": self.window,
+            "path": self.path,
+        }
+        if self.same_window:
+            data["sameWindow"] = True
+        return data
+
+    @classmethod
+    def from_dict(cls, d: Mapping[str, Any]) -> Relocation:
+        __tracebackhide__ = True
+        return cls(d["kind"], d["target"], d["window"], d["path"], bool(d.get("sameWindow", False)))
+
+
+@dataclass(frozen=True)
 class Diagnostic:
     """Structured explanation of a failed resolution (mirrors the protocol ``Diagnostic``)."""
 
@@ -98,6 +131,9 @@ class Diagnostic:
     match_count: int
     candidates: tuple[Candidate, ...] = ()
     within: Diagnostic | None = None
+    relocations: tuple[Relocation, ...] = ()
+    hint: str | None = None
+    declared: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         __tracebackhide__ = True
@@ -111,6 +147,12 @@ class Diagnostic:
         }
         if self.within is not None:
             data["within"] = self.within.to_dict()
+        if self.relocations:
+            data["relocations"] = [r.to_dict() for r in self.relocations[:MAX_RELOCATIONS]]
+        if self.hint is not None:
+            data["hint"] = self.hint
+        if self.declared is not None:
+            data["declared"] = self.declared
         return data
 
     @classmethod
@@ -124,7 +166,35 @@ class Diagnostic:
             match_count=d["matchCount"],
             candidates=tuple(Candidate.from_dict(c) for c in d["candidates"]),
             within=cls.from_dict(d["within"]) if d.get("within") else None,
+            relocations=tuple(Relocation.from_dict(r) for r in d.get("relocations", ())),
+            hint=d.get("hint"),
+            declared=d.get("declared"),
         )
+
+    def relocation_lines(self) -> list[str]:
+        """The "found elsewhere" explanation (empty unless a relocation search found something)."""
+        __tracebackhide__ = True
+        if not self.relocations:
+            return []
+        lines: list[str] = []
+        roots: dict[str, list[str]] = {}
+        for found in self.relocations:
+            if found.kind == "element" and found.same_window:
+                lines.append(
+                    f"  → found in the same window under a different container: {found.path}"
+                )
+            elif found.kind == "element":
+                lines.append(f"  → found in another window: {found.path}")
+            else:
+                roots.setdefault(found.target, []).append(found.window)
+        for target, windows in roots.items():
+            where = ", ".join(dict.fromkeys(windows))
+            lines.append(f"  → the component root {target} was found in: {where}")
+        if self.hint:
+            lines.append(f"  hint: {self.hint}")
+        if self.declared:
+            lines.append(f"  declared: {self.declared}")
+        return lines
 
     def format(self) -> str:
         """Multi-line human-readable text for the CLI, pytest failures and the editor."""
@@ -133,6 +203,7 @@ class Diagnostic:
         if self.candidates:
             lines.append("  Candidates:")
             lines.extend(c.format(i) for i, c in enumerate(self.candidates[:MAX_CANDIDATES], 1))
+        lines.extend(self.relocation_lines())
         return "\n".join(lines)
 
 

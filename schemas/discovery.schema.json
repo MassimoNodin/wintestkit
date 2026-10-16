@@ -128,6 +128,10 @@
           "items": {
             "$ref": "discovery.schema.json#/$defs/ElementEntry"
           }
+        },
+        "children": {
+          "type": "array",
+          "items": { "$ref": "discovery.schema.json#/$defs/ChildPageEntry" }
         }
       },
       "required": [
@@ -140,6 +144,17 @@
         "nameRange",
         "elements"
       ],
+      "additionalProperties": false
+    },
+    "ChildPageEntry": {
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "pageId": { "type": "string" },
+        "range": { "$ref": "common.schema.json#/$defs/Range" },
+        "nameRange": { "$ref": "common.schema.json#/$defs/Range" }
+      },
+      "required": ["name", "pageId", "range", "nameRange"],
       "additionalProperties": false
     },
     "ElementEntry": {
@@ -172,6 +187,10 @@
         },
         "windowName": {
           "type": "string"
+        },
+        "elementType": {
+          "type": "string",
+          "description": "The class the element is declared with: Element, Elements, a built-in typed element such as ComboBox, or a user-defined subclass of Element. Absent for windows."
         },
         "dynamic": {
           "type": "boolean"

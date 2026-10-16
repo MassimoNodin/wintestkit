@@ -45,5 +45,33 @@ export function formatDiagnostic(diagnostic: Diagnostic): string {
           .join("; ");
     lines.push(text);
   });
+  const roots = new Map<string, string[]>();
+  for (const found of diagnostic.relocations ?? []) {
+    if (found.kind === "element" && found.sameWindow) {
+      lines.push(
+        "  → found in the same window under a different container: " +
+          found.path,
+      );
+    } else if (found.kind === "element") {
+      lines.push("  → found in another window: " + found.path);
+    } else {
+      roots.set(found.target, [
+        ...(roots.get(found.target) ?? []),
+        found.window,
+      ]);
+    }
+  }
+  roots.forEach((windows, target) =>
+    lines.push(
+      "  → the component root " +
+        target +
+        " was found in: " +
+        [...new Set(windows)].join(", "),
+    ),
+  );
+  if (diagnostic.relocations?.length) {
+    if (diagnostic.hint) lines.push("  hint: " + diagnostic.hint);
+    if (diagnostic.declared) lines.push("  declared: " + diagnostic.declared);
+  }
   return lines.join("\n");
 }
