@@ -124,6 +124,14 @@ vi.mock("../../src/editor/decorations", () => ({
     dispose() {}
   },
 }));
+vi.mock("../../src/editor/flowRuns", () => ({
+  FlowRuns: class {
+    constructor() {
+      mocks.registerCommand("wintestkit.runFlow", () => {});
+    }
+    dispose() {}
+  },
+}));
 vi.mock("../../src/editor/highlightCommands", () => ({
   HighlightCommands: class {
     constructor() {
@@ -157,8 +165,6 @@ vi.mock("../../src/views/elementsTree", () => ({
   ElementsTree: class {
     constructor() {
       mocks.registerWebviewViewProvider("wintestkit.navigation", {});
-      mocks.registerCommand("wintestkit.tests.run", () => {});
-      mocks.registerCommand("wintestkit.tests.debug", () => {});
       mocks.registerCommand("wintestkit.elements.goTo", () => {});
     }
     dispose() {}
@@ -176,8 +182,6 @@ vi.mock("../../src/pytestConflict", () => ({
 vi.mock("../../src/testing/controller", () => ({
   TestController: class {
     constructor() {
-      mocks.registerCommand("wintestkit.runTest", () => {});
-      mocks.registerCommand("wintestkit.debugTest", () => {});
     }
     dispose() {}
   },

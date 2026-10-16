@@ -1,9 +1,9 @@
 import { randomBytes } from "node:crypto";
 import * as vscode from "vscode";
 import type { Projects } from "../projects";
-import { normalizedPath } from "../projects";
 import type { DiscoveryStore } from "../discovery/store";
 import type { CheckResultsStore } from "../editor/decorations";
+import { flowKey, type FlowRuns } from "../editor/flowRuns";
 import type { DiscoveryResult } from "../protocol/generated";
 import { buildTree, type ElementNode } from "./elementsTreeModel";
 import { navigationDocument, renderBody } from "./navigationDocument";
@@ -25,7 +25,7 @@ import {
   type NavigationAction,
   type NavigationSection,
 } from "./navigationModel";
-import { buildProjectTree, type ProjectSection } from "./projectTreeModel";
+import { buildProjectTree } from "./projectTreeModel";
 
 interface NavigationHost {
   globalState: vscode.Memento;
@@ -45,6 +45,7 @@ export class ElementsTree
     private readonly projects: Projects,
     private readonly discovery: DiscoveryStore,
     private readonly checks: CheckResultsStore,
+    private readonly flows: FlowRuns,
     private readonly host?: NavigationHost,
   ) {
     this.session = new NavigationSession(
@@ -56,16 +57,10 @@ export class ElementsTree
       projects.onDidChange(refresh),
       discovery.onDidChange(refresh),
       checks.onDidChange(refresh),
+      flows.onDidChange(refresh),
       vscode.window.registerWebviewViewProvider("wintestkit.navigation", this, {
         webviewOptions: { retainContextWhenHidden: true },
       }),
-      ...(["run", "debug"] as const).map((action) =>
-        vscode.commands.registerCommand(
-          "wintestkit.tests." + action,
-          (node?: { testId?: string; root?: string }) =>
-            this.runNode(action, node),
-        ),
-      ),
       vscode.commands.registerCommand(
         "wintestkit.elements.goTo",
         (node: ElementNode) => this.openNode(node),
@@ -94,10 +89,10 @@ export class ElementsTree
       }),
     ];
   }
-  getChildren(node?: ElementNode, section?: ProjectSection): ElementNode[] {
+  getChildren(node?: ElementNode, section?: NavigationSection): ElementNode[] {
     if (node) return node.children;
-    return section
-      ? buildProjectTree(this.discoveries(), section)
+    return section === "flows"
+      ? buildProjectTree(this.discoveries())
       : buildTree(this.discoveries());
   }
   getTreeItem(node: ElementNode): vscode.TreeItem {
@@ -141,7 +136,7 @@ export class ElementsTree
     const discoveries = this.discoveries();
     return this.session.section === "pages"
       ? buildTree(discoveries)
-      : buildProjectTree(discoveries, this.session.section);
+      : buildProjectTree(discoveries);
   }
   private onMessage(value: unknown): void {
     const message = parseNavigationMessage(value);
@@ -191,6 +186,14 @@ export class ElementsTree
       );
       return;
     }
+    if (action === "run") {
+      if (!node.file) return;
+      await vscode.commands.executeCommand("wintestkit.runFlow", {
+        file: node.file,
+        name: node.label,
+      });
+      return;
+    }
     if (action === "checkPage") {
       if (!node.file || !node.page) return;
       await vscode.commands.executeCommand("wintestkit.checkPage", {
@@ -199,22 +202,6 @@ export class ElementsTree
       });
       return;
     }
-    await this.runNode(action === "run" ? "run" : "debug", node);
-  }
-  private async runNode(
-    action: "run" | "debug",
-    node?: { testId?: string; root?: string },
-  ): Promise<void> {
-    if (typeof node?.testId !== "string" || !node.root) return;
-    const project = this.projects.all.find(
-      (candidate) =>
-        normalizedPath(candidate.root.fsPath) === normalizedPath(node.root!),
-    );
-    if (!project) return;
-    await vscode.commands.executeCommand(
-      action === "run" ? "wintestkit.runTest" : "wintestkit.debugTest",
-      { id: node.testId, project },
-    );
   }
   private async openNode(node?: ElementNode): Promise<void> {
     if (!node?.file) return;
@@ -239,7 +226,6 @@ export class ElementsTree
     void this.host.workspaceState.update(navigationExpandedKey, {
       pages: [...this.session.expanded.pages],
       flows: [...this.session.expanded.flows],
-      tests: [...this.session.expanded.tests],
     });
   }
   private publish(reveal = false): void {
@@ -269,8 +255,17 @@ export class ElementsTree
     reveal?: boolean;
   } {
     const source = this.sectionNodes();
-    const nodes = toNavNodes(source, (elementId) =>
-      elementId ? this.checks.results.get(elementId)?.status : undefined,
+    const nodes = toNavNodes(
+      source,
+      (elementId) =>
+        elementId ? this.checks.results.get(elementId)?.status : undefined,
+      (node) => {
+        if (node.kind !== "flow" || !node.runnable || !node.file) return;
+        const status = this.flows.states.get(
+          flowKey({ file: node.file, name: node.label }),
+        )?.status;
+        return status;
+      },
     );
     this.session.prune(nodes);
     const hasProject = this.projects.all.length > 0;

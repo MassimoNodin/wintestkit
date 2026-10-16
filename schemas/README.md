@@ -10,7 +10,7 @@ encode its interfaces, unions, method parameters/results, and notification paylo
 | `step.schema.json` | Per-test action events |
 | `events.schema.json` | All seven run-event variants, collection records, outcomes, summaries |
 | `results.schema.json` | Report results and per-test results |
-| `rpc.schema.json` | Editor/inspector results, all 15 method parameter/result pairs, four notifications |
+| `rpc.schema.json` | Editor/inspector results, all 16 method parameter/result pairs, four notifications |
 
 Every definition is in `$defs` under its contract name. For dotted RPC names, capitalize each
 part: `element.highlight` becomes `ElementHighlightParams` / `ElementHighlightResult`.
@@ -19,6 +19,8 @@ RPC schemas describe the payload, not the JSON-RPC transport envelope.
 
 Discovery results optionally include `flows`, an array of public module-level functions
 under `flows/` directories. Older backends may omit this field; editors treat it as empty.
+A flow's optional `runnable` is true when its only required parameter is `app`; `flow.run`
+calls such a flow with the running application and reports `passed` or `failed`.
 
 Discovery, step, events, and results documents reference their primary type at the root.
 Common and RPC documents are definition libraries; select a named definition to validate them.

@@ -182,6 +182,8 @@ export interface ProtocolContracts {
   ElementResult?: ElementResult;
   ErrorInfo?: ErrorInfo;
   FlowEntry?: FlowEntry;
+  FlowRunParams?: FlowRunParams;
+  FlowRunResult?: FlowRunResult;
   InitializeParams?: InitializeParams;
   InitializeResult?: InitializeResult;
   InspectChildrenParams?: InspectChildrenParams;
@@ -503,6 +505,7 @@ export interface FlowEntry {
   name: string;
   range: Range;
   nameRange: Range;
+  runnable?: boolean;
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
@@ -560,6 +563,23 @@ export interface ErrorInfo {
   type: string;
   message: string;
   diagnostic?: Diagnostic;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "FlowRunParams".
+ */
+export interface FlowRunParams {
+  file: string;
+  name: string;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "FlowRunResult".
+ */
+export interface FlowRunResult {
+  status: "passed" | "failed";
+  message?: string;
+  durationMs: number;
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema

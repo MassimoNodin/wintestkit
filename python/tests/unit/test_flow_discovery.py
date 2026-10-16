@@ -56,3 +56,35 @@ def test_unsaved_flow_edits_and_syntax_errors(tmp_path: Path) -> None:
     broken = discover(tmp_path, overrides={file: "def broken(:"})
     assert broken.flows == ()
     assert len(broken.errors) == 1
+
+
+def test_flags_flows_whose_only_required_parameter_is_app(tmp_path: Path) -> None:
+    write(
+        tmp_path,
+        "flows/navigation.py",
+        """
+        def tour(app): pass
+        async def tour_async(app, speed=1): pass
+        def open_page(app, page_type): pass
+        def standalone(): pass
+        def renamed(application): pass
+        def keyword_only(*, app): pass
+        def app_second(speed, app): pass
+        def app_default(app=None): pass
+        def flag_after(app, *, fast=False): pass
+        def flag_required(app, *, fast): pass
+    """,
+    )
+    runnable = {flow.name: flow.runnable for flow in discover(tmp_path).flows}
+    assert runnable == {
+        "tour": True,
+        "tour_async": True,
+        "open_page": False,
+        "standalone": False,
+        "renamed": False,
+        "keyword_only": False,
+        "app_second": False,
+        "app_default": False,
+        "flag_after": True,
+        "flag_required": False,
+    }

@@ -161,6 +161,7 @@ class FlowEntry:
     name: str
     range: Range
     name_range: Range
+    runnable: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -169,7 +170,23 @@ class FlowEntry:
             "name": self.name,
             "range": self.range.to_dict(),
             "nameRange": self.name_range.to_dict(),
+            "runnable": self.runnable,
         }
+
+
+def _takes_only_app(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+    """Whether the function can be called as ``flow(app)`` (``app`` is the only required one)."""
+    arguments = node.args
+    positional = [*arguments.posonlyargs, *arguments.args]
+    required = positional[: len(positional) - len(arguments.defaults)]
+    required += [
+        argument
+        for argument, default in zip(arguments.kwonlyargs, arguments.kw_defaults, strict=True)
+        if default is None
+    ]
+    return [argument.arg for argument in required] == ["app"] and (
+        bool(positional) and positional[0].arg == "app"
+    )
 
 
 @dataclass(frozen=True)
@@ -1121,6 +1138,7 @@ def discover(
                     name=node.name,
                     range=source.range_of(node),
                     name_range=source.name_range(node),
+                    runnable=_takes_only_app(node),
                 )
                 for node in source.tree.body
                 if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)

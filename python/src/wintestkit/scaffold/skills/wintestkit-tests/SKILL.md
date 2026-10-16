@@ -226,7 +226,8 @@ def open_customer(app: App) -> CustomerPage:
     return customer
 ```
 
-A flow takes `app`, calls intent methods, synchronizes with `expect`, and returns the page it ends
+A flow takes `app` (a flow whose only required parameter is `app` can be run from the VS Code
+Flows tab or CodeLens), calls intent methods, synchronizes with `expect`, and returns the page it ends
 on. Pages do not import each other for navigation; flows know the pages. Keep flows free of
 assertions about behaviour under test: only wait for arrival.
 

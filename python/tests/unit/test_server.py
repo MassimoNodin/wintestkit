@@ -11,9 +11,23 @@ import pytest
 from rpc_support import RpcElement, make_server, request
 
 from wintestkit.engine import actions, overlay
-from wintestkit.errors import AppNotRunningError, EnvironmentNotReadyError
+from wintestkit.errors import AppNotRunningError, EnvironmentNotReadyError, WtkError
 from wintestkit.targets import TargetError
 from wintestkit.uia.element import Rect
+
+
+def test_app_status_survives_an_app_without_a_main_window(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    server, output, _ = make_server(tmp_path, monkeypatch)
+    request(server, output, "initialize", {"root": str(tmp_path)})
+
+    def no_window(timeout: float = 0.0) -> None:
+        raise WtkError("No window matches Window for CalculatorApp.exe (open windows: none)")
+
+    assert server.app is not None
+    monkeypatch.setattr(server.app, "main_window", no_window, raising=False)
+    assert request(server, output, "app.status")["result"] == {"running": True, "pids": [1]}
 
 
 def test_methods_and_nodes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

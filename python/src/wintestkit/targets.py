@@ -7,8 +7,10 @@ edits in the editor take effect without restarting the server.
 
 from __future__ import annotations
 
+import asyncio
 import importlib
 import importlib.util
+import inspect
 import os
 import sys
 import time
@@ -104,6 +106,21 @@ class CheckResult(ElementResult):
     def to_dict(self) -> dict[str, Any]:
         data = super().to_dict()
         data["qualname"] = self.qualname
+        return data
+
+
+@dataclass
+class FlowResult:
+    """Outcome of running one flow (mirrors the protocol ``FlowRunResult``)."""
+
+    status: str
+    duration_ms: float
+    message: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        data: dict[str, Any] = {"status": self.status, "durationMs": round(self.duration_ms, 1)}
+        if self.message is not None:
+            data["message"] = self.message
         return data
 
 
@@ -447,3 +464,54 @@ def _check_page(
                 )
             )
     return results
+
+
+def run_flow(app: App, loader: ModuleLoader, file: Path, name: str) -> FlowResult:
+    """Call the flow ``name`` of ``file`` as ``flow(app)`` (awaiting it if it is async).
+
+    Only flows whose sole required parameter is ``app`` can be run. An exception raised by the
+    flow is a failed result rather than an error, with the user's innermost frame in the message.
+    """
+    module = loader.load(file)
+    flow = getattr(module, name, None)
+    if name.startswith("_") or not callable(flow) or isinstance(flow, type):
+        raise TargetError(f"{file.name} has no flow {name!r}")
+    parameters = list(inspect.signature(flow).parameters.values())
+    required = [
+        p.name
+        for p in parameters
+        if p.default is p.empty and p.kind not in (p.VAR_POSITIONAL, p.VAR_KEYWORD)
+    ]
+    first = parameters[0] if parameters else None
+    if (
+        required != ["app"]
+        or first is None
+        or first.name != "app"
+        or first.kind is first.KEYWORD_ONLY
+    ):
+        needs = ", ".join(required) or "no parameters"
+        raise TargetError(
+            f"flow {name!r} cannot be run from the editor: it needs ({needs}); "
+            "only flows whose only required parameter is 'app' can be run"
+        )
+    started = time.perf_counter()
+    try:
+        with runtime.config_scope(loader.cfg):
+            outcome = flow(app)
+            if inspect.isawaitable(outcome):
+
+                async def finish() -> None:
+                    await outcome
+
+                asyncio.run(finish())
+    except Exception as exc:
+        frames = [
+            f
+            for f in traceback.extract_tb(exc.__traceback__)
+            if loader.root in Path(f.filename).resolve().parents
+        ]
+        where = f" ({Path(frames[-1].filename).as_posix()}:{frames[-1].lineno})" if frames else ""
+        return FlowResult(
+            "failed", (time.perf_counter() - started) * 1000, f"{type(exc).__name__}: {exc}{where}"
+        )
+    return FlowResult("passed", (time.perf_counter() - started) * 1000)

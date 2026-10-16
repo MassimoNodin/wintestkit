@@ -85,6 +85,9 @@ summary:focus-visible {
     width: 29px;
     padding: 5px;
 }
+#other-apps {
+    margin-left: auto;
+}
 #other-apps[aria-pressed="true"] {
     color: var(--vscode-button-foreground, #fff);
     background: var(--vscode-button-background, #0078d4);

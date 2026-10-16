@@ -8,6 +8,7 @@ import { DiscoveryStore } from "./discovery/store";
 import { CodeLenses } from "./editor/codeLens";
 import { CheckDecorations, CheckResultsStore } from "./editor/decorations";
 import { HighlightCommands } from "./editor/highlightCommands";
+import { FlowRuns } from "./editor/flowRuns";
 import { TestController } from "./testing/controller";
 import { registerInitialize } from "./init";
 import { PytestConflict } from "./pytestConflict";
@@ -105,14 +106,15 @@ export function activate(context: vscode.ExtensionContext): {
   );
   const discovery = new DiscoveryStore(projects, servers, log);
   const checks = new CheckResultsStore(discovery);
-  const lenses = new CodeLenses(projects, discovery, checks);
-  const elements = new ElementsTree(projects, discovery, checks, context);
-  context.subscriptions.push(elements);
+  const flows = new FlowRuns(projects, discovery, servers, log);
+  const lenses = new CodeLenses(projects, discovery, checks, flows);
+  const elements = new ElementsTree(projects, discovery, checks, flows, context);
+  context.subscriptions.push(elements, flows);
   const spy = new SpyView(projects, servers, context.extensionUri, log);
   context.subscriptions.push(spy);
   context.subscriptions.push(registerInsertElement(projects, discovery, log));
   const reports = new Reports(servers, log);
-  const tests = new TestController(projects, discovery, lenses, log, reports);
+  const tests = new TestController(projects, discovery, log, reports);
   context.subscriptions.push(
     registerInitialize(projects, log),
     new PytestConflict(projects, context.workspaceState, log),
@@ -238,13 +240,10 @@ export function activate(context: vscode.ExtensionContext): {
         "wintestkit.highlightElement",
         "wintestkit.checkElement",
         "wintestkit.checkPage",
-        "wintestkit.runTest",
-        "wintestkit.debugTest",
+        "wintestkit.runFlow",
         "wintestkit.initProject",
         "wintestkit.openSettings",
         "wintestkit.elements.goTo",
-        "wintestkit.tests.run",
-        "wintestkit.tests.debug",
         "wintestkit.spy.startPick",
         "wintestkit.spy.refresh",
       ].includes(contribution.command)

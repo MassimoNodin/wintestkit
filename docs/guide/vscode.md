@@ -1,7 +1,7 @@
 # VS Code
 
 The **WinTestKit** extension (`wintestkit.wintestkit`) adds editor actions, Test Explorer
-integration, an **Explorer** for Pages, Flows and Tests, and a **Spy** below it. It needs the
+integration, an **Explorer** for the Page Tree and Flows, and a **Spy** below it. It needs the
 [Python extension](https://marketplace.visualstudio.com/items?itemName=ms-python.python) and the
 `wintestkit` package in the selected interpreter. When the package is missing, the extension
 offers to install it (**WinTestKit: Install wintestkit Package**).
@@ -27,8 +27,11 @@ Spy's toolbar is reserved for picking and browsing controls.
   The same foreground step runs for `wtk highlight` and `Element.highlight()`. **Check** resolves
   the control and shows the result in the gutter. A failed check becomes an editor warning with
   the full diagnostic (closest candidates and what differs).
-- Above every `Page`: **Check All Elements** checks the whole page.
-- Above every test: **Run Test** and **Debug Test**.
+- Above every `Page`: **Check all elements in this class** checks the whole page.
+- Above every runnable flow (one whose only required parameter is `app`): **Run flow** runs it
+  against the running application and shows **Running flow…**, **Flow passed** or **Flow failed**.
+  If the application isn't running, you get an error instead of a launch prompt. Flows can take
+  minutes; the request waits up to ten minutes.
 
 Highlight and Check show progress and their latest result directly in the CodeLens: **Highlighting…** /
 **Checking…**, then **Highlighted** / **Check: Found**, **Not found**, **multiple matches**, or **Failed**.
@@ -51,7 +54,7 @@ and **Show Test Results**. **WinTestKit: Open Last Report** opens the latest rep
 
 ### Debugging
 
-**Debug Test** (or the Debug profile in the Test Explorer) runs the test under the
+The Debug profile in the Test Explorer runs the test under the
 [Python Debugger](https://marketplace.visualstudio.com/items?itemName=ms-python.debugpy). Normal
 breakpoints work in tests, pages and fixtures. Debug runs raise the default auto-wait to one
 hour so a test paused at a breakpoint doesn't time out. Debug runs don't write a
@@ -66,7 +69,7 @@ both is supported. Turn the prompt off with `wintestkit.promptDisablePytestExplo
 ## Explorer
 
 **Current Setup**, **Explorer** and **Spy** stack in the WinTestKit activity bar, with Spy
-below Explorer. Explorer is a single view. A **Page Tree | Flows | Tests** control at the top
+below Explorer. Explorer is a single view. A **Page Tree | Flows** control at the top
 switches the list, and the selected tab is remembered.
 
 - **Page Tree** shows only pages that are not children of another page at the root,
@@ -76,13 +79,14 @@ switches the list, and the selected tab is remembered.
   Inline actions highlight/check elements or check a whole page; icons show the last check result.
 - **Flows** lists public, module-level Python functions (including async functions) under
   `flows/` directories, grouped by source file. Private helpers and class methods are omitted.
-  Flows are ordinary Python helpers, not independently runnable tests.
-- **Tests** lists pytest tests by file and class, with inline **Run Tests** and **Debug Tests**
-  actions for a test, class, file or project. These use the same runner as the Test Explorer.
+  Flows are ordinary Python helpers, not tests. A flow whose only required parameter is `app`
+  (such as `tour_calculator(app)`) has a **Run Flow** button. It calls the flow with the running
+  application, shows a spinner while it runs and a pass or fail icon afterwards, and reports an
+  exception as a failed run. Flows that need other arguments have no Run button.
 
 Click an entry to open its definition. **Refresh** on the Explorer title reloads discovery.
 Entries are grouped by project in multi-project workspaces. Discovery updates while you type
-without importing or running your code. The built-in Test Explorer remains available.
+without importing or running your code. Run and debug tests from VS Code's Testing view (Test Explorer).
 
 ## Spy
 
@@ -95,10 +99,10 @@ The **Spy** view, below Explorer, explores the live UI Automation tree of the ap
   element** (or `wtk spy` in a terminal): hold **Ctrl** and click a control in the application.
   **Esc** cancels. **Refresh objects** reloads the tree. **Pick element** and **Refresh objects**
   stay in the Spy toolbar.
-- While the application is running, **Other apps** follows **Collapse all**. It is off by
-  default (**Show other apps' objects**), so the tree lists the current application's windows.
-  Turn it on (**Hide other apps' objects**) to append other desktop windows after those. The
-  choice is remembered.
+- While the application is running, a button at the right end of the toolbar switches the tree
+  scope. It reads **Show Other Apps** by default, when the tree lists only the current
+  application's windows. Click it to append other desktop windows after those; it then reads
+  **Show Only Selected App**. The choice is remembered.
 - The details show the control's properties, supported patterns and a **suggested locator** that
   is marked unique, or not unique with the number of matches.
 - **Add to page…** inserts the locator into an existing page or a new page file, adds
