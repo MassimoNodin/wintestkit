@@ -243,9 +243,9 @@ export class HighlightCommands implements vscode.Disposable {
           page.qualname === target.page,
       );
     if (!page) return;
-    const elements = page.elements.filter((element) =>
-      filter ? element.qualname === filter : element.kind !== "window",
-    );
+    const elements = filter
+      ? page.elements.filter((element) => element.qualname === filter)
+      : page.elements;
     const pendingStatus: ActionStatus = { status: "running" };
     for (const element of elements)
       this.checks.setFeedback(

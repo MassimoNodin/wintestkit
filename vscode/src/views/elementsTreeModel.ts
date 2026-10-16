@@ -128,6 +128,59 @@ export function buildTree(discoveries: DiscoveryResult[]): ElementNode[] {
           page: page.qualname,
         };
       });
+    const entries = new Map(discovery.pages.map((page) => [page.id, page]));
+    const templates = new Map(pages.map((page) => [page.id, page]));
+    const childIds = new Set(
+      discovery.pages.flatMap((page) =>
+        (page.children ?? []).map((child) => child.pageId),
+      ),
+    );
+    const represented = new Set<string>();
+    const copyElements = (nodes: ElementNode[], instanceId: string): ElementNode[] =>
+      nodes.map((node) => ({
+        ...node,
+        id: instanceId + "|" + node.id,
+        children: copyElements(node.children, instanceId),
+      }));
+    const expandPage = (
+      pageId: string,
+      instanceId: string,
+      ancestors: ReadonlySet<string>,
+      memberName?: string,
+    ): ElementNode => {
+      const entry = entries.get(pageId)!;
+      const template = templates.get(discovery.root + "|" + pageId)!;
+      represented.add(pageId);
+      const lineage = new Set([...ancestors, pageId]);
+      const children = instanceId === template.id
+        ? [...template.children]
+        : copyElements(template.children, instanceId);
+      for (const child of entry.children ?? []) {
+        if (!entries.has(child.pageId) || lineage.has(child.pageId)) continue;
+        children.push(expandPage(
+          child.pageId,
+          instanceId + "|" + JSON.stringify([child.name, child.pageId]),
+          lineage,
+          child.name,
+        ));
+      }
+      return {
+        ...template,
+        id: instanceId,
+        label: memberName ? memberName + ": " + entry.name : template.label,
+        children,
+      };
+    };
+    const roots = pages
+      .filter((page) => !childIds.has(page.id.slice(discovery.root.length + 1)))
+      .map((page) => expandPage(
+        page.id.slice(discovery.root.length + 1), page.id, new Set(),
+      ));
+    for (const page of pages) {
+      const pageId = page.id.slice(discovery.root.length + 1);
+      if (!represented.has(pageId))
+        roots.push(expandPage(pageId, page.id, new Set()));
+    }
     return discoveries.length > 1
       ? [
           {
@@ -136,9 +189,9 @@ export function buildTree(discoveries: DiscoveryResult[]): ElementNode[] {
             description: discovery.root,
             kind: "project" as const,
             icon: "root-folder",
-            children: pages,
+            children: roots,
           },
         ]
-      : pages;
+      : roots;
   });
 }

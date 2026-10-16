@@ -4,7 +4,7 @@ import type { ElementNode } from "./elementsTreeModel";
 export const SECTIONS = ["pages", "flows", "tests"] as const;
 export type NavigationSection = (typeof SECTIONS)[number];
 export const SECTION_LABEL: Record<NavigationSection, string> = {
-  pages: "Pages",
+  pages: "Page Tree",
   flows: "Flows",
   tests: "Tests",
 };
@@ -24,7 +24,7 @@ export const ACTION_PRESENTATION: Record<
 > = {
   highlight: { icon: "eye", title: "Highlight Element" },
   check: { icon: "check", title: "Check Element" },
-  checkPage: { icon: "checklist", title: "Check All Elements" },
+  checkPage: { icon: "check-all", title: "Check All Elements" },
   run: { icon: "play", title: "Run Tests" },
   debug: { icon: "debug-alt", title: "Debug Tests" },
 };
@@ -78,8 +78,7 @@ export function actionsFor(node: ElementNode): NavigationAction[] {
     node.file &&
     node.qualname
   )
-    actions.push("highlight");
-  if (context === "element" && node.file && node.qualname) actions.push("check");
+    actions.push("highlight", "check");
   if (context === "page" && node.file && node.page) actions.push("checkPage");
   if (isTestContext(context) && node.testId !== undefined && node.root)
     actions.push("run", "debug");

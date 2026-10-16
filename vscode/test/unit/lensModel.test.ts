@@ -152,8 +152,8 @@ describe("editor lens model", () => {
       "C:/demo/page.py",
       new Map([["test", "passed"]]),
     );
-    expect(lenses).toHaveLength(11);
-    expect(lenses.filter((lens) => lens.line === 2)).toHaveLength(1);
+    expect(lenses).toHaveLength(12);
+    expect(lenses.filter((lens) => lens.line === 2)).toHaveLength(2);
     expect(
       lenses.find((lens) => lens.title === "$(pass-filled)\u00a0\u00a0Passed")
         ?.command,

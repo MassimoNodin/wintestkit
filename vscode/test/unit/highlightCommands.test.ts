@@ -295,9 +295,7 @@ describe("editor highlight commands", () => {
     },
   );
   it("updates each element during a whole-page check", async () => {
-    const elements = page.elements.filter(
-      (element) => element.kind !== "window",
-    );
+    const elements = page.elements;
     mocks.request.mockResolvedValue({
       results: elements.map((element) => ({
         qualname: element.qualname,
