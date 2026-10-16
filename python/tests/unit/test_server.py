@@ -171,10 +171,11 @@ def test_highlight_raises_window_before_reading_bounds(
         button.rect = restored_rect
         return activated
 
-    def flash(rect: Rect, duration: int, *, block: bool) -> None:
+    def flash(rect: Rect, duration: int, *, block: bool, after: Any = None) -> None:
         assert rect == restored_rect
         assert duration == 800
         assert not block
+        assert callable(after)  # gives the foreground back once the outline is gone
         calls.append("highlight")
 
     monkeypatch.setattr(actions, "bring_to_front", foreground)

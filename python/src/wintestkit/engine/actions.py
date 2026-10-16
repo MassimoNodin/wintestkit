@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Callable
 from typing import Literal
 
 from wintestkit.engine import waits
@@ -75,6 +76,36 @@ def bring_to_front(el: UIAElement) -> bool:
     if not raised:
         log.debug("could not bring window %#x to the foreground", hwnd)
     return raised
+
+
+def raise_with_restore(el: UIAElement) -> Callable[[], None]:
+    """Raise the owning window like :func:`bring_to_front`; the callback gives focus back.
+
+    The callback re-selects the window that had the foreground before (the editor the user
+    clicked in, so the right one when several are open) unless the user has switched to another
+    window in the meantime.
+    """
+    __tracebackhide__ = True
+    previous = win32.GetForegroundWindow()
+    hwnd = _top_level_hwnd(el)
+    raised = bring_to_front(el)
+
+    def restore() -> None:
+        __tracebackhide__ = True
+        if not raised or not previous or previous == hwnd:
+            return
+        try:
+            if (
+                win32.GetForegroundWindow() == hwnd
+                and win32.IsWindow(previous)
+                and win32.IsWindowVisible(previous)
+                and not win32.IsIconic(previous)
+            ):
+                win32.bring_to_foreground(previous)
+        except Exception:
+            log.debug("could not return the foreground to window %#x", previous, exc_info=True)
+
+    return restore
 
 
 def _foreground(el: UIAElement) -> None:

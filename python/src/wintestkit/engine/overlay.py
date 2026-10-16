@@ -9,6 +9,7 @@ import logging
 import queue
 import threading
 import time
+from collections.abc import Callable
 from types import TracebackType
 from typing import Any
 
@@ -232,10 +233,12 @@ def flash(
     thickness: int = 3,
     blink: bool = True,
     block: bool = False,
+    after: Callable[[], None] | None = None,
 ) -> None:
     """Outline ``rect`` for ``duration_ms`` (blinking three times unless ``blink=False``).
 
     With ``block=False`` this returns immediately and the outline is managed by a daemon thread.
+    ``after`` is called once the outline is gone, even if it could not be shown.
     """
 
     def run() -> None:
@@ -253,6 +256,9 @@ def flash(
                     time.sleep(step)
         except EnvironmentNotReadyError:
             log.warning("could not show the highlight overlay", exc_info=True)
+        finally:
+            if after is not None:
+                after()
 
     if block:
         run()

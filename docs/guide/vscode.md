@@ -24,7 +24,9 @@ Spy's toolbar is reserved for picking and browsing controls.
 
 - Above every `Element` and `Window`: **Highlight** brings the control's owning window to the
   foreground, then draws a frame around it. If Windows denies that, the outline is still drawn.
-  The same foreground step runs for `wtk highlight` and `Element.highlight()`. **Check** resolves
+  When the frame disappears, focus goes back to the window that had it (the VS Code window you
+  clicked in), unless you switched to another window meanwhile. `wtk highlight` and
+  `Element.highlight()` use the same foreground step but leave focus on the highlighted window. **Check** resolves
   the control and shows the result in the gutter. A failed check becomes an editor warning with
   the full diagnostic (closest candidates and what differs).
 - Above every `Page`: **Check all elements in this class** checks the whole page.
