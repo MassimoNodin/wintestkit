@@ -99,3 +99,99 @@ def test_bound_highlight_without_bounds_does_not_draw(monkeypatch: pytest.Monkey
     monkeypatch.setattr(overlay, "flash", lambda *args, **kwargs: pytest.fail("must not flash"))
     with pytest.raises(ActionError, match="no on-screen rectangle"):
         Stub().highlight()
+
+
+EDITOR = 500
+TARGET = 100
+
+
+class _Windows:
+    """A scripted desktop: which window is in front, which exist, which are minimized."""
+
+    def __init__(self, monkeypatch: pytest.MonkeyPatch, front: int) -> None:
+        self.front = front
+        self.alive = {EDITOR, TARGET}
+        self.minimized: set[int] = set()
+        self.activated: list[int] = []
+        monkeypatch.setattr(win32, "root_window", lambda handle: TARGET)
+        monkeypatch.setattr(win32, "GetForegroundWindow", lambda: self.front)
+        monkeypatch.setattr(win32, "IsWindow", lambda handle: handle in self.alive)
+        monkeypatch.setattr(win32, "IsWindowVisible", lambda handle: handle in self.alive)
+        monkeypatch.setattr(win32, "IsIconic", lambda handle: handle in self.minimized)
+        monkeypatch.setattr(win32, "bring_to_foreground", self.bring_to_foreground)
+
+    def bring_to_foreground(self, handle: int) -> bool:
+        self.front = handle
+        self.activated.append(handle)
+        return True
+
+
+def _target() -> FakeElement:
+    target = FakeElement("Button", "Save")
+    target.native_window_handle = TARGET
+    return target
+
+
+def test_restore_returns_the_foreground_to_the_window_that_had_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    desktop = _Windows(monkeypatch, front=EDITOR)
+    restore = actions.raise_with_restore(_target())
+    assert desktop.activated == [TARGET]
+    restore()
+    assert desktop.activated == [TARGET, EDITOR]
+
+
+@pytest.mark.parametrize("change", ["user_switched", "editor_closed", "editor_minimized"])
+def test_restore_leaves_the_desktop_alone_when_it_changed(
+    monkeypatch: pytest.MonkeyPatch, change: str
+) -> None:
+    desktop = _Windows(monkeypatch, front=EDITOR)
+    restore = actions.raise_with_restore(_target())
+    if change == "user_switched":
+        desktop.front = 777
+    elif change == "editor_closed":
+        desktop.alive.discard(EDITOR)
+    else:
+        desktop.minimized.add(EDITOR)
+    restore()
+    assert desktop.activated == [TARGET]
+
+
+def test_restore_does_nothing_when_the_target_was_already_in_front(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    desktop = _Windows(monkeypatch, front=TARGET)
+    actions.raise_with_restore(_target())()
+    assert desktop.activated == [TARGET]
+
+
+def test_restore_does_nothing_when_the_window_could_not_be_raised(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    desktop = _Windows(monkeypatch, front=EDITOR)
+    monkeypatch.setattr(win32, "bring_to_foreground", lambda handle: False)
+    actions.raise_with_restore(_target())()
+    assert desktop.activated == []
+
+
+def test_flash_runs_after_when_the_outline_is_done(monkeypatch: pytest.MonkeyPatch) -> None:
+    done: list[str] = []
+    monkeypatch.setattr(overlay.time, "sleep", lambda seconds: None)
+
+    class Shown:
+        def __enter__(self) -> "Shown":
+            return self
+
+        def __exit__(self, *exc: object) -> None:
+            done.append("hidden")
+
+        def show(self, rect: Rect) -> None:
+            done.append("show")
+
+        def hide(self) -> None:
+            done.append("hide")
+
+    monkeypatch.setattr(overlay, "Overlay", lambda color, thickness: Shown())
+    overlay.flash(Rect(0, 0, 5, 5), 60, block=True, after=lambda: done.append("after"))
+    assert done[-2:] == ["hidden", "after"]

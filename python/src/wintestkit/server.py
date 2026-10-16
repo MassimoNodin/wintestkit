@@ -11,6 +11,7 @@ import queue
 import sys
 import threading
 from collections import OrderedDict
+from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, BinaryIO, cast
 
@@ -23,7 +24,7 @@ if TYPE_CHECKING:
     from wintestkit.config import WtkConfig
     from wintestkit.engine.spy import SpySession
     from wintestkit.targets import ModuleLoader
-    from wintestkit.uia.element import UIAElement
+    from wintestkit.uia.element import Rect, UIAElement
 
 log = logging.getLogger("wintestkit.server")
 
@@ -183,6 +184,18 @@ class Server:
                 log.exception("RPC request failed")
                 self._error(request_id, -32603, "internal error", {"message": str(exc)})
 
+    @staticmethod
+    def _flash(
+        rect: Rect | None, params: dict[str, Any], restore: Callable[[], None] | None
+    ) -> None:
+        """Outline ``rect``, then give the foreground back to the editor window."""
+        from wintestkit.engine import overlay
+
+        if rect is not None:
+            overlay.flash(rect, int(params.get("durationMs", 1500)), block=False, after=restore)
+        elif restore is not None:
+            restore()
+
     def _app(self, required: bool = True) -> App | None:
         from wintestkit.app import App
 
@@ -230,7 +243,6 @@ class Server:
             session.stop()
 
     def dispatch(self, method: str, params: dict[str, Any], spy_epoch: int | None = None) -> Any:
-        from wintestkit.engine import overlay
         from wintestkit.targets import ModuleLoader, Target, check_page, resolve_target
 
         if method == "shutdown":
@@ -318,14 +330,14 @@ class Server:
                 }
             result = resolve_target(app, self.loader, Target(file, params["qualname"]), timeout=0)
             if result.uia is not None:
-                from wintestkit.engine.actions import bring_to_front
+                from wintestkit.engine.actions import raise_with_restore
 
-                bring_to_front(result.uia)
+                restore = raise_with_restore(result.uia)
                 rect = result.uia.rect
             else:
+                restore = None
                 rect = result.element.rect if result.element is not None else None
-            if rect is not None:
-                overlay.flash(rect, int(params.get("durationMs", 1500)), block=False)
+            self._flash(rect, params, restore)
             return result.to_dict()
         if method == "inspect.roots":
             app = self._app(False)
@@ -396,12 +408,10 @@ class Server:
         if method == "inspect.children":
             return [self._register(child) for child in node.children()]
         if method == "inspect.highlight":
-            from wintestkit.engine.actions import bring_to_front
+            from wintestkit.engine.actions import raise_with_restore
 
-            bring_to_front(node)
-            rect = node.rect
-            if rect is not None:
-                overlay.flash(rect, int(params.get("durationMs", 1500)), block=False)
+            restore = raise_with_restore(node)
+            self._flash(node.rect, params, restore)
             return None
         if method == "suggest.locator":
             from wintestkit.engine.suggest import suggest_locator

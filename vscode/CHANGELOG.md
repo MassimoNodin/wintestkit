@@ -5,6 +5,10 @@ released together with the same version) are documented here.
 
 ## [Unreleased]
 
+- After a Highlight from VS Code (CodeLens, Explorer or Spy) the outline fades and focus returns to the
+  window that had it, so the right VS Code window is selected again. Focus stays where it is if you
+  switched windows meanwhile.
+
 - Fix the Spy failing with "No window matches Window" and Current Setup showing "Status unavailable"
   for apps such as UWP Calculator that have no top-level window in their own process.
 
