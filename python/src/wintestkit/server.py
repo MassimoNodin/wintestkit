@@ -374,6 +374,7 @@ class Server:
 
             return suggest_locator(node, self._app(False)).to_dict()
         if method == "inspect.properties":
+            from wintestkit.engine.properties import SUPPORTED, inspection_values
             from wintestkit.uia.constants import PROPERTY_IDS
 
             properties: dict[str, str] = {}
@@ -388,6 +389,17 @@ class Server:
                     )
                 except Exception:
                     continue
+            if not full:
+                properties.update(
+                    {
+                        key: str(value)
+                        for key, value in inspection_values(node, self.cfg.property_aliases).items()
+                    }
+                )
+            for alias, target in self.cfg.property_aliases.items():
+                property_name = SUPPORTED[target].uia_name if full else target
+                if property_name in properties:
+                    properties[alias] = properties[property_name]
             ancestors: list[dict[str, Any]] = []
             parent = node.parent() if params.get("includeAncestors", False) else None
             seen = {node.runtime_id}

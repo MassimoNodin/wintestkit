@@ -16,11 +16,13 @@ def add_parser(subparsers: Any) -> None:
 
 
 def run(args: argparse.Namespace) -> int:
+    from wintestkit.engine.properties import inspection_values
     from wintestkit.engine.spy import SpySession
     from wintestkit.engine.suggest import suggest_locator
     from wintestkit.uia.element import UIAElement
 
-    app = None if args.all_processes else common.attach_app(common.load(args))
+    cfg = common.load(args)
+    app = None if args.all_processes else common.attach_app(cfg)
     pids = frozenset(app.pids) if app is not None else None
     finished = threading.Event()
 
@@ -31,6 +33,9 @@ def run(args: argparse.Namespace) -> int:
     def pick(element: UIAElement) -> None:
         suggestion = suggest_locator(element, app)
         print("\nPicked: " + element.info().short())
+        for key, value in inspection_values(element, cfg.property_aliases).items():
+            if value != "":
+                print(f"  {key}: {value}")
         if suggestion.window is not None:
             print("  window = " + suggestion.window[0])
         for name, code, _ in suggestion.helpers:

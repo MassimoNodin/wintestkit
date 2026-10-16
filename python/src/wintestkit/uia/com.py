@@ -149,18 +149,29 @@ _CONDITION_PROPS = {
     "class_name": "ClassName",
     "process_id": "ProcessId",
     "framework_id": "FrameworkId",
+    "help_text": "HelpText",
+    "item_status": "ItemStatus",
+    "item_type": "ItemType",
+    "accelerator_key": "AcceleratorKey",
+    "access_key": "AccessKey",
+    "localized_control_type": "LocalizedControlType",
+    "value": "ValueValue",
+    "is_enabled": "IsEnabled",
+    "is_offscreen": "IsOffscreen",
+    "is_password": "IsPassword",
+    "is_keyboard_focusable": "IsKeyboardFocusable",
 }
 
 
 def create_condition(**props: Any) -> Any:
     """Build a UIA condition matching all given exact property values.
 
-    Accepted keys: ``control_type`` (int id), ``automation_id``, ``name``, ``class_name``,
-    ``process_id``, ``framework_id``. No properties yields a true condition.
+    Accepts UIA property names and the locator's snake-case shorthand names.
+    No properties yields a true condition.
     """
     __tracebackhide__ = True
     for key in props:
-        if key not in _CONDITION_PROPS:
+        if key not in _CONDITION_PROPS and key not in PROPERTY_IDS:
             raise ValueError(f"unsupported condition property {key!r}")
     uia = get_uia()
     with wrap_com_errors:
@@ -169,7 +180,7 @@ def create_condition(**props: Any) -> Any:
             if key == "control_type" and isinstance(value, str):
                 value = CONTROL_TYPES[value]
             conditions.append(
-                uia.CreatePropertyCondition(PROPERTY_IDS[_CONDITION_PROPS[key]], value)
+                uia.CreatePropertyCondition(PROPERTY_IDS[_CONDITION_PROPS.get(key, key)], value)
             )
         if not conditions:
             return uia.CreateTrueCondition()

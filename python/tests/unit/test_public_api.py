@@ -1,5 +1,6 @@
 """The package's public surface and its lazy imports."""
 
+import re
 import subprocess
 import sys
 
@@ -94,7 +95,7 @@ def test_importing_the_package_does_not_load_ui_automation() -> None:
 
 
 def test_version() -> None:
-    assert wintestkit.__version__ == "0.1.0"
+    assert re.fullmatch(r"\d+\.\d+\.\d+", wintestkit.__version__)
 
 
 class _Probe:

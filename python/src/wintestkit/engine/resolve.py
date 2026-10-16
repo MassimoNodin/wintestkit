@@ -19,6 +19,8 @@ from wintestkit.engine.diagnose import (
     quote,
 )
 from wintestkit.engine.locator import ItemSelector, Locator, WindowLocator, match_value
+from wintestkit.engine.properties import matches as matches_property
+from wintestkit.engine.properties import read, resolve_where
 from wintestkit.engine.query import query_all
 from wintestkit.errors import (
     AmbiguousElementError,
@@ -45,11 +47,16 @@ def resolve_window(app: App, wl: WindowLocator | None) -> UIAElement:
     __tracebackhide__ = True
     if wl is None or wl.is_empty():
         return app.main_window()
+    constraints = resolve_where(wl.where, wl.describe(), wl.taken())
     source = app
     if wl.process is not None and wl.process.lower() != app.process_name.lower():
         source = App.attach(process=wl.process)
     only_process = (
-        wl.title is None and wl.class_name is None and wl.automation_id is None and wl.index is None
+        wl.title is None
+        and wl.class_name is None
+        and wl.automation_id is None
+        and wl.index is None
+        and not constraints
     )
     if only_process:
         return source.main_window()
@@ -61,6 +68,7 @@ def resolve_window(app: App, wl: WindowLocator | None) -> UIAElement:
         if (wl.title is None or match_value(wl.title, w.name))
         and (wl.class_name is None or match_value(wl.class_name, w.class_name))
         and (wl.automation_id is None or match_value(wl.automation_id, w.automation_id))
+        and all(matches_property(c, read(w, c.spec)) for c in constraints)
     ]
     if wl.index is not None:
         if wl.index < len(matches):

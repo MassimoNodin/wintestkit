@@ -19,7 +19,12 @@ class P(Page):
 ```
 
 Element options: `automation_id`, `name`, `control_type`, `class_name`, `index`, `depth`, `within`,
-`window`, `timeout`, `validate` (typed elements only). Strings match exactly; a compiled regex
+`window`, `timeout`, `validate` (typed elements only), `where`. Windows and `Elements` also accept
+`where={"HelpText": "Save", "ItemStatus": re.compile(r"AddressBox$")}`. Entries AND together;
+boolean/numeric properties require boolean/numeric values. `property_aliases` in `wintestkit.yaml`
+maps alternate names to real UIA properties (for example `ClrFullClassName: ItemStatus`); it does
+not expose private .NET properties. Do not duplicate a property via a keyword and `where`.
+Strings match exactly; a compiled regex
 matches with `re.search`. `window = Window()` with no arguments means the application's main window.
 
 Component mounts: `address = AddressBox()`, `AddressBox(root=Element(class_name="AddressBox",

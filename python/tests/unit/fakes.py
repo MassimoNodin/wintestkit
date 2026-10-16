@@ -22,9 +22,11 @@ class FakeElement:
         class_name: str = "",
         children: list[FakeElement] | None = None,
         rect: Rect | None = DEFAULT_RECT,
+        properties: dict[str, Any] | None = None,
     ) -> None:
         _COUNTER[0] += 1
         self.control_type = control_type
+        self.properties = properties or {}
         self.name = name
         self.automation_id = automation_id
         self.class_name = class_name
@@ -50,6 +52,17 @@ class FakeElement:
 
     def as_live(self) -> FakeElement:
         return self
+
+    def get_property(self, name: str) -> Any:
+        from wintestkit.uia.com import _CONDITION_PROPS
+        from wintestkit.uia.constants import CONTROL_TYPES
+
+        if name in self.properties:
+            return self.properties[name]
+        if name == "ControlType":
+            return CONTROL_TYPES[self.control_type]
+        attribute = next((key for key, value in _CONDITION_PROPS.items() if value == name), name)
+        return getattr(self, attribute, "")
 
     def info(self, with_patterns: bool = False) -> ElementInfo:
         return ElementInfo(
@@ -109,13 +122,18 @@ _CONDITION_ATTRS = {
 
 
 def _matches(element: FakeElement, props: dict[str, Any]) -> bool:
-    from wintestkit.uia.constants import CONTROL_TYPE_NAMES
-
     for key, value in props.items():
-        actual = getattr(element, _CONDITION_ATTRS[key])
+        from wintestkit.uia.com import _CONDITION_PROPS
+
+        actual = (
+            getattr(element, _CONDITION_ATTRS[key])
+            if key in _CONDITION_ATTRS
+            else element.get_property(_CONDITION_PROPS.get(key, key))
+        )
         if key == "control_type":
-            actual_id = next(i for i, n in CONTROL_TYPE_NAMES.items() if n == actual)
-            if actual_id != value:
+            from wintestkit.uia.constants import CONTROL_TYPES
+
+            if CONTROL_TYPES[actual] != value:
                 return False
         elif actual != value:
             return False

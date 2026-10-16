@@ -92,7 +92,9 @@ def test_inspection_expensive_reads_are_opt_in(
     if ancestors:
         params["includeAncestors"] = True
     result = request(server, output, "inspect.properties", params)["result"]
-    assert property_reads == (list(PROPERTY_IDS) if full else [])
+    assert property_reads == (
+        list(PROPERTY_IDS) if full else ["HelpText", "ItemStatus", "ItemType"]
+    )
     assert pattern_reads == [full]
     assert bool(parent_reads) is ancestors
     assert bool(result["ancestors"]) is ancestors

@@ -141,6 +141,17 @@
     "WindowLocatorData": {
       "type": "object",
       "properties": {
+        "where": {
+          "type": "object",
+          "propertyNames": { "minLength": 1 },
+          "additionalProperties": {
+            "anyOf": [
+              { "$ref": "common.schema.json#/$defs/Matcher" },
+              { "type": "boolean" },
+              { "type": "number" }
+            ]
+          }
+        },
         "title": {
           "$ref": "common.schema.json#/$defs/Matcher"
         },
@@ -218,6 +229,17 @@
     "LocatorData": {
       "type": "object",
       "properties": {
+        "where": {
+          "type": "object",
+          "propertyNames": { "minLength": 1 },
+          "additionalProperties": {
+            "anyOf": [
+              { "$ref": "common.schema.json#/$defs/Matcher" },
+              { "type": "boolean" },
+              { "type": "number" }
+            ]
+          }
+        },
         "automationId": {
           "$ref": "common.schema.json#/$defs/Matcher"
         },

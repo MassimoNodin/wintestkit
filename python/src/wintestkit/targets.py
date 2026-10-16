@@ -18,6 +18,7 @@ from pathlib import Path
 from types import ModuleType
 from typing import TYPE_CHECKING, Any, cast
 
+from wintestkit import runtime
 from wintestkit.config import WtkConfig
 from wintestkit.discovery import EXCLUDED_DIRS
 from wintestkit.errors import (
@@ -391,8 +392,9 @@ def resolve_target(
 ) -> ElementResult:
     """Bind the target's page to ``app`` and resolve the element (``timeout`` 0: immediately)."""
     started = time.perf_counter()
-    page_class, attribute = loader.get_element(target)  # TargetError propagates
-    return resolve_bound(_bound_for(app, page_class, attribute), timeout, started)
+    with runtime.config_scope(loader.cfg):
+        page_class, attribute = loader.get_element(target)
+        return resolve_bound(_bound_for(app, page_class, attribute), timeout, started)
 
 
 def check_page(
@@ -405,7 +407,7 @@ def check_page(
     """
     from wintestkit.engine import relocate
 
-    with relocate.shared_budget():
+    with runtime.config_scope(loader.cfg), relocate.shared_budget():
         return _check_page(app, loader, file, page_name, timeout)
 
 

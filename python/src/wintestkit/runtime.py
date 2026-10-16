@@ -9,7 +9,9 @@ import logging
 import re
 import threading
 import time
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Generator, Iterable, Mapping
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 from pathlib import PurePath
 from types import TracebackType
@@ -64,6 +66,7 @@ StepListener = Callable[[StepRecord], None]
 
 _lock = threading.Lock()
 _config: WtkConfig | None = None
+_scoped_config: ContextVar[WtkConfig | None] = ContextVar("wtk_config", default=None)
 _listeners: list[StepListener] = []
 _current_test: str | None = None
 _seq = 0
@@ -75,6 +78,9 @@ _seq = 0
 def get_config() -> WtkConfig:
     """The active configuration (loaded from the working directory on first use)."""
     __tracebackhide__ = True
+    scoped = _scoped_config.get()
+    if scoped is not None:
+        return scoped
     global _config
     with _lock:
         if _config is None:
@@ -87,6 +93,17 @@ def set_config(cfg: WtkConfig) -> None:
     global _config
     with _lock:
         _config = cfg
+
+
+@contextmanager
+def config_scope(cfg: WtkConfig) -> Generator[None]:
+    """Use a project's configuration for one CLI/editor operation without leaking it."""
+    __tracebackhide__ = True
+    token = _scoped_config.set(cfg)
+    try:
+        yield
+    finally:
+        _scoped_config.reset(token)
 
 
 # -- listeners and test lifecycle -----------------------------------------------------------------

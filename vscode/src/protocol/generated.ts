@@ -471,6 +471,9 @@ export interface ElementEntry {
  * via the `definition` "LocatorData".
  */
 export interface LocatorData {
+  where?: {
+    [k: string]: Matcher | boolean | number;
+  };
   automationId?: Matcher;
   name?: Matcher;
   controlType?: string;
@@ -486,6 +489,9 @@ export interface LocatorData {
  * via the `definition` "WindowLocatorData".
  */
 export interface WindowLocatorData {
+  where?: {
+    [k: string]: Matcher | boolean | number;
+  };
   title?: Matcher;
   process?: string;
   className?: Matcher;

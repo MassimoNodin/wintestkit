@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 
-from wintestkit import runtime
+from wintestkit import __version__, runtime
 
 Validate = Callable[[str, str, Any], None]
 
@@ -132,7 +132,7 @@ def test_stream_framing(stream: list[dict[str, Any]]) -> None:
     assert stream[0]["event"] == "session_start"
     assert stream[1]["event"] == "collected"
     assert stream[-1]["event"] == "session_end"
-    assert stream[0]["wintestkitVersion"] == "0.1.0"
+    assert stream[0]["wintestkitVersion"] == __version__
     assert stream[0]["pid"] > 0
     assert "\\" not in stream[0]["root"]
 

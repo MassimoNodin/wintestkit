@@ -6,6 +6,7 @@ from collections.abc import Callable
 from typing import Any
 
 from wintestkit.engine.locator import Locator
+from wintestkit.engine.properties import matches, native_value, read, resolve_where
 from wintestkit.uia import com
 from wintestkit.uia.constants import CONTROL_TYPES, TreeScope
 from wintestkit.uia.element import UIAElement
@@ -58,7 +59,12 @@ def query_all(root: UIAElement, locator: Locator) -> list[UIAElement]:
     property values; call ``as_live()`` before handing them to actions.
     """
     __tracebackhide__ = True
-    condition = make_condition(**locator.exact_props())
+    constraints = resolve_where(locator.where, locator.describe_link(), locator.taken())
+    props: dict[str, Any] = dict(locator.exact_props())
+    for constraint in constraints:
+        if not constraint.is_regex:
+            props[constraint.spec.condition] = native_value(constraint)
+    condition = make_condition(**props)
     depth = locator.depth
     scope = TreeScope.Children if depth == 1 else TreeScope.Descendants
     found = root.find_all(scope, condition, cached=True)
@@ -67,6 +73,9 @@ def query_all(root: UIAElement, locator: Locator) -> list[UIAElement]:
     regexes = locator.regex_props()
     if regexes:
         found = [e for e in found if all(r.search(getattr(e, attr)) for attr, r in regexes.items())]
+    for constraint in constraints:
+        if constraint.is_regex:
+            found = [e for e in found if matches(constraint, read(e, constraint.spec))]
     return _unique(found)
 
 

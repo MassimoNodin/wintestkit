@@ -4,6 +4,8 @@ scripts/**
 out/**
 node_modules/**
 .vscode-test/**
+.pytest_cache/**
+.ruff_cache/**
 *.ts
 *.mjs
 tsconfig.json
