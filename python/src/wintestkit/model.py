@@ -659,9 +659,10 @@ class _BoundBase:
         return self
 
     def highlight(self, duration_ms: int = 1500, *, timeout: float | None = None) -> None:
-        """Flash an outline around the element (blocks for the duration)."""
+        """Bring the owning window forward, then flash an outline (blocks for the duration)."""
         __tracebackhide__ = True
         element = self.resolve(timeout)
+        actions.bring_to_front(element)
         rect = element.rect
         if rect is None:
             raise ActionError(f"{self._description()} has no on-screen rectangle to highlight")

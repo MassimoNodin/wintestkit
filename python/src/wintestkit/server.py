@@ -36,7 +36,7 @@ _PARAMS: dict[str, tuple[set[str], set[str]]] = {
     "app.close": (set(), set()),
     "element.highlight": ({"file", "qualname"}, {"durationMs"}),
     "page.check": ({"file", "page"}, set()),
-    "inspect.roots": (set(), set()),
+    "inspect.roots": (set(), {"includeOtherApps"}),
     "inspect.children": ({"nodeId"}, set()),
     "inspect.properties": ({"nodeId"}, {"full", "includeAncestors"}),
     "inspect.highlight": ({"nodeId"}, {"durationMs"}),
@@ -115,7 +115,7 @@ class Server:
                     or value < 0
                 ):
                     raise RpcError(-32602, "durationMs must be a finite nonnegative number")
-            elif key in ("full", "includeAncestors"):
+            elif key in ("full", "includeAncestors", "includeOtherApps"):
                 if not isinstance(value, bool):
                     raise RpcError(-32602, f"{key} must be a boolean")
             elif key == "overrides":
@@ -306,18 +306,41 @@ class Server:
                     ]
                 }
             result = resolve_target(app, self.loader, Target(file, params["qualname"]), timeout=0)
-            if result.element is not None and result.element.rect is not None:
-                overlay.flash(result.element.rect, int(params.get("durationMs", 1500)), block=False)
+            if result.uia is not None:
+                from wintestkit.engine.actions import bring_to_front
+
+                bring_to_front(result.uia)
+                rect = result.uia.rect
+            else:
+                rect = result.element.rect if result.element is not None else None
+            if rect is not None:
+                overlay.flash(rect, int(params.get("durationMs", 1500)), block=False)
             return result.to_dict()
         if method == "inspect.roots":
             app = self._app(False)
-            if app is not None:
+            include_other = params.get("includeOtherApps", False)
+            if app is not None and not include_other:
                 roots = app.top_level_windows()
             else:
                 from wintestkit.uia import com
                 from wintestkit.uia.element import UIAElement
 
-                roots = UIAElement(com.get_uia().GetRootElement()).children()
+                desktop = UIAElement(com.get_uia().GetRootElement()).children()
+                if app is None:
+                    roots = desktop
+                else:
+                    roots = list(app.top_level_windows())
+                    seen = {root.runtime_id for root in roots}
+                    pids = set(app.pids)
+                    for window in desktop:
+                        try:
+                            runtime_id = window.runtime_id
+                            if not runtime_id or runtime_id in seen or window.process_id in pids:
+                                continue
+                        except Exception:
+                            continue
+                        seen.add(runtime_id)
+                        roots.append(window)
             return [self._register(root) for root in roots]
         if method == "spy.start":
             from wintestkit.engine.spy import SpySession

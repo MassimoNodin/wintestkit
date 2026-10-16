@@ -1,49 +1,60 @@
 import { parseDocument, isMap, type Document } from "yaml";
 
 export type SettingsScope = "shared" | "local";
+export type SettingGroup = "Application" | "Test runs" | "Debugging";
 export interface SettingField {
   key: string;
   label: string;
   kind: "string" | "number" | "boolean" | "list" | "select";
+  description?: string;
   default?: unknown;
   choices?: string[];
   localOnly?: boolean;
   minimum?: number;
+  group?: SettingGroup;
 }
 export const settingFields: SettingField[] = [
   {
     key: "app.path",
     label: "Application executable",
     kind: "string",
+    description:
+      "The .exe WinTestKit starts for tests. Stored only on this machine.",
     localOnly: true,
   },
-  { key: "app.process", label: "Process name", kind: "string" },
+  {
+    key: "app.process",
+    label: "Process name",
+    kind: "string",
+    description: "Finds or attaches to an application that is already running.",
+    group: "Application",
+  },
   {
     key: "app.args",
     label: "Application arguments (JSON array)",
     kind: "list",
+    description: 'Command-line arguments, for example ["--demo"].',
     default: [],
     localOnly: true,
+    group: "Application",
   },
   {
     key: "app.cwd",
     label: "Working directory",
     kind: "string",
+    description: "Folder the application starts in.",
     localOnly: true,
+    group: "Application",
   },
   {
     key: "launch",
     label: "Application lifecycle",
     kind: "select",
+    description:
+      "Start once per session, once per test, or attach to a running app.",
     default: "per-session",
     choices: ["per-session", "per-test", "attach"],
-  },
-  {
-    key: "timeout",
-    label: "Action / assertion timeout (seconds)",
-    kind: "number",
-    default: 10,
-    minimum: 0.001,
+    group: "Application",
   },
   {
     key: "app.startup_timeout",
@@ -51,6 +62,7 @@ export const settingFields: SettingField[] = [
     kind: "number",
     default: 30,
     minimum: 0.001,
+    group: "Application",
   },
   {
     key: "app.close_timeout",
@@ -58,13 +70,24 @@ export const settingFields: SettingField[] = [
     kind: "number",
     default: 10,
     minimum: 0.001,
+    group: "Application",
+  },
+  {
+    key: "timeout",
+    label: "Action / assertion timeout (seconds)",
+    kind: "number",
+    default: 10,
+    minimum: 0.001,
+    group: "Test runs",
   },
   {
     key: "input_mode",
     label: "Input mode",
     kind: "select",
+    description: "Use UI Automation patterns or simulated mouse input.",
     default: "pattern",
     choices: ["pattern", "mouse"],
+    group: "Test runs",
   },
   {
     key: "screenshots",
@@ -72,35 +95,63 @@ export const settingFields: SettingField[] = [
     kind: "select",
     default: "on-failure",
     choices: ["off", "on-failure", "every-step"],
+    group: "Test runs",
   },
   {
     key: "report_dir",
     label: "Report directory",
     kind: "string",
     default: "wtk-report",
+    group: "Test runs",
   },
   {
     key: "python_paths",
     label: "Python import paths (JSON array)",
     kind: "list",
     default: ["."],
+    group: "Test runs",
   },
   {
     key: "highlight_actions",
     label: "Highlight actions",
     kind: "boolean",
+    description: "Flash each element before WinTestKit acts on it.",
     default: false,
     localOnly: true,
+    group: "Debugging",
   },
   {
     key: "slow_mo_ms",
     label: "Slow motion (milliseconds)",
     kind: "number",
+    description: "Pause after each action so runs are easier to follow.",
     default: 0,
     minimum: 0,
     localOnly: true,
+    group: "Debugging",
   },
 ];
+
+export interface SettingSections {
+  essentials: SettingField[];
+  advanced: { group: SettingGroup; fields: SettingField[] }[];
+}
+
+export function settingSections(scope: SettingsScope): SettingSections {
+  const editable = settingFields.filter(
+    (field) => scope === "local" || !field.localOnly,
+  );
+  const groups: SettingGroup[] = ["Application", "Test runs", "Debugging"];
+  return {
+    essentials: editable.filter((field) => !field.group),
+    advanced: groups
+      .map((group) => ({
+        group,
+        fields: editable.filter((field) => field.group === group),
+      }))
+      .filter((section) => section.fields.length),
+  };
+}
 
 export function settingsScope(filename: string): SettingsScope {
   return filename.endsWith("wintestkit.local.yaml") ? "local" : "shared";

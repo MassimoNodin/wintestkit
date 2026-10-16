@@ -23,7 +23,7 @@ Which actions exist depends on how the element is declared. A plain `Element` ha
 | `expand()` / `collapse()` | Expand or collapse a combo box | `ComboBox` |
 | `focus()` | Give the element keyboard focus | every element |
 | `scroll_into_view()` | Scroll a list or grid item into view | every element |
-| `highlight(duration_ms=1500)` | Draw a frame around the element (debugging aid) | every element |
+| `highlight(duration_ms=1500)` | Bring the owning window forward, then draw a frame around the element. The outline is still drawn if Windows denies foreground | every element |
 
 "every element" means the typed elements and the plain `Element`. A plain `Element` additionally
 has all the other rows (`type`, `check`, `expand`, `select`, ...), so existing pages keep working.

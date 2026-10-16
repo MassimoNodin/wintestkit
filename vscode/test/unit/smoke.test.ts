@@ -4,14 +4,19 @@ import type * as vscode from "vscode";
 
 const mocks = vi.hoisted(() => ({
   log: { info: vi.fn(), error: vi.fn(), show: vi.fn(), dispose: vi.fn() },
-  request: vi.fn(() => Promise.resolve(null)),
+  request: vi.fn<(method: string) => Promise<null>>(() => Promise.resolve(null)),
+  refreshSpy: vi.fn(() => Promise.resolve()),
+  refreshStatus: vi.fn(() => Promise.resolve()),
+  readConfig: vi.fn(),
+  showError: vi.fn(),
+  serverGet: vi.fn(),
   runTerminal: vi.fn(() => Promise.resolve()),
   folder: {
     uri: { fsPath: "C:\demo", toString: () => "file:///C:/demo" },
     name: "demo",
   },
   registerCommand: vi.fn<
-    (command: string, callback: () => void) => vscode.Disposable
+    (command: string, callback: (target?: vscode.TreeItem) => unknown) => vscode.Disposable
   >(() => ({ dispose: vi.fn() })),
   executeCommand: vi.fn(() => Promise.resolve()),
   registerTreeDataProvider: vi.fn<
@@ -24,6 +29,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("vscode", () => ({
   window: {
+    showErrorMessage: mocks.showError,
     registerCustomEditorProvider: vi.fn(() => ({ dispose: vi.fn() })),
     createOutputChannel: () => mocks.log,
     registerTreeDataProvider: mocks.registerTreeDataProvider,
@@ -62,9 +68,11 @@ vi.mock("../../src/settings/currentSetup", () => ({
     dispose() {}
   },
 }));
+vi.mock("../../src/settings/files", () => ({ readConfiguration: mocks.readConfig }));
 vi.mock("../../src/server/serverManager", () => ({
   ServerManager: class {
-    get() {
+    get(project?: unknown) {
+      mocks.serverGet(project);
       return Promise.resolve({ client: { request: mocks.request } });
     }
     restart() {
@@ -78,16 +86,15 @@ vi.mock("../../src/server/serverManager", () => ({
 }));
 vi.mock("../../src/statusBar", () => ({
   StatusBar: class {
-    refresh() {
-      return Promise.resolve();
-    }
+    refresh = mocks.refreshStatus;
     dispose() {}
   },
 }));
 vi.mock("../../src/projects", () => ({
   Projects: class {
     all = [{ root: mocks.folder.uri, name: mocks.folder.name }];
-    projectFor() {
+    projectFor(uri?: vscode.Uri) {
+      if (uri?.fsPath === "C:/other") return { root: uri, name: "other" };
       return this.all[0];
     }
     onDidChange() {
@@ -137,6 +144,7 @@ vi.mock("../../src/spy/insertElement", () => ({
 }));
 vi.mock("../../src/spy/spyView", () => ({
   SpyView: class {
+    refreshForProject = mocks.refreshSpy;
     constructor() {
       mocks.registerWebviewViewProvider("wintestkit.spy", {});
       mocks.registerCommand("wintestkit.spy.startPick", () => {});
@@ -148,9 +156,7 @@ vi.mock("../../src/spy/spyView", () => ({
 vi.mock("../../src/views/elementsTree", () => ({
   ElementsTree: class {
     constructor() {
-      mocks.registerTreeDataProvider("wintestkit.elements", {});
-      mocks.registerTreeDataProvider("wintestkit.flows", {});
-      mocks.registerTreeDataProvider("wintestkit.tests", {});
+      mocks.registerWebviewViewProvider("wintestkit.navigation", {});
       mocks.registerCommand("wintestkit.tests.run", () => {});
       mocks.registerCommand("wintestkit.tests.debug", () => {});
       mocks.registerCommand("wintestkit.elements.goTo", () => {});
@@ -184,6 +190,7 @@ describe("extension scaffold", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.readConfig.mockResolvedValue({ "app.path": "C:/Apps/Demo.exe" });
     subscriptions = [];
     activate({
       subscriptions,
@@ -200,20 +207,22 @@ describe("extension scaffold", () => {
         .map((command: { command: string }) => command.command)
         .sort(),
     );
-    expect(mocks.registerTreeDataProvider).toHaveBeenCalledWith(
-      "wintestkit.elements",
+    expect(mocks.registerWebviewViewProvider).toHaveBeenCalledWith(
+      "wintestkit.navigation",
       expect.any(Object),
     );
     expect(mocks.registerWebviewViewProvider).toHaveBeenCalledWith(
       "wintestkit.spy",
       expect.any(Object),
     );
-    expect(manifest.contributes.views.wintestkit.slice(0, 4)).toEqual([
+    expect(manifest.contributes.views.wintestkit).toEqual([
       { id: "wintestkit.setup", name: "Current Setup" },
-      { id: "wintestkit.elements", name: "Pages" },
-      { id: "wintestkit.flows", name: "Flows" },
-      { id: "wintestkit.tests", name: "Tests" },
+      { id: "wintestkit.navigation", name: "Explorer", type: "webview" },
+      { id: "wintestkit.spy", name: "Spy", type: "webview" },
     ]);
+    expect(JSON.stringify(manifest.contributes.menus["view/title"])).not.toContain(
+      "wintestkit.spy",
+    );
     expect(subscriptions.length).toBeGreaterThan(
       manifest.contributes.commands.length + 3,
     );
@@ -238,6 +247,35 @@ describe("extension scaffold", () => {
       mocks.folder.uri.fsPath,
       "doctor",
     ]);
+  });
+
+  it.each([
+    ["launchApp", ["app.launch"]],
+    ["closeApp", ["app.close"]],
+    ["restartApp", ["app.close", "app.launch"]],
+    ["refreshApp", []],
+  ])("runs %s for the setup row's project and refreshes its state", async (command, methods) => {
+    const root = { fsPath: "C:/other", toString: () => "file:///C:/other" } as vscode.Uri;
+    const callback = mocks.registerCommand.mock.calls.find(
+      ([registered]) => registered === "wintestkit." + command,
+    )?.[1];
+    expect(callback).toBeDefined();
+    await callback?.({ resourceUri: root } as vscode.TreeItem);
+    expect(mocks.request.mock.calls.map(([method]) => method)).toEqual(methods);
+    if (methods.length) expect(mocks.serverGet).toHaveBeenCalledWith({ root, name: "other" });
+    expect(mocks.refreshSpy).toHaveBeenCalledWith({ root, name: "other" });
+    expect(mocks.refreshStatus).toHaveBeenCalledOnce();
+  });
+
+  it("does not close an attached app when restart has no executable", async () => {
+    mocks.readConfig.mockResolvedValue({ "app.process": "CalculatorApp.exe" });
+    const callback = mocks.registerCommand.mock.calls.find(
+      ([command]) => command === "wintestkit.restartApp",
+    )?.[1];
+    await callback?.();
+    expect(mocks.request).not.toHaveBeenCalled();
+    expect(mocks.showError).toHaveBeenCalledWith(expect.stringContaining("executable"));
+    expect(mocks.refreshStatus).toHaveBeenCalledOnce();
   });
 
   it("has a Windows testing manifest and configuration parser dependencies", () => {

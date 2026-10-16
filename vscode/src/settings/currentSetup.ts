@@ -1,6 +1,7 @@
 import * as path from "node:path";
 import * as vscode from "vscode";
 import type { Projects } from "../projects";
+import type { StatusBar } from "../statusBar";
 import { readConfiguration } from "./files";
 import { executableIcon } from "./appIcon";
 
@@ -13,9 +14,13 @@ export class CurrentSetup
   private readonly icons = new Map<string, vscode.Uri | undefined>();
   private readonly pendingIcons = new Set<string>();
   private disposed = false;
-  constructor(private readonly projects: Projects) {
+  constructor(
+    private readonly projects: Projects,
+    private readonly status: StatusBar,
+  ) {
     this.subscriptions = [
       projects.onDidChange(() => this.refresh()),
+      status.onDidChangeApplication(() => this.refresh()),
       vscode.window.onDidChangeActiveTextEditor(() => this.refresh()),
       vscode.window.registerTreeDataProvider("wintestkit.setup", this),
     ];
@@ -60,6 +65,22 @@ export class CurrentSetup
       item.tooltip =
         (file || process || "Select an application in local settings") +
         "\nClick to configure this project.";
+      const state = this.status.applicationState(project);
+      const stateLabel = state?.error
+        ? "Status unavailable"
+        : state ? state.running ? "Running" : "Stopped" : "Checking app…";
+      item.description += " · " + stateLabel;
+      item.tooltip += "\n" + (state?.error || stateLabel);
+      const launchable = !!file?.trim();
+      item.contextValue = state?.error || !state
+        ? "current-setup"
+        : "current-setup-" + (state.running ? "running" : "stopped") +
+          (launchable ? "-launchable" : "-attach");
+      if (!launchable) {
+        item.tooltip += process
+          ? "\nStart the app manually and refresh its status, or configure an executable to launch it."
+          : "\nConfigure an executable or process name first.";
+      }
       const iconSource = file
         ? path.isAbsolute(file)
           ? file

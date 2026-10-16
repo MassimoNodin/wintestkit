@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from rpc_support import make_server, request
+from rpc_support import RpcElement, make_server, request
 
 from wintestkit.engine import actions, overlay
 from wintestkit.errors import AppNotRunningError, EnvironmentNotReadyError
@@ -59,6 +59,44 @@ def test_methods_and_nodes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> N
     assert request(server, output, "initialize", {"root": str(tmp_path)})["error"]["code"] == -32600
 
 
+def test_roots_include_other_apps_only_when_asked(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    server, output, _button = make_server(tmp_path, monkeypatch)
+    request(server, output, "initialize", {"root": str(tmp_path)})
+    assert server.app is not None
+    window = server.app.windows[0]  # type: ignore[attr-defined]
+    other = RpcElement("Window", "Notepad")
+    other.process_id = 2
+    owned = RpcElement("Window", "Owned dialog")
+    owned.process_id = 1
+    desktop_reads = 0
+
+    class RootElement:
+        def __init__(self, _raw: object) -> None:
+            pass
+
+        def children(self) -> list[Any]:
+            nonlocal desktop_reads
+            desktop_reads += 1
+            return [window, owned, other]
+
+    monkeypatch.setattr("wintestkit.uia.element.UIAElement", RootElement)
+    monkeypatch.setattr(
+        "wintestkit.uia.com.get_uia",
+        lambda: type("Uia", (), {"GetRootElement": lambda self: object()})(),
+    )
+    scoped = request(server, output, "inspect.roots")["result"]
+    assert [node["info"]["name"] for node in scoped] == ["Demo"]
+    assert desktop_reads == 0
+    widened = request(server, output, "inspect.roots", {"includeOtherApps": True})["result"]
+    assert [node["info"]["name"] for node in widened] == ["Demo", "Notepad"]
+    assert desktop_reads == 1
+    restored = request(server, output, "inspect.roots", {"includeOtherApps": False})["result"]
+    assert [node["info"]["name"] for node in restored] == ["Demo"]
+    assert desktop_reads == 1
+
+
 @pytest.mark.parametrize("full", [False, True])
 @pytest.mark.parametrize("ancestors", [False, True])
 def test_inspection_expensive_reads_are_opt_in(
@@ -102,8 +140,9 @@ def test_inspection_expensive_reads_are_opt_in(
 
 
 @pytest.mark.parametrize("activated", [True, False])
+@pytest.mark.parametrize("method", ["inspect.highlight", "element.highlight"])
 def test_highlight_raises_window_before_reading_bounds(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, activated: bool
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, activated: bool, method: str
 ) -> None:
     server, output, button = make_server(tmp_path, monkeypatch)
     request(server, output, "initialize", {"root": str(tmp_path)})
@@ -126,13 +165,35 @@ def test_highlight_raises_window_before_reading_bounds(
 
     monkeypatch.setattr(actions, "bring_to_front", foreground)
     monkeypatch.setattr(overlay, "flash", flash)
-    assert (
-        request(server, output, "inspect.highlight", {"nodeId": node["nodeId"], "durationMs": 800})[
-            "result"
-        ]
-        is None
-    )
+    if method == "inspect.highlight":
+        response = request(server, output, method, {"nodeId": node["nodeId"], "durationMs": 800})
+        assert response["result"] is None
+    else:
+        response = request(
+            server,
+            output,
+            method,
+            {"file": "page.py", "qualname": "Main.ok", "durationMs": 800},
+        )
+        assert response["result"]["status"] == "found"
     assert calls == ["foreground", "highlight"]
+
+
+def test_element_highlight_does_not_activate_a_missing_target(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    server, output, _ = make_server(tmp_path, monkeypatch)
+    request(server, output, "initialize", {"root": str(tmp_path)})
+
+    def unexpected(*args: Any, **kwargs: Any) -> None:
+        pytest.fail("must not activate or outline a target that does not resolve")
+
+    monkeypatch.setattr(actions, "bring_to_front", unexpected)
+    monkeypatch.setattr(overlay, "flash", unexpected)
+    response = request(
+        server, output, "element.highlight", {"file": "page.py", "qualname": "Main.missing"}
+    )
+    assert response["error"]["code"] == -32003
 
 
 @pytest.mark.parametrize(
@@ -144,6 +205,7 @@ def test_highlight_raises_window_before_reading_bounds(
         ("inspect.children", {}),
         ("inspect.properties", {"nodeId": "x", "full": "true"}),
         ("inspect.properties", {"nodeId": "x", "includeAncestors": 1}),
+        ("inspect.roots", {"includeOtherApps": "yes"}),
         ("inspect.highlight", {"nodeId": "x", "durationMs": -1}),
         ("inspect.highlight", {"nodeId": "x", "durationMs": True}),
         ("inspect.highlight", {"nodeId": "x", "durationMs": float("nan")}),

@@ -246,8 +246,8 @@ The type argument of `Element[...]` is the only link between the two; it also gi
 
 To extend a built-in control, subclass its bound class (`class BoundMyCombo(BoundComboBox)`) and
 declare `class MyCombo(Element[BoundMyCombo])`; an existing typed element can also be subclassed
-as is (`class StateCombo(ComboBox)`). Discovery (`wtk discover`, the Pages view) finds your element
-classes statically, including across modules, and shows their type.
+as is (`class StateCombo(ComboBox)`). Discovery (`wtk discover`, the Explorer **Pages** tab)
+finds your element classes statically, including across modules, and shows their type.
 
 ## Inheritance
 
@@ -371,5 +371,5 @@ def reset_demo(main: MainPage) -> None:
     expect(main.status).to_have_text("Ready")
 ```
 
-Pages are discovered statically (without importing your code) by `wtk discover`, the VS Code
-Pages section and CodeLens, so define them as plain class attributes at class level.
+Pages are discovered statically (without importing your code) by `wtk discover`, the Explorer
+**Pages** tab and CodeLens, so define them as plain class attributes at class level.

@@ -7,6 +7,7 @@ import {
   flattenSettings,
   parseSettings,
   settingFields,
+  settingSections,
   settingsScope,
   updateSetting,
 } from "./model";
@@ -95,7 +96,7 @@ export class ConfigurationEditor implements vscode.CustomTextEditorProvider {
       nonce +
       '\';"><link rel="stylesheet" href="' +
       style +
-      '"></head><body><header><p class="eyebrow">WINTESTKIT</p><h1>Configuration</h1><p id="project"></p><nav><button id="local">This machine</button><button id="shared">Shared project</button><button id="source">Open YAML</button><button id="save">Save configuration</button></nav></header><p id="scope"></p><p class="help">Machine overrides take precedence over shared YAML and legacy pyproject.toml settings. Environment variables and CLI options can override both. Uncheck a setting to inherit it.</p><p id="status" role="status" aria-live="polite"></p><main id="fields"></main><script nonce="' +
+      '"></head><body><header><p class="eyebrow">WINTESTKIT</p><h1>Configuration</h1><p id="project"></p><nav aria-label="Configuration file and actions"><button id="local">This machine</button><button id="shared">Shared project</button><button id="source">Open YAML</button><button id="save">Save configuration</button></nav></header><p id="scope"></p><p id="status" role="status" aria-live="polite"></p><main id="fields"></main><script nonce="' +
       nonce +
       '" src="' +
       script +
@@ -120,6 +121,7 @@ export class ConfigurationEditor implements vscode.CustomTextEditorProvider {
           version,
           dirty: document.isDirty,
           fields: settingFields,
+          sections: settingSections(scope),
           values: flattenSettings(parsed.toJS({ maxAliasCount: 50 }) ?? {}),
           effective,
         });

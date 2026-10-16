@@ -36,9 +36,17 @@
                     aria-hidden="true"
                 ></span>
             </button>
-            <span class="toolbar-spacer"></span
-            ><span id="state" role="status">Connecting</span>
-            <button id="launch" class="secondary" hidden>Launch app</button>
+            <button
+                id="other-apps"
+                class="secondary"
+                aria-pressed="false"
+                aria-label="Show other apps' objects"
+                title="Show other apps' objects"
+                hidden
+            >
+                <span class="codicon codicon-window" aria-hidden="true"></span
+                >Other apps
+            </button>
         </header>
         <main id="workspace">
             <section id="tree-pane" class="pane" aria-label="Object browser">

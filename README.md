@@ -107,7 +107,7 @@ app:
   path: C:/Program Files/Contoso/Orders.exe
 ```
 
-In VS Code, use the **Current Setup** gear above Pages to edit these files with the custom
+In VS Code, use the **Current Setup** gear above the Explorer to edit these files with the custom
 YAML configuration editor. `pyproject.toml` retains pytest configuration, and legacy
 `[tool.wintestkit]` settings remain supported. Use your real executable path; relative paths
 resolve from the project directory.
@@ -175,6 +175,8 @@ wtk check pages/main.py          # ✗ = broken/moved, ends with "25 found, 4 br
 ```
 
 In VS Code, use the **Highlight** and **Check** CodeLens actions above your page elements.
+**Highlight**, `wtk highlight` and `Element.highlight()` bring the owning window forward before
+drawing the outline. If Windows denies that, the outline is still drawn.
 See [pages and elements](docs/guide/pages-and-elements.md) and
 [locator strategies](docs/guide/locators-for-wpf.md) for nested controls, lists and dialogs.
 

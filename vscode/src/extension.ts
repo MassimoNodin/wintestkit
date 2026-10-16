@@ -18,6 +18,7 @@ import { registerInsertElement } from "./spy/insertElement";
 import { computeInsertion } from "./spy/insertionModel";
 import { ConfigurationEditor, settingsEditorId } from "./settings/editor";
 import { CurrentSetup } from "./settings/currentSetup";
+import { readConfiguration } from "./settings/files";
 
 interface CommandContribution {
   command: string;
@@ -41,8 +42,13 @@ export function activate(context: vscode.ExtensionContext): {
   const servers = new ServerManager(log);
   activeServers = servers;
   const projects = new Projects(log);
+  const currentProject = (): Project | undefined => {
+    const document = vscode.window.activeTextEditor?.document.uri;
+    return (document && projects.projectFor(document)) || projects.all[0];
+  };
+  const status = new StatusBar(servers, currentProject);
   const configuration = new ConfigurationEditor(projects, context.extensionUri);
-  const setup = new CurrentSetup(projects);
+  const setup = new CurrentSetup(projects, status);
   context.subscriptions.push(
     setup,
     vscode.window.registerCustomEditorProvider(
@@ -98,9 +104,9 @@ export function activate(context: vscode.ExtensionContext): {
     },
   );
   const discovery = new DiscoveryStore(projects, servers, log);
-  const lenses = new CodeLenses(projects, discovery);
   const checks = new CheckResultsStore(discovery);
-  const elements = new ElementsTree(projects, discovery, checks);
+  const lenses = new CodeLenses(projects, discovery, checks);
+  const elements = new ElementsTree(projects, discovery, checks, context);
   context.subscriptions.push(elements);
   const spy = new SpyView(projects, servers, context.extensionUri, log);
   context.subscriptions.push(spy);
@@ -118,11 +124,6 @@ export function activate(context: vscode.ExtensionContext): {
     new CheckDecorations(checks, context.extensionUri),
     new HighlightCommands(projects, discovery, servers, checks, log),
   );
-  const currentProject = (): Project | undefined => {
-    const document = vscode.window.activeTextEditor?.document.uri;
-    return document ? projects.projectFor(document) : projects.all[0];
-  };
-  const status = new StatusBar(servers, currentProject);
   context.subscriptions.push(servers, status, projects, discovery);
   let previousProjects: readonly Project[] = [];
   context.subscriptions.push(
@@ -144,8 +145,11 @@ export function activate(context: vscode.ExtensionContext): {
   );
   const withProject = async (
     action: (project: Project) => Promise<unknown>,
+    target?: vscode.TreeItem,
   ): Promise<void> => {
-    const project = currentProject();
+    const project = target?.resourceUri
+      ? projects.projectFor(target.resourceUri)
+      : currentProject();
     if (!project) {
       await vscode.window.showInformationMessage(
         "Open a WinTestKit project first.",
@@ -154,24 +158,33 @@ export function activate(context: vscode.ExtensionContext): {
     }
     try {
       await action(project);
-      await status.refresh();
     } catch (error) {
       log.error(String(error));
       await vscode.window.showErrorMessage(String(error));
+    } finally {
+      await status.refresh();
     }
   };
-  const implemented: Record<string, () => unknown> = {
+  const changeApp = (methods: string[], target?: vscode.TreeItem) =>
+    withProject(async (project) => {
+      if (methods.length > 1) {
+        const config = await readConfiguration(project.root);
+        if (typeof config["app.path"] !== "string" || !config["app.path"].trim())
+          throw new Error("Configure an application executable before restarting the app.");
+      }
+      const connection = await servers.get(project);
+      for (const method of methods) await connection.client.request(method);
+      await spy.refreshForProject(project);
+    }, target);
+  const implemented: Record<string, (target?: vscode.TreeItem) => unknown> = {
     "wintestkit.elements.refresh": () => projects.refresh(),
     "wintestkit.showOutput": () => log.show(),
     "wintestkit.openReport": () => reports.open(currentProject()),
-    "wintestkit.launchApp": () =>
-      withProject(async (project) =>
-        (await servers.get(project)).client.request("app.launch"),
-      ),
-    "wintestkit.closeApp": () =>
-      withProject(async (project) =>
-        (await servers.get(project)).client.request("app.close"),
-      ),
+    "wintestkit.launchApp": (target) => changeApp(["app.launch"], target),
+    "wintestkit.closeApp": (target) => changeApp(["app.close"], target),
+    "wintestkit.restartApp": (target) => changeApp(["app.close", "app.launch"], target),
+    "wintestkit.refreshApp": (target) =>
+      withProject((project) => spy.refreshForProject(project), target),
     "wintestkit.restartServer": () =>
       withProject((project) => servers.restart(project)),
     "wintestkit.runDoctor": () =>
@@ -238,9 +251,9 @@ export function activate(context: vscode.ExtensionContext): {
     )
       continue;
     context.subscriptions.push(
-      vscode.commands.registerCommand(contribution.command, () => {
+      vscode.commands.registerCommand(contribution.command, (target?: vscode.TreeItem) => {
         if (implemented[contribution.command])
-          return implemented[contribution.command]();
+          return implemented[contribution.command](target);
         if (contribution.command === "wintestkit.showOutput") {
           log.show();
         } else {

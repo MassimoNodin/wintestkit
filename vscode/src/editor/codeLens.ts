@@ -3,6 +3,7 @@ import type { Projects } from "../projects";
 import type { DiscoveryStore } from "../discovery/store";
 import type { TestOutcome } from "../protocol/generated";
 import { buildLenses } from "./lensModel";
+import type { CheckResultsStore } from "./decorations";
 
 export class CodeLenses implements vscode.CodeLensProvider, vscode.Disposable {
   private readonly changed = new vscode.EventEmitter<void>();
@@ -12,9 +13,11 @@ export class CodeLenses implements vscode.CodeLensProvider, vscode.Disposable {
   constructor(
     private readonly projects: Projects,
     private readonly discovery: DiscoveryStore,
+    private readonly checks: CheckResultsStore,
   ) {
     this.subscriptions = [
       discovery.onDidChange(() => this.refresh()),
+      checks.onDidChange(() => this.refresh()),
       vscode.workspace.onDidChangeConfiguration((event) => {
         if (event.affectsConfiguration("wintestkit.codeLens.enabled"))
           this.refresh();
@@ -38,7 +41,12 @@ export class CodeLenses implements vscode.CodeLensProvider, vscode.Disposable {
     const project = this.projects.projectFor(document.uri);
     const result = project && this.discovery.get(project);
     if (!result) return [];
-    return buildLenses(result, document.uri.fsPath, this.lastResults).map(
+    return buildLenses(
+      result,
+      document.uri.fsPath,
+      this.lastResults,
+      this.checks.feedback,
+    ).map(
       (spec) =>
         new vscode.CodeLens(new vscode.Range(spec.line, 0, spec.line, 0), {
           title: spec.title,

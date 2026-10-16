@@ -263,7 +263,7 @@ interface CheckResult extends ElementResult { qualname: string }
 
 // --- inspector
 interface NodeInfo { nodeId: string; info: ElementInfo; hasChildren: boolean }
-"inspect.roots":     () => NodeInfo[]   // top-level windows of the app (all windows if no app configured/running)
+"inspect.roots":     (p?: { includeOtherApps?: boolean }) => NodeInfo[]   // app windows; includeOtherApps returns all top-level windows (also used when no app is configured/running)
 "inspect.children":  (p: { nodeId: string }) => NodeInfo[]
 "inspect.properties":(p: { nodeId: string }) => { info: ElementInfo;            // includes patterns
                                                    properties: Record<string, string>;  // every readable UIA property, stringified

@@ -254,6 +254,7 @@ def test_invalid_item_selectors(validate: Validate, data: Any) -> None:
         ("events.schema.json", "RunEvent", {"event": "test_start", "time": 0}),
         ("rpc.schema.json", "InitializeParams", {}),
         ("rpc.schema.json", "DiscoverParams", {"overrides": {"file.py": 42}}),
+        ("rpc.schema.json", "InspectRootsParams", {"includeOtherApps": "yes"}),
         ("rpc.schema.json", "InspectHighlightResult", {}),
         ("rpc.schema.json", "LogNotification", {"level": "trace", "message": "test"}),
     ],

@@ -13,7 +13,7 @@ application under test.
 | [Locators for WPF](locators-for-wpf.md) | Strict matching, diagnostics, locator strategies, lists, grids, dialogs |
 | [Actions and assertions](actions-and-assertions.md) | Every action, auto-waiting, `expect`, timeouts |
 | [Running tests](running-tests.md) | `wtk run`, launch modes, fixtures, reports, JUnit, exit codes |
-| [VS Code](vscode.md) | CodeLens, Test Explorer, debugging, Pages/Flows/Tests sections, Spy |
+| [VS Code](vscode.md) | CodeLens, Test Explorer, debugging, Explorer (Pages, Flows, Tests), Spy |
 | [CI](ci.md) | Running UI tests on a build agent |
 | [Troubleshooting](troubleshooting.md) | `wtk doctor`, common failures, logs |
 | [Migrating from TestComplete](migrating-from-testcomplete.md) | Concept mapping |

@@ -1,10 +1,15 @@
-"""Resolve child controls to their owning native window without interacting with them."""
+"""Resolve child controls to their owning window, then highlight the restored bounds."""
+
+from typing import Any
 
 import pytest
 from fakes import FakeElement
 
-from wintestkit.engine import actions
+from wintestkit.engine import actions, overlay
+from wintestkit.errors import ActionError
+from wintestkit.model import _BoundBase
 from wintestkit.uia import win32
+from wintestkit.uia.element import Rect
 
 
 @pytest.mark.parametrize("child_handle", [0, 101])
@@ -48,3 +53,49 @@ def test_no_native_window_does_not_activate_another_app(monkeypatch: pytest.Monk
 
     monkeypatch.setattr(win32, "bring_to_foreground", unexpected)
     assert not actions.bring_to_front(root)
+
+
+def test_bound_highlight_reads_bounds_after_raise(monkeypatch: pytest.MonkeyPatch) -> None:
+    target = FakeElement("Button", "Save", rect=None)
+    restored = Rect(8, 9, 40, 16)
+    calls: list[str] = []
+
+    def foreground(element: Any) -> bool:
+        assert element is target
+        target.rect = restored
+        calls.append("foreground")
+        return True
+
+    def flash(rect: Rect, duration: int, *, block: bool) -> None:
+        assert rect == restored
+        assert duration == 250
+        assert block
+        calls.append("highlight")
+
+    class Stub(_BoundBase):
+        def resolve(self, timeout: float | None = None) -> Any:
+            return target
+
+        def _description(self) -> str:
+            return "Main.save"
+
+    monkeypatch.setattr(actions, "bring_to_front", foreground)
+    monkeypatch.setattr(overlay, "flash", flash)
+    Stub().highlight(250)
+    assert calls == ["foreground", "highlight"]
+
+
+def test_bound_highlight_without_bounds_does_not_draw(monkeypatch: pytest.MonkeyPatch) -> None:
+    target = FakeElement("Button", "Save", rect=None)
+
+    class Stub(_BoundBase):
+        def resolve(self, timeout: float | None = None) -> Any:
+            return target
+
+        def _description(self) -> str:
+            return "Main.save"
+
+    monkeypatch.setattr(actions, "bring_to_front", lambda element: False)
+    monkeypatch.setattr(overlay, "flash", lambda *args, **kwargs: pytest.fail("must not flash"))
+    with pytest.raises(ActionError, match="no on-screen rectangle"):
+        Stub().highlight()

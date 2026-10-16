@@ -1,7 +1,7 @@
 # VS Code
 
 The **WinTestKit** extension (`wintestkit.wintestkit`) adds editor actions, Test Explorer
-integration, separate Pages, Flows and Tests sections, and a Spy. It needs the
+integration, an **Explorer** for Pages, Flows and Tests, and a **Spy** below it. It needs the
 [Python extension](https://marketplace.visualstudio.com/items?itemName=ms-python.python) and the
 `wintestkit` package in the selected interpreter. When the package is missing, the extension
 offers to install it (**WinTestKit: Install wintestkit Package**).
@@ -10,13 +10,31 @@ The extension starts one Python server per project in the background. The status
 whether the application is running; click it for **Launch App**, **Close App**, **Restart Server**,
 **Open Last Report**, **Check Environment** and **Show Output**.
 
+## Current Setup
+
+The configured application appears in **Current Setup**, with its lifecycle mode and live
+**Running** or **Stopped** state on the same row. Hover over the row to access **Launch App**
+(when stopped), **Close App** (when running), **Restart App**, **Refresh App Status**, and the
+settings gear. Launch and restart require an executable path in the local configuration.
+For a process-only attach setup, start the application manually and refresh its status.
+The state updates automatically while VS Code is focused, and app actions refresh the visible Spy.
+Spy's toolbar is reserved for picking and browsing controls.
+
 ## CodeLens
 
-- Above every `Element` and `Window`: **Highlight** draws a frame around the control in the running
-  application; **Check** resolves it and shows the result in the gutter. A failed check becomes an
-  editor warning with the full diagnostic (closest candidates and what differs).
+- Above every `Element` and `Window`: **Highlight** brings the control's owning window to the
+  foreground, then draws a frame around it. If Windows denies that, the outline is still drawn.
+  The same foreground step runs for `wtk highlight` and `Element.highlight()`. **Check** resolves
+  the control and shows the result in the gutter. A failed check becomes an editor warning with
+  the full diagnostic (closest candidates and what differs).
 - Above every `Page`: **Check All Elements** checks the whole page.
 - Above every test: **Run Test** and **Debug Test**.
+
+Highlight and Check show progress and their latest result directly in the CodeLens: **Highlighting…** /
+**Checking…**, then **Highlighted** / **Check: Found**, **Not found**, **multiple matches**, or **Failed**.
+Hover over a result for details; click it again to retry the same action. Highlight and Check keep
+separate results, and Check All Elements updates each element's Check result. Results describe the
+last attempt, not live app state; editing the declaration or refreshing discovery clears them.
 
 If the application isn't running, **Highlight** offers to launch it. Turn the CodeLens off with
 `wintestkit.codeLens.enabled`.
@@ -45,9 +63,11 @@ The Python extension can also discover your tests with pytest, which shows every
 WinTestKit offers to disable the Python extension's pytest discovery for the workspace; keeping
 both is supported. Turn the prompt off with `wintestkit.promptDisablePytestExplorer`.
 
-## Pages, Flows and Tests
+## Explorer
 
-The WinTestKit activity bar has three independently collapsible sections:
+**Current Setup**, **Explorer** and **Spy** stack in the WinTestKit activity bar, with Spy
+below Explorer. Explorer is a single view. A **Pages | Flows | Tests** control at the top
+switches the list, and the selected tab is remembered.
 
 - **Pages** lists page classes, with elements nested under their `within` containers.
   Inline actions highlight/check elements or check a whole page; icons show the last check result.
@@ -57,17 +77,25 @@ The WinTestKit activity bar has three independently collapsible sections:
 - **Tests** lists pytest tests by file and class, with inline **Run Tests** and **Debug Tests**
   actions for a test, class, file or project. These use the same runner as the Test Explorer.
 
-Click an entry to open its definition. Each section has its own refresh action and groups
-entries by project in multi-project workspaces. Discovery updates while you type without
-importing or running your code. The built-in Test Explorer remains available.
+Click an entry to open its definition. **Refresh** on the Explorer title reloads discovery.
+Entries are grouped by project in multi-project workspaces. Discovery updates while you type
+without importing or running your code. The built-in Test Explorer remains available.
 
 ## Spy
 
-The **Spy** view explores the live UI Automation tree of the application.
+The **Spy** view, below Explorer, explores the live UI Automation tree of the application.
 
-- Expand windows and controls lazily; selecting a control highlights it in the application.
-- **Pick Element** (or `wtk spy` in a terminal): hold **Ctrl** and click a control in the
-  application. **Esc** cancels.
+- Expand windows and controls lazily. Selecting a control highlights it and brings its owning
+  window to the foreground when Windows allows it. If Windows denies that, the outline is still
+  drawn.
+- The toolbar starts with **Pick element**, **Refresh objects** and **Collapse all**. **Pick
+  element** (or `wtk spy` in a terminal): hold **Ctrl** and click a control in the application.
+  **Esc** cancels. **Refresh objects** reloads the tree. **Pick element** and **Refresh objects**
+  stay in the Spy toolbar.
+- While the application is running, **Other apps** follows **Collapse all**. It is off by
+  default (**Show other apps' objects**), so the tree lists the current application's windows.
+  Turn it on (**Hide other apps' objects**) to append other desktop windows after those. The
+  choice is remembered.
 - The details show the control's properties, supported patterns and a **suggested locator** that
   is marked unique, or not unique with the number of matches.
 - **Add to page…** inserts the locator into an existing page or a new page file, adds
@@ -88,14 +116,20 @@ does not block the basic property display.
 
 ## Project Configuration
 
-**Current Setup**, above Pages, shows the application name and executable icon (with a
+**Current Setup**, above the Explorer, shows the application name and executable icon (with a
 generic fallback). Click the row or gear to configure it. In multi-project workspaces,
 it follows the active source file.
 
-The custom YAML editor offers **This machine** and **Shared project** tabs. Override
-checkboxes control inheritance. Save with the toolbar or Ctrl+S; **Open YAML** switches
-to raw text for advanced settings. Comments and other settings are preserved. Saving
-reloads the backend and refreshes Current Setup. Invalid settings show actionable errors.
+The custom YAML editor offers **This machine** and **Shared project** tabs. On **This
+machine**, **Start the application** shows only **Application executable**, with **Browse…**;
+clearing it removes the override. On **Shared project**, that section explains the executable
+lives in the ignored local file. Everything else (process name, arguments, working directory,
+lifecycle, timeouts, input mode, screenshots, reports, import paths and debugging aids)
+sits under the collapsed **Advanced options** section, grouped as **Application**, **Test runs**
+and **Debugging**, where override checkboxes control inheritance. Save with the toolbar or
+Ctrl+S; **Open YAML** switches to raw text for settings not shown in the form. Comments and
+other settings are preserved. Saving reloads the backend and refreshes Current Setup. Invalid
+settings show actionable errors.
 
 Executable paths, working directories, arguments and viewing preferences are edited in
 ignored `wintestkit.local.yaml`; shareable defaults go in `wintestkit.yaml`. Missing files

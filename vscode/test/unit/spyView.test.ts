@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import * as path from "node:path";
 import type * as vscode from "vscode";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -11,6 +12,10 @@ const mocks = vi.hoisted(() => ({
   command: vi.fn(),
   information: vi.fn(() => Promise.resolve(undefined)),
   icons: vi.fn(() => Promise.resolve({} as Record<string, string>)),
+  activeEditor: undefined as
+    | { document: { uri: { fsPath: string; toString(): string } } }
+    | undefined,
+  editorListeners: [] as Array<() => void>,
 }));
 vi.mock("../../src/spy/appIcons", () => ({
   readApplicationIcons: mocks.icons,
@@ -25,8 +30,19 @@ vi.mock("vscode", () => ({
     }),
   },
   window: {
+    get activeTextEditor() {
+      return mocks.activeEditor;
+    },
     registerWebviewViewProvider: () => ({ dispose() {} }),
-    onDidChangeActiveTextEditor: () => ({ dispose() {} }),
+    onDidChangeActiveTextEditor: (callback: () => void) => {
+      mocks.editorListeners.push(callback);
+      return {
+        dispose() {
+          const index = mocks.editorListeners.indexOf(callback);
+          if (index >= 0) mocks.editorListeners.splice(index, 1);
+        },
+      };
+    },
     showInformationMessage: mocks.information,
   },
   commands: {
@@ -42,12 +58,15 @@ describe("Spy view bridge", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.notifications.clear();
+    mocks.activeEditor = undefined;
+    mocks.editorListeners.splice(0, mocks.editorListeners.length);
   });
   const create = async (connect?: () => Promise<unknown>) => {
     const project = {
       root: { fsPath: "C:/demo", toString: () => "demo" },
       name: "demo",
     };
+    const known = [project];
     const notificationDisposals: string[] = [];
     const client = {
       request: mocks.request,
@@ -65,7 +84,9 @@ describe("Spy view bridge", () => {
     let serverState = "ready";
     const provider = new SpyView(
       {
-        all: [project],
+        all: known,
+        projectFor: (uri: { toString(): string }) =>
+          known.find((item) => item.root.toString() === uri.toString()),
         onDidChange: () => ({ dispose() {} }),
       } as unknown as Projects,
       {
@@ -117,8 +138,250 @@ describe("Spy view bridge", () => {
         serverState = state;
         serverChanged();
       },
+      activate: (next: typeof project) => {
+        known.push(next);
+        mocks.activeEditor = { document: { uri: next.root } };
+        for (const listener of [...mocks.editorListeners]) listener();
+      },
     };
   };
+  it("refreshes after app actions only for the visible matching project", async () => {
+    const fixture = await create();
+    const project = {
+      root: { fsPath: "C:/demo", toString: () => "demo" }, name: "demo",
+    } as import("../../src/server/serverManager").Project;
+    mocks.request.mockImplementation((method: string) =>
+      Promise.resolve(method === "app.status" ? { running: true } : []),
+    );
+    await fixture.provider.refreshForProject({
+      ...project, root: { toString: () => "other" } as vscode.Uri,
+    });
+    expect(mocks.request).not.toHaveBeenCalled();
+    fixture.view.visible = false;
+    await fixture.provider.refreshForProject(project);
+    expect(mocks.request).not.toHaveBeenCalled();
+    fixture.view.visible = true;
+    await fixture.provider.refreshForProject(project);
+    expect(mocks.request).toHaveBeenCalledWith("app.status");
+    expect(fixture.sent).toContainEqual({ type: "roots", nodes: [] });
+    fixture.provider.dispose();
+  });
+  it("places the other-apps toggle after collapse and keeps the tree guides on the last child", async () => {
+    const fixture = await create();
+    const html = fixture.view.webview.html;
+    expect(html).toMatch(/id="pick"[\s\S]*id="refresh"[\s\S]*id="collapse"/);
+    expect(html).toMatch(
+      /id="collapse"[\s\S]*?<\/button>\s*<button[\s\S]*?id="other-apps"/,
+    );
+    expect(html).toMatch(/id="other-apps"[\s\S]*?\bhidden\b/);
+    const css = readFileSync("media/spy/spy.css", "utf8");
+    expect(css).not.toMatch(/#tree ul\s*\{[^}]*border-left/);
+    expect(css).toMatch(
+      /#tree ul > li:last-child::after,\s*#tree ul > li\.last-branch::after\s*\{[^}]*height:\s*14px/,
+    );
+    const script = readFileSync("media/spy/spy.js", "utf8");
+    expect(script).toContain("last-branch");
+    expect(script).toContain('post("showOtherApps"');
+    expect(script).toContain("vscode.getState()");
+    fixture.provider.dispose();
+  });
+  it("scopes roots to the current app until other apps are requested", async () => {
+    mocks.request.mockImplementation((method: string) =>
+      Promise.resolve(
+        method === "app.status" ? { running: true, pids: [7] } : [],
+      ),
+    );
+    const fixture = await create();
+    const rootCalls = () =>
+      mocks.request.mock.calls.filter((call) => call[0] === "inspect.roots");
+    fixture.receive({ type: "ready", showOtherApps: false });
+    await vi.waitFor(() => expect(rootCalls()).toEqual([["inspect.roots"]]));
+    expect(fixture.sent).toContainEqual(
+      expect.objectContaining({
+        type: "state",
+        appRunning: true,
+        showOtherApps: false,
+      }),
+    );
+    mocks.request.mockClear();
+    fixture.receive({ type: "showOtherApps", enabled: true });
+    await vi.waitFor(() =>
+      expect(rootCalls()).toEqual([
+        ["inspect.roots", { includeOtherApps: true }],
+      ]),
+    );
+    expect(fixture.sent).toContainEqual(
+      expect.objectContaining({
+        type: "state",
+        appRunning: true,
+        showOtherApps: true,
+      }),
+    );
+    mocks.request.mockClear();
+    fixture.receive({ type: "refresh" });
+    await vi.waitFor(() =>
+      expect(rootCalls()).toEqual([
+        ["inspect.roots", { includeOtherApps: true }],
+      ]),
+    );
+    mocks.request.mockClear();
+    fixture.receive({ type: "showOtherApps", enabled: false });
+    await vi.waitFor(() => expect(rootCalls()).toEqual([["inspect.roots"]]));
+    mocks.request.mockClear();
+    fixture.receive({ type: "showOtherApps", enabled: "yes" });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(mocks.request).not.toHaveBeenCalled();
+    fixture.provider.dispose();
+  });
+  it("drops a superseded scope's roots and selection", async () => {
+    let finishFirst: (nodes: unknown[]) => void = () => {};
+    let finishSecond: (nodes: unknown[]) => void = () => {};
+    let finishSelect: (value: unknown) => void = () => {};
+    let rootCalls = 0;
+    mocks.request.mockImplementation(
+      (method: string, params?: { includeOtherApps?: boolean }) => {
+        if (method === "app.status")
+          return Promise.resolve({ running: true, pids: [7] });
+        if (method === "inspect.roots") {
+          rootCalls += 1;
+          return new Promise((resolve) => {
+            if (params?.includeOtherApps) finishSecond = resolve;
+            else finishFirst = resolve;
+          });
+        }
+        if (method === "inspect.properties")
+          return new Promise((resolve) => {
+            finishSelect = resolve;
+          });
+        if (method === "suggest.locator")
+          return Promise.resolve({ helpers: [], code: "Element()" });
+        return Promise.resolve(undefined);
+      },
+    );
+    const fixture = await create();
+    fixture.receive({ type: "ready", showOtherApps: false });
+    await vi.waitFor(() => expect(rootCalls).toBe(1));
+    fixture.receive({ type: "select", nodeId: "kept" });
+    await vi.waitFor(() =>
+      expect(mocks.request).toHaveBeenCalledWith("inspect.properties", {
+        nodeId: "kept",
+      }),
+    );
+    fixture.receive({ type: "showOtherApps", enabled: true });
+    await vi.waitFor(() => expect(rootCalls).toBe(2));
+    finishFirst([{ nodeId: "scoped" }]);
+    finishSelect({ info: { name: "Kept" }, properties: {}, ancestors: [] });
+    finishSecond([{ nodeId: "other" }]);
+    await vi.waitFor(() =>
+      expect(fixture.sent.filter((message) => message.type === "roots")).toEqual(
+        [{ type: "roots", nodes: [{ nodeId: "other" }] }],
+      ),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(fixture.sent.filter((message) => message.type === "roots")).toEqual([
+      { type: "roots", nodes: [{ nodeId: "other" }] },
+    ]);
+    expect(fixture.sent.some((message) => message.type === "selected")).toBe(
+      false,
+    );
+    fixture.provider.dispose();
+  });
+  it("keeps the other-apps scope when revealing a picked control", async () => {
+    mocks.request.mockImplementation((method: string) =>
+      Promise.resolve(
+        method === "app.status"
+          ? { running: true }
+          : method === "inspect.properties"
+            ? {
+                info: { controlType: "Button", name: "Save" },
+                properties: {},
+                ancestors: [],
+              }
+            : method === "inspect.roots"
+              ? []
+              : undefined,
+      ),
+    );
+    const fixture = await create();
+    fixture.receive({ type: "showOtherApps", enabled: true });
+    await vi.waitFor(() =>
+      expect(mocks.request).toHaveBeenCalledWith("inspect.roots", {
+        includeOtherApps: true,
+      }),
+    );
+    mocks.request.mockClear();
+    fixture.receive({ type: "pick" });
+    await vi.waitFor(() =>
+      expect(mocks.notifications.has("spy.picked")).toBe(true),
+    );
+    mocks.notifications.get("spy.picked")?.({
+      node: { nodeId: "picked", info: { controlType: "Button", name: "Save" } },
+      suggestion: { helpers: [], code: "Element()" },
+    });
+    await vi.waitFor(() =>
+      expect(mocks.request).toHaveBeenCalledWith("inspect.roots", {
+        includeOtherApps: true,
+      }),
+    );
+    fixture.provider.dispose();
+  });
+  it("drops a picked reveal superseded by a scope change", async () => {
+    let finishReveal: (nodes: unknown[]) => void = () => {};
+    let finishRefresh: (nodes: unknown[]) => void = () => {};
+    mocks.request.mockImplementation(
+      (method: string, params?: { includeOtherApps?: boolean }) => {
+        if (method === "app.status")
+          return Promise.resolve({ running: true, pids: [7] });
+        if (method === "inspect.properties")
+          return Promise.resolve({
+            info: { controlType: "Button", name: "Save" },
+            properties: {},
+            ancestors: [],
+          });
+        if (method === "inspect.roots")
+          return new Promise((resolve) => {
+            if (params?.includeOtherApps) finishRefresh = resolve;
+            else finishReveal = resolve;
+          });
+        return Promise.resolve(undefined);
+      },
+    );
+    const fixture = await create();
+    fixture.receive({ type: "pick" });
+    await vi.waitFor(() =>
+      expect(mocks.notifications.has("spy.picked")).toBe(true),
+    );
+    mocks.notifications.get("spy.picked")?.({
+      node: { nodeId: "picked", info: { controlType: "Button", name: "Save" } },
+      suggestion: { helpers: [], code: "Element()" },
+    });
+    await vi.waitFor(() =>
+      expect(mocks.request).toHaveBeenCalledWith("inspect.roots"),
+    );
+    fixture.receive({ type: "showOtherApps", enabled: true });
+    await vi.waitFor(() =>
+      expect(mocks.request).toHaveBeenCalledWith("inspect.roots", {
+        includeOtherApps: true,
+      }),
+    );
+    finishRefresh([{ nodeId: "other" }]);
+    finishReveal([{ nodeId: "scoped" }]);
+    await vi.waitFor(() =>
+      expect(fixture.sent.filter((message) => message.type === "roots")).toEqual(
+        [{ type: "roots", nodes: [{ nodeId: "other" }] }],
+      ),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(fixture.sent.filter((message) => message.type === "roots")).toEqual([
+      { type: "roots", nodes: [{ nodeId: "other" }] },
+    ]);
+    expect(
+      fixture.sent.some(
+        (message) => message.type === "picked" || message.type === "selected",
+      ),
+    ).toBe(false);
+    fixture.provider.dispose();
+  });
   it("reloads the tree when the server becomes ready after a failed startup", async () => {
     let rejectConnection: (error: Error) => void = () => {};
     const connect = vi.fn().mockImplementationOnce(
@@ -584,6 +847,235 @@ describe("Spy view bridge", () => {
       }),
     );
     expect(fixture.sent.some((message) => message.type === "roots")).toBe(true);
+    fixture.provider.dispose();
+  });
+  it("does not let an in-flight pick overwrite a newer row selection", async () => {
+    let finishPick: (value: unknown) => void = () => {};
+    mocks.request.mockImplementation(
+      (method: string, params?: { includeAncestors?: boolean }) => {
+        if (method === "inspect.properties" && params?.includeAncestors)
+          return new Promise((resolve) => {
+            finishPick = resolve;
+          });
+        if (method === "inspect.properties")
+          return Promise.resolve({
+            info: { name: "Row" },
+            properties: {},
+            ancestors: [],
+          });
+        if (method === "suggest.locator")
+          return Promise.resolve({ helpers: [], code: "Row()" });
+        if (method === "inspect.roots")
+          return Promise.resolve([
+            { nodeId: "root", info: { processId: 1 } },
+          ]);
+        return Promise.resolve(undefined);
+      },
+    );
+    const fixture = await create();
+    fixture.receive({ type: "pick" });
+    await vi.waitFor(() =>
+      expect(mocks.notifications.has("spy.picked")).toBe(true),
+    );
+    mocks.notifications.get("spy.picked")?.({
+      node: { nodeId: "picked", info: { controlType: "Button", name: "Save" } },
+      suggestion: { helpers: [], code: "Element()" },
+    });
+    await vi.waitFor(() =>
+      expect(mocks.request).toHaveBeenCalledWith("inspect.properties", {
+        nodeId: "picked",
+        includeAncestors: true,
+      }),
+    );
+    fixture.receive({ type: "select", nodeId: "row" });
+    await vi.waitFor(() =>
+      expect(
+        fixture.sent.some(
+          (message) => message.type === "selected" && message.nodeId === "row",
+        ),
+      ).toBe(true),
+    );
+    finishPick({
+      info: { controlType: "Button", name: "Save" },
+      properties: {},
+      ancestors: [],
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(
+      fixture.sent
+        .filter((message) => message.type === "selected")
+        .map((message) => message.nodeId),
+    ).toEqual(["row"]);
+    expect(
+      fixture.sent.some(
+        (message) => message.type === "picked" || message.type === "roots",
+      ),
+    ).toBe(false);
+    fixture.provider.dispose();
+  });
+  it("does not let an older selection overwrite a picked control", async () => {
+    let finishSelect: (value: unknown) => void = () => {};
+    mocks.request.mockImplementation(
+      (method: string, params?: { includeAncestors?: boolean }) => {
+        if (method === "inspect.properties" && params?.includeAncestors)
+          return Promise.resolve({
+            info: { controlType: "Button", name: "Save" },
+            properties: {},
+            ancestors: [],
+          });
+        if (method === "inspect.properties")
+          return new Promise((resolve) => {
+            finishSelect = resolve;
+          });
+        if (method === "suggest.locator")
+          return Promise.resolve({ helpers: [], code: "Element()" });
+        if (method === "inspect.roots") return Promise.resolve([]);
+        return Promise.resolve(undefined);
+      },
+    );
+    const fixture = await create();
+    fixture.receive({ type: "select", nodeId: "row" });
+    await vi.waitFor(() =>
+      expect(mocks.request).toHaveBeenCalledWith("inspect.properties", {
+        nodeId: "row",
+      }),
+    );
+    fixture.receive({ type: "pick" });
+    await vi.waitFor(() =>
+      expect(mocks.notifications.has("spy.picked")).toBe(true),
+    );
+    mocks.notifications.get("spy.picked")?.({
+      node: { nodeId: "picked", info: { controlType: "Button", name: "Save" } },
+      suggestion: { helpers: [], code: "Element()" },
+    });
+    await vi.waitFor(() =>
+      expect(
+        fixture.sent.some(
+          (message) =>
+            message.type === "selected" && message.nodeId === "picked",
+        ),
+      ).toBe(true),
+    );
+    finishSelect({ info: { name: "Row" }, properties: {}, ancestors: [] });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(
+      fixture.sent
+        .filter((message) => message.type === "selected")
+        .map((message) => message.nodeId),
+    ).toEqual(["picked"]);
+    expect(
+      fixture.sent.some(
+        (message) => message.type === "suggestion" && message.nodeId === "row",
+      ),
+    ).toBe(false);
+    fixture.provider.dispose();
+  });
+  it("drops expanded children superseded when a pick replaces the tree", async () => {
+    let finishExpand: (nodes: unknown[]) => void = () => {};
+    const picked = {
+      nodeId: "picked",
+      info: { controlType: "Button", name: "Save", processId: 4 },
+    };
+    mocks.request.mockImplementation((method: string) => {
+      if (method === "inspect.children")
+        return new Promise((resolve) => {
+          finishExpand = resolve;
+        });
+      if (method === "inspect.properties")
+        return Promise.resolve({
+          info: picked.info,
+          properties: {},
+          ancestors: [],
+        });
+      if (method === "inspect.roots")
+        return Promise.resolve([
+          {
+            nodeId: "root",
+            hasChildren: true,
+            info: { name: "App", controlType: "Window", processId: 4 },
+          },
+        ]);
+      return Promise.resolve(undefined);
+    });
+    const fixture = await create();
+    fixture.receive({ type: "expand", nodeId: "root" });
+    await vi.waitFor(() =>
+      expect(mocks.request).toHaveBeenCalledWith("inspect.children", {
+        nodeId: "root",
+      }),
+    );
+    fixture.receive({ type: "pick" });
+    await vi.waitFor(() =>
+      expect(mocks.notifications.has("spy.picked")).toBe(true),
+    );
+    mocks.notifications.get("spy.picked")?.({
+      node: picked,
+      suggestion: { helpers: [], code: "Element()" },
+    });
+    await vi.waitFor(() =>
+      expect(fixture.sent.some((message) => message.type === "roots")).toBe(
+        true,
+      ),
+    );
+    finishExpand([{ nodeId: "stale" }]);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(
+      fixture.sent.filter((message) => message.type === "children"),
+    ).toEqual([]);
+    fixture.provider.dispose();
+  });
+  it("does not let a superseded connection clear newer roots", async () => {
+    const client = {
+      request: mocks.request,
+      onNotification: (name: string, callback: (value: unknown) => void) => {
+        mocks.notifications.set(name, callback);
+        return { dispose: () => mocks.notifications.delete(name) };
+      },
+    };
+    const pending: Array<(value: { client: typeof client }) => void> = [];
+    const connect = vi.fn(
+      () =>
+        new Promise<{ client: typeof client }>((resolve) => {
+          pending.push(resolve);
+        }),
+    );
+    const fixture = await create(connect);
+    mocks.request.mockImplementation((method: string) =>
+      Promise.resolve(
+        method === "app.status"
+          ? { running: true }
+          : [{ nodeId: "fresh", info: { processId: 1 } }],
+      ),
+    );
+    const first = fixture.provider.refresh();
+    await vi.waitFor(() => expect(pending).toHaveLength(1));
+    fixture.activate({
+      root: { fsPath: "C:/other", toString: () => "other" },
+      name: "other",
+    });
+    await vi.waitFor(() => expect(pending).toHaveLength(2));
+    pending[1]({ client });
+    await vi.waitFor(() =>
+      expect(
+        fixture.sent.filter((message) => message.type === "roots"),
+      ).toEqual([
+        {
+          type: "roots",
+          nodes: [{ nodeId: "fresh", info: { processId: 1 } }],
+        },
+      ]),
+    );
+    pending[0]({ client });
+    await first;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(fixture.sent.filter((message) => message.type === "roots")).toEqual(
+      [
+        {
+          type: "roots",
+          nodes: [{ nodeId: "fresh", info: { processId: 1 } }],
+        },
+      ],
+    );
     fixture.provider.dispose();
   });
 });

@@ -1,6 +1,8 @@
 import * as vscode from "vscode";
 import type { DiscoveryStore, LocatedElement } from "../discovery/store";
 import type { CheckResult } from "../protocol/generated";
+import { normalizedPath } from "../projects";
+import type { ActionFeedback, ActionStatus, ElementAction } from "./lensModel";
 
 export interface CheckedElement extends LocatedElement {
   result: CheckResult;
@@ -8,14 +10,23 @@ export interface CheckedElement extends LocatedElement {
 export class CheckResultsStore implements vscode.Disposable {
   readonly results = new Map<string, CheckResult>();
   readonly entries = new Map<string, CheckedElement>();
+  readonly feedback = new Map<string, ActionFeedback>();
+  private readonly feedbackLocations = new Map<string, LocatedElement>();
   private readonly changed = new vscode.EventEmitter<void>();
   readonly onDidChange = this.changed.event;
   private readonly subscriptions: vscode.Disposable[];
   constructor(discovery: DiscoveryStore) {
     this.subscriptions = [
       vscode.workspace.onDidChangeTextDocument((event) => {
-        for (const [id, entry] of this.entries) {
-          if (entry.page.file !== event.document.uri.fsPath) continue;
+        for (const [id, entry] of new Map([
+          ...this.entries,
+          ...this.feedbackLocations,
+        ])) {
+          if (
+            normalizedPath(entry.page.file) !==
+            normalizedPath(event.document.uri.fsPath)
+          )
+            continue;
           if (
             event.contentChanges.some(
               (change) =>
@@ -27,12 +38,31 @@ export class CheckResultsStore implements vscode.Disposable {
         }
       }),
       discovery.onDidChange((project) => {
-        for (const [id, entry] of this.entries) {
+        for (const [id, entry] of new Map([
+          ...this.entries,
+          ...this.feedbackLocations,
+        ])) {
           if (entry.project.root.toString() === project.root.toString())
             this.remove(id);
         }
       }),
     ];
+  }
+  setFeedback(
+    entry: LocatedElement,
+    action: ElementAction,
+    status: ActionStatus,
+    expected?: ActionStatus,
+  ): boolean {
+    if (expected && this.feedback.get(entry.element.id)?.[action] !== expected)
+      return false;
+    this.feedbackLocations.set(entry.element.id, entry);
+    this.feedback.set(entry.element.id, {
+      ...this.feedback.get(entry.element.id),
+      [action]: status,
+    });
+    this.changed.fire();
+    return true;
   }
   set(entry: CheckedElement): void {
     this.entries.set(entry.element.id, entry);
@@ -40,6 +70,8 @@ export class CheckResultsStore implements vscode.Disposable {
     this.changed.fire();
   }
   remove(id: string): void {
+    this.feedback.delete(id);
+    this.feedbackLocations.delete(id);
     this.results.delete(id);
     this.entries.delete(id);
     this.changed.fire();
@@ -123,7 +155,9 @@ export class CheckDecorations implements vscode.Disposable {
               ? "  \u2713 found"
               : status === "ambiguous"
                 ? "  \u26a0 " + entry.result.diagnostic?.matchCount + " matches"
-                : "  \u2717 not found";
+                : status === "error"
+                  ? "  \u2717 error"
+                  : "  \u2717 not found";
           options.push({
             range: new vscode.Range(line, 0, line, 0),
             hoverMessage:
