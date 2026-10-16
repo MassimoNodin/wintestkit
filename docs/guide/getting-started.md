@@ -19,6 +19,11 @@ Existing configuration is preserved. In VS Code, use the gear in **Current Setup
 these YAML files with the configuration form.
 Ignore rules do not untrack files already committed to Git.
 
+`wtk init` also writes the `wintestkit-tests` agent skill to `.claude/skills/wintestkit-tests/`. It teaches AI
+coding tools (such as Claude Code) the page, component, flow and test conventions of these guides,
+including migration from TestComplete. The canonical copy is `skills/wintestkit-tests` in the repository;
+`wtk init --force` refreshes it.
+
 Use your own application's executable, window titles and locators. No example applications
 are bundled. The [Calculator example](../../examples/calculator-tests) provides page classes,
 navigation flows and tests for Windows Calculator, which must be installed and opened separately.

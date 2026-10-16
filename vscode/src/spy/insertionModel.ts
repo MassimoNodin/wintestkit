@@ -5,6 +5,21 @@ import type {
   Suggestion,
 } from "../protocol/generated";
 
+/** The built-in typed elements Spy can emit; keep in step with wintestkit.controls. */
+const TYPED_ELEMENTS = [
+  "Button",
+  "CheckBox",
+  "ComboBox",
+  "DataGrid",
+  "ListBox",
+  "ListItem",
+  "RadioButton",
+  "TabControl",
+  "Text",
+  "TextBox",
+  "TreeView",
+];
+
 const keywords = new Set(
   "False None True and as assert async await break class continue def del elif else except finally for from global if import in is lambda nonlocal not or pass raise return try while with yield".split(
     " ",
@@ -110,6 +125,10 @@ export function computeInsertion(
     "Page",
     ...["Window", "Element", "Elements"].filter((name) =>
       new RegExp("\\b" + name + "\\s*\\(").test(allCode),
+    ),
+    // A typed element is only ever a declaration, so a name like "Text (1)" does not count.
+    ...TYPED_ELEMENTS.filter((name) =>
+      new RegExp("(?:^|=)\\s*" + name + "\\s*\\(", "m").test(allCode),
     ),
   ];
   const imported = new Set<string>();

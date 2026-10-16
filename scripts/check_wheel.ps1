@@ -33,6 +33,9 @@ try {
     if (-not ($names | Where-Object { $_ -like "wintestkit/scaffold/*.tmpl" })) {
         throw "Wheel is missing the scaffold templates"
     }
+    foreach ($skill in @("SKILL.md", "references/api.md", "references/fixing-breakages.md", "references/migration-from-testcomplete.md")) {
+        if ($names -notcontains "wintestkit/scaffold/skills/wintestkit-tests/$skill") { throw "Wheel is missing the agent skill file $skill" }
+    }
 
     Invoke-Checked "Create virtual environment" { uv venv --python 3.12 $venv }
     $env:VIRTUAL_ENV = $venv

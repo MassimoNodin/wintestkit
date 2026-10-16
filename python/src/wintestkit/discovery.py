@@ -56,7 +56,26 @@ DEFAULT_PYTHON_CLASSES = ("Test",)
 DEFAULT_PYTHON_FUNCTIONS = ("test",)
 DEFAULT_REPORT_DIR = "wtk-report"
 
-_ELEMENT_FUNCTIONS = {"Window": "window", "Element": "element", "Elements": "elements"}
+# The built-in typed elements (wintestkit.controls); each is declared like ``Element``.
+TYPED_ELEMENTS = (
+    "Button",
+    "CheckBox",
+    "ComboBox",
+    "DataGrid",
+    "ListBox",
+    "ListItem",
+    "RadioButton",
+    "TabControl",
+    "Text",
+    "TextBox",
+    "TreeView",
+)
+_ELEMENT_FUNCTIONS = {
+    "Window": "window",
+    "Element": "element",
+    "Elements": "elements",
+    **dict.fromkeys(TYPED_ELEMENTS, "element"),
+}
 _LOCATOR_KEYS = {
     "automation_id": "automationId",
     "name": "name",
@@ -163,6 +182,7 @@ class ElementEntry:
     dynamic: bool
     within_name: str | None = None
     window_name: str | None = None
+    element_type: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         data: dict[str, Any] = {
@@ -179,7 +199,29 @@ class ElementEntry:
             data["withinName"] = self.within_name
         if self.window_name is not None:
             data["windowName"] = self.window_name
+        if self.element_type is not None:
+            data["elementType"] = self.element_type
         return data
+
+
+# Keyword arguments a component mount may carry: ``Box(root=Element(...), window=Window(...))``.
+_MOUNT_KEYWORDS = frozenset({"root", "window"})
+
+
+@dataclass(frozen=True)
+class ChildPageEntry:
+    name: str
+    page_id: str
+    range: Range
+    name_range: Range
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "name": self.name,
+            "pageId": self.page_id,
+            "range": self.range.to_dict(),
+            "nameRange": self.name_range.to_dict(),
+        }
 
 
 @dataclass(frozen=True)
@@ -192,6 +234,7 @@ class PageEntry:
     range: Range
     name_range: Range
     elements: tuple[ElementEntry, ...]
+    children: tuple[ChildPageEntry, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -203,6 +246,7 @@ class PageEntry:
             "range": self.range.to_dict(),
             "nameRange": self.name_range.to_dict(),
             "elements": [e.to_dict() for e in self.elements],
+            "children": [child.to_dict() for child in self.children],
         }
 
 
@@ -366,6 +410,8 @@ class _ClassInfo:
     base_names: tuple[str, ...]
     parent_qualname: str | None = None
     elements: dict[str, tuple[str, ast.Call]] = field(default_factory=lambda: {})
+    # Calls of other names, which are elements only if the class resolves to an Element subclass.
+    other_calls: dict[str, ast.Call] = field(default_factory=lambda: {})
 
 
 def _base_text(base: ast.expr) -> str:
@@ -403,6 +449,8 @@ def _collect_classes(
                 kind = _call_kind(value)
                 if kind:
                     info.elements[target_name] = (kind, value)
+                elif _call_name(value) is not None:
+                    info.other_calls[target_name] = value
         found.append(info)
         found.extend(_collect_classes(source, node.body, f"{qualname}."))
     return found
@@ -418,15 +466,19 @@ def _assignment(stmt: ast.stmt) -> tuple[str | None, ast.expr | None]:
     return None, None
 
 
-def _call_kind(call: ast.Call) -> str | None:
+def _call_name(call: ast.Call) -> str | None:
     func = call.func
-    name = (
+    return (
         func.id
         if isinstance(func, ast.Name)
         else func.attr
         if isinstance(func, ast.Attribute)
         else None
     )
+
+
+def _call_kind(call: ast.Call) -> str | None:
+    name = _call_name(call)
     return _ELEMENT_FUNCTIONS.get(name) if name else None
 
 
@@ -444,10 +496,149 @@ class _Built:
 class _Index:
     """All classes of the project, to resolve ``within=`` across inheritance."""
 
-    def __init__(self, classes: Sequence[_ClassInfo]) -> None:
+    def __init__(self, classes: Sequence[_ClassInfo], modules: Sequence[_Source] = ()) -> None:
         self.by_name: dict[str, list[_ClassInfo]] = {}
+        self.by_symbol: dict[str, _ClassInfo] = {}
+        # Modules without classes still matter: a package ``__init__`` re-exports classes.
+        self.sources: dict[str, _Source] = {self.module_name(m): m for m in modules}
         for info in classes:
             self.by_name.setdefault(info.name, []).append(info)
+            module = self.module_name(info.source)
+            self.sources[module] = info.source
+            self.by_symbol[module + "." + info.qualname] = info
+        for info in classes:  # user subclasses of Element: ``date = DatePicker(...)``
+            for attribute, call in info.other_calls.items():
+                resolved = self.resolve_class(info, call.func)
+                kind = self.element_class_kind(resolved) if resolved is not None else None
+                if kind is not None:
+                    info.elements[attribute] = (kind, call)
+
+    @staticmethod
+    def module_name(source: _Source) -> str:
+        return source.rel.removesuffix(".py").replace("/", ".").removesuffix(".__init__")
+
+    def reference(self, source: _Source, expression: str) -> str:
+        head, separator, tail = expression.partition(".")
+        if source.tree is None:
+            return expression
+        for statement in source.tree.body:
+            if isinstance(statement, ast.ImportFrom):
+                module = statement.module or ""
+                if statement.level:
+                    package = self.module_name(source).split(".")
+                    if not source.rel.endswith("/__init__.py"):
+                        package.pop()
+                    package = package[: len(package) - statement.level + 1]
+                    module = ".".join([*package, *([module] if module else [])])
+                for alias in statement.names:
+                    if (alias.asname or alias.name) == head:
+                        return module + "." + alias.name + (separator + tail if separator else "")
+            elif isinstance(statement, ast.Import):
+                for alias in statement.names:
+                    if (alias.asname or alias.name.split(".")[0]) == head:
+                        prefix = alias.name if alias.asname else head
+                        return prefix + (separator + tail if separator else "")
+        return self.module_name(source) + "." + expression
+
+    def resolve_symbol(self, symbol: str, seen: frozenset[str] = frozenset()) -> _ClassInfo | None:
+        if symbol in seen:
+            return None
+        if symbol in self.by_symbol:
+            return self.by_symbol[symbol]
+        module, _, name = symbol.rpartition(".")
+        source = self.sources.get(module)
+        if source is not None:
+            target = self.reference(source, name)
+            if target != symbol:
+                return self.resolve_symbol(target, seen | {symbol})
+        return None
+
+    def resolve_class(self, info: _ClassInfo, expression: ast.expr) -> _ClassInfo | None:
+        text = ast.unparse(expression)
+        symbol = self.reference(info.source, text)
+        resolved = self.resolve_symbol(symbol)
+        if resolved is not None:
+            return resolved
+        candidates = self.by_name.get(text, [])
+        return (
+            candidates[0]
+            if len(candidates) == 1 and symbol == self.module_name(info.source) + "." + text
+            else None
+        )
+
+    def element_class_kind(
+        self, info: _ClassInfo, seen: frozenset[int] = frozenset()
+    ) -> str | None:
+        """``"element"``/``"elements"`` when the class derives from ``Element``/``Elements``.
+
+        Bases may be subscripted (``Element[BoundDatePicker]``) or user classes in other modules.
+        """
+        if id(info) in seen:
+            return None
+        for base in info.node.bases:
+            expression = base.value if isinstance(base, ast.Subscript) else base
+            name = _base_short_name(expression)
+            if name == "Elements":
+                return "elements"
+            if name == "Element" or name in TYPED_ELEMENTS:
+                return "element"
+            parent = self.resolve_class(info, expression)
+            if parent is not None:
+                kind = self.element_class_kind(parent, seen | {id(info)})
+                if kind is not None:
+                    return kind
+        return None
+
+    def is_page(self, info: _ClassInfo, seen: frozenset[int] = frozenset()) -> bool:
+        if id(info) in seen:
+            return False
+        for base in info.node.bases:
+            reference = self.reference(info.source, ast.unparse(base))
+            if ast.unparse(base) in {"Page", "PageObject"} or reference in {
+                "wintestkit.Page",
+                "wintestkit.PageObject",
+                "wintestkit.model.Page",
+                "wintestkit.model.PageObject",
+            }:
+                return True
+            parent = self.resolve_class(info, base)
+            if parent is not None and self.is_page(parent, seen | {id(info)}):
+                return True
+        return False
+
+    def child_pages(
+        self, info: _ClassInfo, seen: frozenset[int] = frozenset()
+    ) -> dict[str, ChildPageEntry]:
+        if id(info) in seen:
+            return {}
+        children: dict[str, ChildPageEntry] = {}
+        for base in reversed(info.node.bases):
+            parent = self.resolve_class(info, base)
+            if parent is not None:
+                children.update(self.child_pages(parent, seen | {id(info)}))
+        for statement in info.node.body:
+            name, value = _assignment(statement)
+            if name is None:
+                continue
+            children.pop(name, None)
+            if not isinstance(value, ast.Call) or value.args:
+                continue
+            if any(keyword.arg not in _MOUNT_KEYWORDS for keyword in value.keywords):
+                continue
+            child = self.resolve_class(info, value.func)
+            if child is not None and self.is_page(child):
+                target = (
+                    statement.targets[0]
+                    if isinstance(statement, ast.Assign)
+                    else cast("ast.AnnAssign", statement).target
+                )
+                children[name] = ChildPageEntry(
+                    name,
+                    child.source.rel + "::" + child.qualname,
+                    info.source.range_of(statement),
+                    info.source.range_of(target),
+                )
+        return children
 
     def find_element(
         self, cls: _ClassInfo, attribute: str, seen: frozenset[int] = frozenset()
@@ -573,7 +764,7 @@ def _build(
         if arg is None:  # **kwargs
             built.dynamic = True
             continue
-        if arg == "timeout":
+        if arg in ("timeout", "validate"):
             continue
         if arg == "within":
             _resolve_within(keyword.value, built, cls, index, visiting, own_name)
@@ -647,7 +838,7 @@ def _resolve_window(node: ast.expr, built: _Built, cls: _ClassInfo, index: _Inde
 
 
 def _page_names(classes: Sequence[_ClassInfo]) -> set[str]:
-    names = {"Page"}
+    names = {"Page", "PageObject"}
     changed = True
     while changed:
         changed = False
@@ -663,15 +854,15 @@ def _page_entries(
 ) -> list[PageEntry]:
     entries: list[PageEntry] = []
     for info in classes:
-        if info.source is not source or info.name not in pages or info.name == "Page":
+        if info.source is not source or not index.is_page(info):
             continue
         elements: list[ElementEntry] = []
         for stmt in info.node.body:
             name, value = _assignment(stmt)
             if not name or not isinstance(value, ast.Call):
                 continue
-            kind = _call_kind(value)
-            if kind is None:
+            kind = info.elements[name][0] if name in info.elements else None
+            if kind is None or info.elements[name][1] is not value:
                 continue
             built = _build(value, kind, info, index, own_name=name)
             target: ast.AST = (
@@ -691,6 +882,7 @@ def _page_entries(
                     dynamic=built.dynamic,
                     within_name=built.within_name,
                     window_name=built.window_name,
+                    element_type=None if kind == "window" else _call_name(value),
                 )
             )
         entries.append(
@@ -703,6 +895,7 @@ def _page_entries(
                 range=source.range_of(info.node),
                 name_range=source.name_range(info.node),
                 elements=tuple(elements),
+                children=tuple(index.child_pages(info).values()),
             )
         )
     return entries
@@ -860,7 +1053,7 @@ def discover(
         assert source.tree is not None
         classes.extend(_collect_classes(source, source.tree.body))
     pages = _page_names(classes)
-    index = _Index(classes)
+    index = _Index(classes, parsed)
 
     tests: list[TestEntry] = []
     page_entries: list[PageEntry] = []

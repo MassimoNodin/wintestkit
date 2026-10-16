@@ -102,6 +102,20 @@ describe("Spy element insertion", () => {
       '    )\n    ok = Element(control_type="Button", name="OK")\n\n    def helper',
     );
   });
+  it("imports the typed element a suggestion declares", () => {
+    const source =
+      'from wintestkit import Page, Window\n\nclass Main(Page):\n    window = Window(title="Demo")\n';
+    const typed = {
+      ...suggestion,
+      code: 'ComboBox(automation_id="Country", within=Element(name="Text (1)"))',
+      attributeName: "country",
+    };
+    const updated = insert(source, page(source, [entry("window", 3)]), typed);
+    expect(updated).toContain(
+      "from wintestkit import Page, Window, Element, ComboBox",
+    );
+    expect(updated).not.toContain("Text,");
+  });
   it("keeps class docstrings and inserts windows before new declarations", () => {
     const source =
       'from wintestkit import Page\n\nclass Main(Page):\n    """A page.\n    More detail.\n    """\n    pass\n';

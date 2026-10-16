@@ -18,14 +18,14 @@ from wintestkit.errors import (
     UIAError,
     WaitTimeoutError,
 )
-from wintestkit.model import BoundElement, BoundElements, BoundWindow, is_password_locator
+from wintestkit.model import BoundControl, BoundElements, BoundWindow, is_password_locator
 from wintestkit.uia import patterns
 from wintestkit.uia.constants import ToggleState
 from wintestkit.uia.element import UIAElement
 
 __all__ = ["Expectation", "expect"]
 
-Target = BoundElement | BoundElements | BoundWindow
+Target = BoundControl | BoundElements | BoundWindow
 
 _NOT_FOUND = "<element not found>"
 _NO_ARGUMENT: Any = object()
@@ -136,7 +136,7 @@ class Expectation:
         call = f"expect({qualname}).{'not_.' if self._negate else ''}{method}({shown})"
         budget = self._budget()
         locator_text = target.locator.describe()
-        secret = isinstance(target, BoundElement) and is_password_locator(target.locator)
+        secret = isinstance(target, BoundControl) and is_password_locator(target.locator)
         args = {"expected": expected} if has_argument else {}
         latest: list[_Outcome] = []
 
@@ -171,6 +171,8 @@ class Expectation:
             lines.append(f"  Actual: {outcome.actual}")
             lines.append(f"  Locator: {locator_text}")
             if self._locator_error is not None:
+                if not isinstance(target, BoundElements):
+                    target.explain_relocation(self._locator_error)
                 lines.append("")
                 lines.append(self._locator_error.diagnostic.format())
             raise AssertionError("\n".join(lines))

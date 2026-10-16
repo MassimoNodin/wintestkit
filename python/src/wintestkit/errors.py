@@ -102,3 +102,7 @@ class UIAError(WtkError):
         super().__init__(message)
         self.hresult = hresult
         self.element_gone = element_gone
+
+
+class ElementTypeError(ActionError):
+    """The element found does not fit the type it was declared as (``ComboBox``, ``Button`` ...)."""

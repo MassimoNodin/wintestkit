@@ -235,6 +235,22 @@ def is_checked(el: UIAElement) -> bool:
     return patterns.toggle_state(el) == ToggleState.On
 
 
+def toggle(el: UIAElement) -> None:
+    __tracebackhide__ = True
+    patterns.toggle(el)
+
+
+def select_self(el: UIAElement) -> None:
+    """Select the element itself (a radio button, list item or tab)."""
+    __tracebackhide__ = True
+    patterns.select_item(el)
+
+
+def is_selected(el: UIAElement) -> bool:
+    __tracebackhide__ = True
+    return patterns.is_selected(el)
+
+
 def expand(el: UIAElement) -> None:
     __tracebackhide__ = True
     patterns.expand(el)
@@ -338,6 +354,39 @@ def _select_in_combo(el: UIAElement, item: Item) -> None:
     finally:
         if patterns.expand_state(el) == ExpandCollapseState.Expanded:
             patterns.collapse(el)
+
+
+def select_in_combo(el: UIAElement, item: Item) -> None:
+    """Select an item of a combo box (even one that does not report the ``ComboBox`` type)."""
+    __tracebackhide__ = True
+    _select_in_combo(el, item)
+
+
+def combo_item_names(el: UIAElement) -> list[str]:
+    """Names of a combo box's items: expand it, read them, and collapse it again."""
+    __tracebackhide__ = True
+    was_expanded = patterns.expand_state(el) == ExpandCollapseState.Expanded
+    if not was_expanded:
+        patterns.expand(el)
+    try:
+        try:
+            items = waits.wait_until(
+                lambda: _combo_items(el) or None,
+                _STABLE_TIMEOUT,
+                description=f"the items of {_short(el)}",
+            )
+        except waits.WaitTimeoutError:
+            items = []
+        return [item.name for item in items]
+    finally:
+        if not was_expanded and patterns.expand_state(el) == ExpandCollapseState.Expanded:
+            patterns.collapse(el)
+
+
+def listed_item_names(el: UIAElement) -> list[str]:
+    """Names of the items of a list, tree or tab control that are currently realized."""
+    __tracebackhide__ = True
+    return [c.name for t in _ITEM_TYPES for c in query_all(el, Locator(control_type=t))]
 
 
 def _find_listed_item(el: UIAElement, item: str | re.Pattern[str]) -> UIAElement | None:

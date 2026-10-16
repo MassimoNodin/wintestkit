@@ -44,6 +44,47 @@ No element matches Button[name="Sign In"] in Window "WTK Demo" (closest: Button 
 - Open `tree.txt` in the failure artifacts, or use the Spy, to see what the UI tree actually
   contains.
 
+## Found in another window
+
+The most common breakage is a box, dialog or input that moved to a different window of the
+application. Its own properties (class name, control name) still match; only its container
+changed. When an element is not found, WinTestKit therefore looks for the element's own locator
+(ignoring `within=` and the window) in every top-level window of the application, and says where
+it found it. Nothing found there is ever used for the action: the test still fails.
+
+```text
+No element matches Edit#Street in Window "Customer" (waited 5.0s)
+  → found in another window: Window "Edit Customer" › Group #AddressBox "Address" › Edit #Street "Street"
+  → the component root Home.address.root (AddressBox) was found in: Window "Edit Customer"
+  hint: the box moved — move `address = AddressBox()` (pages/home.py:12) to the page for that window, or set its window
+  declared: pages/components/address.py:9
+```
+
+- `found in another window` is the element itself, with its window and a short path of ancestors.
+  It lists at most five matches.
+- `the component root … was found in` appears for members of a [component](pages-and-elements.md#components):
+  the whole box moved. Move the mount line (`address = AddressBox()`, shown as `hint`) to the page
+  of that window, or give the mount `window=Window(...)`. Tests and the component stay as they
+  are.
+- `declared` points at the line that defines the element, `hint` at the mount.
+- If the element is found in the window it is declared for, but under a different container, the
+  output says so and the window is not repeated in the path. The container locator is wrong, not
+  the window:
+
+  ```text
+  No element matches Edit#Street in Window "Customer" (waited 5.0s)
+    → found in the same window under a different container: Group #Other "Box" › Edit #Street "Street"
+    hint: the component root locator no longer matches the container of this element — update `root` at pages/components/address.py:5
+    declared: pages/components/address.py:9
+  ```
+
+  Update the component's `root` (or the element's `within=` chain) at the line named in the hint.
+- For a single element that moved, declare it on the page for the new window or give it
+  `window=`.
+- The search runs once, after the normal wait has expired, and is limited to about two seconds,
+  five matches and twenty windows. It also shows up in `wtk check`, in the editor and in the HTML
+  report (`relocations` in the JSON diagnostic).
+
 ## Ambiguous element
 
 `2 elements match … add within= or index= to pick one` means the locator matches several controls.

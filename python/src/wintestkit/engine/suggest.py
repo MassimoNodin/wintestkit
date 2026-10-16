@@ -17,6 +17,22 @@ if TYPE_CHECKING:
     from wintestkit.uia.element import ElementInfo, UIAElement
 
 
+# The typed element (wintestkit.controls) declared for a control type; any other stays ``Element``.
+TYPED_ELEMENT_FOR_CONTROL = {
+    "Button": "Button",
+    "CheckBox": "CheckBox",
+    "ComboBox": "ComboBox",
+    "DataGrid": "DataGrid",
+    "Edit": "TextBox",
+    "List": "ListBox",
+    "ListItem": "ListItem",
+    "RadioButton": "RadioButton",
+    "Tab": "TabControl",
+    "Text": "Text",
+    "Tree": "TreeView",
+}
+
+
 @dataclass(frozen=True)
 class Suggestion:
     locator: Locator
@@ -142,10 +158,23 @@ def _candidates(element: UIAElement) -> list[tuple[str, Locator]]:
     return candidates
 
 
-def _unique_candidate(element: UIAElement, root: UIAElement) -> tuple[str, Locator] | None:
+def _unique_candidate(
+    element: UIAElement, root: UIAElement, typed: bool = False
+) -> tuple[str, Locator] | None:
+    """The first strategy that finds exactly ``element``.
+
+    With ``typed`` the declaration names its control type (``ComboBox(...)``), so a locator that
+    is still unique without the ``control_type`` filter is preferred: a typed element never needs
+    one, and a custom control that reports ``Custom`` would not match it anyway.
+    """
     for strategy, locator in _candidates(element):
         matches = query_all(root, locator)
         if len(matches) == 1 and matches[0].same_as(element):
+            if typed and locator.control_type is not None:
+                loose = replace(locator, control_type=None)
+                found = query_all(root, loose)
+                if len(found) == 1 and found[0].same_as(element):
+                    return strategy, loose
             return strategy, locator
     return None
 
@@ -166,7 +195,8 @@ def _ancestors(element: UIAElement, top: UIAElement) -> list[UIAElement]:
 def _stable_locator(
     element: UIAElement, top: UIAElement, helper_depth: int
 ) -> tuple[str, Locator, tuple[tuple[str, str, Locator], ...]] | None:
-    candidate = _unique_candidate(element, top)
+    typed = helper_depth == 0 and element.control_type in TYPED_ELEMENT_FOR_CONTROL
+    candidate = _unique_candidate(element, top, typed)
     if candidate is not None:
         return candidate[0], candidate[1], ()
     if helper_depth >= 2:
@@ -176,7 +206,7 @@ def _stable_locator(
             ancestor.name or ancestor.automation_id
         ):
             continue
-        scoped = _unique_candidate(element, ancestor)
+        scoped = _unique_candidate(element, ancestor, typed)
         if scoped is None:
             continue
         helper = _stable_locator(ancestor, top, helper_depth + 1)
@@ -257,7 +287,9 @@ def suggest_locator(el: UIAElement, app: App | None = None) -> Suggestion:
     within_name = helpers[-1][0] if helpers else None
     return Suggestion(
         locator,
-        render_element_code(locator, within_name),
+        render_element_code(
+            locator, within_name, TYPED_ELEMENT_FOR_CONTROL.get(el.control_type, "Element")
+        ),
         attribute_name_for(el.info()),
         helpers,
         True,

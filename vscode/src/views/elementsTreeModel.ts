@@ -41,7 +41,16 @@ export function buildTree(discoveries: DiscoveryResult[]): ElementNode[] {
         );
         const elements = new Map(
           ordered.map((element) => {
-            const description =
+            // Typed elements (ComboBox, a custom DatePicker, ...) show their type; the generic
+            // Element and Elements need no label.
+            const typed =
+              element.kind !== "window" &&
+              element.elementType !== undefined &&
+              element.elementType !== "Element" &&
+              element.elementType !== "Elements"
+                ? element.elementType
+                : undefined;
+            const locatorText =
               element.kind === "window"
                 ? describeWindow(element.locator.window ?? {})
                 : describeLocator({
@@ -49,6 +58,9 @@ export function buildTree(discoveries: DiscoveryResult[]): ElementNode[] {
                     within: undefined,
                     window: undefined,
                   });
+            const description = typed
+              ? `${typed} · ${locatorText}`.trimEnd()
+              : locatorText;
             const node: ElementNode = {
               id: discovery.root + "|" + element.id,
               elementId: element.id,
@@ -67,6 +79,7 @@ export function buildTree(discoveries: DiscoveryResult[]): ElementNode[] {
               page: page.qualname,
               range: element.nameRange,
               tooltip:
+                (typed ? typed + ": " : "") +
                 (element.kind === "window"
                   ? description
                   : describeLocator(element.locator)) +

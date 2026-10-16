@@ -1,27 +1,29 @@
-"""Navigation is ordinary Python; no workflow registration is needed."""
+"""Navigation between modes is a flow: it knows the pages, the pages do not know each other."""
 
-from pages.calculator import CalculatorPage
+from collections.abc import Callable
+
+from pages.calculator import CalculatorModePage, CalculatorWindow
+from pages.components.navigation import NavigationPane
 from pages.programmer import ProgrammerPage
 from pages.scientific import ScientificPage
 from pages.standard import StandardPage
 
 from wintestkit import App, expect
 
+# Mode page -> the navigation intent that opens it, and the heading it shows.
+_MODES: dict[type[CalculatorModePage], tuple[Callable[[NavigationPane], None], str]] = {
+    StandardPage: (NavigationPane.open_standard, "Standard"),
+    ScientificPage: (NavigationPane.open_scientific, "Scientific"),
+    ProgrammerPage: (NavigationPane.open_programmer, "Programmer"),
+}
 
-def open_page[CalculatorMode: CalculatorPage](
-    app: App, page_type: type[CalculatorMode]
-) -> CalculatorMode:
-    modes = {
-        StandardPage: ("standard_menu_item", "Standard"),
-        ScientificPage: ("scientific_menu_item", "Scientific"),
-        ProgrammerPage: ("programmer_menu_item", "Programmer"),
-    }
-    if page_type not in modes:
+
+def open_page[Mode: CalculatorModePage](app: App, page_type: type[Mode]) -> Mode:
+    """Switch Calculator to the mode of ``page_type`` and return that page."""
+    if page_type not in _MODES:
         raise ValueError("Choose StandardPage, ScientificPage or ProgrammerPage")
-    menu_item, heading = modes[page_type]
-    current = CalculatorPage(app)
-    current.navigation.click()
-    getattr(current, menu_item).click()
+    open_mode, heading = _MODES[page_type]
+    open_mode(CalculatorWindow(app).navigation)
     destination = page_type(app)
     expect(destination.heading).to_have_text(heading)
     return destination

@@ -70,6 +70,14 @@ def test_schema_documents_are_valid(schema_documents: dict[str, dict[str, Any]])
         Draft202012Validator.check_schema(document)
 
 
+RELOCATION = {
+    "kind": "element",
+    "target": "Home.address.street",
+    "window": 'Window "Edit Customer"',
+    "path": 'Window "Edit Customer" \u203a Group "Address" \u203a Edit "Street"',
+}
+
+
 def definition_examples() -> dict[str, dict[str, Any]]:
     element = fixture_data("element-info.json")
     diagnostic = fixture_data("diagnostic.json")
@@ -89,6 +97,7 @@ def definition_examples() -> dict[str, dict[str, Any]]:
         "LocatorData": discovery["pages"][0]["elements"][0]["locator"],
         "Mismatch": {"property": "name", "expected": "Sign in", "actual": "OK"},
         "Candidate": diagnostic["candidates"][0],
+        "Relocation": RELOCATION,
         "Diagnostic": diagnostic,
         "ErrorInfo": {
             "type": "AmbiguousElementError",
@@ -169,6 +178,12 @@ def definition_examples() -> dict[str, dict[str, Any]]:
             },
             "PageEntry": discovery["pages"][0],
             "ElementEntry": discovery["pages"][0]["elements"][0],
+            "ChildPageEntry": {
+                "name": "address",
+                "pageId": "pages/boxes.py::AddressBox",
+                "range": discovery["pages"][0]["range"],
+                "nameRange": discovery["pages"][0]["nameRange"],
+            },
             "DiscoveryError": discovery["errors"][0],
         },
         "step.schema.json": {"StepEvent": fixture_data("step.json")},
@@ -285,6 +300,24 @@ def test_recursive_diagnostic(validate: Validate) -> None:
     outer["candidates"] = diagnostic["candidates"] * 3
     with pytest.raises(ValidationError):
         validate("common.schema.json", "Diagnostic", outer)
+
+
+def test_diagnostic_relocations(validate: Validate) -> None:
+    diagnostic = fixture_data("diagnostic.json")
+    same = {**RELOCATION, "window": 'Window "Customer"', "sameWindow": True}
+    diagnostic["relocations"] = [RELOCATION, {**RELOCATION, "kind": "component_root"}, same]
+    diagnostic["hint"] = "the box moved"
+    diagnostic["declared"] = "pages/components/address.py:9"
+    validate("common.schema.json", "Diagnostic", diagnostic)
+    diagnostic["relocations"] = [RELOCATION] * 6
+    with pytest.raises(ValidationError):
+        validate("common.schema.json", "Diagnostic", diagnostic)
+    diagnostic["relocations"] = [{**RELOCATION, "sameWindow": "yes"}]
+    with pytest.raises(ValidationError):
+        validate("common.schema.json", "Diagnostic", diagnostic)
+    diagnostic["relocations"] = [{**RELOCATION, "kind": "window"}]
+    with pytest.raises(ValidationError):
+        validate("common.schema.json", "Diagnostic", diagnostic)
 
 
 def test_open_argument_map(validate: Validate) -> None:

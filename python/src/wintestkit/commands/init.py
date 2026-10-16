@@ -6,6 +6,7 @@ import argparse
 import json
 import tomllib
 from importlib.resources import files
+from importlib.resources.abc import Traversable
 from pathlib import Path
 from string import Template
 from typing import Any, cast
@@ -19,7 +20,9 @@ def add_parser(subparsers: Any) -> None:
     parser.add_argument("directory", nargs="?", metavar="DIR")
     parser.add_argument("--app", metavar="PATH")
     parser.add_argument(
-        "--force", action="store_true", help="replace existing starter Python files"
+        "--force",
+        action="store_true",
+        help="replace existing starter Python files and the agent skill",
     )
     parser.set_defaults(handler=run)
 
@@ -27,6 +30,19 @@ def add_parser(subparsers: Any) -> None:
 def _template(name: str, **values: str) -> str:
     source = files("wintestkit.scaffold").joinpath(name).read_text(encoding="utf-8")
     return Template(source).substitute(values)
+
+
+def skill_files(source: Traversable | None = None, prefix: str = "") -> dict[str, str]:
+    """The packaged agent skill as ``{relative path: text}`` (written to ``.claude/skills``)."""
+    folder = source or files("wintestkit.scaffold").joinpath("skills", "wintestkit-tests")
+    found: dict[str, str] = {}
+    for entry in sorted(folder.iterdir(), key=lambda item: item.name):
+        if entry.is_dir():
+            if entry.name != "__pycache__":
+                found.update(skill_files(entry, f"{prefix}{entry.name}/"))
+        else:
+            found[prefix + entry.name] = entry.read_text(encoding="utf-8")
+    return found
 
 
 def _write(path: Path, text: str, *, force: bool) -> None:
@@ -83,6 +99,8 @@ def run(args: argparse.Namespace) -> int:
         "tests/test_smoke.py": _template("test_smoke.py.tmpl"),
     }.items():
         _write(root / relative, content, force=args.force)
+    for relative, text in skill_files().items():
+        _write(root / ".claude/skills/wintestkit-tests" / relative, text, force=args.force)
     ensure_local_ignores(root)
     _write(
         root / "wintestkit.yaml",
@@ -103,4 +121,5 @@ def run(args: argparse.Namespace) -> int:
         _write(root / "wintestkit.local.yaml", local, force=False)
     print("\nNext: install wintestkit and pytest, select your app in wintestkit.local.yaml and")
     print("pages/main.py, then run wtk doctor and wtk run from the project directory.")
+    print("AI coding tools find the wintestkit-tests skill in .claude/skills/wintestkit-tests.")
     return common.EXIT_OK

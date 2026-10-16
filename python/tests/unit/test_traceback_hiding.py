@@ -15,6 +15,7 @@ import wintestkit
 PACKAGE = Path(wintestkit.__file__).parent
 MODULES = [
     "model.py",
+    "controls.py",
     "expect.py",
     "app.py",
     "runtime.py",
@@ -23,6 +24,7 @@ MODULES = [
     "engine/waits.py",
     "engine/actions.py",
     "engine/diagnose.py",
+    "engine/relocate.py",
     "uia/patterns.py",
     "uia/element.py",
     "uia/com.py",

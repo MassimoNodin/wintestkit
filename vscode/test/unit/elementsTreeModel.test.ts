@@ -69,6 +69,20 @@ describe("Elements tree model", () => {
     expect(tree[0].children[1].children[0].label).toBe("child");
     expect(tree[0].children[1].children[0].qualname).toBe("Main.child");
   });
+  it("shows the type of typed elements but not of plain ones", () => {
+    const tree = buildTree([
+      discovery([
+        { ...element("country", 3), elementType: "ComboBox" },
+        { ...element("plain", 4), elementType: "Element" },
+        element("unknown", 5),
+      ]),
+    ]);
+    const [country, plain, unknown] = tree[0].children;
+    expect(country.description.startsWith("ComboBox · ")).toBe(true);
+    expect(country.tooltip?.startsWith("ComboBox: ")).toBe(true);
+    expect(plain.description).toBe('Button[name="plain"]');
+    expect(unknown.description).toBe('Button[name="unknown"]');
+  });
   it("adds project roots only for multi-project workspaces", () => {
     const tree = buildTree([discovery([]), discovery([], "C:/second")]);
     expect(tree.map((node) => node.kind)).toEqual(["project", "project"]);

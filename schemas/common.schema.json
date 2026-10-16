@@ -287,6 +287,29 @@
       "required": ["info", "score", "mismatches"],
       "additionalProperties": false
     },
+    "Relocation": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["element", "component_root"]
+        },
+        "target": {
+          "type": "string"
+        },
+        "window": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "sameWindow": {
+          "type": "boolean"
+        }
+      },
+      "required": ["kind", "target", "window", "path"],
+      "additionalProperties": false
+    },
     "Diagnostic": {
       "type": "object",
       "properties": {
@@ -323,6 +346,19 @@
         },
         "within": {
           "$ref": "common.schema.json#/$defs/Diagnostic"
+        },
+        "relocations": {
+          "type": "array",
+          "items": {
+            "$ref": "common.schema.json#/$defs/Relocation"
+          },
+          "maxItems": 5
+        },
+        "hint": {
+          "type": "string"
+        },
+        "declared": {
+          "type": "string"
         }
       },
       "required": [

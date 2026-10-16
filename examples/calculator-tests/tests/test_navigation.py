@@ -1,4 +1,4 @@
-"""Tests use page flows, then assert the controls specific to each destination."""
+"""Tests switch modes through flows, then assert the controls specific to each destination."""
 
 import pytest
 from flows.navigation import open_page, tour_calculator
@@ -17,12 +17,12 @@ def test_scientific_page(app: App) -> None:
 @pytest.mark.navigation
 def test_programmer_page(app: App) -> None:
     programmer = open_page(app, ProgrammerPage)
-    expect(programmer.hexadecimal).to_be_visible()
-    expect(programmer.binary).to_be_visible()
+    expect(programmer.radix.hexadecimal).to_be_visible()
+    expect(programmer.radix.binary).to_be_visible()
 
 
 @pytest.mark.navigation
 def test_tour_returns_to_standard(app: App) -> None:
     standard = tour_calculator(app)
     expect(standard.heading).to_have_text("Standard")
-    expect(standard.plus).to_be_enabled()
+    expect(standard.operators.plus).to_be_enabled()

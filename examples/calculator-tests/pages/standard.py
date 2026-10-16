@@ -1,7 +1,7 @@
 """The Standard calculator page."""
 
-from pages.calculator import CalculatorPage
+from pages.calculator import CalculatorModePage
 
 
-class StandardPage(CalculatorPage):
-    """Standard mode reuses the common arithmetic controls."""
+class StandardPage(CalculatorModePage):
+    """Standard mode has exactly the common keypad."""

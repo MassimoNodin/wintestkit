@@ -128,3 +128,68 @@ def test_candidate_must_match_selected(monkeypatch: pytest.MonkeyPatch) -> None:
         lambda root, locator: [other] if locator.name else original(root, locator),
     )
     assert suggest_locator(button, app).strategy == "index"
+
+
+def test_typed_declaration_for_a_known_control_type() -> None:
+    combo = FakeElement("ComboBox", "Country", automation_id="Country")
+    edit = FakeElement("Edit", "", automation_id="Street")
+    app = FakeApp([FakeElement("Window", "Demo", children=[combo, edit])])
+    suggestion = suggest_locator(combo, app)
+    assert suggestion.code == 'ComboBox(automation_id="Country")'
+    assert suggestion.locator == Locator(automation_id="Country")
+    assert resolve(Scope(app), suggestion.locator).same_as(combo)
+    assert suggest_locator(edit, app).code == 'TextBox(automation_id="Street")'
+
+
+@pytest.mark.parametrize(
+    "control_type,typed",
+    [
+        ("Button", "Button"),
+        ("CheckBox", "CheckBox"),
+        ("RadioButton", "RadioButton"),
+        ("List", "ListBox"),
+        ("ListItem", "ListItem"),
+        ("DataGrid", "DataGrid"),
+        ("Tree", "TreeView"),
+        ("Tab", "TabControl"),
+        ("Text", "Text"),
+    ],
+)
+def test_every_built_in_type_maps_from_its_control_type(control_type: str, typed: str) -> None:
+    target = FakeElement(control_type, "x", automation_id="Target")
+    app = FakeApp([FakeElement("Window", "Demo", children=[target])])
+    assert suggest_locator(target, app).code == f'{typed}(automation_id="Target")'
+
+
+def test_the_control_type_stays_when_it_is_needed_for_uniqueness() -> None:
+    button = FakeElement("Button", "OK")
+    label = FakeElement("Text", "OK")
+    app = FakeApp([FakeElement("Window", "Demo", children=[button, label])])
+    suggestion = suggest_locator(button, app)
+    assert suggestion.code == 'Button(control_type="Button", name="OK")'
+    assert resolve(Scope(app), suggestion.locator).same_as(button)
+
+
+def test_other_control_types_stay_plain_elements() -> None:
+    group = FakeElement("Group", "Panel", automation_id="Panel")
+    app = FakeApp([FakeElement("Window", "Demo", children=[group])])
+    assert (
+        suggest_locator(group, app).code == 'Element(automation_id="Panel", control_type="Group")'
+    )
+
+
+def test_the_typed_name_is_used_with_within_and_index() -> None:
+    first = FakeElement("Edit", "", class_name="TextBox")
+    second = FakeElement("Edit", "", class_name="TextBox")
+    app = FakeApp([FakeElement("Window", "Demo", children=[first, second])])
+    suggestion = suggest_locator(second, app)
+    assert suggestion.strategy == "index"
+    assert suggestion.code.startswith("TextBox(")
+    assert 'control_type="Edit"' in suggestion.code
+    button = FakeElement("Button", "OK")
+    group = FakeElement("Group", "Panel B", children=[button])
+    app = FakeApp([FakeElement("Window", "Demo", children=[FakeElement("Button", "OK"), group])])
+    within = suggest_locator(button, app)
+    assert within.strategy == "within"
+    assert within.code.startswith("Button(") and "within=panel_b" in within.code
+    assert within.helpers[0][1].startswith("Element(")

@@ -253,6 +253,24 @@ class ModuleLoader:
             and value.__module__ == module.__name__
         }
 
+    def mounted_components(self) -> set[type[Page]]:
+        """Page classes mounted as a component by any page class loaded from the project."""
+        from wintestkit.model import Page
+
+        mounted: set[type[Page]] = set()
+        for module in list(sys.modules.values()):
+            file = getattr(module, "__file__", None)
+            if not file or self.root not in Path(file).resolve().parents:
+                continue
+            for value in list(vars(module).values()):
+                if (
+                    isinstance(value, type)
+                    and issubclass(value, Page)
+                    and value.__module__ == module.__name__
+                ):
+                    mounted.update(type(child) for child in value.children().values())
+        return mounted
+
     def _walk(self, target: Target) -> tuple[type[Page], list[str]]:
         """The deepest ``Page`` class on the qualified name and the remaining attributes."""
         from wintestkit.model import Page
@@ -292,23 +310,34 @@ class ModuleLoader:
         return page
 
     def get_element(self, target: Target) -> tuple[type[Page], str]:
-        """The page class and attribute name; a bare page means its ``window``."""
-        from wintestkit.model import Element, Window
+        """The page class and attribute path; a bare page means its ``window``.
+
+        The path is dotted through mounted components (``address.street``); a component on its
+        own means its ``root``.
+        """
+        from wintestkit.model import Element, PageObject, Window
 
         page, remaining = self._walk(target)
         if not remaining:
             return page, "window"
-        if len(remaining) != 1:
-            raise TargetError(f"{target.qualname!r} is not a page attribute")
-        attribute = remaining[0]
-        definition: Any = getattr(page, attribute, None)
+        owner: type[Page] = page
+        for part in remaining[:-1]:
+            child: Any = getattr(owner, part, None)
+            if not isinstance(child, PageObject):
+                raise TargetError(f"{target.qualname!r} is not a page attribute")
+            owner = type(child)
+        attribute = remaining[-1]
+        definition: Any = getattr(owner, attribute, None)
+        if isinstance(definition, PageObject):
+            return page, ".".join(remaining)
         if not isinstance(definition, Element | Window):
-            known = ", ".join(sorted(self.element_names(page))) or "none"
-            raise TargetError(f"{page.__name__} has no element {attribute!r} (elements: {known})")
-        return page, attribute
+            known = ", ".join(sorted(self.element_names(owner))) or "none"
+            raise TargetError(f"{owner.__name__} has no element {attribute!r} (elements: {known})")
+        return page, ".".join(remaining)
 
     @staticmethod
-    def element_names(page: type[Page]) -> list[str]:
+    def element_names(page: type[Page], _seen: tuple[type, ...] = ()) -> list[str]:
+        """Own elements and windows, then those of mounted components under dotted names."""
         from wintestkit.model import Element, Window
 
         names: dict[str, None] = {}
@@ -318,6 +347,13 @@ class ModuleLoader:
                     names[name] = None
                 else:
                     names.pop(name, None)
+        for name, child in page.children().items():
+            if type(child) in (*_seen, page):
+                continue  # composition cycle
+            nested = ModuleLoader.element_names(type(child), (*_seen, page))
+            if "root" in child.declared() and "root" not in nested:
+                nested.insert(0, "root")  # a root supplied by the mount itself
+            names.update({f"{name}.{inner}": None for inner in nested})
         return list(names)
 
 
@@ -325,13 +361,7 @@ class ModuleLoader:
 
 
 def _bound_for(app: App, page_class: type[Page], attribute: str) -> Any:
-    from wintestkit.model import BoundWindow, Window
-
-    page = page_class(app)
-    bound: Any = getattr(page, attribute, None) if hasattr(page_class, attribute) else None
-    if bound is None:
-        return BoundWindow(page, Window())  # no window declared: the application's main window
-    return bound
+    return page_class(app).bound_at(attribute)
 
 
 def resolve_bound(bound: Any, timeout: float, started: float | None = None) -> ElementResult:
@@ -377,6 +407,11 @@ def check_page(
             known = ", ".join(sorted(pages)) or "none"
             raise TargetError(f"{file.name} has no page {page_name!r} (pages: {known})")
         pages = {page_name: pages[page_name]}
+    else:
+        # Reusable components are checked through the pages that mount them; searching a box
+        # standalone in the main window only produces false "not found" noise.
+        mounted = loader.mounted_components()
+        pages = {name: klass for name, klass in pages.items() if klass not in mounted}
     results: list[CheckResult] = []
     for name, page_class in pages.items():
         for attribute in loader.element_names(page_class):

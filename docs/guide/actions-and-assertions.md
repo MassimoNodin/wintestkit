@@ -5,19 +5,28 @@
 Every action is a method of a bound element and accepts `timeout=` (seconds) to override how long
 it waits for the element.
 
-| Action | What it does |
-|---|---|
-| `click(mode=None)` | Click. In `pattern` mode (the default) it uses the control's Invoke, Toggle, SelectionItem or ExpandCollapse pattern and falls back to a mouse click; `mode="mouse"` always moves the mouse and clicks |
-| `double_click()` / `right_click()` / `hover()` | Mouse input at the center of the element |
-| `type(text, clear=True, keys=False)` | Enter text: set through the Value pattern when possible, otherwise typed on the keyboard. `clear=False` appends; `keys=True` always types key by key |
-| `clear()` | Remove all text |
-| `press(keys)` | Focus the element and press keys: `"Enter"`, `"Ctrl+S"`, `"Ctrl+A Delete"` (combos separated by spaces) |
-| `select(item)` | Select an item of a combo box, list, grid, tree or tab control by name, 0-based index or compiled regex |
-| `check()` / `uncheck()` | Set a check box or toggle button to a state (no-op if already there) |
-| `expand()` / `collapse()` | Expand or collapse a tree item, combo box, menu or expander |
-| `focus()` | Give the element keyboard focus |
-| `scroll_into_view()` | Scroll a list or grid item into view |
-| `highlight(duration_ms=1500)` | Draw a frame around the element (debugging aid) |
+Which actions exist depends on how the element is declared. A plain `Element` has all of them; a
+[typed element](pages-and-elements.md#typed-elements) has only the ones that apply to its control
+(the *On* column), and a [custom control](pages-and-elements.md#custom-controls) adds its own.
+
+| Action | What it does | On |
+|---|---|---|
+| `click(mode=None)` | Click. In `pattern` mode (the default) it uses the control's Invoke, Toggle, SelectionItem or ExpandCollapse pattern and falls back to a mouse click; `mode="mouse"` always moves the mouse and clicks | `Button`, `CheckBox`, `RadioButton`, `ListItem` |
+| `double_click()` / `right_click()` | Mouse input at the center of the element | `Button`, `CheckBox`, `RadioButton` |
+| `hover()` | Move the mouse over the element | every element |
+| `type(text, clear=True, keys=False)` | Enter text: set through the Value pattern when possible, otherwise typed on the keyboard. `clear=False` appends; `keys=True` always types key by key | `TextBox` |
+| `clear()` | Remove all text | `TextBox` |
+| `press(keys)` | Focus the element and press keys: `"Enter"`, `"Ctrl+S"`, `"Ctrl+A Delete"` (combos separated by spaces) | `TextBox` |
+| `select(item)` | Select an item by name, 0-based index or compiled regex (a combo box opens, picks and closes itself); a grid selects a row by index | `ComboBox`, `ListBox`, `DataGrid`, `TreeView`, `TabControl` |
+| `select()` | Select the radio button or list item itself | `RadioButton`, `ListItem` |
+| `check()` / `uncheck()` / `toggle()` | Set a check box or toggle button to a state (no-op if already there) / flip it | `CheckBox` (`toggle` only here) |
+| `expand()` / `collapse()` | Expand or collapse a combo box | `ComboBox` |
+| `focus()` | Give the element keyboard focus | every element |
+| `scroll_into_view()` | Scroll a list or grid item into view | every element |
+| `highlight(duration_ms=1500)` | Draw a frame around the element (debugging aid) | every element |
+
+"every element" means the typed elements and the plain `Element`. A plain `Element` additionally
+has all the other rows (`type`, `check`, `expand`, `select`, ...), so existing pages keep working.
 
 Windows have `close()`, `maximize()`, `minimize()` and `restore()`.
 
@@ -78,7 +87,19 @@ def test_continue_waits_until_it_is_enabled(main: MainPage) -> None:
 
 ## Reading state
 
-Reads return the current value without asserting anything:
+Reads return the current value without asserting anything. Like actions, some exist only on
+the types they apply to (a plain `Element` has them all):
+
+| Read | On |
+|---|---|
+| `text`, `is_enabled()`, `exists()`, `is_visible()`, `info()` | every element |
+| `value` | `TextBox`, `ComboBox` |
+| `is_checked()` | `CheckBox` |
+| `is_selected()` | `RadioButton`, `ListItem` |
+| `selected`, `selected_items()` | `ComboBox`, `ListBox`, `TreeView`, `TabControl` (`DataGrid`: `selected_items()` only) |
+| `items()` | `ComboBox` (expands and collapses it), `ListBox`, `TreeView`, `TabControl` |
+| `row_count()`, `column_count()`, `row(i)`, `cell(row, column)`, `find_row(column, value)` | `DataGrid` |
+
 
 ```python
 # pseudo-code

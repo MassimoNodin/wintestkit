@@ -36,7 +36,7 @@ def app(calculator_app: App) -> App:
 @pytest.fixture
 def standard(app: App) -> StandardPage:
     calculator = open_page(app, StandardPage)
-    calculator.clear.click()
+    calculator.clear()
     return calculator
 
 

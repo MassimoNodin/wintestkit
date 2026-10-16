@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import logging
 import os
 import sys
@@ -66,8 +67,22 @@ def _split_passthrough(argv: list[str]) -> tuple[list[str], list[str]]:
     return argv, []
 
 
+def _configure_streams() -> None:
+    """Let non-ASCII marks (check, arrow, chevron) print when piped on Windows codepages."""
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if (
+            reconfigure is None
+            or str(getattr(stream, "encoding", "")).lower().replace("-", "") == "utf8"
+        ):
+            continue
+        with contextlib.suppress(ValueError, OSError):  # a stream that cannot change keeps its own
+            reconfigure(encoding="utf-8", errors="replace")
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Run the CLI; returns the process exit code."""
+    _configure_streams()
     own, passthrough = _split_passthrough(list(sys.argv[1:] if argv is None else argv))
     parser = build_parser()
     try:
