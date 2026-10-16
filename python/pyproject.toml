@@ -4,12 +4,16 @@ dynamic = ["version"]
 description = "UI test automation for Windows WPF applications"
 readme = "README.md"
 requires-python = ">=3.12"
-license = "MIT"
+license = "LicenseRef-Proprietary"
+license-files = ["LICENSE"]
 dependencies = [
     "comtypes>=1.4.8",
     "pyyaml>=6.0.2",
 ]
-classifiers = ["Operating System :: Microsoft :: Windows", "Framework :: Pytest"]
+classifiers = [
+    "Operating System :: Microsoft :: Windows",
+    "Framework :: Pytest",
+]
 
 [project.scripts]
 wtk = "wintestkit.cli:main"

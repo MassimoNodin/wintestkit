@@ -1,21 +1,52 @@
-MIT License
+WinTestKit Proprietary License
 
-Copyright (c) 2026 Massimo Nodin
+Copyright (c) 2026 Massimo Nodin. All rights reserved.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+1. Ownership. WinTestKit, including its source code, compiled code, documentation and
+   related materials (the "Software"), is owned by Massimo Nodin (the "Licensor"). The
+   Software is licensed, not sold. No rights are granted except those stated here or in a
+   separate written agreement with the Licensor.
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+2. Grant. Subject to this license and to any payment terms agreed with the Licensor, the
+   Licensor grants you a non-exclusive, non-transferable, non-sublicensable, revocable
+   license to install and use the Software for your own internal purposes, including to
+   write and run tests for applications you are authorized to test.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+3. Restrictions. Unless the Licensor agrees in writing, you may not:
+   a. copy, modify, translate or create derivative works of the Software, except as
+      needed to run it as intended;
+   b. distribute, sublicense, sell, rent, lease, lend, host or otherwise make the
+      Software available to anyone else, or offer it as a service;
+   c. reverse engineer, decompile or disassemble the Software, or attempt to extract its
+      source code, except to the extent applicable law does not allow this restriction;
+   d. remove or alter any copyright, license or other proprietary notice;
+   e. use the Software to build a product or service that competes with it.
+
+4. Your tests and data. You keep all rights in the tests, configuration and other content
+   you create with the Software. This license gives the Licensor no rights in them.
+
+5. Third-party components. The Software may include or depend on third-party components
+   that are licensed under their own terms. Those terms apply to those components.
+
+6. Earlier versions. Versions of the Software that the Licensor distributed before this
+   license under the MIT License remain available to the people who received them under
+   the MIT License. This license applies to all later versions.
+
+7. Termination. This license ends automatically if you breach it. On termination you must
+   stop using the Software and delete all copies.
+
+8. No warranty. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+   IMPLIED, INCLUDING THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE
+   AND NON-INFRINGEMENT.
+
+9. Limitation of liability. TO THE MAXIMUM EXTENT PERMITTED BY LAW, THE LICENSOR IS NOT
+   LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL OR PUNITIVE DAMAGES, OR FOR
+   LOST PROFITS OR DATA, ARISING FROM THE USE OF OR INABILITY TO USE THE SOFTWARE. THE
+   LICENSOR'S TOTAL LIABILITY IS LIMITED TO THE AMOUNT YOU PAID FOR THE SOFTWARE IN THE
+   12 MONTHS BEFORE THE CLAIM.
+
+10. General. This license is the entire agreement about the Software between you and the
+    Licensor, unless you have a separate written agreement with the Licensor. If a
+    provision is unenforceable, the rest stays in effect.
+
+Contact the Licensor for commercial licensing: massimonodin@gmail.com
