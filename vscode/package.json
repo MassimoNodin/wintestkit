@@ -4,7 +4,7 @@
   "displayName": "WinTestKit",
   "description": "UI test automation for Windows WPF apps — highlight elements, run tests, inspect UI.",
   "version": "0.1.1",
-  "license": "MIT",
+  "license": "SEE LICENSE IN LICENSE",
   "icon": "media/icon.png",
   "engines": {
     "vscode": "^1.95.0"

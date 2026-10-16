@@ -5,6 +5,8 @@ released together with the same version) are documented here.
 
 ## [Unreleased]
 
+- Switch to a proprietary license for new versions. Earlier releases stay available under MIT.
+
 - Rename Pages to Page Tree and nest child pages under their parents, with separation
   between root trees. Shared children appear under each parent.
 
