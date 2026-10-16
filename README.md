@@ -171,7 +171,7 @@ With the application open, verify the locators:
 
 ```powershell
 wtk highlight pages/main.py::MainPage.sign_in
-wtk check pages/main.py
+wtk check pages/main.py          # ✗ = broken/moved, ends with "25 found, 4 broken/moved"; exit 1
 ```
 
 In VS Code, use the **Highlight** and **Check** CodeLens actions above your page elements.

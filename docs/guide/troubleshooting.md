@@ -85,6 +85,16 @@ No element matches Edit#Street in Window "Customer" (waited 5.0s)
   five matches and twenty windows. It also shows up in `wtk check`, in the editor and in the HTML
   report (`relocations` in the JSON diagnostic).
 
+## Reading `wtk check` results
+
+In `wtk check`, `✗` means the element was not found where it is declared: broken or moved. It is
+always a failure and the exit code is 1; the last line summarizes it, for example
+`25 found, 4 broken/moved`. If `found in …` lines follow, they say where the element went.
+Otherwise it was not visible in the current app state, which does not prove it did not move. Put
+the app into the state where the element should exist (open the dialog, pane or tab) and run
+`wtk check` again, or use the Spy, before concluding the locator is wrong. All relocation searches
+of one check run share a ten second budget.
+
 ## Ambiguous element
 
 `2 elements match … add within= or index= to pick one` means the locator matches several controls.

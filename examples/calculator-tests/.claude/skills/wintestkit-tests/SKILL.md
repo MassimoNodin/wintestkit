@@ -256,8 +256,12 @@ wtk discover                     # what static discovery sees: pages, components
 wtk run                          # the test suite (pytest underneath)
 ```
 
-`wtk check` needs the application open on the window under test; controls that exist only in some
-states (a closed pane, another mode, a popup) fail until the app is in that state.
+`wtk check` needs the application open on the window under test. `✗` always means broken/moved and
+exits 1; the last line is a summary such as `25 found, 4 broken/moved`. If `found in …` lines
+follow, they say where the element went; otherwise it was not visible in the current app state
+(a closed pane, another mode, a popup). Put the app into the state where it should exist (open
+the dialog or pane) and run `wtk check` again, or use the Spy, before concluding the locator is
+wrong.
 
 When an element is not found, WinTestKit searches the other windows of the application and prints
 `found in another window` with a `hint` naming the mount line. Read it and apply the smallest

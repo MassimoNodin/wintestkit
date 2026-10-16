@@ -8,6 +8,7 @@ import type {
 } from "../protocol/generated";
 import { ServerManager, type Project } from "../server/serverManager";
 import { RpcError } from "../server/jsonrpc";
+import { summarizeChecks } from "./checkStatus";
 import { CheckResultsStore } from "./decorations";
 import { formatDiagnostic, shortElement } from "./diagnostics";
 
@@ -228,19 +229,7 @@ export class HighlightCommands implements vscode.Disposable {
       if (element) this.checks.set({ project, page, element, result: checked });
     }
     if (!filter) {
-      const found = result.results.filter(
-        (result) => result.status === "found",
-      ).length;
-      vscode.window.setStatusBarMessage(
-        "Checked " +
-          result.results.length +
-          " elements: " +
-          found +
-          " found, " +
-          (result.results.length - found) +
-          " missing.",
-        5000,
-      );
+      vscode.window.setStatusBarMessage(summarizeChecks(result.results), 5000);
     }
   }
   dispose(): void {

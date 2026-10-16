@@ -61,7 +61,8 @@ tests/                   intent calls (`standard.add_one_to(n)`, `open_page`) an
   Programmer, so their roots use `control_type="Group"` plus `name`.
 - `uv run wtk check pages/standard.py` (and `scientific.py`, `programmer.py` with that mode
   open) resolves every element; the three navigation items exist only while the navigation pane is
-  open, so open it first to check them. `uv run wtk discover` lists the pages, components and
+  open; with the pane closed `wtk check` reports them as `✗` (broken/moved, exit 1) because they are
+  not visible in that state, so open it first to check them. `uv run wtk discover` lists the pages, components and
   element types without importing the code.
 - `[tool.pyright]` in `pyproject.toml` type-checks the suite in strict mode.
 
