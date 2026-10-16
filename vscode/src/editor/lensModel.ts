@@ -154,14 +154,13 @@ export function buildLenses(
         { file, qualname: element.qualname },
         actionTooltip(status?.highlight, tooltip),
       );
-      if (element.kind !== "window")
-        add(
-          element.range.start.line,
-          actionLabel("check", status?.check) || "$(check) Check",
-          "wintestkit.checkElement",
-          { file, qualname: element.qualname },
-          actionTooltip(status?.check, tooltip),
-        );
+      add(
+        element.range.start.line,
+        actionLabel("check", status?.check) || "$(check) Check",
+        "wintestkit.checkElement",
+        { file, qualname: element.qualname },
+        actionTooltip(status?.check, tooltip),
+      );
     }
   }
   for (const test of discovery.tests) {

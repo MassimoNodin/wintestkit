@@ -5,6 +5,12 @@ released together with the same version) are documented here.
 
 ## [Unreleased]
 
+- Rename Pages to Page Tree and nest child pages under their parents, with separation
+  between root trees. Shared children appear under each parent.
+
+- Windows can now be checked like elements: the Explorer and CodeLens show a Check action for
+  them, and Check all elements includes them.
+
 - Highlight and Check show per-element progress, success, missing/ambiguous matches and errors
   inline in their CodeLens actions, with hover details and click-to-retry.
 

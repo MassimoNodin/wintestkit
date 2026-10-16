@@ -441,7 +441,7 @@ describe("navigation view", () => {
     const { tree } = createTree(hostFor(global));
     resolve(tree);
     expect(mocks.html).toContain('role="tablist"');
-    expect(mocks.html).toContain(">Pages</button>");
+    expect(mocks.html).toContain(">Page Tree</button>");
     expect(mocks.html).toContain(">Flows</button>");
     expect(mocks.html).toContain(">Tests</button>");
     expect(mocks.html).toContain('data-section="tests" aria-selected="true"');

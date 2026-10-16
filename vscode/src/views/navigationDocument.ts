@@ -73,7 +73,7 @@ function renderItem(
         .join("")}</div>`
     : "";
   return (
-    `<div role="treeitem" class="item" data-id="${escapeAttribute(node.id)}" ` +
+    `<div role="treeitem" class="item${node.context.webviewSection === "page" ? " page-item" : node.context.webviewSection === "project" ? " project-item" : ""}" data-id="${escapeAttribute(node.id)}" ` +
     `aria-label="${escapeAttribute(accessible)}" title="${escapeAttribute(node.tooltip)}" ` +
     (node.children.length ? `aria-expanded="${open ? "true" : "false"}" ` : "") +
     `aria-selected="${selected ? "true" : "false"}" tabindex="${selected ? "0" : "-1"}" ` +
@@ -104,7 +104,7 @@ body {
   display: flex;
   flex: 0 0 22px;
   height: 22px;
-  margin: 4px 6px 2px;
+  margin: 4px 6px 10px;
   border: 1px solid var(--vscode-checkbox-border, var(--vscode-panel-border, transparent));
   border-radius: 2px;
   overflow: hidden;
@@ -122,8 +122,12 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  cursor: pointer;
 }
 #segments button:last-child { border-right: 0; }
+#segments button:hover {
+  background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground));
+}
 #segments button[aria-selected="true"] {
   background: var(--vscode-list-activeSelectionBackground);
   color: var(--vscode-list-activeSelectionForeground);
@@ -134,6 +138,12 @@ body {
 }
 #tree { flex: 1 1 auto; min-height: 0; overflow: auto; }
 .group { margin-left: 12px; }
+#tree > .page-item + .page-item,
+#tree > .project-item > .group > .page-item + .page-item {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--vscode-panel-border, var(--vscode-widget-border, transparent));
+}
 .line {
   display: flex;
   align-items: center;
@@ -157,10 +167,21 @@ body {
   background: transparent;
   color: inherit;
   flex: 0 0 auto;
+  cursor: pointer;
 }
-.action { width: 22px; }
+.action { width: 22px; border-radius: 3px; }
+.twist:hover, .action:hover {
+  background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground));
+}
+.action:focus-visible, .twist:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: -1px;
+}
 .spacer { display: inline-block; }
 .icon { margin-right: 4px; flex: 0 0 auto; }
+.icon.codicon-symbol-class { color: var(--vscode-symbolIcon-classForeground, #ee9d28); }
+.icon.codicon-symbol-field { color: var(--vscode-symbolIcon-fieldForeground, #75beff); }
+.icon.codicon-symbol-method { color: var(--vscode-symbolIcon-methodForeground, #b180d7); }
 .icon.testing-iconPassed { color: var(--vscode-testing-iconPassed); }
 .icon.list-warningForeground { color: var(--vscode-list-warningForeground); }
 .icon.testing-iconFailed { color: var(--vscode-testing-iconFailed); }
@@ -185,7 +206,7 @@ body {
 const SCRIPT = `
 const vscodeApi = acquireVsCodeApi();
 const sections = ["pages", "flows", "tests"];
-const labels = { pages: "Pages", flows: "Flows", tests: "Tests" };
+const labels = { pages: "Page Tree", flows: "Flows", tests: "Tests" };
 const actions = ["highlight", "check", "checkPage", "run", "debug"];
 const named = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Home", "End", "Enter", " "]);
 const segments = document.getElementById("segments");
@@ -295,7 +316,7 @@ export function navigationDocument(options: {
 <style nonce="{{nonce}}">${STYLE}</style>
 </head>
 <body>
-<div id="segments" role="tablist" aria-label="Pages, Flows, and Tests">{{tabs}}</div>
+<div id="segments" role="tablist" aria-label="Page Tree, Flows, and Tests">{{tabs}}</div>
 <div id="tree" role="tree" aria-label="{{treeLabel}}" tabindex="0"><!--TREE--></div>
 <script nonce="{{nonce}}">${SCRIPT}</script>
 </body>

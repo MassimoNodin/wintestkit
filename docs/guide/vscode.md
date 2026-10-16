@@ -66,10 +66,13 @@ both is supported. Turn the prompt off with `wintestkit.promptDisablePytestExplo
 ## Explorer
 
 **Current Setup**, **Explorer** and **Spy** stack in the WinTestKit activity bar, with Spy
-below Explorer. Explorer is a single view. A **Pages | Flows | Tests** control at the top
+below Explorer. Explorer is a single view. A **Page Tree | Flows | Tests** control at the top
 switches the list, and the selected tab is remembered.
 
-- **Pages** lists page classes, with elements nested under their `within` containers.
+- **Page Tree** shows only pages that are not children of another page at the root,
+  with spacing and dividers between root trees. Expand a page to reveal its elements
+  and child pages; shared child pages appear under each parent, not again at the root.
+  Elements remain nested under their `within` containers.
   Inline actions highlight/check elements or check a whole page; icons show the last check result.
 - **Flows** lists public, module-level Python functions (including async functions) under
   `flows/` directories, grouped by source file. Private helpers and class methods are omitted.

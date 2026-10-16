@@ -119,4 +119,44 @@ describe("Elements tree model", () => {
     expect(result.pages[0].name).toBe("Zulu");
     expect(buildTree([])).toEqual([]);
   });
+  it("nests child pages under each parent and roots only unreferenced pages", () => {
+    const page = (id: string, children: string[] = []) => ({
+      ...discovery([]).pages[0],
+      id,
+      name: id,
+      qualname: id,
+      children: children.map((child) => ({
+        name: child.toLowerCase(),
+        pageId: child,
+        range: range(2),
+        nameRange: range(2),
+      })),
+    });
+    const result = discovery([]);
+    result.pages = [
+      page("Shared"),
+      page("Standard", ["Shared"]),
+      page("Calculator", ["Standard", "Shared"]),
+      page("Standalone"),
+    ];
+    const tree = buildTree([result]);
+    expect(tree.map((node) => node.label)).toEqual(["Calculator", "Standalone"]);
+    const [standard, shared] = tree[0].children;
+    expect(standard.label).toBe("standard: Standard");
+    expect(standard.children[0].label).toBe("shared: Shared");
+    expect(shared.label).toBe("shared: Shared");
+    expect(standard.children[0].id).not.toBe(shared.id);
+  });
+});
+describe("Window actions", () => {
+  it("lets windows be highlighted and checked", async () => {
+    const { actionsFor } = await import("../../src/views/navigationModel");
+    const window = {
+      ...element("window", 2),
+      kind: "window" as const,
+      locator: { window: { title: "Demo" } },
+    };
+    const node = buildTree([discovery([window])])[0].children[0];
+    expect(actionsFor(node)).toEqual(["highlight", "check"]);
+  });
 });
