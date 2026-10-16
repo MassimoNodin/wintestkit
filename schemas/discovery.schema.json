@@ -47,7 +47,8 @@
         "file": { "type": "string" },
         "name": { "type": "string" },
         "range": { "$ref": "common.schema.json#/$defs/Range" },
-        "nameRange": { "$ref": "common.schema.json#/$defs/Range" }
+        "nameRange": { "$ref": "common.schema.json#/$defs/Range" },
+        "runnable": { "type": "boolean" }
       },
       "required": ["id", "file", "name", "range", "nameRange"],
       "additionalProperties": false

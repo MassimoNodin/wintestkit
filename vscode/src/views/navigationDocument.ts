@@ -79,7 +79,7 @@ function renderItem(
     `aria-selected="${selected ? "true" : "false"}" tabindex="${selected ? "0" : "-1"}" ` +
     `data-vscode-context="${escapeAttribute(JSON.stringify(node.context))}">` +
     `<div class="line">${twist}` +
-    `<span class="codicon codicon-${escapeAttribute(node.icon)} icon${color}" aria-hidden="true"></span>` +
+    `<span class="codicon codicon-${escapeAttribute(node.icon)}${node.icon === "loading" ? " codicon-modifier-spin" : ""} icon${color}" aria-hidden="true"></span>` +
     `<span class="label">${escapeText(node.label)}</span>` +
     (node.description
       ? `<span class="desc">${escapeText(node.description)}</span>`
@@ -205,9 +205,9 @@ body {
 
 const SCRIPT = `
 const vscodeApi = acquireVsCodeApi();
-const sections = ["pages", "flows", "tests"];
-const labels = { pages: "Page Tree", flows: "Flows", tests: "Tests" };
-const actions = ["highlight", "check", "checkPage", "run", "debug"];
+const sections = ["pages", "flows"];
+const labels = { pages: "Page Tree", flows: "Flows" };
+const actions = ["highlight", "check", "checkPage", "run"];
 const named = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Home", "End", "Enter", " "]);
 const segments = document.getElementById("segments");
 const tree = document.getElementById("tree");
@@ -316,7 +316,7 @@ export function navigationDocument(options: {
 <style nonce="{{nonce}}">${STYLE}</style>
 </head>
 <body>
-<div id="segments" role="tablist" aria-label="Page Tree, Flows, and Tests">{{tabs}}</div>
+<div id="segments" role="tablist" aria-label="Page Tree and Flows">{{tabs}}</div>
 <div id="tree" role="tree" aria-label="{{treeLabel}}" tabindex="0"><!--TREE--></div>
 <script nonce="{{nonce}}">${SCRIPT}</script>
 </body>

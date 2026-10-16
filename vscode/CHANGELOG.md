@@ -5,6 +5,20 @@ released together with the same version) are documented here.
 
 ## [Unreleased]
 
+- Fix the Spy failing with "No window matches Window" and Current Setup showing "Status unavailable"
+  for apps such as UWP Calculator that have no top-level window in their own process.
+
+- Move the Spy scope toggle to the right of the toolbar and label it **Show Other Apps** /
+  **Show Only Selected App**. The page CodeLens now reads **Check all elements in this class**.
+
+- Add **Run flow** to the Flows tab and as a CodeLens above flows whose only required parameter is
+  `app`. A new `flow.run` request calls the flow with the running application; discovery reports
+  `runnable` for each flow.
+
+- Remove the Run Test / Debug Test CodeLens and their commands; use the Testing view instead.
+
+- Remove the Tests tab from the Explorer; tests are run and debugged from VS Code's Testing view.
+
 - Switch to a proprietary license for new versions. Earlier releases stay available under MIT.
 
 - Rename Pages to Page Tree and nest child pages under their parents, with separation

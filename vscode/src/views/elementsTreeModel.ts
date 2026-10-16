@@ -13,9 +13,7 @@ export interface ElementNode {
     | "element"
     | "elements"
     | "file"
-    | "flow"
-    | "test"
-    | "test-class";
+    | "flow";
   icon: string;
   children: ElementNode[];
   file?: string;
@@ -24,8 +22,7 @@ export interface ElementNode {
   page?: string;
   elementId?: string;
   tooltip?: string;
-  root?: string;
-  testId?: string;
+  runnable?: boolean;
 }
 
 export function buildTree(discoveries: DiscoveryResult[]): ElementNode[] {

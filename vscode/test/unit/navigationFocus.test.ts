@@ -313,7 +313,7 @@ function bootClient() {
   const segments = new HTMLElement("segments");
   const tree = new HTMLElement("tree");
   const tabs: Record<string, HTMLElement> = {};
-  for (const section of ["pages", "flows", "tests"]) {
+  for (const section of ["pages", "flows"]) {
     const tab = new HTMLElement("tab-" + section);
     tab.setAttribute("data-section", section);
     tab.setAttribute("aria-selected", section === "pages" ? "true" : "false");
@@ -491,10 +491,10 @@ describe("navigation document focus", () => {
     outside.focus();
     client.focusLog.length = 0;
     client.tree.scrollTop = 11;
-    client.paint("tests", "");
+    client.paint("pages", "");
     expect(client.focusLog).toEqual([]);
     expect(client.active()).toBe(outside);
-    expect(client.tabs.tests.getAttribute("aria-selected")).toBe("true");
+    expect(client.tabs.pages.getAttribute("aria-selected")).toBe("true");
     expect(client.tree.scrollTop).toBe(11);
   });
 

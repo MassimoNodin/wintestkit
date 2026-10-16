@@ -174,6 +174,10 @@ describe("Spy view bridge", () => {
       /id="collapse"[\s\S]*?<\/button>\s*<button[\s\S]*?id="other-apps"/,
     );
     expect(html).toMatch(/id="other-apps"[\s\S]*?\bhidden\b/);
+    expect(html).toContain('<span id="other-apps-label">Show Other Apps</span>');
+    expect(readFileSync("media/spy/spy.css", "utf8")).toMatch(
+      /#other-apps\s*\{[^}]*margin-left:\s*auto/,
+    );
     const css = readFileSync("media/spy/spy.css", "utf8");
     expect(css).not.toMatch(/#tree ul\s*\{[^}]*border-left/);
     expect(css).toMatch(

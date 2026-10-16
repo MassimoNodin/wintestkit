@@ -2,7 +2,6 @@ import * as path from "node:path";
 import * as vscode from "vscode";
 import type { Projects } from "../projects";
 import type { DiscoveryStore } from "../discovery/store";
-import type { CodeLenses } from "../editor/codeLens";
 import { formatDiagnostic } from "../editor/diagnostics";
 import { getInterpreter } from "../python";
 import type { Project } from "../server/serverManager";
@@ -17,11 +16,6 @@ interface ItemData {
   project: Project;
   nodeid?: string;
 }
-export interface TestTarget {
-  id: string;
-  project?: Project;
-}
-
 export function failureMessages(
   end?: TestEnd,
   fallback?: string,
@@ -69,9 +63,6 @@ export class TestController implements vscode.Disposable {
     "WinTestKit",
   );
   readonly lastMessages = new Map<string, vscode.TestMessage[]>();
-  get lastResults() {
-    return this.lenses.lastResults;
-  }
   readonly items = new Map<string, vscode.TestItem>();
   private readonly metadata = new WeakMap<vscode.TestItem, ItemData>();
   private readonly queues = new Map<string, Promise<void>>();
@@ -83,7 +74,6 @@ export class TestController implements vscode.Disposable {
   constructor(
     private readonly projects: Projects,
     private readonly discovery: DiscoveryStore,
-    private readonly lenses: CodeLenses,
     private readonly log: vscode.LogOutputChannel,
     private readonly reports: Reports,
   ) {
@@ -106,14 +96,6 @@ export class TestController implements vscode.Disposable {
     this.subscriptions = [
       discovery.onDidChange(() => this.rebuild()),
       projects.onDidChange(() => this.rebuild()),
-      vscode.commands.registerCommand(
-        "wintestkit.runTest",
-        (target?: TestTarget) => this.runTarget(target),
-      ),
-      vscode.commands.registerCommand(
-        "wintestkit.debugTest",
-        (target?: TestTarget) => this.runTarget(target, true),
-      ),
     ];
     this.rebuild();
   }
@@ -192,44 +174,6 @@ export class TestController implements vscode.Disposable {
       test.range.end.line,
       test.range.end.character,
     );
-  }
-  async runTarget(target?: TestTarget, debug = false): Promise<void> {
-    if (!target) {
-      const editor = vscode.window.activeTextEditor;
-      const located =
-        editor &&
-        this.discovery.testAt(
-          editor.document.uri,
-          editor.selection.active.line,
-        );
-      if (located) target = { id: located.test.id, project: located.project };
-    }
-    if (!target) return;
-    const editorProject =
-      vscode.window.activeTextEditor &&
-      this.projects.projectFor(vscode.window.activeTextEditor.document.uri);
-    const project =
-      target.project ??
-      editorProject ??
-      this.projects.all.find((project) =>
-        this.items.has(this.key(project, target!.id)),
-      );
-    const item = project && this.items.get(this.key(project, target.id));
-    if (!item) return;
-    const cancellation = new vscode.CancellationTokenSource();
-    try {
-      await this.run(
-        new vscode.TestRunRequest(
-          [item],
-          undefined,
-          debug ? this.debugProfile : this.profile,
-        ),
-        cancellation.token,
-        debug,
-      );
-    } finally {
-      cancellation.dispose();
-    }
   }
   private selected(
     request: vscode.TestRunRequest,
@@ -377,16 +321,8 @@ export class TestController implements vscode.Disposable {
         action.kind === "errored" ||
         action.kind === "skipped"
       ) {
-        const outcome = action.kind === "errored" ? "error" : action.kind;
         if (action.kind === "passed" || action.kind === "skipped")
           this.lastMessages.delete(action.id);
-        this.lenses.lastResults.set(action.id, outcome);
-        if (action.id.includes("["))
-          this.lenses.lastResults.set(
-            action.id.slice(0, action.id.indexOf("[")),
-            outcome,
-          );
-        this.lenses.refresh();
       }
     }
   }

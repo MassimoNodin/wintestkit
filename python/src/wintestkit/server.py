@@ -36,6 +36,7 @@ _PARAMS: dict[str, tuple[set[str], set[str]]] = {
     "app.close": (set(), set()),
     "element.highlight": ({"file", "qualname"}, {"durationMs"}),
     "page.check": ({"file", "page"}, set()),
+    "flow.run": ({"file", "name"}, set()),
     "inspect.roots": (set(), {"includeOtherApps"}),
     "inspect.children": ({"nodeId"}, set()),
     "inspect.properties": ({"nodeId"}, {"full", "includeAncestors"}),
@@ -276,7 +277,10 @@ class Server:
                 "pids": app.pids if app is not None else [],
             }
             if app is not None:
-                status["mainWindowTitle"] = app.main_window().name
+                # Apps such as UWP Calculator have no top-level window of their own process; the
+                # app is still running, so the title is simply omitted.
+                with contextlib.suppress(WtkError):
+                    status["mainWindowTitle"] = app.main_window().name
             return status
         if method == "app.launch":
             app = self._app(False)
@@ -293,6 +297,13 @@ class Server:
                 with self._node_lock:
                     self.nodes.clear()
             return None
+        if method == "flow.run":
+            from wintestkit.targets import run_flow
+
+            app = self._app()
+            assert app is not None
+            file = (self.cfg.root / Path(params["file"])).resolve()
+            return run_flow(app, self.loader, file, params["name"]).to_dict()
         if method in ("element.highlight", "page.check"):
             app = self._app()
             assert app is not None

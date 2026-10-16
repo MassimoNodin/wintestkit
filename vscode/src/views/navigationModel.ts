@@ -1,22 +1,16 @@
 import type { CheckResult } from "../protocol/generated";
 import type { ElementNode } from "./elementsTreeModel";
 
-export const SECTIONS = ["pages", "flows", "tests"] as const;
+export const SECTIONS = ["pages", "flows"] as const;
 export type NavigationSection = (typeof SECTIONS)[number];
 export const SECTION_LABEL: Record<NavigationSection, string> = {
   pages: "Page Tree",
   flows: "Flows",
-  tests: "Tests",
 };
 export const navigationSectionKey = "wintestkit.navigation.section";
 export const navigationExpandedKey = "wintestkit.navigation.expanded";
 
-export type NavigationAction =
-  | "highlight"
-  | "check"
-  | "checkPage"
-  | "run"
-  | "debug";
+export type NavigationAction = "highlight" | "check" | "checkPage" | "run";
 
 export const ACTION_PRESENTATION: Record<
   NavigationAction,
@@ -24,16 +18,14 @@ export const ACTION_PRESENTATION: Record<
 > = {
   highlight: { icon: "eye", title: "Highlight Element" },
   check: { icon: "check", title: "Check Element" },
-  checkPage: { icon: "check-all", title: "Check All Elements" },
-  run: { icon: "play", title: "Run Tests" },
-  debug: { icon: "debug-alt", title: "Debug Tests" },
+  checkPage: { icon: "check-all", title: "Check All Direct Child Elements" },
+  run: { icon: "play", title: "Run Flow" },
 };
 
 const ACTIONS = new Set<string>(Object.keys(ACTION_PRESENTATION));
-const TEST_CONTEXT = /^test(-class|-file|-project)?$/;
 
 export function isSection(value: unknown): value is NavigationSection {
-  return value === "pages" || value === "flows" || value === "tests";
+  return value === "pages" || value === "flows";
 }
 
 export function readSection(value: unknown): NavigationSection {
@@ -60,14 +52,7 @@ export function readExpanded(
 }
 
 export function nodeContext(node: ElementNode): string {
-  return node.testId !== undefined &&
-    (node.kind === "file" || node.kind === "project")
-    ? "test-" + node.kind
-    : node.kind;
-}
-
-export function isTestContext(value: string): boolean {
-  return TEST_CONTEXT.test(value);
+  return node.kind;
 }
 
 export function actionsFor(node: ElementNode): NavigationAction[] {
@@ -80,8 +65,7 @@ export function actionsFor(node: ElementNode): NavigationAction[] {
   )
     actions.push("highlight", "check");
   if (context === "page" && node.file && node.page) actions.push("checkPage");
-  if (isTestContext(context) && node.testId !== undefined && node.root)
-    actions.push("run", "debug");
+  if (context === "flow" && node.runnable && node.file) actions.push("run");
   return actions;
 }
 
@@ -105,9 +89,9 @@ export function menuContext(
     context.file = node.file;
     context.page = node.page;
   }
-  if (node.testId !== undefined && node.root) {
-    context.testId = node.testId;
-    context.root = node.root;
+  if (section === "flow" && node.runnable && node.file) {
+    context.file = node.file;
+    context.flowName = node.label;
   }
   return context;
 }
@@ -275,7 +259,6 @@ export class NavigationSession {
     this.expanded = {
       pages: new Set(expanded?.pages ?? []),
       flows: new Set(expanded?.flows ?? []),
-      tests: new Set(expanded?.tests ?? []),
     };
   }
   select(section: NavigationSection): void {
@@ -444,8 +427,6 @@ export function emptyMessage(
   if (!hasProject || count > 0) return undefined;
   if (section === "flows")
     return "Add reusable Python functions under flows/ to see them here.";
-  if (section === "tests")
-    return "No tests found. Add pytest tests to your project.";
   return undefined;
 }
 
@@ -459,12 +440,27 @@ export interface NavNode extends TreeSource {
   children: NavNode[];
 }
 
+export function flowPresentation(
+  state: "running" | "passed" | "failed",
+): { icon: string; color?: "testing.iconPassed" | "testing.iconFailed" } {
+  if (state === "running") return { icon: "loading" };
+  return state === "passed"
+    ? { icon: "pass", color: "testing.iconPassed" }
+    : { icon: "error", color: "testing.iconFailed" };
+}
+
 export function toNavNodes(
   nodes: readonly ElementNode[],
   statusFor: (elementId: string | undefined) => CheckResult["status"] | undefined,
+  flowStateFor: (
+    node: ElementNode,
+  ) => "running" | "passed" | "failed" | undefined = () => undefined,
 ): NavNode[] {
   return nodes.map((node) => {
-    const presentation = checkPresentation(statusFor(node.elementId));
+    const flowState = flowStateFor(node);
+    const presentation = flowState
+      ? flowPresentation(flowState)
+      : checkPresentation(statusFor(node.elementId));
     return {
       id: node.id,
       label: node.label,
@@ -474,7 +470,7 @@ export function toNavNodes(
       color: presentation?.color,
       context: menuContext(node),
       actions: actionsFor(node),
-      children: toNavNodes(node.children, statusFor),
+      children: toNavNodes(node.children, statusFor, flowStateFor),
     };
   });
 }

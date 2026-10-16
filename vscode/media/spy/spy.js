@@ -83,10 +83,12 @@
     const running = !!(appState && appState.appRunning);
     otherApps.hidden = !running;
     otherApps.setAttribute("aria-pressed", String(showOtherApps));
-    otherApps.title = showOtherApps
-      ? "Hide other apps' objects"
-      : "Show other apps' objects";
-    otherApps.setAttribute("aria-label", otherApps.title);
+    const otherAppsText = showOtherApps
+      ? "Show Only Selected App"
+      : "Show Other Apps";
+    otherApps.title = otherAppsText;
+    otherApps.setAttribute("aria-label", otherAppsText);
+    element("other-apps-label").textContent = otherAppsText;
     const load = element("load-properties");
     load.disabled =
       !hasDetails || fullPropertiesLoading || fullPropertiesLoaded;

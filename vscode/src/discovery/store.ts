@@ -14,10 +14,6 @@ export interface LocatedElement {
   page: PageEntry;
   element: ElementEntry;
 }
-export interface LocatedTest {
-  project: Project;
-  test: TestEntry;
-}
 
 export class DiscoveryStore implements vscode.Disposable {
   private readonly results = new Map<string, DiscoveryResult>();
@@ -129,21 +125,6 @@ export class DiscoveryStore implements vscode.Disposable {
       );
       if (element) return { project, page, element };
     }
-  }
-  testAt(uri: vscode.Uri, line: number): LocatedTest | undefined {
-    const project = this.projects.projectFor(uri);
-    if (!project) return;
-    const test = (this.get(project)?.tests ?? [])
-      .filter(
-        (test) =>
-          normalizedPath(test.file) === normalizedPath(uri.fsPath) &&
-          test.range.start.line <= line &&
-          test.range.end.line >= line,
-      )
-      .sort(
-        (first, second) => second.range.start.line - first.range.start.line,
-      )[0];
-    if (test) return { project, test };
   }
   pageById(id: string, project?: Project): PageEntry | undefined {
     return this.selected(project)

@@ -2,66 +2,39 @@ import * as path from "node:path";
 import type { DiscoveryResult } from "../protocol/generated";
 import type { ElementNode } from "./elementsTreeModel";
 
-export type ProjectSection = "flows" | "tests";
-
-export function buildProjectTree(
-  discoveries: DiscoveryResult[],
-  section: ProjectSection,
-): ElementNode[] {
+export function buildProjectTree(discoveries: DiscoveryResult[]): ElementNode[] {
   return discoveries.flatMap((discovery) => {
     const files = new Map<string, ElementNode>();
-    const entries = new Map<string, ElementNode>();
-    const definitions =
-      section === "tests"
-        ? discovery.tests
-        : (discovery.flows ?? []).map((flow) => ({
-            ...flow,
-            parent: null,
-            kind: "function" as const,
-          }));
-    for (const definition of definitions) {
+    for (const flow of discovery.flows ?? []) {
       const relative = path
-        .relative(discovery.root, definition.file)
+        .relative(discovery.root, flow.file)
         .replaceAll("\\", "/");
-      if (!files.has(definition.file)) {
-        files.set(definition.file, {
-          id: section + "|" + discovery.root + "|" + relative,
-          label: relative.startsWith(section + "/")
-            ? relative.slice(section.length + 1)
+      let file = files.get(flow.file);
+      if (!file) {
+        file = {
+          id: "flows|" + discovery.root + "|" + relative,
+          label: relative.startsWith("flows/")
+            ? relative.slice("flows/".length)
             : relative,
           description: "",
           kind: "file",
           icon: "file-code",
           children: [],
-          file: definition.file,
-          root: discovery.root,
-          testId: section === "tests" ? relative : undefined,
-        });
+          file: flow.file,
+        };
+        files.set(flow.file, file);
       }
-      const isClass = definition.kind === "class";
-      entries.set(definition.id, {
-        id: section + "|" + discovery.root + "|" + definition.id,
-        label: definition.name,
+      file.children.push({
+        id: "flows|" + discovery.root + "|" + flow.id,
+        label: flow.name,
         description: "",
-        kind: section === "flows" ? "flow" : isClass ? "test-class" : "test",
-        icon:
-          section === "flows"
-            ? "symbol-method"
-            : isClass
-              ? "symbol-class"
-              : "beaker",
+        kind: "flow",
+        icon: "symbol-method",
         children: [],
-        file: definition.file,
-        range: definition.nameRange,
-        root: discovery.root,
-        testId: section === "tests" ? definition.id : undefined,
+        file: flow.file,
+        range: flow.nameRange,
+        runnable: flow.runnable === true,
       });
-    }
-    for (const definition of definitions) {
-      const parentId = definition.parent;
-      const parent =
-        (parentId && entries.get(parentId)) || files.get(definition.file);
-      parent?.children.push(entries.get(definition.id)!);
     }
     const children = [...files.values()].sort((first, second) =>
       first.label.localeCompare(second.label),
@@ -69,14 +42,12 @@ export function buildProjectTree(
     return discoveries.length > 1 && children.length
       ? [
           {
-            id: section + "|" + discovery.root,
+            id: "flows|" + discovery.root,
             label: path.basename(discovery.root),
             description: discovery.root,
             kind: "project" as const,
             icon: "root-folder",
             children,
-            root: discovery.root,
-            testId: section === "tests" ? "" : undefined,
           },
         ]
       : children;

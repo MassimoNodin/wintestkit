@@ -2,7 +2,11 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { buildLenses, describeLocator } from "../../src/editor/lensModel";
 import { formatDiagnostic } from "../../src/editor/diagnostics";
-import type { ActionFeedback, ActionStatus } from "../../src/editor/lensModel";
+import type {
+  ActionFeedback,
+  ActionStatus,
+  FlowStatus,
+} from "../../src/editor/lensModel";
 import type {
   DiscoveryResult,
   LocatorData,
@@ -38,7 +42,7 @@ describe("editor lens model", () => {
       const feedback = new Map<string, ActionFeedback>([
         [element.id, { highlight: result, check: result }],
       ]);
-      const lenses = buildLenses(discovery, page.file, new Map(), feedback);
+      const lenses = buildLenses(discovery, page.file, feedback);
       for (const [command, label] of [
         ["highlightElement", highlight],
         ["checkElement", check],
@@ -62,7 +66,6 @@ describe("editor lens model", () => {
     const lenses = buildLenses(
       discovery,
       page.file,
-      new Map(),
       new Map([
         [element.id, { highlight: { status: "found", durationMs: 1 } }],
       ]),
@@ -147,24 +150,50 @@ describe("editor lens model", () => {
         },
       ],
     };
-    const lenses = buildLenses(
-      result,
-      "C:/demo/page.py",
-      new Map([["test", "passed"]]),
-    );
-    expect(lenses).toHaveLength(12);
+    const lenses = buildLenses(result, "C:/demo/page.py");
+    expect(lenses).toHaveLength(7);
     expect(lenses.filter((lens) => lens.line === 2)).toHaveLength(2);
-    expect(
-      lenses.find((lens) => lens.title === "$(pass-filled)\u00a0\u00a0Passed")
-        ?.command,
-    ).toBe("");
-    expect(
-      lenses.find((lens) => lens.command === "wintestkit.runTest")?.line,
-    ).toBe(8);
-    expect(
-      lenses.find((lens) => lens.title === "$(play)\u00a0\u00a0Run tests"),
-    ).toBeDefined();
-    expect(buildLenses(result, "C:/elsewhere.py", new Map())).toEqual([]);
+    // Tests get their run and debug actions from VS Code's Testing view, not CodeLens.
+    expect(lenses.filter((lens) => lens.line >= 8)).toEqual([]);
+    expect(buildLenses(result, "C:/elsewhere.py")).toEqual([]);
+  });
+  it("adds a Run flow lens to runnable flows only and shows their status", () => {
+    const flow = (name: string, line: number, runnable?: boolean) => ({
+      id: "flows/tour.py::" + name,
+      file: "C:/demo/flows/tour.py",
+      name,
+      range: range(line),
+      nameRange: range(line),
+      runnable,
+    });
+    const result: DiscoveryResult = {
+      version: 1,
+      root: "C:/demo",
+      errors: [],
+      pages: [],
+      tests: [],
+      flows: [flow("tour", 3, true), flow("open_page", 6, false), flow("old", 9)],
+    };
+    const lenses = buildLenses(result, "C:/demo/flows/tour.py");
+    expect(lenses).toEqual([
+      expect.objectContaining({
+        line: 3,
+        title: "$(play)  Run flow",
+        command: "wintestkit.runFlow",
+        args: [{ file: "C:/demo/flows/tour.py", name: "tour" }],
+      }),
+    ]);
+    expect(buildLenses(result, "C:/other.py")).toEqual([]);
+    const titleFor = (status?: FlowStatus) =>
+      buildLenses(result, "C:/demo/flows/tour.py", new Map(), () => status)[0];
+    expect(titleFor({ status: "running" }).title).toContain("Running flow");
+    expect(titleFor({ status: "passed", durationMs: 1 }).title).toContain(
+      "Flow passed",
+    );
+    const failed = titleFor({ status: "failed", durationMs: 1, message: "boom" });
+    expect(failed.title).toContain("Flow failed");
+    expect(failed.tooltip).toBe("boom");
+    expect(failed.command).toBe("wintestkit.runFlow");
   });
   it("formats detailed diagnostics without losing candidate mismatches", () => {
     const text = formatDiagnostic({

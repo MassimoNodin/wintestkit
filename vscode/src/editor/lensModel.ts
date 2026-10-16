@@ -2,9 +2,9 @@ import * as path from "node:path";
 import type {
   DiscoveryResult,
   ElementHighlightResult,
+  FlowRunResult,
   LocatorData,
   Matcher,
-  TestOutcome,
   WindowLocatorData,
 } from "../protocol/generated";
 
@@ -18,6 +18,15 @@ export interface LensSpec {
 export type ElementAction = "highlight" | "check";
 export type ActionStatus = ElementHighlightResult | { status: "running" };
 export type ActionFeedback = Partial<Record<ElementAction, ActionStatus>>;
+export type FlowStatus = FlowRunResult | { status: "running" };
+
+function flowLabel(status?: FlowStatus): string {
+  if (!status) return "$(play) Run flow";
+  if (status.status === "running") return "$(loading~spin) Running flow…";
+  return status.status === "passed"
+    ? "$(pass-filled) Flow passed"
+    : "$(error) Flow failed";
+}
 
 function actionLabel(action: ElementAction, result?: ActionStatus): string {
   if (!result) return "";
@@ -105,8 +114,9 @@ export function describeLocator(locator: LocatorData): string {
 export function buildLenses(
   discovery: DiscoveryResult,
   file: string,
-  lastResults: Map<string, TestOutcome>,
   feedback: ReadonlyMap<string, ActionFeedback> = new Map(),
+  flowStatus: (file: string, name: string) => FlowStatus | undefined = () =>
+    undefined,
 ): LensSpec[] {
   const normalize = (value: string): string => {
     const resolved =
@@ -134,7 +144,7 @@ export function buildLenses(
     if (normalize(page.file) !== normalize(file)) continue;
     add(
       page.range.start.line,
-      "$(checklist) Check all elements",
+      "$(checklist) Check all elements in this class",
       "wintestkit.checkPage",
       { file, page: page.qualname },
       page.qualname,
@@ -163,33 +173,17 @@ export function buildLenses(
       );
     }
   }
-  for (const test of discovery.tests) {
-    if (normalize(test.file) !== normalize(file)) continue;
-    const suffix = test.kind === "class" ? "tests" : "test";
+  for (const flow of discovery.flows ?? []) {
+    if (!flow.runnable || normalize(flow.file) !== normalize(file)) continue;
+    const status = flowStatus(flow.file, flow.name);
     add(
-      test.range.start.line,
-      "$(play) Run " + suffix,
-      "wintestkit.runTest",
-      { id: test.id },
-      test.id,
+      flow.range.start.line,
+      flowLabel(status),
+      "wintestkit.runFlow",
+      { file, name: flow.name },
+      (status && status.status !== "running" ? status.message : undefined) ??
+        "Run " + flow.name + " with the running application",
     );
-    add(
-      test.range.start.line,
-      "$(debug-alt) Debug " + suffix,
-      "wintestkit.debugTest",
-      { id: test.id },
-      test.id,
-    );
-    const outcome = lastResults.get(test.id);
-    if (outcome) {
-      const title =
-        outcome === "passed"
-          ? "$(pass-filled) Passed"
-          : outcome === "skipped"
-            ? "$(debug-step-over) Skipped"
-            : "$(error) Failed";
-      add(test.range.start.line, title, "", undefined, outcome);
-    }
   }
   return lenses;
 }

@@ -1,23 +1,24 @@
 import * as vscode from "vscode";
 import type { Projects } from "../projects";
 import type { DiscoveryStore } from "../discovery/store";
-import type { TestOutcome } from "../protocol/generated";
 import { buildLenses } from "./lensModel";
 import type { CheckResultsStore } from "./decorations";
+import { flowKey, type FlowRuns } from "./flowRuns";
 
 export class CodeLenses implements vscode.CodeLensProvider, vscode.Disposable {
   private readonly changed = new vscode.EventEmitter<void>();
   readonly onDidChangeCodeLenses = this.changed.event;
   private readonly subscriptions: vscode.Disposable[];
-  readonly lastResults = new Map<string, TestOutcome>();
   constructor(
     private readonly projects: Projects,
     private readonly discovery: DiscoveryStore,
     private readonly checks: CheckResultsStore,
+    private readonly flows: FlowRuns,
   ) {
     this.subscriptions = [
       discovery.onDidChange(() => this.refresh()),
       checks.onDidChange(() => this.refresh()),
+      flows.onDidChange(() => this.refresh()),
       vscode.workspace.onDidChangeConfiguration((event) => {
         if (event.affectsConfiguration("wintestkit.codeLens.enabled"))
           this.refresh();
@@ -44,8 +45,8 @@ export class CodeLenses implements vscode.CodeLensProvider, vscode.Disposable {
     return buildLenses(
       result,
       document.uri.fsPath,
-      this.lastResults,
       this.checks.feedback,
+      (file, name) => this.flows.states.get(flowKey({ file, name })),
     ).map(
       (spec) =>
         new vscode.CodeLens(new vscode.Range(spec.line, 0, spec.line, 0), {

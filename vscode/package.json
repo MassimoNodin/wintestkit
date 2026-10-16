@@ -25,18 +25,6 @@
   "contributes": {
     "commands": [
       {
-        "command": "wintestkit.tests.run",
-        "title": "Run Tests",
-        "category": "WinTestKit",
-        "icon": "$(play)"
-      },
-      {
-        "command": "wintestkit.tests.debug",
-        "title": "Debug Tests",
-        "category": "WinTestKit",
-        "icon": "$(debug-alt)"
-      },
-      {
         "command": "wintestkit.highlightElement",
         "title": "Highlight Element",
         "category": "WinTestKit",
@@ -55,16 +43,10 @@
         "icon": "$(checklist)"
       },
       {
-        "command": "wintestkit.runTest",
-        "title": "Run Test",
+        "command": "wintestkit.runFlow",
+        "title": "Run Flow",
         "category": "WinTestKit",
         "icon": "$(play)"
-      },
-      {
-        "command": "wintestkit.debugTest",
-        "title": "Debug Test",
-        "category": "WinTestKit",
-        "icon": "$(debug-alt)"
       },
       {
         "command": "wintestkit.launchApp",
@@ -232,7 +214,7 @@
         },
         {
           "command": "wintestkit.checkElement",
-          "when": "webviewId == 'wintestkit.navigation' && webviewSection == element",
+          "when": "webviewId == 'wintestkit.navigation' && webviewSection =~ /^(element|window)$/",
           "group": "navigation@2"
         },
         {
@@ -241,25 +223,12 @@
           "group": "navigation@3"
         },
         {
-          "command": "wintestkit.tests.run",
-          "when": "webviewId == 'wintestkit.navigation' && webviewSection =~ /^test(-class|-file|-project)?$/",
-          "group": "navigation@1"
-        },
-        {
-          "command": "wintestkit.tests.debug",
-          "when": "webviewId == 'wintestkit.navigation' && webviewSection =~ /^test(-class|-file|-project)?$/",
-          "group": "navigation@2"
+          "command": "wintestkit.runFlow",
+          "when": "webviewId == 'wintestkit.navigation' && webviewSection == flow && flowName",
+          "group": "navigation@4"
         }
       ],
       "commandPalette": [
-        {
-          "command": "wintestkit.tests.run",
-          "when": "false"
-        },
-        {
-          "command": "wintestkit.tests.debug",
-          "when": "false"
-        },
         {
           "command": "wintestkit.highlightElement",
           "when": "false"
@@ -269,15 +238,11 @@
           "when": "false"
         },
         {
-          "command": "wintestkit.runTest",
-          "when": "false"
-        },
-        {
-          "command": "wintestkit.debugTest",
-          "when": "false"
-        },
-        {
           "command": "wintestkit.elements.goTo",
+          "when": "false"
+        },
+        {
+          "command": "wintestkit.runFlow",
           "when": "false"
         }
       ],

@@ -7,6 +7,9 @@ import type { DiscoveryStore } from "../../src/discovery/store";
 import type { CheckResultsStore } from "../../src/editor/decorations";
 import type { ElementNode } from "../../src/views/elementsTreeModel";
 import type { DiscoveryResult } from "../../src/protocol/generated";
+import { flowKey, type FlowRuns } from "../../src/editor/flowRuns";
+import type { FlowStatus } from "../../src/editor/lensModel";
+import { actionsFor } from "../../src/views/navigationModel";
 
 const mocks = vi.hoisted(() => ({
   providers: new Map<string, vscode.WebviewViewProvider>(),
@@ -108,6 +111,15 @@ const result: DiscoveryResult = {
       file: "/project/flows/navigation.py",
       range,
       nameRange: range,
+      runnable: true,
+    },
+    {
+      id: "flows/navigation.py::open_dialog",
+      name: "open_dialog",
+      file: "/project/flows/navigation.py",
+      range,
+      nameRange: range,
+      runnable: false,
     },
   ],
   tests: [
@@ -138,14 +150,19 @@ function createTree(host?: {
     results: new Map(),
     onDidChange: subscribe,
   } as unknown as CheckResultsStore;
+  const flows = {
+    states: new Map<string, FlowStatus>(),
+    onDidChange: subscribe,
+  } as unknown as FlowRuns;
   const tree = new ElementsTree(
     projects as unknown as Projects,
     discovery,
     checks,
+    flows,
     host,
   );
   trees.push(tree);
-  return { tree, projects, checks };
+  return { tree, projects, checks, flows };
 }
 afterEach(() => {
   trees.splice(0).forEach((tree) => tree.dispose());
@@ -290,7 +307,7 @@ function bootClient() {
   const tree = new HTMLElement("tree");
   const outside = new HTMLElement("outside");
   const tabs: Record<string, HTMLElement> = {};
-  for (const section of ["pages", "flows", "tests"]) {
+  for (const section of ["pages", "flows"]) {
     const tab = new HTMLElement();
     tab.setAttribute("data-section", section);
     tab.setAttribute("aria-selected", section === "pages" ? "true" : "false");
@@ -350,35 +367,6 @@ describe("navigation view", () => {
     expect(tree.getChildren(undefined, "flows")[0].children[0].kind).toBe(
       "flow",
     );
-    expect(tree.getChildren(undefined, "tests")[0].children[0].kind).toBe(
-      "test",
-    );
-  });
-  it.each(["run", "debug"] as const)(
-    "routes %s actions to the existing runner with the originating project",
-    async (action) => {
-      const { tree } = createTree();
-      const file = tree.getChildren(undefined, "tests")[0];
-      expect(tree.getTreeItem(file).contextValue).toBe("test-file");
-      await mocks.commands.get("wintestkit.tests." + action)!(file.children[0]);
-      expect(mocks.execute).toHaveBeenCalledWith(
-        action === "run" ? "wintestkit.runTest" : "wintestkit.debugTest",
-        { id: result.tests[0].id, project },
-      );
-      await mocks.commands.get("wintestkit.tests." + action)!(file);
-      expect(mocks.execute).toHaveBeenLastCalledWith(expect.any(String), {
-        id: "tests/test_main.py",
-        project,
-      });
-    },
-  );
-  it("ignores non-test entries and stale projects", async () => {
-    const { tree, projects } = createTree();
-    await mocks.commands.get("wintestkit.tests.run")!(tree.getChildren()[0]);
-    const test = tree.getChildren(undefined, "tests")[0].children[0];
-    projects.all.splice(0);
-    await mocks.commands.get("wintestkit.tests.run")!(test);
-    expect(mocks.execute).not.toHaveBeenCalled();
   });
   it("opens flow definitions and source files", async () => {
     const { tree } = createTree();
@@ -402,18 +390,6 @@ describe("navigation view", () => {
       },
     );
   });
-  it("runs a test project whose target id is empty", async () => {
-    const { tree, projects } = createTree();
-    projects.all.push({ root: { fsPath: "/other" }, name: "other" } as Project);
-    const projectNode = tree.getChildren(undefined, "tests")[0];
-    expect(projectNode.kind).toBe("project");
-    expect(projectNode.testId).toBe("");
-    await mocks.commands.get("wintestkit.tests.run")!(projectNode);
-    expect(mocks.execute).toHaveBeenCalledWith("wintestkit.runTest", {
-      id: "",
-      project,
-    });
-  });
   it("colors check status icons with the testing theme tokens", () => {
     const { tree, checks } = createTree();
     checks.results.set("Main.username", {
@@ -436,34 +412,30 @@ describe("navigation view", () => {
       color: { id: "list.warningForeground" },
     });
   });
-  it("shows a segmented Pages | Flows | Tests selector and restores the last tab", () => {
-    const global = memoryState({ "wintestkit.navigation.section": "tests" });
+  it("shows a segmented Page Tree | Flows selector and restores the last tab", () => {
+    const global = memoryState({ "wintestkit.navigation.section": "flows" });
     const { tree } = createTree(hostFor(global));
     resolve(tree);
     expect(mocks.html).toContain('role="tablist"');
     expect(mocks.html).toContain(">Page Tree</button>");
     expect(mocks.html).toContain(">Flows</button>");
-    expect(mocks.html).toContain(">Tests</button>");
-    expect(mocks.html).toContain('data-section="tests" aria-selected="true"');
+    expect(mocks.html).not.toContain(">Tests</button>");
+    expect(mocks.html).toContain('data-section="flows" aria-selected="true"');
     expect(mocks.html).not.toContain("executeCommand");
     mocks.listener?.({ type: "select", section: "flows" });
     expect(global.get("wintestkit.navigation.section")).toBe("flows");
     expect(mocks.posted.at(-1)).toMatchObject({ type: "render", section: "flows" });
     expect(mocks.posted.at(-1)).not.toHaveProperty("reveal");
-    mocks.execute.mockClear();
-    mocks.listener?.({
-      command: "wintestkit.runTest",
-      type: "action",
-      action: "run",
-      id: "tests|/project|tests/test_main.py::test_open",
-    });
-    expect(mocks.execute).not.toHaveBeenCalled();
     const restored = createTree(hostFor(global));
     resolve(restored.tree);
     expect(mocks.html).toContain('data-section="flows" aria-selected="true"');
-    expect(mocks.html).not.toContain('data-section="tests" aria-selected="true"');
   });
-  it("routes rendered context-menu arguments into run, check, and open", async () => {
+  it("falls back to Page Tree when the removed Tests tab was last selected", () => {
+    const global = memoryState({ "wintestkit.navigation.section": "tests" });
+    resolve(createTree(hostFor(global)).tree);
+    expect(mocks.html).toContain('data-section="pages" aria-selected="true"');
+  });
+  it("routes rendered context-menu arguments into check and open", async () => {
     const element = {
       id: "Main.username",
       name: "username",
@@ -476,7 +448,7 @@ describe("navigation view", () => {
     };
     result.pages[0].elements.push(element);
     try {
-      const { tree, projects } = createTree(hostFor());
+      const { tree } = createTree(hostFor());
       resolve(tree);
       const page = tree.getChildren()[0];
       mocks.listener?.({ type: "toggle", id: page.id });
@@ -520,25 +492,6 @@ describe("navigation view", () => {
           selection: expect.objectContaining({ startLine: 2, startCharacter: 4 }),
         }),
       );
-      projects.all.push({ root: { fsPath: "/other" }, name: "other" } as Project);
-      mocks.listener?.({ type: "select", section: "tests" });
-      const projectContext = contextArguments(
-        (mocks.posted.at(-1) as { html: string }).html,
-      ).find((entry) => entry.webviewSection === "test-project");
-      expect(projectContext).toEqual({
-        webviewSection: "test-project",
-        preventDefaultContextMenuItems: true,
-        testId: "",
-        root: "/project",
-      });
-      await mocks.commands.get("wintestkit.tests.run")!({
-        ...projectContext,
-        webview: "wintestkit.navigation",
-      } as unknown as ElementNode);
-      expect(mocks.execute).toHaveBeenCalledWith("wintestkit.runTest", {
-        id: "",
-        project,
-      });
     } finally {
       result.pages[0].elements.pop();
     }
@@ -570,13 +523,52 @@ describe("navigation view", () => {
     expect(client.tabs.pages.tabIndex).toBe(-1);
     expect(client.tabs.flows.getAttribute("aria-selected")).toBe("true");
     client.outside.focus();
-    client.paint("tests");
+    client.paint("pages");
     expect(client.active()).toBe(client.outside);
-    expect(client.tabs.tests.getAttribute("aria-selected")).toBe("true");
+    expect(client.tabs.pages.getAttribute("aria-selected")).toBe("true");
     client.tree.focus();
     client.paint("pages");
     expect(client.active()).toBe(client.tree);
     expect(client.tabs.pages.getAttribute("aria-selected")).toBe("true");
+  });
+  it("offers Run only on runnable flows and sends the flow to the runner", async () => {
+    const { tree } = createTree(hostFor());
+    resolve(tree);
+    mocks.listener?.({ type: "select", section: "flows" });
+    const [file] = tree.getChildren(undefined, "flows");
+    const [runnable, other] = file.children;
+    expect(actionsFor(runnable)).toEqual(["run"]);
+    expect(actionsFor(other)).toEqual([]);
+    expect(actionsFor(file)).toEqual([]);
+    mocks.listener?.({ type: "action", action: "run", id: runnable.id });
+    await vi.waitFor(() =>
+      expect(mocks.execute).toHaveBeenCalledWith("wintestkit.runFlow", {
+        file: "/project/flows/navigation.py",
+        name: "open_page",
+      }),
+    );
+    mocks.execute.mockClear();
+    mocks.listener?.({ type: "action", action: "run", id: other.id });
+    mocks.listener?.({ type: "action", action: "run", id: file.id });
+    expect(mocks.execute).not.toHaveBeenCalled();
+  });
+  it("shows a running spinner and the last result on a flow", () => {
+    const { tree, flows } = createTree(hostFor());
+    resolve(tree);
+    mocks.listener?.({ type: "select", section: "flows" });
+    const key = flowKey({
+      file: "/project/flows/navigation.py",
+      name: "open_page",
+    });
+    const html = () => (mocks.posted.at(-1) as { html: string }).html;
+    flows.states.set(key, { status: "running" });
+    mocks.listener?.({ type: "toggle", id: tree.getChildren(undefined, "flows")[0].id });
+    expect(html()).toContain("codicon-loading codicon-modifier-spin");
+    flows.states.set(key, { status: "failed", durationMs: 1, message: "boom" });
+    mocks.listener?.({ type: "toggle", id: tree.getChildren(undefined, "flows")[0].id });
+    mocks.listener?.({ type: "toggle", id: tree.getChildren(undefined, "flows")[0].id });
+    expect(html()).toContain("codicon-error");
+    expect(html()).toContain("testing-iconFailed");
   });
   it("reports open and action failures", async () => {
     const { tree } = createTree(hostFor());

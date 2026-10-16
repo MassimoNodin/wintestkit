@@ -4,6 +4,7 @@ import type * as vscode from "vscode";
 import type { DiscoveryStore, LocatedElement } from "../../src/discovery/store";
 import type { DiscoveryResult } from "../../src/protocol/generated";
 import type { Project } from "../../src/server/serverManager";
+import type { FlowRuns } from "../../src/editor/flowRuns";
 import type { Projects } from "../../src/projects";
 
 const mocks = vi.hoisted(() => ({
@@ -141,6 +142,10 @@ describe("inline action feedback", () => {
       { projectFor: () => project } as unknown as Projects,
       discoveryStore,
       store,
+      {
+        states: new Map(),
+        onDidChange: () => ({ dispose: vi.fn() }),
+      } as unknown as FlowRuns,
     );
     try {
       const changed = vi.fn();
