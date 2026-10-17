@@ -142,9 +142,18 @@ wtk spy
 Hold **Ctrl** and click a control to pick it; press **Esc** to exit. `wtk inspect` prints the
 configured application's UI Automation tree. The CLI Spy does not launch your app for you.
 
-Prefer a stable `automation_id` when available. Otherwise combine properties such as
-`control_type`, `name`, `class_name` and a containing element (`within=`). Locators are strict:
-if several controls match, narrow the locator instead of relying on an arbitrary match.
+Choose the most stable property the control exposes, in this order:
+
+1. `automation_id`: stable and language-independent.
+2. `control_type` with `name`: the visible label. It changes with the UI language and wording.
+3. `class_name`: the short WPF type (`TextBox`, `ComboBox`). Useful for unlabeled inputs.
+4. `where={...}`: any other UI Automation property, such as `HelpText`, `ItemStatus` or `IsEnabled`.
+5. `within=`: scope the search to a uniquely identifiable container.
+6. `index=`: the n-th of several matches. Use it last, because it breaks when controls are reordered.
+
+Locators are strict: if several controls match, WinTestKit fails immediately with
+`AmbiguousElementError` instead of picking one, so narrow the locator. If nothing matches, the
+error lists the closest candidates and how each differs.
 
 ## 5. Describe a page
 
@@ -167,6 +176,47 @@ class MainPage(Page):
 **These names and IDs are illustrative.** Replace the title and locators with values from
 Spy for your own application. Do not assume it exposes these AutomationIds.
 
+### Match other UI Automation properties
+
+Use `where={...}` on `Element`, typed elements such as `Button`, `Elements` and `Window`. Every
+entry must match, alongside `name=`, `automation_id=` and `class_name=`. Strings are exact,
+compiled regexes use `re.search`, and boolean and numeric properties need real `True`/`False` and
+numbers.
+
+```python
+import re
+from wintestkit import Button, Element, Page, Window
+
+
+class MainPage(Page):
+    window = Window(where={"FrameworkId": "WPF"}, title="Contoso Orders")
+
+    save = Button(where={"HelpText": "Save", "IsEnabled": True})
+    address = Element(where={"ItemStatus": re.compile(r"\.AddressBox$")})
+```
+
+A typed element such as `Button` does not add a `control_type` filter to its locator. It finds the
+control exactly as `Element` would, then checks that the match fits the type. Add
+`control_type=` yourself when you want to filter on it.
+
+`class_name` is the short UIA class name (`TextBox`), not the full .NET type. UI Automation does
+not expose the full CLR type name. To match on it, have your test build copy
+`GetType().FullName` into `ItemStatus`, then match that property. You can alias a TestComplete-style
+name in `wintestkit.yaml`:
+
+```yaml
+property_aliases:
+  ClrFullClassName: ItemStatus
+```
+
+```python
+Element(where={"ClrFullClassName": "Company.Controls.AddressBox"})
+```
+
+An alias only renames a real UIA property. The app must expose the value first. See
+[property matching](docs/guide/property-matching.md) for the C# helper and the full rules.
+Confirm values with `wtk inspect --at 400,300 --json` or Spy before matching.
+
 With the application open, verify the locators:
 
 ```powershell
@@ -177,8 +227,9 @@ wtk check pages/main.py          # ✗ = broken/moved, ends with "25 found, 4 br
 In VS Code, use the **Highlight** and **Check** CodeLens actions above your page elements.
 **Highlight**, `wtk highlight` and `Element.highlight()` bring the owning window forward before
 drawing the outline. If Windows denies that, the outline is still drawn.
-See [pages and elements](docs/guide/pages-and-elements.md) and
-[locator strategies](docs/guide/locators-for-wpf.md) for nested controls, lists and dialogs.
+See [pages and elements](docs/guide/pages-and-elements.md),
+[locator strategies](docs/guide/locators-for-wpf.md) for nested controls, lists and dialogs, and
+[property matching](docs/guide/property-matching.md) for `where=` and property aliases.
 
 ## 6. Create a basic test suite
 
