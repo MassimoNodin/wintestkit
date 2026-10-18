@@ -531,7 +531,8 @@
           "type": "array",
           "items": { "$ref": "rpc.schema.json#/$defs/DefinitionError" }
         },
-        "pageCount": { "type": "integer", "minimum": 0 }
+        "pageCount": { "type": "integer", "minimum": 0 },
+        "appRunning": { "type": "boolean" }
       },
       "required": ["definitions", "errors", "pageCount"],
       "additionalProperties": false

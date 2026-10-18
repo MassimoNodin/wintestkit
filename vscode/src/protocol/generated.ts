@@ -731,6 +731,7 @@ export interface InspectDefinitionsResult {
   definitions: DefinitionMatch[];
   errors: DefinitionError[];
   pageCount: number;
+  appRunning?: boolean;
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema

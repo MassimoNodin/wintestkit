@@ -289,7 +289,7 @@ class Coverage:
             self._generation = self.loader.generation
             self.catalogue = build_catalogue(self.loader, self.cfg)
             self._resolved.clear()
-        epoch = self._ui_epoch(app)
+        epoch = self._ui_epoch(app) if app is not None else None
         if epoch != self._epoch:
             self._epoch = epoch
             self._resolved.clear()
@@ -354,6 +354,13 @@ class Coverage:
         with runtime.config_scope(self.cfg):
             self._ensure_fresh(app)
             assert self.catalogue is not None
+            if app is None:
+                return {
+                    "definitions": [],
+                    "errors": self.catalogue.errors,
+                    "pageCount": len({entry.page_class for entry in self.catalogue.entries}),
+                    "appRunning": False,
+                }
             snapshot = _SnapshotApp(app)
             fresh: dict[Any, frozenset[str]] = {}
             grouped: dict[str, list[str]] = {}
@@ -371,6 +378,7 @@ class Coverage:
                 "definitions": sorted(matches, key=lambda m: (m["file"], m["line"])),
                 "errors": self.catalogue.errors,
                 "pageCount": len({entry.page_class for entry in self.catalogue.entries}),
+                "appRunning": True,
             }
 
     @staticmethod
