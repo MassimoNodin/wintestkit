@@ -16,12 +16,19 @@ describe("Spy message contract", () => {
     expect(
       parseSpyRequest({ type: "copy", text: "button = Element()" }),
     ).toBeDefined();
+    expect(
+      parseSpyRequest({ type: "openDefinition", id: "pages/a.py::A.b", x: 1 }),
+    ).toEqual({ type: "openDefinition", id: "pages/a.py::A.b" });
     expect(parseSpyRequest({ type: "ready", showOtherApps: true })).toEqual({
       type: "ready",
       showOtherApps: true,
     });
     expect(parseSpyRequest({ type: "ready", showOtherApps: "yes" })).toEqual({
       type: "ready",
+    });
+    expect(parseSpyRequest({ type: "bringToFront", enabled: true })).toEqual({
+      type: "bringToFront",
+      enabled: true,
     });
     expect(parseSpyRequest({ type: "showOtherApps", enabled: false })).toEqual({
       type: "showOtherApps",
@@ -35,10 +42,15 @@ describe("Spy message contract", () => {
       { type: "launchApp" },
       { type: "showOtherApps" },
       { type: "showOtherApps", enabled: "yes" },
+      { type: "bringToFront" },
+      { type: "bringToFront", enabled: "yes" },
       { type: "select", nodeId: 1 },
       { type: "loadProperties", nodeId: 1 },
       { type: "select", nodeId: "x".repeat(513) },
       { type: "copy", text: "x".repeat(100001) },
+      { type: "openDefinition" },
+      { type: "openDefinition", id: 3 },
+      { type: "openDefinition", id: "x".repeat(2049) },
     ])
       expect(parseSpyRequest(invalid)).toBeUndefined();
   });

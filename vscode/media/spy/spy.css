@@ -85,16 +85,20 @@ summary:focus-visible {
     width: 29px;
     padding: 5px;
 }
+#bring-front[aria-pressed="true"] {
+    background: var(
+        --vscode-toolbar-activeBackground,
+        var(--vscode-toolbar-hoverBackground)
+    );
+}
 #other-apps {
     margin-left: auto;
 }
 #other-apps[aria-pressed="true"] {
-    color: var(--vscode-button-foreground, #fff);
-    background: var(--vscode-button-background, #0078d4);
-    border-color: transparent;
-}
-#other-apps[aria-pressed="true"]:hover {
-    background: var(--vscode-button-hoverBackground, #0066b8);
+    background: var(
+        --vscode-toolbar-activeBackground,
+        var(--vscode-toolbar-hoverBackground)
+    );
 }
 #hint {
     margin: 0;
@@ -441,6 +445,10 @@ ul {
 #selection-summary > .codicon {
     font-size: 23px;
 }
+#selection-summary > .app-icon {
+    width: 24px;
+    height: 24px;
+}
 #selection-summary > div {
     min-width: 0;
 }
@@ -465,6 +473,102 @@ ul {
 }
 summary {
     cursor: pointer;
+}
+#definitions-status {
+    margin: 0;
+    padding: 8px 12px;
+}
+#definitions-status:empty {
+    display: none;
+}
+#definitions-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+#definitions-list li + li {
+    border-top: 1px solid var(--border);
+}
+.definition {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 10px;
+    width: 100%;
+    padding: 9px 12px;
+    text-align: left;
+    color: inherit;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+}
+.definition:hover,
+.definition:focus-visible {
+    background: var(--vscode-list-hoverBackground);
+}
+.definition .file-icon {
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    font-size: 18px;
+    color: var(--muted);
+}
+.definition .file-icon svg {
+    width: 20px;
+    height: 20px;
+}
+.definition-text {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+.definition-file {
+    overflow: hidden;
+    font-weight: 600;
+    text-overflow: ellipsis;
+}
+.definition-folder {
+    margin-left: 6px;
+    font-weight: 400;
+    color: var(--muted);
+}
+.definition-caption {
+    overflow: hidden;
+    font-family: var(--vscode-editor-font-family, monospace);
+    font-size: 11px;
+    color: var(--muted);
+    text-overflow: ellipsis;
+}
+.definition-open {
+    flex-shrink: 0;
+    opacity: 0;
+    color: var(--muted);
+    transition: opacity 0.12s;
+}
+.definition:hover .definition-open,
+.definition:focus-visible .definition-open {
+    opacity: 1;
+}
+.defined-name {
+    font-family: var(--vscode-editor-font-family, monospace);
+}
+.original-name {
+    color: var(--muted);
+}
+.node.selected .original-name {
+    color: inherit;
+    opacity: 0.7;
+}
+.defined-marker {
+    flex-shrink: 0;
+    margin-left: 6px;
+    font-size: 13px;
+    color: var(--vscode-testing-iconPassed, #73c991);
 }
 .property-loading-actions {
     padding: 10px 12px;

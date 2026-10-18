@@ -1,5 +1,8 @@
 import type {
+  DefinitionError,
+  DefinitionMatch,
   InspectPropertiesResult,
+  NodeCoverage,
   NodeInfo,
   Suggestion,
 } from "../protocol/generated";
@@ -13,14 +16,15 @@ export type SpyRequest =
       showOtherApps?: boolean;
     }
   | {
-      type: "showOtherApps";
+      type: "showOtherApps" | "bringToFront";
       enabled: boolean;
     }
   | {
       type: "expand" | "select" | "highlight" | "loadProperties";
       nodeId: string;
     }
-  | { type: "copy"; text: string };
+  | { type: "copy"; text: string }
+  | { type: "openDefinition"; id: string };
 export type SpyResponse =
   | { type: "rootIcons"; icons: Record<string, string> }
   | {
@@ -41,6 +45,7 @@ export type SpyResponse =
       appRunning: boolean;
       hasProject: boolean;
       showOtherApps: boolean;
+      bringToFront: boolean;
     }
   | { type: "roots"; nodes: NodeInfo[] }
   | { type: "children"; nodeId: string; nodes: NodeInfo[] }
@@ -51,6 +56,22 @@ export type SpyResponse =
       suggestion?: Suggestion;
     }
   | { type: "suggestion"; nodeId: string; suggestion: Suggestion }
+  | { type: "suggestionUnavailable"; nodeId: string; reason: string }
+  | {
+      type: "definitions";
+      nodeId: string;
+      state: "loading" | "ready" | "unavailable";
+      definitions?: DefinitionMatch[];
+      errors?: DefinitionError[];
+      pageCount?: number;
+      reason?: string;
+    }
+  | {
+      // Nodes in ``nodeIds`` are settled: those missing from ``covered`` are not defined anywhere.
+      type: "coverage";
+      nodeIds: string[];
+      covered: Record<string, NodeCoverage>;
+    }
   | {
       type: "allProperties";
       nodeId: string;
@@ -73,9 +94,9 @@ export function parseSpyRequest(value: unknown): SpyRequest | undefined {
     return typeof message.showOtherApps === "boolean"
       ? { type: "ready", showOtherApps: message.showOtherApps }
       : { type: "ready" };
-  if (message.type === "showOtherApps")
+  if (message.type === "showOtherApps" || message.type === "bringToFront")
     return typeof message.enabled === "boolean"
-      ? { type: "showOtherApps", enabled: message.enabled }
+      ? { type: message.type, enabled: message.enabled }
       : undefined;
   if (
     ["pick", "stopPick", "refresh", "addToPage"].includes(String(message.type))
@@ -101,6 +122,12 @@ export function parseSpyRequest(value: unknown): SpyRequest | undefined {
     message.text.length <= 100000
   )
     return { type: "copy", text: message.text };
+  if (
+    message.type === "openDefinition" &&
+    typeof message.id === "string" &&
+    message.id.length <= 2048
+  )
+    return { type: "openDefinition", id: message.id };
 }
 
 export function suggestionText(suggestion: Suggestion): string {
