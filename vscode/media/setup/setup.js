@@ -17,10 +17,7 @@
   const press = (id) => vscode.postMessage({ type: "tile", id });
 
   const tile = (spec) => {
-    // A project tile without a chevron has nothing to switch to, so it is not a button.
-    const interactive = !(spec.id === "project" && !spec.chevron);
-    const node = el(interactive ? "button" : "div", "tile tile-" + spec.id);
-    if (!interactive) node.classList.add("static");
+    const node = el("button", "tile");
     if (spec.disabled) node.disabled = true;
     if (spec.busy) {
       node.classList.add("busy");
@@ -55,8 +52,8 @@
     text.append(el("span", "tile-title", spec.title));
     if (spec.subtitle) text.append(el("span", "tile-subtitle", spec.subtitle));
     node.append(icon, text);
-    if (spec.chevron) node.append(codicon("chevron-down tile-chevron"));
-    if (interactive) node.addEventListener("click", () => press(spec.id));
+    if (spec.chevron) node.append(codicon((spec.trailing ?? "chevron-down") + " tile-chevron"));
+    node.addEventListener("click", () => press(spec.id));
     return node;
   };
 
@@ -64,20 +61,10 @@
     root.replaceChildren();
     if (!model) return;
     if (model.tiles.length) {
-      const actions = model.tiles.filter((spec) =>
-        ["launch", "restart", "close", "refresh", "init"].includes(spec.id),
-      );
-      const choices = model.tiles.filter((spec) => !actions.includes(spec));
-      if (actions.length) {
-        const row = el("div", "action-row");
-        for (const spec of actions) row.append(tile(spec));
-        root.append(row);
-      }
-      if (choices.length) {
-        const row = el("div", "choice-row");
-        for (const spec of choices) row.append(tile(spec));
-        root.append(row);
-      }
+      const grid = el("div");
+      grid.id = "tiles";
+      for (const spec of model.tiles) grid.append(tile(spec));
+      root.append(grid);
     }
     if (model.message) {
       const hint = el("div", "hint");

@@ -54,6 +54,13 @@ describe("test event mapping", () => {
       message: "Test process exited unexpectedly (code 2). See output.",
     });
   });
+  it("emits last-run totals for successful runs without an HTML report", () => {
+    const actions = new EventMapper().consume({
+      event: "session_end", time: 1, exitCode: 0,
+      summary: { total: 2, passed: 2, failed: 0, errors: 0, skipped: 0, duration: 1 },
+    });
+    expect(actions).toContainEqual({ kind: "report", path: undefined, failed: 0, passed: 2 });
+  });
   it("normalizes newlines without doubling CRLF", () => {
     expect(terminalText("first\nsecond\r\n")).toBe("first\r\nsecond\r\n");
   });

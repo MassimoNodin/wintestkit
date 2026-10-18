@@ -40,53 +40,9 @@ p {
 }
 #tiles {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(195px, 1fr));
     gap: 8px;
     padding: 10px;
-}
-.action-row {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    gap: 6px;
-    padding: 8px 10px 4px;
-}
-.choice-row {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    padding: 4px 10px 8px;
-}
-.choice-row .tile {
-    min-height: 32px;
-    flex: 1 1 100px;
-    gap: 6px;
-    padding: 4px 8px;
-    border-radius: 16px;
-}
-.choice-row .tile-icon {
-    width: 18px;
-    height: 18px;
-    font-size: 16px;
-}
-.choice-row .tile-icon img {
-    width: 18px;
-    height: 18px;
-}
-.choice-row .tile-title {
-    font-size: 12px;
-}
-.choice-row .tile-app .tile-subtitle,
-.choice-row .tile-mode .tile-subtitle {
-    display: none;
-}
-.choice-row .tile-project .tile-subtitle {
-    display: block;
-    font-size: 10px;
-}
-.action-row .tile {
-    border-color: var(--accent);
-    background: var(--vscode-button-background, var(--surface));
-    color: var(--vscode-button-foreground, inherit);
 }
 .tile {
     display: flex;
@@ -117,9 +73,6 @@ p {
 .tile.busy:disabled {
     border-color: var(--accent);
     opacity: 1;
-}
-.tile.static {
-    cursor: default;
 }
 .tile-icon {
     display: inline-flex;

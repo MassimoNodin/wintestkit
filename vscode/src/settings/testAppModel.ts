@@ -26,6 +26,8 @@ export interface Tile {
   /** Colours the codicon: launch green, stop red, attach/project orange, and so on. */
   tone?: "launch" | "stop" | "link" | "project" | "busy" | "warn";
   chevron?: boolean;
+  /** The codicon shown at the tile's trailing edge (default chevron-down): what pressing it opens. */
+  trailing?: string;
   disabled?: boolean;
   /** The action this tile started is running: it shows a spinner and a short status. */
   busy?: boolean;
@@ -172,6 +174,7 @@ export function buildTestAppModel(input: TestAppInput): TestAppModel {
         icon: input.icon,
         codicon: "window",
         chevron: true,
+        trailing: "list-selection",
         tooltip: target + "\nChoose a different application",
       }
     : {
@@ -180,6 +183,7 @@ export function buildTestAppModel(input: TestAppInput): TestAppModel {
         codicon: "window",
         tone: "warn",
         chevron: true,
+        trailing: "list-selection",
         tooltip: "Pick the application to test",
       };
   const modeTile: Tile = {
@@ -188,26 +192,23 @@ export function buildTestAppModel(input: TestAppInput): TestAppModel {
     codicon: mode.codicon,
     tone: "link",
     chevron: true,
+    trailing: "list-selection",
     tooltip: mode.description + "\nChoose how the app is started",
   };
   const projectTile: Tile = {
     id: "project",
-    title: input.project.name,
+    title: input.workspaceName || input.project.name,
     subtitle:
       input.workspaceName && input.workspaceName !== input.project.name
-        ? input.workspaceName
+        ? input.project.name
         : undefined,
     codicon: "folder-opened",
     tone: "project",
-    chevron: (input.projectCount ?? 1) > 1,
-    tooltip:
-      (input.projectCount ?? 1) > 1
-        ? "Switch WinTestKit project"
-        : "The WinTestKit project",
+    chevron: true,
+    trailing: "go-to-file",
+    tooltip: "Show the project folder in the Explorer",
   };
-  const tiles: Tile[] = [appTile, modeTile];
-  if ((input.projectCount ?? 1) > 1) tiles.push(projectTile);
-  const appName = appTile.title;
+  const tiles: Tile[] = [projectTile, appTile, modeTile];
   const model: TestAppModel = {
     kind: "app",
     status: { label: "Checking…", tone: "idle" },
@@ -244,10 +245,10 @@ export function buildTestAppModel(input: TestAppInput): TestAppModel {
     ): Tile => ({ id, title, codicon, tone, disabled: true });
     if (action === "launch") tiles.push(busy("launch"));
     else if (action === "restart")
-      tiles.push(busy("restart"), idle("close", `Close ${appName}`, "debug-stop", "stop"));
+      tiles.push(busy("restart"), idle("close", "Close", "debug-stop", "stop"));
     else {
       if (launchable)
-        tiles.push(idle("restart", `Restart ${appName}`, "debug-restart", "launch"));
+        tiles.push(idle("restart", "Restart", "debug-restart", "launch"));
       tiles.push(busy("close"));
     }
     return model;
@@ -256,7 +257,7 @@ export function buildTestAppModel(input: TestAppInput): TestAppModel {
   if (!state) {
     tiles.push({
       id: "launch",
-      title: `Launch ${appName}`,
+      title: "Launch",
       codicon: "debug-start",
       tone: "launch",
       disabled: true,
@@ -285,13 +286,13 @@ export function buildTestAppModel(input: TestAppInput): TestAppModel {
     if (launchable)
       tiles.push({
         id: "restart",
-        title: `Restart ${appName}`,
+        title: "Restart",
         codicon: "debug-restart",
         tone: "launch",
       });
     tiles.push({
       id: "close",
-      title: `Close ${appName}`,
+      title: "Close",
       codicon: "debug-stop",
       tone: "stop",
     });
@@ -333,7 +334,7 @@ export function buildTestAppModel(input: TestAppInput): TestAppModel {
     model.status = { label: "Stopped", tone: "idle" };
     tiles.push({
       id: "launch",
-      title: `Launch ${appName}`,
+      title: "Launch",
       codicon: "debug-start",
       tone: "launch",
       disabled: !target,

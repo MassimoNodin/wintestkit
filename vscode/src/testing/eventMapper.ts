@@ -105,8 +105,7 @@ export class EventMapper {
           });
         this.pending.clear();
         const failed = event.summary.failed + event.summary.errors;
-        if (event.reportPath || failed)
-          actions.push({ kind: "report", path: event.reportPath, failed, passed: event.summary.passed });
+        actions.push({ kind: "report", path: event.reportPath, failed, passed: event.summary.passed });
         break;
     }
     return actions;

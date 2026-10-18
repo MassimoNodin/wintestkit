@@ -28,7 +28,79 @@ def test_app_status_survives_an_app_without_a_main_window(
 
     assert server.app is not None
     monkeypatch.setattr(server.app, "main_window", no_window, raising=False)
-    assert request(server, output, "app.status")["result"] == {"running": True, "pids": [1]}
+    assert request(server, output, "app.status")["result"] == {
+        "running": True,
+        "pids": [1],
+        "owned": False,
+    }
+
+
+def test_app_status_only_claims_unchanged_server_owned_pids(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    server, output, _ = make_server(tmp_path, monkeypatch)
+    request(server, output, "initialize", {"root": str(tmp_path)})
+    server._owned_app_pids = {1}
+    assert request(server, output, "app.status")["result"]["owned"] is True
+
+    monkeypatch.setattr(FakeApp, "pids", property(lambda self: [2]))
+    result = request(server, output, "app.status")["result"]
+    assert result == {
+        "running": True,
+        "pids": [2],
+        "owned": False,
+        "mainWindowTitle": "Demo",
+    }
+    assert server._owned_app_pids is None
+
+
+def test_app_launch_owns_only_the_process_it_started(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from wintestkit.app import App
+
+    server, output, _ = make_server(tmp_path, monkeypatch)
+    request(server, output, "initialize", {"root": str(tmp_path)})
+    app = server.app
+    server.app = None
+
+    def not_running(*, process: str | None = None) -> Any:
+        raise AppNotRunningError("not running")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(App, "attach", not_running)
+        patch.setattr(
+            "wintestkit.pytest_plugin.launch_app",
+            lambda config, progress=None: app,
+        )
+        request(server, output, "app.launch")
+        status = request(server, output, "app.status")["result"]
+    assert status == {
+        "running": True,
+        "pids": [1],
+        "owned": True,
+        "mainWindowTitle": "Demo",
+    }
+
+
+def test_server_auto_attach_is_always_unowned(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from wintestkit.app import App
+
+    server, output, _ = make_server(tmp_path, monkeypatch)
+    request(server, output, "initialize", {"root": str(tmp_path)})
+    app = server.app
+    server.app = None
+    with monkeypatch.context() as patch:
+        patch.setattr(App, "attach", lambda *, process=None: app)
+        status = request(server, output, "app.status")["result"]
+    assert status == {
+        "running": True,
+        "pids": [1],
+        "owned": False,
+        "mainWindowTitle": "Demo",
+    }
 
 
 def test_methods_and_nodes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

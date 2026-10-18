@@ -94,6 +94,9 @@ class Server:
         self.cfg: WtkConfig | None = None
         self.loader: ModuleLoader | None = None
         self.app: App | None = None
+        # Ownership is deliberately independent of the configured launch mode. The server can
+        # attach to a process it did not start, including in per-session mode.
+        self._owned_app_pids: set[int] | None = None
         self.nodes: OrderedDict[str, UIAElement] = OrderedDict()
         self.node_infos: dict[str, ElementInfo] = {}
         self.coverage: Coverage | None = None
@@ -152,6 +155,9 @@ class Server:
                     raise RpcError(
                         -32602, f"nodeIds must list at most {MAX_COVERAGE_NODES} nonempty strings"
                     )
+            elif key == "arguments":
+                if not isinstance(value, dict):
+                    raise RpcError(-32602, "flow arguments must be an object")
             elif key == "overrides":
                 if not isinstance(value, dict):
                     raise RpcError(-32602, "overrides must map paths to source strings")
@@ -245,6 +251,7 @@ class Server:
         if self.app is not None and self.app.is_running():
             return self.app
         self.app = None
+        self._owned_app_pids = None
         if self.cfg is not None and self.cfg.app is not None:
             with contextlib.suppress(AppNotRunningError):
                 self.app = App.attach(process=self.cfg.app.process_name)
@@ -337,9 +344,16 @@ class Server:
             return discover(self.cfg.root, overrides=overrides).to_dict()
         if method == "app.status":
             app = self._app(False)
+            pids = app.pids if app is not None else []
+            owned = bool(pids) and self._owned_app_pids == set(pids)
+            if self._owned_app_pids is not None and not owned:
+                # PID replacement or any other unexpected process set change invalidates our
+                # ownership claim. Reattaching later must never silently restore it.
+                self._owned_app_pids = None
             status: dict[str, Any] = {
-                "running": app is not None,
-                "pids": app.pids if app is not None else [],
+                "running": bool(pids),
+                "pids": pids,
+                "owned": owned,
             }
             if app is not None:
                 # Apps such as UWP Calculator have no top-level window of their own process; the
@@ -355,6 +369,7 @@ class Server:
                 app = self.app = launch_app(
                     self.cfg, progress=lambda stage: self.notify("app.starting", {"stage": stage})
                 )
+                self._owned_app_pids = set(app.pids) or None
             return {"pids": app.pids}
         if method == "app.processes":
             from wintestkit.uia import win32
@@ -370,6 +385,7 @@ class Server:
             if app is not None:
                 app.close(timeout=self.cfg.app.close_timeout if self.cfg.app is not None else 10)
                 self.app = None
+                self._owned_app_pids = None
                 with self._node_lock:
                     self.nodes.clear()
                     self.node_infos.clear()

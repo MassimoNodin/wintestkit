@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+﻿import { randomBytes } from "node:crypto";
 import * as vscode from "vscode";
 import type { Projects } from "../projects";
 import type { Project } from "../server/serverManager";
@@ -9,8 +9,6 @@ import type { DiscoveryResult } from "../protocol/generated";
 import { buildTree, type ElementNode } from "./elementsTreeModel";
 import { navigationDocument, renderBody } from "./navigationDocument";
 import {
-  SECTION_LABEL,
-  navigationDescription,
   actionsFor,
   checkPresentation,
   emptyMessage,
@@ -29,6 +27,9 @@ import {
 } from "./navigationModel";
 import { buildProjectTree } from "./projectTreeModel";
 import type { Reports } from "../report";
+import type { UnusedDefinitions } from "./unusedDefinitions";
+import { annotateUnused, type UnusedLookup } from "./unusedAnnotation";
+import type { UnusedToolsState } from "./navigationDocument";
 
 interface NavigationHost {
   globalState: vscode.Memento;
@@ -51,6 +52,7 @@ export class ElementsTree
     private readonly flows: FlowRuns,
     private readonly host?: NavigationHost,
     private readonly reports?: Reports,
+    private readonly unused?: UnusedDefinitions,
   ) {
     this.session = new NavigationSession(
       readSection(host?.globalState.get(navigationSectionKey)),
@@ -63,6 +65,7 @@ export class ElementsTree
       checks.onDidChange(refresh),
       flows.onDidChange(refresh),
       ...(reports ? [reports.onDidChange(refresh)] : []),
+      ...(unused ? [unused.onDidChange(refresh)] : []),
       vscode.window.registerWebviewViewProvider("wintestkit.navigation", this, {
         webviewOptions: { retainContextWhenHidden: true },
       }),
@@ -81,7 +84,6 @@ export class ElementsTree
       enableScripts: true,
       localResourceRoots: [icons],
     };
-    view.description = this.description();
     view.webview.html = this.document(view);
     this.viewSubscriptions.forEach((subscription) => subscription.dispose());
     const listener = view.webview.onDidReceiveMessage((value: unknown) => {
@@ -153,6 +155,22 @@ export class ElementsTree
       void vscode.commands.executeCommand("wintestkit.openGettingStarted");
       return;
     }
+    if (value && typeof value === "object" && (value as { type?: unknown }).type === "unusedScan") {
+      if (!this.unused || this.unused.scanning) return;
+      void this.unused.scan().then((summary) => {
+        this.publish();
+        if (summary.cancelled) void vscode.window.showInformationMessage("Unused-definition scan cancelled. Completed project results remain available.");
+        else if (summary.unavailable > 0) void vscode.window.showWarningMessage(`${summary.unavailable} definition(s) could not be checked because the Python reference provider was unavailable or failed. They remain unmarked.`);
+        if (summary.capped) void vscode.window.showInformationMessage("Scan limit reached: only the first 300 definitions per project were checked.");
+      }).catch((error: unknown) => vscode.window.showErrorMessage(`Unused-definition scan failed: ${String(error)}`));
+      return;
+    }
+    if (value && typeof value === "object" && (value as { type?: unknown }).type === "unusedToggle") {
+      if (!this.unused?.hasResults) return;
+      this.showUnused = !this.showUnused;
+      this.publish();
+      return;
+    }
     const message = parseNavigationMessage(value);
     if (!message) return;
     const nodes = this.sectionNodes();
@@ -180,6 +198,7 @@ export class ElementsTree
     }
     this.publish(effect.reveal === true);
   }
+  private showUnused = false;
   private showFailure(work: Promise<void>): void {
     void work.catch((error: unknown) => {
       void vscode.window.showErrorMessage(
@@ -245,13 +264,7 @@ export class ElementsTree
   private publish(reveal = false): void {
     if (!this.view || this.disposed) return;
     const payload = this.payload(reveal);
-    this.view.description = this.description(payload.section);
     void this.view.webview.postMessage(payload);
-  }
-  private description(section = this.session.section): string {
-    const uri = vscode.window.activeTextEditor?.document.uri;
-    const project = (uri && this.projects.projectFor(uri)) || this.projects.all[0];
-    return navigationDescription(section, project?.name);
   }
   private document(view: vscode.WebviewView): string {
     const payload = this.payload();
@@ -272,8 +285,11 @@ export class ElementsTree
     section: NavigationSection;
     html: string;
     reveal?: boolean;
+    unused?: UnusedToolsState;
   } {
-    const source = this.sectionNodes();
+    let source = this.sectionNodes();
+    const unusedState = this.unusedState();
+    if (unusedState) source = annotateUnused(source, this.unusedLookup(), unusedState.filtering);
     const nodes = toNavNodes(
       source,
       (elementId) =>
@@ -295,12 +311,50 @@ export class ElementsTree
         nodes,
         expanded: this.session.expanded[this.session.section],
         focusId: this.session.focus[this.session.section],
-        welcome: emptyMessage(this.session.section, hasProject, nodes.length),
+        welcome: unusedState?.filtering && nodes.length === 0
+          ? undefined
+          : emptyMessage(this.session.section, hasProject, nodes.length),
+        notice: unusedState?.filtering && nodes.length === 0
+          ? "No unused definitions found. Every scanned definition has at least one reference."
+          : undefined,
         showInitialize: !hasProject,
         lastRun: this.reports?.lastRun(this.currentProject()),
       }),
+      ...(unusedState ? { unused: unusedState } : {}),
     };
     return reveal ? { ...message, reveal: true } : message;
+  }
+  private unusedState(): UnusedToolsState | undefined {
+    if (this.session.section !== "pages" || !this.unused) return undefined;
+    const scanned = this.unused.hasResults;
+    return {
+      scanning: this.unused.scanning,
+      scanned,
+      count: this.unused.count,
+      filtering: this.showUnused && scanned,
+    };
+  }
+  private unusedLookup(): UnusedLookup {
+    const unused = this.unused!;
+    const owners = this.projects.all.flatMap((project) => {
+      const root = this.discovery.get(project)?.root;
+      return root === undefined ? [] : [{ project, root, prefix: root + "|" }];
+    });
+    const byKey = new Map(owners.map(({ project }) => [project.root.toString(), project]));
+    return {
+      ownerOf: (node) =>
+        owners
+          .find(({ root, prefix }) => node.id === root || node.id.startsWith(prefix))
+          ?.project.root.toString(),
+      hasResult: (key) => {
+        const project = byKey.get(key);
+        return project !== undefined && unused.hasResult(project);
+      },
+      isUnused: (key, elementId) => {
+        const project = byKey.get(key);
+        return project !== undefined && unused.has(project, elementId);
+      },
+    };
   }
   private currentProject(): Project | undefined {
     const uri = vscode.window.activeTextEditor?.document.uri;

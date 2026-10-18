@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+vi.mock("vscode", () => ({}));
 import { bindPageFlow, type Binding } from "../../src/editor/checkAfterFlow";
 
 describe("explicit check-after-flow bindings", () => {

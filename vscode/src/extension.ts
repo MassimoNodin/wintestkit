@@ -1,4 +1,4 @@
-import * as vscode from "vscode";
+﻿import * as vscode from "vscode";
 import { createLog } from "./log";
 import { installPackage, onDidChangeInterpreter, runTerminal } from "./python";
 import { ServerManager, type Project } from "./server/serverManager";
@@ -15,6 +15,7 @@ import { TestController } from "./testing/controller";
 import { registerInitialize } from "./init";
 import { PytestConflict } from "./pytestConflict";
 import { ElementsTree } from "./views/elementsTree";
+import { UnusedDefinitions } from "./views/unusedDefinitions";
 import { Reports } from "./report";
 import { SpyView } from "./spy/spyView";
 import { registerInsertElement } from "./spy/insertElement";
@@ -23,11 +24,28 @@ import { RelocationActions } from "./editor/relocationActions";
 import { computeInsertion } from "./spy/insertionModel";
 import { ConfigurationEditor, settingsEditorId } from "./settings/editor";
 import { TestAppView } from "./settings/testApp";
+import type { AppStatusResult } from "./protocol/generated";
 import { readConfiguration } from "./settings/files";
 import { RpcError } from "./server/jsonrpc";
 
 interface CommandContribution {
   command: string;
+}
+
+const RPC_TIMEOUT_OVERHEAD_SECONDS = 5;
+const MAX_APP_RPC_TIMEOUT_SECONDS = 24 * 60 * 60;
+
+function appRpcTimeoutMs(
+  configured: unknown,
+  fallbackSeconds: number,
+  setting: string,
+): number {
+  const value = configured === undefined ? fallbackSeconds : Number(configured);
+  if (!Number.isFinite(value) || value <= 0)
+    throw new Error(`${setting} must be a finite positive number.`);
+  if (value + RPC_TIMEOUT_OVERHEAD_SECONDS > MAX_APP_RPC_TIMEOUT_SECONDS)
+    throw new Error(`${setting} is too large; the maximum is ${MAX_APP_RPC_TIMEOUT_SECONDS - RPC_TIMEOUT_OVERHEAD_SECONDS} seconds.`);
+  return Math.ceil((value + RPC_TIMEOUT_OVERHEAD_SECONDS) * 1000);
 }
 
 interface ExtensionManifest {
@@ -44,6 +62,7 @@ export function activate(context: vscode.ExtensionContext): {
   elements: ElementsTree;
   spy: SpyView;
   setup: TestAppView;
+  unused: UnusedDefinitions;
   computeInsertion: typeof computeInsertion;
 } {
   const log = createLog();
@@ -125,6 +144,7 @@ export function activate(context: vscode.ExtensionContext): {
   const flows = new FlowRuns(projects, discovery, servers, log, (file, name) => checkAfterFlow.afterFlow(file, name));
   const reports = new Reports(servers, log, context.globalState);
   const lenses = new CodeLenses(projects, discovery, checks, flows);
+  const unused = new UnusedDefinitions(projects, discovery);
   const elements = new ElementsTree(
     projects,
     discovery,
@@ -132,8 +152,9 @@ export function activate(context: vscode.ExtensionContext): {
     flows,
     context,
     reports,
+    unused,
   );
-  context.subscriptions.push(elements, flows, checkAfterFlow, projectSweep);
+  context.subscriptions.push(elements, flows, checkAfterFlow, projectSweep, unused);
   const spy = new SpyView(projects, servers, context.extensionUri, log);
   context.subscriptions.push(spy);
   context.subscriptions.push(
@@ -204,20 +225,8 @@ export function activate(context: vscode.ExtensionContext): {
   ) =>
     withProject(async (project) => {
       const closing = methods.includes("app.close");
-      if (closing) {
-        const config = await readConfiguration(project.root);
-        if (config.launch === "attach") {
-          const name = String(config["app.process"] ?? "the attached app").replace(/\.exe$/i, "");
-          const answer = await vscode.window.showWarningMessage(
-            `Close ${name}? WinTestKit didn't start it, and unsaved work in ${name} will be lost.`,
-            { modal: true },
-            "Close App",
-          );
-          if (answer !== "Close App") return;
-        }
-      }
+      const config = await readConfiguration(project.root);
       if (methods.length > 1) {
-        const config = await readConfiguration(project.root);
         if (
           typeof config["app.path"] !== "string" ||
           !config["app.path"].trim()
@@ -227,9 +236,31 @@ export function activate(context: vscode.ExtensionContext): {
           );
       }
       const connection = await servers.get(project);
-      const config = await readConfiguration(project.root).catch(() => ({}));
-      const timeout = Number(
-        (config as Record<string, unknown>)["app.startup_timeout"],
+      if (closing) {
+        const appStatus = await connection.client.request<AppStatusResult>(
+          "app.status",
+        );
+        if (config.launch === "attach" || !appStatus.owned) {
+          const name = String(
+            config["app.process"] ?? appStatus.mainWindowTitle ?? "the app",
+          ).replace(/\.exe$/i, "");
+          const answer = await vscode.window.showWarningMessage(
+            `Close ${name}? WinTestKit did not start this process, and unsaved work may be lost.`,
+            { modal: true },
+            "Close App",
+          );
+          if (answer !== "Close App") return;
+        }
+      }
+      const startupTimeout = appRpcTimeoutMs(
+        config["app.startup_timeout"],
+        30,
+        "app.startup_timeout",
+      );
+      const closeTimeout = appRpcTimeoutMs(
+        config["app.close_timeout"],
+        10,
+        "app.close_timeout",
       );
       const action =
         methods.length > 1
@@ -251,10 +282,14 @@ export function activate(context: vscode.ExtensionContext): {
           status.beginTransition(
             project,
             closing ? "stopping" : "starting",
-            closing || !(timeout > 0) ? undefined : timeout * 1000,
+            closing ? undefined : startupTimeout - RPC_TIMEOUT_OVERHEAD_SECONDS * 1000,
             action,
           );
-          await connection.client.request(method);
+          await connection.client.request(
+            method,
+            {},
+            closing ? closeTimeout : startupTimeout,
+          );
         }
         status.endTransition(project);
       } catch (error) {
@@ -361,6 +396,8 @@ export function activate(context: vscode.ExtensionContext): {
         "wintestkit.elements.goTo",
         "wintestkit.spy.startPick",
         "wintestkit.spy.refresh",
+        "wintestkit.spy.revealRelocation",
+        "wintestkit.spy.insertAssertion",
       ].includes(contribution.command)
     )
       continue;
@@ -399,7 +436,7 @@ export function activate(context: vscode.ExtensionContext): {
     false,
   );
   void projects.refresh();
-  return { tests, checks, elements, spy, setup, computeInsertion };
+  return { tests, checks, elements, spy, setup, unused, computeInsertion };
 }
 
 let activeServers: ServerManager | undefined;

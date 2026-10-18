@@ -1,4 +1,4 @@
-import {
+﻿import {
   ACTION_PRESENTATION,
   SECTION_LABEL,
   SECTIONS,
@@ -19,11 +19,20 @@ export function escapeAttribute(value: string): string {
   return escapeText(value).replaceAll('"', "&quot;").replaceAll("'", "&#39;");
 }
 
+/** What the Page Tree toolbar shows for the on-demand unused-definition scan. */
+export interface UnusedToolsState {
+  scanning: boolean;
+  scanned: boolean;
+  count: number;
+  filtering: boolean;
+}
+
 export function renderBody(input: {
   nodes: readonly NavNode[];
   expanded: ReadonlySet<string>;
   focusId?: string;
   welcome?: string;
+  notice?: string;
   showInitialize: boolean;
   lastRun?: LastRunSummary;
 }): string {
@@ -37,6 +46,8 @@ export function renderBody(input: {
       '<button type="button" class="link" data-initialize="true">Initialize Project</button>' +
       '<button type="button" class="link" data-getting-started="true">Open Getting Started</button></div>'
     );
+  if (!input.nodes.length && input.notice)
+    return reportAction + `<div class="empty"><p>${escapeText(input.notice)}</p></div>`;
   if (!input.nodes.length)
     return input.welcome
       ? reportAction + `<div class="empty"><p>${escapeText(input.welcome)}</p><button type="button" class="link" data-getting-started="true">Open Getting Started</button></div>`
@@ -125,6 +136,41 @@ body {
   margin: 6px 10px;
   border: 1px solid var(--vscode-panel-border, #d7dce3);
   border-radius: 4px;
+}
+#unused-tools { display: flex; flex: 0 0 auto; flex-wrap: wrap; gap: 6px; margin: 0 10px 6px; }
+#unused-tools[hidden], #unused-tools [hidden] { display: none; }
+#unused-tools .tool {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 26px;
+  padding: 3px 10px;
+  border: 1px solid var(--vscode-button-border, transparent);
+  border-radius: 2px;
+  background: var(--vscode-button-secondaryBackground);
+  color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+#unused-tools .tool:hover:not(:disabled) { background: var(--vscode-button-secondaryHoverBackground); }
+#unused-tools .tool:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 2px; }
+#unused-tools .tool:disabled { opacity: 0.5; cursor: default; }
+#unused-tools .tool[aria-pressed="true"] {
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+}
+#unused-tools .tool[aria-pressed="true"]:hover { background: var(--vscode-button-hoverBackground); }
+#unused-tools .tool .codicon { font-size: 14px; }
+#unused-tools .badge {
+  min-width: 16px;
+  padding: 0 5px;
+  border-radius: 8px;
+  background: var(--vscode-badge-background);
+  color: var(--vscode-badge-foreground);
+  font-size: 11px;
+  line-height: 16px;
+  text-align: center;
 }
 #segments button {
   display: flex;
@@ -280,6 +326,32 @@ const actions = ["highlight", "check", "checkPage", "run"];
 const named = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Home", "End", "Enter", " "]);
 const segments = document.getElementById("segments");
 const tree = document.getElementById("tree");
+const unusedTools = document.getElementById("unused-tools");
+const unusedScan = document.getElementById("unused-scan");
+const unusedToggle = document.getElementById("unused-toggle");
+unusedScan?.addEventListener("click", () => vscodeApi.postMessage({ type: "unusedScan" }));
+unusedToggle?.addEventListener("click", () => vscodeApi.postMessage({ type: "unusedToggle" }));
+function paintUnused(state) {
+  if (!unusedTools || !unusedScan || !unusedToggle) return;
+  unusedTools.hidden = !state;
+  if (!state) return;
+  const scanIcon = unusedScan.querySelector(".codicon");
+  scanIcon.className = "codicon " + (state.scanning ? "codicon-loading codicon-modifier-spin" : state.scanned ? "codicon-refresh" : "codicon-search");
+  unusedScan.querySelector(".tool-label").textContent = state.scanning ? "Scanning\u2026" : state.scanned ? "Rescan" : "Find unused definitions";
+  unusedScan.disabled = state.scanning;
+  unusedScan.title = state.scanned
+    ? "Scan the project again. Results are a static estimate from the Python language server."
+    : "Ask the Python language server which definitions have no references. This is a static estimate.";
+  unusedToggle.disabled = !state.scanned;
+  unusedToggle.setAttribute("aria-pressed", state.filtering ? "true" : "false");
+  unusedToggle.querySelector(".codicon").className = "codicon " + (state.filtering ? "codicon-eye-closed" : "codicon-eye");
+  unusedToggle.title = !state.scanned
+    ? "Run Find unused definitions first."
+    : state.filtering ? "Show every definition again." : "Show only definitions with no references.";
+  const badge = document.getElementById("unused-count");
+  badge.hidden = !state.scanned;
+  badge.textContent = String(state.count);
+}
 function revealRow(row) {
   const line = row.firstElementChild instanceof HTMLElement ? row.firstElementChild : row;
   const item = line.getBoundingClientRect();
@@ -307,6 +379,7 @@ function paint(message) {
     if (selectedTab instanceof HTMLElement) selectedTab.focus({ preventScroll: true });
   }
   tree.setAttribute("aria-label", labels[message.section]);
+  paintUnused(message.section === "pages" ? message.unused : undefined);
   tree.innerHTML = message.html;
   const focusable = tree.querySelector("[role='treeitem'][tabindex='0']");
   tree.tabIndex = focusable ? -1 : 0;
@@ -411,6 +484,7 @@ export function navigationDocument(options: {
 </head>
 <body>
 <div id="segments" role="tablist" aria-label="Page Tree and Flows">{{tabs}}</div>
+<div id="unused-tools" role="toolbar" aria-label="Unused definitions" hidden><button id="unused-scan" type="button" class="tool"><span class="codicon codicon-search" aria-hidden="true"></span><span class="tool-label">Find unused definitions</span></button><button id="unused-toggle" type="button" class="tool" aria-pressed="false" disabled><span class="codicon codicon-eye" aria-hidden="true"></span><span class="tool-label">Show unused</span><span id="unused-count" class="badge" hidden></span></button></div>
 <div id="tree" role="tree" aria-label="{{treeLabel}}" tabindex="0"><!--TREE--></div>
 <script nonce="{{nonce}}">${SCRIPT}</script>
 </body>

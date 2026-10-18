@@ -7,6 +7,7 @@ export type StartStage = "process" | "window";
 
 export interface ApplicationState {
   running: boolean;
+  owned?: boolean;
   error?: string;
   pids?: number[];
   mainWindowTitle?: string;
@@ -101,6 +102,7 @@ export class StatusBar implements vscode.Disposable {
       const previous = this.applications.get(project.root.toString());
       this.applications.set(project.root.toString(), {
         running,
+        owned: status.owned,
         pids: status.pids,
         mainWindowTitle: status.mainWindowTitle,
         transition: previous?.transition,

@@ -58,6 +58,7 @@ beforeEach(() => {
   flows = new FlowRuns(
     { projectFor: () => project } as unknown as Projects,
     {
+      get: () => ({ flows: [] }),
       onDidChange: (listener: (project: unknown) => void) => {
         mocks.rediscover = listener;
         return { dispose() {} };

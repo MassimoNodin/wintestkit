@@ -158,3 +158,6 @@ repository's **Run Extension** launch configuration for an Extension Development
 No example application is bundled. The end-to-end suite checks static discovery and CodeLens
 against the Calculator example without launching an app; see the repository's
 [development guide](https://github.com/MassimoNodin/wintestkit/blob/master/docs/development.md).
+# Unused definition estimates
+
+The Page Tree offers **Find unused definitions** as an on-demand static estimate. It asks VS Code's Python reference provider for each discovered definition (up to 300 per project). A result with no references beyond its declaration is marked **possibly unused (static estimate)**. **Show unused** filters the Page Tree after a scan. Dynamic access, reflection, inheritance, mounted definitions, and providers with incomplete knowledge can produce false positives; results are not coverage and must not drive automatic removal. If the reference provider is unavailable or errors for a definition, that definition remains unknown and is not marked unused. Editing Python, changing discovery, or changing projects invalidates results.

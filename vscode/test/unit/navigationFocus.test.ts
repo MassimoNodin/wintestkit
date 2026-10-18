@@ -2,7 +2,6 @@ import vm from "node:vm";
 import { describe, expect, it } from "vitest";
 import {
   NavigationSession,
-  navigationDescription,
   reduceNavigation,
   type NavNode,
 } from "../../src/views/navigationModel";
@@ -47,16 +46,6 @@ const nodes: NavNode[] = [
     children: [],
   },
 ];
-
-describe("active project view description", () => {
-  it("names the page or flow surface and its project", () => {
-    expect(navigationDescription("pages", "calculator-tests")).toBe(
-      "Page Tree · calculator-tests",
-    );
-    expect(navigationDescription("flows", "payments")).toBe("Flows · payments");
-    expect(navigationDescription("pages")).toBe("Page Tree");
-  });
-});
 
 function body(expanded: ReadonlySet<string>, focusId?: string): string {
   return renderBody({

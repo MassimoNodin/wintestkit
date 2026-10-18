@@ -1,11 +1,5 @@
 import * as vscode from "vscode";
-
-export type AssertionKind = "text" | "enabled";
-export function assertionLine(kind: AssertionKind, expression: string, observed: string | boolean): string {
-  return kind === "text"
-    ? `expect(${expression}).to_have_text(${JSON.stringify(observed)})`
-    : `expect(${expression}).to_be_${observed ? "enabled" : "disabled"}()`;
-}
+import { assertionLine } from "./assertionModel";
 
 export function registerInsertAssertion(): vscode.Disposable {
   return vscode.commands.registerCommand(
