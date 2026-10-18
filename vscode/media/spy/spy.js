@@ -139,6 +139,8 @@
   const renderDefinitions = (message) => {
     const list = element("definitions-list");
     list.replaceChildren();
+    const assertion = element("insert-assertion");
+    assertion.hidden = true;
     if (message.state === "loading") {
       definitionsStatus("Checking your pages…");
       return;
@@ -151,6 +153,16 @@
       return;
     }
     const errors = message.errors || [];
+    const matches = message.definitions || [];
+    if (
+      matches.length === 1 &&
+      observedInfo &&
+      (observedInfo.name || typeof observedInfo.isEnabled === "boolean")
+    ) {
+      assertion.hidden = false;
+      assertion.dataset.definitionId = matches[0].id;
+      assertion.setAttribute("aria-label", "Insert assertion for " + matches[0].qualname);
+    }
     // One row per file: definitions in the same file share it (the first, by line, is opened).
     const files = new Map();
     for (const definition of message.definitions || []) {
@@ -524,6 +536,7 @@
   };
   let picking = false;
   let selected;
+  let observedInfo;
   let suggestion;
   // Whether the selected object has an on-screen rectangle to outline.
   let highlightable = true;
@@ -538,6 +551,7 @@
     table("all-properties", {});
     detailsError = "";
     const info = nodes.get(nodeId).node.info;
+    observedInfo = info;
     element("selection-name").textContent =
       info.name || info.automationId || info.controlType;
     element("selection-type").textContent = info.controlType;
@@ -737,6 +751,15 @@
   );
   element("add").addEventListener("click", () => {
     if (suggestion) post("addToPage");
+  });
+  element("insert-assertion").addEventListener("click", () => {
+    if (!selected || !observedInfo) return;
+    post("insertAssertion", {
+      nodeId: selected,
+      definitionId: element("insert-assertion").dataset.definitionId,
+      name: observedInfo.name || "",
+      enabled: observedInfo.isEnabled,
+    });
   });
   element("highlight").addEventListener("click", () => {
     if (selected) post("highlight", { nodeId: selected });

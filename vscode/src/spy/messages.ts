@@ -24,6 +24,7 @@ export type SpyRequest =
       nodeId: string;
     }
   | { type: "copy"; text: string }
+  | { type: "insertAssertion"; nodeId: string; definitionId: string; name: string; enabled: boolean }
   | { type: "openDefinition"; id: string };
 export type SpyResponse =
   | { type: "rootIcons"; icons: Record<string, string> }
@@ -124,6 +125,14 @@ export function parseSpyRequest(value: unknown): SpyRequest | undefined {
     message.text.length <= 100000
   )
     return { type: "copy", text: message.text };
+  if (
+    message.type === "insertAssertion" &&
+    typeof message.nodeId === "string" && message.nodeId.length <= 512 &&
+    typeof message.definitionId === "string" && message.definitionId.length <= 2048 &&
+    typeof message.name === "string" && message.name.length <= 4096 &&
+    typeof message.enabled === "boolean"
+  )
+    return { type: "insertAssertion", nodeId: message.nodeId, definitionId: message.definitionId, name: message.name, enabled: message.enabled };
   if (
     message.type === "openDefinition" &&
     typeof message.id === "string" &&

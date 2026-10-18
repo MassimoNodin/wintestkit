@@ -39,6 +39,7 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
   };
   private disposed = false;
   private suggestion?: Suggestion;
+  private selectedNodeId?: string;
   // The definitions last shown for the selected object, so the panel can ask to open one by id.
   private definitionTargets = new Map<string, DefinitionMatch>();
   // Tree nodes the panel currently shows, so markers can be refreshed after a page file is saved.
@@ -582,6 +583,14 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
       if (definition) await this.openDefinition(definition);
       return;
     }
+    if (message.type === "insertAssertion") {
+      if (message.nodeId !== this.selectedNodeId || !this.definitionTargets.has(message.definitionId)) return;
+      await vscode.commands.executeCommand("wintestkit.spy.insertAssertion", {
+        name: message.name,
+        enabled: message.enabled,
+      });
+      return;
+    }
     if (message.type === "addToPage") {
       if (this.suggestion)
         await vscode.commands.executeCommand(
@@ -591,7 +600,10 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
       return;
     }
     const nodeId = "nodeId" in message ? message.nodeId : undefined;
-    if (message.type === "select") this.suggestion = undefined;
+    if (message.type === "select") {
+      this.suggestion = undefined;
+      this.selectedNodeId = message.nodeId;
+    }
     const title =
       message.type === "expand"
         ? "Loading children"

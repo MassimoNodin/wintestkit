@@ -16,6 +16,13 @@ describe("Spy message contract", () => {
     expect(
       parseSpyRequest({ type: "copy", text: "button = Element()" }),
     ).toBeDefined();
+    expect(parseSpyRequest({
+      type: "insertAssertion", nodeId: "node:1", definitionId: "pages/a.py::A.ok",
+      name: "OK", enabled: true,
+    })).toEqual({
+      type: "insertAssertion", nodeId: "node:1", definitionId: "pages/a.py::A.ok",
+      name: "OK", enabled: true,
+    });
     expect(
       parseSpyRequest({ type: "openDefinition", id: "pages/a.py::A.b", x: 1 }),
     ).toEqual({ type: "openDefinition", id: "pages/a.py::A.b" });
