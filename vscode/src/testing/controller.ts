@@ -12,6 +12,7 @@ import { runArguments, runProcess } from "./runner";
 import { runDebugSession } from "./debug";
 import type { Reports } from "../report";
 import { disposeRunProfiles } from "./profiles";
+import { offerDoctorForRun } from "./environment";
 
 interface ItemData {
   project: Project;
@@ -404,14 +405,13 @@ export class TestController implements vscode.Disposable {
           : await runProcess(project, python, args, token, (text) =>
             run.appendOutput(text),
           );
-      if (code === 3 && !token.isCancellationRequested) {
-        const choice = await vscode.window.showWarningMessage(
-          "WinTestKit's environment checks blocked this run.",
-          "Check Environment",
+      if (!token.isCancellationRequested)
+        await offerDoctorForRun(
+          code,
+          project,
+          (message, action) => vscode.window.showWarningMessage(message, action),
+          (command, target) => vscode.commands.executeCommand(command, target),
         );
-        if (choice)
-          await vscode.commands.executeCommand("wintestkit.runDoctor");
-      }
       await listener.drain();
       this.apply(
         project,
