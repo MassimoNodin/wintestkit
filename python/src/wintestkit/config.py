@@ -117,7 +117,7 @@ class WtkConfig:
     python_paths: tuple[Path, ...]
     property_aliases: Mapping[str, str] = field(default_factory=lambda: {})
     trace: TraceMode = "off"
-    trace_fps: float = 5.0
+    trace_fps: float = 15.0
     trace_scope: Literal["window", "desktop"] = "window"
     trace_max_frames: int = 3000
     trace_max_bytes: int = 104857600
@@ -437,7 +437,7 @@ def load_config(start: Path | None = None, overrides: Mapping[str, Any] | None =
             "TraceMode",
             _enum("trace", values.get("trace", "off"), ("off", "on", "retain-on-failure")),
         ),
-        trace_fps=_trace_fps(values.get("trace_fps", 5.0)),
+        trace_fps=_trace_fps(values.get("trace_fps", 15.0)),
         trace_scope=cast(
             "Literal['window', 'desktop']",
             _enum("trace_scope", values.get("trace_scope", "window"), ("window", "desktop")),

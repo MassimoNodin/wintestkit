@@ -71,7 +71,7 @@ def test_defaults_without_pyproject(tmp_path: Path) -> None:
     assert config.highlight_actions is False
     assert config.slow_mo_ms == 0
     assert config.python_paths == (tmp_path.resolve(),)
-    assert (config.trace, config.trace_fps, config.trace_scope) == ("off", 5.0, "window")
+    assert (config.trace, config.trace_fps, config.trace_scope) == ("off", 15.0, "window")
     assert (config.trace_max_frames, config.trace_max_bytes) == (3000, 104857600)
 
 

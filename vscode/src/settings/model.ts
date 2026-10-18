@@ -111,7 +111,7 @@ export const settingFields: SettingField[] = [
     key: "trace_fps",
     label: "Trace capture rate (FPS)",
     kind: "number",
-    default: 5,
+    default: 15,
     minimum: 0,
     maximum: 30,
     group: "Evidence",

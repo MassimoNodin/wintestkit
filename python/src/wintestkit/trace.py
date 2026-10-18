@@ -10,6 +10,10 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from wintestkit.uia.png import encode_png
+
+Pixels = tuple[int, int, bytes]
+
 log = logging.getLogger("wintestkit.trace")
 
 
@@ -25,7 +29,7 @@ class TraceRecorder:
         scope: str = "window",
         max_frames: int = 3000,
         max_bytes: int = 104857600,
-        capture: Callable[[], bytes | None] | None = None,
+        capture: Callable[[], bytes | Pixels | None] | None = None,
     ) -> None:
         self.directory = directory / "trace"
         self.report_dir = report_dir
@@ -61,23 +65,28 @@ class TraceRecorder:
     def request_frame(self) -> None:
         self._wake.set()
 
-    def _capture_window(self) -> bytes | None:
+    def _capture_window(self) -> bytes | Pixels | None:
         from wintestkit.uia import screenshot
 
         if self.scope == "desktop":
             return screenshot.capture_screen()
         if self.window is None:
             return None
-        return screenshot.capture_window(self.window, self.window_pid)
+        return screenshot.capture_window_pixels(self.window, self.window_pid)
 
     def _sample(self) -> None:
         timestamp = max(0.0, time.monotonic() - self.started)
-        png = self._capture()
-        if not png or self._stop.is_set():
+        captured = self._capture()
+        if not captured or self._stop.is_set():
             return
-        digest = hashlib.sha256(png).digest()
+        if isinstance(captured, tuple):
+            width, height, rgb = captured
+            digest = hashlib.sha256(b"%d,%d," % (width, height) + rgb).digest()
+        else:
+            digest = hashlib.sha256(captured).digest()
         if digest == self._digest:
             return
+        png = encode_png(*captured) if isinstance(captured, tuple) else captured
         if len(self.frames) >= self.max_frames or self._bytes + len(png) > self.max_bytes:
             self.truncated = True
             return
@@ -94,6 +103,9 @@ class TraceRecorder:
         self._digest = digest
 
     def _run(self) -> None:
+        # Ticks keep a fixed cadence so capture time does not stretch the interval; a tick that
+        # is already late is skipped rather than queued.
+        due = time.monotonic()
         while not self._stop.is_set() and not self.truncated:
             self._wake.clear()
             try:
@@ -102,7 +114,9 @@ class TraceRecorder:
                 if self.error is None:
                     log.warning("trace capture failed: %s", exc)
                 self.error = f"Screenshot capture failed: {exc}"
-            self._wake.wait(self.interval)
+            now = time.monotonic()
+            due = max(due + self.interval, now)
+            self._wake.wait(due - now)
 
     def stop(self, *, discard: bool = False) -> dict[str, Any]:
         if self._result is not None:

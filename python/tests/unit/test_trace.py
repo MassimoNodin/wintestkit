@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from wintestkit.trace import TraceRecorder
+from wintestkit.uia.png import encode_png
 
 
 def test_frames_are_timestamped_deduplicated_and_portable(tmp_path: Path) -> None:
@@ -22,6 +23,17 @@ def test_frames_are_timestamped_deduplicated_and_portable(tmp_path: Path) -> Non
     assert result["frames"][0]["path"] == "artifacts/test/trace/000000.png"
     assert (tmp_path / result["frames"][1]["path"]).read_bytes() == b"second"
     assert trace.stop() is result
+
+
+def test_unchanged_pixels_are_dropped_before_encoding(tmp_path: Path) -> None:
+    red, blue = b"\xff\x00\x00", b"\x00\x00\xff"
+    frames = iter([(1, 1, red), (1, 1, red), (1, 1, blue)])
+    trace = TraceRecorder(tmp_path, tmp_path, capture=lambda: next(frames))
+    for _ in range(3):
+        trace._sample()
+    result = trace.stop()
+    assert len(result["frames"]) == 2
+    assert (tmp_path / result["frames"][1]["path"]).read_bytes() == encode_png(1, 1, blue)
 
 
 @pytest.mark.parametrize("limits", [{"max_frames": 1}, {"max_bytes": 5}])
