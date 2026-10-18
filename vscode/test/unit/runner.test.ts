@@ -19,7 +19,7 @@ vi.mock("vscode", () => ({
     },
   },
 }));
-import { runArguments, runProcess } from "../../src/testing/runner";
+import { runArguments, runProcess, tracesByDefault } from "../../src/testing/runner";
 class Child extends EventEmitter {
   pid = 1234;
   stdout = new PassThrough();
@@ -63,6 +63,20 @@ describe("test subprocess runner", () => {
     const args = runArguments("tcp://localhost:1", ["test_x"], false, ["--trace", "off"], true);
     expect(args.lastIndexOf("retain-on-failure")).toBeGreaterThan(args.indexOf("off"));
     expect(args.slice(args.lastIndexOf("--trace"), args.indexOf("--"))).toEqual(["--trace", "retain-on-failure"]);
+  });
+  it("records a trace by default that extra args and the recording profile can override", () => {
+    const args = runArguments("tcp://localhost:1", ["test_x"], false, ["--trace", "off"], true, true);
+    expect(args.slice(args.indexOf("--trace"), args.indexOf("--trace") + 2)).toEqual(["--trace", "on"]);
+    expect(args.slice(args.lastIndexOf("--trace"), args.indexOf("--"))).toEqual(["--trace", "retain-on-failure"]);
+    expect(runArguments("tcp://localhost:1", ["test_x"], false, [])).not.toContain("--trace");
+  });
+  it("only defaults to tracing when nothing chose a trace mode", () => {
+    expect(tracesByDefault({}, [], {})).toBe(true);
+    expect(tracesByDefault({ trace: "off" }, [], {})).toBe(false);
+    expect(tracesByDefault({}, ["--trace=off"], {})).toBe(false);
+    expect(tracesByDefault({}, ["--wtk-trace", "off"], {})).toBe(false);
+    expect(tracesByDefault({}, ["--trace-fps", "2"], {})).toBe(true);
+    expect(tracesByDefault({}, [], { WTK_TRACE: "off" })).toBe(false);
   });
   it("decodes chunked Unicode output and exits without leaking cancellation subscriptions", async () => {
     const child = new Child();

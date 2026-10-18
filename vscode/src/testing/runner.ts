@@ -14,6 +14,7 @@ export function runArguments(
   highlight: boolean,
   extraArgs: string[],
   recording = false,
+  defaultTrace = false,
 ): string[] {
   return [
     "-m",
@@ -22,11 +23,24 @@ export function runArguments(
     "--events",
     url,
     ...(highlight ? ["--highlight"] : []),
+    ...(defaultTrace ? ["--trace", "on"] : []),
     ...extraArgs,
     ...(recording ? ["--trace", "retain-on-failure"] : []),
     "--",
     ...nodeids,
   ];
+}
+/** Testing-tab runs record a trace unless the project, environment or extra args choose a mode. */
+export function tracesByDefault(
+  configured: Record<string, unknown>,
+  extraArgs: string[],
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
+  return (
+    !("trace" in configured) &&
+    !env.WTK_TRACE &&
+    !extraArgs.some((arg) => /^--(wtk-)?trace(=|$)/.test(arg))
+  );
 }
 export function killProcessTree(child: ChildProcessWithoutNullStreams): void {
   if (!child.pid) return;

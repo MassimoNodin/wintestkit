@@ -74,12 +74,15 @@ export async function ensureLocalIgnores(root: vscode.Uri): Promise<void> {
 export async function readConfiguration(
   root: vscode.Uri,
   overrides: Record<string, string> = {},
+  includeDefaults = true,
 ): Promise<Record<string, unknown>> {
-  const merged: Record<string, unknown> = Object.fromEntries(
-    settingFields
-      .filter((field) => field.default !== undefined)
-      .map((field) => [field.key, field.default]),
-  );
+  const merged: Record<string, unknown> = includeDefaults
+    ? Object.fromEntries(
+        settingFields
+          .filter((field) => field.default !== undefined)
+          .map((field) => [field.key, field.default]),
+      )
+    : {};
   for (const name of configurationNames) {
     const source =
       overrides[name] ?? (await readOptional(vscode.Uri.joinPath(root, name)));
