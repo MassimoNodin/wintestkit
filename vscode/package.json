@@ -133,6 +133,11 @@
         "icon": "$(refresh)"
       },
       {
+        "command": "wintestkit.spy.revealRelocation",
+        "title": "Reveal Relocated Element in Spy",
+        "category": "WinTestKit"
+      },
+      {
         "command": "wintestkit.elements.refresh",
         "title": "Refresh",
         "category": "WinTestKit",

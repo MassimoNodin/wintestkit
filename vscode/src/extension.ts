@@ -18,6 +18,7 @@ import { ElementsTree } from "./views/elementsTree";
 import { Reports } from "./report";
 import { SpyView } from "./spy/spyView";
 import { registerInsertElement } from "./spy/insertElement";
+import { RelocationActions } from "./editor/relocationActions";
 import { computeInsertion } from "./spy/insertionModel";
 import { ConfigurationEditor, settingsEditorId } from "./settings/editor";
 import { TestAppView } from "./settings/testApp";
@@ -145,6 +146,7 @@ export function activate(context: vscode.ExtensionContext): {
     checks,
     new CheckDecorations(checks, context.extensionUri),
     new HighlightCommands(projects, discovery, servers, checks, log),
+    new RelocationActions(checks),
   );
   context.subscriptions.push(servers, status, projects, discovery);
   let previousProjects: readonly Project[] = [];

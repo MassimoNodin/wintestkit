@@ -63,6 +63,10 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
       vscode.commands.registerCommand("wintestkit.spy.refresh", () =>
         this.safe(() => this.refresh()),
       ),
+      vscode.commands.registerCommand(
+        "wintestkit.spy.revealRelocation",
+        (path: string) => this.safe(() => this.revealRelocation(path)),
+      ),
       projects.onDidChange(() => {
         if (this.view?.visible) void this.safe(() => this.refresh());
       }),
@@ -434,6 +438,54 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
       if (this.disposed || !this.sameScope(scopeRevision, revision)) return;
       this.post({ type: "rootIcons", icons });
     });
+  }
+  /** Resolve a diagnostic path against a fresh, bounded UIA snapshot before revealing it. */
+  private async revealRelocation(path: string): Promise<void> {
+    const parts = path.split(" › ").map((part) => part.trim()).filter(Boolean);
+    if (!parts.length || parts.length > 12) throw new Error("Invalid relocation path.");
+    const connection = await this.connect();
+    if (!connection.client) throw new Error("No active WinTestKit project.");
+    const client = connection.client;
+    const status = await client.request<AppStatusResult>("app.status");
+    if (!status.running) throw new Error("Start the target app before revealing a relocated element.");
+    const roots = await this.requestRoots(client, false);
+    const matches: { node: NodeInfo; ancestors: NodeInfo[] }[] = [];
+    let visited = 0;
+    const short = (node: NodeInfo) => {
+      const info = node.info;
+      const labels = [info.controlType];
+      if (info.automationId) labels.push("#" + info.automationId);
+      if (info.name) labels.push('"' + info.name + '"');
+      if (!info.automationId && !info.name && info.className)
+        labels.push("[" + info.className + "]");
+      return labels.join(" ");
+    };
+    const walk = async (node: NodeInfo, ancestors: NodeInfo[], depth: number) => {
+      if (++visited > 1000 || depth > 12 || matches.length > 1) return;
+      const chain = [...ancestors, node];
+      const pathStart = chain.length - parts.length;
+      if (pathStart >= 0 && chain.slice(pathStart).every((item, index) => short(item) === parts[index]))
+        matches.push({ node, ancestors });
+      if (depth >= parts.length || !node.hasChildren) return;
+      const children = await client.request<NodeInfo[]>("inspect.children", { nodeId: node.nodeId });
+      for (const child of children) await walk(child, chain, depth + 1);
+    };
+    for (const root of roots) await walk(root, [], 1);
+    if (matches.length !== 1)
+      throw new Error(matches.length ? "Relocation path is ambiguous in the current UI." : "Relocation path is no longer present; refresh Spy.");
+    const target = matches[0];
+    const revision = ++this.revision;
+    this.selection++;
+    this.post({ type: "roots", nodes: roots });
+    this.trackNodes(client, roots, true);
+    for (const ancestor of target.ancestors) {
+      const children = await client.request<NodeInfo[]>("inspect.children", { nodeId: ancestor.nodeId });
+      if (revision !== this.revision || client !== this.client) return;
+      this.post({ type: "children", nodeId: ancestor.nodeId, nodes: children });
+      this.trackNodes(client, children);
+    }
+    await this.handle({ type: "select", nodeId: target.node.nodeId });
+    await vscode.commands.executeCommand("wintestkit.spy.focus");
   }
   private sameScope(scopeRevision: number, revision: number): boolean {
     return scopeRevision === this.scopeRevision && revision === this.revision;
