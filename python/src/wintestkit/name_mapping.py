@@ -4,15 +4,26 @@ from __future__ import annotations
 
 import keyword
 import re
+import unicodedata
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
+from wintestkit.model import PageObject
+
 MAX_XML_BYTES = 10 * 1024 * 1024
+RESERVED_NAMES = set(dir(PageObject)) | set(PageObject.__annotations__) | {"Element", "Page"}
+
+
+class _SafeTreeBuilder(ET.TreeBuilder):
+    def doctype(self, name: str, pubid: str | None, system: str | None) -> None:
+        raise ValueError("DTD and entity declarations are not allowed")
 
 
 def _identifier(value: str, fallback: str = "element") -> str:
+    value = unicodedata.normalize("NFKC", value)
     value = re.sub(r"\W+", "_", value, flags=re.UNICODE).strip("_")
-    if not value or value[0].isdigit() or value in keyword.kwlist:
+    value = "".join(character if ("a" + character).isidentifier() else "_" for character in value)
+    if not value or not value.isidentifier() or keyword.iskeyword(value) or value in RESERVED_NAMES:
         value = f"{fallback}_{value}" if value else fallback
     return value
 
@@ -37,12 +48,14 @@ def convert(xml_path: Path) -> str:
     if re.search(rb"<!\s*(DOCTYPE|ENTITY)\b", data, re.IGNORECASE):
         raise ValueError("DTD and entity declarations are not allowed")
     try:
-        root = ET.fromstring(data)
+        root = ET.fromstring(data, parser=ET.XMLParser(target=_SafeTreeBuilder()))
     except ET.ParseError as exc:
         raise ValueError(f"invalid NameMapping XML: {exc}") from exc
     lines = [
-        '"""Generated from TestComplete NameMapping; review locators before use."""',
-        "# Configure property_aliases: {ClrFullClassName: ItemStatus} in wintestkit.yaml.",
+        '"""Generated from TestComplete NameMapping; review locators before use.',
+        "",
+        "ClrFullClassName requires a verified application-specific UIA property alias.",
+        '"""',
         "",
         "from wintestkit import Element, Page",
         "",
@@ -81,13 +94,13 @@ def convert(xml_path: Path) -> str:
         control_name = props.get("WPFControlName")
         if not class_name and not control_name:
             continue
-        alias = _identifier(control_name or class_name.rsplit(".", 1)[-1])
+        alias = _identifier(control_name or (class_name or "").rsplit(".", 1)[-1])
         base = alias
         suffix = 2
         while alias in used:
             alias, suffix = f"{base}_{suffix}", suffix + 1
         used.add(alias)
-        args = []
+        args: list[str] = []
         if control_name:
             args.append(f"automation_id={control_name!r}")
         if class_name:
