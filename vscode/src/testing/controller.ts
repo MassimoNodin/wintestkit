@@ -70,6 +70,7 @@ export class TestController implements vscode.Disposable {
   private readonly subscriptions: vscode.Disposable[];
   private readonly profile: vscode.TestRunProfile;
   private readonly debugProfile: vscode.TestRunProfile;
+  private readonly recordingProfile: vscode.TestRunProfile;
   private disposed = false;
   constructor(
     private readonly projects: Projects,
@@ -88,6 +89,12 @@ export class TestController implements vscode.Disposable {
       vscode.TestRunProfileKind.Debug,
       (request, token) => this.run(request, token, true),
       true,
+    );
+    this.recordingProfile = this.controller.createRunProfile(
+      "Run with recording",
+      vscode.TestRunProfileKind.Run,
+      (request, token) => this.run(request, token, false, true),
+      false,
     );
     this.controller.refreshHandler = async () => {
       await projects.refresh();
@@ -205,6 +212,7 @@ export class TestController implements vscode.Disposable {
     request: vscode.TestRunRequest,
     token: vscode.CancellationToken,
     debug = false,
+    recording = false,
   ): Promise<void> {
     const run = this.controller.createTestRun(request);
     const cancellation = new vscode.CancellationTokenSource();
@@ -228,7 +236,7 @@ export class TestController implements vscode.Disposable {
           const queued = previous
             .catch(() => {})
             .then(() =>
-              this.runProject(project, items, run, cancellation.token, debug),
+              this.runProject(project, items, run, cancellation.token, debug, recording),
             );
           this.queues.set(key, queued);
           return queued.finally(() => {
@@ -332,6 +340,7 @@ export class TestController implements vscode.Disposable {
     run: vscode.TestRun,
     token: vscode.CancellationToken,
     debug = false,
+    recording = false,
   ): Promise<void> {
     const nodeids = items.map((item) => this.metadata.get(item)!.nodeid!);
     const mapper = new EventMapper(nodeids);
@@ -366,6 +375,7 @@ export class TestController implements vscode.Disposable {
         nodeids,
         settings.get<boolean>("run.highlightActions", false),
         settings.get<string[]>("run.extraArgs", []),
+        recording,
       );
       const code = debug
         ? await runDebugSession(

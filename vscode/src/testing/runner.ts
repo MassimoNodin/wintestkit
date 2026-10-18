@@ -13,6 +13,7 @@ export function runArguments(
   nodeids: string[],
   highlight: boolean,
   extraArgs: string[],
+  recording = false,
 ): string[] {
   return [
     "-m",
@@ -21,6 +22,7 @@ export function runArguments(
     "--events",
     url,
     ...(highlight ? ["--highlight"] : []),
+    ...(recording ? ["--trace", "retain-on-failure"] : []),
     ...extraArgs,
     "--",
     ...nodeids,
