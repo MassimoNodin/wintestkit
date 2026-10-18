@@ -62,6 +62,7 @@ export function activate(context: vscode.ExtensionContext): {
   spy: SpyView;
   setup: TestAppView;
   unused: UnusedDefinitions;
+  reports: Reports;
   computeInsertion: typeof computeInsertion;
 } {
   const log = createLog();
@@ -436,7 +437,7 @@ export function activate(context: vscode.ExtensionContext): {
     false,
   );
   void projects.refresh();
-  return { tests, checks, elements, spy, setup, unused, computeInsertion };
+  return { tests, checks, elements, spy, setup, unused, reports, computeInsertion };
 }
 
 let activeServers: ServerManager | undefined;

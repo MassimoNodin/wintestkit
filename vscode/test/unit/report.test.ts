@@ -3,7 +3,7 @@ vi.mock("vscode", () => ({
   window: { showErrorMessage: vi.fn(async () => undefined), showInformationMessage: vi.fn(async () => undefined) },
   env: { openExternal: vi.fn(async () => true) },
 }));
-import { failureMessage, reportPath, Reports } from "../../src/report";
+import { failureMessage, previewHtml, reportPath, Reports, waitForFile } from "../../src/report";
 import type { Project } from "../../src/server/serverManager";
 
 describe("report location", () => {
@@ -24,6 +24,22 @@ describe("report location", () => {
     expect(
       reportPath(undefined, undefined, "/proj", () => true),
     ).toBeUndefined();
+  });
+  it("points a report's relative paths at its folder in the preview", () => {
+    const base = "https://file+.vscode-resource.vscode-cdn.net/c%3A/p/report/";
+    expect(previewHtml("<!doctype html><html><head><title>r</title></head></html>", base)).toContain(
+      `<head><base href="${base}"><title>`,
+    );
+    expect(previewHtml("<p>no head</p>", base)).toBe(`<base href="${base}"><p>no head</p>`);
+    expect(previewHtml("<head><meta></head>", 'x"y/')).toContain('href="x&quot;y/"');
+  });
+  it("waits for a report that is written after the run announces it", async () => {
+    const sizes = [undefined, undefined, 10, 80, 80];
+    const size = vi.fn(async () => sizes.shift());
+    const sleep = vi.fn(async () => {});
+    expect(await waitForFile("r/index.html", 15000, size, sleep)).toBe(true);
+    expect(size).toHaveBeenCalledTimes(5);
+    expect(await waitForFile("r/index.html", 300, async () => undefined, sleep)).toBe(false);
   });
   it("pluralizes the failure message", () => {
     expect(failureMessage(1)).toBe("1 test failed.");

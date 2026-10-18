@@ -70,6 +70,8 @@ export class TestAppView
   }
   async resolveWebviewView(view: vscode.WebviewView): Promise<void> {
     this.view = view;
+    // A badge from before a restart or reload describes a run this session knows nothing about.
+    view.badge = undefined;
     const assets = vscode.Uri.joinPath(this.extensionUri, "media", "setup");
     const icons = vscode.Uri.joinPath(this.extensionUri, "media", "codicons");
     view.webview.options = {
@@ -342,6 +344,7 @@ export class TestAppView
   }
   dispose(): void {
     this.disposed = true;
+    if (this.view) this.view.badge = undefined;
     this.subscriptions.forEach((subscription) => subscription.dispose());
   }
 }
