@@ -59,6 +59,10 @@ describe("test subprocess runner", () => {
       "tests/test.py::test_case[with space]",
     ]);
   });
+  it("enables backend trace retention for the recording profile", () => {
+    expect(runArguments("tcp://localhost:1", ["test_x"], false, [], true)).toContain("retain-on-failure");
+    expect(runArguments("tcp://localhost:1", ["test_x"], false, [], true)).toContain("--trace");
+  });
   it("decodes chunked Unicode output and exits without leaking cancellation subscriptions", async () => {
     const child = new Child();
     mocks.spawn.mockReturnValue(child);
