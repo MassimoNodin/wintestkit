@@ -184,6 +184,19 @@ export function activate(context: vscode.ExtensionContext): {
   };
   const changeApp = (methods: string[], target?: vscode.TreeItem) =>
     withProject(async (project) => {
+      const closing = methods.includes("app.close");
+      if (closing) {
+        const config = await readConfiguration(project.root).catch(() => ({}));
+        if (config.launch === "attach") {
+          const name = String(config["app.process"] ?? "the attached app").replace(/\.exe$/i, "");
+          const answer = await vscode.window.showWarningMessage(
+            `Close ${name}? WinTestKit didn't start it, and unsaved work in ${name} will be lost.`,
+            { modal: true },
+            "Close App",
+          );
+          if (answer !== "Close App") return;
+        }
+      }
       if (methods.length > 1) {
         const config = await readConfiguration(project.root);
         if (
