@@ -293,6 +293,14 @@ describe("Spy view bridge", () => {
     expect(script).toContain("Showing other desktop windows.");
     expect(html).toContain('id="scope-context" role="status"');
   });
+  it("uses roving focus and tree keyboard semantics for Spy nodes", () => {
+    const script = readFileSync("media/spy/spy.js", "utf8");
+    expect(script).toContain('row.setAttribute("aria-level"');
+    expect(script).toContain('row.setAttribute("aria-posinset"');
+    expect(script).toContain('addEventListener("focusin"');
+    expect(script).toContain("entry.children.querySelector");
+    expect(script).toContain('event.key === " "');
+  });
   it("drops a superseded scope's roots and selection", async () => {
     let finishFirst: (nodes: unknown[]) => void = () => {};
     let finishSecond: (nodes: unknown[]) => void = () => {};
