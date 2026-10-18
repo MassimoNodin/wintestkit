@@ -482,13 +482,15 @@ describe("navigation view", () => {
       });
       mocks.listener?.({
         type: "action",
-        action: "check",
+        action: "highlight",
         id: page.children[0].id,
       });
-      expect(mocks.execute).toHaveBeenCalledWith("wintestkit.checkElement", {
+      expect(mocks.execute).toHaveBeenCalledWith("wintestkit.highlightElement", {
         file: elementContext?.file,
         qualname: elementContext?.qualname,
       });
+      expect(actionsFor(page.children[0])).toEqual(["highlight"]);
+      expect(openHtml).not.toContain('data-action="check"');
       mocks.listener?.({ type: "action", action: "checkPage", id: page.id });
       expect(mocks.execute).toHaveBeenCalledWith("wintestkit.checkPage", {
         file: pageContext?.file,
