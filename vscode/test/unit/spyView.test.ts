@@ -298,24 +298,11 @@ describe("Spy view bridge", () => {
     expect(script).toContain("Showing other desktop windows.");
     expect(html).toContain('id="scope-context" role="status"');
   });
-  it("offers opt-in collapsed grouping for non-target desktop windows", () => {
-    const script = readFileSync("media/spy/spy.js", "utf8");
-    const html = readFileSync("media/spy/spy.html", "utf8");
-    expect(script).toContain("let groupDesktop =");
-    expect(script).toContain("!pids.has(node.info.processId)");
-    expect(script).toContain("Other desktop windows (");
-    expect(script).toContain('groupRow.setAttribute("aria-expanded", "false")');
-    expect(script).toContain("children.hidden = !open");
-    expect(html).toContain('id="group-desktop"');
-  });
   it("uses roving focus and tree keyboard semantics for Spy nodes", () => {
     const script = readFileSync("media/spy/spy.js", "utf8");
-    expect(script).toContain('groupRow.setAttribute("aria-level"');
-    expect(script).toContain('groupRow.setAttribute("aria-posinset"');
     expect(script).toContain('addEventListener("focusin"');
     expect(script).toContain("entry.children.querySelector");
     expect(script).toContain('event.key === " "');
-    expect(script).toContain('groupRow.setAttribute("role", "treeitem")');
     expect(script).toContain('children.setAttribute("role", "group")');
   });
   it("drops a superseded scope's roots and selection", async () => {

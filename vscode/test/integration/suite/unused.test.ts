@@ -27,12 +27,14 @@ suite("Unused definitions", () => {
       if (pages.length === 0) await new Promise((resolve) => setTimeout(resolve, 500));
     }
     assert.ok(pages.length > 0, "discovery returned pages");
-    // Pylance answers reference requests only once it has analysed the workspace.
-    // A discovery refresh or edit during a scan cancels it, so wait for things to settle and retry.
+    // Pylance answers reference requests only once it has analysed the workspace, so retry while it
+    // warms up. Discovery refreshes that language-server work causes must never cancel a scan.
     let summary = await unused.scan();
-    for (let attempt = 0; attempt < 20 && (summary.cancelled || summary.unavailable > 0); attempt++) {
+    assert.equal(summary.cancelled, false, "a discovery refresh must not cancel the scan");
+    for (let attempt = 0; attempt < 20 && summary.unavailable > 0; attempt++) {
       await new Promise((resolve) => setTimeout(resolve, 3000));
       summary = await unused.scan();
+      assert.equal(summary.cancelled, false, "a discovery refresh must not cancel the scan");
     }
     const flagged = pages.flatMap((page) =>
       page.elements

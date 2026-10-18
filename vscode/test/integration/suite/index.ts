@@ -3,9 +3,9 @@ import Mocha from "mocha";
 
 export function run(): Promise<void> {
   const mocha = new Mocha({ ui: "tdd", color: true, timeout: 60000 });
-  mocha.addFile(path.resolve(__dirname, "activation.test.js"));
-  mocha.addFile(path.resolve(__dirname, "settings.test.js"));
-  mocha.addFile(path.resolve(__dirname, "unused.test.js"));
+  const only = process.env.WTK_INTEGRATION_ONLY;
+  for (const name of ["activation", "settings", "unused"])
+    if (!only || only === name) mocha.addFile(path.resolve(__dirname, name + ".test.js"));
   return new Promise((resolve, reject) => {
     mocha.run((failures) => {
       if (failures > 0)

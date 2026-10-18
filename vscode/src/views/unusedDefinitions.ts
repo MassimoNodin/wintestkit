@@ -21,16 +21,31 @@ export class UnusedDefinitions implements vscode.Disposable {
   private readonly changed = new vscode.EventEmitter<void>();
   readonly onDidChange = this.changed.event;
   private run?: vscode.CancellationTokenSource;
+  private readonly signatures = new Map<string, string>();
+  /** Projects edited while a scan was running: their result would be stale, so it is dropped. */
+  private readonly edited = new Set<string>();
   private readonly subscriptions: vscode.Disposable[];
   constructor(private readonly projects: Projects, private readonly discovery: DiscoveryStore) {
     this.subscriptions = [
       projects.onDidChange(() => this.invalidate()),
-      discovery.onDidChange((project) => this.invalidate(project)),
+      // Discovery refreshes constantly while language-server work goes on; only a changed set of
+      // definitions makes a finished scan stale.
+      discovery.onDidChange((project) => {
+        if (!project) return this.invalidate();
+        if (this.signature(project) !== this.signatures.get(project.root.toString())) this.invalidate(project);
+      }),
       vscode.workspace.onDidChangeTextDocument((event) => {
+        if (event.contentChanges.length === 0) return;
         const project = projects.projectFor(event.document.uri);
-        if (project) this.invalidate(project);
+        if (project) this.invalidate(project, true);
       }),
     ];
+  }
+  private signature(project: Project): string {
+    return (this.discovery.get(project)?.pages ?? [])
+      .flatMap((page) => page.elements.map((element) => element.id))
+      .sort()
+      .join("|");
   }
   has(project: Project, elementId: string): boolean {
     return this.results.get(project.root.toString())?.has(elementId) ?? false;
@@ -48,6 +63,7 @@ export class UnusedDefinitions implements vscode.Disposable {
     this.run?.cancel();
     const source = new vscode.CancellationTokenSource();
     this.run = source;
+    this.edited.clear();
     this.changed.fire();
     let unavailable = 0;
     let capped = false;
@@ -80,7 +96,10 @@ export class UnusedDefinitions implements vscode.Disposable {
               else if (classification === undefined) unavailable++;
             } catch { unavailable++; /* Provider errors leave this entry unknown. */ }
           }
-          if (!source.token.isCancellationRequested && this.projects.all.some((item) => item.root.toString() === project.root.toString())) this.results.set(project.root.toString(), unused);
+          if (!source.token.isCancellationRequested && !this.edited.has(project.root.toString()) && this.projects.all.some((item) => item.root.toString() === project.root.toString())) {
+            this.results.set(project.root.toString(), unused);
+            this.signatures.set(project.root.toString(), this.signature(project));
+          }
         }
       });
       this.changed.fire();
@@ -91,9 +110,16 @@ export class UnusedDefinitions implements vscode.Disposable {
       this.changed.fire();
     }
   }
-  private invalidate(project?: Project): void {
+  /**
+   * Language-server and discovery activity refreshes discovery while a scan runs, so only a real
+   * edit counts during a scan, and it just discards that project's result instead of aborting.
+   */
+  private invalidate(project?: Project, edit = false): void {
+    if (this.run) {
+      if (!edit || !project) return;
+      this.edited.add(project.root.toString());
+    }
     if (project) this.results.delete(project.root.toString()); else this.results.clear();
-    this.run?.cancel();
     this.changed.fire();
   }
   dispose(): void { this.run?.cancel(); this.subscriptions.forEach((item) => item.dispose()); this.changed.dispose(); }
