@@ -19,8 +19,10 @@ RPC schemas describe the payload, not the JSON-RPC transport envelope.
 
 Discovery results optionally include `flows`, an array of public module-level functions
 under `flows/` directories. Older backends may omit this field; editors treat it as empty.
-A flow's optional `runnable` is true when its only required parameter is `app`; `flow.run`
-calls such a flow with the running application and reports `passed` or `failed`.
+A flow's optional `runnable` is true when it can be called with the running application and the
+editor's supported scalar inputs. `parameters` describes annotated `str`, `int`, `float`, and `bool`
+arguments, including literal scalar defaults. The editor validates supplied values against these
+types; flow input is never evaluated as Python. Older backends may omit both fields.
 
 Discovery, step, events, and results documents reference their primary type at the root.
 Common and RPC documents are definition libraries; select a named definition to validate them.
