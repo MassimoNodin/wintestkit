@@ -406,7 +406,7 @@ describe("navigation view", () => {
       color: { id: "list.warningForeground" },
     });
   });
-  it("shows tile-themed Page Tree and Flows tabs and restores the last tab", () => {
+  it("shows compact segmented Page Tree and Flows tabs and restores the last tab", () => {
     const global = memoryState({ "wintestkit.navigation.section": "flows" });
     const { tree } = createTree(hostFor(global));
     resolve(tree);
@@ -419,11 +419,12 @@ describe("navigation view", () => {
     expect(mocks.html).toContain(
       'codicon-run-all tab-icon" aria-hidden="true"',
     );
-    expect(mocks.html).toContain("min-height: 56px");
+    expect(mocks.html).toContain("min-height: 30px");
+    expect(mocks.html).not.toContain("min-height: 56px");
     expect(mocks.html).toContain(
-      "background: var(--vscode-editor-background, #fff)",
+      "background: var(--vscode-list-inactiveSelectionBackground)",
     );
-    expect(mocks.html).toContain("border-radius: 5px");
+    expect(mocks.html).toContain("border-radius: 4px");
     expect(mocks.html).not.toContain(">Tests</button>");
     expect(mocks.html).toContain('data-section="flows" aria-selected="true"');
     expect(mocks.html).not.toContain("executeCommand");

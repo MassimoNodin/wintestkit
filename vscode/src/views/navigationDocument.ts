@@ -114,24 +114,26 @@ body {
 #segments {
   display: flex;
   flex: 0 0 auto;
-  gap: 8px;
-  margin: 10px;
+  gap: 0;
+  margin: 6px 10px;
+  border: 1px solid var(--vscode-panel-border, #d7dce3);
+  border-radius: 4px;
 }
 #segments button {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 6px;
   flex: 1 1 0;
   min-width: 0;
-  min-height: 56px;
-  border: 1px solid var(--vscode-panel-border, #d7dce3);
-  border-radius: 5px;
-  background: var(--vscode-editor-background, #fff);
+  min-height: 30px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  background: transparent;
   color: var(--vscode-foreground);
   font: inherit;
-  font-size: 14px;
+  font-size: inherit;
   text-align: left;
-  padding: 8px 12px;
+  padding: 4px 8px;
   cursor: pointer;
 }
 #segments .tab-icon {
@@ -139,8 +141,8 @@ body {
   flex-shrink: 0;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
+  width: 16px;
+  height: 16px;
   font-size: 16px;
   color: var(--vscode-charts-orange, #d18616);
 }
@@ -155,6 +157,8 @@ body {
 }
 #segments button[aria-selected="true"] {
   border-color: var(--vscode-focusBorder, #0078d4);
+  background: var(--vscode-list-inactiveSelectionBackground);
+  color: var(--vscode-list-inactiveSelectionForeground, var(--vscode-foreground));
 }
 #segments button:focus-visible, .item:focus > .line {
   outline: 1px solid var(--vscode-focusBorder);
