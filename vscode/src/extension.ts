@@ -9,6 +9,7 @@ import { CodeLenses } from "./editor/codeLens";
 import { CheckDecorations, CheckResultsStore } from "./editor/decorations";
 import { HighlightCommands } from "./editor/highlightCommands";
 import { FlowRuns } from "./editor/flowRuns";
+import { CheckAfterFlow } from "./editor/checkAfterFlow";
 import { TestController } from "./testing/controller";
 import { registerInitialize } from "./init";
 import { PytestConflict } from "./pytestConflict";
@@ -116,7 +117,8 @@ export function activate(context: vscode.ExtensionContext): {
   );
   const discovery = new DiscoveryStore(projects, servers, log);
   const checks = new CheckResultsStore(discovery);
-  const flows = new FlowRuns(projects, discovery, servers, log);
+  const checkAfterFlow = new CheckAfterFlow(projects, discovery, context.workspaceState);
+  const flows = new FlowRuns(projects, discovery, servers, log, (file, name) => checkAfterFlow.afterFlow(file, name));
   const lenses = new CodeLenses(projects, discovery, checks, flows);
   const elements = new ElementsTree(
     projects,
@@ -125,7 +127,7 @@ export function activate(context: vscode.ExtensionContext): {
     flows,
     context,
   );
-  context.subscriptions.push(elements, flows);
+  context.subscriptions.push(elements, flows, checkAfterFlow);
   const spy = new SpyView(projects, servers, context.extensionUri, log);
   context.subscriptions.push(spy);
   context.subscriptions.push(registerInsertElement(projects, discovery, log));
@@ -336,6 +338,7 @@ export function activate(context: vscode.ExtensionContext): {
         "wintestkit.checkElement",
         "wintestkit.checkPage",
         "wintestkit.runFlow",
+        "wintestkit.checkAfterFlow",
         "wintestkit.initProject",
         "wintestkit.openSettings",
         "wintestkit.elements.goTo",

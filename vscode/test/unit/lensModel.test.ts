@@ -85,7 +85,7 @@ describe("editor lens model", () => {
     const all = buildLenses(discovery, page.file);
     const compact = buildLenses(discovery, page.file, new Map(), undefined, true);
     expect(all.some((lens) => lens.command === "wintestkit.checkElement")).toBe(true);
-    expect(compact.map((lens) => lens.command)).toEqual(["wintestkit.checkPage"]);
+    expect(compact.map((lens) => lens.command)).toEqual(["wintestkit.checkPage", "wintestkit.checkAfterFlow"]);
   });
   it.each(cases)("matches the Python locator format: $describe", (fixture) => {
     expect(describeLocator(fixture.locator)).toBe(fixture.describe);

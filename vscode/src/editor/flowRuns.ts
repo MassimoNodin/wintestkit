@@ -30,6 +30,7 @@ export class FlowRuns implements vscode.Disposable {
     private readonly discovery: DiscoveryStore,
     private readonly servers: ServerManager,
     private readonly log: vscode.LogOutputChannel,
+    private readonly afterPassed?: (file: string, name: string) => Promise<void>,
   ) {
     this.subscriptions = [
       vscode.commands.registerCommand("wintestkit.runFlow", (target?: FlowTarget) =>
@@ -86,6 +87,7 @@ export class FlowRuns implements vscode.Disposable {
       }
       if (this.states.get(key) === pending) this.set(key, result);
       if (result.status === "passed") {
+        await this.afterPassed?.(target.file, target.name);
         vscode.window.setStatusBarMessage(
           `$(pass-filled) Flow ${target.name} passed in ${Math.round(result.durationMs)} ms`,
           5000,

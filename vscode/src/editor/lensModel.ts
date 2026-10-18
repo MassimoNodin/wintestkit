@@ -150,6 +150,7 @@ export function buildLenses(
       { file, page: page.qualname },
       "Checks these elements against the app's current screen. Elements on screens that are not open may be reported as not found.",
     );
+    add(page.range.start.line, "$(debug-start) Check after flow…", "wintestkit.checkAfterFlow", { file, page: page.qualname }, "Choose a flow that explicitly navigates to this page. It runs only after you opt in here.");
     if (!classOnly) for (const element of page.elements) {
       const status = feedback.get(element.id);
       const tooltip =
