@@ -101,6 +101,14 @@ class RunRecorder:
                 if "location" in test:
                     test["location"]["file"] = self._relative(test["location"]["file"])
                 test["screenshots"] = [self._relative(path) for path in event["screenshots"]]
+                if "trace" in event:
+                    trace = copy.deepcopy(event["trace"])
+                    for frame in trace["frames"]:
+                        path = Path(frame["path"])
+                        frame["path"] = (
+                            self._relative(str(path)) if path.is_absolute() else path.as_posix()
+                        )
+                    test["trace"] = trace
                 if "artifactsDir" in event:
                     tree = Path(event["artifactsDir"]) / "tree.txt"
                     if tree.is_file():

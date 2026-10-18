@@ -7,7 +7,18 @@ import pytest
 from wintestkit.config import find_project_root, load_config
 from wintestkit.errors import ConfigError
 
-ENV_VARS = ["WTK_APP_PATH", "WTK_LAUNCH", "WTK_TIMEOUT", "WTK_INPUT_MODE", "WTK_SCREENSHOTS"]
+ENV_VARS = [
+    "WTK_APP_PATH",
+    "WTK_LAUNCH",
+    "WTK_TIMEOUT",
+    "WTK_INPUT_MODE",
+    "WTK_SCREENSHOTS",
+    "WTK_TRACE",
+    "WTK_TRACE_FPS",
+    "WTK_TRACE_SCOPE",
+    "WTK_TRACE_MAX_FRAMES",
+    "WTK_TRACE_MAX_BYTES",
+]
 
 
 @pytest.fixture(autouse=True)
@@ -60,6 +71,39 @@ def test_defaults_without_pyproject(tmp_path: Path) -> None:
     assert config.highlight_actions is False
     assert config.slow_mo_ms == 0
     assert config.python_paths == (tmp_path.resolve(),)
+    assert (config.trace, config.trace_fps, config.trace_scope) == ("off", 5.0, "window")
+    assert (config.trace_max_frames, config.trace_max_bytes) == (3000, 104857600)
+
+
+def test_trace_config_and_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    write_pyproject(
+        tmp_path,
+        '[tool.wintestkit]\ntrace = "retain-on-failure"\ntrace_fps = 12\ntrace_scope = "desktop"\ntrace_max_frames = 40\ntrace_max_bytes = 4096\n',
+    )
+    cfg = load_config(tmp_path)
+    assert (cfg.trace, cfg.trace_fps, cfg.trace_scope) == ("retain-on-failure", 12.0, "desktop")
+    assert (cfg.trace_max_frames, cfg.trace_max_bytes) == (40, 4096)
+    monkeypatch.setenv("WTK_TRACE", "on")
+    monkeypatch.setenv("WTK_TRACE_FPS", "25")
+    monkeypatch.setenv("WTK_TRACE_SCOPE", "window")
+    assert load_config(tmp_path).trace == "on"
+    assert load_config(tmp_path).trace_fps == 25.0
+    assert load_config(tmp_path).trace_scope == "window"
+
+
+@pytest.mark.parametrize("mode", ["on", "off", "retain-on-failure"])
+def test_trace_mode_in_yaml(tmp_path: Path, mode: str) -> None:
+    (tmp_path / "wintestkit.yaml").write_text(f"trace: {mode}\n", encoding="utf-8")
+    assert load_config(tmp_path).trace == mode
+
+
+@pytest.mark.parametrize(
+    "body", ["trace_fps = 31", "trace_fps = 0", "trace_max_frames = 0", "trace_max_bytes = -1"]
+)
+def test_bad_trace_limits(tmp_path: Path, body: str) -> None:
+    write_pyproject(tmp_path, f"[tool.wintestkit]\n{body}\n")
+    with pytest.raises(ConfigError):
+        load_config(tmp_path)
 
 
 def test_pyproject_without_wintestkit_table_is_not_found(tmp_path: Path) -> None:

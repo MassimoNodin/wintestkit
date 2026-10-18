@@ -22,6 +22,9 @@ _FORWARDED = (
     ("slowmo", "--wtk-slowmo"),
     ("report", "--wtk-report"),
     ("events", "--wtk-events"),
+    ("trace", "--wtk-trace"),
+    ("trace_fps", "--wtk-trace-fps"),
+    ("trace_scope", "--wtk-trace-scope"),
 )
 
 
@@ -43,6 +46,9 @@ def add_parser(subparsers: Any) -> None:
     parser.add_argument("--no-report", action="store_true")
     parser.add_argument("--junit", metavar="PATH")
     parser.add_argument("--events", metavar="URL")
+    parser.add_argument("--trace", choices=("off", "on", "retain-on-failure"))
+    parser.add_argument("--trace-fps", type=float, metavar="FPS")
+    parser.add_argument("--trace-scope", choices=("window", "desktop"))
     parser.add_argument("-k", dest="keyword", metavar="EXPR")
     parser.add_argument("-m", dest="marker", metavar="EXPR")
     parser.add_argument("-x", dest="exitfirst", action="store_true")

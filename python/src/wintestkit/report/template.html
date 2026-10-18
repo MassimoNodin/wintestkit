@@ -8,6 +8,9 @@
 :root{color-scheme:light dark;--bg:#f5f7fb;--surface:#fff;--ink:#172239;--muted:#64748b;--line:#dce3ee;--fail:#b91c1c;--accent:#2563eb}
 @media(prefers-color-scheme:dark){:root{--bg:#101722;--surface:#182233;--ink:#edf2fa;--muted:#9eabc0;--line:#334155;--fail:#fca5a5;--accent:#93c5fd}}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.6 system-ui,sans-serif}main{max-width:1200px;margin:auto;padding:32px}h1{margin:0;font-size:32px}h2{font-size:17px;margin-top:28px}#meta{color:var(--muted)}#filters{display:flex;gap:8px;flex-wrap:wrap;margin:20px 0}button,input{font:inherit;border:1px solid var(--line);border-radius:8px;padding:8px 12px;background:var(--surface);color:var(--ink)}button{cursor:pointer}button[aria-pressed=true]{border-color:var(--accent);color:var(--accent)}input{width:100%;margin-bottom:12px}details{background:var(--surface);border:1px solid var(--line);border-radius:10px;margin:8px 0;overflow:hidden}summary{cursor:pointer;padding:12px;display:flex;gap:12px;align-items:center}.status{font-weight:700;min-width:64px}.failed,.error{color:var(--fail)}.duration{margin-left:auto;color:var(--muted)}.detail{padding:0 16px 16px;overflow:auto}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:var(--bg);padding:12px;border-radius:6px}table{width:100%;border-collapse:collapse;font-size:12px}th,td{padding:8px;text-align:left;vertical-align:top;border-bottom:1px solid var(--line);overflow-wrap:anywhere}tr.failed{background:color-mix(in srgb,var(--fail) 8%,transparent)}img{max-width:220px;max-height:140px;border-radius:6px}a{color:var(--accent)}.shots{display:flex;flex-wrap:wrap;gap:12px}dialog{max-width:95vw;max-height:95vh;background:var(--surface);border:1px solid var(--line);border-radius:12px}dialog img{max-width:85vw;max-height:80vh;display:block}dialog::backdrop{background:#0009}.empty{color:var(--muted)}
+.trace{margin:18px 0;padding:14px;border:1px solid var(--line);border-radius:10px;background:var(--bg)}.trace-view{width:100%;max-width:none;max-height:70vh;object-fit:contain;display:block;margin:0 auto 12px;background:#000;border-radius:6px}.trace-controls{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.trace-controls input{flex:1;min-width:140px;margin:0}.trace-time{font-variant-numeric:tabular-nums;white-space:nowrap;color:var(--muted)}.filmstrip{display:flex;gap:8px;overflow-x:auto;padding:10px 2px}.filmstrip button{flex:none;padding:3px}.filmstrip img{width:100px;height:64px;max-width:none;max-height:none;object-fit:cover;display:block}.filmstrip button[aria-current=true]{outline:2px solid var(--accent);outline-offset:1px}.trace-note{margin:8px 0;color:var(--muted)}tr.trace-step{cursor:pointer}tr.trace-step[aria-current=true]{background:color-mix(in srgb,var(--accent) 16%,transparent);outline:1px solid var(--accent)}tr.trace-step:focus{outline:2px solid var(--accent);outline-offset:-2px}
+@media(max-width:640px){main{padding:16px}.trace-controls{gap:6px}.filmstrip img{width:76px;height:52px}}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;transition-duration:.01ms!important}}
 </style>
 </head>
 <body><main><h1>WinTestKit report</h1><p id="meta"></p><nav id="filters" aria-label="Outcome filters"></nav><input id="search" type="search" placeholder="Search test ids" aria-label="Search test ids"><div id="tests"></div></main>
@@ -23,10 +26,121 @@ const list=document.getElementById('tests');
 function node(tag,text,parent){const element=document.createElement(tag);if(text!==undefined)element.textContent=text;if(parent)parent.append(element);return element;}
 function safePath(path){if(typeof path!=='string'||!path||path.startsWith('/')||path.startsWith('\\')||/^[a-z][a-z0-9+.-]*:/i.test(path)||path.split(/[\\/]/).includes('..'))return null;return path.split('/').map(encodeURIComponent).join('/');}
 function image(path,parent){const url=safePath(path);if(!url)return;const button=node('button',undefined,parent);button.setAttribute('aria-label','Open screenshot '+path);const thumbnail=node('img',undefined,button);thumbnail.src=url;thumbnail.alt=path;button.onclick=()=>{document.getElementById('full').src=url;document.getElementById('overlay').showModal();};}
-function table(headers,rows,parent){const result=node('table',undefined,parent);const header=node('tr',undefined,node('thead',undefined,result));headers.forEach(title=>node('th',title,header));const body=node('tbody',undefined,result);rows.forEach(row=>{const cells=node('tr',undefined,body);if(row.status==='failed')cells.className='failed';row.values.forEach(value=>{const cell=node('td',typeof value==='object'?JSON.stringify(value):String(value??''),cells);});if(row.screenshot)image(row.screenshot,cells.lastChild);});}
+function table(headers,rows,parent){const result=node('table',undefined,parent);const header=node('tr',undefined,node('thead',undefined,result));headers.forEach(title=>node('th',title,header));const body=node('tbody',undefined,result);rows.forEach(row=>{const cells=node('tr',undefined,body);if(row.status==='failed')cells.className='failed';if(row.stepTime!==undefined){cells.classList.add('trace-step');cells.tabIndex=0;cells.setAttribute('role','button');cells.setAttribute('aria-label','Show screenshot at step '+row.values[0]);cells.dataset.traceTime=String(row.stepTime);}row.values.forEach(value=>{const cell=node('td',typeof value==='object'?JSON.stringify(value):String(value??''),cells);});if(row.screenshot)image(row.screenshot,cells.lastChild);});return result;}
 function diagnostic(value,parent){if(!value)return;node('h3',value.message||'Locator diagnostic',parent);node('p',(value.locator||'')+' — '+(value.searchedIn||''),parent);table(['Candidate','Class','Rect','Mismatches'],(value.candidates||[]).map(candidate=>({values:[candidate.info.name||candidate.info.automationId,candidate.info.className,candidate.info.rect,candidate.mismatches]})),parent);(value.relocations||[]).forEach(found=>node('p',(found.sameWindow?'Found in the same window under a different container: ':'Found elsewhere: ')+found.path+(found.kind==='component_root'?' (component root '+found.target+')':''),parent));if(value.relocations&&value.relocations.length){if(value.hint)node('p','Hint: '+value.hint,parent);if(value.declared)node('p','Declared: '+value.declared,parent);}if(value.within)diagnostic(value.within,parent);}
-function detail(test,parent){if(test.message)node('pre',test.message,parent);if(test.location)node('p',test.location.file+':'+(test.location.line+1),parent);diagnostic(test.error?.diagnostic,parent);if(test.steps.length){node('h3','Steps',parent);table(['Seq','Action','Target','Locator','Arguments','Duration','Status / screenshot'],test.steps.map(step=>({status:step.status,screenshot:step.screenshot,values:[step.seq,step.action,step.target,step.locator,step.args,step.duration.toFixed(3)+'s',step.status]})),parent);}const shots=node('div',undefined,parent);shots.className='shots';test.screenshots.forEach(path=>image(path,shots));const tree=safePath(test.treeDump);if(tree){const link=node('a','Open UI tree dump',parent);link.href=tree;}['stdout','stderr','log'].forEach(stream=>{if(test[stream]){const fold=node('details',undefined,parent);node('summary',stream,fold);node('pre',test[stream],fold);}});}
-function render(){list.replaceChildren();const visible=data.tests.filter(test=>(selected==='total'||test.outcome===(selected==='errors'?'error':selected))&&test.id.toLowerCase().includes(search.value.toLowerCase()));const groups=new Map();visible.forEach(test=>{if(!groups.has(test.file))groups.set(test.file,[]);groups.get(test.file).push(test);});groups.forEach((tests,file)=>{node('h2',file,list);tests.forEach(test=>{const row=node('details',undefined,list);const summary=node('summary',undefined,row);const status=node('span',symbols[test.outcome]+' '+test.outcome,summary);status.className='status '+test.outcome;node('span',test.name,summary);node('span',test.duration.toFixed(3)+'s',summary).className='duration';let loaded=false;const load=()=>{if(!loaded&&row.open){loaded=true;detail(test,node('div',undefined,row));row.lastChild.className='detail';}};row.addEventListener('toggle',load);if(test.outcome==='failed'||test.outcome==='error'){row.open=true;load();}});});if(!visible.length)node('p','No matching tests',list).className='empty';Array.from(filters.children).forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.outcome===selected)));}
+function detail(test,parent){if(test.message)node('pre',test.message,parent);if(test.location)node('p',test.location.file+':'+(test.location.line+1),parent);diagnostic(test.error?.diagnostic,parent);let traceApi=null;if(test.trace){traceApi=trace(test.trace,parent);}if(test.steps.length){node('h3','Steps',parent);const stepRows=test.steps.map(step=>({status:step.status,screenshot:step.screenshot,stepTime:traceApi&&Number.isFinite(step.start)?step.start-test.trace.startedAt:undefined,values:[step.seq,step.action,step.target,step.locator,step.args,step.duration.toFixed(3)+'s',step.status]}));const stepTable=table(['Seq','Action','Target','Locator','Arguments','Duration','Status / screenshot'],stepRows,parent);if(traceApi)stepTable.addEventListener('click',event=>{const row=event.target.closest('tr.trace-step');if(row)traceApi.seek(Number(row.dataset.traceTime));});if(traceApi)stepTable.addEventListener('keydown',event=>{const row=event.target.closest('tr.trace-step');if(row&&(event.key==='Enter'||event.key===' ')){event.preventDefault();traceApi.seek(Number(row.dataset.traceTime));}});if(traceApi)traceApi.refresh();}const shots=node('div',undefined,parent);shots.className='shots';test.screenshots.forEach(path=>image(path,shots));const tree=safePath(test.treeDump);if(tree){const link=node('a','Open UI tree dump',parent);link.href=tree;}['stdout','stderr','log'].forEach(stream=>{if(test[stream]){const fold=node('details',undefined,parent);node('summary',stream,fold);node('pre',test[stream],fold);}});}
+function trace(value,parent){
+  const section=node('section',undefined,parent);
+  section.className='trace';
+  section.setAttribute('aria-label','Screenshot trace playback');
+  const frames=Array.isArray(value.frames)?value.frames.filter(frame=>frame&&Number.isFinite(frame.time)&&typeof frame.path==='string'&&safePath(frame.path)).sort((a,b)=>a.time-b.time):[];
+  const duration=Number.isFinite(value.duration)&&value.duration>0?value.duration:0;
+  const live={timer:null,index:0,time:0};
+  const view=node('img',undefined,section);
+  view.className='trace-view';
+  view.alt='Trace screenshot';
+  const controls=node('div',undefined,section);
+  controls.className='trace-controls';
+  const play=node('button','Play',controls);
+  play.type='button';
+  play.setAttribute('aria-label','Play screenshot trace');
+  const range=node('input',undefined,controls);
+  range.type='range';
+  range.min='0';
+  range.max=String(duration);
+  range.step='0.01';
+  range.value='0';
+  range.setAttribute('aria-label','Trace position');
+  range.disabled=!frames.length||!duration;
+  const stamp=node('span','0:00 / '+formatTime(duration),controls);
+  stamp.className='trace-time';
+  const strip=node('div',undefined,section);
+  strip.className='filmstrip';
+  strip.setAttribute('role','group');
+  strip.setAttribute('aria-label','Trace screenshot frames');
+  const note=node('p',undefined,section);
+  note.className='trace-note';
+  if(!frames.length){
+    note.textContent='No usable screenshot frames are available for this trace.';
+    play.disabled=true;
+  }else if(!duration){
+    note.textContent='Trace duration is zero; use the frame thumbnails to inspect screenshots.';
+    play.disabled=true;
+    range.disabled=true;
+  }
+  if(value.error)node('p','Trace error: '+value.error,section).className='trace-note error';
+  if(value.truncated)node('p','Trace was truncated; these frames are only a partial recording.',section).className='trace-note';
+  const count=Math.min(frames.length,60);
+  if(frames.length>count){
+    const limited=node('p','Showing '+count+' of '+frames.length+' frames. Playback still uses all frames.',section);
+    limited.className='trace-note';
+  }
+  const buttons=[];
+  for(let i=0;i<count;i++){
+    const frame=frames[Math.round(i*(frames.length-1)/Math.max(1,count-1))];
+    const index=frames.indexOf(frame);
+    const button=node('button',undefined,strip);
+    button.type='button';
+    button.setAttribute('aria-label','Show frame at '+formatTime(frame.time));
+    const thumb=node('img',undefined,button);
+    thumb.src=safePath(frame.path);
+    thumb.alt='';
+    button.addEventListener('click',()=>{stop();show(frame.time);});
+    buttons.push({index,button});
+  }
+  function formatTime(seconds){
+    seconds=Math.max(0,Number(seconds)||0);
+    return Math.floor(seconds/60)+':'+String(Math.floor(seconds%60)).padStart(2,'0');
+  }
+  function show(time){
+    if(!frames.length)return;
+    time=Math.max(0,Math.min(duration,Number(time)||0));
+    live.time=time;
+    let index=0;
+    while(index+1<frames.length&&frames[index+1].time<=time)index++;
+    live.index=index;
+    const frame=frames[index];
+    const src=safePath(frame.path);
+    if(view.getAttribute('src')!==src){
+      view.onerror=()=>{note.textContent='Unable to load trace screenshot: '+frame.path;};
+      view.onload=()=>{if(note.textContent.startsWith('Unable to load trace screenshot:'))note.textContent='';};
+      view.src=src;
+    }
+    range.value=String(time);
+    stamp.textContent=formatTime(time)+' / '+formatTime(duration);
+    buttons.forEach(item=>item.button.setAttribute('aria-current',String(item.index===index)));
+    const stepRows=Array.from(parent.querySelectorAll('tr.trace-step'));
+    const current=stepRows.filter(row=>Number.isFinite(Number(row.dataset.traceTime))&&Number(row.dataset.traceTime)<=time).pop();
+    stepRows.forEach(row=>row.setAttribute('aria-current',String(row===current)));
+  }
+  function stop(){
+    if(live.timer){clearInterval(live.timer);live.timer=null;}
+    play.textContent='Play';
+    play.setAttribute('aria-label','Play screenshot trace');
+  }
+  function seek(time){stop();show(time);}
+  play.addEventListener('click',()=>{
+    if(live.timer){stop();return;}
+    if(!frames.length||!duration)return;
+    if(window.matchMedia('(prefers-reduced-motion: reduce)').matches){
+      note.textContent='Automatic playback is disabled by your reduced motion preference. Use the range or thumbnails to step through frames.';
+      return;
+    }
+    if(live.time>=duration)show(0);
+    play.textContent='Pause';
+    play.setAttribute('aria-label','Pause screenshot trace');
+    const began=performance.now(),offset=live.time;
+    live.timer=setInterval(()=>{
+      const time=offset+(performance.now()-began)/1000;
+      if(time>=duration){show(duration);stop();}
+      else show(time);
+    },50);
+  });
+  range.addEventListener('input',()=>seek(Number(range.value)));
+  if(frames.length)show(0);
+  return frames.length?{seek,stop,refresh:()=>show(live.time)}:null;
+}
+function render(){list.querySelectorAll('.trace').forEach(section=>{const play=section.querySelector('button[aria-label^="Pause"]');if(play)play.click();});list.replaceChildren();const visible=data.tests.filter(test=>(selected==='total'||test.outcome===(selected==='errors'?'error':selected))&&test.id.toLowerCase().includes(search.value.toLowerCase()));const groups=new Map();visible.forEach(test=>{if(!groups.has(test.file))groups.set(test.file,[]);groups.get(test.file).push(test);});groups.forEach((tests,file)=>{node('h2',file,list);tests.forEach(test=>{const row=node('details',undefined,list);const summary=node('summary',undefined,row);const status=node('span',symbols[test.outcome]+' '+test.outcome,summary);status.className='status '+test.outcome;node('span',test.name,summary);node('span',test.duration.toFixed(3)+'s',summary).className='duration';let loaded=false;const load=()=>{if(!loaded&&row.open){loaded=true;detail(test,node('div',undefined,row));row.lastChild.className='detail';}};row.addEventListener('toggle',load);if(test.outcome==='failed'||test.outcome==='error'){row.open=true;load();}row.addEventListener('toggle',()=>{if(!row.open)row.querySelectorAll('.trace').forEach(section=>{const active=section.querySelector('button[aria-label^="Pause"]');if(active)active.click();});});});});if(!visible.length)node('p','No matching tests',list).className='empty';Array.from(filters.children).forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.outcome===selected)));}
 ['total','passed','failed','skipped','errors'].forEach(outcome=>{const button=node('button',outcome+' '+data.summary[outcome],filters);button.dataset.outcome=outcome;button.onclick=()=>{selected=outcome;render();};});
 document.getElementById('meta').textContent=new Date(data.startedAt*1000).toLocaleString()+' · '+data.duration.toFixed(2)+'s · '+data.environment.machine+' · Python '+data.environment.python+' · WinTestKit '+data.environment.wintestkit+' · '+data.environment.screen.width+'×'+data.environment.screen.height+' @ '+data.environment.screen.scale;
 search.addEventListener('input',render);document.getElementById('close').onclick=()=>document.getElementById('overlay').close();render();

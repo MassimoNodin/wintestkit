@@ -243,7 +243,8 @@
             },
             "artifactsDir": {
               "type": "string"
-            }
+            },
+            "trace": { "$ref": "results.schema.json#/$defs/Trace" }
           },
           "required": [
             "event",

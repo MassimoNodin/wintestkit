@@ -3,6 +3,18 @@
   "$id": "https://wintestkit.dev/schemas/results.schema.json",
   "$ref": "#/$defs/Results",
   "$defs": {
+    "Trace": {
+      "type": "object",
+      "properties": {
+        "startedAt": { "type": "number" },
+        "duration": { "type": "number", "minimum": 0 },
+        "frames": { "type": "array", "items": { "type": "object", "properties": { "time": { "type": "number", "minimum": 0 }, "path": { "type": "string" } }, "required": ["time", "path"], "additionalProperties": false } },
+        "truncated": { "type": "boolean" },
+        "error": { "type": "string" }
+      },
+      "required": ["startedAt", "duration", "frames", "truncated"],
+      "additionalProperties": false
+    },
     "Results": {
       "type": "object",
       "properties": {
@@ -133,6 +145,7 @@
             "type": "string"
           }
         },
+        "trace": { "$ref": "results.schema.json#/$defs/Trace" },
         "treeDump": {
           "type": "string"
         },

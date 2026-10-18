@@ -118,6 +118,7 @@ export type RunEvent =
       error?: ErrorInfo;
       screenshots: string[];
       artifactsDir?: string;
+      trace?: Trace;
     }
   | {
       event: "session_end";
@@ -242,6 +243,7 @@ export interface ProtocolContracts {
   TestEntry?: TestEntry;
   TestOutcome?: TestOutcome;
   TestResult?: TestResult;
+  Trace?: Trace;
   WindowLocatorData?: WindowLocatorData;
 }
 /**
@@ -849,6 +851,7 @@ export interface TestResult {
   error?: ErrorInfo;
   steps: StepEvent[];
   screenshots: string[];
+  trace?: Trace;
   treeDump?: string;
   stdout: string;
   stderr: string;
@@ -871,6 +874,20 @@ export interface StepEvent {
   status: "passed" | "failed";
   error?: ErrorInfo;
   screenshot?: string;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "Trace".
+ */
+export interface Trace {
+  startedAt: number;
+  duration: number;
+  frames: {
+    time: number;
+    path: string;
+  }[];
+  truncated: boolean;
+  error?: string;
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
