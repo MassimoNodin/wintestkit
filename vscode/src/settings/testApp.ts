@@ -292,6 +292,7 @@ export class TestAppView
         await this.save({
           "app.path": picked.fsPath,
           "app.process": undefined,
+          launch: "per-session",
         });
     } else {
       const connection = await this.servers.get(project);

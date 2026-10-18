@@ -96,11 +96,14 @@ describe("Test Target tiles", () => {
     expect(launch).toMatchObject({ title: "Launch", tone: "launch" });
     expect(launch.disabled).toBeFalsy();
   });
-  it("offers only attach and spawn, but still shows a per-test setting", () => {
+  it("offers spawn first by default, but still shows a per-test setting", () => {
     expect(modeChoices.map((mode) => [mode.id, mode.title])).toEqual([
-      ["attach", "Attach"],
       ["per-session", "Spawn"],
+      ["attach", "Attach"],
     ]);
+    expect(
+      build({ "app.path": "C:/Apps/Demo.exe" }, { running: false }).tiles[1],
+    ).toMatchObject({ title: "Spawn", codicon: "rocket" });
     expect(build(attach, { running: false }).tiles[1]).toMatchObject({
       title: "Attach",
       codicon: "link",
