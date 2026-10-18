@@ -278,6 +278,18 @@
     otherApps.title = otherAppsText;
     otherApps.setAttribute("aria-label", otherAppsText);
     element("other-apps-label").textContent = otherAppsText;
+    const context = element("scope-context");
+    if (appState?.hasProject) {
+      const target = appState.targetName || "Test Target";
+      context.hidden = false;
+      context.textContent = !running
+        ? target + " isn't running. Showing other desktop windows."
+        : showOtherApps
+          ? "Showing all desktop windows."
+          : "Live: " + target;
+    } else {
+      context.hidden = true;
+    }
     const load = element("load-properties");
     load.disabled =
       !hasDetails || fullPropertiesLoading || fullPropertiesLoaded;
@@ -553,7 +565,7 @@
     for (const row of parent.querySelectorAll(".node"))
       nodes.delete(row.dataset.nodeId);
     parent.replaceChildren();
-    for (const node of values) {
+    values.forEach((node, index) => {
       const item = document.createElement("li");
       item.setAttribute("role", "none");
       const row = document.createElement("div");
@@ -563,7 +575,15 @@
       const name =
         node.info.name || node.info.automationId || node.info.controlType;
       row.setAttribute("aria-label", name + ", " + node.info.controlType);
+      row.setAttribute("aria-posinset", String(index + 1));
+      row.setAttribute("aria-setsize", String(values.length));
       row.setAttribute("aria-selected", String(node.nodeId === selected));
+      row.tabIndex = node.nodeId === selected || (!selected && !nodes.size) ? 0 : -1;
+      const parentRow = parent.closest("li")?.querySelector(":scope > .node");
+      row.setAttribute(
+        "aria-level",
+        String(parent === element("tree") ? 1 : Number(parentRow?.getAttribute("aria-level") || 1) + 1),
+      );
       row.classList.toggle("selected", node.nodeId === selected);
       row.title = [
         name,
@@ -587,6 +607,7 @@
       );
       const label = document.createElement("button");
       label.className = "label";
+      label.tabIndex = -1;
       const icon = document.createElement("span");
       setIcon(icon, node.info.controlType);
       const text = document.createElement("span");
@@ -622,7 +643,7 @@
       });
       rootIcon(nodes.get(node.nodeId));
       applyMarker(nodes.get(node.nodeId));
-    }
+    });
     filter();
   };
   const table = (id, values) => {
@@ -682,6 +703,7 @@
     for (const [id, entry] of nodes) {
       entry.row.classList.toggle("selected", id === nodeId);
       entry.row.setAttribute("aria-selected", String(id === nodeId));
+      entry.row.tabIndex = id === nodeId ? 0 : -1;
     }
   };
   element("pick").addEventListener("click", () =>
@@ -742,14 +764,25 @@
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       event.preventDefault();
       const next = visible[position + (event.key === "ArrowDown" ? 1 : -1)];
-      next?.querySelector(".label").focus();
+      next?.focus();
     } else if (event.key === "ArrowRight" || event.key === "ArrowLeft") {
       event.preventDefault();
-      expand(nodeId, event.key === "ArrowRight");
-    } else if (event.key === "Enter") {
+      const entry = nodes.get(nodeId);
+      if (event.key === "ArrowRight") {
+        if (entry.node.hasChildren && !entry.open) expand(nodeId, true);
+        else entry.children.querySelector(':scope > li:not([hidden]) > .node')?.focus();
+      } else if (entry.open) expand(nodeId, false);
+      else row.parentElement?.parentElement?.closest(".node")?.focus();
+    } else if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
       choose(nodeId);
     }
+  });
+  element("tree").addEventListener("focusin", (event) => {
+    const row = event.target.closest(".node[role='treeitem']");
+    if (!row) return;
+    for (const entry of element("tree").querySelectorAll(".node[role='treeitem']"))
+      entry.tabIndex = entry === row ? 0 : -1;
   });
   const resize = (size) => {
     const bounds = element("workspace").getBoundingClientRect();
