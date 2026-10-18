@@ -114,10 +114,12 @@ def test_reports_missing_typed_flow_arguments(tmp_path: Path) -> None:
 
 def test_flow_run_over_rpc(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     server, output, _ = make_server(tmp_path, monkeypatch)
-    write_flows(tmp_path, "def tour(app):\n    assert app is not None\n")
+    write_flows(tmp_path, "def tour(app, page: str):\n    assert page == 'home'\n")
     request(server, output, "initialize", {"root": str(tmp_path)})
-    params = {"file": "flows/tour.py", "name": "tour"}
+    params = {"file": "flows/tour.py", "name": "tour", "arguments": {"page": "home"}}
     assert request(server, output, "flow.run", params)["result"]["status"] == "passed"
+    invalid = request(server, output, "flow.run", {**params, "arguments": "home"})
+    assert invalid["error"]["code"] == -32602
     missing = request(server, output, "flow.run", {**params, "name": "nope"})
     assert missing["error"]["code"] == -32003
     server.app = None

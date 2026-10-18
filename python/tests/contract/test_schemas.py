@@ -128,7 +128,7 @@ def definition_examples() -> dict[str, dict[str, Any]]:
         "DiscoverParams": {"overrides": {"C:/wtk/pages/main.py": "class MainPage: pass"}},
         "DiscoverResult": discovery,
         "AppStatusParams": {},
-        "AppStatusResult": {"running": True, "pids": [1234], "mainWindowTitle": "WTK Demo"},
+        "AppStatusResult": {"running": True, "pids": [1234], "owned": True, "mainWindowTitle": "WTK Demo"},
         "AppProcessesParams": {},
         "RunningProcess": {
             "name": "CalculatorApp.exe",
@@ -352,7 +352,7 @@ def test_optional_and_nullable_fields(validate: Validate) -> None:
     validate("common.schema.json", "LocatorData", {})
     validate("common.schema.json", "ItemSelectorData", {"kind": "row", "row": 0})
     validate("rpc.schema.json", "DiscoverParams", {})
-    validate("rpc.schema.json", "AppStatusResult", {"running": False, "pids": []})
+    validate("rpc.schema.json", "AppStatusResult", {"running": False, "pids": [], "owned": False})
     initialize = definition_examples()["rpc.schema.json"]["InitializeResult"]
     initialize["config"].pop("app")
     validate("rpc.schema.json", "InitializeResult", initialize)

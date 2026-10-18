@@ -7,14 +7,6 @@ export const SECTION_LABEL: Record<NavigationSection, string> = {
   pages: "Page Tree",
   flows: "Flows",
 };
-export function navigationDescription(
-  section: NavigationSection,
-  projectName?: string,
-): string {
-  return projectName
-    ? SECTION_LABEL[section] + " · " + projectName
-    : SECTION_LABEL[section];
-}
 export const navigationSectionKey = "wintestkit.navigation.section";
 export const navigationExpandedKey = "wintestkit.navigation.expanded";
 

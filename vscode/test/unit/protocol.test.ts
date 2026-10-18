@@ -279,6 +279,7 @@ const results = {
         truncated: false,
       },
       treeDump: "artifacts/sign-in/tree.txt",
+      treeDiff: "artifacts/sign-in/tree-diff.txt",
       stdout: "Signed in\n",
       stderr: "",
       log: "",
@@ -386,6 +387,7 @@ const events = [
       "C:/wtk/examples/demo-tests/wtk-report/artifacts/sign-in/step-1.png",
     ],
     artifactsDir: "C:/wtk/examples/demo-tests/wtk-report/artifacts/sign-in",
+    treeDiff: "C:/wtk/examples/demo-tests/wtk-report/artifacts/sign-in/tree-diff.txt",
     trace: {
       startedAt: 1791936000,
       duration: 0.2,

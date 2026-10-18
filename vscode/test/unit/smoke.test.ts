@@ -5,7 +5,7 @@ import { RpcError } from "../../src/server/jsonrpc";
 
 const mocks = vi.hoisted(() => ({
   log: { info: vi.fn(), error: vi.fn(), show: vi.fn(), dispose: vi.fn() },
-  request: vi.fn<(method: string) => Promise<null>>(() =>
+  request: vi.fn<(method: string) => Promise<unknown>>(() =>
     Promise.resolve(null),
   ),
   refreshSpy: vi.fn(() => Promise.resolve()),
@@ -153,6 +153,31 @@ vi.mock("../../src/editor/flowRuns", () => ({
     dispose() {}
   },
 }));
+vi.mock("../../src/editor/checkAfterFlow", () => ({
+  CheckAfterFlow: class {
+    constructor() {
+      mocks.registerCommand("wintestkit.checkAfterFlow", () => {});
+    }
+    afterFlow = vi.fn(() => Promise.resolve());
+    dispose() {}
+  },
+}));
+vi.mock("../../src/editor/projectSweep", () => ({
+  ProjectSweep: class {
+    constructor() { mocks.registerCommand("wintestkit.sweepProject", () => {}); }
+    dispose() {}
+  },
+}));
+vi.mock("../../src/views/unusedDefinitions", () => ({
+  UnusedDefinitions: class {
+    dispose() {}
+  },
+}));
+vi.mock("../../src/editor/relocationActions", () => ({
+  RelocationActions: class {
+    dispose() {}
+  },
+}));
 vi.mock("../../src/editor/highlightCommands", () => ({
   HighlightCommands: class {
     constructor() {
@@ -178,6 +203,7 @@ vi.mock("../../src/spy/spyView", () => ({
       mocks.registerWebviewViewProvider("wintestkit.spy", {});
       mocks.registerCommand("wintestkit.spy.startPick", () => {});
       mocks.registerCommand("wintestkit.spy.refresh", () => {});
+      mocks.registerCommand("wintestkit.spy.revealRelocation", () => {});
     }
     dispose() {}
   },
@@ -215,6 +241,11 @@ describe("extension scaffold", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.readConfig.mockResolvedValue({ "app.path": "C:/Apps/Demo.exe" });
+    mocks.request.mockImplementation(async (method) =>
+      method === "app.status"
+        ? { running: true, pids: [12], owned: true }
+        : null,
+    );
     mocks.showWarning.mockResolvedValue("Close App");
     subscriptions = [];
     activate({
@@ -307,7 +338,7 @@ describe("extension scaffold", () => {
       expect(callback).toBeDefined();
       await callback?.({ resourceUri: root } as vscode.TreeItem);
       expect(mocks.request.mock.calls.map(([method]) => method)).toEqual(
-        methods,
+        methods.includes("app.close") ? ["app.status", ...methods] : methods,
       );
       if (methods.length)
         expect(mocks.serverGet).toHaveBeenCalledWith({ root, name: "other" });
@@ -333,6 +364,47 @@ describe("extension scaffold", () => {
     );
     expect(mocks.endTransition).toHaveBeenCalledExactlyOnceWith(
       expect.anything(),
+    );
+    expect(mocks.request).toHaveBeenCalledWith("app.launch", {}, 17_000);
+  });
+
+  it("sets launch RPC deadline beyond the configured startup timeout", async () => {
+    mocks.readConfig.mockResolvedValue({
+      "app.path": "C:/Apps/Demo.exe",
+      "app.startup_timeout": 60,
+    });
+    const callback = mocks.registerCommand.mock.calls.find(
+      ([command]) => command === "wintestkit.launchApp",
+    )?.[1];
+    await callback?.();
+    expect(mocks.request).toHaveBeenCalledWith("app.launch", {}, 65_000);
+  });
+
+  it("sets close RPC deadline from close_timeout rather than startup_timeout", async () => {
+    mocks.readConfig.mockResolvedValue({
+      "app.path": "C:/Apps/Demo.exe",
+      "app.startup_timeout": 60,
+      "app.close_timeout": 35,
+    });
+    const callback = mocks.registerCommand.mock.calls.find(
+      ([command]) => command === "wintestkit.closeApp",
+    )?.[1];
+    await callback?.();
+    expect(mocks.request).toHaveBeenCalledWith("app.close", {}, 40_000);
+  });
+
+  it("rejects unbounded app RPC timeouts before requesting lifecycle changes", async () => {
+    mocks.readConfig.mockResolvedValue({
+      "app.path": "C:/Apps/Demo.exe",
+      "app.startup_timeout": Number.POSITIVE_INFINITY,
+    });
+    const callback = mocks.registerCommand.mock.calls.find(
+      ([command]) => command === "wintestkit.launchApp",
+    )?.[1];
+    await callback?.();
+    expect(mocks.request).not.toHaveBeenCalledWith("app.launch", {}, expect.any(Number));
+    expect(mocks.showError).toHaveBeenCalledWith(
+      expect.stringContaining("finite positive number"),
     );
   });
 
@@ -444,11 +516,11 @@ describe("extension scaffold", () => {
       )?.[1];
       await callback?.();
       expect(mocks.showWarning).toHaveBeenCalledWith(
-        expect.stringContaining("WinTestKit didn't start it"),
+        expect.stringContaining("WinTestKit did not start this process"),
         { modal: true },
         "Close App",
       );
-      expect(mocks.request).not.toHaveBeenCalled();
+      expect(mocks.request).not.toHaveBeenCalledWith("app.close");
     },
   );
 
@@ -466,7 +538,24 @@ describe("extension scaffold", () => {
     )?.[1];
     await callback?.();
     expect(mocks.showWarning).toHaveBeenCalledOnce();
-    expect(mocks.request.mock.calls.map(([method]) => method)).toEqual(methods);
+    expect(mocks.request.mock.calls.map(([method]) => method)).toEqual([
+      "app.status",
+      ...methods,
+    ]);
+  });
+
+  it("confirms a process that Launch mode did not start", async () => {
+    mocks.readConfig.mockResolvedValue({ "app.path": "C:/Apps/Demo.exe", launch: "per-session" });
+    mocks.request.mockResolvedValueOnce({ running: true, pids: [9], owned: false });
+    const callback = mocks.registerCommand.mock.calls.find(
+      ([registered]) => registered === "wintestkit.closeApp",
+    )?.[1];
+    await callback?.();
+    expect(mocks.showWarning).toHaveBeenCalledOnce();
+    expect(mocks.request.mock.calls.map(([method]) => method)).toEqual([
+      "app.status",
+      "app.close",
+    ]);
   });
 
   it("fails closed when attached app configuration cannot be read", async () => {

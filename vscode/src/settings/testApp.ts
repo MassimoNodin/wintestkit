@@ -30,6 +30,9 @@ const TILES = new Set<string>([
   "doctor",
 ]);
 
+/** Non-breaking spaces, which a quick pick keeps, so its icons are not jammed against the label. */
+const ICON_GAP = "  ";
+
 export function parseTestAppMessage(
   value: unknown,
 ): WebviewMessage | undefined {
@@ -176,11 +179,6 @@ export class TestAppView
   private async render(): Promise<void> {
     const model = await this.model();
     if (this.disposed || !this.view) return;
-    const project = this.currentProject();
-    this.view.description =
-      this.projects.all.length > 1 || !project
-        ? model.status.label
-        : `${project.name} · ${model.status.label}`;
     void this.view.webview.postMessage({ type: "model", model });
   }
   private async run(id: TileId): Promise<void> {
@@ -193,7 +191,7 @@ export class TestAppView
         case "mode":
           return await this.pickMode();
         case "project":
-          return await this.pickProject();
+          return await this.revealProject();
         case "launch":
           return void (await vscode.commands.executeCommand(
             "wintestkit.launchApp",
@@ -242,7 +240,7 @@ export class TestAppView
     const current = String(config.launch ?? "per-session");
     const choice = await vscode.window.showQuickPick(
       modeChoices.map((mode) => ({
-        label: "$(" + mode.codicon + ") " + mode.title,
+        label: "$(" + mode.codicon + ")" + ICON_GAP + mode.title,
         description: mode.id === current ? "current" : undefined,
         detail: mode.description,
         id: mode.id,
@@ -251,18 +249,15 @@ export class TestAppView
     );
     if (choice && choice.id !== current) await this.save({ launch: choice.id });
   }
-  private async pickProject(): Promise<void> {
-    if (this.projects.all.length < 2) return;
-    const choice = await vscode.window.showQuickPick(
-      this.projects.all.map((project, index) => ({
-        label: "$(folder-opened) " + project.name,
-        description: index === 0 ? "current" : undefined,
-        detail: project.root.fsPath,
-        project,
-      })),
-      { placeHolder: "Choose a WinTestKit project" },
-    );
-    if (choice) this.projects.select(choice.project);
+  private async revealProject(): Promise<void> {
+    const project = this.currentProject();
+    if (!project) return;
+    try {
+      await vscode.commands.executeCommand("revealInExplorer", project.root);
+    } catch {
+      // Outside the open workspace folders the Explorer cannot show it; use the OS file manager.
+      await vscode.commands.executeCommand("revealFileInOS", project.root);
+    }
   }
   private async pickApp(): Promise<void> {
     const project = this.currentProject();
@@ -270,17 +265,17 @@ export class TestAppView
     const choice = await vscode.window.showQuickPick(
       [
         {
-          label: "$(folder-opened) Browse for an executable…",
+          label: "$(folder-opened)" + ICON_GAP + "Browse for an executable…",
           detail: "Launch it for tests (stored only on this machine)",
           action: "browse",
         },
         {
-          label: "$(pulse) Attach to a running app…",
+          label: "$(pulse)" + ICON_GAP + "Attach to a running app…",
           detail: "Pick an application that already has a window",
           action: "running",
         },
         {
-          label: "$(gear) Open settings…",
+          label: "$(gear)" + ICON_GAP + "Open settings…",
           detail: "All application settings",
           action: "settings",
         },
@@ -288,12 +283,17 @@ export class TestAppView
       { placeHolder: "Choose the application to test" },
     );
     if (!choice) return;
-    if (choice.action === "settings") {
+    if (choice.action === "settings")
       await vscode.commands.executeCommand(
         "wintestkit.openSettings",
         project.root,
       );
-    } else if (choice.action === "browse") {
+    else await this.applyApp(choice.action as "browse" | "running");
+  }
+  private async applyApp(action: "browse" | "running"): Promise<void> {
+    const project = this.currentProject();
+    if (!project) return;
+    if (action === "browse") {
       const [picked] =
         (await vscode.window.showOpenDialog({
           canSelectMany: false,

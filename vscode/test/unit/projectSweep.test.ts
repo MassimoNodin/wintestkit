@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+vi.mock("vscode", () => ({}));
 import { classifySweepBindings } from "../../src/editor/projectSweep";
 import type { Binding } from "../../src/editor/checkAfterFlow";
 import type { FlowEntry, PageEntry } from "../../src/protocol/generated";

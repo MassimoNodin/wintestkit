@@ -283,6 +283,10 @@ export interface AppStartingNotification {
  */
 export interface AppStatusResult {
   running: boolean;
+  /**
+   * True only while the server still owns the exact PID set it launched.
+   */
+  owned: boolean;
   pids: number[];
   mainWindowTitle?: string;
 }

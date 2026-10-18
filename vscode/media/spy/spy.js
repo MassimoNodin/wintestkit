@@ -515,10 +515,12 @@
       let lastVisible;
       for (const item of parent.children) {
         if (item.dataset.desktopGroup) {
-          const group = item.querySelector("details");
-          const childMatch = visit(item.querySelector("ul"));
+          const groupRow = item.querySelector(":scope > .node");
+          const groupChildren = item.querySelector(":scope > ul");
+          const childMatch = visit(groupChildren);
           item.hidden = !!query && !childMatch;
-          if (query && childMatch) group.open = true;
+          if (query && childMatch) groupRow.setAttribute("aria-expanded", "true");
+          groupChildren.hidden = groupRow.getAttribute("aria-expanded") !== "true";
           any = any || !item.hidden;
           if (!item.hidden) lastVisible = item;
           continue;
@@ -683,19 +685,32 @@
       const item = document.createElement("li");
       item.dataset.desktopGroup = "true";
       item.setAttribute("role", "none");
-      const details = document.createElement("details");
-      const summary = document.createElement("summary");
-      summary.textContent = `Other desktop windows (${desktopNodes.length})`;
-      const updateSummary = () => summary.setAttribute("aria-label", `${desktopNodes.length} other desktop windows, ${details.open ? "expanded" : "collapsed"}`);
-      updateSummary();
-      details.addEventListener("toggle", updateSummary);
+      const groupRow = document.createElement("div");
+      groupRow.className = "node desktop-group";
+      groupRow.setAttribute("role", "treeitem");
+      groupRow.setAttribute("aria-label", `${desktopNodes.length} other desktop windows`);
+      groupRow.setAttribute("aria-level", parent === element("tree") ? "1" : "2");
+      groupRow.setAttribute("aria-posinset", String(visibleNodes.length + 1));
+      groupRow.setAttribute("aria-setsize", String(visibleNodes.length + 1));
+      groupRow.setAttribute("aria-expanded", "false");
+      groupRow.tabIndex = visibleNodes.length ? -1 : 0;
+      const groupLabel = document.createElement("button");
+      groupLabel.className = "label";
+      groupLabel.tabIndex = -1;
+      groupLabel.textContent = `Other desktop windows (${desktopNodes.length})`;
+      groupRow.append(groupLabel);
       const children = document.createElement("ul");
       children.id = "other-desktop-tree";
       children.setAttribute("role", "group");
-      details.append(summary, children);
-      item.append(details);
+      children.hidden = true;
+      item.append(groupRow, children);
       parent.append(item);
       renderNodes(children, desktopNodes);
+      groupLabel.addEventListener("click", () => {
+        const open = groupRow.getAttribute("aria-expanded") !== "true";
+        groupRow.setAttribute("aria-expanded", String(open));
+        children.hidden = !open;
+      });
     }
     filter();
   };
@@ -837,6 +852,14 @@
       next?.focus();
     } else if (event.key === "ArrowRight" || event.key === "ArrowLeft") {
       event.preventDefault();
+      if (row.parentElement.dataset.desktopGroup) {
+        const children = row.parentElement.querySelector(":scope > ul");
+        const open = event.key === "ArrowRight";
+        row.setAttribute("aria-expanded", String(open));
+        children.hidden = !open;
+        if (open) children.querySelector(":scope > li:not([hidden]) > .node")?.focus();
+        return;
+      }
       const entry = nodes.get(nodeId);
       if (event.key === "ArrowRight") {
         if (entry.node.hasChildren && !entry.open) expand(nodeId, true);
@@ -845,6 +868,12 @@
       else row.parentElement?.parentElement?.closest(".node")?.focus();
     } else if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
+      if (row.parentElement.dataset.desktopGroup) {
+        const open = row.getAttribute("aria-expanded") !== "true";
+        row.setAttribute("aria-expanded", String(open));
+        row.parentElement.querySelector(":scope > ul").hidden = !open;
+        return;
+      }
       choose(nodeId);
     }
   });

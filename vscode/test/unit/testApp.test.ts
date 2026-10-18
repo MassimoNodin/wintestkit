@@ -77,11 +77,11 @@ describe("Test Target tiles", () => {
     expect(model.tiles).toEqual([]);
     expect(model.message?.tone).toBe("warn");
   });
-  it("lays out app, mode, project and launch tiles when stopped", () => {
+  it("lays out project, app, mode and launch tiles when stopped", () => {
     const model = build(launchable, { running: false });
     expect(model.status).toEqual({ label: "Stopped", tone: "idle" });
-    expect(ids(model)).toEqual(["app", "mode", "project", "launch"]);
-    const [app, mode, projectTile, launch] = model.tiles;
+    expect(ids(model)).toEqual(["project", "app", "mode", "launch"]);
+    const [projectTile, app, mode, launch] = model.tiles;
     expect(app).toMatchObject({ title: "Demo", chevron: true });
     expect(app.tooltip).toContain("C:/Apps/Demo.exe");
     expect(mode).toMatchObject({
@@ -93,7 +93,7 @@ describe("Test Target tiles", () => {
       title: "demo",
       codicon: "folder-opened",
     });
-    expect(launch).toMatchObject({ title: "Launch Demo", tone: "launch" });
+    expect(launch).toMatchObject({ title: "Launch", tone: "launch" });
     expect(launch.disabled).toBeFalsy();
   });
   it("offers launch for tests first by default, but still shows a per-test setting", () => {
@@ -102,43 +102,30 @@ describe("Test Target tiles", () => {
       ["attach", "Attach"],
     ]);
     expect(
-      build({ "app.path": "C:/Apps/Demo.exe" }, { running: false }).tiles[1],
+      build({ "app.path": "C:/Apps/Demo.exe" }, { running: false }).tiles[2],
     ).toMatchObject({ title: "Launch for tests", codicon: "rocket" });
-    expect(build(attach, { running: false }).tiles[1]).toMatchObject({
+    expect(build(attach, { running: false }).tiles[2]).toMatchObject({
       title: "Attach",
       codicon: "link",
     });
     expect(
-      build({ ...launchable, launch: "per-test" }, { running: false }).tiles[1]
+      build({ ...launchable, launch: "per-test" }, { running: false }).tiles[2]
         .title,
     ).toBe("Launch per test");
   });
-  it("shows the project name with a distinct workspace subtitle only when switching projects", () => {
-    const single = build(
-      launchable,
-      { running: false },
-      { workspaceName: "Calculator", projectCount: 1 },
-    );
-    expect(single.tiles.find((tile) => tile.id === "project")).toBeUndefined();
-    const several = build(
-      launchable,
-      { running: false },
-      { workspaceName: "Calculator", projectCount: 3 },
-    ).tiles[2];
-    expect(several.title).toBe("demo");
-    expect(several.subtitle).toBe("Calculator");
-    expect(several.chevron).toBe(true);
-    expect(
-      build(launchable, { running: false }, { workspaceName: "demo", projectCount: 3 })
-        .tiles[2].subtitle,
-    ).toBeUndefined();
-  });
-  it("hides the project chooser when there is only one project", () => {
-    expect(ids(build(launchable, { running: false }, { projectCount: 1 }))).toEqual([
-      "app",
-      "mode",
-      "launch",
-    ]);
+  it("always shows the project tile, with the workspace as its title and the project as a subtitle", () => {
+    const tile = (extra: Parameters<typeof build>[2]) =>
+      build(launchable, { running: false }, extra).tiles[0];
+    expect(tile({ workspaceName: "Calculator", projectCount: 1 })).toMatchObject({
+      id: "project",
+      title: "Calculator",
+      subtitle: "demo",
+    });
+    expect(tile({ workspaceName: "Calculator", projectCount: 3 }).title).toBe("Calculator");
+    const same = tile({ workspaceName: "demo" });
+    expect(same.title).toBe("demo");
+    expect(same.subtitle).toBeUndefined();
+    expect(tile({ projectCount: 1 }).title).toBe("demo");
   });
   it("shows pids on the app tile and restart and close when running", () => {
     const model = build(launchable, {
@@ -147,8 +134,8 @@ describe("Test Target tiles", () => {
       mainWindowTitle: "Demo window",
     });
     expect(model.status).toEqual({ label: "Running", tone: "ok" });
-    expect(model.tiles[0].subtitle).toBe("PIDs 12, 34");
-    expect(ids(model)).toEqual(["app", "mode", "project", "restart", "close"]);
+    expect(model.tiles[1].subtitle).toBe("PIDs 12, 34");
+    expect(ids(model)).toEqual(["project", "app", "mode", "restart", "close"]);
     expect(model.tiles.at(-1)).toMatchObject({ tone: "stop" });
   });
   it("never offers to launch or restart an attach-only setup", () => {
@@ -158,7 +145,7 @@ describe("Test Target tiles", () => {
     expect(ids(stopped).slice(3)).toEqual(["refresh"]);
     const running = build(attach, { running: true, pids: [5] });
     expect(ids(running).slice(3)).toEqual(["close"]);
-    expect(running.tiles[0].subtitle).toBe("PID 5");
+    expect(running.tiles[1].subtitle).toBe("PID 5");
   });
   it("explains that Launch for tests needs an executable instead of saying it attaches", () => {
     const model = build(
@@ -214,7 +201,7 @@ describe("Test Target tiles", () => {
         }),
         expect.objectContaining({
           id: "close",
-          title: "Close Demo",
+          title: "Close",
           disabled: true,
         }),
       ]);
@@ -229,7 +216,7 @@ describe("Test Target tiles", () => {
       expect(tail(model)).toEqual([
         expect.objectContaining({
           id: "restart",
-          title: "Restart Demo",
+          title: "Restart",
           disabled: true,
         }),
         expect.objectContaining({
@@ -283,7 +270,7 @@ describe("Test Target tiles", () => {
   });
   it("asks which application to test when none is configured", () => {
     const model = build({ launch: "attach" }, { running: false });
-    expect(model.tiles[0]).toMatchObject({
+    expect(model.tiles[1]).toMatchObject({
       id: "app",
       title: "Choose app",
       chevron: true,
@@ -326,6 +313,13 @@ describe("Test Target messages and manifest", () => {
       type: "tile",
       id: "doctor",
     });
+  });
+  it("shows what each tile opens with its trailing icon", () => {
+    const [projectTile, app, mode] = build(launchable, { running: false }).tiles;
+    expect(projectTile).toMatchObject({ chevron: true, trailing: "go-to-file" });
+    expect(app).toMatchObject({ chevron: true, trailing: "list-selection" });
+    expect(mode).toMatchObject({ chevron: true, trailing: "list-selection" });
+    expect(build({}, { running: false }).tiles[1].trailing).toBe("list-selection");
   });
   it("accepts only known tiles", () => {
     expect(parseTestAppMessage({ type: "ready" })).toEqual({ type: "ready" });

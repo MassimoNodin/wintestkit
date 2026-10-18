@@ -1,9 +1,10 @@
-import vm from "node:vm";
+﻿import vm from "node:vm";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type * as vscode from "vscode";
 import type { Projects } from "../../src/projects";
 import type { Project } from "../../src/server/serverManager";
 import type { DiscoveryStore } from "../../src/discovery/store";
+import type { UnusedDefinitions } from "../../src/views/unusedDefinitions";
 import type { CheckResultsStore } from "../../src/editor/decorations";
 import type { ElementNode } from "../../src/views/elementsTreeModel";
 import type { DiscoveryResult } from "../../src/protocol/generated";
@@ -20,6 +21,8 @@ const mocks = vi.hoisted(() => ({
   posted: [] as unknown[],
   listener: undefined as ((value: unknown) => void) | undefined,
   html: "",
+  activeEditor: undefined as { document: { uri: { fsPath: string } } } | undefined,
+  activeEditorListener: undefined as ((editor: unknown) => void) | undefined,
 }));
 vi.mock("vscode", () => ({
   EventEmitter: class {
@@ -59,6 +62,11 @@ vi.mock("vscode", () => ({
   },
   TextEditorRevealType: { InCenterIfOutsideViewport: 1 },
   window: {
+    get activeTextEditor() { return mocks.activeEditor; },
+    onDidChangeActiveTextEditor: (listener: (editor: unknown) => void) => {
+      mocks.activeEditorListener = listener;
+      return { dispose: vi.fn() };
+    },
     registerWebviewViewProvider: (
       id: string,
       provider: vscode.WebviewViewProvider,
@@ -135,15 +143,23 @@ const result: DiscoveryResult = {
   ],
 };
 const trees: ElementsTree[] = [];
-function createTree(host?: {
-  globalState: vscode.Memento;
-  workspaceState: vscode.Memento;
-  extensionUri: vscode.Uri;
-}) {
+function createTree(
+  host?: {
+    globalState: vscode.Memento;
+    workspaceState: vscode.Memento;
+    extensionUri: vscode.Uri;
+  },
+  options: { result?: DiscoveryResult; unused?: unknown } = {},
+) {
   const subscribe = () => ({ dispose: vi.fn() });
-  const projects = { all: [project], onDidChange: subscribe };
+  const projects = {
+    all: [project],
+    onDidChange: subscribe,
+    projectFor: (uri: { fsPath: string }) =>
+      uri.fsPath.startsWith("/other") ? { ...project, root: { fsPath: "/other" }, name: "other-project" } : project,
+  };
   const discovery = {
-    get: () => result,
+    get: () => options.result ?? result,
     onDidChange: subscribe,
   } as unknown as DiscoveryStore;
   const checks = {
@@ -160,6 +176,8 @@ function createTree(host?: {
     checks,
     flows,
     host,
+    undefined,
+    options.unused as UnusedDefinitions | undefined,
   );
   trees.push(tree);
   return { tree, projects, checks, flows };
@@ -170,6 +188,8 @@ afterEach(() => {
   mocks.providers.clear();
   mocks.posted.length = 0;
   mocks.listener = undefined;
+  mocks.activeEditor = undefined;
+  mocks.activeEditorListener = undefined;
   vi.clearAllMocks();
 });
 function memoryState(initial?: Record<string, unknown>) {
@@ -220,15 +240,17 @@ function resolve(tree: ElementsTree) {
       return { dispose: vi.fn() };
     },
   };
-  tree.resolveWebviewView({
+  const view = {
     description: "",
     webview,
     onDidDispose: () => ({ dispose: vi.fn() }),
     onDidChangeVisibility: () => ({ dispose: vi.fn() }),
     visible: true,
     show: () => undefined,
-  } as unknown as vscode.WebviewView);
+  };
+  tree.resolveWebviewView(view as unknown as vscode.WebviewView);
   mocks.html = webview.html;
+  return view;
 }
 class ClientNode {
   parent: ClientNode | null = null;
@@ -291,6 +313,17 @@ class ClientNode {
     this.children = [];
   }
 }
+class ToolNode extends ClientNode {
+  hidden = false;
+  disabled = false;
+  title = "";
+  className = "";
+  textContent = "";
+  parts: Record<string, ToolNode> = {};
+  override querySelector(selector: string): ClientNode | null {
+    return this.parts[selector] ?? null;
+  }
+}
 const clientFocus: { current: ClientNode | null } = { current: null };
 function bootClient() {
   const html = navigationDocument({
@@ -310,6 +343,12 @@ function bootClient() {
   const segments = new HTMLElement("segments");
   const tree = new HTMLElement("tree");
   const outside = new HTMLElement("outside");
+  const unusedTools = new ToolNode("unused-tools");
+  const unusedScan = new ToolNode("unused-scan");
+  const unusedToggle = new ToolNode("unused-toggle");
+  const unusedCount = new ToolNode("unused-count");
+  for (const tool of [unusedScan, unusedToggle])
+    tool.parts = { ".codicon": new ToolNode(), ".tool-label": new ToolNode() };
   const tabs: Record<string, HTMLElement> = {};
   for (const section of ["pages", "flows"]) {
     const tab = new HTMLElement();
@@ -324,7 +363,14 @@ function bootClient() {
     {
       document: {
         getElementById: (id: string) =>
-          id === "segments" ? segments : id === "tree" ? tree : null,
+          ({
+            segments,
+            tree,
+            "unused-tools": unusedTools,
+            "unused-scan": unusedScan,
+            "unused-toggle": unusedToggle,
+            "unused-count": unusedCount,
+          } as Record<string, ClientNode>)[id] ?? null,
         get activeElement() {
           return clientFocus.current;
         },
@@ -351,10 +397,11 @@ function bootClient() {
     tabs,
     tree,
     outside,
+    unused: { tools: unusedTools, scan: unusedScan, toggle: unusedToggle, count: unusedCount },
     active: () => clientFocus.current,
-    paint(section: string) {
+    paint(section: string, unused?: unknown) {
       for (const listener of messages)
-        listener({ data: { type: "render", section, html: "" } });
+        listener({ data: { type: "render", section, html: "", unused } });
     },
     key(key: string) {
       const event = { key, preventDefault() {} };
@@ -363,7 +410,122 @@ function bootClient() {
   };
 }
 describe("navigation view", () => {
-  it("renders a project last-run report action in the view body", () => {
+  describe("unused definitions tools", () => {
+    const element = (name: string, line: number) => ({
+      id: "pages/main.py::Main." + name,
+      name,
+      qualname: "Main." + name,
+      kind: "element" as const,
+      range,
+      nameRange: { ...range, start: { line, character: 4 } },
+      locator: { controlType: "Button", name },
+      dynamic: false,
+    });
+    const PAGE_ID = "/project|pages/main.py::Main";
+    const withElements: DiscoveryResult = {
+      ...result,
+      pages: [
+        { ...result.pages[0], elements: [element("used", 3), element("spare", 4), element("lonely", 5)] },
+      ],
+    };
+    function unusedStub(initial: { scanned: boolean; ids?: string[]; scanning?: boolean }) {
+      const state = { ...initial, ids: new Set(initial.ids ?? []) };
+      return {
+        state,
+        scan: vi.fn(() => Promise.resolve({ cancelled: false, capped: false, unavailable: 0 })),
+        has: (_project: unknown, id: string) => state.ids.has(id),
+        hasResult: () => state.scanned,
+        get hasResults() { return state.scanned; },
+        get scanning() { return state.scanning === true; },
+        get count() { return state.ids.size; },
+        onDidChange: () => ({ dispose: vi.fn() }),
+      };
+    }
+    function render(stub: ReturnType<typeof unusedStub>, section?: string) {
+      const { tree } = createTree(hostFor(), { result: withElements, unused: stub });
+      resolve(tree);
+      mocks.listener?.({ type: "toggle", id: PAGE_ID });
+      if (section) mocks.listener?.({ type: "select", section });
+      mocks.listener?.({ type: "ready" });
+      return mocks.posted.at(-1) as { html: string; unused?: Record<string, unknown> };
+    }
+    it("marks definitions with no references and reports the scan state", () => {
+      const stub = unusedStub({ scanned: true, ids: ["pages/main.py::Main.spare", "pages/main.py::Main.lonely"] });
+      const payload = render(stub);
+      expect(payload.unused).toEqual({ scanning: false, scanned: true, count: 2, filtering: false });
+      expect(payload.html).toContain("spare");
+      expect(payload.html.match(/possibly unused/g)?.length ?? 0).toBeGreaterThanOrEqual(2);
+      expect(payload.html).toContain("used");
+    });
+    it("shows only unused definitions after the toggle and keeps the rest hidden", () => {
+      const stub = unusedStub({ scanned: true, ids: ["pages/main.py::Main.spare"] });
+      const { tree } = createTree(hostFor(), { result: withElements, unused: stub });
+      resolve(tree);
+      mocks.listener?.({ type: "toggle", id: PAGE_ID });
+      mocks.listener?.({ type: "unusedToggle" });
+      const payload = mocks.posted.at(-1) as { html: string; unused?: Record<string, unknown> };
+      expect(payload.unused?.filtering).toBe(true);
+      expect(payload.html).toContain("spare");
+      expect(payload.html).not.toContain(">lonely<");
+      expect(payload.html).not.toContain(">used<");
+      mocks.listener?.({ type: "unusedToggle" });
+      const restored = mocks.posted.at(-1) as { html: string };
+      expect(restored.html).toContain(">lonely<");
+    });
+    it("explains an empty filtered tree instead of pointing at Getting Started", () => {
+      const stub = unusedStub({ scanned: true, ids: [] });
+      const { tree } = createTree(hostFor(), { result: withElements, unused: stub });
+      resolve(tree);
+      mocks.listener?.({ type: "unusedToggle" });
+      const payload = mocks.posted.at(-1) as { html: string };
+      expect(payload.html).toContain("No unused definitions found");
+      expect(payload.html).not.toContain("data-getting-started");
+    });
+    it("ignores the toggle until a scan has produced results and does not start a second scan", () => {
+      const stub = unusedStub({ scanned: false });
+      const { tree } = createTree(hostFor(), { result: withElements, unused: stub });
+      resolve(tree);
+      mocks.listener?.({ type: "unusedToggle" });
+      mocks.listener?.({ type: "ready" });
+      expect((mocks.posted.at(-1) as { unused?: { filtering: boolean } }).unused?.filtering).toBe(false);
+      mocks.listener?.({ type: "unusedScan" });
+      expect(stub.scan).toHaveBeenCalledOnce();
+      stub.state.scanning = true;
+      mocks.listener?.({ type: "unusedScan" });
+      expect(stub.scan).toHaveBeenCalledOnce();
+    });
+    it("only offers the tools on the Page Tree", () => {
+      const payload = render(unusedStub({ scanned: true }), "flows");
+      expect(payload.unused).toBeUndefined();
+    });
+    it("paints the toolbar from the scan state and posts scan and toggle requests", () => {
+      const client = bootClient();
+      const { tools, scan, toggle, count } = client.unused;
+      expect(navigationDocument({ cspSource: "x", nonce: "n", iconsHref: "i", section: "pages", treeHtml: "" }))
+        .toContain('id="unused-tools" role="toolbar"');
+      client.paint("pages", { scanning: false, scanned: false, count: 0, filtering: false });
+      expect(tools.hidden).toBe(false);
+      expect(scan.parts[".tool-label"].textContent).toBe("Find unused definitions");
+      expect(toggle.disabled).toBe(true);
+      expect(count.hidden).toBe(true);
+      client.paint("pages", { scanning: true, scanned: false, count: 0, filtering: false });
+      expect(scan.disabled).toBe(true);
+      expect(scan.parts[".codicon"].className).toContain("codicon-modifier-spin");
+      client.paint("pages", { scanning: false, scanned: true, count: 3, filtering: true });
+      expect(scan.parts[".tool-label"].textContent).toBe("Rescan");
+      expect(toggle.disabled).toBe(false);
+      expect(toggle.getAttribute("aria-pressed")).toBe("true");
+      expect(count.hidden).toBe(false);
+      expect(count.textContent).toBe("3");
+      scan.listeners.click?.forEach((listener) => listener({ key: "", preventDefault() {} }));
+      toggle.listeners.click?.forEach((listener) => listener({ key: "", preventDefault() {} }));
+      expect(client.posts).toEqual(
+        expect.arrayContaining([{ type: "unusedScan" }, { type: "unusedToggle" }]),
+      );
+      client.paint("flows", { scanning: false, scanned: true, count: 3, filtering: false });
+      expect(tools.hidden).toBe(true);
+    });
+  });  it("renders a project last-run report action in the view body", () => {
     const body = renderBody({
       nodes: [], expanded: new Set(), welcome: "Initialize the project", showInitialize: true,
       lastRun: { passed: 4, failed: 1, report: "/project/wtk-report/index.html", at: 1 },
@@ -376,6 +538,14 @@ describe("navigation view", () => {
     const body = renderBody({ nodes: [], expanded: new Set(), showInitialize: true });
     expect(body).toContain('data-initialize="true"');
     expect(body).toContain('data-getting-started="true"');
+  });
+  it("leaves the view description empty", () => {
+    const { tree } = createTree(hostFor());
+    const view = resolve(tree);
+    expect(view.description).toBe("");
+    mocks.activeEditor = { document: { uri: { fsPath: "/other/tests/test.py" } } };
+    mocks.activeEditorListener?.(mocks.activeEditor);
+    expect(view.description).toBe("");
   });
   it("registers one shared panel and keeps every section available", () => {
     const { tree } = createTree();

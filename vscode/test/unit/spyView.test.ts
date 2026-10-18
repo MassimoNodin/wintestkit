@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   notifications: new Map<string, (value: unknown) => void>(),
   clipboard: vi.fn(),
   command: vi.fn(),
+  commands: new Map<string, (...args: unknown[]) => unknown>(),
   information: vi.fn(() => Promise.resolve(undefined)),
   icons: vi.fn(() => Promise.resolve({} as Record<string, string>)),
   activeEditor: undefined as
@@ -85,7 +86,10 @@ vi.mock("vscode", () => ({
     showTextDocument: mocks.showDocument,
   },
   commands: {
-    registerCommand: () => ({ dispose() {} }),
+    registerCommand: (name: string, handler: (...args: unknown[]) => unknown) => {
+      mocks.commands.set(name, handler);
+      return { dispose() { mocks.commands.delete(name); } };
+    },
     executeCommand: mocks.command,
   },
   env: { clipboard: { writeText: mocks.clipboard } },
@@ -97,6 +101,7 @@ describe("Spy view bridge", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.notifications.clear();
+    mocks.commands.clear();
     mocks.activeEditor = undefined;
     mocks.markers = true;
     mocks.bringToFront = false;
@@ -299,16 +304,19 @@ describe("Spy view bridge", () => {
     expect(script).toContain("let groupDesktop =");
     expect(script).toContain("!pids.has(node.info.processId)");
     expect(script).toContain("Other desktop windows (");
-    expect(script).toContain('addEventListener("toggle", updateSummary)');
+    expect(script).toContain('groupRow.setAttribute("aria-expanded", "false")');
+    expect(script).toContain("children.hidden = !open");
     expect(html).toContain('id="group-desktop"');
   });
   it("uses roving focus and tree keyboard semantics for Spy nodes", () => {
     const script = readFileSync("media/spy/spy.js", "utf8");
-    expect(script).toContain('row.setAttribute("aria-level"');
-    expect(script).toContain('row.setAttribute("aria-posinset"');
+    expect(script).toContain('groupRow.setAttribute("aria-level"');
+    expect(script).toContain('groupRow.setAttribute("aria-posinset"');
     expect(script).toContain('addEventListener("focusin"');
     expect(script).toContain("entry.children.querySelector");
     expect(script).toContain('event.key === " "');
+    expect(script).toContain('groupRow.setAttribute("role", "treeitem")');
+    expect(script).toContain('children.setAttribute("role", "group")');
   });
   it("drops a superseded scope's roots and selection", async () => {
     let finishFirst: (nodes: unknown[]) => void = () => {};

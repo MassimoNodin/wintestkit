@@ -232,6 +232,10 @@
         "running": {
           "type": "boolean"
         },
+        "owned": {
+          "type": "boolean",
+          "description": "True only while the server still owns the exact PID set it launched."
+        },
         "pids": {
           "type": "array",
           "items": {
@@ -243,7 +247,7 @@
           "type": "string"
         }
       },
-      "required": ["running", "pids"],
+      "required": ["running", "pids", "owned"],
       "additionalProperties": false
     },
     "AppLaunchParams": {

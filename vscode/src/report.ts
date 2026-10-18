@@ -58,7 +58,7 @@ export class Reports {
     if (file) {
       this.last.set(key, file);
       this.latest = file;
-    }
+    } else this.last.delete(key);
     if (failed > 0) void this.notify(failed, file);
   }
 
@@ -75,7 +75,7 @@ export class Reports {
     }
     const summary = project && this.lastRun(project);
     const file = project
-      ? reportPath((key && this.last.get(key)) ?? summary?.report, reportDir, project.root.fsPath)
+      ? reportPath(summary?.report ?? (key && this.last.get(key)), reportDir, project.root.fsPath)
       : this.latest;
     if (!file) {
       await vscode.window.showInformationMessage(

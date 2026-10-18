@@ -32,7 +32,7 @@ vi.mock("vscode", () => ({
       return { dispose() {} };
     },
     onDidChangeConfiguration: () => ({ dispose() {} }),
-    getConfiguration: () => ({ get: () => true }),
+    getConfiguration: () => ({ get: (_key: string, fallback: unknown) => fallback }),
   },
   languages: { registerCodeLensProvider: () => ({ dispose() {} }) },
   Range: class {},

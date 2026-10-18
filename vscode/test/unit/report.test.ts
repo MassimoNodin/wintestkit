@@ -48,5 +48,8 @@ describe("report location", () => {
     expect(changed).toHaveBeenCalledTimes(2);
     const restored = new Reports({} as never, {} as never, state as never);
     expect(restored.lastRun(first)).toMatchObject({ passed: 7, failed: 2 });
+    reports.record(first, undefined, 0, 2);
+    expect(reports.lastRun(first)).toMatchObject({ passed: 2, failed: 0 });
+    expect(reports.lastRun(first)?.report).toBeUndefined();
   });
 });
