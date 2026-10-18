@@ -16,9 +16,20 @@ export function reportPath(
   return exists(candidate) ? candidate : undefined;
 }
 
-/** Points the report's relative screenshot and trace paths at the folder it was written to. */
-export function previewHtml(html: string, baseHref: string): string {
-  const base = `<base href="${baseHref.replace(/"/g, "&quot;")}">`;
+export type ReportTheme = "light" | "dark";
+
+export function isReportTheme(value: unknown): value is ReportTheme {
+  return value === "light" || value === "dark";
+}
+
+/**
+ * Points the report's relative screenshot and trace paths at the folder it was written to, and
+ * passes on the theme the user last picked in the report.
+ */
+export function previewHtml(html: string, baseHref: string, theme?: ReportTheme): string {
+  const base =
+    `<base href="${baseHref.replace(/"/g, "&quot;")}">` +
+    (theme ? `<meta name="wtk-theme" content="${theme}">` : "");
   return /<head[^>]*>/i.test(html)
     ? html.replace(/<head[^>]*>/i, (head) => head + base)
     : base + html;
@@ -58,6 +69,7 @@ export interface LastRunSummary {
 }
 
 const LAST_RUNS_KEY = "wintestkit.lastRuns";
+const REPORT_THEME_KEY = "wintestkit.reportTheme";
 
 export class Reports {
   private readonly last = new Map<string, string>();
@@ -125,6 +137,10 @@ export class Reports {
           localResourceRoots: [vscode.Uri.file(dir)],
         },
       );
+      panel.webview.onDidReceiveMessage((message: { type?: unknown; theme?: unknown }) => {
+        if (message?.type === "wtk-theme" && isReportTheme(message.theme))
+          void this.state?.update(REPORT_THEME_KEY, message.theme);
+      });
       panel.onDidDispose(() => {
         if (this.panel === panel) this.panel = undefined;
       });
@@ -132,7 +148,12 @@ export class Reports {
       this.panelDir = dir;
     } else this.panel.reveal(vscode.ViewColumn.Active, false);
     const base = this.panel.webview.asWebviewUri(vscode.Uri.file(dir)).toString();
-    this.panel.webview.html = previewHtml(html, base.endsWith("/") ? base : base + "/");
+    const theme = this.state?.get<unknown>(REPORT_THEME_KEY);
+    this.panel.webview.html = previewHtml(
+      html,
+      base.endsWith("/") ? base : base + "/",
+      isReportTheme(theme) ? theme : undefined,
+    );
   }
 
   async open(project: Project | undefined): Promise<void> {
