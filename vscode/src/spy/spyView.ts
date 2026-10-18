@@ -27,6 +27,7 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
   private picking = false;
   private appRunning = false;
   private targetPids: number[] = [];
+  private targetName?: string;
   private showOtherApps = false;
   private revision = 0;
   private scopeRevision = 0;
@@ -163,7 +164,7 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
       type: "state",
       picking: this.picking,
       appRunning: this.appRunning,
-      targetName: project?.name ?? "Test Target",
+      targetName: this.targetName ?? project?.name ?? "Test Target",
       targetPids: this.targetPids,
       hasProject: !!this.currentProject(),
       showOtherApps: this.showOtherApps,
@@ -433,6 +434,7 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
       if (this.disposed || !this.sameScope(scopeRevision, revision)) return;
       this.appRunning = status.running;
       this.targetPids = status.pids;
+      this.targetName = status.running ? status.mainWindowTitle : undefined;
       this.state();
       this.post({ type: "roots", nodes });
       this.trackNodes(client, nodes, true);
