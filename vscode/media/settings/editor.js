@@ -135,6 +135,7 @@
       input.spellcheck = false;
       if (field.kind === "number") {
         input.min = String(field.minimum ?? 0);
+        if (field.maximum !== undefined) input.max = String(field.maximum);
         input.step = field.key === "slow_mo_ms" ? "1" : "any";
       }
     }

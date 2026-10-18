@@ -65,10 +65,14 @@ are queued.
 
 After a run with failures, a notification offers **Open Report** (the HTML report in your browser)
 and **Show Test Results**. **WinTestKit: Open Last Report** opens the latest report later.
+The Pages & Flows view also shows the current project's last-run totals and an **Open report**
+action. Runs from **Run with recording** capture screenshots at the configured trace rate and
+scope; failed-test reports open with the failed test's evidence, including playback when frames
+were captured.
 
 ### Debugging
 
-The Debug profile in the Test Explorer runs the test under the
+The **Debug (no report)** profile in the Test Explorer runs the test under the
 [Python Debugger](https://marketplace.visualstudio.com/items?itemName=ms-python.debugpy). Normal
 breakpoints work in tests, pages and fixtures. Debug runs raise the default auto-wait to one
 hour so a test paused at a breakpoint doesn't time out. Debug runs don't write a
@@ -147,8 +151,10 @@ machine**, **Start the application** shows only **Application executable**, with
 clearing it removes the override. On **Shared project**, that section explains the executable
 lives in the ignored local file. Everything else (process name, arguments, working directory,
 lifecycle, timeouts, input mode, screenshots, reports, import paths and debugging aids)
-sits under the collapsed **Advanced options** section, grouped as **Application**, **Test runs**
-and **Debugging**, where override checkboxes control inheritance. Save with the toolbar or
+sits under the collapsed **Advanced options** section, grouped as **Application**, **Test runs**,
+**Evidence**, and **Debugging**, where override checkboxes control inheritance. Evidence includes
+the screenshot policy, trace mode, trace FPS (greater than 0 and no more than 30), and capture
+scope (**window** or **desktop**). Save with the toolbar or
 Ctrl+S; **Open YAML** switches to raw text for settings not shown in the form. Comments and
 other settings are preserved. Saving reloads the backend and refreshes the Test Target section. Invalid
 settings show actionable errors.

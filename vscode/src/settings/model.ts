@@ -1,7 +1,7 @@
 import { parseDocument, isMap, type Document } from "yaml";
 
 export type SettingsScope = "shared" | "local";
-export type SettingGroup = "Application" | "Test runs" | "Debugging";
+export type SettingGroup = "Application" | "Test runs" | "Evidence" | "Debugging";
 export interface SettingField {
   key: string;
   label: string;
@@ -11,6 +11,7 @@ export interface SettingField {
   choices?: string[];
   localOnly?: boolean;
   minimum?: number;
+  maximum?: number;
   group?: SettingGroup;
 }
 export const settingFields: SettingField[] = [
@@ -95,7 +96,7 @@ export const settingFields: SettingField[] = [
     kind: "select",
     default: "on-failure",
     choices: ["off", "on-failure", "every-step"],
-    group: "Test runs",
+    group: "Evidence",
   },
   {
     key: "trace",
@@ -104,15 +105,16 @@ export const settingFields: SettingField[] = [
     description: "Capture screenshots for playback in the HTML report.",
     default: "off",
     choices: ["off", "on", "retain-on-failure"],
-    group: "Test runs",
+    group: "Evidence",
   },
   {
     key: "trace_fps",
     label: "Trace capture rate (FPS)",
     kind: "number",
     default: 5,
-    minimum: 0.1,
-    group: "Test runs",
+    minimum: 0,
+    maximum: 30,
+    group: "Evidence",
   },
   {
     key: "trace_scope",
@@ -120,7 +122,7 @@ export const settingFields: SettingField[] = [
     kind: "select",
     default: "window",
     choices: ["window", "desktop"],
-    group: "Test runs",
+    group: "Evidence",
   },
   {
     key: "report_dir",
@@ -166,7 +168,7 @@ export function settingSections(scope: SettingsScope): SettingSections {
   const editable = settingFields.filter(
     (field) => scope === "local" || !field.localOnly,
   );
-  const groups: SettingGroup[] = ["Application", "Test runs", "Debugging"];
+  const groups: SettingGroup[] = ["Application", "Test runs", "Evidence", "Debugging"];
   return {
     essentials: editable.filter((field) => !field.group),
     advanced: groups
@@ -247,6 +249,8 @@ export function validateSettings(
       (typeof entry !== "number" ||
         !Number.isFinite(entry) ||
         entry < (field.minimum ?? 0) ||
+        (key === "trace_fps" && entry <= 0) ||
+        (field.maximum !== undefined && entry > field.maximum) ||
         (key === "slow_mo_ms" && !Number.isInteger(entry)))
     )
       throw new Error(

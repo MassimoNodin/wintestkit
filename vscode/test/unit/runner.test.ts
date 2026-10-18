@@ -60,8 +60,9 @@ describe("test subprocess runner", () => {
     ]);
   });
   it("enables backend trace retention for the recording profile", () => {
-    expect(runArguments("tcp://localhost:1", ["test_x"], false, [], true)).toContain("retain-on-failure");
-    expect(runArguments("tcp://localhost:1", ["test_x"], false, [], true)).toContain("--trace");
+    const args = runArguments("tcp://localhost:1", ["test_x"], false, ["--trace", "off"], true);
+    expect(args.lastIndexOf("retain-on-failure")).toBeGreaterThan(args.indexOf("off"));
+    expect(args.slice(args.lastIndexOf("--trace"), args.indexOf("--"))).toEqual(["--trace", "retain-on-failure"]);
   });
   it("decodes chunked Unicode output and exits without leaking cancellation subscriptions", async () => {
     const child = new Child();
