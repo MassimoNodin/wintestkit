@@ -155,6 +155,9 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     group.addoption("--wtk-report", metavar="DIR", help="report directory")
     group.addoption("--wtk-no-report", action="store_true", help="do not write a report")
     group.addoption(
+        "--wtk-ui-tree-diff", action="store_true", help="retain bounded per-test UI tree baselines"
+    )
+    group.addoption(
         "--wtk-events", metavar="URL", help="stream run events: tcp://HOST:PORT or file"
     )
 
@@ -218,6 +221,7 @@ class _Run:
     reports: dict[str, pytest.TestReport] = field(default_factory=lambda: {})
     exceptions: dict[str, pytest.ExceptionInfo[BaseException]] = field(default_factory=lambda: {})
     artifacts: artifact_files.ArtifactSet | None = None
+    tree_baseline: str | None = None
     step_screenshots: list[Path] = field(default_factory=lambda: [])
     trace: TraceRecorder | None = None
 
@@ -414,20 +418,19 @@ class _Controller:
             self._trace_window(run.trace, _funcarg(item, "app"))
         if call.excinfo is not None:
             run.exceptions[report.when or "call"] = call.excinfo
-        if report.when == "call" and report.passed:
-            # Retain only the latest bounded passing tree; report directory cleanup deliberately
-            # leaves this single baseline in place between runs.
-            tree = artifact_files.capture_tree_text(_funcarg(item, "app"))
-            if tree is not None:
-                baseline = self.config.report_dir / "ui-tree-baseline.txt"
-                baseline.write_text(tree, encoding="utf-8")
+        tree_diff_enabled = bool(self.pytest_config.getoption("wtk_ui_tree_diff", False))
+        evidence_enabled = self.report_enabled and self.config.screenshots != "off"
+        if report.when == "call" and report.passed and tree_diff_enabled and evidence_enabled:
+            run.tree_baseline = artifact_files.capture_tree_text(_funcarg(item, "app"))
+        baseline = artifact_files.baseline_path(
+            self.config.report_dir, repr(self.config.app), item.nodeid
+        )
         if not report.failed or report.when == "teardown" or self.config.screenshots == "off":
             return
         directory = artifact_files.artifacts_dir(self.config.report_dir, item.nodeid)
         app = _funcarg(item, "app")
         captured = artifact_files.capture_failure(app, directory)
-        if captured.tree_dump is not None:
-            baseline = self.config.report_dir / "ui-tree-baseline.txt"
+        if tree_diff_enabled and evidence_enabled and captured.tree_dump is not None:
             diff_path = directory / "tree-diff.txt"
             if artifact_files.write_tree_diff(baseline, captured.tree_dump, diff_path):
                 captured.tree_diff = diff_path
@@ -444,6 +447,16 @@ class _Controller:
         if report.when != "teardown":
             return
         outcome = _outcome(run)
+        if (
+            outcome == "passed"
+            and self.report_enabled
+            and self.config.screenshots != "off"
+            and self.pytest_config.getoption("wtk_ui_tree_diff", False)
+        ):
+            baseline = artifact_files.baseline_path(
+                self.config.report_dir, repr(self.config.app), report.nodeid
+            )
+            artifact_files.store_tree_text(run.tree_baseline, baseline)
         duration = sum(r.duration for r in run.reports.values())
         self.finished.append(_Finished(report.nodeid, outcome, duration))
         # pytest accumulates captured sections on the item, so the teardown report already

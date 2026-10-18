@@ -59,6 +59,7 @@
         "truncated": false
       },
       "treeDump": "artifacts/sign-in/tree.txt",
+      "treeDiff": "artifacts/sign-in/tree-diff.txt",
       "stdout": "Signed in\n",
       "stderr": "",
       "log": ""
