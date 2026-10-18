@@ -84,7 +84,7 @@ export class TestController implements vscode.Disposable {
       true,
     );
     this.debugProfile = this.controller.createRunProfile(
-      "Debug",
+      "Debug (no report)",
       vscode.TestRunProfileKind.Debug,
       (request, token) => this.run(request, token, true),
       true,
