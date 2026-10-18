@@ -9,14 +9,14 @@ const result = (status: CheckResult["status"]): CheckResult => ({
 });
 
 describe("summarizeChecks", () => {
-  it("counts not found elements as broken/moved", () => {
+  it("describes not found elements as state-dependent", () => {
     expect(
       summarizeChecks([result("found"), result("found"), result("not_found")]),
-    ).toBe("Checked 3 elements: 2 found, 1 broken/moved.");
+    ).toBe("Checked 3 elements: 2 found, 1 not found (possibly off-screen, broken, or moved).");
   });
   it("reports ambiguous and failed checks as errors", () => {
     expect(
       summarizeChecks([result("found"), result("ambiguous"), result("error")]),
-    ).toBe("Checked 3 elements: 1 found, 0 broken/moved, 2 errors.");
+    ).toBe("Checked 3 elements: 1 found, 0 not found (possibly off-screen, broken, or moved), 2 errors.");
   });
 });
