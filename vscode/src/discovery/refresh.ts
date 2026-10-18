@@ -42,7 +42,12 @@ export class LatestRefresh<Result> {
           )
             this.apply(key, result);
         } catch (error) {
-          if (!this.disposed) this.error(error);
+          if (
+            !this.disposed &&
+            this.entries.get(key) === entry &&
+            revision === entry.revision
+          )
+            this.error(error);
         }
         if (revision === entry.revision || entry.timer) break;
       }

@@ -3,6 +3,24 @@ import { LatestRefresh } from "../../src/discovery/refresh";
 
 afterEach(() => vi.useRealTimers());
 describe("latest discovery refresh", () => {
+  it("suppresses failures from removed projects", async () => {
+    let fail!: (error: Error) => void;
+    const error = vi.fn();
+    const refresh = new LatestRefresh(
+      () =>
+        new Promise((resolve, reject) => {
+          fail = reject;
+        }),
+      vi.fn(),
+      error,
+    );
+    refresh.schedule("removed-project");
+    refresh.remove("removed-project");
+    fail(new Error("server stopped"));
+    await Promise.resolve();
+    expect(error).not.toHaveBeenCalled();
+    refresh.dispose();
+  });
   it("debounces edits for 400 ms", async () => {
     vi.useFakeTimers();
     const load = vi.fn(async () => "latest");
