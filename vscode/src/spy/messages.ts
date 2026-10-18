@@ -45,6 +45,7 @@ export type SpyResponse =
       picking: boolean;
       appRunning: boolean;
       targetName: string;
+      targetPids: number[];
       hasProject: boolean;
       showOtherApps: boolean;
       bringToFront: boolean;
