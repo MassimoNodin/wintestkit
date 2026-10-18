@@ -185,6 +185,8 @@ def _flow_parameters(node: ast.FunctionDef | ast.AsyncFunctionDef) -> list[dict[
     for argument, default in zip(positional, defaults, strict=True):
         if argument.arg == "app":
             continue
+        if argument in args.posonlyargs:
+            continue
         annotation = argument.annotation
         kind = annotation.id if isinstance(annotation, ast.Name) else None
         if kind not in {"str", "int", "float", "bool"}:

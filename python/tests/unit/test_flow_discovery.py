@@ -70,6 +70,7 @@ def test_flags_flows_whose_only_required_parameter_is_app(tmp_path: Path) -> Non
         def renamed(application): pass
         def keyword_only(*, app): pass
         def app_second(speed, app): pass
+        def positional_only(app, page: str, /): pass
         def app_default(app=None): pass
         def flag_after(app, *, fast=False): pass
         def flag_required(app, *, fast): pass
@@ -84,6 +85,7 @@ def test_flags_flows_whose_only_required_parameter_is_app(tmp_path: Path) -> Non
         "renamed": False,
         "keyword_only": False,
         "app_second": False,
+        "positional_only": False,
         "app_default": False,
         "flag_after": True,
         "flag_required": False,
