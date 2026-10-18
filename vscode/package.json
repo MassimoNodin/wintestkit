@@ -262,6 +262,11 @@
           "type": "boolean",
           "default": true
         },
+        "wintestkit.codeLens.classOnly": {
+          "type": "boolean",
+          "default": false,
+          "description": "Show only the class check lens. Element highlight and check lenses are hidden; Page Tree controls remain available."
+        },
         "wintestkit.spy.bringWindowToFront": {
           "type": "boolean",
           "default": false,

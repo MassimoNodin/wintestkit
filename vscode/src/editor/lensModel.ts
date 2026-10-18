@@ -117,6 +117,7 @@ export function buildLenses(
   feedback: ReadonlyMap<string, ActionFeedback> = new Map(),
   flowStatus: (file: string, name: string) => FlowStatus | undefined = () =>
     undefined,
+  classOnly = false,
 ): LensSpec[] {
   const normalize = (value: string): string => {
     const resolved =
@@ -149,7 +150,7 @@ export function buildLenses(
       { file, page: page.qualname },
       page.qualname,
     );
-    for (const element of page.elements) {
+    if (!classOnly) for (const element of page.elements) {
       const status = feedback.get(element.id);
       const tooltip =
         element.kind === "window"
