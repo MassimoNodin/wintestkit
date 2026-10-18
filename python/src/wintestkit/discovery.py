@@ -1057,7 +1057,9 @@ def _scan(root: Path, report_dir: Path | None) -> list[Path]:
         subdirs[:] = sorted(
             d
             for d in subdirs
-            if d not in EXCLUDED_DIRS and (report_dir is None or (here / d).resolve() != report_dir)
+            if not d.startswith(".")
+            and d not in EXCLUDED_DIRS
+            and (report_dir is None or (here / d).resolve() != report_dir)
         )
         files.extend(here / name for name in sorted(names) if name.endswith(".py"))
     return files
@@ -1098,6 +1100,8 @@ def discover(
     )
     sources: list[_Source] = []
     for path in all_files:
+        if any(part.startswith(".") for part in path.relative_to(root).parts[:-1]):
+            continue
         rel = path.relative_to(root).as_posix()
         try:
             sources.append(_read_source(path, rel, contents))

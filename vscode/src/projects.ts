@@ -88,10 +88,18 @@ export class Projects implements vscode.Disposable {
     try {
       const files = await vscode.workspace.findFiles(
         "**/{pyproject.toml,wintestkit.yaml}",
-        "**/{node_modules,.venv,venv,.git,site-packages}/**",
+        "**/{.*,node_modules,venv,site-packages}/**",
       );
       const projects: Project[] = [];
       for (const file of files) {
+        if (
+          vscode.workspace
+            .asRelativePath(file, false)
+            .split(/[\\/]/)
+            .slice(0, -1)
+            .some((segment) => segment.startsWith("."))
+        )
+          continue;
         try {
           const source = Buffer.from(
             await vscode.workspace.fs.readFile(file),
