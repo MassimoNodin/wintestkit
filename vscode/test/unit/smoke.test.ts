@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   endTransition: vi.fn(),
   readConfig: vi.fn(),
   showError: vi.fn(),
+  showWarning: vi.fn(),
   serverGet: vi.fn(),
   runTerminal: vi.fn(() => Promise.resolve()),
   folder: {
@@ -38,6 +39,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("vscode", () => ({
   window: {
     showErrorMessage: mocks.showError,
+    showWarningMessage: mocks.showWarning,
     registerCustomEditorProvider: vi.fn(() => ({ dispose: vi.fn() })),
     createOutputChannel: () => mocks.log,
     registerTreeDataProvider: mocks.registerTreeDataProvider,
@@ -212,6 +214,7 @@ describe("extension scaffold", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.readConfig.mockResolvedValue({ "app.path": "C:/Apps/Demo.exe" });
+    mocks.showWarning.mockResolvedValue("Close App");
     subscriptions = [];
     activate({
       subscriptions,
@@ -375,6 +378,56 @@ describe("extension scaffold", () => {
       expect.stringContaining("executable"),
     );
     expect(mocks.refreshStatus).toHaveBeenCalledOnce();
+  });
+
+  it.each(["closeApp", "restartApp"])(
+    "requires confirmation before %s closes an attached app",
+    async (command) => {
+      mocks.readConfig.mockResolvedValue({
+        "app.path": "C:/Apps/Demo.exe",
+        "app.process": "Demo.exe",
+        launch: "attach",
+      });
+      mocks.showWarning.mockResolvedValueOnce(undefined);
+      const callback = mocks.registerCommand.mock.calls.find(
+        ([registered]) => registered === `wintestkit.${command}`,
+      )?.[1];
+      await callback?.();
+      expect(mocks.showWarning).toHaveBeenCalledWith(
+        expect.stringContaining("WinTestKit didn't start it"),
+        { modal: true },
+        "Close App",
+      );
+      expect(mocks.request).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    ["closeApp", ["app.close"]],
+    ["restartApp", ["app.close", "app.launch"]],
+  ])("closes an attached app through %s only after confirmation", async (command, methods) => {
+    mocks.readConfig.mockResolvedValue({
+      "app.path": "C:/Apps/Demo.exe",
+      "app.process": "Demo.exe",
+      launch: "attach",
+    });
+    const callback = mocks.registerCommand.mock.calls.find(
+      ([registered]) => registered === `wintestkit.${command}`,
+    )?.[1];
+    await callback?.();
+    expect(mocks.showWarning).toHaveBeenCalledOnce();
+    expect(mocks.request.mock.calls.map(([method]) => method)).toEqual(methods);
+  });
+
+  it("fails closed when attached app configuration cannot be read", async () => {
+    mocks.readConfig.mockRejectedValueOnce(new Error("Unreadable config"));
+    const callback = mocks.registerCommand.mock.calls.find(
+      ([registered]) => registered === "wintestkit.closeApp",
+    )?.[1];
+    await callback?.();
+    expect(mocks.showWarning).not.toHaveBeenCalled();
+    expect(mocks.request).not.toHaveBeenCalled();
+    expect(mocks.showError).toHaveBeenCalledWith("Unreadable config");
   });
 
   it("has a Windows testing manifest and configuration parser dependencies", () => {
