@@ -81,6 +81,12 @@ describe("editor lens model", () => {
       lenses.find((lens) => lens.command === "wintestkit.checkPage")?.title,
     ).toContain("Check all elements in this class exist");
   });
+  it("supports class-only lenses while preserving default element lenses", () => {
+    const all = buildLenses(discovery, page.file);
+    const compact = buildLenses(discovery, page.file, new Map(), undefined, true);
+    expect(all.some((lens) => lens.command === "wintestkit.checkElement")).toBe(true);
+    expect(compact.map((lens) => lens.command)).toEqual(["wintestkit.checkPage"]);
+  });
   it.each(cases)("matches the Python locator format: $describe", (fixture) => {
     expect(describeLocator(fixture.locator)).toBe(fixture.describe);
   });

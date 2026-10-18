@@ -42,11 +42,13 @@ export class CodeLenses implements vscode.CodeLensProvider, vscode.Disposable {
     const project = this.projects.projectFor(document.uri);
     const result = project && this.discovery.get(project);
     if (!result) return [];
+    const configuration = vscode.workspace.getConfiguration("wintestkit", document.uri);
     return buildLenses(
       result,
       document.uri.fsPath,
       this.checks.feedback,
       (file, name) => this.flows.states.get(flowKey({ file, name })),
+      configuration.get<boolean>("codeLens.classOnly", false),
     ).map(
       (spec) =>
         new vscode.CodeLens(new vscode.Range(spec.line, 0, spec.line, 0), {
