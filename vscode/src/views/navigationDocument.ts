@@ -15,9 +15,7 @@ export function escapeText(value: string): string {
 }
 
 export function escapeAttribute(value: string): string {
-  return escapeText(value)
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
+  return escapeText(value).replaceAll('"', "&quot;").replaceAll("'", "&#39;");
 }
 
 export function renderBody(input: {
@@ -39,6 +37,17 @@ export function renderBody(input: {
   return input.nodes
     .map((node) => renderItem(node, input.expanded, input.focusId))
     .join("");
+}
+
+/** Pages and flows are the top-level rows: tall, with a divider between them. */
+function rowClass(section: unknown): string {
+  return section === "page"
+    ? " page-item"
+    : section === "flow"
+      ? " flow-item"
+      : section === "project"
+        ? " project-item"
+        : "";
 }
 
 function renderItem(
@@ -73,9 +82,11 @@ function renderItem(
         .join("")}</div>`
     : "";
   return (
-    `<div role="treeitem" class="item${node.context.webviewSection === "page" ? " page-item" : node.context.webviewSection === "project" ? " project-item" : ""}" data-id="${escapeAttribute(node.id)}" ` +
+    `<div role="treeitem" class="item${rowClass(node.context.webviewSection)}${node.children.length ? "" : " leaf"}" data-id="${escapeAttribute(node.id)}" ` +
     `aria-label="${escapeAttribute(accessible)}" title="${escapeAttribute(node.tooltip)}" ` +
-    (node.children.length ? `aria-expanded="${open ? "true" : "false"}" ` : "") +
+    (node.children.length
+      ? `aria-expanded="${open ? "true" : "false"}" `
+      : "") +
     `aria-selected="${selected ? "true" : "false"}" tabindex="${selected ? "0" : "-1"}" ` +
     `data-vscode-context="${escapeAttribute(JSON.stringify(node.context))}">` +
     `<div class="line">${twist}` +
@@ -102,48 +113,94 @@ body {
 }
 #segments {
   display: flex;
-  flex: 0 0 22px;
-  height: 22px;
-  margin: 4px 6px 10px;
-  border: 1px solid var(--vscode-checkbox-border, var(--vscode-panel-border, transparent));
-  border-radius: 2px;
-  overflow: hidden;
+  flex: 0 0 auto;
+  gap: 8px;
+  margin: 10px;
 }
 #segments button {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   flex: 1 1 0;
   min-width: 0;
-  border: 0;
-  border-right: 1px solid var(--vscode-checkbox-border, var(--vscode-panel-border, transparent));
-  background: var(--vscode-input-background, transparent);
+  min-height: 56px;
+  border: 1px solid var(--vscode-panel-border, #d7dce3);
+  border-radius: 5px;
+  background: var(--vscode-editor-background, #fff);
   color: var(--vscode-foreground);
   font: inherit;
-  font-size: 12px;
-  padding: 0 2px;
+  font-size: 14px;
+  text-align: left;
+  padding: 8px 12px;
+  cursor: pointer;
+}
+#segments .tab-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  font-size: 16px;
+  color: var(--vscode-charts-orange, #d18616);
+}
+#segments button[data-section="flows"] .tab-icon { color: var(--vscode-symbolIcon-methodForeground, #b180d7); }
+#segments .tab-label {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  cursor: pointer;
 }
-#segments button:last-child { border-right: 0; }
 #segments button:hover {
-  background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground));
+  background: var(--vscode-list-hoverBackground, #edf2f8);
 }
 #segments button[aria-selected="true"] {
-  background: var(--vscode-list-activeSelectionBackground);
-  color: var(--vscode-list-activeSelectionForeground);
+  border-color: var(--vscode-focusBorder, #0078d4);
 }
 #segments button:focus-visible, .item:focus > .line {
   outline: 1px solid var(--vscode-focusBorder);
   outline-offset: -1px;
 }
-#tree { flex: 1 1 auto; min-height: 0; overflow: auto; }
+#tree { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 2px 10px 8px 14px; }
 .group { margin-left: 12px; }
+#tree > .page-item > .line,
+#tree > .flow-item > .line,
+#tree > .project-item > .group > .page-item > .line,
+#tree > .project-item > .group > .flow-item > .line { height: 40px; }
 #tree > .page-item + .page-item,
-#tree > .project-item > .group > .page-item + .page-item {
-  margin-top: 10px;
-  padding-top: 8px;
+#tree > .flow-item + .flow-item,
+#tree > .project-item > .group > .page-item + .page-item,
+#tree > .project-item > .group > .flow-item + .flow-item {
   border-top: 1px solid var(--vscode-panel-border, var(--vscode-widget-border, transparent));
 }
+.page-item > .group { padding-bottom: 6px; }
+/* Dotted trail from a page to its children, as in the Spy's object tree. Only elements below a
+   page get it: pages and flows are separate, divided rows. */
+.page-item .group > .item { position: relative; }
+.page-item .group > .item::before {
+  content: "";
+  position: absolute;
+  left: -4px;
+  top: 11px;
+  width: 7px;
+  border-top: 1px dotted var(--vscode-tree-indentGuidesStroke, #aab6c6);
+}
+.page-item .group > .item::after {
+  content: "";
+  position: absolute;
+  left: -4px;
+  top: 0;
+  bottom: 0;
+  border-left: 1px dotted var(--vscode-tree-indentGuidesStroke, #aab6c6);
+}
+.page-item .group > .item:last-child::after { bottom: auto; height: 11px; }
+/* A nested row with no chevron (a leaf) has no use for a chevron-wide gap: its tick runs from the
+   vertical line towards the icon. The indent is padding on the row's line, not on the row, so the
+   highlight still starts at the row's left edge like every other row's. */
+.page-item .group > .item.leaf > .line > .spacer { width: 0; }
+.page-item .group > .item.leaf > .line { padding-left: 16px; }
+.page-item .group > .item.leaf::before { width: 15px; }
+#tree > .page-item > .group > .item:first-child::after,
+#tree > .project-item > .group > .page-item > .group > .item:first-child::after { top: -12px; }
 .line {
   display: flex;
   align-items: center;
@@ -181,6 +238,7 @@ body {
 .icon { margin-right: 4px; flex: 0 0 auto; }
 .icon.codicon-symbol-class { color: var(--vscode-symbolIcon-classForeground, #ee9d28); }
 .icon.codicon-symbol-field { color: var(--vscode-symbolIcon-fieldForeground, #75beff); }
+.icon.codicon-run-all { color: var(--vscode-symbolIcon-methodForeground, #b180d7); }
 .icon.codicon-symbol-method { color: var(--vscode-symbolIcon-methodForeground, #b180d7); }
 .icon.testing-iconPassed { color: var(--vscode-testing-iconPassed); }
 .icon.list-warningForeground { color: var(--vscode-list-warningForeground); }
@@ -304,7 +362,9 @@ export function navigationDocument(options: {
     return (
       `<button type="button" role="tab" data-section="${section}" ` +
       `aria-selected="${selected ? "true" : "false"}" aria-controls="tree" ` +
-      `tabindex="${selected ? "0" : "-1"}">${SECTION_LABEL[section]}</button>`
+      `tabindex="${selected ? "0" : "-1"}">` +
+      `<span class="codicon codicon-${section === "pages" ? "list-tree" : "run-all"} tab-icon" aria-hidden="true"></span>` +
+      `<span class="tab-label">${SECTION_LABEL[section]}</span></button>`
     );
   }).join("");
   const html = `<!doctype html>

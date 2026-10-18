@@ -2,43 +2,37 @@ import * as path from "node:path";
 import type { DiscoveryResult } from "../protocol/generated";
 import type { ElementNode } from "./elementsTreeModel";
 
-export function buildProjectTree(discoveries: DiscoveryResult[]): ElementNode[] {
+/**
+ * Flows listed like pages: one row per flow, with the file it lives in beside its name. Flows keep
+ * their order within a file; files are ordered by name.
+ */
+export function buildProjectTree(
+  discoveries: DiscoveryResult[],
+): ElementNode[] {
   return discoveries.flatMap((discovery) => {
-    const files = new Map<string, ElementNode>();
+    const files = new Map<string, ElementNode[]>();
     for (const flow of discovery.flows ?? []) {
-      const relative = path
-        .relative(discovery.root, flow.file)
-        .replaceAll("\\", "/");
-      let file = files.get(flow.file);
-      if (!file) {
-        file = {
-          id: "flows|" + discovery.root + "|" + relative,
-          label: relative.startsWith("flows/")
-            ? relative.slice("flows/".length)
-            : relative,
-          description: "",
-          kind: "file",
-          icon: "file-code",
-          children: [],
-          file: flow.file,
-        };
-        files.set(flow.file, file);
-      }
-      file.children.push({
+      const rows = files.get(flow.file) ?? [];
+      rows.push({
         id: "flows|" + discovery.root + "|" + flow.id,
         label: flow.name,
-        description: "",
+        description: path.relative(discovery.root, flow.file),
         kind: "flow",
-        icon: "symbol-method",
+        icon: "run-all",
         children: [],
         file: flow.file,
         range: flow.nameRange,
         runnable: flow.runnable === true,
       });
+      files.set(flow.file, rows);
     }
-    const children = [...files.values()].sort((first, second) =>
-      first.label.localeCompare(second.label),
-    );
+    const children = [...files.entries()]
+      .sort(([first], [second]) =>
+        path
+          .relative(discovery.root, first)
+          .localeCompare(path.relative(discovery.root, second)),
+      )
+      .flatMap(([, rows]) => rows);
     return discoveries.length > 1 && children.length
       ? [
           {
