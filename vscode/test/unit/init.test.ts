@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   handler: undefined as (() => Promise<void>) | undefined,
   installed: vi.fn(),
   execute: vi.fn(),
+  command: vi.fn(),
   install: vi.fn(),
   picker: vi.fn(),
   show: vi.fn(),
@@ -28,6 +29,7 @@ vi.mock("vscode", () => ({
     workspaceFolders: [mocks.folder],
   },
   commands: {
+    executeCommand: mocks.command,
     registerCommand: (_name: string, handler: () => Promise<void>) => {
       mocks.handler = handler;
       return { dispose() {} };
@@ -52,6 +54,7 @@ beforeEach(() => {
   mocks.installed.mockResolvedValue({ installed: true });
   mocks.execute.mockResolvedValue({ stdout: "Created", stderr: "" });
   mocks.picker.mockResolvedValue(undefined);
+  mocks.info.mockResolvedValue(undefined);
   registerInitialize(
     { refresh: mocks.refresh } as unknown as Projects,
     {
@@ -63,6 +66,29 @@ beforeEach(() => {
   );
 });
 describe("Initialize Project", () => {
+  it("opens Testing from the completion notification", async () => {
+    mocks.info.mockResolvedValue("Open Testing");
+    await mocks.handler?.();
+    expect(mocks.info).toHaveBeenCalledWith(
+      "Project initialized. Run tests from VS Code's Testing view.",
+      "Open Testing",
+      "Open smoke test",
+    );
+    expect(mocks.command).toHaveBeenCalledWith("wintestkit.openTesting");
+  });
+  it("opens the smoke test from the completion notification", async () => {
+    mocks.info.mockResolvedValue("Open smoke test");
+    await mocks.handler?.();
+    expect(mocks.show).toHaveBeenLastCalledWith({
+      fsPath: "C:/project with spaces/tests/test_smoke.py",
+    });
+    expect(mocks.command).not.toHaveBeenCalled();
+  });
+  it("does not navigate when the completion notification is dismissed", async () => {
+    await mocks.handler?.();
+    expect(mocks.show).toHaveBeenCalledOnce();
+    expect(mocks.command).not.toHaveBeenCalled();
+  });
   it("supports skipping app selection and refreshes before opening the page", async () => {
     await mocks.handler?.();
     expect(mocks.execute).toHaveBeenCalledWith(

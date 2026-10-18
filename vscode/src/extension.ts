@@ -234,6 +234,8 @@ export function activate(context: vscode.ExtensionContext): {
       await spy.refreshForProject(project);
     }, target);
   const implemented: Record<string, (target?: vscode.TreeItem) => unknown> = {
+    "wintestkit.openTesting": () =>
+      vscode.commands.executeCommand("workbench.view.testing.focus"),
     "wintestkit.elements.refresh": () => projects.refresh(),
     "wintestkit.showOutput": () => log.show(),
     "wintestkit.openReport": () => reports.open(currentProject()),
