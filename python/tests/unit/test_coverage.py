@@ -228,6 +228,50 @@ def test_an_unimportable_page_is_reported_and_the_rest_still_work(
     assert [d["qualname"] for d in response["result"]["definitions"]] == ["Base.ok"]
 
 
+def test_stopped_app_preserves_catalogue_without_resolving(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    server, output, nodes = _project(tmp_path, monkeypatch)
+    running = request(server, output, "inspect.definitions", {"nodeId": nodes["ok"]["nodeId"]})[
+        "result"
+    ]
+    assert running["appRunning"] is True
+    app = server.app
+    monkeypatch.setattr(server, "_app", lambda required=True: None)
+    resolve = server._coverage()._resolve
+
+    def unexpected_resolution(*args: Any, **kwargs: Any) -> None:
+        pytest.fail("Stopped-app inspection must not resolve locators")
+
+    monkeypatch.setattr(server._coverage(), "_resolve", unexpected_resolution)
+    stopped = request(server, output, "inspect.definitions", {"nodeId": nodes["ok"]["nodeId"]})[
+        "result"
+    ]
+    assert stopped == {
+        "definitions": [],
+        "errors": [],
+        "pageCount": running["pageCount"],
+        "appRunning": False,
+    }
+    assert stopped["pageCount"] > 0
+    monkeypatch.setattr(server._coverage(), "_resolve", resolve)
+    monkeypatch.setattr(server, "_app", lambda required=True: app)
+    assert _definitions(server, output, nodes["ok"])
+
+
+def test_stopped_app_loads_catalogue_before_any_live_inspection(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    server, output, nodes = _project(tmp_path, monkeypatch)
+    monkeypatch.setattr(server, "_app", lambda required=True: None)
+    result = request(server, output, "inspect.definitions", {"nodeId": nodes["ok"]["nodeId"]})[
+        "result"
+    ]
+    assert result["pageCount"] > 0
+    assert result["appRunning"] is False
+    assert result["definitions"] == []
+
+
 def test_coverage_params_are_validated(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     server, output, _nodes = _project(tmp_path, monkeypatch)
     for bad in ("x", [""], [1], ["a"] * 501):

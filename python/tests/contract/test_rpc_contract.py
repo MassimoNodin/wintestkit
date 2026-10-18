@@ -8,6 +8,19 @@ import pytest
 from rpc_support import make_server, request
 
 
+def test_stopped_app_definitions_contract(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, validate: Any
+) -> None:
+    server, output, button = make_server(tmp_path, monkeypatch)
+    request(server, output, "initialize", {"root": str(tmp_path)})
+    node = server._register(button)
+    monkeypatch.setattr(server, "_app", lambda required=True: None)
+    result = request(server, output, "inspect.definitions", {"nodeId": node["nodeId"]})["result"]
+    validate("rpc.schema.json", "InspectDefinitionsResult", result)
+    assert result["appRunning"] is False
+    assert result["pageCount"] == 1
+
+
 def test_rpc_results(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, validate: Any) -> None:
     from wintestkit.engine import spy
 

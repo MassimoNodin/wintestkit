@@ -700,6 +700,7 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
         definitions: result.definitions,
         errors: result.errors,
         pageCount: result.pageCount,
+        appRunning: result.appRunning,
       });
     } catch (error) {
       if (!current()) return;

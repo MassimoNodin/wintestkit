@@ -828,6 +828,29 @@ describe("Spy view bridge", () => {
     });
     fixture.provider.dispose();
   });
+  it("preserves stopped-app context and the real page count", async () => {
+    selectWith({
+      "inspect.definitions": {
+        definitions: [],
+        errors: [],
+        pageCount: 4,
+        appRunning: false,
+      },
+    });
+    const fixture = await create();
+    fixture.receive({ type: "select", nodeId: "save" });
+    await vi.waitFor(() => expect(sawDefinitions(fixture, "ready")).toBe(true));
+    expect(fixture.sent).toContainEqual({
+      type: "definitions",
+      nodeId: "save",
+      state: "ready",
+      definitions: [],
+      errors: [],
+      pageCount: 4,
+      appRunning: false,
+    });
+    fixture.provider.dispose();
+  });
   it("reports definitions as unavailable when the server cannot answer", async () => {
     selectWith({
       "inspect.definitions": () => Promise.reject(new Error("no catalogue")),

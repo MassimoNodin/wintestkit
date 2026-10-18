@@ -203,7 +203,9 @@
     const parts = [];
     if (!(message.definitions || []).length)
       parts.push(
-        message.pageCount === 0 && !errors.length
+        (message.appRunning ?? appState?.appRunning) === false
+          ? "Start the app from Test Target to see which page definitions point at this object."
+          : message.pageCount === 0 && !errors.length
           ? "This project has no pages."
           : "Not defined in any page.",
       );
@@ -368,7 +370,7 @@
           "tree",
           "window",
           "Application not running",
-          "Use the app controls in Current Setup, then refresh or pick a control.",
+          "Use the app controls in Test Target, then refresh or pick a control.",
         );
       else
         emptyState(

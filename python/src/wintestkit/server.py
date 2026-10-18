@@ -481,8 +481,6 @@ class Server:
         node = self._node(params["nodeId"])
         if method == "inspect.definitions":
             app = self._app(False)
-            if app is None:
-                return {"definitions": [], "errors": [], "pageCount": 0}
             return self._coverage().definitions_of(app, params["nodeId"], node.info())
         if method == "inspect.children":
             return [self._register(child) for child in node.children()]

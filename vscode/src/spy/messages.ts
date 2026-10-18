@@ -64,6 +64,7 @@ export type SpyResponse =
       definitions?: DefinitionMatch[];
       errors?: DefinitionError[];
       pageCount?: number;
+      appRunning?: boolean;
       reason?: string;
     }
   | {
