@@ -671,3 +671,52 @@ pre {
         color: inherit;
     }
 }
+
+#tree-stage {
+    position: relative;
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-height: 0;
+}
+#tree-stage[data-busy="true"] #tree-region {
+    filter: blur(3px);
+    opacity: 0.6;
+    pointer-events: none;
+    user-select: none;
+}
+#tree-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 16px;
+    text-align: center;
+    pointer-events: none;
+}
+#tree-overlay[hidden] {
+    display: none;
+}
+#tree-overlay > .codicon {
+    width: 32px;
+    height: 32px;
+    flex-shrink: 0;
+    font-size: 32px;
+    line-height: 32px;
+    color: var(--accent);
+    transform-origin: center;
+    animation: empty-state-spin 1s linear infinite;
+}
+#tree-overlay strong {
+    font-size: 13px;
+    font-weight: 600;
+}
+#tree-overlay span:last-child {
+    max-width: 310px;
+    color: var(--muted);
+    font-size: 12px;
+}

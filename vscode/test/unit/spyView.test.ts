@@ -298,6 +298,17 @@ describe("Spy view bridge", () => {
     expect(script).toContain("Showing other desktop windows.");
     expect(html).toContain('id="scope-context" role="status"');
   });
+  it("blurs the object tree behind a spinner and status while it loads", () => {
+    const script = readFileSync("media/spy/spy.js", "utf8");
+    const html = readFileSync("media/spy/spy.html", "utf8");
+    const css = readFileSync("media/spy/spy.css", "utf8");
+    expect(html).toContain('id="tree-overlay" role="status"');
+    expect(html).toContain('id="tree-stage"');
+    expect(script).toContain('element("tree-stage").dataset.busy = String(reloading)');
+    expect(script).toContain("Reloading objects…");
+    expect(css).toContain('#tree-stage[data-busy="true"] #tree-region');
+    expect(css).toContain("filter: blur(3px)");
+  });
   it("uses roving focus and tree keyboard semantics for Spy nodes", () => {
     const script = readFileSync("media/spy/spy.js", "utf8");
     expect(script).toContain('addEventListener("focusin"');
@@ -488,7 +499,8 @@ describe("Spy view bridge", () => {
     expect(fixture.view.webview.html).toContain("default-src 'none'");
     expect(fixture.view.webview.html).toContain("img-src data:");
     expect(fixture.view.webview.html).not.toContain('id="loading"');
-    expect(fixture.view.webview.html).toContain('id="tree-loading"');
+    expect(fixture.view.webview.html).toContain('id="tree-overlay"');
+    expect(fixture.view.webview.html).not.toContain('id="tree-loading"');
     expect(fixture.view.webview.html).toContain('id="details-loading"');
     expect(fixture.view.webview.html).toContain('id="details-empty"');
     expect(fixture.view.webview.html).toMatch(
