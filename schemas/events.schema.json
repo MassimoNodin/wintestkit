@@ -23,6 +23,7 @@
         "name": {
           "type": "string"
         },
+        "markers": { "type": "array", "items": { "type": "string" } },
         "parent": {
           "anyOf": [
             {
@@ -102,6 +103,7 @@
             "root": {
               "type": "string"
             },
+            "command": { "type": "string" },
             "pid": {
               "type": "integer",
               "minimum": 0

@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 from wintestkit.cli import main
-from wintestkit.report.html import render, write_report
+from wintestkit.report.html import TREE_TEXT_LIMIT, render, write_report
 from wintestkit.report.results import RunRecorder, prepare_directory
 
 
@@ -25,7 +25,7 @@ def test_embedded_json_cannot_end_script() -> None:
     data = html.split('<script type="application/json" id="wtk-data">')[1].split("</script>")[0]
     assert json.loads(data) == payload
     assert "<script>alert" not in html
-    assert "http://" not in html and "https://" not in html
+    assert 'src="http' not in html and 'href="http' not in html
     assert "innerHTML" not in html
 
 
@@ -101,3 +101,78 @@ def test_trace_paths_are_portable_and_payload_is_not_mutated(tmp_path: Path) -> 
     recorded = recorder.results()["tests"][0]["trace"]
     assert recorded["frames"][0]["path"] == "artifacts/frame.png"
     assert trace["frames"][0]["path"] == str(tmp_path / "artifacts/frame.png")
+
+
+def embedded_results(html: str) -> dict:
+    return json.loads(
+        html.split('<script type="application/json" id="wtk-data">')[1].split("</script>")[0]
+    )
+
+
+def test_tree_is_embedded_without_mutating_saved_results(tmp_path: Path) -> None:
+    tree = tmp_path / "artifacts" / "tree.txt"
+    tree.parent.mkdir()
+    content = 'Window "App"\n  Button "</script><script>bad()</script>" id=save disabled'
+    tree.write_bytes(content.encode("utf-8"))
+    results = {"tests": [{"id": "test", "treeDump": "artifacts/tree.txt"}]}
+    report = write_report(tmp_path, results)
+    embedded = embedded_results(report.read_text(encoding="utf-8"))
+    assert embedded["tests"][0]["treeText"] == content
+    assert embedded["tests"][0]["treeTextTruncated"] is False
+    assert "treeText" not in results["tests"][0]
+    assert json.loads((tmp_path / "results.json").read_text(encoding="utf-8")) == results
+    assert "<script>bad()" not in report.read_text(encoding="utf-8")
+
+
+def test_tree_embedding_is_bounded_and_rejects_outside_files(tmp_path: Path) -> None:
+    report_dir = tmp_path / "report"
+    report_dir.mkdir()
+    (report_dir / "large.txt").write_bytes(b"x" * (TREE_TEXT_LIMIT + 10))
+    (tmp_path / "private.txt").write_text("secret", encoding="utf-8")
+    results = {
+        "tests": [{"treeDump": name} for name in ("large.txt", "../private.txt", "missing.txt")]
+    }
+    embedded = embedded_results(render(results, report_dir))["tests"]
+    assert len(embedded[0]["treeText"]) == TREE_TEXT_LIMIT
+    assert embedded[0]["treeTextTruncated"] is True
+    assert "treeText" not in embedded[1]
+    assert "treeText" not in embedded[2]
+
+
+def test_recorder_retains_editor_and_run_metadata(tmp_path: Path) -> None:
+    recorder = RunRecorder(tmp_path)
+    recorder.record(
+        {"event": "session_start", "time": 1, "root": str(tmp_path), "command": "pytest -q"}
+    )
+    recorder.record(
+        {
+            "event": "collected",
+            "tests": [
+                {
+                    "id": "test.py::test",
+                    "name": "test",
+                    "file": str(tmp_path / "test.py"),
+                    "line": 9,
+                    "markers": ["smoke"],
+                }
+            ],
+        }
+    )
+    recorder.record(
+        {
+            "event": "test_end",
+            "id": "test.py::test",
+            "outcome": "error",
+            "duration": 0.1,
+            "screenshots": [],
+            "message": "setup failed",
+        }
+    )
+    result = recorder.results()
+    assert result["root"] == str(tmp_path)
+    assert result["command"] == "pytest -q"
+    test = result["tests"][0]
+    assert test["absoluteFile"] == str(tmp_path / "test.py")
+    assert test["line"] == 9
+    assert test["markers"] == ["smoke"]
+    assert test["outcome"] == "error"

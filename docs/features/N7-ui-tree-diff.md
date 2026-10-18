@@ -2,7 +2,8 @@
 
 Enable with `pytest --wtk-ui-tree-diff`. On successful tests, WinTestKit captures a bounded main
 window tree and keeps one baseline per test ID and configured app target. Later failures for that
-same pair can show a text diff link in the HTML report. Baselines are capped at 512 KiB each, and
+same pair write a text diff to `tree-diff.txt` in the test's artifacts and record it as `treeDiff`
+in `results.json`; the HTML report does not display it. Baselines are capped at 512 KiB each, and
 the baseline directory keeps at most 500 files, pruning oldest entries. Screen coordinates are
 removed before comparison; names, AutomationIds, classes, and hierarchy remain.
 

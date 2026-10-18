@@ -56,6 +56,8 @@ class RunRecorder:
         self.started = 0.0
         self.finished = 0.0
         self.summary: dict[str, Any] = {}
+        self.root: str | None = None
+        self.command: str | None = None
 
     def _relative(self, path: str) -> str:
         return Path(os.path.relpath(Path(path).resolve(), self.directory)).as_posix()
@@ -64,12 +66,16 @@ class RunRecorder:
         kind = event["event"]
         if kind == "session_start":
             self.started = event["time"]
+            self.root = event.get("root")
+            self.command = event.get("command")
         elif kind == "collected":
             for item in event["tests"]:
                 self.tests[item["id"]] = {
                     "id": item["id"],
                     "file": self._relative(item["file"]),
+                    "absoluteFile": str(Path(item["file"]).resolve()),
                     "line": item["line"],
+                    "markers": copy.deepcopy(item.get("markers", [])),
                     "name": item["name"],
                     "outcome": "skipped",
                     "duration": 0.0,
@@ -127,5 +133,7 @@ class RunRecorder:
             "duration": max(0.0, self.finished - self.started),
             "environment": environment(),
             "summary": self.summary,
+            "root": self.root,
+            "command": self.command,
             "tests": [self.tests[test_id] for test_id in self.completed],
         }

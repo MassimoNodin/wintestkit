@@ -77,6 +77,7 @@ export type RunEvent =
       event: "session_start";
       time: number;
       root: string;
+      command?: string;
       pid: number;
       wintestkitVersion: string;
     }
@@ -442,6 +443,7 @@ export interface CollectedTest {
   file: string;
   line: number;
   name: string;
+  markers?: string[];
   parent: string | null;
 }
 /**
@@ -814,6 +816,8 @@ export interface PageCheckResult {
  * via the `definition` "Results".
  */
 export interface Results {
+  root?: string | null;
+  command?: string | null;
   version: 1;
   startedAt: number;
   finishedAt: number;
@@ -853,6 +857,8 @@ export interface TestResult {
   file: string;
   line: number;
   name: string;
+  absoluteFile?: string;
+  markers?: string[];
   outcome: TestOutcome;
   duration: number;
   message?: string;

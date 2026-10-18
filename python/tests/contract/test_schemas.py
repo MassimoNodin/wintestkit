@@ -394,3 +394,15 @@ def test_open_argument_map(validate: Validate) -> None:
     step["seq"] = 0
     with pytest.raises(ValidationError):
         validate("step.schema.json", "StepEvent", step)
+
+
+def test_report_metadata_fields(validate: Validate) -> None:
+    results = fixture_data("results.json")
+    results.update(root="C:/project", command="pytest -q")
+    results["tests"][0].update(absoluteFile="C:/project/tests/test_login.py", markers=["smoke"])
+    validate("results.schema.json", "Results", results)
+    events = run_events()
+    events[0]["command"] = "pytest -q"
+    events[1]["tests"][0]["markers"] = ["smoke"]
+    for event in events[:2]:
+        validate("events.schema.json", "RunEvent", event)

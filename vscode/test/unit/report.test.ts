@@ -3,7 +3,7 @@ vi.mock("vscode", () => ({
   window: { showErrorMessage: vi.fn(async () => undefined), showInformationMessage: vi.fn(async () => undefined) },
   env: { openExternal: vi.fn(async () => true) },
 }));
-import { failureMessage, previewHtml, reportPath, Reports, waitForFile } from "../../src/report";
+import { failureMessage, isReportTheme, previewHtml, reportPath, Reports, waitForFile } from "../../src/report";
 import type { Project } from "../../src/server/serverManager";
 
 describe("report location", () => {
@@ -32,6 +32,14 @@ describe("report location", () => {
     );
     expect(previewHtml("<p>no head</p>", base)).toBe(`<base href="${base}"><p>no head</p>`);
     expect(previewHtml("<head><meta></head>", 'x"y/')).toContain('href="x&quot;y/"');
+  });
+  it("passes the remembered report theme to the page", () => {
+    expect(previewHtml("<head></head>", "b/", "dark")).toBe(
+      '<head><base href="b/"><meta name="wtk-theme" content="dark"></head>',
+    );
+    expect(previewHtml("<head></head>", "b/")).not.toContain("wtk-theme");
+    expect(isReportTheme("light")).toBe(true);
+    expect(isReportTheme("auto")).toBe(false);
   });
   it("waits for a report that is written after the run announces it", async () => {
     const sizes = [undefined, undefined, 10, 80, 80];

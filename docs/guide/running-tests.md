@@ -31,7 +31,7 @@ wtk run -- -p no:cacheprovider --maxfail=3  # raw pytest arguments after --
 | `--junit PATH` | Also write JUnit XML |
 | `--events URL` | Stream run events (see below) |
 | `--trace {off,on,retain-on-failure}` | Record continuous screenshot traces; off by default |
-| `--trace-fps FPS` | Sampling rate, greater than 0 and at most 30 (default 5) |
+| `--trace-fps FPS` | Sampling rate, greater than 0 and at most 30 (default 15) |
 | `--trace-scope {window,desktop}` | Capture the application window (default) or opt into the full desktop |
 | `-k EXPR`, `-m EXPR`, `-x`, `--lf` | As in pytest |
 
@@ -175,19 +175,23 @@ Or save the settings in shared or local YAML:
 
 ```yaml
 trace: "retain-on-failure"
-trace_fps: 5
+trace_fps: 15
 trace_scope: window
 trace_max_frames: 3000
 trace_max_bytes: 104857600
 ```
 
-Expand a test in the HTML report to play, pause or scrub its trace, select a filmstrip
-thumbnail, or click a step to jump to that point. The current step follows the playback
-position, including waits where the screenshot does not change. This is visual replay,
-not an interactive UI Automation snapshot or an MP4 recording.
+Open a test's trace from its **Open Trace Viewer** button or by clicking a step. Playback runs on
+the recording's own clock, so the replay keeps the pace of the real run, including waits where
+the screen does not change; the speed can be set from 0.5× to 4×. The timeline has one
+evenly spaced dot per step and the playhead crosses each gap in proportion to how long that step
+took. Drag the timeline, click a dot or a thumbnail, or use the arrow keys to move between steps,
+and Space to play or pause. This is visual replay, not an interactive UI Automation snapshot or an
+MP4 recording.
 
-Tracing is off by default and independent of the existing screenshots setting. A background
-worker targets 5 frames per second, with additional capture requests after actions. It keeps
+Tracing is off by default for `pytest` and `wtk run` (runs started from the VS Code Testing view
+turn it on unless a trace mode is set) and independent of the existing screenshots setting. A background
+worker targets 15 frames per second, with additional capture requests after actions. It keeps
 only changed frames, drops missed sampling ticks rather than building a queue, and stops at
 the per-test frame or byte limit. The report marks truncated and unavailable recordings.
 Capture failures do not change the test outcome. Passing and skipped traces are deleted in

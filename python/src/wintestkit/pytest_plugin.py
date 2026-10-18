@@ -13,6 +13,7 @@ import contextlib
 import dataclasses
 import logging
 import os
+import subprocess
 import time
 from collections.abc import Callable, Generator
 from dataclasses import dataclass, field
@@ -288,6 +289,9 @@ class _Controller:
             {
                 "event": "session_start",
                 "root": self._posix(self.config.root),
+                "command": subprocess.list2cmdline(
+                    ["pytest", *self.pytest_config.invocation_params.args]
+                ),
                 "pid": os.getpid(),
                 "wintestkitVersion": __version__,
             }
@@ -317,6 +321,7 @@ class _Controller:
                 "file": self._posix(item.path),
                 "line": item.location[1] if item.location[1] is not None else 0,
                 "name": item.name,
+                "markers": sorted({marker.name for marker in item.iter_markers()}),
                 "parent": self._parent_id(item),
             }
             for item in session.items
@@ -487,6 +492,11 @@ class _Controller:
             trace_result = run.trace.stop(discard=discard)
             if not discard:
                 event["trace"] = trace_result
+        if outcome == "skipped":
+            skipped = next((item for item in run.reports.values() if item.skipped), None)
+            if skipped is not None:
+                reason = skipped.longrepr
+                event["message"] = str(reason[2] if isinstance(reason, tuple) else reason)
         exc = _failure_exception(run)
         if exc is not None:
             event["message"] = _message(exc)

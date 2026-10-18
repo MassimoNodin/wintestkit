@@ -18,6 +18,8 @@
     "Results": {
       "type": "object",
       "properties": {
+        "root": { "type": ["string", "null"] },
+        "command": { "type": ["string", "null"] },
         "version": {
           "const": 1
         },
@@ -106,6 +108,8 @@
         "name": {
           "type": "string"
         },
+        "absoluteFile": { "type": "string" },
+        "markers": { "type": "array", "items": { "type": "string" } },
         "outcome": {
           "$ref": "events.schema.json#/$defs/TestOutcome"
         },
