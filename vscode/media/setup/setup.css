@@ -171,3 +171,41 @@ p {
     cursor: not-allowed;
     background: var(--surface);
 }
+
+.tile.alert,
+.tile.alert:hover:not(:disabled) {
+    border-color: var(--error);
+    background: color-mix(in srgb, var(--error) 14%, var(--surface));
+}
+.tile.alert .tile-subtitle {
+    color: var(--error);
+}
+
+.hint {
+    align-items: center;
+}
+.hint-text {
+    flex: 1;
+    min-width: 0;
+}
+.hint-icon {
+    flex-shrink: 0;
+    font-size: 16px;
+}
+.hint[data-tone="error"] .hint-icon {
+    color: var(--error);
+}
+.hint[data-tone="warn"] .hint-icon {
+    color: var(--warn);
+}
+.hint button.hint-dismiss {
+    display: inline-flex;
+    padding: 2px;
+    border-radius: 3px;
+    color: var(--muted);
+}
+.hint button.hint-dismiss:hover {
+    color: inherit;
+    text-decoration: none;
+    background: var(--vscode-toolbar-hoverBackground, rgba(128, 128, 128, 0.2));
+}

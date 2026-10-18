@@ -28,6 +28,7 @@ const TILES = new Set<string>([
   "init",
   "output",
   "doctor",
+  "dismiss",
 ]);
 
 /** Non-breaking spaces, which a quick pick keeps, so its icons are not jammed against the label. */
@@ -179,6 +180,8 @@ export class TestAppView
   private async render(): Promise<void> {
     const model = await this.model();
     if (this.disposed || !this.view) return;
+    // The badge on the activity bar icon is how a failed attach run is noticed from elsewhere.
+    this.view.badge = model.badge ? { value: 1, tooltip: model.badge } : undefined;
     void this.view.webview.postMessage({ type: "model", model });
   }
   private async run(id: TileId): Promise<void> {
@@ -207,6 +210,8 @@ export class TestAppView
             "wintestkit.closeApp",
             target,
           ));
+        case "dismiss":
+          return project ? this.status.clearAttachFailure(project) : undefined;
         case "refresh":
           return void (await this.status.refresh());
         case "output":

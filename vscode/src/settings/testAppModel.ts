@@ -14,6 +14,7 @@ export type TileId =
   | "refresh"
   | "init"
   | "doctor"
+  | "dismiss"
   | "output";
 
 export interface Tile {
@@ -26,6 +27,8 @@ export interface Tile {
   /** Colours the codicon: launch green, stop red, attach/project orange, and so on. */
   tone?: "launch" | "stop" | "link" | "project" | "busy" | "warn";
   chevron?: boolean;
+  /** Draws attention: something about this tile explains a failure. */
+  alert?: boolean;
   /** Shown but not pressable (it keeps its tooltip, which says why). */
   locked?: boolean;
   /** The codicon shown at the tile's trailing edge (default chevron-down): what pressing it opens. */
@@ -44,7 +47,13 @@ export interface TestAppModel {
     tone: Tone;
     text: string;
     action?: { id: TileId; label: string };
+    /** A codicon shown before the text, in the tone's colour. */
+    icon?: string;
+    /** The tile id the message's dismiss button sends. */
+    dismiss?: TileId;
   };
+  /** Shown as a badge on the WinTestKit icon in the activity bar, with this tooltip. */
+  badge?: string;
 }
 
 export interface TestAppInput {
@@ -373,6 +382,33 @@ export function buildTestAppModel(input: TestAppInput): TestAppModel {
       tone: "launch",
       disabled: !target,
     });
+  }
+  if (state.attachFailure && modeId === "attach") {
+    const name = processName ?? "the app";
+    model.status = { label: "Tests need the app running", tone: "error" };
+    Object.assign(modeTile, {
+      title: "Attach",
+      subtitle: "App wasn't running",
+      codicon: "warning",
+      tone: "stop",
+      alert: true,
+      tooltip:
+        "The last test run failed: the launch mode is Attach, so WinTestKit did not start " +
+        name +
+        " and it wasn't running.\nClick to change the launch mode.",
+    });
+    model.message = {
+      tone: "error",
+      text:
+        "The last test run failed because " +
+        name +
+        " wasn't running. Attach mode never starts the app: start it yourself, or change the launch mode to Launch for tests.",
+      action: { id: "mode", label: "Change launch mode" },
+      icon: "warning",
+      dismiss: "dismiss",
+    };
+    model.badge =
+      "The last test run failed: " + name + " wasn't running in Attach mode.";
   }
   return model;
 }

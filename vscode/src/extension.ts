@@ -159,7 +159,10 @@ export function activate(context: vscode.ExtensionContext): {
   context.subscriptions.push(
     registerInsertElement(projects, discovery, log),
   );
-  const tests = new TestController(projects, discovery, log, reports);
+  const tests = new TestController(projects, discovery, log, reports, {
+    cleared: (project) => status.clearAttachFailure(project),
+    notRunning: (project) => status.recordAttachFailure(project),
+  });
   context.subscriptions.push(
     registerInitialize(projects, log),
     new PytestConflict(projects, context.workspaceState, log),

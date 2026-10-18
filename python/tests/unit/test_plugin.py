@@ -215,6 +215,42 @@ def test_attach_never_closes(pytester: pytest.Pytester, fake_apps: list[str]) ->
     assert fake_apps == ["attach FakeApp.exe", "attach FakeApp.exe"]
 
 
+def test_attach_to_a_stopped_app_explains_why_nothing_was_launched(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from wintestkit.errors import AppNotRunningError
+
+    def attach(cls: type[App], process: str | None = None, pid: int | None = None) -> App:
+        raise AppNotRunningError(f"No running process named {process}")
+
+    monkeypatch.setattr(App, "attach", classmethod(attach))
+    project(pytester, launch="attach", tests="def test_one(app): pass")
+    result = pytester.runpytest("-p", "no:cacheprovider")
+    result.assert_outcomes(errors=1)
+    result.stdout.fnmatch_lines(
+        [
+            'THE APP WAS NOT LAUNCHED: the launch mode is "attach".',
+            "*never*starts it.",
+            "FakeApp.exe is not running*",
+            "*start FakeApp.exe yourself*",
+            '*"Launch for tests"*',
+        ]
+    )
+    # Only the explanation is shown, not a traceback into the plugin's own fixture.
+    result.stdout.no_fnmatch_line("*pytest_plugin.py*")
+    result.stdout.no_fnmatch_line("*yield attached*")
+
+
+def test_attach_to_a_stopped_app_error_is_typed_for_the_editor() -> None:
+    from wintestkit.pytest_plugin import _AttachNotRunning  # pyright: ignore[reportPrivateUsage]
+
+    error = _AttachNotRunning("Calc.exe")
+    info = error.to_dict()
+    assert info["type"] == "AttachNotRunningError"
+    assert "Calc.exe is not running" in info["message"]
+    assert isinstance(error, pytest.fail.Exception)
+
+
 def test_marker_overrides_launch_mode_and_timeout(
     pytester: pytest.Pytester, fake_apps: list[str]
 ) -> None:

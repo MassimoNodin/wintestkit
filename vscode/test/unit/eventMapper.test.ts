@@ -54,6 +54,20 @@ describe("test event mapping", () => {
       message: "Test process exited unexpectedly (code 2). See output.",
     });
   });
+  it("keeps the attach-not-running error type on the errored action", () => {
+    const [action] = new EventMapper(["test"]).consume({
+      event: "test_end",
+      time: 0,
+      id: "test",
+      outcome: "error",
+      duration: 0,
+      message: "THE APP WAS NOT LAUNCHED",
+      error: { type: "AttachNotRunningError", message: "THE APP WAS NOT LAUNCHED" },
+      screenshots: [],
+    });
+    expect(action).toMatchObject({ kind: "errored" });
+    expect(action.kind === "errored" && action.end?.error?.type).toBe("AttachNotRunningError");
+  });
   it("emits last-run totals for successful runs without an HTML report", () => {
     const actions = new EventMapper().consume({
       event: "session_end", time: 1, exitCode: 0,

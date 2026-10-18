@@ -7,6 +7,8 @@ export type StartStage = "process" | "window";
 
 export interface ApplicationState {
   running: boolean;
+  /** The last test run failed because attach mode found the app not running. */
+  attachFailure?: { at: number };
   owned?: boolean;
   error?: string;
   pids?: number[];
@@ -107,6 +109,7 @@ export class StatusBar implements vscode.Disposable {
         mainWindowTitle: status.mainWindowTitle,
         transition: previous?.transition,
         failure: running ? undefined : previous?.failure,
+        attachFailure: running ? undefined : previous?.attachFailure,
       });
       this.item.text = `$(beaker) WTK: ${running ? "$(circle-filled) app running" : "$(circle-outline) app stopped"}`;
     } catch (error) {
@@ -141,6 +144,21 @@ export class StatusBar implements vscode.Disposable {
         }
       }
     }
+  }
+  /** A test run in attach mode found the app stopped; the Test Target explains it until the next run. */
+  recordAttachFailure(project: Project): void {
+    const key = project.root.toString();
+    const previous = this.applications.get(key) ?? { running: false };
+    if (previous.running) return;
+    this.applications.set(key, { ...previous, attachFailure: { at: Date.now() } });
+    this.changed.fire(project);
+  }
+  clearAttachFailure(project: Project): void {
+    const key = project.root.toString();
+    const previous = this.applications.get(key);
+    if (!previous?.attachFailure) return;
+    this.applications.set(key, { ...previous, attachFailure: undefined });
+    this.changed.fire(project);
   }
   applicationState(project: Project): ApplicationState | undefined {
     return this.applications.get(project.root.toString());

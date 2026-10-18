@@ -148,6 +148,33 @@ describe("Test Target tiles", () => {
     expect(stopped.locked).toBeUndefined();
     expect(stopped).toMatchObject({ chevron: true, trailing: "list-selection" });
   });
+  it("marks the Attach tile and explains it after a test run failed in attach mode", () => {
+    const failed = { running: false, attachFailure: { at: 1 } };
+    const model = build(attach, failed);
+    const mode = model.tiles[2];
+    expect(mode).toMatchObject({
+      title: "Attach",
+      subtitle: "App wasn't running",
+      codicon: "warning",
+      tone: "stop",
+      alert: true,
+    });
+    expect(mode.tooltip).toContain("did not start CalculatorApp.exe");
+    expect(model.status).toEqual({ label: "Tests need the app running", tone: "error" });
+    expect(model.message).toMatchObject({
+      tone: "error",
+      action: { id: "mode", label: "Change launch mode" },
+    });
+    expect(model.message?.text).toContain("CalculatorApp.exe wasn't running");
+    expect(model.message).toMatchObject({ icon: "warning", dismiss: "dismiss" });
+    expect(model.badge).toContain("CalculatorApp.exe wasn't running");
+    expect(build(attach, { running: false }).badge).toBeUndefined();
+    expect(parseTestAppMessage({ type: "tile", id: "dismiss" })).toEqual({ type: "tile", id: "dismiss" });
+    // It stops describing the app once it runs, or when the mode is no longer attach.
+    expect(build(attach, { running: true, pids: [5], attachFailure: { at: 1 } }).tiles[2].alert).toBeUndefined();
+    expect(build(launchable, failed).tiles[2].alert).toBeUndefined();
+    expect(build(attach, { running: false }).tiles[2].alert).toBeUndefined();
+  });
   it("never offers to launch or restart an attach-only setup", () => {
     const stopped = build(attach, { running: false });
     expect(stopped.status.label).toBe("Waiting for the app");

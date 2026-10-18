@@ -290,13 +290,13 @@ describe("Spy view bridge", () => {
     expect(mocks.request).not.toHaveBeenCalled();
     fixture.provider.dispose();
   });
-  it("keeps the scope control visible and explains the live target", () => {
+  it("keeps the scope control visible without any scope text", () => {
     const script = readFileSync("media/spy/spy.js", "utf8");
     const html = readFileSync("media/spy/spy.html", "utf8");
     expect(script).toContain('otherApps.hidden = false');
     expect(script).toContain('otherApps.disabled = !running');
-    expect(script).toContain("Showing other desktop windows.");
-    expect(html).toContain('id="scope-context" role="status"');
+    expect(script).not.toContain("Showing");
+    expect(html).not.toContain("scope-context");
   });
   it("blurs the object tree behind a spinner and status while it loads", () => {
     const script = readFileSync("media/spy/spy.js", "utf8");
@@ -308,6 +308,13 @@ describe("Spy view bridge", () => {
     expect(script).toContain("Reloading objects…");
     expect(css).toContain('#tree-stage[data-busy="true"] #tree-region');
     expect(css).toContain("filter: blur(3px)");
+  });
+  it("always starts with all desktop windows and keeps the narrowing button", () => {
+    const script = readFileSync("media/spy/spy.js", "utf8");
+    const html = readFileSync("media/spy/spy.html", "utf8");
+    expect(script).toContain("let showOtherApps = true;");
+    expect(script).not.toContain("persisted");
+    expect(html).toContain('id="other-apps"');
   });
   it("uses roving focus and tree keyboard semantics for Spy nodes", () => {
     const script = readFileSync("media/spy/spy.js", "utf8");
@@ -386,6 +393,7 @@ describe("Spy view bridge", () => {
       ),
     );
     const fixture = await create();
+    fixture.receive({ type: "showOtherApps", enabled: false });
     fixture.receive({ type: "showOtherApps", enabled: true });
     await vi.waitFor(() =>
       expect(mocks.request).toHaveBeenCalledWith("inspect.roots", {
@@ -430,6 +438,7 @@ describe("Spy view bridge", () => {
       },
     );
     const fixture = await create();
+    fixture.receive({ type: "showOtherApps", enabled: false });
     fixture.receive({ type: "pick" });
     await vi.waitFor(() =>
       expect(mocks.notifications.has("spy.picked")).toBe(true),

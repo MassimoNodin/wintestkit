@@ -31,7 +31,7 @@ from wintestkit.config import (
     find_project_root,
     load_config,
 )
-from wintestkit.errors import ConfigError, WtkError
+from wintestkit.errors import AppNotRunningError, AttachNotRunningError, ConfigError, WtkError
 from wintestkit.events import EventSink, open_sink
 from wintestkit.report.html import write_report
 from wintestkit.report.results import RunRecorder, prepare_directory
@@ -625,7 +625,11 @@ def app(
     if mode == "attach":
         if config.app is None:
             raise ConfigError("no application to attach to: set [tool.wintestkit.app]", key="app")
-        yield App.attach(process=config.app.process_name)
+        try:
+            attached = App.attach(process=config.app.process_name)
+        except AppNotRunningError:
+            raise _AttachNotRunning(config.app.process_name) from None
+        yield attached
     elif mode == "per-session":
         yield _wtk_session_app.get(config)
     else:
@@ -634,6 +638,37 @@ def app(
             yield launched
         finally:
             launched.close(timeout=config.app.close_timeout if config.app else 10.0)
+
+
+class _AttachNotRunning(AttachNotRunningError, pytest.fail.Exception):
+    """Attach mode with the application not running, reported as just its message.
+
+    The traceback of this setup failure would only point into WinTestKit's own fixture, so pytest
+    is told to show the explanation alone. It stays a ``WtkError`` so the event stream carries
+    its type and the editor can tell the user why nothing was launched.
+    """
+
+    def __init__(self, process: str) -> None:
+        message = "\n".join(
+            [
+                'THE APP WAS NOT LAUNCHED: the launch mode is "attach".',
+                "",
+                "Attach mode only connects to an app that is already running; WinTestKit never "
+                "starts it.",
+                f"{process} is not running, so there was nothing to attach to and the tests did "
+                "not run.",
+                "",
+                "To fix this, either:",
+                f"  - start {process} yourself and run the tests again, or",
+                '  - switch the launch mode to "Launch for tests" (Test Target in the editor, '
+                "or launch: per-session in the settings) so WinTestKit starts the app for you.",
+            ]
+        )
+        AttachNotRunningError.__init__(self, message)
+        pytest.fail.Exception.__init__(self, message, pytrace=False)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"type": "AttachNotRunningError", "message": self.message}
 
 
 @pytest.fixture
