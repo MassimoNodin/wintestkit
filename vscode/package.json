@@ -55,6 +55,12 @@
         "icon": "$(debug-start)"
       },
       {
+        "command": "wintestkit.sweepProject",
+        "title": "Sweep project using remembered reach flows",
+        "category": "WinTestKit",
+        "icon": "$(run-all)"
+      },
+      {
         "command": "wintestkit.launchApp",
         "title": "Launch App",
         "category": "WinTestKit",

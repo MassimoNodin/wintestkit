@@ -4,7 +4,10 @@ import type { Projects } from "../projects";
 import { normalizedPath } from "../projects";
 
 const STATE_KEY = "wintestkit.checkAfterFlow.v1";
-type Binding = { file: string; page: string; flowFile: string; flowName: string };
+export type Binding = { file: string; page: string; flowFile: string; flowName: string };
+export function rememberedPageFlows(state: vscode.Memento): Binding[] {
+  return state.get<Binding[]>(STATE_KEY, []);
+}
 
 /** Explicit per-user bindings from a page class to a navigation flow. */
 export class CheckAfterFlow implements vscode.Disposable {
@@ -20,7 +23,7 @@ export class CheckAfterFlow implements vscode.Disposable {
     )];
   }
   async afterFlow(file: string, name: string): Promise<void> {
-    const bindings = this.state.get<Binding[]>(STATE_KEY, []);
+    const bindings = rememberedPageFlows(this.state);
     for (const binding of bindings) {
       if (normalizedPath(binding.flowFile) !== normalizedPath(file) || binding.flowName !== name) continue;
       const project = this.projects.projectFor(vscode.Uri.file(binding.file));
@@ -43,7 +46,7 @@ export class CheckAfterFlow implements vscode.Disposable {
       label: flow.name, description: vscode.workspace.asRelativePath(flow.file), flow,
     })), { title: "Check this class after a navigation flow", placeHolder: "Choose a flow that explicitly reaches this page" });
     if (!selected) return;
-    const bindings = this.state.get<Binding[]>(STATE_KEY, []).filter((item) =>
+    const bindings = rememberedPageFlows(this.state).filter((item) =>
       !(normalizedPath(item.file) === normalizedPath(target.file) && item.page === target.page));
     bindings.push({ ...target, flowFile: selected.flow.file, flowName: selected.flow.name });
     await this.state.update(STATE_KEY, bindings);
