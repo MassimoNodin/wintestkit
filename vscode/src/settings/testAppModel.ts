@@ -192,7 +192,10 @@ export function buildTestAppModel(input: TestAppInput): TestAppModel {
   const projectTile: Tile = {
     id: "project",
     title: input.project.name,
-    subtitle: input.workspaceName,
+    subtitle:
+      input.workspaceName && input.workspaceName !== input.project.name
+        ? input.workspaceName
+        : undefined,
     codicon: "folder-opened",
     tone: "project",
     chevron: (input.projectCount ?? 1) > 1,

@@ -75,9 +75,13 @@ p {
 .choice-row .tile-title {
     font-size: 12px;
 }
-.choice-row .tile-subtitle,
-.choice-row .tile-chevron {
+.choice-row .tile-app .tile-subtitle,
+.choice-row .tile-mode .tile-subtitle {
     display: none;
+}
+.choice-row .tile-project .tile-subtitle {
+    display: block;
+    font-size: 10px;
 }
 .action-row .tile {
     border-color: var(--accent);

@@ -113,25 +113,25 @@ describe("Test Target tiles", () => {
         .title,
     ).toBe("Launch per test");
   });
-  it("puts the workspace folder over the project name, and a switch only for several projects", () => {
+  it("shows the project name with a distinct workspace subtitle only when switching projects", () => {
     const single = build(
       launchable,
       { running: false },
       { workspaceName: "Calculator", projectCount: 1 },
-    ).tiles[2];
-    expect(single).toMatchObject({
-      title: "demo",
-      subtitle: "Calculator",
-      chevron: false,
-    });
+    );
+    expect(single.tiles.find((tile) => tile.id === "project")).toBeUndefined();
     const several = build(
       launchable,
       { running: false },
-      { workspaceName: "demo", projectCount: 3 },
+      { workspaceName: "Calculator", projectCount: 3 },
     ).tiles[2];
     expect(several.title).toBe("demo");
-    expect(several.subtitle).toBeUndefined();
+    expect(several.subtitle).toBe("Calculator");
     expect(several.chevron).toBe(true);
+    expect(
+      build(launchable, { running: false }, { workspaceName: "demo", projectCount: 3 })
+        .tiles[2].subtitle,
+    ).toBeUndefined();
   });
   it("hides the project chooser when there is only one project", () => {
     expect(ids(build(launchable, { running: false }, { projectCount: 1 }))).toEqual([
@@ -214,7 +214,7 @@ describe("Test Target tiles", () => {
         }),
         expect.objectContaining({
           id: "close",
-          title: "Close",
+          title: "Close Demo",
           disabled: true,
         }),
       ]);
@@ -229,7 +229,7 @@ describe("Test Target tiles", () => {
       expect(tail(model)).toEqual([
         expect.objectContaining({
           id: "restart",
-          title: "Restart",
+          title: "Restart Demo",
           disabled: true,
         }),
         expect.objectContaining({
