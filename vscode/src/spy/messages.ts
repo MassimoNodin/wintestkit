@@ -43,6 +43,7 @@ export type SpyResponse =
       type: "state";
       picking: boolean;
       appRunning: boolean;
+      targetName: string;
       hasProject: boolean;
       showOtherApps: boolean;
       bringToFront: boolean;

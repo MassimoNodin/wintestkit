@@ -250,6 +250,7 @@ describe("Spy view bridge", () => {
       expect.objectContaining({
         type: "state",
         appRunning: true,
+        targetName: "demo",
         showOtherApps: false,
       }),
     );
@@ -264,6 +265,7 @@ describe("Spy view bridge", () => {
       expect.objectContaining({
         type: "state",
         appRunning: true,
+        targetName: "demo",
         showOtherApps: true,
       }),
     );
@@ -282,6 +284,14 @@ describe("Spy view bridge", () => {
     await new Promise((resolve) => setTimeout(resolve, 10));
     expect(mocks.request).not.toHaveBeenCalled();
     fixture.provider.dispose();
+  });
+  it("keeps the scope control visible and explains the live target", () => {
+    const script = readFileSync("media/spy/spy.js", "utf8");
+    const html = readFileSync("media/spy/spy.html", "utf8");
+    expect(script).toContain('otherApps.hidden = false');
+    expect(script).toContain('otherApps.disabled = !running');
+    expect(script).toContain("Showing other desktop windows.");
+    expect(html).toContain('id="scope-context" role="status"');
   });
   it("drops a superseded scope's roots and selection", async () => {
     let finishFirst: (nodes: unknown[]) => void = () => {};

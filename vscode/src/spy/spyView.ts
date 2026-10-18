@@ -148,10 +148,12 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
     if (!this.disposed) void this.view?.webview.postMessage(message);
   }
   private state(): void {
+    const project = this.currentProject();
     this.post({
       type: "state",
       picking: this.picking,
       appRunning: this.appRunning,
+      targetName: project?.name ?? "Test Target",
       hasProject: !!this.currentProject(),
       showOtherApps: this.showOtherApps,
       bringToFront: this.bringToFront(),

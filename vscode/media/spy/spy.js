@@ -266,7 +266,11 @@
     renderBringToFront();
     const otherApps = element("other-apps");
     const running = !!(appState && appState.appRunning);
-    otherApps.hidden = !running;
+    otherApps.hidden = false;
+    otherApps.disabled = !running;
+    otherApps.title = running
+      ? (showOtherApps ? "Show Only Selected App" : "Show Other Apps")
+      : "The selected app is stopped; desktop windows are shown.";
     otherApps.setAttribute("aria-pressed", String(showOtherApps));
     const otherAppsText = showOtherApps
       ? "Show Only Selected App"
