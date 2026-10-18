@@ -17,6 +17,10 @@ if TYPE_CHECKING:
     from wintestkit.uia.element import ElementInfo, UIAElement
 
 
+class WindowSelectedError(WtkError):
+    """The selected element is a top-level window, which has no element locator."""
+
+
 # The typed element (wintestkit.controls) declared for a control type; any other stays ``Element``.
 TYPED_ELEMENT_FOR_CONTROL = {
     "Button": "Button",
@@ -245,7 +249,7 @@ def _top_window(element: UIAElement, app: App | None) -> UIAElement:
 def suggest_locator(el: UIAElement, app: App | None = None) -> Suggestion:
     top = _top_window(el, app)
     if top.same_as(el):
-        raise WtkError("Select a window descendant to generate an element locator")
+        raise WindowSelectedError("Select a window descendant to generate an element locator")
     window_locator = WindowLocator(title=top.name or None)
     windows = app.top_level_windows() if app is not None else [top]
     same_title = [window for window in windows if window.name == top.name]

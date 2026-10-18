@@ -47,6 +47,7 @@ def test_rpc_results(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, validate: 
         ("discover", {}, "DiscoverResult"),
         ("app.status", {}, "AppStatusResult"),
         ("app.launch", {}, "AppLaunchResult"),
+        ("app.processes", {}, "AppProcessesResult"),
         (
             "element.highlight",
             {"file": "page.py", "qualname": "Main.ok"},
@@ -63,6 +64,8 @@ def test_rpc_results(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, validate: 
         ),
         ("inspect.highlight", {"nodeId": node["nodeId"]}, "InspectHighlightResult"),
         ("suggest.locator", {"nodeId": node["nodeId"]}, "SuggestLocatorResult"),
+        ("inspect.definitions", {"nodeId": node["nodeId"]}, "InspectDefinitionsResult"),
+        ("inspect.coverage", {"nodeIds": [node["nodeId"]]}, "InspectCoverageResult"),
         ("spy.stop", {}, "SpyStopResult"),
     ]
     for method, params, definition in methods:

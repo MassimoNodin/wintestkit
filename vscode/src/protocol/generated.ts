@@ -15,6 +15,11 @@ export type AppCloseResult = null;
 export type AppLaunchParams = Record<string, never>;
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "AppProcessesParams".
+ */
+export type AppProcessesParams = Record<string, never>;
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
  * via the `definition` "AppStatusParams".
  */
 export type AppStatusParams = Record<string, never>;
@@ -163,6 +168,9 @@ export interface ProtocolContracts {
   AppCloseResult?: AppCloseResult;
   AppLaunchParams?: AppLaunchParams;
   AppLaunchResult?: AppLaunchResult;
+  AppProcessesParams?: AppProcessesParams;
+  AppProcessesResult?: AppProcessesResult;
+  AppStartingNotification?: AppStartingNotification;
   AppStatusParams?: AppStatusParams;
   AppStatusResult?: AppStatusResult;
   Candidate?: Candidate;
@@ -170,6 +178,8 @@ export interface ProtocolContracts {
   ChildPageEntry?: ChildPageEntry;
   CollectError?: CollectError;
   CollectedTest?: CollectedTest;
+  DefinitionError?: DefinitionError;
+  DefinitionMatch?: DefinitionMatch;
   Diagnostic?: Diagnostic;
   DiscoverParams?: DiscoverParams;
   DiscoverResult?: DiscoverResult;
@@ -188,6 +198,10 @@ export interface ProtocolContracts {
   InitializeResult?: InitializeResult;
   InspectChildrenParams?: InspectChildrenParams;
   InspectChildrenResult?: InspectChildrenResult;
+  InspectCoverageParams?: InspectCoverageParams;
+  InspectCoverageResult?: InspectCoverageResult;
+  InspectDefinitionsParams?: InspectDefinitionsParams;
+  InspectDefinitionsResult?: InspectDefinitionsResult;
   InspectHighlightParams?: InspectHighlightParams;
   InspectHighlightResult?: InspectHighlightResult;
   InspectPropertiesParams?: InspectPropertiesParams;
@@ -199,6 +213,7 @@ export interface ProtocolContracts {
   LogNotification?: LogNotification;
   Matcher?: Matcher;
   Mismatch?: Mismatch;
+  NodeCoverage?: NodeCoverage;
   NodeInfo?: NodeInfo;
   PageCheckParams?: PageCheckParams;
   PageCheckResult?: PageCheckResult;
@@ -209,6 +224,7 @@ export interface ProtocolContracts {
   Relocation?: Relocation;
   Results?: Results;
   RunEvent?: RunEvent;
+  RunningProcess?: RunningProcess;
   ShutdownParams?: ShutdownParams;
   ShutdownResult?: ShutdownResult;
   SpyCancelledNotification?: SpyCancelledNotification;
@@ -234,6 +250,29 @@ export interface ProtocolContracts {
  */
 export interface AppLaunchResult {
   pids: number[];
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "AppProcessesResult".
+ */
+export interface AppProcessesResult {
+  processes: RunningProcess[];
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "RunningProcess".
+ */
+export interface RunningProcess {
+  name: string;
+  pids: number[];
+  windowTitle: string;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "AppStartingNotification".
+ */
+export interface AppStartingNotification {
+  stage: "process" | "window";
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
@@ -397,6 +436,30 @@ export interface CollectedTest {
   line: number;
   name: string;
   parent: string | null;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "DefinitionError".
+ */
+export interface DefinitionError {
+  file: string;
+  message: string;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "DefinitionMatch".
+ */
+export interface DefinitionMatch {
+  id: string;
+  qualname: string;
+  kind: "element" | "elements" | "window";
+  elementType?: string;
+  locator: string;
+  file: string;
+  line: number;
+  range?: Range;
+  pages: string[];
+  pageCount: number;
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
@@ -625,11 +688,56 @@ export interface NodeInfo {
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "InspectCoverageParams".
+ */
+export interface InspectCoverageParams {
+  /**
+   * @maxItems 500
+   */
+  nodeIds: string[];
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "InspectCoverageResult".
+ */
+export interface InspectCoverageResult {
+  covered: {
+    [k: string]: NodeCoverage;
+  };
+  pending: string[];
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "NodeCoverage".
+ */
+export interface NodeCoverage {
+  count: number;
+  first: string;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "InspectDefinitionsParams".
+ */
+export interface InspectDefinitionsParams {
+  nodeId: string;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "InspectDefinitionsResult".
+ */
+export interface InspectDefinitionsResult {
+  definitions: DefinitionMatch[];
+  errors: DefinitionError[];
+  pageCount: number;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
  * via the `definition` "InspectHighlightParams".
  */
 export interface InspectHighlightParams {
   nodeId: string;
   durationMs?: number;
+  bringToFront?: boolean;
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema

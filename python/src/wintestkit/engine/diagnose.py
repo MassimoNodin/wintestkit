@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping, Sequence
+from collections.abc import Generator, Mapping, Sequence
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 from typing import TYPE_CHECKING, Any, Literal
@@ -26,6 +28,23 @@ DiagnosticKind = Literal[
 
 MAX_CANDIDATES = 5
 MAX_RELOCATIONS = 5
+
+_quiet: ContextVar[bool] = ContextVar("wintestkit_quiet_diagnostics", default=False)
+
+
+@contextmanager
+def quiet_diagnostics() -> Generator[None]:
+    """Skip the expensive "closest candidates" scans of not-found diagnostics.
+
+    For callers that only need to know whether a locator resolves (not why it does not), so a miss
+    costs one search instead of one search plus a scan of every control in the window.
+    """
+    __tracebackhide__ = True
+    token = _quiet.set(True)
+    try:
+        yield
+    finally:
+        _quiet.reset(token)
 
 
 @dataclass(frozen=True)
@@ -231,6 +250,15 @@ def diagnose_window(
     ambiguous). ``candidates`` are all windows that were examined (defaults to the app's windows).
     """
     __tracebackhide__ = True
+    if _quiet.get() and len(matches) <= 1:
+        described = wl.describe()
+        return Diagnostic(
+            kind="window_not_found",
+            message=f"No window matches {described}",
+            locator=described,
+            searched_in=f"Application {wl.process or app.process_name}",
+            match_count=0,
+        )
     examined = list(candidates) if candidates is not None else app.top_level_windows()
     process = wl.process or app.process_name
     described = wl.describe()
@@ -320,6 +348,14 @@ def diagnose_not_found(
 ) -> Diagnostic:
     """Explain why ``link`` matched nothing under ``root`` and list the closest elements."""
     __tracebackhide__ = True
+    if _quiet.get():
+        return Diagnostic(
+            kind="not_found",
+            message=f"No element matches {link.describe_link(include_item=False)} in {searched_in}",
+            locator=full_locator.describe(),
+            searched_in=searched_in,
+            match_count=0,
+        )
     scored: list[tuple[int, float, int, ElementInfo, tuple[Mismatch, ...]]] = []
     for order, element in enumerate(relaxed_descendants(root, link.control_type)):
         info = element.info()

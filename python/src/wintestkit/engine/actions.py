@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import logging
 import re
-from collections.abc import Callable
 from typing import Literal
 
 from wintestkit.engine import waits
@@ -78,34 +77,23 @@ def bring_to_front(el: UIAElement) -> bool:
     return raised
 
 
-def raise_with_restore(el: UIAElement) -> Callable[[], None]:
-    """Raise the owning window like :func:`bring_to_front`; the callback gives focus back.
-
-    The callback re-selects the window that had the foreground before (the editor the user
-    clicked in, so the right one when several are open) unless the user has switched to another
-    window in the meantime.
-    """
+def window_is_minimized(el: UIAElement) -> bool:
+    """Whether the element's top-level window is minimized (its controls then have no bounds)."""
     __tracebackhide__ = True
-    previous = win32.GetForegroundWindow()
     hwnd = _top_level_hwnd(el)
-    raised = bring_to_front(el)
+    return bool(hwnd) and bool(win32.IsIconic(hwnd))
 
-    def restore() -> None:
-        __tracebackhide__ = True
-        if not raised or not previous or previous == hwnd:
-            return
-        try:
-            if (
-                win32.GetForegroundWindow() == hwnd
-                and win32.IsWindow(previous)
-                and win32.IsWindowVisible(previous)
-                and not win32.IsIconic(previous)
-            ):
-                win32.bring_to_foreground(previous)
-        except Exception:
-            log.debug("could not return the foreground to window %#x", previous, exc_info=True)
 
-    return restore
+def raise_without_activating(el: UIAElement) -> bool:
+    """Show the owning window above the others while the current window keeps keyboard focus."""
+    __tracebackhide__ = True
+    hwnd = _top_level_hwnd(el)
+    if not hwnd:
+        return False
+    raised = win32.raise_window(hwnd)
+    if not raised:
+        log.debug("could not raise window %#x", hwnd)
+    return raised
 
 
 def _foreground(el: UIAElement) -> None:

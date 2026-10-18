@@ -228,6 +228,7 @@ Error codes:
 | -32003 | Target not found (bad file/qualname, import failure; `data.message` has the traceback summary) |
 | -32004 | Environment not ready (locked desktop etc.) |
 | -32005 | Unknown node id (stale inspector node) |
+| -32006 | No element locator for a top-level window (`suggest.locator` on a window node) |
 
 ### Methods
 
@@ -270,6 +271,11 @@ interface NodeInfo { nodeId: string; info: ElementInfo; hasChildren: boolean }
                                                    ancestors: NodeInfo[] }              // root-first path
 "inspect.highlight": (p: { nodeId: string; durationMs?: number }) => null
 "suggest.locator":   (p: { nodeId: string }) => Suggestion
+"inspect.definitions": (p: { nodeId: string }) => { definitions: DefinitionMatch[];   // page definitions that resolve to exactly this node
+                                                    errors: { file: string; message: string }[];  // page files that could not be imported
+                                                    pageCount: number }
+"inspect.coverage":  (p: { nodeIds: string[] }) => { covered: Record<string, { count: number; first: string }>;
+                                                     pending: string[] }   // nodes not finished within the time budget: ask again
 
 interface Suggestion {
   locator: LocatorData;

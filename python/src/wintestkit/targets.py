@@ -141,6 +141,9 @@ class ModuleLoader:
             sys.path.insert(0, text)
         self._stamps: dict[Path, tuple[int, int]] | None = None
         self._last_scan = 0.0
+        #: Bumped whenever the project's modules are purged because a file changed, so callers that
+        #: cache what the pages declare can tell when it is stale.
+        self.generation = 0
 
     # -- change detection -----------------------------------------------------------------------
 
@@ -191,6 +194,7 @@ class ModuleLoader:
         self._stamps = stamps
         if changed:
             self._purge_project_modules()
+            self.generation += 1
         return changed
 
     # -- loading --------------------------------------------------------------------------------

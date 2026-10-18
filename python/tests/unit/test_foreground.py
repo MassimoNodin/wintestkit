@@ -101,78 +101,82 @@ def test_bound_highlight_without_bounds_does_not_draw(monkeypatch: pytest.Monkey
         Stub().highlight()
 
 
-EDITOR = 500
-TARGET = 100
-
-
-class _Windows:
-    """A scripted desktop: which window is in front, which exist, which are minimized."""
-
-    def __init__(self, monkeypatch: pytest.MonkeyPatch, front: int) -> None:
-        self.front = front
-        self.alive = {EDITOR, TARGET}
-        self.minimized: set[int] = set()
-        self.activated: list[int] = []
-        monkeypatch.setattr(win32, "root_window", lambda handle: TARGET)
-        monkeypatch.setattr(win32, "GetForegroundWindow", lambda: self.front)
-        monkeypatch.setattr(win32, "IsWindow", lambda handle: handle in self.alive)
-        monkeypatch.setattr(win32, "IsWindowVisible", lambda handle: handle in self.alive)
-        monkeypatch.setattr(win32, "IsIconic", lambda handle: handle in self.minimized)
-        monkeypatch.setattr(win32, "bring_to_foreground", self.bring_to_foreground)
-
-    def bring_to_foreground(self, handle: int) -> bool:
-        self.front = handle
-        self.activated.append(handle)
-        return True
-
-
-def _target() -> FakeElement:
-    target = FakeElement("Button", "Save")
-    target.native_window_handle = TARGET
-    return target
-
-
-def test_restore_returns_the_foreground_to_the_window_that_had_it(
+def test_raise_without_activating_raises_the_owning_window(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    desktop = _Windows(monkeypatch, front=EDITOR)
-    restore = actions.raise_with_restore(_target())
-    assert desktop.activated == [TARGET]
-    restore()
-    assert desktop.activated == [TARGET, EDITOR]
+    child = FakeElement("Button", "Save")
+    root = FakeElement("Window", "Demo", children=[child])
+    root.native_window_handle = 100
+    raised: list[int] = []
+    monkeypatch.setattr(win32, "root_window", lambda handle: 100)
+    monkeypatch.setattr(win32, "raise_window", lambda handle: raised.append(handle) or True)
+    monkeypatch.setattr(
+        win32, "bring_to_foreground", lambda handle: pytest.fail("must not take focus")
+    )
+    assert actions.raise_without_activating(child)
+    assert raised == [100]
 
 
-@pytest.mark.parametrize("change", ["user_switched", "editor_closed", "editor_minimized"])
-def test_restore_leaves_the_desktop_alone_when_it_changed(
-    monkeypatch: pytest.MonkeyPatch, change: str
-) -> None:
-    desktop = _Windows(monkeypatch, front=EDITOR)
-    restore = actions.raise_with_restore(_target())
-    if change == "user_switched":
-        desktop.front = 777
-    elif change == "editor_closed":
-        desktop.alive.discard(EDITOR)
-    else:
-        desktop.minimized.add(EDITOR)
-    restore()
-    assert desktop.activated == [TARGET]
-
-
-def test_restore_does_nothing_when_the_target_was_already_in_front(
+def test_raise_without_activating_ignores_an_element_without_a_window(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    desktop = _Windows(monkeypatch, front=TARGET)
-    actions.raise_with_restore(_target())()
-    assert desktop.activated == [TARGET]
+    pane = FakeElement("Pane", "Desktop")
+    pane.native_window_handle = 0
+    monkeypatch.setattr(win32, "raise_window", lambda handle: pytest.fail("no window to raise"))
+    assert not actions.raise_without_activating(pane)
 
 
-def test_restore_does_nothing_when_the_window_could_not_be_raised(
+class _Z:
+    """Records the window calls made by ``win32.raise_window``."""
+
+    def __init__(self, monkeypatch: pytest.MonkeyPatch, *, iconic: bool, topmost: bool) -> None:
+        self.calls: list[tuple[str, int]] = []
+        monkeypatch.setattr(win32, "IsIconic", lambda handle: iconic)
+        monkeypatch.setattr(
+            win32,
+            "ShowWindow",
+            lambda handle, command: self.calls.append(("show", command)) or True,
+        )
+        monkeypatch.setattr(
+            win32, "GetWindowLongW", lambda handle, index: win32.WS_EX_TOPMOST if topmost else 0
+        )
+        monkeypatch.setattr(
+            win32,
+            "SetWindowPos",
+            lambda handle, after, x, y, w, h, flags: (
+                self.calls.append(("pos", after, flags)) or True
+            ),
+        )
+
+
+_NO_FOCUS = win32.SWP_NOMOVE | win32.SWP_NOSIZE | win32.SWP_NOACTIVATE
+
+
+def test_raise_window_goes_topmost_then_back_without_activating(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    desktop = _Windows(monkeypatch, front=EDITOR)
-    monkeypatch.setattr(win32, "bring_to_foreground", lambda handle: False)
-    actions.raise_with_restore(_target())()
-    assert desktop.activated == []
+    z = _Z(monkeypatch, iconic=False, topmost=False)
+    assert win32.raise_window(100)
+    assert z.calls == [
+        ("pos", win32.HWND_TOPMOST, _NO_FOCUS),
+        ("pos", win32.HWND_NOTOPMOST, _NO_FOCUS),
+    ]
+
+
+def test_raise_window_keeps_a_window_that_was_already_topmost(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    z = _Z(monkeypatch, iconic=False, topmost=True)
+    assert win32.raise_window(100)
+    assert z.calls == [("pos", win32.HWND_TOPMOST, _NO_FOCUS)]
+
+
+def test_raise_window_restores_a_minimized_window_without_activating(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    z = _Z(monkeypatch, iconic=True, topmost=False)
+    assert win32.raise_window(100)
+    assert z.calls[0] == ("show", win32.SW_SHOWNOACTIVATE)
 
 
 def test_flash_runs_after_when_the_outline_is_done(monkeypatch: pytest.MonkeyPatch) -> None:

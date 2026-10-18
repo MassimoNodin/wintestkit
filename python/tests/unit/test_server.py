@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from fakes import FakeApp
 from rpc_support import RpcElement, make_server, request
 
 from wintestkit.engine import actions, overlay
@@ -67,10 +68,56 @@ def test_methods_and_nodes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> N
     assert properties["ancestors"][0]["info"]["name"] == "Demo"
     assert request(server, output, "inspect.highlight", params)["result"] is None
     assert request(server, output, "suggest.locator", params)["result"]["strategy"] == "name"
+    window_error = request(server, output, "suggest.locator", {"nodeId": root["nodeId"]})["error"]
+    assert window_error["code"] == -32006
+    assert "window descendant" in window_error["message"]
     assert (
         request(server, output, "inspect.children", {"nodeId": "stale"})["error"]["code"] == -32005
     )
     assert request(server, output, "initialize", {"root": str(tmp_path)})["error"]["code"] == -32600
+
+
+def test_app_launch_reports_its_stages_while_starting(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    server, output, _button = make_server(tmp_path, monkeypatch)
+    request(server, output, "initialize", {"root": str(tmp_path)})
+    server.app = None  # nothing is running yet, so app.launch has to start the app
+    started = FakeApp([])
+
+    def launch(config: Any, progress: Any = None) -> FakeApp:
+        progress("process")
+        progress("window")
+        return started
+
+    monkeypatch.setattr("wintestkit.pytest_plugin.launch_app", launch)
+
+    def not_running(**kwargs: Any) -> None:
+        raise AppNotRunningError("not running")
+
+    monkeypatch.setattr("wintestkit.app.App.attach", staticmethod(not_running))
+    server.handle({"jsonrpc": "2.0", "id": 1, "method": "app.launch", "params": {}})
+    messages = [json.loads(line) for line in output.getvalue().splitlines()]
+    stages = [m["params"]["stage"] for m in messages if m.get("method") == "app.starting"]
+    assert stages == ["process", "window"]
+    assert server.app is started
+
+
+def test_app_processes_lists_the_running_apps_with_windows(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    server, output, _button = make_server(tmp_path, monkeypatch)
+    request(server, output, "initialize", {"root": str(tmp_path)})
+    monkeypatch.setattr(
+        "wintestkit.uia.win32.windowed_processes",
+        lambda: [("CalculatorApp.exe", [38000], "Calculator"), ("code.exe", [7, 9], "Code")],
+    )
+    assert request(server, output, "app.processes")["result"] == {
+        "processes": [
+            {"name": "CalculatorApp.exe", "pids": [38000], "windowTitle": "Calculator"},
+            {"name": "code.exe", "pids": [7, 9], "windowTitle": "Code"},
+        ]
+    }
 
 
 def test_roots_include_other_apps_only_when_asked(
@@ -109,6 +156,21 @@ def test_roots_include_other_apps_only_when_asked(
     restored = request(server, output, "inspect.roots", {"includeOtherApps": False})["result"]
     assert [node["info"]["name"] for node in restored] == ["Demo"]
     assert desktop_reads == 1
+
+
+def test_roots_leave_out_transient_popup_windows(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    server, output, _button = make_server(tmp_path, monkeypatch)
+    request(server, output, "initialize", {"root": str(tmp_path)})
+    assert server.app is not None
+    window = server.app.windows[0]  # type: ignore[attr-defined]
+    for popup_class in ("Xaml_WindowedPopupClass", "Microsoft.UI.Content.PopupWindowSiteBridge"):
+        server.app.windows.append(  # type: ignore[attr-defined]
+            RpcElement("Window", "PopupHost", class_name=popup_class)
+        )
+    roots = request(server, output, "inspect.roots")["result"]
+    assert [node["info"]["name"] for node in roots] == [window.name]
 
 
 @pytest.mark.parametrize("full", [False, True])
@@ -171,17 +233,22 @@ def test_highlight_raises_window_before_reading_bounds(
         button.rect = restored_rect
         return activated
 
-    def flash(rect: Rect, duration: int, *, block: bool, after: Any = None) -> None:
+    def flash(rect: Rect, duration: int, *, block: bool) -> None:
         assert rect == restored_rect
         assert duration == 800
         assert not block
-        assert callable(after)  # gives the foreground back once the outline is gone
         calls.append("highlight")
 
-    monkeypatch.setattr(actions, "bring_to_front", foreground)
+    monkeypatch.setattr(actions, "raise_without_activating", foreground)
+    monkeypatch.setattr(actions, "window_is_minimized", lambda element: True)
     monkeypatch.setattr(overlay, "flash", flash)
     if method == "inspect.highlight":
-        response = request(server, output, method, {"nodeId": node["nodeId"], "durationMs": 800})
+        response = request(
+            server,
+            output,
+            method,
+            {"nodeId": node["nodeId"], "durationMs": 800, "bringToFront": True},
+        )
         assert response["result"] is None
     else:
         response = request(
@@ -194,6 +261,56 @@ def test_highlight_raises_window_before_reading_bounds(
     assert calls == ["foreground", "highlight"]
 
 
+@pytest.mark.parametrize("method", ["inspect.highlight", "element.highlight"])
+def test_highlight_does_not_raise_a_window_for_an_element_without_bounds(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, method: str
+) -> None:
+    server, output, button = make_server(tmp_path, monkeypatch)
+    request(server, output, "initialize", {"root": str(tmp_path)})
+    node = server._register(button)
+    button.rect = None
+
+    def unexpected(*args: Any, **kwargs: Any) -> None:
+        pytest.fail("must not raise the window or outline an element that has no bounds")
+
+    monkeypatch.setattr(actions, "raise_without_activating", unexpected)
+    monkeypatch.setattr(actions, "window_is_minimized", lambda element: False)
+    monkeypatch.setattr(overlay, "flash", unexpected)
+    if method == "inspect.highlight":
+        response = request(server, output, method, {"nodeId": node["nodeId"], "bringToFront": True})
+        assert response["result"] is None
+    else:
+        response = request(server, output, method, {"file": "page.py", "qualname": "Main.ok"})
+        assert response["result"]["status"] == "found"
+
+
+def test_inspect_highlight_outlines_without_raising_the_window_unless_asked(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    server, output, button = make_server(tmp_path, monkeypatch)
+    request(server, output, "initialize", {"root": str(tmp_path)})
+    node = server._register(button)
+    raised: list[str] = []
+    outlined: list[Rect] = []
+    monkeypatch.setattr(
+        actions, "raise_without_activating", lambda element: raised.append("raised") or True
+    )
+    monkeypatch.setattr(overlay, "flash", lambda rect, duration, *, block: outlined.append(rect))
+    request(server, output, "inspect.highlight", {"nodeId": node["nodeId"]})
+    assert raised == []  # off by default: the outline alone marks the element
+    assert outlined == [button.rect]
+    request(server, output, "inspect.highlight", {"nodeId": node["nodeId"], "bringToFront": False})
+    assert raised == []
+    request(server, output, "inspect.highlight", {"nodeId": node["nodeId"], "bringToFront": True})
+    assert raised == ["raised"]
+    assert (
+        request(
+            server, output, "inspect.highlight", {"nodeId": node["nodeId"], "bringToFront": "yes"}
+        )["error"]["code"]
+        == -32602
+    )
+
+
 def test_element_highlight_does_not_activate_a_missing_target(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -203,7 +320,7 @@ def test_element_highlight_does_not_activate_a_missing_target(
     def unexpected(*args: Any, **kwargs: Any) -> None:
         pytest.fail("must not activate or outline a target that does not resolve")
 
-    monkeypatch.setattr(actions, "bring_to_front", unexpected)
+    monkeypatch.setattr(actions, "raise_without_activating", unexpected)
     monkeypatch.setattr(overlay, "flash", unexpected)
     response = request(
         server, output, "element.highlight", {"file": "page.py", "qualname": "Main.missing"}
