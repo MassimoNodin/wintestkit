@@ -19,17 +19,44 @@ export function failureMessage(failed: number): string {
   return `${failed} ${failed === 1 ? "test" : "tests"} failed.`;
 }
 
+export interface LastRunSummary {
+  passed: number;
+  failed: number;
+  report?: string;
+  at: number;
+}
+
+const LAST_RUNS_KEY = "wintestkit.lastRuns";
+
 export class Reports {
   private readonly last = new Map<string, string>();
   private latest: string | undefined;
+  private readonly summaries = new Map<string, LastRunSummary>();
+  private readonly listeners = new Set<(project: Project) => void>();
   constructor(
     private readonly servers: ServerManager,
     private readonly log: vscode.LogOutputChannel,
-  ) {}
+    private readonly state?: vscode.Memento,
+  ) {
+    const saved = state?.get<Record<string, LastRunSummary>>(LAST_RUNS_KEY) ?? {};
+    for (const [root, summary] of Object.entries(saved)) this.summaries.set(root, summary);
+  }
 
-  record(project: Project, file: string | undefined, failed: number): void {
+  onDidChange(listener: (project: Project) => void): vscode.Disposable {
+    this.listeners.add(listener);
+    return { dispose: () => this.listeners.delete(listener) };
+  }
+  lastRun(project: Project | undefined): LastRunSummary | undefined {
+    return project && this.summaries.get(project.root.toString());
+  }
+  record(project: Project, file: string | undefined, failed: number, passed = 0): void {
+    const key = project.root.toString();
+    const summary = { passed, failed, report: file, at: Date.now() };
+    this.summaries.set(key, summary);
+    void this.state?.update(LAST_RUNS_KEY, Object.fromEntries(this.summaries));
+    this.listeners.forEach((listener) => listener(project));
     if (file) {
-      this.last.set(project.root.toString(), file);
+      this.last.set(key, file);
       this.latest = file;
     }
     if (failed > 0) void this.notify(failed, file);
@@ -46,8 +73,9 @@ export class Reports {
         this.log.warn(`Cannot read the report directory: ${String(error)}`);
       }
     }
+    const summary = project && this.lastRun(project);
     const file = project
-      ? reportPath(key && this.last.get(key), reportDir, project.root.fsPath)
+      ? reportPath((key && this.last.get(key)) ?? summary?.report, reportDir, project.root.fsPath)
       : this.latest;
     if (!file) {
       await vscode.window.showInformationMessage(

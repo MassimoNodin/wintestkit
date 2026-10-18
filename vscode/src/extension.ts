@@ -123,6 +123,7 @@ export function activate(context: vscode.ExtensionContext): {
   const checkAfterFlow = new CheckAfterFlow(projects, discovery, context.workspaceState);
   const projectSweep = new ProjectSweep(projects, discovery, servers, context.workspaceState);
   const flows = new FlowRuns(projects, discovery, servers, log, (file, name) => checkAfterFlow.afterFlow(file, name));
+  const reports = new Reports(servers, log, context.globalState);
   const lenses = new CodeLenses(projects, discovery, checks, flows);
   const elements = new ElementsTree(
     projects,
@@ -130,6 +131,7 @@ export function activate(context: vscode.ExtensionContext): {
     checks,
     flows,
     context,
+    reports,
   );
   context.subscriptions.push(elements, flows, checkAfterFlow, projectSweep);
   const spy = new SpyView(projects, servers, context.extensionUri, log);
@@ -138,7 +140,6 @@ export function activate(context: vscode.ExtensionContext): {
     registerInsertElement(projects, discovery, log),
     registerInsertAssertion(),
   );
-  const reports = new Reports(servers, log);
   const tests = new TestController(projects, discovery, log, reports);
   context.subscriptions.push(
     registerInitialize(projects, log),
