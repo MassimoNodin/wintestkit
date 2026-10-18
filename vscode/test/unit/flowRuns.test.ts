@@ -7,6 +7,7 @@ import { RpcError } from "../../src/server/jsonrpc";
 
 const mocks = vi.hoisted(() => ({
   commands: new Map<string, (target?: unknown) => Promise<void>>(),
+  executeCommand: vi.fn(),
   rediscover: undefined as ((project: unknown) => void) | undefined,
   request: vi.fn(),
   info: vi.fn(),
@@ -32,6 +33,7 @@ vi.mock("vscode", () => ({
       mocks.commands.set(name, handler);
       return { dispose() {} };
     },
+    executeCommand: mocks.executeCommand,
   },
   Uri: { file: (file: string) => ({ fsPath: file }) },
   window: {
@@ -113,13 +115,18 @@ describe("flow runs", () => {
     expect(mocks.show).toHaveBeenCalled();
     expect(flows.states.get(flowKey(target))?.status).toBe("failed");
   });
-  it("tells the user to start the app instead of launching it", async () => {
-    mocks.request.mockRejectedValue(new RpcError(-32002, "App is not running"));
+  it("offers to launch a stopped app and retries the flow", async () => {
+    mocks.request
+      .mockRejectedValueOnce(new RpcError(-32002, "App is not running"))
+      .mockResolvedValueOnce({ status: "passed", durationMs: 1 });
+    mocks.info.mockResolvedValue("Launch App");
     await run();
-    expect(mocks.error).toHaveBeenCalledWith(
-      "The app isn't running. Launch it, then run the flow again.",
-    );
-    expect(flows.states.has(flowKey(target))).toBe(false);
+    expect(mocks.info).toHaveBeenCalledWith("The app isn't running.", "Launch App");
+    expect(mocks.executeCommand).toHaveBeenCalledWith("wintestkit.launchApp", {
+      resourceUri: project.root,
+    });
+    expect(mocks.request).toHaveBeenCalledTimes(2);
+    expect(flows.states.get(flowKey(target))?.status).toBe("passed");
   });
   it("shows other errors and clears the running state", async () => {
     mocks.request.mockRejectedValue(
