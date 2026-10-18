@@ -27,14 +27,14 @@ describe("editor lens model", () => {
   const page = discovery.pages[0];
   const element = page.elements.find((element) => element.kind !== "window")!;
   it.each([
-    ["running", "Highlighting…"],
-    ["found", "Highlighted"],
-    ["not_found", "Highlight: Not found"],
-    ["ambiguous", "Highlight: Multiple matches"],
-    ["error", "Highlight: Failed"],
+    ["running", "Highlighting…", "Checking…"],
+    ["found", "Highlighted", "Check: Found"],
+    ["not_found", "Highlight: Not found", "Check: Not found"],
+    ["ambiguous", "Highlight: Multiple matches", "Check: Multiple matches"],
+    ["error", "Highlight: Failed", "Check: Failed"],
   ] as const)(
     "shows %s feedback and preserves retry actions",
-    (status, highlight) => {
+    (status, highlight, check) => {
       const result: ActionStatus =
         status === "running"
           ? { status }
@@ -45,6 +45,7 @@ describe("editor lens model", () => {
       const lenses = buildLenses(discovery, page.file, feedback);
       for (const [command, label] of [
         ["highlightElement", highlight],
+        ["checkElement", check],
       ]) {
         const lens = lenses.find(
           (lens) =>
@@ -61,7 +62,7 @@ describe("editor lens model", () => {
       }
     },
   );
-  it("keeps class checks but removes individual check lenses", () => {
+  it("keeps highlight and check feedback independent", () => {
     const lenses = buildLenses(
       discovery,
       page.file,
@@ -75,7 +76,7 @@ describe("editor lens model", () => {
           lens.line === element.range.start.line &&
           lens.command === "wintestkit.checkElement",
       )?.title,
-    ).toBeUndefined();
+    ).toBe("$(check)\u00a0\u00a0Check exists");
     expect(
       lenses.find((lens) => lens.command === "wintestkit.checkPage")?.title,
     ).toContain("Check all elements in this class exist");
@@ -153,8 +154,8 @@ describe("editor lens model", () => {
       ],
     };
     const lenses = buildLenses(result, "C:/demo/page.py");
-    expect(lenses).toHaveLength(4);
-    expect(lenses.filter((lens) => lens.line === 2)).toHaveLength(1);
+    expect(lenses).toHaveLength(7);
+    expect(lenses.filter((lens) => lens.line === 2)).toHaveLength(2);
     // Tests get their run and debug actions from VS Code's Testing view, not CodeLens.
     expect(lenses.filter((lens) => lens.line >= 8)).toEqual([]);
     expect(buildLenses(result, "C:/elsewhere.py")).toEqual([]);

@@ -63,7 +63,7 @@ export function actionsFor(node: ElementNode): NavigationAction[] {
     node.file &&
     node.qualname
   )
-    actions.push("highlight");
+    actions.push("highlight", "check");
   if (context === "page" && node.file && node.page) actions.push("checkPage");
   if (context === "flow" && node.runnable && node.file) actions.push("run");
   return actions;
