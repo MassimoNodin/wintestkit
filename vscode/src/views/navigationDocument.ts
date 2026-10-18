@@ -346,6 +346,21 @@ tree.addEventListener("click", (event) => {
 tree.addEventListener("keydown", (event) => {
   if (event.altKey || event.ctrlKey || event.metaKey) return;
   const target = event.target;
+  if (event.key === "F2" && target instanceof Element) {
+    const row = target.closest("[role='treeitem']");
+    const actions = row ? Array.from(row.querySelectorAll("[data-action]")) : [];
+    if (actions?.length) {
+      event.preventDefault();
+      for (const action of actions) action.tabIndex = 0;
+      actions[0].focus();
+    }
+    return;
+  }
+  if (event.key === "Escape" && target instanceof Element && target.closest("[data-action]")) {
+    event.preventDefault();
+    target.closest("[role='treeitem']")?.focus();
+    return;
+  }
   if (target instanceof Element && target.closest("[data-action], [data-initialize]") && (event.key === "Enter" || event.key === " ")) return;
   if (!named.has(event.key) && event.key.length !== 1) return;
   event.preventDefault();
