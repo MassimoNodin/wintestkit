@@ -474,7 +474,7 @@ def _check_page(
     return results
 
 
-def run_flow(app: App, loader: ModuleLoader, file: Path, name: str) -> FlowResult:
+def run_flow(app: App, loader: ModuleLoader, file: Path, name: str, arguments: dict[str, Any] | None = None) -> FlowResult:
     """Call the flow ``name`` of ``file`` as ``flow(app)`` (awaiting it if it is async).
 
     Only flows whose sole required parameter is ``app`` can be run. An exception raised by the
@@ -505,7 +505,17 @@ def run_flow(app: App, loader: ModuleLoader, file: Path, name: str) -> FlowResul
     started = time.perf_counter()
     try:
         with runtime.config_scope(loader.cfg):
-            outcome = flow(app)
+            values = arguments or {}
+            signature = inspect.signature(flow)
+            allowed = {parameter for parameter in signature.parameters if parameter != "app"}
+            if set(values) - allowed:
+                raise TargetError("flow arguments contain unknown parameter names")
+            for key, value in values.items():
+                annotation = signature.parameters[key].annotation
+                expected = annotation if annotation in (str, int, float, bool) else None
+                if expected is None or type(value) is not expected:
+                    raise TargetError(f"flow argument {key!r} must be a supported typed scalar")
+            outcome = flow(app, **values)
             if inspect.isawaitable(outcome):
 
                 async def finish() -> None:

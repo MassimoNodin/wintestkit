@@ -38,7 +38,7 @@ _PARAMS: dict[str, tuple[set[str], set[str]]] = {
     "app.processes": (set(), set()),
     "element.highlight": ({"file", "qualname"}, {"durationMs"}),
     "page.check": ({"file", "page"}, set()),
-    "flow.run": ({"file", "name"}, set()),
+    "flow.run": ({"file", "name"}, {"arguments"}),
     "inspect.roots": (set(), {"includeOtherApps"}),
     "inspect.children": ({"nodeId"}, set()),
     "inspect.properties": ({"nodeId"}, {"full", "includeAncestors"}),
@@ -380,7 +380,10 @@ class Server:
             app = self._app()
             assert app is not None
             file = (self.cfg.root / Path(params["file"])).resolve()
-            return run_flow(app, self.loader, file, params["name"]).to_dict()
+            arguments = params.get("arguments", {})
+            if not isinstance(arguments, dict):
+                raise RpcError(-32602, "flow arguments must be an object")
+            return run_flow(app, self.loader, file, params["name"], arguments).to_dict()
         if method in ("element.highlight", "page.check"):
             app = self._app()
             assert app is not None

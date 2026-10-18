@@ -48,7 +48,21 @@
         "name": { "type": "string" },
         "range": { "$ref": "common.schema.json#/$defs/Range" },
         "nameRange": { "$ref": "common.schema.json#/$defs/Range" },
-        "runnable": { "type": "boolean" }
+          "runnable": { "type": "boolean" },
+          "parameters": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": { "type": "string" },
+                "type": { "enum": ["str", "int", "float", "bool"] },
+                "required": { "type": "boolean" },
+                "default": { "type": ["string", "number", "boolean"] }
+              },
+              "required": ["name", "type", "required"],
+              "additionalProperties": false
+            }
+          }
       },
       "required": ["id", "file", "name", "range", "nameRange"],
       "additionalProperties": false

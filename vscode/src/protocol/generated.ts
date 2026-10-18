@@ -571,6 +571,7 @@ export interface FlowEntry {
   range: Range;
   nameRange: Range;
   runnable?: boolean;
+  parameters?: { name: string; type: "str" | "int" | "float" | "bool"; required: boolean; default?: string | number | boolean }[];
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema

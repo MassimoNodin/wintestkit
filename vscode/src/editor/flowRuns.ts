@@ -11,6 +11,7 @@ import { recoverStoppedApp } from "./appRecovery";
 export interface FlowTarget {
   file: string;
   name: string;
+  arguments?: Record<string, string | number | boolean>;
 }
 
 // A flow can run for minutes, far longer than the default request timeout.
@@ -61,6 +62,9 @@ export class FlowRuns implements vscode.Disposable {
       );
       return;
     }
+    const flow = this.discovery.get(project)?.flows?.find((item) => item.name === target.name && normalizedPath(item.file) === normalizedPath(target.file));
+    const arguments_ = target.arguments ?? await this.promptArguments(flow?.parameters ?? []);
+    if (arguments_ === undefined) return;
     const pending: FlowStatus = { status: "running" };
     this.set(key, pending);
     try {
@@ -69,7 +73,7 @@ export class FlowRuns implements vscode.Disposable {
       try {
         result = await connection.client.request<FlowRunResult>(
           "flow.run",
-          target,
+          Object.keys(arguments_).length ? { ...target, arguments: arguments_ } : target,
           FLOW_TIMEOUT_MS,
         );
       } catch (error) {
@@ -81,7 +85,7 @@ export class FlowRuns implements vscode.Disposable {
         }
         result = await connection.client.request<FlowRunResult>(
           "flow.run",
-          target,
+          Object.keys(arguments_).length ? { ...target, arguments: arguments_ } : target,
           FLOW_TIMEOUT_MS,
         );
       }
@@ -109,6 +113,26 @@ export class FlowRuns implements vscode.Disposable {
             : String(error);
       void vscode.window.showErrorMessage(message);
     }
+  }
+  private async promptArguments(parameters: NonNullable<import("../protocol/generated").FlowEntry["parameters"]>): Promise<Record<string, string | number | boolean> | undefined> {
+    const values: Record<string, string | number | boolean> = {};
+    for (const parameter of parameters) {
+      if (parameter.type === "bool") {
+        const options = parameter.required ? ["true", "false"] : [String(parameter.default), "true", "false"];
+        const answer = await vscode.window.showQuickPick([...new Set(options)], { title: `Flow parameter: ${parameter.name}`, placeHolder: "Choose true or false" });
+        if (answer === undefined) return undefined;
+        values[parameter.name] = answer === "true";
+        continue;
+      }
+      const answer = await vscode.window.showInputBox({ title: `Flow parameter: ${parameter.name}`, prompt: `${parameter.type}${parameter.required ? " (required)" : " (optional)"}`, value: parameter.default === undefined ? "" : String(parameter.default), ignoreFocusOut: true });
+      if (answer === undefined) return undefined;
+      if (answer === "" && !parameter.required) continue;
+      if (parameter.type === "str") values[parameter.name] = answer;
+      else if (parameter.type === "int" && /^-?\d+$/.test(answer)) values[parameter.name] = Number(answer);
+      else if (parameter.type === "float" && answer.trim() && Number.isFinite(Number(answer))) values[parameter.name] = Number(answer);
+      else { await vscode.window.showErrorMessage(`Enter a valid ${parameter.type} value for ${parameter.name}.`); return undefined; }
+    }
+    return values;
   }
   private set(key: string, status: FlowStatus): void {
     this.states.set(key, status);
