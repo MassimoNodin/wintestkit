@@ -5,6 +5,7 @@ wintestkit.local.yaml
 *.egg-info/
 dist/
 .pytest_cache/
+.pytest-*/
 .ruff_cache/
 node_modules/
 vscode/dist/

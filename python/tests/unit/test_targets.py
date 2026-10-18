@@ -55,6 +55,19 @@ def test_parse_relative_absolute_and_windows_paths(tmp_path: Path) -> None:
         )
 
 
+def test_reload_scan_ignores_dot_prefixed_directories(tmp_path: Path) -> None:
+    root = tmp_path / ".workspace" / "project"
+    root.mkdir(parents=True)
+    visible = root / "pages.py"
+    visible.write_text(SOURCE, encoding="utf-8")
+    for relative in (".custom/pages.py", "pkg/.cache/pages.py"):
+        hidden = root / relative
+        hidden.parent.mkdir(parents=True)
+        hidden.write_text(SOURCE, encoding="utf-8")
+    loader = ModuleLoader(load_config(root))
+    assert set(loader._scan()) == {visible}
+
+
 @pytest.mark.parametrize(
     "text", ["", "::Main", "main.py::", "main.py:: ", "main.py::Main..ok", "main.py::Main.1ok"]
 )

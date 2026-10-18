@@ -234,13 +234,27 @@ def test_excluded_directories(tmp_path: Path) -> None:
         "dist",
         ".tox",
         ".pytest_cache",
+        ".pytest-trace-focused",
+        ".custom",
         "site-packages",
     ):
         write(tmp_path, f"{name}/test_hidden.py", "def test_hidden():\n    pass\n")
     write(tmp_path, "pkg/.venv/test_deep.py", "def test_deep():\n    pass\n")
+    write(tmp_path, "pkg/.custom/test_deep.py", "def test_deep():\n    pass\n")
     write(tmp_path, "wtk-report/test_report.py", "def test_report():\n    pass\n")
     write(tmp_path, "test_visible.py", "def test_visible():\n    pass\n")
     assert ids(discover(tmp_path).tests) == ["test_visible.py::test_visible"]
+
+
+def test_hidden_directory_overrides_are_excluded(tmp_path: Path) -> None:
+    result = discover(
+        tmp_path,
+        overrides={
+            tmp_path / ".custom" / "test_hidden.py": "def test_hidden():\n    pass\n",
+            tmp_path / "test_visible.py": "def test_visible():\n    pass\n",
+        },
+    )
+    assert ids(result.tests) == ["test_visible.py::test_visible"]
 
 
 def test_configured_report_dir_is_excluded(tmp_path: Path) -> None:

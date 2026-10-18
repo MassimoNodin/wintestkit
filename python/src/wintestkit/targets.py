@@ -153,7 +153,11 @@ class ModuleLoader:
         for directory, subdirs, names in os.walk(self.root):
             here = Path(directory)
             subdirs[:] = [
-                d for d in subdirs if d not in EXCLUDED_DIRS and (here / d).resolve() != report_dir
+                d
+                for d in subdirs
+                if not d.startswith(".")
+                and d not in EXCLUDED_DIRS
+                and (here / d).resolve() != report_dir
             ]
             for name in names:
                 if name.endswith(".py"):
