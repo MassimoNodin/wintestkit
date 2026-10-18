@@ -145,7 +145,8 @@
       "wintestkit": [
         {
           "id": "wintestkit.setup",
-          "name": "Current Setup"
+          "name": "Test Target",
+          "type": "webview"
         },
         {
           "id": "wintestkit.navigation",
@@ -159,13 +160,6 @@
         }
       ]
     },
-    "viewsWelcome": [
-      {
-        "view": "wintestkit.setup",
-        "contents": "[Initialize Project](command:wintestkit.initProject)",
-        "when": "!wintestkit.hasProject"
-      }
-    ],
     "menus": {
       "view/title": [
         {
@@ -177,33 +171,6 @@
           "command": "wintestkit.elements.refresh",
           "when": "view == wintestkit.navigation",
           "group": "navigation"
-        }
-      ],
-      "view/item/context": [
-        {
-          "command": "wintestkit.launchApp",
-          "when": "view == wintestkit.setup && isWorkspaceTrusted && viewItem == current-setup-stopped-launchable",
-          "group": "inline@1"
-        },
-        {
-          "command": "wintestkit.closeApp",
-          "when": "view == wintestkit.setup && isWorkspaceTrusted && viewItem =~ /^current-setup-running-/",
-          "group": "inline@1"
-        },
-        {
-          "command": "wintestkit.restartApp",
-          "when": "view == wintestkit.setup && isWorkspaceTrusted && viewItem == current-setup-running-launchable",
-          "group": "inline@2"
-        },
-        {
-          "command": "wintestkit.refreshApp",
-          "when": "view == wintestkit.setup && isWorkspaceTrusted && viewItem =~ /^current-setup/",
-          "group": "inline@3"
-        },
-        {
-          "command": "wintestkit.openSettings",
-          "when": "view == wintestkit.setup && viewItem =~ /^current-setup/",
-          "group": "inline@4"
         }
       ],
       "webview/context": [
@@ -265,6 +232,16 @@
         "wintestkit.codeLens.enabled": {
           "type": "boolean",
           "default": true
+        },
+        "wintestkit.spy.bringWindowToFront": {
+          "type": "boolean",
+          "default": false,
+          "description": "Bring an application's window to the front (without taking focus from VS Code) when you select or highlight one of its objects in Spy. The outline is drawn above every window either way."
+        },
+        "wintestkit.spy.markDefinedObjects": {
+          "type": "boolean",
+          "default": true,
+          "description": "Mark objects in the Spy tree that an element definition in your pages already points at. Turn off if the application is slow to answer UI Automation queries."
         },
         "wintestkit.highlight.durationMs": {
           "type": "number",

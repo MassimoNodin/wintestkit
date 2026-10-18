@@ -18,7 +18,7 @@ import { SpyView } from "./spy/spyView";
 import { registerInsertElement } from "./spy/insertElement";
 import { computeInsertion } from "./spy/insertionModel";
 import { ConfigurationEditor, settingsEditorId } from "./settings/editor";
-import { CurrentSetup } from "./settings/currentSetup";
+import { TestAppView } from "./settings/testApp";
 import { readConfiguration } from "./settings/files";
 
 interface CommandContribution {
@@ -29,12 +29,16 @@ interface ExtensionManifest {
   contributes: { commands: CommandContribution[] };
 }
 
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 export function activate(context: vscode.ExtensionContext): {
   tests: TestController;
   checks: CheckResultsStore;
   elements: ElementsTree;
   spy: SpyView;
-  setup: CurrentSetup;
+  setup: TestAppView;
   computeInsertion: typeof computeInsertion;
 } {
   const log = createLog();
@@ -49,7 +53,12 @@ export function activate(context: vscode.ExtensionContext): {
   };
   const status = new StatusBar(servers, currentProject);
   const configuration = new ConfigurationEditor(projects, context.extensionUri);
-  const setup = new CurrentSetup(projects, status);
+  const setup = new TestAppView(
+    projects,
+    status,
+    servers,
+    context.extensionUri,
+  );
   context.subscriptions.push(
     setup,
     vscode.window.registerCustomEditorProvider(
@@ -108,7 +117,13 @@ export function activate(context: vscode.ExtensionContext): {
   const checks = new CheckResultsStore(discovery);
   const flows = new FlowRuns(projects, discovery, servers, log);
   const lenses = new CodeLenses(projects, discovery, checks, flows);
-  const elements = new ElementsTree(projects, discovery, checks, flows, context);
+  const elements = new ElementsTree(
+    projects,
+    discovery,
+    checks,
+    flows,
+    context,
+  );
   context.subscriptions.push(elements, flows);
   const spy = new SpyView(projects, servers, context.extensionUri, log);
   context.subscriptions.push(spy);
@@ -171,11 +186,51 @@ export function activate(context: vscode.ExtensionContext): {
     withProject(async (project) => {
       if (methods.length > 1) {
         const config = await readConfiguration(project.root);
-        if (typeof config["app.path"] !== "string" || !config["app.path"].trim())
-          throw new Error("Configure an application executable before restarting the app.");
+        if (
+          typeof config["app.path"] !== "string" ||
+          !config["app.path"].trim()
+        )
+          throw new Error(
+            "Configure an application executable before restarting the app.",
+          );
       }
       const connection = await servers.get(project);
-      for (const method of methods) await connection.client.request(method);
+      const config = await readConfiguration(project.root).catch(() => ({}));
+      const timeout = Number(
+        (config as Record<string, unknown>)["app.startup_timeout"],
+      );
+      const action =
+        methods.length > 1
+          ? "restart"
+          : methods[0] === "app.close"
+            ? "close"
+            : "launch";
+      const starting = connection.client.onNotification(
+        "app.starting",
+        (value) => {
+          const stage = (value as { stage?: string } | undefined)?.stage;
+          if (stage === "process" || stage === "window")
+            status.setStage(project, stage);
+        },
+      );
+      try {
+        for (const method of methods) {
+          const closing = method === "app.close";
+          status.beginTransition(
+            project,
+            closing ? "stopping" : "starting",
+            closing || !(timeout > 0) ? undefined : timeout * 1000,
+            action,
+          );
+          await connection.client.request(method);
+        }
+        status.endTransition(project);
+      } catch (error) {
+        status.endTransition(project, { action, message: errorText(error) });
+        throw error;
+      } finally {
+        starting.dispose();
+      }
       await spy.refreshForProject(project);
     }, target);
   const implemented: Record<string, (target?: vscode.TreeItem) => unknown> = {
@@ -184,7 +239,8 @@ export function activate(context: vscode.ExtensionContext): {
     "wintestkit.openReport": () => reports.open(currentProject()),
     "wintestkit.launchApp": (target) => changeApp(["app.launch"], target),
     "wintestkit.closeApp": (target) => changeApp(["app.close"], target),
-    "wintestkit.restartApp": (target) => changeApp(["app.close", "app.launch"], target),
+    "wintestkit.restartApp": (target) =>
+      changeApp(["app.close", "app.launch"], target),
     "wintestkit.refreshApp": (target) =>
       withProject((project) => spy.refreshForProject(project), target),
     "wintestkit.restartServer": () =>
@@ -250,18 +306,21 @@ export function activate(context: vscode.ExtensionContext): {
     )
       continue;
     context.subscriptions.push(
-      vscode.commands.registerCommand(contribution.command, (target?: vscode.TreeItem) => {
-        if (implemented[contribution.command])
-          return implemented[contribution.command](target);
-        if (contribution.command === "wintestkit.showOutput") {
-          log.show();
-        } else {
-          log.info(
-            contribution.command +
-              ": not implemented in the extension scaffold",
-          );
-        }
-      }),
+      vscode.commands.registerCommand(
+        contribution.command,
+        (target?: vscode.TreeItem) => {
+          if (implemented[contribution.command])
+            return implemented[contribution.command](target);
+          if (contribution.command === "wintestkit.showOutput") {
+            log.show();
+          } else {
+            log.info(
+              contribution.command +
+                ": not implemented in the extension scaffold",
+            );
+          }
+        },
+      ),
     );
   }
 

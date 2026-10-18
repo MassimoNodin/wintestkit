@@ -23,8 +23,8 @@ def test_sign_in(app):
 
 ## Features
 
-- **Current Setup and YAML configuration.** See the current application icon/name above
-  the Explorer and use its gear to open a custom settings editor. **This machine** shows
+- **Test Target and YAML configuration.** See the application's icon, name and live status
+  (including start-up progress) above the Explorer and use its gear to open a custom settings editor. **This machine** shows
   only **Application executable** under **Start the application**, with **Browse…**. Other
   settings are under collapsed **Advanced options** (**Application**, **Test runs**,
   **Debugging**). Shared defaults live in `wintestkit.yaml`; the executable and other

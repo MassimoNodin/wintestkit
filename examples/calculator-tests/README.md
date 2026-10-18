@@ -7,8 +7,11 @@ pytest fixtures and parametrized scenarios. No application source or binaries ar
 
 Use Windows with an interactive, unlocked desktop, Python 3.12+ and uv.
 Install Windows Calculator if necessary and keep at most one Calculator window open.
-The fixtures attach to `CalculatorApp.exe` if it is already running; otherwise they
-start it using `calc.exe` and close that instance at the end of the test session.
+The project's `launch` setting decides how Calculator is obtained: with `attach` (the default here)
+the tests use a Calculator you have already opened; with `per-session` WinTestKit starts it
+using the executable from `app.path` (set `C:\Windows\System32\calc.exe` in
+`wintestkit.local.yaml`), closes any copy that is already open first, and closes the one it
+started when the tests finish. In VS Code, use the **Mode** tile of the Test Target view.
 Use an English-language Calculator because navigation headings and result text are asserted
 in English. Control identifiers may need adapting for other Calculator versions.
 

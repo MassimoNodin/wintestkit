@@ -4,9 +4,14 @@ import type * as vscode from "vscode";
 
 const mocks = vi.hoisted(() => ({
   log: { info: vi.fn(), error: vi.fn(), show: vi.fn(), dispose: vi.fn() },
-  request: vi.fn<(method: string) => Promise<null>>(() => Promise.resolve(null)),
+  request: vi.fn<(method: string) => Promise<null>>(() =>
+    Promise.resolve(null),
+  ),
   refreshSpy: vi.fn(() => Promise.resolve()),
   refreshStatus: vi.fn(() => Promise.resolve()),
+  beginTransition: vi.fn(),
+  setStage: vi.fn(),
+  endTransition: vi.fn(),
   readConfig: vi.fn(),
   showError: vi.fn(),
   serverGet: vi.fn(),
@@ -16,7 +21,10 @@ const mocks = vi.hoisted(() => ({
     name: "demo",
   },
   registerCommand: vi.fn<
-    (command: string, callback: (target?: vscode.TreeItem) => unknown) => vscode.Disposable
+    (
+      command: string,
+      callback: (target?: vscode.TreeItem) => unknown,
+    ) => vscode.Disposable
   >(() => ({ dispose: vi.fn() })),
   executeCommand: vi.fn(() => Promise.resolve()),
   registerTreeDataProvider: vi.fn<
@@ -62,18 +70,25 @@ vi.mock("../../src/settings/editor", () => ({
     open = vi.fn(() => Promise.resolve());
   },
 }));
-vi.mock("../../src/settings/currentSetup", () => ({
-  CurrentSetup: class {
+vi.mock("../../src/settings/testApp", () => ({
+  TestAppView: class {
     refresh() {}
     dispose() {}
   },
 }));
-vi.mock("../../src/settings/files", () => ({ readConfiguration: mocks.readConfig }));
+vi.mock("../../src/settings/files", () => ({
+  readConfiguration: mocks.readConfig,
+}));
 vi.mock("../../src/server/serverManager", () => ({
   ServerManager: class {
     get(project?: unknown) {
       mocks.serverGet(project);
-      return Promise.resolve({ client: { request: mocks.request } });
+      return Promise.resolve({
+        client: {
+          request: mocks.request,
+          onNotification: () => ({ dispose() {} }),
+        },
+      });
     }
     restart() {
       return this.get();
@@ -87,6 +102,9 @@ vi.mock("../../src/server/serverManager", () => ({
 vi.mock("../../src/statusBar", () => ({
   StatusBar: class {
     refresh = mocks.refreshStatus;
+    beginTransition = mocks.beginTransition;
+    setStage = mocks.setStage;
+    endTransition = mocks.endTransition;
     dispose() {}
   },
 }));
@@ -181,8 +199,7 @@ vi.mock("../../src/pytestConflict", () => ({
 }));
 vi.mock("../../src/testing/controller", () => ({
   TestController: class {
-    constructor() {
-    }
+    constructor() {}
     dispose() {}
   },
 }));
@@ -220,13 +237,13 @@ describe("extension scaffold", () => {
       expect.any(Object),
     );
     expect(manifest.contributes.views.wintestkit).toEqual([
-      { id: "wintestkit.setup", name: "Current Setup" },
+      { id: "wintestkit.setup", name: "Test Target", type: "webview" },
       { id: "wintestkit.navigation", name: "Explorer", type: "webview" },
       { id: "wintestkit.spy", name: "Spy", type: "webview" },
     ]);
-    expect(JSON.stringify(manifest.contributes.menus["view/title"])).not.toContain(
-      "wintestkit.spy",
-    );
+    expect(
+      JSON.stringify(manifest.contributes.menus["view/title"]),
+    ).not.toContain("wintestkit.spy");
     expect(subscriptions.length).toBeGreaterThan(
       manifest.contributes.commands.length + 3,
     );
@@ -258,17 +275,79 @@ describe("extension scaffold", () => {
     ["closeApp", ["app.close"]],
     ["restartApp", ["app.close", "app.launch"]],
     ["refreshApp", []],
-  ])("runs %s for the setup row's project and refreshes its state", async (command, methods) => {
-    const root = { fsPath: "C:/other", toString: () => "file:///C:/other" } as vscode.Uri;
+  ])(
+    "runs %s for the setup row's project and refreshes its state",
+    async (command, methods) => {
+      const root = {
+        fsPath: "C:/other",
+        toString: () => "file:///C:/other",
+      } as vscode.Uri;
+      const callback = mocks.registerCommand.mock.calls.find(
+        ([registered]) => registered === "wintestkit." + command,
+      )?.[1];
+      expect(callback).toBeDefined();
+      await callback?.({ resourceUri: root } as vscode.TreeItem);
+      expect(mocks.request.mock.calls.map(([method]) => method)).toEqual(
+        methods,
+      );
+      if (methods.length)
+        expect(mocks.serverGet).toHaveBeenCalledWith({ root, name: "other" });
+      expect(mocks.refreshSpy).toHaveBeenCalledWith({ root, name: "other" });
+      expect(mocks.refreshStatus).toHaveBeenCalledOnce();
+    },
+  );
+
+  it("records a launch as starting with its timeout, then as done", async () => {
+    mocks.readConfig.mockResolvedValue({
+      "app.path": "C:/Apps/Demo.exe",
+      "app.startup_timeout": 12,
+    });
     const callback = mocks.registerCommand.mock.calls.find(
-      ([registered]) => registered === "wintestkit." + command,
+      ([command]) => command === "wintestkit.launchApp",
     )?.[1];
-    expect(callback).toBeDefined();
-    await callback?.({ resourceUri: root } as vscode.TreeItem);
-    expect(mocks.request.mock.calls.map(([method]) => method)).toEqual(methods);
-    if (methods.length) expect(mocks.serverGet).toHaveBeenCalledWith({ root, name: "other" });
-    expect(mocks.refreshSpy).toHaveBeenCalledWith({ root, name: "other" });
-    expect(mocks.refreshStatus).toHaveBeenCalledOnce();
+    await callback?.();
+    expect(mocks.beginTransition).toHaveBeenCalledWith(
+      expect.anything(),
+      "starting",
+      12_000,
+      "launch",
+    );
+    expect(mocks.endTransition).toHaveBeenCalledExactlyOnceWith(
+      expect.anything(),
+    );
+  });
+
+  it("records a restart as one action: closing, then starting", async () => {
+    mocks.readConfig.mockResolvedValue({ "app.path": "C:/Apps/Demo.exe" });
+    const callback = mocks.registerCommand.mock.calls.find(
+      ([command]) => command === "wintestkit.restartApp",
+    )?.[1];
+    await callback?.();
+    expect(
+      mocks.beginTransition.mock.calls.map(([, kind, , action]) => [
+        kind,
+        action,
+      ]),
+    ).toEqual([
+      ["stopping", "restart"],
+      ["starting", "restart"],
+    ]);
+  });
+
+  it("records why a launch failed so the Test Target section can show it", async () => {
+    mocks.readConfig.mockResolvedValue({ "app.path": "C:/Apps/Demo.exe" });
+    mocks.request.mockRejectedValueOnce(
+      new Error("Demo.exe did not show a window within 30s"),
+    );
+    const callback = mocks.registerCommand.mock.calls.find(
+      ([command]) => command === "wintestkit.launchApp",
+    )?.[1];
+    await callback?.();
+    expect(mocks.endTransition).toHaveBeenCalledWith(expect.anything(), {
+      action: "launch",
+      message: "Demo.exe did not show a window within 30s",
+    });
+    expect(mocks.showError).toHaveBeenCalled();
   });
 
   it("does not close an attached app when restart has no executable", async () => {
@@ -278,7 +357,9 @@ describe("extension scaffold", () => {
     )?.[1];
     await callback?.();
     expect(mocks.request).not.toHaveBeenCalled();
-    expect(mocks.showError).toHaveBeenCalledWith(expect.stringContaining("executable"));
+    expect(mocks.showError).toHaveBeenCalledWith(
+      expect.stringContaining("executable"),
+    );
     expect(mocks.refreshStatus).toHaveBeenCalledOnce();
   });
 

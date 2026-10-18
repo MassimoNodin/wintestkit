@@ -2,9 +2,28 @@ import * as vscode from "vscode";
 import type { AppStatusResult } from "./protocol/generated";
 import { ServerManager, type Project } from "./server/serverManager";
 
+export type StartStage = "process" | "window";
+
 export interface ApplicationState {
   running: boolean;
   error?: string;
+  pids?: number[];
+  mainWindowTitle?: string;
+  /** An app action in progress: the server is busy, so this is tracked here, not polled. */
+  transition?: {
+    /** The action the user asked for; a restart passes through stopping, then starting. */
+    action: "launch" | "restart" | "close";
+    kind: "starting" | "stopping";
+    since: number;
+    timeoutMs?: number;
+    stage?: StartStage;
+  };
+  /** The last app action that failed, until the app runs or another action starts. */
+  failure?: {
+    action: "launch" | "restart" | "close";
+    message: string;
+    at: number;
+  };
 }
 
 export class StatusBar implements vscode.Disposable {
@@ -79,13 +98,22 @@ export class StatusBar implements vscode.Disposable {
       const status =
         await connection.client.request<AppStatusResult>("app.status");
       running = status.running;
-      this.applications.set(project.root.toString(), { running });
+      const previous = this.applications.get(project.root.toString());
+      this.applications.set(project.root.toString(), {
+        running,
+        pids: status.pids,
+        mainWindowTitle: status.mainWindowTitle,
+        transition: previous?.transition,
+        failure: running ? undefined : previous?.failure,
+      });
       this.item.text = `$(beaker) WTK: ${running ? "$(circle-filled) app running" : "$(circle-outline) app stopped"}`;
     } catch (error) {
       this.applications.set(project.root.toString(), {
         running: false,
-        error: this.servers.state(project) === "not-installed"
-          ? "Python package not installed" : String(error),
+        error:
+          this.servers.state(project) === "not-installed"
+            ? "Python package not installed"
+            : String(error),
       });
       this.item.text =
         this.servers.state(project) === "not-installed"
@@ -98,7 +126,9 @@ export class StatusBar implements vscode.Disposable {
         if (this.project()?.root.toString() === project.root.toString()) {
           this.item.show();
           await vscode.commands.executeCommand(
-            "setContext", "wintestkit.appRunning", running,
+            "setContext",
+            "wintestkit.appRunning",
+            running,
           );
         } else {
           this.pendingRefresh = true;
@@ -112,6 +142,56 @@ export class StatusBar implements vscode.Disposable {
   }
   applicationState(project: Project): ApplicationState | undefined {
     return this.applications.get(project.root.toString());
+  }
+  /** Marks an app action as in progress so views can show it (the server cannot answer yet). */
+  beginTransition(
+    project: Project,
+    kind: "starting" | "stopping",
+    timeoutMs?: number,
+    action: "launch" | "restart" | "close" = kind === "stopping"
+      ? "close"
+      : "launch",
+  ): void {
+    const key = project.root.toString();
+    const previous = this.applications.get(key) ?? { running: false };
+    // A restart closes, then launches: keep its start time across the two steps.
+    const continued =
+      previous.transition?.action === action ? previous.transition : undefined;
+    this.applications.set(key, {
+      ...previous,
+      failure: undefined,
+      transition: {
+        action,
+        kind,
+        since: continued?.since ?? Date.now(),
+        timeoutMs,
+      },
+    });
+    this.changed.fire(project);
+  }
+  setStage(project: Project, stage: StartStage): void {
+    const key = project.root.toString();
+    const previous = this.applications.get(key);
+    if (!previous?.transition) return;
+    this.applications.set(key, {
+      ...previous,
+      transition: { ...previous.transition, stage },
+    });
+    this.changed.fire(project);
+  }
+  /** Ends the in-progress action; a message records why it failed. */
+  endTransition(
+    project: Project,
+    failure?: { action: "launch" | "restart" | "close"; message: string },
+  ): void {
+    const key = project.root.toString();
+    const previous = this.applications.get(key) ?? { running: false };
+    this.applications.set(key, {
+      ...previous,
+      transition: undefined,
+      failure: failure ? { ...failure, at: Date.now() } : previous.failure,
+    });
+    this.changed.fire(project);
   }
   dispose(): void {
     this.disposed = true;

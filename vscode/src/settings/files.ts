@@ -1,6 +1,11 @@
 import * as vscode from "vscode";
 import { parse as parseToml } from "smol-toml";
-import { flattenSettings, parseSettings, settingFields } from "./model";
+import {
+  flattenSettings,
+  parseSettings,
+  settingFields,
+  updateSetting,
+} from "./model";
 
 export const configurationNames = [
   "pyproject.toml",
@@ -96,4 +101,22 @@ export async function readConfiguration(
     }
   }
   return merged;
+}
+
+/**
+ * Writes settings to the project's local, Git-ignored configuration (`wintestkit.local.yaml`),
+ * creating it when needed. A value of `undefined` removes the setting.
+ */
+export async function writeLocalSettings(
+  root: vscode.Uri,
+  changes: Record<string, unknown>,
+): Promise<void> {
+  await ensureLocalIgnores(root);
+  const uri = vscode.Uri.joinPath(root, "wintestkit.local.yaml");
+  let source =
+    (await readOptional(uri)) ??
+    "# Local machine overrides. This file is ignored by Git.\n{}\n";
+  for (const [key, value] of Object.entries(changes))
+    source = updateSetting(source, "local", key, value, value === undefined);
+  await vscode.workspace.fs.writeFile(uri, Buffer.from(source, "utf8"));
 }

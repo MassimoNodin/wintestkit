@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta
+            http-equiv="Content-Security-Policy"
+            content="default-src 'none'; img-src data:; style-src {{cspSource}}; font-src {{cspSource}}; script-src 'nonce-{{nonce}}'"
+        />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <link rel="stylesheet" href="{{icons}}" />
+        <link rel="stylesheet" href="{{css}}" />
+        <title>WinTestKit Test Target</title>
+    </head>
+    <body>
+        <main id="card" aria-live="polite">
+            <p class="muted" style="padding: 10px">Loading…</p>
+        </main>
+        <script nonce="{{nonce}}" src="{{js}}"></script>
+    </body>
+</html>

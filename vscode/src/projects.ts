@@ -34,6 +34,7 @@ export function pickProject(
 
 export class Projects implements vscode.Disposable {
   private projects: Project[] = [];
+  private preferredRoot?: string;
   private revision = 0;
   private disposed = false;
   private readonly changed = new vscode.EventEmitter<readonly Project[]>();
@@ -56,6 +57,24 @@ export class Projects implements vscode.Disposable {
   }
   get all(): readonly Project[] {
     return this.projects;
+  }
+  /**
+   * Makes ``project`` the one views fall back to (``all[0]``) when no open file belongs to a
+   * project, for example when the user picks a project in the Test Target card.
+   */
+  select(project: Project): void {
+    this.preferredRoot = normalizedPath(project.root.fsPath);
+    this.projects = this.prefer(this.projects);
+    this.changed.fire(this.projects);
+  }
+  private prefer(projects: Project[]): Project[] {
+    if (!this.preferredRoot) return projects;
+    const preferred = projects.find(
+      (project) => normalizedPath(project.root.fsPath) === this.preferredRoot,
+    );
+    return preferred
+      ? [preferred, ...projects.filter((project) => project !== preferred)]
+      : projects;
   }
   projectFor(uri: vscode.Uri): Project | undefined {
     const root = pickProject(
@@ -98,8 +117,10 @@ export class Projects implements vscode.Disposable {
         }
       }
       if (this.disposed || revision !== this.revision) return;
-      this.projects = projects.sort((first, second) =>
-        first.root.fsPath.localeCompare(second.root.fsPath),
+      this.projects = this.prefer(
+        projects.sort((first, second) =>
+          first.root.fsPath.localeCompare(second.root.fsPath),
+        ),
       );
       await vscode.commands.executeCommand(
         "setContext",
