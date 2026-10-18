@@ -5,6 +5,31 @@ released together with the same version) are documented here.
 
 ## [Unreleased]
 
+- Explorer Page Tree and Flows tabs match the Test Target tiles, with rounded borders,
+  themed surfaces and orange icons; an accent border identifies the selected tab.
+- "Current Setup" is now **Test Target**: tiles for the application (icon, name, process IDs), its
+  launch mode, the project and a Launch / Restart / Close action, with the status next to the title.
+  The application and mode tiles open quick picks (browse for an executable, attach to a running
+  app, Attach or Spawn) that save to `wintestkit.local.yaml`, and the project tile
+  switches projects. While the app starts it shows each stage (process started, app responding,
+  main window shown) with the time against the startup timeout, and a failed launch keeps the
+  reason on the section with a way to retry.
+- **Spawn** (launch) mode owns the app's lifecycle: a copy that is already running is closed first,
+  and the app WinTestKit started is closed when the tests finish. The Calculator example now uses
+  the standard `app` fixture, so the mode in the Test Target view decides whether it attaches or
+  starts Calculator.
+- Spy file rows use the Python logo for `.py` files.
+- Spy shows which element definitions in your pages already point at the selected object ("Defined
+  in pages": page attribute, locator, file; click to open it) and marks those objects in the tree.
+  Only definitions that resolve to exactly that object count. Markers can be turned off with
+  `wintestkit.spy.markDefinedObjects`.
+- Selecting an object in Spy no longer brings its window forward by default: the outline is drawn above
+  every window anyway. A pin button next to Collapse all (setting `wintestkit.spy.bringWindowToFront`)
+  turns it on; the window is then raised without taking keyboard focus from VS Code, and left alone
+  when the element has no on-screen rectangle (the Highlight button is disabled with an explanation).
+- Spy no longer lists the transient `PopupHost` windows that XAML apps create for tooltips and menus.
+  Selecting a window explains that only its controls get locators, and shows its application icon.
+
 - After a Highlight from VS Code (CodeLens, Explorer or Spy) the outline fades and focus returns to the
   window that had it, so the right VS Code window is selected again. Focus stays where it is if you
   switched windows meanwhile.
