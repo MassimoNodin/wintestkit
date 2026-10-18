@@ -477,7 +477,11 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
       if (depth > 12) return;
       const chain = [...ancestors, node];
       const pathStart = chain.length - parts.length;
-      if (pathStart >= 0 && chain.slice(pathStart).every((item, index) => short(item) === parts[index]))
+      const includesWindow = parts[0].startsWith("Window ");
+      const pathMatches = includesWindow
+        ? chain.length === parts.length && chain.every((item, index) => short(item) === parts[index])
+        : pathStart >= 0 && chain.slice(pathStart).every((item, index) => short(item) === parts[index]);
+      if (pathMatches)
         matches.push({ node, ancestors });
       if (depth >= parts.length || !node.hasChildren) return;
       const children = await client.request<NodeInfo[]>("inspect.children", { nodeId: node.nodeId });
