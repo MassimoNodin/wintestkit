@@ -4,7 +4,7 @@ dynamic = ["version"]
 description = "UI test automation for Windows WPF applications"
 readme = "README.md"
 requires-python = ">=3.12"
-license = "LicenseRef-Proprietary"
+license = "MIT"
 license-files = ["LICENSE"]
 dependencies = [
     "comtypes>=1.4.8",
