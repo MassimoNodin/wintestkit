@@ -138,6 +138,11 @@
         "category": "WinTestKit"
       },
       {
+        "command": "wintestkit.spy.insertAssertion",
+        "title": "Insert Assertion from Spy",
+        "category": "WinTestKit"
+      },
+      {
         "command": "wintestkit.elements.refresh",
         "title": "Refresh",
         "category": "WinTestKit",
