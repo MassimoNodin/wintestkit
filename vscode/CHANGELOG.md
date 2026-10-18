@@ -5,6 +5,11 @@ released together with the same version) are documented here.
 
 ## [Unreleased]
 
+- Rename the navigation view to **Pages & Flows** and add an **Open Testing** toolbar action.
+  Project initialization now offers to open Testing or the generated smoke test.
+- Spy distinguishes a stopped app from a project without pages, preserving the page catalogue
+  and explaining how to start live definition checks from **Test Target**.
+- Align the element check command with the **Check exists** CodeLens and update stale UI guidance.
 - Explorer Page Tree and Flows tabs match the Test Target tiles, with rounded borders,
   themed surfaces and orange icons; an accent border identifies the selected tab.
 - "Current Setup" is now **Test Target**: tiles for the application (icon, name, process IDs), its
