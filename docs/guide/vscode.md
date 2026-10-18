@@ -145,6 +145,9 @@ does not block the basic property display.
 The **Test Target** section, above the Explorer, shows the application name and executable icon (with a
 generic fallback). Use the gear to edit its settings. In multi-project workspaces,
 it follows the active source file.
+Use **WinTestKit: Open Getting Started** to reopen the five-step walkthrough. The Pages & Flows
+empty state offers it alongside project initialization; Spy offers it when no project is open and
+**Choose app** when a project has no running target.
 
 The custom YAML editor offers **This machine** and **Shared project** tabs. On **This
 machine**, **Start the application** shows only **Application executable**, with **Browse…**;

@@ -101,6 +101,16 @@
         "icon": "$(beaker)"
       },
       {
+        "command": "wintestkit.chooseApp",
+        "title": "Choose App",
+        "category": "WinTestKit"
+      },
+      {
+        "command": "wintestkit.openGettingStarted",
+        "title": "Open Getting Started",
+        "category": "WinTestKit"
+      },
+      {
         "command": "wintestkit.openReport",
         "title": "Open Last Report",
         "category": "WinTestKit"
@@ -194,9 +204,9 @@
         "title": "Get started with WinTestKit",
         "description": "Choose a target, inspect it, and run your first test.",
         "steps": [
-          { "id": "chooseApp", "title": "Choose an application", "description": "Select the application under test in Test Target.", "media": { "markdown": "media/walkthrough/choose-app.md" }, "completionEvents": ["onCommand:wintestkit.openSettings"] },
+          { "id": "chooseApp", "title": "Choose an application", "description": "Use the app chooser in Test Target.", "media": { "markdown": "media/walkthrough/choose-app.md" }, "completionEvents": ["onContext:wintestkit.hasChosenApp"] },
           { "id": "launchApp", "title": "Launch the application", "description": "Start the target so Spy can inspect its controls.", "media": { "markdown": "media/walkthrough/launch-app.md" }, "completionEvents": ["onCommand:wintestkit.launchApp"] },
-          { "id": "addControl", "title": "Add a control to a page", "description": "Pick a live control in Spy and add its locator to your page definitions.", "media": { "markdown": "media/walkthrough/add-control.md" }, "completionEvents": ["onCommand:wintestkit.spy.startPick"] },
+          { "id": "addControl", "title": "Add a control to a page", "description": "Pick a live control in Spy and add its locator to your page definitions.", "media": { "markdown": "media/walkthrough/add-control.md" }, "completionEvents": ["onCommand:wintestkit.spy.addToPage"] },
           { "id": "checkElement", "title": "Check the locator", "description": "Confirm the page element resolves in the running application.", "media": { "markdown": "media/walkthrough/check-element.md" }, "completionEvents": ["onCommand:wintestkit.checkElement"] },
           { "id": "runSmokeTest", "title": "Run tests", "description": "Open Testing and run the smoke test.", "media": { "markdown": "media/walkthrough/run-tests.md" }, "completionEvents": ["onCommand:testing.runAll"] }
         ]

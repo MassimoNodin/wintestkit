@@ -566,6 +566,14 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
     if (this.client) await this.client.request("spy.stop");
   }
   private async handle(message: SpyRequest): Promise<void> {
+    if (message.type === "chooseApp") {
+      await vscode.commands.executeCommand("wintestkit.chooseApp");
+      return;
+    }
+    if (message.type === "openGettingStarted") {
+      await vscode.commands.executeCommand("wintestkit.openGettingStarted");
+      return;
+    }
     if (message.type === "ready") {
       if (typeof message.showOtherApps === "boolean")
         this.showOtherApps = message.showOtherApps;

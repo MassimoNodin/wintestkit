@@ -372,6 +372,8 @@
     const query = element("search").value.trim();
     element("tree-empty").hidden = treeHasMatches;
     element("clear-filter").hidden = !query;
+    element("choose-app").hidden = !(appState && appState.hasProject && !appState.appRunning && rootsLoaded);
+    element("getting-started").hidden = !!(appState && appState.hasProject);
     if (!treeHasMatches) {
       if (!nodes.size && treeTasks.length)
         emptyState(
@@ -767,6 +769,8 @@
     filter();
     element("search").focus();
   });
+  element("choose-app").addEventListener("click", () => post("chooseApp"));
+  element("getting-started").addEventListener("click", () => post("openGettingStarted"));
   element("collapse").addEventListener("click", () => {
     element("search").value = "";
     for (const entry of nodes.values()) entry.open = false;

@@ -9,7 +9,7 @@ import type {
 
 export type SpyRequest =
   | {
-      type: "pick" | "stopPick" | "refresh" | "addToPage";
+      type: "pick" | "stopPick" | "refresh" | "addToPage" | "chooseApp" | "openGettingStarted";
     }
   | {
       type: "ready";
@@ -103,10 +103,10 @@ export function parseSpyRequest(value: unknown): SpyRequest | undefined {
       ? { type: message.type, enabled: message.enabled }
       : undefined;
   if (
-    ["pick", "stopPick", "refresh", "addToPage"].includes(String(message.type))
+    ["pick", "stopPick", "refresh", "addToPage", "chooseApp", "openGettingStarted"].includes(String(message.type))
   )
     return {
-      type: message.type as "pick" | "stopPick" | "refresh" | "addToPage",
+      type: message.type as "pick" | "stopPick" | "refresh" | "addToPage" | "chooseApp" | "openGettingStarted",
     };
   if (
     ["expand", "select", "highlight", "loadProperties"].includes(

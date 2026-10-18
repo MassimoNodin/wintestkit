@@ -122,6 +122,9 @@ export class TestAppView
       }
     });
   }
+  async chooseApp(): Promise<void> {
+    await this.run("app");
+  }
   private currentProject() {
     const active = vscode.window.activeTextEditor?.document.uri;
     return (active && this.projects.projectFor(active)) || this.projects.all[0];
@@ -304,6 +307,7 @@ export class TestAppView
           "app.process": undefined,
           launch: "per-session",
         });
+      if (picked) await vscode.commands.executeCommand("setContext", "wintestkit.hasChosenApp", true);
     } else {
       const connection = await this.servers.get(project);
       const { processes } =
@@ -328,6 +332,7 @@ export class TestAppView
           "app.path": undefined,
           launch: "attach",
         });
+      if (running) await vscode.commands.executeCommand("setContext", "wintestkit.hasChosenApp", true);
     }
   }
   dispose(): void {

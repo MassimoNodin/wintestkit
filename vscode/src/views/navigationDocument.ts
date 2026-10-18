@@ -34,11 +34,12 @@ export function renderBody(input: {
     return (
       reportAction +
       '<div class="empty"><p>No WinTestKit project found.</p>' +
-      '<button type="button" class="link" data-initialize="true">Initialize Project</button></div>'
+      '<button type="button" class="link" data-initialize="true">Initialize Project</button>' +
+      '<button type="button" class="link" data-getting-started="true">Open Getting Started</button></div>'
     );
   if (!input.nodes.length)
     return input.welcome
-      ? reportAction + `<div class="empty"><p>${escapeText(input.welcome)}</p></div>`
+      ? reportAction + `<div class="empty"><p>${escapeText(input.welcome)}</p><button type="button" class="link" data-getting-started="true">Open Getting Started</button></div>`
       : reportAction;
   return reportAction + input.nodes
     .map((node) => renderItem(node, input.expanded, input.focusId))
@@ -336,6 +337,10 @@ tree.addEventListener("click", (event) => {
   if (!(target instanceof Element)) return;
   if (target.closest("[data-initialize]")) {
     vscodeApi.postMessage({ type: "initialize" });
+    return;
+  }
+  if (target.closest("[data-getting-started]")) {
+    vscodeApi.postMessage({ type: "openGettingStarted" });
     return;
   }
   const row = target.closest("[role='treeitem']");
