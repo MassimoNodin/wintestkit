@@ -457,6 +457,7 @@ class _Controller:
                 self.config.report_dir, repr(self.config.app), report.nodeid
             )
             artifact_files.store_tree_text(run.tree_baseline, baseline)
+        run.tree_baseline = None
         duration = sum(r.duration for r in run.reports.values())
         self.finished.append(_Finished(report.nodeid, outcome, duration))
         # pytest accumulates captured sections on the item, so the teardown report already

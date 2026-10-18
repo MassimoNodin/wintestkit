@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import logging
 import threading
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -338,6 +338,18 @@ class UIAElement:
     def children(self) -> list[UIAElement]:
         __tracebackhide__ = True
         return self.find_all(TreeScope.Children)
+
+    def iter_children(self) -> Iterator[UIAElement]:
+        """Lazily enumerate control-view children with cached description properties."""
+        __tracebackhide__ = True
+        with com.wrap_com_errors:
+            walker = com.get_uia().ControlViewWalker
+            request = _get_cache_request()
+            child = walker.GetFirstChildElementBuildCache(self.raw, request)
+        while child:
+            yield UIAElement(child, cached=True)
+            with com.wrap_com_errors:
+                child = walker.GetNextSiblingElementBuildCache(child, request)
 
     def find_all(
         self, scope: TreeScope, condition: Any | None = None, cached: bool = False
