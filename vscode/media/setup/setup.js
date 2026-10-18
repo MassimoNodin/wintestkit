@@ -64,10 +64,20 @@
     root.replaceChildren();
     if (!model) return;
     if (model.tiles.length) {
-      const grid = el("div");
-      grid.id = "tiles";
-      for (const spec of model.tiles) grid.append(tile(spec));
-      root.append(grid);
+      const actions = model.tiles.filter((spec) =>
+        ["launch", "restart", "close", "refresh", "init"].includes(spec.id),
+      );
+      const choices = model.tiles.filter((spec) => !actions.includes(spec));
+      if (actions.length) {
+        const row = el("div", "action-row");
+        for (const spec of actions) row.append(tile(spec));
+        root.append(row);
+      }
+      if (choices.length) {
+        const row = el("div", "choice-row");
+        for (const spec of choices) row.append(tile(spec));
+        root.append(row);
+      }
     }
     if (model.message) {
       const hint = el("div", "hint");

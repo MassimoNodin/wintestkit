@@ -172,7 +172,11 @@ export class TestAppView
   private async render(): Promise<void> {
     const model = await this.model();
     if (this.disposed || !this.view) return;
-    this.view.description = model.status.label;
+    const project = this.currentProject();
+    this.view.description =
+      this.projects.all.length > 1 || !project
+        ? model.status.label
+        : `${project.name} · ${model.status.label}`;
     void this.view.webview.postMessage({ type: "model", model });
   }
   private async run(id: TileId): Promise<void> {

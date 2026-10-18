@@ -191,11 +191,8 @@ export function buildTestAppModel(input: TestAppInput): TestAppModel {
   };
   const projectTile: Tile = {
     id: "project",
-    title: input.workspaceName || input.project.name,
-    subtitle:
-      input.workspaceName && input.workspaceName !== input.project.name
-        ? input.project.name
-        : undefined,
+    title: input.project.name,
+    subtitle: input.workspaceName,
     codicon: "folder-opened",
     tone: "project",
     chevron: (input.projectCount ?? 1) > 1,
@@ -204,7 +201,9 @@ export function buildTestAppModel(input: TestAppInput): TestAppModel {
         ? "Switch WinTestKit project"
         : "The WinTestKit project",
   };
-  const tiles: Tile[] = [appTile, modeTile, projectTile];
+  const tiles: Tile[] = [appTile, modeTile];
+  if ((input.projectCount ?? 1) > 1) tiles.push(projectTile);
+  const appName = appTile.title;
   const model: TestAppModel = {
     kind: "app",
     status: { label: "Checking…", tone: "idle" },
@@ -241,10 +240,10 @@ export function buildTestAppModel(input: TestAppInput): TestAppModel {
     ): Tile => ({ id, title, codicon, tone, disabled: true });
     if (action === "launch") tiles.push(busy("launch"));
     else if (action === "restart")
-      tiles.push(busy("restart"), idle("close", "Close", "debug-stop", "stop"));
+      tiles.push(busy("restart"), idle("close", `Close ${appName}`, "debug-stop", "stop"));
     else {
       if (launchable)
-        tiles.push(idle("restart", "Restart", "debug-restart", "launch"));
+        tiles.push(idle("restart", `Restart ${appName}`, "debug-restart", "launch"));
       tiles.push(busy("close"));
     }
     return model;
@@ -253,7 +252,7 @@ export function buildTestAppModel(input: TestAppInput): TestAppModel {
   if (!state) {
     tiles.push({
       id: "launch",
-      title: "Launch",
+      title: `Launch ${appName}`,
       codicon: "debug-start",
       tone: "launch",
       disabled: true,
@@ -282,13 +281,13 @@ export function buildTestAppModel(input: TestAppInput): TestAppModel {
     if (launchable)
       tiles.push({
         id: "restart",
-        title: "Restart",
+        title: `Restart ${appName}`,
         codicon: "debug-restart",
         tone: "launch",
       });
     tiles.push({
       id: "close",
-      title: "Close",
+      title: `Close ${appName}`,
       codicon: "debug-stop",
       tone: "stop",
     });
@@ -328,7 +327,7 @@ export function buildTestAppModel(input: TestAppInput): TestAppModel {
     model.status = { label: "Stopped", tone: "idle" };
     tiles.push({
       id: "launch",
-      title: "Launch",
+      title: `Launch ${appName}`,
       codicon: "debug-start",
       tone: "launch",
       disabled: !target,

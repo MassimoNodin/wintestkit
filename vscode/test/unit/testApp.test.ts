@@ -61,7 +61,7 @@ const build = (
   config: Record<string, unknown>,
   state?: ApplicationState,
   extra: Partial<Parameters<typeof buildTestAppModel>[0]> = {},
-) => buildTestAppModel({ project, trusted: true, config, state, ...extra });
+) => buildTestAppModel({ project, trusted: true, projectCount: 2, config, state, ...extra });
 const ids = (model: ReturnType<typeof build>) =>
   model.tiles.map((tile) => tile.id);
 
@@ -93,7 +93,7 @@ describe("Test Target tiles", () => {
       title: "demo",
       codicon: "folder-opened",
     });
-    expect(launch).toMatchObject({ title: "Launch", tone: "launch" });
+    expect(launch).toMatchObject({ title: "Launch Demo", tone: "launch" });
     expect(launch.disabled).toBeFalsy();
   });
   it("offers launch for tests first by default, but still shows a per-test setting", () => {
@@ -120,8 +120,8 @@ describe("Test Target tiles", () => {
       { workspaceName: "Calculator", projectCount: 1 },
     ).tiles[2];
     expect(single).toMatchObject({
-      title: "Calculator",
-      subtitle: "demo",
+      title: "demo",
+      subtitle: "Calculator",
       chevron: false,
     });
     const several = build(
@@ -132,6 +132,13 @@ describe("Test Target tiles", () => {
     expect(several.title).toBe("demo");
     expect(several.subtitle).toBeUndefined();
     expect(several.chevron).toBe(true);
+  });
+  it("hides the project chooser when there is only one project", () => {
+    expect(ids(build(launchable, { running: false }, { projectCount: 1 }))).toEqual([
+      "app",
+      "mode",
+      "launch",
+    ]);
   });
   it("shows pids on the app tile and restart and close when running", () => {
     const model = build(launchable, {
