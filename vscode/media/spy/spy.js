@@ -12,6 +12,7 @@
     typeof persisted === "object" &&
     persisted.showOtherApps
   );
+  let groupDesktop = !!(persisted && typeof persisted === "object" && persisted.groupDesktop);
   let rootsLoaded = false;
   let treeHasMatches = false;
   let hasDetails = false;
@@ -290,6 +291,11 @@
     otherApps.title = otherAppsText;
     otherApps.setAttribute("aria-label", otherAppsText);
     element("other-apps-label").textContent = otherAppsText;
+    const grouping = element("group-desktop");
+    grouping.hidden = !showOtherApps;
+    grouping.disabled = !appState?.hasProject || !showOtherApps;
+    grouping.setAttribute("aria-pressed", String(groupDesktop));
+    grouping.title = "Collapse other desktop window titles under one group";
     const context = element("scope-context");
     if (appState?.hasProject) {
       const target = appState.targetName || "Test Target";
@@ -506,6 +512,15 @@
       let any = false;
       let lastVisible;
       for (const item of parent.children) {
+        if (item.dataset.desktopGroup) {
+          const group = item.querySelector("details");
+          const childMatch = visit(item.querySelector("ul"));
+          item.hidden = !!query && !childMatch;
+          if (query && childMatch) group.open = true;
+          any = any || !item.hidden;
+          if (!item.hidden) lastVisible = item;
+          continue;
+        }
         const entry = nodes.get(item.firstElementChild.dataset.nodeId);
         const childMatch = visit(entry.children);
         item.hidden =
@@ -579,7 +594,11 @@
     for (const row of parent.querySelectorAll(".node"))
       nodes.delete(row.dataset.nodeId);
     parent.replaceChildren();
-    values.forEach((node, index) => {
+    const pids = new Set(appState?.targetPids || []);
+    const grouped = parent.id === "tree" && groupDesktop && showOtherApps;
+    const desktopNodes = grouped ? values.filter((node) => !pids.has(node.info.processId)) : [];
+    const visibleNodes = grouped ? values.filter((node) => pids.has(node.info.processId)) : values;
+    visibleNodes.forEach((node, index) => {
       const item = document.createElement("li");
       item.setAttribute("role", "none");
       const row = document.createElement("div");
@@ -658,6 +677,24 @@
       rootIcon(nodes.get(node.nodeId));
       applyMarker(nodes.get(node.nodeId));
     });
+    if (desktopNodes.length) {
+      const item = document.createElement("li");
+      item.dataset.desktopGroup = "true";
+      item.setAttribute("role", "none");
+      const details = document.createElement("details");
+      const summary = document.createElement("summary");
+      summary.textContent = `Other desktop windows (${desktopNodes.length})`;
+      const updateSummary = () => summary.setAttribute("aria-label", `${desktopNodes.length} other desktop windows, ${details.open ? "expanded" : "collapsed"}`);
+      updateSummary();
+      details.addEventListener("toggle", updateSummary);
+      const children = document.createElement("ul");
+      children.id = "other-desktop-tree";
+      children.setAttribute("role", "group");
+      details.append(summary, children);
+      item.append(details);
+      parent.append(item);
+      renderNodes(children, desktopNodes);
+    }
     filter();
   };
   const table = (id, values) => {
@@ -745,6 +782,12 @@
     vscode.setState({ ...(vscode.getState() || {}), showOtherApps });
     renderStatus();
     post("showOtherApps", { enabled: showOtherApps });
+  });
+  element("group-desktop").addEventListener("click", () => {
+    groupDesktop = !groupDesktop;
+    vscode.setState({ ...(vscode.getState() || {}), showOtherApps, groupDesktop });
+    element("group-desktop").setAttribute("aria-pressed", String(groupDesktop));
+    post("refresh");
   });
   element("copy").addEventListener("click", () =>
     post("copy", { text: element("code").textContent }),

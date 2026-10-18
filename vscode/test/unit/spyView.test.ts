@@ -293,6 +293,15 @@ describe("Spy view bridge", () => {
     expect(script).toContain("Showing other desktop windows.");
     expect(html).toContain('id="scope-context" role="status"');
   });
+  it("offers opt-in collapsed grouping for non-target desktop windows", () => {
+    const script = readFileSync("media/spy/spy.js", "utf8");
+    const html = readFileSync("media/spy/spy.html", "utf8");
+    expect(script).toContain("let groupDesktop =");
+    expect(script).toContain("!pids.has(node.info.processId)");
+    expect(script).toContain("Other desktop windows (");
+    expect(script).toContain('addEventListener("toggle", updateSummary)');
+    expect(html).toContain('id="group-desktop"');
+  });
   it("uses roving focus and tree keyboard semantics for Spy nodes", () => {
     const script = readFileSync("media/spy/spy.js", "utf8");
     expect(script).toContain('row.setAttribute("aria-level"');
