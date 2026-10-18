@@ -455,6 +455,8 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
     const roots = await this.requestRoots(client, false);
     const matches: { node: NodeInfo; ancestors: NodeInfo[] }[] = [];
     let visited = 0;
+    let exhausted = false;
+    const deadline = Date.now() + 2500;
     const short = (node: NodeInfo) => {
       const info = node.info;
       const labels = [info.controlType];
@@ -465,7 +467,12 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
       return labels.join(" ");
     };
     const walk = async (node: NodeInfo, ancestors: NodeInfo[], depth: number) => {
-      if (++visited > 1000 || depth > 12 || matches.length > 1) return;
+      if (matches.length > 1) return;
+      if (Date.now() > deadline || ++visited > 1000) {
+        exhausted = true;
+        return;
+      }
+      if (depth > 12) return;
       const chain = [...ancestors, node];
       const pathStart = chain.length - parts.length;
       if (pathStart >= 0 && chain.slice(pathStart).every((item, index) => short(item) === parts[index]))
@@ -475,6 +482,7 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
       for (const child of children) await walk(child, chain, depth + 1);
     };
     for (const root of roots) await walk(root, [], 1);
+    if (exhausted) throw new Error("Relocation search exceeded its safety limit; narrow the desktop scope and try again.");
     if (matches.length !== 1)
       throw new Error(matches.length ? "Relocation path is ambiguous in the current UI." : "Relocation path is no longer present; refresh Spy.");
     const target = matches[0];
