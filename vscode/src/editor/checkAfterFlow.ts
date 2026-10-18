@@ -8,6 +8,22 @@ export type Binding = { file: string; page: string; flowFile: string; flowName: 
 export function rememberedPageFlows(state: vscode.Memento): Binding[] {
   return state.get<Binding[]>(STATE_KEY, []);
 }
+export function bindPageFlow(
+  bindings: readonly Binding[],
+  target: { file: string; page: string },
+  flow: { file: string; name: string },
+): Binding[] {
+  return [
+    ...bindings.filter(
+      (item) =>
+        !(
+          normalizedPath(item.file) === normalizedPath(target.file) &&
+          item.page === target.page
+        ),
+    ),
+    { ...target, flowFile: flow.file, flowName: flow.name },
+  ];
+}
 
 /** Explicit per-user bindings from a page class to a navigation flow. */
 export class CheckAfterFlow implements vscode.Disposable {
@@ -46,9 +62,11 @@ export class CheckAfterFlow implements vscode.Disposable {
       label: flow.name, description: vscode.workspace.asRelativePath(flow.file), flow,
     })), { title: "Check this class after a navigation flow", placeHolder: "Choose a flow that explicitly reaches this page" });
     if (!selected) return;
-    const bindings = rememberedPageFlows(this.state).filter((item) =>
-      !(normalizedPath(item.file) === normalizedPath(target.file) && item.page === target.page));
-    bindings.push({ ...target, flowFile: selected.flow.file, flowName: selected.flow.name });
+    const bindings = bindPageFlow(
+      rememberedPageFlows(this.state),
+      target,
+      selected.flow,
+    );
     await this.state.update(STATE_KEY, bindings);
     await vscode.window.showInformationMessage(`This class will be checked after ${selected.flow.name} completes successfully.`);
   }
