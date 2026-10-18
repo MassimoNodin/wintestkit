@@ -149,6 +149,10 @@ export class ElementsTree
       void this.reports?.open(this.currentProject());
       return;
     }
+    if (value && typeof value === "object" && (value as { type?: unknown }).type === "openGettingStarted") {
+      void vscode.commands.executeCommand("wintestkit.openGettingStarted");
+      return;
+    }
     const message = parseNavigationMessage(value);
     if (!message) return;
     const nodes = this.sectionNodes();

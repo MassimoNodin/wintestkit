@@ -432,7 +432,9 @@ export function emptyMessage(
   hasProject: boolean,
   count: number,
 ): string | undefined {
-  if (!hasProject || count > 0) return undefined;
+  if (count > 0) return undefined;
+  if (!hasProject) return "Open or initialize a WinTestKit project to see its pages and flows.";
+  if (section === "pages") return "No page definitions found. Initialize the project or add a Page class.";
   if (section === "flows")
     return "Add reusable Python functions under flows/ to see them here.";
   return undefined;

@@ -372,6 +372,11 @@ describe("navigation view", () => {
     expect(body).toContain('data-open-report="true"');
     expect(body).toContain("Initialize Project");
   });
+  it("offers initialization and Getting Started in the instantiated no-project webview", () => {
+    const body = renderBody({ nodes: [], expanded: new Set(), showInitialize: true });
+    expect(body).toContain('data-initialize="true"');
+    expect(body).toContain('data-getting-started="true"');
+  });
   it("registers one shared panel and keeps every section available", () => {
     const { tree } = createTree();
     expect([...mocks.providers.keys()]).toEqual(["wintestkit.navigation"]);
