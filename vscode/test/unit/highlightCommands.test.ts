@@ -9,6 +9,7 @@ import type { DiscoveryResult, Diagnostic } from "../../src/protocol/generated";
 
 const mocks = vi.hoisted(() => ({
   commands: new Map<string, (target?: unknown) => Promise<void>>(),
+  executeCommand: vi.fn(),
   request: vi.fn(),
   set: vi.fn(),
   feedback: vi.fn(),
@@ -30,7 +31,7 @@ vi.mock("vscode", () => ({
       mocks.commands.set(name, handler);
       return { dispose() {} };
     },
-    executeCommand: vi.fn(),
+    executeCommand: mocks.executeCommand,
   },
   Uri: { file: (file: string) => ({ fsPath: file }) },
   workspace: { getConfiguration: () => ({ get: () => 1500 }) },
@@ -123,9 +124,12 @@ describe("editor highlight commands", () => {
     await mocks.commands.get("wintestkit.highlightElement")?.(target);
     expect(mocks.request.mock.calls.map((call) => call[0])).toEqual([
       "element.highlight",
-      "app.launch",
       "element.highlight",
     ]);
+    expect(mocks.executeCommand).toHaveBeenCalledWith(
+      "wintestkit.launchApp",
+      { resourceUri: expect.anything() },
+    );
   });
   it.each([0, 600])(
     "cleans up highlight before an undismissed launch prompt after %s ms",
