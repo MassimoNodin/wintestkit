@@ -388,9 +388,17 @@ export class TestController implements vscode.Disposable {
             token,
             sessionEnded,
           )
-        : await runProcess(project, python, args, token, (text) =>
+          : await runProcess(project, python, args, token, (text) =>
             run.appendOutput(text),
           );
+      if (code === 3 && !token.isCancellationRequested) {
+        const choice = await vscode.window.showWarningMessage(
+          "WinTestKit's environment checks blocked this run.",
+          "Check Environment",
+        );
+        if (choice)
+          await vscode.commands.executeCommand("wintestkit.runDoctor");
+      }
       await listener.drain();
       this.apply(
         project,
