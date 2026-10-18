@@ -49,6 +49,12 @@
         "icon": "$(play)"
       },
       {
+        "command": "wintestkit.checkAfterFlow",
+        "title": "Check after flow",
+        "category": "WinTestKit",
+        "icon": "$(debug-start)"
+      },
+      {
         "command": "wintestkit.launchApp",
         "title": "Launch App",
         "category": "WinTestKit",
