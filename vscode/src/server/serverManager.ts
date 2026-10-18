@@ -2,7 +2,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import * as vscode from "vscode";
 import { checkWintestkit, getInterpreter, installPackage } from "../python";
 import type { InitializeResult } from "../protocol/generated";
-import { JsonRpcClient, LineSplitter } from "./jsonrpc";
+import { JsonRpcClient, LineSplitter, RpcError } from "./jsonrpc";
 
 export interface Project {
   root: vscode.Uri;
@@ -25,6 +25,7 @@ interface Entry {
   state: ServerState;
   notified: boolean;
   blocked?: boolean;
+  startupError?: RpcError;
 }
 
 export class ServerManager implements vscode.Disposable {
@@ -62,6 +63,7 @@ export class ServerManager implements vscode.Disposable {
       };
       this.entries.set(key, entry);
     }
+    if (entry.startupError) return Promise.reject(entry.startupError);
     if (entry.blocked)
       return Promise.reject(
         new Error(
@@ -135,6 +137,18 @@ export class ServerManager implements vscode.Disposable {
       },
     );
     entry.process = processHandle;
+    this.log.info(
+      "[" +
+        entry.project.name +
+        "] Starting server for " +
+        entry.project.root.fsPath +
+        " using " +
+        python +
+        " (pid " +
+        processHandle.pid +
+        ")",
+    );
+    let startupRejected = false;
     const client = new JsonRpcClient((line) => processHandle.stdin.write(line));
     const stdout = new LineSplitter((line) => client.handleLine(line));
     const stderr = new LineSplitter((line) =>
@@ -147,7 +161,7 @@ export class ServerManager implements vscode.Disposable {
       this.log.error(String(error));
       client.dispose();
     });
-    processHandle.once("close", () => {
+    processHandle.once("close", (code, signal) => {
       stdout.end();
       stderr.end();
       client.dispose();
@@ -156,6 +170,18 @@ export class ServerManager implements vscode.Disposable {
       entry.promise = undefined;
       entry.process = undefined;
       entry.state = "error";
+      if (startupRejected) return;
+      this.log.error(
+        "[" +
+          entry.project.name +
+          "] Server stopped unexpectedly for " +
+          entry.project.root.fsPath +
+          " (exit code " +
+          code +
+          ", signal " +
+          signal +
+          ")",
+      );
       entry.crashes = entry.crashes.filter(
         (timestamp) => Date.now() - timestamp < 60000,
       );
@@ -165,7 +191,9 @@ export class ServerManager implements vscode.Disposable {
         entry.blocked = true;
         void vscode.window
           .showErrorMessage(
-            "WinTestKit server repeatedly stopped.",
+            "WinTestKit server for " +
+              entry.project.name +
+              " repeatedly stopped.",
             "Show Output",
             "Restart",
           )
@@ -202,6 +230,24 @@ export class ServerManager implements vscode.Disposable {
         throw new Error("incompatible WinTestKit protocol version");
       }
     } catch (error) {
+      if (
+        !this.disposed &&
+        generation === entry.generation &&
+        error instanceof RpcError &&
+        error.code !== -1
+      ) {
+        startupRejected = true;
+        entry.startupError = error;
+        this.log.error(
+          "[" +
+            entry.project.name +
+            "] Server initialization rejected for " +
+            entry.project.root.fsPath +
+            ": " +
+            String(error),
+        );
+      }
+      client.dispose();
       processHandle.kill();
       throw error;
     }
@@ -252,6 +298,7 @@ export class ServerManager implements vscode.Disposable {
     entry.promise = undefined;
     entry.process = undefined;
     entry.state = "stopped";
+    entry.startupError = undefined;
     if (connection) {
       try {
         await connection.client.request("shutdown", {}, 1000);
