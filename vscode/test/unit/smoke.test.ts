@@ -442,7 +442,7 @@ describe("extension scaffold", () => {
     await callback?.();
     expect(mocks.showWarning).not.toHaveBeenCalled();
     expect(mocks.request).not.toHaveBeenCalled();
-    expect(mocks.showError).toHaveBeenCalledWith("Unreadable config");
+    expect(mocks.showError).toHaveBeenCalledWith("Error: Unreadable config");
   });
 
   it("has a Windows testing manifest and configuration parser dependencies", () => {
