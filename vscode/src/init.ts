@@ -69,6 +69,17 @@ export function registerInitialize(
       await vscode.window.showTextDocument(
         vscode.Uri.joinPath(folder.uri, "pages", "main.py"),
       );
+      const next = await vscode.window.showInformationMessage(
+        "Project initialized. Run tests from VS Code's Testing view.",
+        "Open Testing",
+        "Open smoke test",
+      );
+      if (next === "Open Testing")
+        await vscode.commands.executeCommand("wintestkit.openTesting");
+      else if (next === "Open smoke test")
+        await vscode.window.showTextDocument(
+          vscode.Uri.joinPath(folder.uri, "tests", "test_smoke.py"),
+        );
     } catch (error) {
       log.error(String(error));
       const choice = await vscode.window.showErrorMessage(

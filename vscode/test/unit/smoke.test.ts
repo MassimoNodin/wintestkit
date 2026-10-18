@@ -249,6 +249,20 @@ describe("extension scaffold", () => {
     );
   });
 
+  it("opens native Testing from the Pages & Flows toolbar", async () => {
+    const openTesting = mocks.registerCommand.mock.calls.find(
+      ([command]) => command === "wintestkit.openTesting",
+    );
+    await openTesting?.[1]();
+    expect(mocks.executeCommand).toHaveBeenCalledWith(
+      "workbench.view.testing.focus",
+    );
+    expect(manifest.contributes.menus["view/title"]).toContainEqual({
+      command: "wintestkit.openTesting",
+      when: "view == wintestkit.navigation",
+      group: "navigation@1",
+    });
+  });
   it("shows output and runs doctor with the selected project", async () => {
     const showOutput = mocks.registerCommand.mock.calls.find(
       ([command]) => command === "wintestkit.showOutput",
