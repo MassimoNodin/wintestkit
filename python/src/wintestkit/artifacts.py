@@ -67,7 +67,7 @@ def capture_step_screenshot(app: App | None, directory: Path, seq: int) -> Path 
     try:
         from wintestkit.uia import screenshot
 
-        png = screenshot.capture_element(app.main_window())
+        png = screenshot.capture_window(app.main_window().native_window_handle)
         if png is None:
             return None
         return screenshot.save(png, directory / "steps" / f"{seq}.png")
@@ -89,7 +89,7 @@ def capture_failure(app: App | None, directory: Path) -> ArtifactSet:
             window = app.main_window()
             from wintestkit.uia import screenshot
 
-            png = screenshot.capture_element(window)
+            png = screenshot.capture_window(window.native_window_handle)
             if png is not None:
                 artifacts.add_screenshot(screenshot.save(png, directory / "window.png"))
         except Exception:

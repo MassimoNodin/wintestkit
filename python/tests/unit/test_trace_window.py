@@ -20,15 +20,44 @@ def test_window_capture_uses_window_renderer(monkeypatch: pytest.MonkeyPatch) ->
         return 1
 
     monkeypatch.setattr(win32.user32, "GetWindowRect", bounds)
-    calls: list[tuple[Rect, int | None]] = []
 
-    def bitmap(rect: Rect, hwnd: int | None = None) -> bytes:
-        calls.append((rect, hwnd))
-        return b"window-content"
+    def frame(hwnd: int, attribute: int, pointer: Any, size: int) -> int:
+        # The visible frame sits inside the invisible resize borders.
+        visible = pointer._obj
+        visible.left, visible.top, visible.right, visible.bottom = 17, 20, 103, 93
+        return 0
 
-    monkeypatch.setattr(screenshot, "_capture_bitmap", bitmap)
-    assert screenshot.capture_window(42) == b"window-content"
-    assert calls == [(Rect(10, 20, 100, 80), 42)]
+    dwm = Mock()
+    dwm.DwmGetWindowAttribute = frame
+    monkeypatch.setattr(win32, "dwmapi", dwm)
+    calls: list[tuple[Rect, int | None, Rect | None]] = []
+
+    def pixels(rect: Rect, hwnd: int | None = None, crop: Rect | None = None):
+        calls.append((rect, hwnd, crop))
+        return 1, 1, b"\x00\x00\x00"
+
+    monkeypatch.setattr(screenshot, "_capture_pixels", pixels)
+    assert screenshot.capture_window(42) == screenshot.encode_png(1, 1, b"\x00\x00\x00")
+    assert calls == [(Rect(10, 20, 100, 80), 42, Rect(7, 0, 86, 73))]
+
+
+def test_black_border_hairline_is_trimmed_but_content_is_kept() -> None:
+    black, grey = b"\x00\x00\x00", b"\x20\x20\x20"
+    # Black on the left, right and bottom edges, as a rendered window leaves them.
+    rows = [black + grey * 3 + black] * 3 + [black * 5]
+    width, height, rgb = screenshot.trim_black_edges(5, 4, b"".join(rows))
+    assert (width, height, rgb) == (3, 3, grey * 9)
+    plain = grey * 20
+    assert screenshot.trim_black_edges(5, 4, plain) == (5, 4, plain)
+
+
+def test_window_capture_keeps_whole_window_without_dwm_frame(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    dwm = Mock()
+    dwm.DwmGetWindowAttribute = lambda *args: 1
+    monkeypatch.setattr(win32, "dwmapi", dwm)
+    assert screenshot._visible_frame(42, Rect(10, 20, 100, 80)) is None
 
 
 def test_reused_window_handle_does_not_capture_another_process(
