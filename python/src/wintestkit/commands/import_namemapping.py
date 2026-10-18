@@ -11,7 +11,9 @@ from wintestkit.name_mapping import convert
 
 
 def add_parser(subparsers: Any) -> None:
-    parser = subparsers.add_parser("import-namemapping", help="generate a Python page from NameMapping XML")
+    parser = subparsers.add_parser(
+        "import-namemapping", help="generate a Python page from NameMapping XML"
+    )
     parser.add_argument("xml", metavar="XML", help="TestComplete NameMapping export")
     parser.add_argument("output", metavar="PY", help="new Python page skeleton")
     parser.add_argument("--force", action="store_true", help="overwrite the output file")
