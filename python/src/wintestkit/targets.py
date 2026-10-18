@@ -481,10 +481,10 @@ def run_flow(
     name: str,
     arguments: dict[str, Any] | None = None,
 ) -> FlowResult:
-    """Call the flow ``name`` of ``file`` as ``flow(app)`` (awaiting it if it is async).
+    """Call a flow with its app and validated scalar arguments, awaiting async flows.
 
-    Only flows whose sole required parameter is ``app`` can be run. An exception raised by the
-    flow is a failed result rather than an error, with the user's innermost frame in the message.
+    An exception raised by the flow is a failed result rather than an error, with the user's
+    innermost frame in the message.
     """
     module = loader.load(file)
     flow = getattr(module, name, None)
@@ -498,7 +498,8 @@ def run_flow(
     ]
     first = parameters[0] if parameters else None
     if (
-        required != ["app"]
+        not required
+        or required[0] != "app"
         or first is None
         or first.name != "app"
         or first.kind is first.KEYWORD_ONLY
@@ -514,11 +515,23 @@ def run_flow(
             values = arguments or {}
             signature = inspect.signature(flow)
             allowed = {parameter for parameter in signature.parameters if parameter != "app"}
+            missing = set(required[1:]) - set(values)
+            if missing:
+                raise TargetError(
+                    "flow arguments are missing required parameters: "
+                    + ", ".join(sorted(missing))
+                )
             if set(values) - allowed:
                 raise TargetError("flow arguments contain unknown parameter names")
             for key, value in values.items():
                 annotation = signature.parameters[key].annotation
-                expected = annotation if annotation in (str, int, float, bool) else None
+                expected = (
+                    annotation
+                    if annotation in (str, int, float, bool)
+                    else {"str": str, "int": int, "float": float, "bool": bool}.get(
+                        annotation
+                    )
+                )
                 if expected is None or type(value) is not expected:
                     raise TargetError(f"flow argument {key!r} must be a supported typed scalar")
             outcome = flow(app, **values)
