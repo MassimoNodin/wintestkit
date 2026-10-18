@@ -1,3 +1,4 @@
+import * as path from "node:path";
 import { describe, expect, it } from "vitest";
 import { buildProjectTree } from "../../src/views/projectTreeModel";
 import type { DiscoveryResult } from "../../src/protocol/generated";
@@ -24,25 +25,25 @@ const discovery = (root = "/project"): DiscoveryResult => ({
 });
 
 describe("project sidebar sections", () => {
-  it("groups flows by source file and navigates to the function name", () => {
+  it("lists each flow as its own row with the file it lives in", () => {
     const result = discovery();
-    const [file] = buildProjectTree([result]);
-    expect(file.label).toBe("navigation.py");
-    expect(file.kind).toBe("file");
-    expect(file.children[0]).toMatchObject({
+    const [flow] = buildProjectTree([result]);
+    expect(flow).toMatchObject({
       label: "open_page",
       kind: "flow",
+      description: path.relative("/project", "/project/flows/navigation.py"),
+      icon: "run-all",
       file: result.flows![0].file,
       range,
+      children: [],
     });
     expect(result.flows).toHaveLength(1);
   });
   it("keeps multi-project flow identities distinct and skips empty roots", () => {
     const tree = buildProjectTree([discovery(), discovery("/other")]);
     expect(tree.map((node) => node.kind)).toEqual(["project", "project"]);
-    expect(tree[0].children[0].children[0].id).not.toBe(
-      tree[1].children[0].children[0].id,
-    );
+    expect(tree[0].children[0].id).not.toBe(tree[1].children[0].id);
+    expect(tree[0].children[0].kind).toBe("flow");
   });
   it("supports backends without flow discovery and empty workspaces", () => {
     const result = discovery();
@@ -50,29 +51,38 @@ describe("project sidebar sections", () => {
     expect(buildProjectTree([result])).toEqual([]);
     expect(buildProjectTree([])).toEqual([]);
   });
-  it("sorts source files without changing discovery order", () => {
+  it("orders files by name and keeps each file's flows in discovery order", () => {
     const result = discovery();
-    result.flows!.push({
-      ...result.flows![0],
-      id: "flows/accounts.py::login",
-      file: "/project/flows/accounts.py",
-      name: "login",
-    });
-    expect(
-      buildProjectTree([result]).map((node) => node.label),
-    ).toEqual(["accounts.py", "navigation.py"]);
+    const first = result.flows![0];
+    result.flows!.push(
+      {
+        ...first,
+        id: "flows/accounts.py::login",
+        file: "/project/flows/accounts.py",
+        name: "login",
+      },
+      { ...first, id: "flows/navigation.py::tour", name: "tour" },
+    );
+    expect(buildProjectTree([result]).map((node) => node.label)).toEqual([
+      "login",
+      "open_page",
+      "tour",
+    ]);
     expect(result.flows![0].name).toBe("open_page");
   });
-  it("preserves nested paths and files outside the section directory", () => {
+  it("shows nested paths and files outside the section directory", () => {
     const result = discovery();
     result.flows = [
       { ...result.flows![0], file: "/project/flows/nested/steps.py" },
-      { ...result.flows![0], id: "other::run", file: "/project/other/steps.py" },
+      {
+        ...result.flows![0],
+        id: "other::run",
+        file: "/project/other/steps.py",
+      },
     ];
-    const files = buildProjectTree([result]);
-    expect(files.map((file) => file.label)).toEqual([
-      "nested/steps.py",
-      "other/steps.py",
+    expect(buildProjectTree([result]).map((flow) => flow.description)).toEqual([
+      path.relative("/project", "/project/flows/nested/steps.py"),
+      path.relative("/project", "/project/other/steps.py"),
     ]);
   });
 });

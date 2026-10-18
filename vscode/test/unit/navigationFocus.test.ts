@@ -261,7 +261,10 @@ class Dom {
       for (const attr of attrs.matchAll(
         /([^\s=/]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'))?/g,
       )) {
-        el.setAttribute(attr[1].toLowerCase(), decode(attr[2] ?? attr[3] ?? ""));
+        el.setAttribute(
+          attr[1].toLowerCase(),
+          decode(attr[2] ?? attr[3] ?? ""),
+        );
       }
       stack[stack.length - 1].append(el);
       if (match[4] !== "/") stack.push(el);
@@ -441,9 +444,13 @@ describe("navigation document focus", () => {
     client.tree.scrollTop = 64;
     client.paint("pages", html);
     expect(client.tree.querySelector("[role='treeitem']")).not.toBeNull();
-    expect(client.tree.querySelector("[role='treeitem'][tabindex='0']")).toBeNull();
+    expect(
+      client.tree.querySelector("[role='treeitem'][tabindex='0']"),
+    ).toBeNull();
     expect(client.active()).toBe(client.tree);
-    expect(client.focusLog).toEqual([{ node: client.tree, preventScroll: true }]);
+    expect(client.focusLog).toEqual([
+      { node: client.tree, preventScroll: true },
+    ]);
     expect(client.tree.tabIndex).toBe(0);
     expect(client.tree.scrollTop).toBe(64);
   });
@@ -570,5 +577,38 @@ describe("navigation document focus", () => {
     expect(client.focusLog).toEqual([]);
     expect(client.active()?.getAttribute("data-id")).toBe("child");
     expect(client.tree.scrollTop).toBe(15);
+  });
+});
+
+describe("leaf rows under a page", () => {
+  it("marks only rows without children as leaves", () => {
+    const html = body(new Set(["parent"]));
+    expect(html).toMatch(/class="item leaf"[^>]*data-id="child"/);
+    expect(html).toMatch(/class="item page-item leaf"[^>]*data-id="other"/);
+    expect(html).toMatch(/class="item page-item"[^>]*data-id="parent"/);
+  });
+  it("narrows the chevron gap only for nested leaves, not for root rows", () => {
+    const css = /<style[^>]*>([\s\S]*?)<\/style>/.exec(
+      navigationDocument({
+        cspSource: "csp",
+        nonce: "n",
+        iconsHref: "codicon.css",
+        section: "pages",
+        treeHtml: "",
+      }),
+    )?.[1];
+    expect(css).toContain(
+      ".page-item .group > .item.leaf > .line > .spacer { width: 0; }",
+    );
+    expect(css).toContain(
+      ".page-item .group > .item.leaf::before { width: 15px; }",
+    );
+    expect(css).not.toMatch(/#tree > \.page-item[^{]*\.spacer/);
+    // The indent lives on the line, so the highlight covers it; padding on the row itself would
+    // start the highlight further right than other rows do.
+    expect(css).toContain(
+      ".page-item .group > .item.leaf > .line { padding-left: 16px; }",
+    );
+    expect(css).not.toMatch(/\.item\.leaf\s*\{[^}]*padding/);
   });
 });
