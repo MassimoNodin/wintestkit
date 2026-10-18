@@ -67,14 +67,14 @@ const MODES: Record<
       "Use the app that is already running. WinTestKit never starts or closes it.",
   },
   "per-session": {
-    title: "Spawn",
+    title: "Launch for tests",
     codicon: "rocket",
     description:
       "Start the app for the tests and close it when they finish. A copy that is already running is closed first.",
   },
   // Still honoured when set in the settings file, but not offered in the picker.
   "per-test": {
-    title: "Spawn per test",
+    title: "Launch per test",
     codicon: "rocket",
     description:
       "Start a fresh app for every test and close it afterwards. Set in the settings file.",
@@ -343,7 +343,7 @@ export function buildTestAppModel(input: TestAppInput): TestAppModel {
       model.message = {
         tone: "warn",
         text: spawning
-          ? "Spawn starts the app for the tests, so it needs an executable. Choose one with the application tile, or switch the mode to Attach."
+          ? "Launch for tests starts the app, so it needs an executable. Choose one with the application tile, or switch the mode to Attach."
           : "WinTestKit attaches to " +
             (processName ?? "the app") +
             " but never starts it. Start the app yourself, or choose an executable to launch.",

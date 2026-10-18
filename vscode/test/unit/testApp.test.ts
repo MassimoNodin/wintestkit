@@ -85,7 +85,7 @@ describe("Test Target tiles", () => {
     expect(app).toMatchObject({ title: "Demo", chevron: true });
     expect(app.tooltip).toContain("C:/Apps/Demo.exe");
     expect(mode).toMatchObject({
-      title: "Spawn",
+      title: "Launch for tests",
       codicon: "rocket",
       chevron: true,
     });
@@ -96,14 +96,14 @@ describe("Test Target tiles", () => {
     expect(launch).toMatchObject({ title: "Launch", tone: "launch" });
     expect(launch.disabled).toBeFalsy();
   });
-  it("offers spawn first by default, but still shows a per-test setting", () => {
+  it("offers launch for tests first by default, but still shows a per-test setting", () => {
     expect(modeChoices.map((mode) => [mode.id, mode.title])).toEqual([
-      ["per-session", "Spawn"],
+      ["per-session", "Launch for tests"],
       ["attach", "Attach"],
     ]);
     expect(
       build({ "app.path": "C:/Apps/Demo.exe" }, { running: false }).tiles[1],
-    ).toMatchObject({ title: "Spawn", codicon: "rocket" });
+    ).toMatchObject({ title: "Launch for tests", codicon: "rocket" });
     expect(build(attach, { running: false }).tiles[1]).toMatchObject({
       title: "Attach",
       codicon: "link",
@@ -111,7 +111,7 @@ describe("Test Target tiles", () => {
     expect(
       build({ ...launchable, launch: "per-test" }, { running: false }).tiles[1]
         .title,
-    ).toBe("Spawn per test");
+    ).toBe("Launch per test");
   });
   it("puts the workspace folder over the project name, and a switch only for several projects", () => {
     const single = build(
@@ -153,13 +153,13 @@ describe("Test Target tiles", () => {
     expect(ids(running).slice(3)).toEqual(["close"]);
     expect(running.tiles[0].subtitle).toBe("PID 5");
   });
-  it("explains that Spawn needs an executable instead of saying it attaches", () => {
+  it("explains that Launch for tests needs an executable instead of saying it attaches", () => {
     const model = build(
       { "app.process": "CalculatorApp.exe", launch: "per-session" },
       { running: false },
     );
     expect(model.status.label).toBe("Needs an executable");
-    expect(model.message?.text).toContain("Spawn");
+    expect(model.message?.text).toContain("Launch for tests");
     expect(model.message?.text).not.toContain("attaches");
   });
   describe("loading state shown in the clicked button", () => {

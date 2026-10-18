@@ -15,11 +15,11 @@ released together with the same version) are documented here.
 - "Current Setup" is now **Test Target**: tiles for the application (icon, name, process IDs), its
   launch mode, the project and a Launch / Restart / Close action, with the status next to the title.
   The application and mode tiles open quick picks (browse for an executable, attach to a running
-  app, Attach or Spawn) that save to `wintestkit.local.yaml`, and the project tile
+  app, Attach or Launch for tests) that save to `wintestkit.local.yaml`, and the project tile
   switches projects. While the app starts it shows each stage (process started, app responding,
   main window shown) with the time against the startup timeout, and a failed launch keeps the
   reason on the section with a way to retry.
-- **Spawn** (launch) mode owns the app's lifecycle: a copy that is already running is closed first,
+- **Launch for tests** mode owns the app's lifecycle: a copy that is already running is closed first,
   and the app WinTestKit started is closed when the tests finish. The Calculator example now uses
   the standard `app` fixture, so the mode in the Test Target view decides whether it attaches or
   starts Calculator.
