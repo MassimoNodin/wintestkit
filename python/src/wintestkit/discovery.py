@@ -162,6 +162,7 @@ class FlowEntry:
     range: Range
     name_range: Range
     runnable: bool = False
+    parameters: list[dict[str, Any]] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -171,22 +172,70 @@ class FlowEntry:
             "range": self.range.to_dict(),
             "nameRange": self.name_range.to_dict(),
             "runnable": self.runnable,
+            "parameters": self.parameters or [],
         }
 
 
-def _takes_only_app(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
-    """Whether the function can be called as ``flow(app)`` (``app`` is the only required one)."""
-    arguments = node.args
-    positional = [*arguments.posonlyargs, *arguments.args]
-    required = positional[: len(positional) - len(arguments.defaults)]
-    required += [
-        argument
-        for argument, default in zip(arguments.kwonlyargs, arguments.kw_defaults, strict=True)
-        if default is None
+def _flow_parameters(node: ast.FunctionDef | ast.AsyncFunctionDef) -> list[dict[str, Any]]:
+    """Describe scalar flow inputs without evaluating source expressions."""
+    args = node.args
+    positional = [*args.posonlyargs, *args.args]
+    defaults = [None] * (len(positional) - len(args.defaults)) + list(args.defaults)
+    output: list[dict[str, Any]] = []
+    for argument, default in zip(positional, defaults, strict=True):
+        if argument.arg == "app":
+            continue
+        annotation = argument.annotation
+        kind = annotation.id if isinstance(annotation, ast.Name) else None
+        if kind not in {"str", "int", "float", "bool"}:
+            continue
+        item: dict[str, Any] = {"name": argument.arg, "type": kind, "required": default is None}
+        if default is not None:
+            try:
+                value = ast.literal_eval(default)
+            except (ValueError, TypeError, SyntaxError):
+                continue
+            if type(value) not in {str, int, float, bool}:
+                continue
+            item["default"] = value
+        output.append(item)
+    for argument, default in zip(args.kwonlyargs, args.kw_defaults, strict=True):
+        kind = argument.annotation.id if isinstance(argument.annotation, ast.Name) else None
+        if kind not in {"str", "int", "float", "bool"}:
+            continue
+        item = {"name": argument.arg, "type": kind, "required": default is None}
+        if default is not None:
+            try:
+                value = ast.literal_eval(default)
+            except (ValueError, TypeError, SyntaxError):
+                continue
+            if type(value) not in {str, int, float, bool}:
+                continue
+            item["default"] = value
+        output.append(item)
+    return output
+
+
+def _editor_runnable(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+    positional = [*node.args.posonlyargs, *node.args.args]
+    if not positional or positional[0].arg != "app":
+        return False
+    described = {item["name"] for item in _flow_parameters(node)}
+    required = [
+        argument.arg
+        for argument, default in zip(
+            positional,
+            [None] * (len(positional) - len(node.args.defaults)) + list(node.args.defaults),
+            strict=True,
+        )
+        if argument.arg != "app" and default is None
     ]
-    return [argument.arg for argument in required] == ["app"] and (
-        bool(positional) and positional[0].arg == "app"
+    required.extend(
+        argument.arg
+        for argument, default in zip(node.args.kwonlyargs, node.args.kw_defaults, strict=True)
+        if default is None
     )
+    return all(name in described for name in required)
 
 
 @dataclass(frozen=True)
@@ -1142,7 +1191,8 @@ def discover(
                     name=node.name,
                     range=source.range_of(node),
                     name_range=source.name_range(node),
-                    runnable=_takes_only_app(node),
+                    runnable=_editor_runnable(node),
+                    parameters=_flow_parameters(node),
                 )
                 for node in source.tree.body
                 if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
