@@ -56,9 +56,14 @@ export class StatusBar implements vscode.Disposable {
         void this.refresh();
       }),
       vscode.commands.registerCommand("wintestkit.statusMenu", async () => {
+        const project = this.project();
+        const running = project ? this.applicationState(project)?.running : false;
         const actions = [
-          ["Launch App", "wintestkit.launchApp"],
-          ["Close App", "wintestkit.closeApp"],
+          ...(running
+            ? [["Restart App", "wintestkit.restartApp"], ["Close App", "wintestkit.closeApp"]]
+            : [["Launch App", "wintestkit.launchApp"]]),
+          ["Run all tests", "testing.runAll"],
+          ["Open Testing view", "wintestkit.openTesting"],
           ["Restart Server", "wintestkit.restartServer"],
           ["Open Last Report", "wintestkit.openReport"],
           ["Check Environment", "wintestkit.runDoctor"],
