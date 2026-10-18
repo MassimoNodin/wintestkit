@@ -27,6 +27,7 @@ def _command_modules() -> list[str]:
         "serve",
         "init",
         "report",
+        "import_namemapping",
     ]
 
 
