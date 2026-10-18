@@ -19,7 +19,6 @@ import { UnusedDefinitions } from "./views/unusedDefinitions";
 import { Reports } from "./report";
 import { SpyView } from "./spy/spyView";
 import { registerInsertElement } from "./spy/insertElement";
-import { registerInsertAssertion } from "./spy/insertAssertion";
 import { RelocationActions } from "./editor/relocationActions";
 import { computeInsertion } from "./spy/insertionModel";
 import { ConfigurationEditor, settingsEditorId } from "./settings/editor";
@@ -159,7 +158,6 @@ export function activate(context: vscode.ExtensionContext): {
   context.subscriptions.push(spy);
   context.subscriptions.push(
     registerInsertElement(projects, discovery, log),
-    registerInsertAssertion(),
   );
   const tests = new TestController(projects, discovery, log, reports);
   context.subscriptions.push(
@@ -397,7 +395,6 @@ export function activate(context: vscode.ExtensionContext): {
         "wintestkit.spy.startPick",
         "wintestkit.spy.refresh",
         "wintestkit.spy.revealRelocation",
-        "wintestkit.spy.insertAssertion",
       ].includes(contribution.command)
     )
       continue;

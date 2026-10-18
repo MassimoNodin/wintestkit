@@ -26,7 +26,6 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
   private project?: Project;
   private picking = false;
   private appRunning = false;
-  private targetPids: number[] = [];
   private targetName?: string;
   private showOtherApps = false;
   private revision = 0;
@@ -161,7 +160,6 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
       picking: this.picking,
       appRunning: this.appRunning,
       targetName: this.targetName ?? project?.name ?? "Test Target",
-      targetPids: this.targetPids,
       hasProject: !!this.currentProject(),
       showOtherApps: this.showOtherApps,
       bringToFront: this.bringToFront(),
@@ -429,7 +427,6 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
       );
       if (this.disposed || !this.sameScope(scopeRevision, revision)) return;
       this.appRunning = status.running;
-      this.targetPids = status.pids;
       this.targetName = status.running ? status.mainWindowTitle : undefined;
       this.state();
       this.post({ type: "roots", nodes });
@@ -602,14 +599,6 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
     if (message.type === "openDefinition") {
       const definition = this.definitionTargets.get(message.id);
       if (definition) await this.openDefinition(definition);
-      return;
-    }
-    if (message.type === "insertAssertion") {
-      if (message.nodeId !== this.selectedNodeId || !this.definitionTargets.has(message.definitionId)) return;
-      await vscode.commands.executeCommand("wintestkit.spy.insertAssertion", {
-        name: message.name,
-        enabled: message.enabled,
-      });
       return;
     }
     if (message.type === "addToPage") {
