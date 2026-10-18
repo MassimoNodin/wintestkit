@@ -19,8 +19,8 @@ that opens the settings.
 - **Application** (icon and name, process IDs while running). Click it to browse for an executable
   to launch, attach to a running app that has a window, or open the settings. The choice is saved
   to `wintestkit.local.yaml`.
-- **Mode** (**Attach** or **Spawn**). **Attach** uses the app that is already running and never
-  closes it; **Spawn** starts the app for the tests (closing a running copy first) and closes it
+- **Mode** (**Attach** or **Launch for tests**). **Attach** uses the app that is already running and never
+  closes it; **Launch for tests** starts the app for the tests (closing a running copy first) and closes it
   when they finish. Click to switch.
 - **Project**. The workspace folder and project name; with several WinTestKit projects, click to
   switch between them.
