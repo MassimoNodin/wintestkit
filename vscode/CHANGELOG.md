@@ -55,7 +55,7 @@ released together with the same version) are documented here.
 
 - Remove the Tests tab from the Explorer; tests are run and debugged from VS Code's Testing view.
 
-- Switch to a proprietary license for new versions. Earlier releases stay available under MIT.
+- Return to the MIT license for all versions.
 
 - Rename Pages to Page Tree and nest child pages under their parents, with separation
   between root trees. Shared children appear under each parent.
