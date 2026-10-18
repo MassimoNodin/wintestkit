@@ -55,7 +55,7 @@ export class CheckAfterFlow implements vscode.Disposable {
     if (!result) return;
     const flows = (result.flows ?? []).filter((flow) => flow.runnable);
     if (!flows.length) {
-      await vscode.window.showInformationMessage("No flows without required arguments are available yet.");
+      await vscode.window.showInformationMessage("No editor-runnable flows are available yet.");
       return;
     }
     const selected = await vscode.window.showQuickPick(flows.map((flow) => ({
