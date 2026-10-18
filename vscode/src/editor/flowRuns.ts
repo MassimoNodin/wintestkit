@@ -6,6 +6,7 @@ import type { FlowRunResult } from "../protocol/generated";
 import type { FlowStatus } from "./lensModel";
 import { RpcError } from "../server/jsonrpc";
 import type { ServerManager } from "../server/serverManager";
+import { recoverStoppedApp } from "./appRecovery";
 
 export interface FlowTarget {
   file: string;
@@ -72,18 +73,11 @@ export class FlowRuns implements vscode.Disposable {
         );
       } catch (error) {
         if (!(error instanceof RpcError) || error.code !== -32002) throw error;
-        const choice = await vscode.window.showInformationMessage(
-          "The app isn't running.",
-          "Launch App",
-        );
-        if (choice !== "Launch App") {
+        if (!(await recoverStoppedApp(project, this.servers))) {
           this.states.delete(key);
           this.changed.fire();
           return;
         }
-        await vscode.commands.executeCommand("wintestkit.launchApp", {
-          resourceUri: project.root,
-        });
         result = await connection.client.request<FlowRunResult>(
           "flow.run",
           target,

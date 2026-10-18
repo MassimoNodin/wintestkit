@@ -42,6 +42,9 @@ vi.mock("vscode", () => ({
     setStatusBarMessage: mocks.status,
   },
 }));
+vi.mock("../../src/settings/files", () => ({
+  readConfiguration: vi.fn(async () => ({ launch: "per-session" })),
+}));
 import { FlowRuns, flowKey } from "../../src/editor/flowRuns";
 
 const project = { root: { fsPath: "/project" }, name: "project" } as Project;
@@ -122,11 +125,20 @@ describe("flow runs", () => {
     mocks.info.mockResolvedValue("Launch App");
     await run();
     expect(mocks.info).toHaveBeenCalledWith("The app isn't running.", "Launch App");
-    expect(mocks.executeCommand).toHaveBeenCalledWith("wintestkit.launchApp", {
+    expect(mocks.executeCommand).toHaveBeenCalledWith("wintestkit.launchAppStrict", {
       resourceUri: project.root,
     });
     expect(mocks.request).toHaveBeenCalledTimes(2);
     expect(flows.states.get(flowKey(target))?.status).toBe("passed");
+  });
+  it("does not retry after a failed staged launch", async () => {
+    mocks.request.mockRejectedValueOnce(new RpcError(-32002, "App is not running"));
+    mocks.info.mockResolvedValue("Launch App");
+    mocks.executeCommand.mockRejectedValueOnce(new Error("Launch failed"));
+    await run();
+    expect(mocks.request).toHaveBeenCalledOnce();
+    expect(mocks.error).toHaveBeenCalledWith("Launch failed");
+    expect(flows.states.has(flowKey(target))).toBe(false);
   });
   it("shows other errors and clears the running state", async () => {
     mocks.request.mockRejectedValue(
