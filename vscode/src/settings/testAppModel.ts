@@ -82,7 +82,7 @@ const MODES: Record<
 };
 
 /** The two ways to get the app, in the order the picker shows them. */
-export const modeChoices = ["attach", "per-session"].map((id) => ({
+export const modeChoices = ["per-session", "attach"].map((id) => ({
   id,
   ...MODES[id],
 }));
