@@ -26,6 +26,18 @@ export function failureMessages(
   if (end?.error?.diagnostic) {
     markdown.appendMarkdown("\n\n");
     markdown.appendCodeblock(formatDiagnostic(end.error.diagnostic), "text");
+    const relocation = end.error.diagnostic.relocations?.[0];
+    if (relocation) {
+      const args = encodeURIComponent(JSON.stringify([relocation.path]));
+      markdown.appendMarkdown(
+        "\n\n[Reveal relocated element in Spy](command:wintestkit.spy.revealRelocation?" +
+          args +
+          ")",
+      );
+      markdown.isTrusted = {
+        enabledCommands: ["wintestkit.spy.revealRelocation"],
+      };
+    }
   }
   for (const screenshot of end?.screenshots ?? []) {
     markdown.appendMarkdown(
