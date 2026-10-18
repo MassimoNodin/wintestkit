@@ -98,7 +98,9 @@ export class HighlightCommands implements vscode.Disposable {
     } catch (error) {
       if (error instanceof RpcError && error.code === -32002)
         throw new AppNotRunningError(() =>
-          connection.client.request("app.launch"),
+          vscode.commands.executeCommand("wintestkit.launchApp", {
+            resourceUri: project.root,
+          }),
         );
       throw error;
     }
