@@ -24,7 +24,7 @@ def test_sign_in(app):
 ## Features
 
 - **Test Target and YAML configuration.** See the application's icon, name and live status
-  (including start-up progress) above the Explorer and use its gear to open a custom settings editor. **This machine** shows
+  (including start-up progress) above Pages & Flows and use its gear to open a custom settings editor. **This machine** shows
   only **Application executable** under **Start the application**, with **Browse…**. Other
   settings are under collapsed **Advanced options** (**Application**, **Test runs**,
   **Debugging**). Shared defaults live in `wintestkit.yaml`; the executable and other
@@ -39,10 +39,10 @@ def test_sign_in(app):
   captured output, parameterized cases and failure details including expected/actual diffs.
   Run and Debug profiles are in the Testing view; debugging uses the Python Debugger with
   normal breakpoints.
-- **Explorer.** One view, with **Spy** below it, and a **Page Tree | Flows** control that
+- **Pages & Flows.** One view, with **Spy** below it, and a **Page Tree | Flows** control that
   remembers the selected tab. Browse pages with their child pages and elements nested by `within`
   containers, and reusable flow functions grouped by file. Jump to definitions,
-  highlight/check page elements, or run flows that only need `app` inline. Run and debug tests from VS Code's Testing view.
+  highlight/check page elements, or run flows that only need `app` inline. Use the beaker action in the view header to open VS Code's Testing view and run or debug tests.
 - **Spy.** Explore the live UI Automation tree. **Pick element** and **Refresh objects** stay in
   the Spy toolbar. Hold **Ctrl** and click a control, or press **Esc** to cancel. The Spy shows
   properties, supported patterns and a suggested locator, and **Add to page…** inserts it into a
@@ -133,7 +133,7 @@ nested projects and multi-root workspaces.
 | Setting | Default | Description |
 |---|---|---|
 | `wintestkit.pythonPath` | `""` | Python interpreter to use. Empty uses the Python extension's selection. |
-| `wintestkit.codeLens.enabled` | `true` | Show Highlight/Check and Run/Debug CodeLens. |
+| `wintestkit.codeLens.enabled` | `true` | Show Highlight, Check exists, class-wide checks and Run Flow CodeLens. |
 | `wintestkit.highlight.durationMs` | `1500` | How long a highlight stays on screen (200–10000 ms). |
 | `wintestkit.run.extraArgs` | `[]` | Extra arguments passed to `wtk run`. |
 | `wintestkit.run.highlightActions` | `false` | Flash each element before acting during runs from VS Code. |
