@@ -37,6 +37,19 @@
                 ></span>
             </button>
             <button
+                id="bring-front"
+                class="icon-button secondary"
+                aria-pressed="false"
+                aria-label="Bring window to front when selecting: off"
+                title="Bring window to front when selecting: off"
+            >
+                <span
+                    id="bring-front-icon"
+                    class="codicon codicon-pin"
+                    aria-hidden="true"
+                ></span>
+            </button>
+            <button
                 id="other-apps"
                 class="secondary"
                 aria-pressed="false"
@@ -136,6 +149,12 @@
                     </button>
                 </div>
                 <div id="selection-summary" hidden>
+                    <img
+                        id="selection-app-icon"
+                        class="app-icon"
+                        alt=""
+                        hidden
+                    />
                     <span
                         id="selection-icon"
                         class="control-icon codicon codicon-inspect"
@@ -162,6 +181,19 @@
                         </p>
                     </div>
                     <div id="property-groups" hidden>
+                        <section
+                            id="definitions-group"
+                            class="property-group"
+                            aria-label="Defined in pages"
+                        >
+                            <h3>Defined in pages</h3>
+                            <p
+                                id="definitions-status"
+                                class="muted"
+                                role="status"
+                            ></p>
+                            <ul id="definitions-list"></ul>
+                        </section>
                         <section class="property-group">
                             <h3>Identity</h3>
                             <table>

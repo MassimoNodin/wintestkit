@@ -5,6 +5,7 @@
   const nodes = new Map();
   const tasks = new Map();
   let appState;
+  let bringToFront = false;
   const persisted = vscode.getState();
   let showOtherApps = !!(
     persisted &&
@@ -21,14 +22,26 @@
   let detailsError = "";
   let failureTarget;
   let rootIcons = {};
-  const rootIcon = (entry) => {
-    if (!entry.root) return;
+  // nodeId -> { count, first }: objects that some element definition in the pages points at
+  const coverage = new Map();
+  const iconSource = (entry) => {
+    if (!entry?.root) return;
     const source = rootIcons[entry.node.info.processId];
-    if (
-      !source ||
-      !/^data:image\/png;base64,[A-Za-z0-9+/]+={0,2}$/.test(source)
-    )
-      return;
+    if (source && /^data:image\/png;base64,[A-Za-z0-9+/]+={0,2}$/.test(source))
+      return source;
+  };
+  // A root window shows its application's icon in the selected-object header; anything else, or an
+  // app without an icon, keeps the control-type glyph.
+  const selectionIcon = (nodeId) => {
+    const source = iconSource(nodes.get(nodeId));
+    const image = element("selection-app-icon");
+    if (source && image.getAttribute("src") !== source) image.src = source;
+    image.hidden = !source;
+    element("selection-icon").hidden = !!source;
+  };
+  const rootIcon = (entry) => {
+    const source = iconSource(entry);
+    if (!source) return;
     const image = document.createElement("img");
     image.className = "app-icon";
     image.alt = "";
@@ -44,6 +57,165 @@
       { once: true },
     );
     image.src = source;
+  };
+  const markerText = (info) =>
+    info.count === 1
+      ? "Defined in your pages: " + info.first
+      : "Defined " +
+        info.count +
+        " times in your pages, for example " +
+        info.first;
+  const applyMarker = (entry) => {
+    if (!entry) return;
+    const info = coverage.get(entry.node.nodeId);
+    const existing = entry.label.querySelector(".defined-marker");
+    // A defined object reads "<name in your pages> - <application's name>", the latter dimmed. The
+    // tooltip (which the filter searches) carries both names.
+    const attribute = info ? info.first.split(".").pop() : undefined;
+    if (attribute) {
+      const defined = document.createElement("span");
+      defined.className = "defined-name";
+      defined.textContent = attribute;
+      const original = document.createElement("span");
+      original.className = "original-name";
+      original.textContent = " - " + entry.name;
+      entry.text.replaceChildren(defined, original);
+    } else {
+      entry.text.textContent = entry.name;
+    }
+    entry.row.title = info
+      ? "Defined as " +
+        info.first +
+        (info.count > 1 ? " (+" + (info.count - 1) + " more)" : "") +
+        " · UI name: " +
+        entry.baseTitle
+      : entry.baseTitle;
+    entry.row.setAttribute(
+      "aria-label",
+      (attribute ? attribute + " (" + entry.name + ")" : entry.name) +
+        ", " +
+        entry.node.info.controlType,
+    );
+    if (!info) {
+      existing?.remove();
+      return;
+    }
+    const marker = existing || document.createElement("span");
+    marker.className = "defined-marker codicon codicon-pass";
+    marker.setAttribute("role", "img");
+    marker.title = markerText(info);
+    marker.setAttribute("aria-label", marker.title);
+    if (!existing) entry.label.append(marker);
+  };
+  const definitionsStatus = (text) => {
+    element("definitions-status").textContent = text;
+  };
+  // File-type icons, drawn inline because a webview cannot read the user's file icon theme.
+  let iconSerial = 0;
+  const pythonIcon = () => {
+    // Gradient ids must be unique per copy: one icon per row, several rows at once.
+    const id = "py" + ++iconSerial;
+    return (
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" focusable="false">' +
+      "<defs>" +
+      '<linearGradient id="' +
+      id +
+      'a" x1="-133.268" y1="-202.91" x2="-133.198" y2="-202.84" gradientTransform="translate(25243.061 38519.17) scale(189.38 189.81)" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#387eb8"/><stop offset="1" stop-color="#366994"/></linearGradient>' +
+      '<linearGradient id="' +
+      id +
+      'b" x1="-133.575" y1="-203.203" x2="-133.495" y2="-203.133" gradientTransform="translate(25309.061 38583.42) scale(189.38 189.81)" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#ffe052"/><stop offset="1" stop-color="#ffc331"/></linearGradient>' +
+      "</defs>" +
+      '<path d="M15.885,2.1c-7.1,0-6.651,3.07-6.651,3.07V8.36h6.752v1H6.545S2,8.8,2,16.005s4.013,6.912,4.013,6.912H8.33V19.556s-.13-4.013,3.9-4.013h6.762s3.772.06,3.772-3.652V5.8s.572-3.712-6.842-3.712h0ZM12.153,4.237a1.214,1.214,0,1,1-1.183,1.244v-.02a1.214,1.214,0,0,1,1.214-1.214h0Z" fill="url(#' +
+      id +
+      'a)"/>' +
+      '<path d="M16.085,29.91c7.1,0,6.651-3.08,6.651-3.08V23.65H15.985v-1h9.47S30,23.158,30,15.995s-4.013-6.912-4.013-6.912H23.64V12.4s.13,4.013-3.9,4.013H12.975S9.2,16.356,9.2,20.068V26.2s-.572,3.712,6.842,3.712h.04Zm3.732-2.147A1.214,1.214,0,1,1,21,26.519v.03a1.214,1.214,0,0,1-1.214,1.214h.03Z" fill="url(#' +
+      id +
+      'b)"/>' +
+      "</svg>"
+    );
+  };
+  const fileIconMarkup = (fileName) =>
+    fileName.toLowerCase().endsWith(".py") ? pythonIcon() : undefined;
+  const renderDefinitions = (message) => {
+    const list = element("definitions-list");
+    list.replaceChildren();
+    if (message.state === "loading") {
+      definitionsStatus("Checking your pages…");
+      return;
+    }
+    if (message.state === "unavailable") {
+      definitionsStatus(
+        "Definitions could not be checked: " +
+          (message.reason || "unknown error"),
+      );
+      return;
+    }
+    const errors = message.errors || [];
+    // One row per file: definitions in the same file share it (the first, by line, is opened).
+    const files = new Map();
+    for (const definition of message.definitions || []) {
+      const group = files.get(definition.file) || [];
+      group.push(definition);
+      files.set(definition.file, group);
+    }
+    for (const [path, group] of files) {
+      group.sort((a, b) => a.line - b.line);
+      const segments = path.split(/[\\/]/);
+      const name = segments.pop();
+      const folder = segments.pop();
+      const item = document.createElement("li");
+      const button = document.createElement("button");
+      button.className = "definition secondary";
+      button.title = group
+        .map((d) => "Open " + d.qualname + " (" + name + ":" + d.line + ")")
+        .join("\n");
+      const icon = document.createElement("span");
+      icon.className = "file-icon";
+      icon.setAttribute("aria-hidden", "true");
+      const markup = fileIconMarkup(name);
+      if (markup) icon.innerHTML = markup;
+      else icon.classList.add("codicon", "codicon-file");
+      const text = document.createElement("span");
+      text.className = "definition-text";
+      const title = document.createElement("span");
+      title.className = "definition-file";
+      title.textContent = name;
+      if (folder) {
+        const where = document.createElement("span");
+        where.className = "definition-folder";
+        where.textContent = folder + "/";
+        title.append(where);
+      }
+      const caption = document.createElement("span");
+      caption.className = "definition-caption";
+      caption.textContent = group.map((d) => d.qualname).join(", ");
+      text.append(title, caption);
+      const open = document.createElement("span");
+      open.className = "definition-open codicon codicon-go-to-file";
+      open.setAttribute("aria-hidden", "true");
+      button.append(icon, text, open);
+      button.addEventListener("click", () =>
+        post("openDefinition", { id: group[0].id }),
+      );
+      item.append(button);
+      list.append(item);
+    }
+    const parts = [];
+    if (!(message.definitions || []).length)
+      parts.push(
+        message.pageCount === 0 && !errors.length
+          ? "This project has no pages."
+          : "Not defined in any page.",
+      );
+    if (errors.length)
+      parts.push(
+        errors.length +
+          " page file" +
+          (errors.length === 1 ? "" : "s") +
+          " could not be loaded: " +
+          errors.map((error) => error.message).join("; "),
+      );
+    definitionsStatus(parts.join(" "));
   };
   const progress = (message) => {
     if (message.done) {
@@ -78,7 +250,18 @@
     element(target + "-empty-description").textContent = description;
     element(target + "-empty").dataset.loading = String(loading);
   };
+  const renderBringToFront = () => {
+    const button = element("bring-front");
+    const text =
+      "Bring window to front when selecting: " + (bringToFront ? "on" : "off");
+    button.setAttribute("aria-pressed", String(bringToFront));
+    button.title = text;
+    button.setAttribute("aria-label", text);
+    element("bring-front-icon").className =
+      "codicon codicon-" + (bringToFront ? "pinned" : "pin");
+  };
   const renderStatus = () => {
+    renderBringToFront();
     const otherApps = element("other-apps");
     const running = !!(appState && appState.appRunning);
     otherApps.hidden = !running;
@@ -324,6 +507,8 @@
   let picking = false;
   let selected;
   let suggestion;
+  // Whether the selected object has an on-screen rectangle to outline.
+  let highlightable = true;
   const choose = (nodeId) => {
     focusSelected(nodeId);
     suggestion = undefined;
@@ -339,7 +524,11 @@
       info.name || info.automationId || info.controlType;
     element("selection-type").textContent = info.controlType;
     setIcon(element("selection-icon"), info.controlType);
-    for (const id of ["copy", "add", "highlight"]) element(id).disabled = true;
+    selectionIcon(nodeId);
+    renderDefinitions({ state: "loading" });
+    for (const id of ["copy", "add"]) element(id).disabled = true;
+    highlightable = true;
+    renderHighlight();
     renderStatus();
     post("select", { nodeId });
   };
@@ -417,6 +606,8 @@
         toggle,
         label,
         icon,
+        text,
+        baseTitle: row.title,
         root: parent.id === "tree",
         loaded: false,
         loading: false,
@@ -424,6 +615,7 @@
         name,
       });
       rootIcon(nodes.get(node.nodeId));
+      applyMarker(nodes.get(node.nodeId));
     }
     filter();
   };
@@ -446,10 +638,18 @@
       body.append(row);
     }
   };
+  const renderHighlight = () => {
+    const button = element("highlight");
+    button.disabled = !hasDetails || !highlightable;
+    button.title =
+      hasDetails && !highlightable
+        ? "Nothing to highlight: this object has no on-screen rectangle. It may be hidden, collapsed, not laid out yet or in a minimized window."
+        : "";
+  };
   const renderSuggestion = (value) => {
     suggestion = value;
     element("badge").hidden = !value;
-    element("highlight").disabled = !hasDetails;
+    renderHighlight();
     for (const id of ["copy", "add"]) element(id).disabled = !value;
     if (!value) {
       element("code").textContent = "Generating locator…";
@@ -492,6 +692,11 @@
     element("search").value = "";
     for (const entry of nodes.values()) entry.open = false;
     filter();
+  });
+  element("bring-front").addEventListener("click", () => {
+    bringToFront = !bringToFront;
+    renderBringToFront();
+    post("bringToFront", { enabled: bringToFront });
   });
   element("other-apps").addEventListener("click", () => {
     showOtherApps = !showOtherApps;
@@ -606,10 +811,13 @@
     } else if (message.type === "rootIcons") {
       rootIcons = message.icons;
       for (const entry of nodes.values()) rootIcon(entry);
+      selectionIcon(selected);
     } else if (message.type === "state") {
       appState = message;
       if (typeof message.showOtherApps === "boolean")
         showOtherApps = message.showOtherApps;
+      if (typeof message.bringToFront === "boolean")
+        bringToFront = message.bringToFront;
       picking = message.picking;
       element("pick-label").textContent = picking
         ? "Stop picking"
@@ -624,6 +832,7 @@
     } else if (message.type === "roots") {
       hint("");
       rootIcons = {};
+      coverage.clear();
       nodes.clear();
       selected = undefined;
       suggestion = undefined;
@@ -648,10 +857,12 @@
       element("selection-type").textContent =
         "Select a control to inspect its properties.";
       setIcon(element("selection-icon"), "");
+      selectionIcon(undefined);
       element("code").textContent = "Select an object to generate a locator.";
       element("badge").hidden = true;
-      for (const id of ["copy", "add", "highlight"])
-        element(id).disabled = true;
+      for (const id of ["copy", "add"]) element(id).disabled = true;
+      highlightable = true;
+      renderHighlight();
     } else if (message.type === "children") {
       const entry = nodes.get(message.nodeId);
       if (entry) {
@@ -670,6 +881,22 @@
     } else if (message.type === "suggestion") {
       if (message.nodeId !== selected) return;
       renderSuggestion(message.suggestion);
+    } else if (message.type === "suggestionUnavailable") {
+      if (message.nodeId !== selected) return;
+      suggestion = undefined;
+      element("badge").hidden = true;
+      for (const id of ["copy", "add"]) element(id).disabled = true;
+      element("code").textContent = message.reason;
+    } else if (message.type === "definitions") {
+      if (message.nodeId !== selected) return;
+      renderDefinitions(message);
+    } else if (message.type === "coverage") {
+      for (const id of message.nodeIds) {
+        const info = message.covered[id];
+        if (info) coverage.set(id, info);
+        else coverage.delete(id);
+        applyMarker(nodes.get(id));
+      }
     } else if (message.type === "propertiesLoading") {
       if (message.nodeId !== selected) return;
       fullPropertiesLoading = message.loading;
@@ -704,6 +931,8 @@
         .filter(Boolean)
         .join(" · ");
       setIcon(element("selection-icon"), info.controlType);
+      selectionIcon(message.nodeId);
+      highlightable = !!info.rect;
       table("properties", {
         Name: info.name,
         "Control type": info.controlType,

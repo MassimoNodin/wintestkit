@@ -6,6 +6,9 @@ import { ServerManager, type Project } from "../server/serverManager";
 import { JsonRpcClient, RpcError } from "../server/jsonrpc";
 import type {
   AppStatusResult,
+  DefinitionMatch,
+  InspectCoverageResult,
+  InspectDefinitionsResult,
   InspectPropertiesResult,
   NodeInfo,
   SpyHoverNotification,
@@ -36,6 +39,12 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
   };
   private disposed = false;
   private suggestion?: Suggestion;
+  // The definitions last shown for the selected object, so the panel can ask to open one by id.
+  private definitionTargets = new Map<string, DefinitionMatch>();
+  // Tree nodes the panel currently shows, so markers can be refreshed after a page file is saved.
+  private loadedNodeIds = new Set<string>();
+  private coverageRun = 0;
+  private coverageTimer?: NodeJS.Timeout;
   private notifications: vscode.Disposable[] = [];
   private viewSubscriptions: vscode.Disposable[] = [];
   private readonly subscriptions: vscode.Disposable[];
@@ -56,6 +65,13 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
       ),
       projects.onDidChange(() => {
         if (this.view?.visible) void this.safe(() => this.refresh());
+      }),
+      vscode.workspace.onDidChangeConfiguration((event) => {
+        if (event.affectsConfiguration("wintestkit.spy.bringWindowToFront"))
+          this.state();
+      }),
+      vscode.workspace.onDidSaveTextDocument((document) => {
+        if (document.languageId === "python") this.scheduleCoverage();
       }),
       vscode.window.onDidChangeActiveTextEditor(() => {
         if (
@@ -138,6 +154,7 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
       appRunning: this.appRunning,
       hasProject: !!this.currentProject(),
       showOtherApps: this.showOtherApps,
+      bringToFront: this.bringToFront(),
     });
     void vscode.commands.executeCommand(
       "setContext",
@@ -314,6 +331,7 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
                 return false;
               treeRevision = ++this.revision;
               this.post({ type: "roots", nodes: roots });
+              this.trackNodes(client, roots, true);
               const icons = await phase("Loading application icons", () =>
                 readApplicationIcons(roots.map((node) => node.info.processId)),
               );
@@ -339,6 +357,7 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
                 if (!this.sameReveal(client, treeRevision, selection))
                   return false;
                 this.post({ type: "children", nodeId: ancestor.nodeId, nodes });
+                this.trackNodes(client, nodes);
               }
               return true;
             },
@@ -358,6 +377,7 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
             properties,
             suggestion: picked.suggestion,
           });
+          void this.loadDefinitions(client, picked.node.nodeId, selection);
           const choice = await vscode.window.showInformationMessage(
             "Picked " +
               picked.node.info.controlType +
@@ -401,6 +421,7 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
       this.appRunning = status.running;
       this.state();
       this.post({ type: "roots", nodes });
+      this.trackNodes(client, nodes, true);
       const icons = await phase("Loading application icons", () =>
         readApplicationIcons(nodes.map((node) => node.info.processId)),
       );
@@ -437,7 +458,10 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
       : client.request<NodeInfo[]>("inspect.roots");
   }
   async refreshForProject(project: Project): Promise<void> {
-    if (this.view?.visible && this.currentProject()?.root.toString() === project.root.toString())
+    if (
+      this.view?.visible &&
+      this.currentProject()?.root.toString() === project.root.toString()
+    )
       await this.safe(() => this.refresh());
   }
   private async startPick(): Promise<void> {
@@ -472,6 +496,16 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
       this.invalidateScope();
       return this.refresh();
     }
+    if (message.type === "bringToFront") {
+      await vscode.workspace
+        .getConfiguration("wintestkit.spy")
+        .update(
+          "bringWindowToFront",
+          message.enabled,
+          vscode.ConfigurationTarget.Global,
+        );
+      return this.state();
+    }
     if (message.type === "showOtherApps") {
       if (this.showOtherApps === message.enabled) return;
       this.showOtherApps = message.enabled;
@@ -483,6 +517,11 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
     if (message.type === "stopPick") return this.stopPick();
     if (message.type === "copy") {
       await vscode.env.clipboard.writeText(message.text);
+      return;
+    }
+    if (message.type === "openDefinition") {
+      const definition = this.definitionTargets.get(message.id);
+      if (definition) await this.openDefinition(definition);
       return;
     }
     if (message.type === "addToPage") {
@@ -497,12 +536,12 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
     if (message.type === "select") this.suggestion = undefined;
     const title =
       message.type === "expand"
-          ? "Loading children"
-          : message.type === "select"
-            ? "Inspecting object"
-            : message.type === "loadProperties"
-              ? "Loading all properties"
-              : "Highlighting object";
+        ? "Loading children"
+        : message.type === "select"
+          ? "Inspecting object"
+          : message.type === "loadProperties"
+            ? "Loading all properties"
+            : "Highlighting object";
     await this.loading(
       title,
       message.type === "select" ? 4 : 2,
@@ -531,11 +570,16 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
             this.client === client &&
             scopeRevision === this.scopeRevision &&
             treeRevision === this.revision
-          )
+          ) {
             this.post({ type: "children", nodeId, nodes });
+            this.trackNodes(client, nodes);
+          }
         } else if (message.type === "highlight") {
           await phase("Highlighting control", () =>
-            client.request("inspect.highlight", { nodeId }),
+            client.request("inspect.highlight", {
+              nodeId,
+              bringToFront: this.bringToFront(),
+            }),
           );
         } else if (message.type === "loadProperties") {
           this.post({ type: "propertiesLoading", nodeId, loading: true });
@@ -578,10 +622,19 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
           this.post({ type: "selected", nodeId, properties });
           const [, suggestion] = await Promise.all([
             phase("Highlighting control", () =>
-              client.request("inspect.highlight", { nodeId }),
+              client.request("inspect.highlight", {
+                nodeId,
+                bringToFront: this.bringToFront(),
+              }),
             ),
             phase("Generating locator", () =>
-              client.request<Suggestion>("suggest.locator", { nodeId }),
+              client
+                .request<Suggestion>("suggest.locator", { nodeId })
+                .catch((error: unknown) => {
+                  if (error instanceof RpcError && error.code === -32006)
+                    return error.message;
+                  throw error;
+                }),
             ),
           ]);
           if (
@@ -590,8 +643,18 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
             client !== this.client
           )
             return;
+          if (typeof suggestion === "string") {
+            this.post({
+              type: "suggestionUnavailable",
+              nodeId,
+              reason: suggestion,
+            });
+            void this.loadDefinitions(client, nodeId, selection);
+            return;
+          }
           this.suggestion = suggestion;
           this.post({ type: "suggestion", nodeId, suggestion });
+          void this.loadDefinitions(client, nodeId, selection);
         }
       },
       nodeId,
@@ -602,7 +665,147 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
         : "tree",
     );
   }
+  // -- element definitions -----------------------------------------------------------------
+  private async loadDefinitions(
+    client: JsonRpcClient,
+    nodeId: string,
+    selection: number,
+  ): Promise<void> {
+    const current = () =>
+      !this.disposed && selection === this.selection && client === this.client;
+    this.definitionTargets = new Map();
+    this.post({ type: "definitions", nodeId, state: "loading" });
+    try {
+      const result = await client.request<InspectDefinitionsResult>(
+        "inspect.definitions",
+        { nodeId },
+      );
+      if (!current()) return;
+      if (!result) {
+        this.post({
+          type: "definitions",
+          nodeId,
+          state: "unavailable",
+          reason: "The automation server returned no definitions.",
+        });
+        return;
+      }
+      this.definitionTargets = new Map(
+        result.definitions.map((definition) => [definition.id, definition]),
+      );
+      this.post({
+        type: "definitions",
+        nodeId,
+        state: "ready",
+        definitions: result.definitions,
+        errors: result.errors,
+        pageCount: result.pageCount,
+      });
+    } catch (error) {
+      if (!current()) return;
+      this.log.error(String(error));
+      this.post({
+        type: "definitions",
+        nodeId,
+        state: "unavailable",
+        reason: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+  private async openDefinition(definition: DefinitionMatch): Promise<void> {
+    const document = await vscode.workspace.openTextDocument(
+      vscode.Uri.file(definition.file),
+    );
+    const start = definition.range
+      ? new vscode.Position(
+          definition.range.start.line,
+          definition.range.start.character,
+        )
+      : new vscode.Position(Math.max(definition.line - 1, 0), 0);
+    const end = definition.range
+      ? new vscode.Position(
+          definition.range.end.line,
+          definition.range.end.character,
+        )
+      : start;
+    await vscode.window.showTextDocument(document, {
+      selection: new vscode.Range(start, end),
+      preview: false,
+    });
+  }
+  // Whether selecting or highlighting an object also raises its application window. Off by
+  // default: the outline is drawn above every window anyway.
+  private bringToFront(): boolean {
+    return vscode.workspace
+      .getConfiguration("wintestkit.spy")
+      .get<boolean>("bringWindowToFront", false);
+  }
+  private markersEnabled(): boolean {
+    return vscode.workspace
+      .getConfiguration("wintestkit.spy")
+      .get<boolean>("markDefinedObjects", true);
+  }
+  private trackNodes(
+    client: JsonRpcClient,
+    nodes: NodeInfo[],
+    reset = false,
+  ): void {
+    if (reset) {
+      this.loadedNodeIds.clear();
+      this.coverageRun++;
+    }
+    for (const node of nodes) this.loadedNodeIds.add(node.nodeId);
+    void this.loadCoverage(
+      client,
+      nodes.map((node) => node.nodeId),
+    );
+  }
+  private scheduleCoverage(): void {
+    clearTimeout(this.coverageTimer);
+    this.coverageTimer = setTimeout(() => {
+      const client = this.client;
+      if (client && this.view?.visible && this.loadedNodeIds.size)
+        void this.loadCoverage(client, [...this.loadedNodeIds]);
+    }, 600);
+  }
+  // Marks the nodes that some definition already points at. The server answers within a small time
+  // budget and names the nodes it did not finish, which are asked for again until settled.
+  private async loadCoverage(
+    client: JsonRpcClient,
+    nodeIds: string[],
+  ): Promise<void> {
+    if (!nodeIds.length || !this.appRunning || !this.markersEnabled()) return;
+    const run = ++this.coverageRun;
+    const revision = this.revision;
+    const stale = () =>
+      this.disposed ||
+      this.client !== client ||
+      run !== this.coverageRun ||
+      revision !== this.revision;
+    let remaining = nodeIds;
+    try {
+      for (let round = 0; round < 60 && remaining.length; round++) {
+        const batch = remaining.slice(0, 500);
+        const rest = remaining.slice(500);
+        const result = await client.request<InspectCoverageResult>(
+          "inspect.coverage",
+          { nodeIds: batch },
+        );
+        if (stale() || !result) return;
+        const pending = new Set(result.pending);
+        this.post({
+          type: "coverage",
+          nodeIds: batch.filter((id) => !pending.has(id)),
+          covered: result.covered,
+        });
+        remaining = [...rest, ...result.pending];
+      }
+    } catch (error) {
+      this.log.error(String(error)); // markers are optional: the tree still works without them
+    }
+  }
   dispose(): void {
+    clearTimeout(this.coverageTimer);
     this.unbind();
     this.disposed = true;
     [...this.subscriptions, ...this.viewSubscriptions].forEach((subscription) =>

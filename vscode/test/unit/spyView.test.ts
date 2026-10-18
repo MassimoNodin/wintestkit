@@ -13,15 +13,53 @@ const mocks = vi.hoisted(() => ({
   information: vi.fn(() => Promise.resolve(undefined)),
   icons: vi.fn(() => Promise.resolve({} as Record<string, string>)),
   activeEditor: undefined as
-    | { document: { uri: { fsPath: string; toString(): string } } }
-    | undefined,
+    { document: { uri: { fsPath: string; toString(): string } } } | undefined,
   editorListeners: [] as Array<() => void>,
+  markers: true,
+  bringToFront: false,
+  updateConfig: vi.fn(() => Promise.resolve()),
+  configListeners: [] as Array<
+    (event: { affectsConfiguration(key: string): boolean }) => void
+  >,
+  openDocument: vi.fn((uri: unknown) => Promise.resolve({ uri })),
+  showDocument: vi.fn(() => Promise.resolve(undefined)),
 }));
 vi.mock("../../src/spy/appIcons", () => ({
   readApplicationIcons: mocks.icons,
 }));
 vi.mock("vscode", () => ({
+  ConfigurationTarget: { Global: 1 },
+  Position: class {
+    constructor(
+      readonly line: number,
+      readonly character: number,
+    ) {}
+  },
+  Range: class {
+    constructor(
+      readonly start: unknown,
+      readonly end: unknown,
+    ) {}
+  },
+  workspace: {
+    getConfiguration: () => ({
+      get: (key: string, fallback: boolean) =>
+        key === "bringWindowToFront"
+          ? mocks.bringToFront
+          : mocks.markers && fallback,
+      update: mocks.updateConfig,
+    }),
+    onDidChangeConfiguration: (
+      listener: (event: { affectsConfiguration(key: string): boolean }) => void,
+    ) => {
+      mocks.configListeners.push(listener);
+      return { dispose() {} };
+    },
+    onDidSaveTextDocument: () => ({ dispose() {} }),
+    openTextDocument: mocks.openDocument,
+  },
   Uri: {
+    file: (fsPath: string) => ({ fsPath }),
     joinPath: (uri: { fsPath: string }, ...parts: string[]) => ({
       fsPath: [uri.fsPath, ...parts].join("/"),
       toString() {
@@ -44,6 +82,7 @@ vi.mock("vscode", () => ({
       };
     },
     showInformationMessage: mocks.information,
+    showTextDocument: mocks.showDocument,
   },
   commands: {
     registerCommand: () => ({ dispose() {} }),
@@ -59,6 +98,9 @@ describe("Spy view bridge", () => {
     vi.clearAllMocks();
     mocks.notifications.clear();
     mocks.activeEditor = undefined;
+    mocks.markers = true;
+    mocks.bringToFront = false;
+    mocks.configListeners.splice(0, mocks.configListeners.length);
     mocks.editorListeners.splice(0, mocks.editorListeners.length);
   });
   const create = async (connect?: () => Promise<unknown>) => {
@@ -148,13 +190,15 @@ describe("Spy view bridge", () => {
   it("refreshes after app actions only for the visible matching project", async () => {
     const fixture = await create();
     const project = {
-      root: { fsPath: "C:/demo", toString: () => "demo" }, name: "demo",
+      root: { fsPath: "C:/demo", toString: () => "demo" },
+      name: "demo",
     } as import("../../src/server/serverManager").Project;
     mocks.request.mockImplementation((method: string) =>
       Promise.resolve(method === "app.status" ? { running: true } : []),
     );
     await fixture.provider.refreshForProject({
-      ...project, root: { toString: () => "other" } as vscode.Uri,
+      ...project,
+      root: { toString: () => "other" } as vscode.Uri,
     });
     expect(mocks.request).not.toHaveBeenCalled();
     fixture.view.visible = false;
@@ -174,7 +218,9 @@ describe("Spy view bridge", () => {
       /id="collapse"[\s\S]*?<\/button>\s*<button[\s\S]*?id="other-apps"/,
     );
     expect(html).toMatch(/id="other-apps"[\s\S]*?\bhidden\b/);
-    expect(html).toContain('<span id="other-apps-label">Show Other Apps</span>');
+    expect(html).toContain(
+      '<span id="other-apps-label">Show Other Apps</span>',
+    );
     expect(readFileSync("media/spy/spy.css", "utf8")).toMatch(
       /#other-apps\s*\{[^}]*margin-left:\s*auto/,
     );
@@ -277,9 +323,9 @@ describe("Spy view bridge", () => {
     finishSelect({ info: { name: "Kept" }, properties: {}, ancestors: [] });
     finishSecond([{ nodeId: "other" }]);
     await vi.waitFor(() =>
-      expect(fixture.sent.filter((message) => message.type === "roots")).toEqual(
-        [{ type: "roots", nodes: [{ nodeId: "other" }] }],
-      ),
+      expect(
+        fixture.sent.filter((message) => message.type === "roots"),
+      ).toEqual([{ type: "roots", nodes: [{ nodeId: "other" }] }]),
     );
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(fixture.sent.filter((message) => message.type === "roots")).toEqual([
@@ -371,9 +417,9 @@ describe("Spy view bridge", () => {
     finishRefresh([{ nodeId: "other" }]);
     finishReveal([{ nodeId: "scoped" }]);
     await vi.waitFor(() =>
-      expect(fixture.sent.filter((message) => message.type === "roots")).toEqual(
-        [{ type: "roots", nodes: [{ nodeId: "other" }] }],
-      ),
+      expect(
+        fixture.sent.filter((message) => message.type === "roots"),
+      ).toEqual([{ type: "roots", nodes: [{ nodeId: "other" }] }]),
     );
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(fixture.sent.filter((message) => message.type === "roots")).toEqual([
@@ -605,6 +651,311 @@ describe("Spy view bridge", () => {
       expect(
         fixture.sent.some((message) => message.type === "suggestion"),
       ).toBe(true),
+    );
+    fixture.provider.dispose();
+  });
+  it("reports a window as having no locator instead of leaving it loading", async () => {
+    mocks.request.mockImplementation((method: string) => {
+      if (method === "inspect.properties")
+        return Promise.resolve({
+          info: { name: "App", controlType: "Window" },
+          properties: {},
+          ancestors: [],
+        });
+      if (method === "suggest.locator")
+        return Promise.reject(
+          new RpcError(-32006, "Select a window descendant"),
+        );
+      return Promise.resolve(undefined);
+    });
+    const fixture = await create();
+    fixture.receive({ type: "select", nodeId: "window" });
+    await vi.waitFor(() =>
+      expect(
+        fixture.sent.some(
+          (message) => message.type === "suggestionUnavailable",
+        ),
+      ).toBe(true),
+    );
+    expect(
+      fixture.sent.find((message) => message.type === "suggestionUnavailable"),
+    ).toEqual({
+      type: "suggestionUnavailable",
+      nodeId: "window",
+      reason: "Select a window descendant",
+    });
+    expect(fixture.sent.some((message) => message.type === "error")).toBe(
+      false,
+    );
+    fixture.provider.dispose();
+  });
+  const definition = {
+    id: "pages/main.py::MainPage.save",
+    qualname: "MainPage.save",
+    kind: "element",
+    locator: 'Button[name="Save"]',
+    file: "C:/demo/pages/main.py",
+    line: 12,
+    range: {
+      start: { line: 11, character: 4 },
+      end: { line: 11, character: 40 },
+    },
+    pages: ["MainPage.save"],
+    pageCount: 1,
+  };
+  const selectWith = (handlers: Record<string, unknown>) =>
+    mocks.request.mockImplementation((method: string) => {
+      if (method in handlers) {
+        const value = handlers[method];
+        return typeof value === "function"
+          ? (value as () => unknown)()
+          : Promise.resolve(value);
+      }
+      if (method === "inspect.properties")
+        return Promise.resolve({ info: { name: "Save" }, properties: {} });
+      if (method === "suggest.locator")
+        return Promise.resolve({ helpers: [], code: "Element()" });
+      return Promise.resolve(undefined);
+    });
+  const sawDefinitions = (
+    fixture: { sent: { type: string; [key: string]: unknown }[] },
+    state: string,
+  ) =>
+    fixture.sent.some(
+      (message) => message.type === "definitions" && message.state === state,
+    );
+  describe("bring window to front option", () => {
+    const highlightCalls = () =>
+      mocks.request.mock.calls.filter(
+        ([method]) => method === "inspect.highlight",
+      );
+    const selectNode = async (
+      fixture: Awaited<ReturnType<typeof create>>,
+      nodeId = "control",
+    ) => {
+      mocks.request.mockImplementation((method: string) =>
+        Promise.resolve(
+          method === "inspect.properties"
+            ? { info: { name: "Save" }, properties: {} }
+            : method === "suggest.locator"
+              ? { helpers: [], code: "Element()" }
+              : undefined,
+        ),
+      );
+      fixture.receive({ type: "select", nodeId });
+      await vi.waitFor(() =>
+        expect(highlightCalls().length).toBeGreaterThan(0),
+      );
+    };
+    it("is off by default, so selecting only outlines the object", async () => {
+      const fixture = await create();
+      await selectNode(fixture);
+      expect(highlightCalls()[0]).toEqual([
+        "inspect.highlight",
+        { nodeId: "control", bringToFront: false },
+      ]);
+      fixture.provider.dispose();
+    });
+    it("raises the window when the option is on, for selection and the Highlight button", async () => {
+      mocks.bringToFront = true;
+      const fixture = await create();
+      await selectNode(fixture);
+      fixture.receive({ type: "highlight", nodeId: "control" });
+      await vi.waitFor(() => expect(highlightCalls()).toHaveLength(2));
+      expect(highlightCalls().map(([, params]) => params)).toEqual([
+        { nodeId: "control", bringToFront: true },
+        { nodeId: "control", bringToFront: true },
+      ]);
+      fixture.provider.dispose();
+    });
+    it("saves the toggle to the user settings and tells the panel", async () => {
+      const fixture = await create();
+      fixture.receive({ type: "bringToFront", enabled: true });
+      await vi.waitFor(() =>
+        expect(mocks.updateConfig).toHaveBeenCalledWith(
+          "bringWindowToFront",
+          true,
+          1,
+        ),
+      );
+      mocks.bringToFront = true;
+      for (const listener of mocks.configListeners)
+        listener({
+          affectsConfiguration: (key) =>
+            key === "wintestkit.spy.bringWindowToFront",
+        });
+      const states = fixture.sent.filter((message) => message.type === "state");
+      expect(states.at(-1)).toMatchObject({ bringToFront: true });
+      fixture.provider.dispose();
+    });
+    it("tells the panel the option is off at first", async () => {
+      const fixture = await create();
+      fixture.receive({ type: "ready" });
+      await vi.waitFor(() =>
+        expect(fixture.sent.some((message) => message.type === "state")).toBe(
+          true,
+        ),
+      );
+      expect(
+        fixture.sent.find((message) => message.type === "state"),
+      ).toMatchObject({ bringToFront: false });
+      fixture.provider.dispose();
+    });
+  });
+  it("lists the definitions that resolve to the selected object after its locator", async () => {
+    selectWith({
+      "inspect.definitions": {
+        definitions: [definition],
+        errors: [],
+        pageCount: 4,
+      },
+    });
+    const fixture = await create();
+    fixture.receive({ type: "select", nodeId: "save" });
+    await vi.waitFor(() => expect(sawDefinitions(fixture, "ready")).toBe(true));
+    const order = fixture.sent.map((message) => message.type);
+    expect(order.indexOf("suggestion")).toBeLessThan(
+      order.lastIndexOf("definitions"),
+    );
+    expect(
+      fixture.sent.find(
+        (message) =>
+          message.type === "definitions" && message.state === "loading",
+      ),
+    ).toEqual({ type: "definitions", nodeId: "save", state: "loading" });
+    expect(mocks.request).toHaveBeenCalledWith("inspect.definitions", {
+      nodeId: "save",
+    });
+    fixture.provider.dispose();
+  });
+  it("reports definitions as unavailable when the server cannot answer", async () => {
+    selectWith({
+      "inspect.definitions": () => Promise.reject(new Error("no catalogue")),
+    });
+    const fixture = await create();
+    fixture.receive({ type: "select", nodeId: "save" });
+    await vi.waitFor(() =>
+      expect(sawDefinitions(fixture, "unavailable")).toBe(true),
+    );
+    expect(
+      fixture.sent.find(
+        (message) =>
+          message.type === "definitions" && message.state === "unavailable",
+      ),
+    ).toMatchObject({ reason: "no catalogue" });
+    fixture.provider.dispose();
+  });
+  it("opens a listed definition at its range and ignores unknown ids", async () => {
+    selectWith({
+      "inspect.definitions": {
+        definitions: [definition],
+        errors: [],
+        pageCount: 1,
+      },
+    });
+    const fixture = await create();
+    fixture.receive({ type: "select", nodeId: "save" });
+    await vi.waitFor(() => expect(sawDefinitions(fixture, "ready")).toBe(true));
+    fixture.receive({ type: "openDefinition", id: "pages/other.py::X.y" });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(mocks.openDocument).not.toHaveBeenCalled();
+    fixture.receive({ type: "openDefinition", id: definition.id });
+    await vi.waitFor(() => expect(mocks.showDocument).toHaveBeenCalled());
+    expect(mocks.openDocument).toHaveBeenCalledWith({
+      fsPath: "C:/demo/pages/main.py",
+    });
+    expect(mocks.showDocument).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        selection: expect.objectContaining({
+          start: expect.objectContaining({ line: 11, character: 4 }),
+        }),
+      }),
+    );
+    fixture.provider.dispose();
+  });
+  const rootsWithCoverage = (coverage: () => unknown): void => {
+    mocks.request.mockImplementation((method: string) => {
+      if (method === "app.status")
+        return Promise.resolve({ running: true, pids: [7] });
+      if (method === "inspect.roots")
+        return Promise.resolve([
+          {
+            nodeId: "a",
+            info: { processId: 7, name: "A", controlType: "Window" },
+          },
+          {
+            nodeId: "b",
+            info: { processId: 7, name: "B", controlType: "Window" },
+          },
+        ]);
+      if (method === "inspect.coverage") return Promise.resolve(coverage());
+      return Promise.resolve(undefined);
+    });
+  };
+  it("marks the loaded tree nodes that some definition points at", async () => {
+    rootsWithCoverage(() => ({
+      covered: { a: { count: 1, first: "MainPage.window" } },
+      pending: [],
+    }));
+    const fixture = await create();
+    fixture.receive({ type: "ready", showOtherApps: false });
+    await vi.waitFor(() =>
+      expect(fixture.sent.some((message) => message.type === "coverage")).toBe(
+        true,
+      ),
+    );
+    expect(mocks.request).toHaveBeenCalledWith("inspect.coverage", {
+      nodeIds: ["a", "b"],
+    });
+    expect(fixture.sent.find((message) => message.type === "coverage")).toEqual(
+      {
+        type: "coverage",
+        nodeIds: ["a", "b"],
+        covered: { a: { count: 1, first: "MainPage.window" } },
+      },
+    );
+    fixture.provider.dispose();
+  });
+  it("asks again for the nodes the server did not finish", async () => {
+    let calls = 0;
+    rootsWithCoverage(() => {
+      calls++;
+      return calls === 1
+        ? { covered: { a: { count: 1, first: "P.a" } }, pending: ["b"] }
+        : { covered: { b: { count: 2, first: "P.b" } }, pending: [] };
+    });
+    const fixture = await create();
+    fixture.receive({ type: "ready", showOtherApps: false });
+    await vi.waitFor(() =>
+      expect(
+        fixture.sent.filter((message) => message.type === "coverage"),
+      ).toHaveLength(2),
+    );
+    const [first, second] = fixture.sent.filter(
+      (message) => message.type === "coverage",
+    );
+    expect(first?.nodeIds).toEqual(["a"]); // "b" is still pending, so not settled yet
+    expect(second?.nodeIds).toEqual(["b"]);
+    expect(mocks.request).toHaveBeenLastCalledWith("inspect.coverage", {
+      nodeIds: ["b"],
+    });
+    fixture.provider.dispose();
+  });
+  it("does not look for defined objects when the setting is off", async () => {
+    mocks.markers = false;
+    rootsWithCoverage(() => ({ covered: {}, pending: [] }));
+    const fixture = await create();
+    fixture.receive({ type: "ready", showOtherApps: false });
+    await vi.waitFor(() =>
+      expect(fixture.sent.some((message) => message.type === "roots")).toBe(
+        true,
+      ),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(mocks.request).not.toHaveBeenCalledWith(
+      "inspect.coverage",
+      expect.anything(),
     );
     fixture.provider.dispose();
   });
@@ -870,9 +1221,7 @@ describe("Spy view bridge", () => {
         if (method === "suggest.locator")
           return Promise.resolve({ helpers: [], code: "Row()" });
         if (method === "inspect.roots")
-          return Promise.resolve([
-            { nodeId: "root", info: { processId: 1 } },
-          ]);
+          return Promise.resolve([{ nodeId: "root", info: { processId: 1 } }]);
         return Promise.resolve(undefined);
       },
     );
@@ -1072,14 +1421,12 @@ describe("Spy view bridge", () => {
     pending[0]({ client });
     await first;
     await new Promise((resolve) => setTimeout(resolve, 20));
-    expect(fixture.sent.filter((message) => message.type === "roots")).toEqual(
-      [
-        {
-          type: "roots",
-          nodes: [{ nodeId: "fresh", info: { processId: 1 } }],
-        },
-      ],
-    );
+    expect(fixture.sent.filter((message) => message.type === "roots")).toEqual([
+      {
+        type: "roots",
+        nodes: [{ nodeId: "fresh", info: { processId: 1 } }],
+      },
+    ]);
     fixture.provider.dispose();
   });
 });
