@@ -17,7 +17,7 @@ export const ACTION_PRESENTATION: Record<
   { icon: string; title: string }
 > = {
   highlight: { icon: "eye", title: "Highlight Element" },
-  check: { icon: "check", title: "Check Element" },
+  check: { icon: "check", title: "Check exists" },
   checkPage: { icon: "check-all", title: "Check all elements in this class exist" },
   run: { icon: "play", title: "Run Flow" },
 };
