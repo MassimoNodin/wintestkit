@@ -63,11 +63,33 @@ export class FlowRuns implements vscode.Disposable {
     this.set(key, pending);
     try {
       const connection = await this.servers.get(project);
-      const result = await connection.client.request<FlowRunResult>(
-        "flow.run",
-        target,
-        FLOW_TIMEOUT_MS,
-      );
+      let result: FlowRunResult;
+      try {
+        result = await connection.client.request<FlowRunResult>(
+          "flow.run",
+          target,
+          FLOW_TIMEOUT_MS,
+        );
+      } catch (error) {
+        if (!(error instanceof RpcError) || error.code !== -32002) throw error;
+        const choice = await vscode.window.showInformationMessage(
+          "The app isn't running.",
+          "Launch App",
+        );
+        if (choice !== "Launch App") {
+          this.states.delete(key);
+          this.changed.fire();
+          return;
+        }
+        await vscode.commands.executeCommand("wintestkit.launchApp", {
+          resourceUri: project.root,
+        });
+        result = await connection.client.request<FlowRunResult>(
+          "flow.run",
+          target,
+          FLOW_TIMEOUT_MS,
+        );
+      }
       if (this.states.get(key) === pending) this.set(key, result);
       if (result.status === "passed") {
         vscode.window.setStatusBarMessage(
@@ -86,9 +108,7 @@ export class FlowRuns implements vscode.Disposable {
       this.states.delete(key);
       this.changed.fire();
       const message =
-        error instanceof RpcError && error.code === -32002
-          ? "The app isn't running. Launch it, then run the flow again."
-          : error instanceof Error
+        error instanceof Error
             ? error.message
             : String(error);
       void vscode.window.showErrorMessage(message);
