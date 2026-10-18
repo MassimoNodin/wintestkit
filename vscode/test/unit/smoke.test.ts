@@ -238,7 +238,7 @@ describe("extension scaffold", () => {
     );
     expect(manifest.contributes.views.wintestkit).toEqual([
       { id: "wintestkit.setup", name: "Test Target", type: "webview" },
-      { id: "wintestkit.navigation", name: "Explorer", type: "webview" },
+      { id: "wintestkit.navigation", name: "Pages & Flows", type: "webview" },
       { id: "wintestkit.spy", name: "Spy", type: "webview" },
     ]);
     expect(
