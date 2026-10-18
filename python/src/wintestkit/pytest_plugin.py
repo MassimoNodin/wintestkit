@@ -35,6 +35,7 @@ from wintestkit.errors import ConfigError, WtkError
 from wintestkit.events import EventSink, open_sink
 from wintestkit.report.html import write_report
 from wintestkit.report.results import RunRecorder, prepare_directory
+from wintestkit.trace import TraceRecorder
 
 if TYPE_CHECKING:
     from wintestkit.app import App
@@ -43,7 +44,18 @@ log = logging.getLogger("wintestkit.pytest")
 
 _MARKER_KEYS = {"launch", "timeout"}
 _MAX_MESSAGE = 2000
-_ENV_VARS = ("WTK_APP_PATH", "WTK_LAUNCH", "WTK_TIMEOUT", "WTK_INPUT_MODE", "WTK_SCREENSHOTS")
+_ENV_VARS = (
+    "WTK_APP_PATH",
+    "WTK_LAUNCH",
+    "WTK_TIMEOUT",
+    "WTK_INPUT_MODE",
+    "WTK_SCREENSHOTS",
+    "WTK_TRACE",
+    "WTK_TRACE_FPS",
+    "WTK_TRACE_SCOPE",
+    "WTK_TRACE_MAX_FRAMES",
+    "WTK_TRACE_MAX_BYTES",
+)
 
 
 def _funcarg(item: Any, name: str) -> Any:
@@ -118,6 +130,9 @@ _OPTION_TO_KEY = {
     "wtk_highlight": "highlight_actions",
     "wtk_slowmo": "slow_mo_ms",
     "wtk_report": "report_dir",
+    "wtk_trace": "trace",
+    "wtk_trace_fps": "trace_fps",
+    "wtk_trace_scope": "trace_scope",
 }
 
 
@@ -128,6 +143,11 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     group.addoption("--wtk-app", metavar="PATH", help="path of the application executable")
     group.addoption("--wtk-input-mode", choices=INPUT_MODES, help="default click strategy")
     group.addoption("--wtk-screenshots", choices=SCREENSHOT_MODES, help="when to capture screens")
+    group.addoption(
+        "--wtk-trace", choices=("off", "on", "retain-on-failure"), help="record a trace"
+    )
+    group.addoption("--wtk-trace-fps", type=float, help="target trace frames per second (up to 30)")
+    group.addoption("--wtk-trace-scope", choices=("window", "desktop"), help="trace capture area")
     group.addoption(
         "--wtk-highlight", action="store_true", default=None, help="flash elements before acting"
     )
@@ -199,6 +219,7 @@ class _Run:
     exceptions: dict[str, pytest.ExceptionInfo[BaseException]] = field(default_factory=lambda: {})
     artifacts: artifact_files.ArtifactSet | None = None
     step_screenshots: list[Path] = field(default_factory=lambda: [])
+    trace: TraceRecorder | None = None
 
 
 @dataclass
@@ -236,6 +257,9 @@ class _Controller:
 
     def close(self) -> None:
         self.remove_listener()
+        for run in self.runs.values():
+            if run.trace is not None:
+                run.trace.stop()
         if self.sink is not None:
             self.sink.close()
             self.sink = None
@@ -302,6 +326,11 @@ class _Controller:
         test_id = runtime.current_test()
         if not test_id:
             return
+        run = self.runs.get(test_id)
+        if run is not None and run.trace is not None:
+            if run.trace.window is None and self.current is not None:
+                self._trace_window(run.trace, _funcarg(self.current, "app"))
+            run.trace.request_frame()
         if self.config.screenshots == "every-step" and self.current is not None:
             app = _funcarg(self.current, "app")
             directory = artifact_files.artifacts_dir(self.config.report_dir, test_id)
@@ -320,6 +349,17 @@ class _Controller:
         runtime.begin_test(item.nodeid)
         self.current = item
         self.runs[item.nodeid] = _Run(item.nodeid)
+        if self.report_enabled and self.config.trace != "off":
+            trace = TraceRecorder(
+                artifact_files.artifacts_dir(self.config.report_dir, item.nodeid),
+                self.config.report_dir,
+                fps=self.config.trace_fps,
+                scope=self.config.trace_scope,
+                max_frames=self.config.trace_max_frames,
+                max_bytes=self.config.trace_max_bytes,
+            )
+            self.runs[item.nodeid].trace = trace
+            trace.start()
         marker = item.get_closest_marker("wtk")
         if marker is None:
             return
@@ -334,6 +374,26 @@ class _Controller:
             current = runtime.get_config()
             self.restore_timeout = current.timeout
             runtime.set_config(dataclasses.replace(current, timeout=float(timeout)))
+
+    @staticmethod
+    def _trace_window(trace: TraceRecorder, app: Any) -> None:
+        if app is None or trace.scope != "window":
+            return
+        try:
+            trace.set_window(int(app.main_window().native_window_handle))
+        except Exception as exc:
+            log.debug("trace window not available: %s", exc)
+
+    @pytest.hookimpl(hookwrapper=True)
+    def pytest_fixture_setup(
+        self, fixturedef: pytest.FixtureDef[Any], request: pytest.FixtureRequest
+    ) -> Generator[None, Any, None]:
+        outcome = yield
+        if fixturedef.argname != "app" or outcome.excinfo is not None:
+            return
+        run = self.runs.get(self.current.nodeid) if self.current is not None else None
+        if run is not None and run.trace is not None:
+            self._trace_window(run.trace, outcome.get_result())
 
     @pytest.hookimpl(trylast=True)
     def pytest_runtest_teardown(self, item: pytest.Item, nextitem: pytest.Item | None) -> None:
@@ -350,6 +410,8 @@ class _Controller:
         outcome = yield
         report: pytest.TestReport = outcome.get_result()
         run = self.runs.setdefault(item.nodeid, _Run(item.nodeid))
+        if report.when == "setup" and run.trace is not None:
+            self._trace_window(run.trace, _funcarg(item, "app"))
         if call.excinfo is not None:
             run.exceptions[report.when or "call"] = call.excinfo
         if not report.failed or report.when == "teardown" or self.config.screenshots == "off":
@@ -391,6 +453,14 @@ class _Controller:
             "duration": duration,
             "screenshots": [self._posix(p) for p in paths],
         }
+        if run.trace is not None:
+            discard = self.config.trace == "retain-on-failure" and outcome not in (
+                "failed",
+                "error",
+            )
+            trace_result = run.trace.stop(discard=discard)
+            if not discard:
+                event["trace"] = trace_result
         exc = _failure_exception(run)
         if exc is not None:
             event["message"] = _message(exc)

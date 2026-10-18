@@ -269,6 +269,15 @@ const results = {
         },
       ],
       screenshots: ["artifacts/sign-in/step-1.png"],
+      trace: {
+        startedAt: 1791936000,
+        duration: 0.2,
+        frames: [
+          { time: 0, path: "artifacts/sign-in/trace/0001.png" },
+          { time: 0.1, path: "artifacts/sign-in/trace/0002.png" },
+        ],
+        truncated: false,
+      },
       treeDump: "artifacts/sign-in/tree.txt",
       stdout: "Signed in\n",
       stderr: "",
@@ -377,6 +386,15 @@ const events = [
       "C:/wtk/examples/demo-tests/wtk-report/artifacts/sign-in/step-1.png",
     ],
     artifactsDir: "C:/wtk/examples/demo-tests/wtk-report/artifacts/sign-in",
+    trace: {
+      startedAt: 1791936000,
+      duration: 0.2,
+      frames: [
+        { time: 0, path: "artifacts/sign-in/trace/0001.png" },
+        { time: 0.1, path: "artifacts/sign-in/trace/0002.png" },
+      ],
+      truncated: false,
+    },
   },
   {
     event: "session_end",

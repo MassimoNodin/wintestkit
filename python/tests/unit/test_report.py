@@ -67,3 +67,32 @@ def test_report_command_regenerates_html(tmp_path: Path) -> None:
 
 def test_report_command_handles_missing_results(tmp_path: Path) -> None:
     assert main(["report", str(tmp_path)]) == 2
+
+
+def test_trace_paths_are_portable_and_payload_is_not_mutated(tmp_path: Path) -> None:
+    recorder = RunRecorder(tmp_path)
+    recorder.record(
+        {
+            "event": "collected",
+            "tests": [{"id": "test", "name": "test", "file": str(tmp_path / "test.py"), "line": 0}],
+        }
+    )
+    trace = {
+        "startedAt": 1,
+        "duration": 1,
+        "truncated": False,
+        "frames": [{"time": 0, "path": str(tmp_path / "artifacts/frame.png")}],
+    }
+    recorder.record(
+        {
+            "event": "test_end",
+            "id": "test",
+            "outcome": "passed",
+            "duration": 1,
+            "screenshots": [],
+            "trace": trace,
+        }
+    )
+    recorded = recorder.results()["tests"][0]["trace"]
+    assert recorded["frames"][0]["path"] == "artifacts/frame.png"
+    assert trace["frames"][0]["path"] == str(tmp_path / "artifacts/frame.png")

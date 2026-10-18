@@ -8,6 +8,7 @@ from typing import Any
 import pytest
 
 from wintestkit import runtime
+from wintestkit.trace import TraceRecorder
 
 
 def test_pytest_results_match_events(
@@ -83,4 +84,68 @@ def test_session_end_reports_output_paths(pytester: pytest.Pytester) -> None:
     assert Path(end["reportPath"]).is_file()
     assert Path(end["junitPath"]) == (pytester.path / "junit.xml").resolve()
     result.stdout.fnmatch_lines(["Report: *index.html"])
+    runtime.reset()
+
+
+@pytest.mark.parametrize("mode", ["on", "retain-on-failure"])
+def test_trace_results_and_events_match_contract(
+    pytester: pytest.Pytester,
+    monkeypatch: pytest.MonkeyPatch,
+    validate: Callable[[str, str, Any], None],
+    mode: str,
+) -> None:
+    monkeypatch.setattr(TraceRecorder, "_capture_window", lambda self: b"fake-png")
+    pytester.makepyprojecttoml(f'[tool.wintestkit]\nscreenshots = "off"\ntrace = "{mode}"\n')
+    pytester.makepyfile("""
+import time
+import pytest
+from wintestkit import runtime
+def test_ok():
+    with runtime.step("wait", "Main", "Window", {}):
+        time.sleep(0.06)
+def test_failure():
+    time.sleep(0.06)
+    assert False, "trace failure"
+@pytest.fixture
+def broken():
+    time.sleep(0.06)
+    raise RuntimeError("setup failed")
+def test_setup_error(broken): pass
+""")
+    result = pytester.runpytest("--wtk-events=trace-events.ndjson")
+    result.assert_outcomes(passed=1, failed=1, errors=1)
+    results = json.loads((pytester.path / "wtk-report/results.json").read_text(encoding="utf-8"))
+    validate("results.schema.json", "Results", results)
+    events = [
+        json.loads(line)
+        for line in (pytester.path / "trace-events.ndjson").read_text(encoding="utf-8").splitlines()
+    ]
+    for event in events:
+        validate("events.schema.json", "RunEvent", event)
+    endings = {event["id"]: event for event in events if event["event"] == "test_end"}
+    for test in results["tests"]:
+        retained = mode == "on" or test["outcome"] in ("failed", "error")
+        assert ("trace" in test) == retained
+        if retained:
+            trace = test["trace"]
+            assert trace == endings[test["id"]]["trace"]
+            assert len(trace["frames"]) == 1
+            assert trace["duration"] >= 0.06
+            assert (pytester.path / "wtk-report" / trace["frames"][0]["path"]).is_file()
+    expected = 3 if mode == "on" else 2
+    assert len(list((pytester.path / "wtk-report").rglob("*.png"))) == expected
+    runtime.reset()
+
+
+def test_no_report_disables_trace_capture(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def unexpected_start(self: TraceRecorder) -> None:
+        raise AssertionError("trace must be disabled with --wtk-no-report")
+
+    monkeypatch.setattr(TraceRecorder, "start", unexpected_start)
+    pytester.makepyprojecttoml('[tool.wintestkit]\nscreenshots = "off"\ntrace = "on"\n')
+    pytester.makepyfile("def test_ok(): pass")
+    pytester.runpytest("--wtk-no-report").assert_outcomes(passed=1)
+    assert not (pytester.path / "wtk-report").exists()
     runtime.reset()

@@ -17,6 +17,7 @@ from wintestkit.errors import ConfigError
 LaunchMode = Literal["per-test", "per-session", "attach"]
 InputMode = Literal["pattern", "mouse"]
 ScreenshotMode = Literal["off", "on-failure", "every-step"]
+TraceMode = Literal["off", "on", "retain-on-failure"]
 
 LAUNCH_MODES = ("per-test", "per-session", "attach")
 INPUT_MODES = ("pattern", "mouse")
@@ -55,6 +56,11 @@ _TOP_LEVEL_KEYS = {
     "slow_mo_ms",
     "python_paths",
     "property_aliases",
+    "trace",
+    "trace_fps",
+    "trace_scope",
+    "trace_max_frames",
+    "trace_max_bytes",
 }
 _APP_KEYS = {"path", "args", "cwd", "env", "process", "startup_timeout", "close_timeout"}
 
@@ -64,6 +70,11 @@ _ENV_VARS = {
     "WTK_TIMEOUT": "timeout",
     "WTK_INPUT_MODE": "input_mode",
     "WTK_SCREENSHOTS": "screenshots",
+    "WTK_TRACE": "trace",
+    "WTK_TRACE_FPS": "trace_fps",
+    "WTK_TRACE_SCOPE": "trace_scope",
+    "WTK_TRACE_MAX_FRAMES": "trace_max_frames",
+    "WTK_TRACE_MAX_BYTES": "trace_max_bytes",
 }
 
 
@@ -105,6 +116,11 @@ class WtkConfig:
     slow_mo_ms: int
     python_paths: tuple[Path, ...]
     property_aliases: Mapping[str, str] = field(default_factory=lambda: {})
+    trace: TraceMode = "off"
+    trace_fps: float = 5.0
+    trace_scope: Literal["window", "desktop"] = "window"
+    trace_max_frames: int = 3000
+    trace_max_bytes: int = 104857600
 
 
 # -- project discovery ----------------------------------------------------------------------------
@@ -164,9 +180,22 @@ def _number(key: str, value: Any, *, positive: bool) -> float:
     return number
 
 
+def _trace_fps(value: Any) -> float:
+    number = _number("trace_fps", value, positive=True)
+    if number > 30:
+        raise _fail("trace_fps", f"must be at most 30, got {value!r}")
+    return number
+
+
 def _non_negative_int(key: str, value: Any) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or value < 0:
         raise _fail(key, f"expected a non-negative integer, got {value!r}")
+    return value
+
+
+def _positive_int(key: str, value: Any) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise _fail(key, f"expected a positive integer, got {value!r}")
     return value
 
 
@@ -265,12 +294,17 @@ def _environment_values(environ: Mapping[str, str]) -> dict[str, Any]:
         raw = environ.get(variable)
         if raw is None or raw == "":
             continue
-        if key == "timeout":
+        if key in {"timeout", "trace_fps"}:
             try:
                 values[key] = float(raw)
             except ValueError:
+                raise ConfigError(f"{variable}: expected a number, got {raw!r}", key=key) from None
+        elif key in {"trace_max_frames", "trace_max_bytes"}:
+            try:
+                values[key] = int(raw)
+            except ValueError:
                 raise ConfigError(
-                    f"{variable}: expected a number, got {raw!r}", key="timeout"
+                    f"{variable}: expected an integer, got {raw!r}", key=key
                 ) from None
         else:
             values[key] = raw
@@ -293,7 +327,14 @@ def _yaml_mapping(loader: yaml.SafeLoader, node: yaml.MappingNode) -> dict[str, 
             raise ConfigError("YAML configuration keys must be strings")
         if key in result:
             raise ConfigError(f"duplicate YAML configuration key: {key}")
-        result[key] = construct(value_node)
+        if (
+            key == "trace"
+            and isinstance(value_node, yaml.ScalarNode)
+            and value_node.value.lower() in ("on", "off")
+        ):
+            result[key] = value_node.value.lower()
+        else:
+            result[key] = construct(value_node)
     return result
 
 
@@ -392,4 +433,15 @@ def load_config(start: Path | None = None, overrides: Mapping[str, Any] | None =
         slow_mo_ms=_non_negative_int("slow_mo_ms", values.get("slow_mo_ms", 0)),
         python_paths=tuple(_resolve_path(root, p) for p in python_paths),
         property_aliases=_property_aliases(values.get("property_aliases", {})),
+        trace=cast(
+            "TraceMode",
+            _enum("trace", values.get("trace", "off"), ("off", "on", "retain-on-failure")),
+        ),
+        trace_fps=_trace_fps(values.get("trace_fps", 5.0)),
+        trace_scope=cast(
+            "Literal['window', 'desktop']",
+            _enum("trace_scope", values.get("trace_scope", "window"), ("window", "desktop")),
+        ),
+        trace_max_frames=_positive_int("trace_max_frames", values.get("trace_max_frames", 3000)),
+        trace_max_bytes=_positive_int("trace_max_bytes", values.get("trace_max_bytes", 104857600)),
     )

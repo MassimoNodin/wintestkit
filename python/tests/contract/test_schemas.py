@@ -251,7 +251,16 @@ def definition_examples() -> dict[str, dict[str, Any]]:
             "CollectError": {"file": "C:/wtk/tests/test_broken.py", "message": "invalid syntax"},
             "Summary": results["summary"],
         },
-        "results.schema.json": {"Results": results, "TestResult": results["tests"][0]},
+        "results.schema.json": {
+            "Results": results,
+            "TestResult": results["tests"][0],
+            "Trace": {
+                "startedAt": 1.0,
+                "duration": 0.5,
+                "frames": [{"time": 0.1, "path": "trace/0001.png"}],
+                "truncated": False,
+            },
+        },
         "rpc.schema.json": rpc,
     }
 

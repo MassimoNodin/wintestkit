@@ -13,6 +13,7 @@ wtk run -k login -x                       # pytest keyword filter, stop at the f
 wtk run --lf                              # re-run the last failures
 wtk run --launch per-test --timeout 20    # override configuration for this run
 wtk run --junit junit.xml --report out/report
+wtk run --trace retain-on-failure --trace-fps 5 --trace-scope window
 wtk run -- -p no:cacheprovider --maxfail=3  # raw pytest arguments after --
 ```
 
@@ -29,6 +30,9 @@ wtk run -- -p no:cacheprovider --maxfail=3  # raw pytest arguments after --
 | `--report DIR` / `--no-report` | Report directory / don't write a report |
 | `--junit PATH` | Also write JUnit XML |
 | `--events URL` | Stream run events (see below) |
+| `--trace {off,on,retain-on-failure}` | Record continuous screenshot traces; off by default |
+| `--trace-fps FPS` | Sampling rate, greater than 0 and at most 30 (default 5) |
+| `--trace-scope {window,desktop}` | Capture the application window (default) or opt into the full desktop |
 | `-k EXPR`, `-m EXPR`, `-x`, `--lf` | As in pytest |
 
 Plain `pytest` works the same way: the plugin activates in projects with `wintestkit.yaml`
@@ -72,8 +76,14 @@ Shared YAML rejects application paths. Legacy paths remain supported; move them 
 `pyproject.toml` to local YAML to keep them machine-specific. Keep secrets out of shared
 configuration; advanced `app.env` settings accept string values in local YAML.
 Relative paths resolve from the project directory. Environment variables include
-`WTK_APP_PATH`, `WTK_LAUNCH`, `WTK_TIMEOUT`, `WTK_INPUT_MODE` and `WTK_SCREENSHOTS`; `WTK_LOG`
+`WTK_APP_PATH`, `WTK_LAUNCH`, `WTK_TIMEOUT`, `WTK_INPUT_MODE`, `WTK_SCREENSHOTS`, `WTK_TRACE`,
+`WTK_TRACE_FPS`, and `WTK_TRACE_SCOPE`; `WTK_LOG`
 sets the log level of the `wintestkit` logger (`DEBUG`, `INFO`, …).
+Trace limits are configurable with `trace_max_frames` (default 3000) and `trace_max_bytes`
+(default 104857600), including environment overrides `WTK_TRACE_MAX_FRAMES` and
+`WTK_TRACE_MAX_BYTES`. Capture is best-effort and may truncate at these limits. Window capture
+is the privacy-conscious default; desktop capture is opt-in and may include unrelated on-screen
+content. Keep tracing off unless needed.
 
 ## Launch modes
 
@@ -147,6 +157,48 @@ WinTestKit clears only the files it created in the report directory (`index.html
 wtk report --open
 wtk report out/report
 ```
+
+## Screenshot trace playback
+
+Record a continuous, timestamped screenshot trace alongside the normal report:
+
+```powershell
+wtk run --trace on
+wtk run --trace retain-on-failure --trace-fps 5
+wtk report --open
+```
+
+Or save the settings in shared or local YAML:
+
+```yaml
+trace: "retain-on-failure"
+trace_fps: 5
+trace_scope: window
+trace_max_frames: 3000
+trace_max_bytes: 104857600
+```
+
+Expand a test in the HTML report to play, pause or scrub its trace, select a filmstrip
+thumbnail, or click a step to jump to that point. The current step follows the playback
+position, including waits where the screenshot does not change. This is visual replay,
+not an interactive UI Automation snapshot or an MP4 recording.
+
+Tracing is off by default and independent of the existing screenshots setting. A background
+worker targets 5 frames per second, with additional capture requests after actions. It keeps
+only changed frames, drops missed sampling ticks rather than building a queue, and stops at
+the per-test frame or byte limit. The report marks truncated and unavailable recordings.
+Capture failures do not change the test outcome. Passing and skipped traces are deleted in
+`retain-on-failure` mode; failed tests and setup/teardown errors retain them.
+
+Window mode renders the application's main window without copying overlapping desktop
+windows. Minimized or closed windows may have no frames; applications that do not support
+window rendering can produce blank frames. Separate popups are not included. Choose
+`--trace-scope desktop` explicitly when you need to see popups and focus changes: this records
+the entire virtual desktop, including other applications. All traces can contain visible
+passwords or other sensitive data; screenshot pixels are not redacted. Review artifacts before
+sharing them. `--no-report` disables tracing. Copy the whole report directory, including
+`artifacts/`, when moving or sharing a recording; `wtk report` can regenerate the player from
+saved results but cannot create frames for an older run.
 
 ## JUnit XML
 
