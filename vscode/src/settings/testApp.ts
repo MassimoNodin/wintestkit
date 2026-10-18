@@ -27,6 +27,7 @@ const TILES = new Set<string>([
   "refresh",
   "init",
   "output",
+  "doctor",
 ]);
 
 export function parseTestAppMessage(
@@ -210,6 +211,11 @@ export class TestAppView
         case "output":
           return void (await vscode.commands.executeCommand(
             "wintestkit.showOutput",
+          ));
+        case "doctor":
+          return void (await vscode.commands.executeCommand(
+            "wintestkit.runDoctor",
+            target,
           ));
         case "init":
           return void (await vscode.commands.executeCommand(

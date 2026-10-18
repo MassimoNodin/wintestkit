@@ -22,6 +22,7 @@ export interface ApplicationState {
   failure?: {
     action: "launch" | "restart" | "close";
     message: string;
+    environment?: boolean;
     at: number;
   };
 }
@@ -188,7 +189,11 @@ export class StatusBar implements vscode.Disposable {
   /** Ends the in-progress action; a message records why it failed. */
   endTransition(
     project: Project,
-    failure?: { action: "launch" | "restart" | "close"; message: string },
+    failure?: {
+      action: "launch" | "restart" | "close";
+      message: string;
+      environment?: boolean;
+    },
   ): void {
     const key = project.root.toString();
     const previous = this.applications.get(key) ?? { running: false };

@@ -20,6 +20,7 @@ import { computeInsertion } from "./spy/insertionModel";
 import { ConfigurationEditor, settingsEditorId } from "./settings/editor";
 import { TestAppView } from "./settings/testApp";
 import { readConfiguration } from "./settings/files";
+import { RpcError } from "./server/jsonrpc";
 
 interface CommandContribution {
   command: string;
@@ -246,7 +247,13 @@ export function activate(context: vscode.ExtensionContext): {
         }
         status.endTransition(project);
       } catch (error) {
-        status.endTransition(project, { action, message: errorText(error) });
+        status.endTransition(project, {
+          action,
+          message: errorText(error),
+          ...(error instanceof RpcError && error.code === -32005
+            ? { environment: true }
+            : {}),
+        });
         throw error;
       } finally {
         starting.dispose();
@@ -269,15 +276,17 @@ export function activate(context: vscode.ExtensionContext): {
       withProject((project) => spy.refreshForProject(project), target),
     "wintestkit.restartServer": () =>
       withProject((project) => servers.restart(project)),
-    "wintestkit.runDoctor": () =>
-      withProject((project) =>
-        runTerminal(project.root, [
-          "-m",
-          "wintestkit",
-          "--root",
-          project.root.fsPath,
-          "doctor",
-        ]),
+    "wintestkit.runDoctor": (target) =>
+      withProject(
+        (project) =>
+          runTerminal(project.root, [
+            "-m",
+            "wintestkit",
+            "--root",
+            project.root.fsPath,
+            "doctor",
+          ]),
+        target,
       ),
     "wintestkit.installPackage": () =>
       withProject((project) => installPackage(project.root)),
