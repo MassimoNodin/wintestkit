@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 from wintestkit.cli import main
@@ -42,6 +43,32 @@ def test_syntax_or_encoding_errors_suppress_markers_safely(tmp_path, capsys):
     _project(tmp_path)
     (tmp_path / "flows").mkdir()
     (tmp_path / "flows" / "broken.py").write_bytes(b"\xff\xfe")
+    assert main(["--root", str(tmp_path), "unused", "--json"]) == 0
+    result = json.loads(capsys.readouterr().out)
+    assert result["errors"]
+    assert result["unused"] == []
+
+
+def test_literal_dynamic_references_are_not_marked_unused(tmp_path, capsys):
+    _project(tmp_path)
+    (tmp_path / "tests" / "test_dynamic.py").write_text(
+        'def test_it(page):\n    getattr(page, "abandoned").click()\n', encoding="utf-8"
+    )
+    assert main(["--root", str(tmp_path), "unused", "--json"]) == 0
+    result = json.loads(capsys.readouterr().out)
+    assert "abandoned" not in {entry["name"] for entry in result["unused"]}
+
+
+def test_unreadable_directory_suppresses_positive_findings(tmp_path, capsys, monkeypatch):
+    _project(tmp_path)
+    walk = os.walk
+
+    def inaccessible_walk(root, *args, **kwargs):
+        if callback := kwargs.get("onerror"):
+            callback(PermissionError(13, "permission denied", str(tmp_path / "tests")))
+        yield from walk(root, *args, **kwargs)
+
+    monkeypatch.setattr("wintestkit.commands.unused.os.walk", inaccessible_walk)
     assert main(["--root", str(tmp_path), "unused", "--json"]) == 0
     result = json.loads(capsys.readouterr().out)
     assert result["errors"]
