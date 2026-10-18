@@ -9,6 +9,7 @@ passed.
 
 from __future__ import annotations
 
+import contextlib
 import dataclasses
 import logging
 import os
@@ -56,9 +57,16 @@ def _marker_kwargs(node: Any, name: str) -> dict[str, Any]:
     return dict(marker.kwargs) if marker is not None else {}
 
 
-def launch_app(config: WtkConfig) -> App:
-    """Start the application described by ``[tool.wintestkit.app]``."""
+def launch_app(config: WtkConfig, progress: Callable[[str], None] | None = None) -> App:
+    """Start the application described by ``[tool.wintestkit.app]``.
+
+    Launching owns the application's lifecycle: a copy that is already running is closed first, so
+    the tests get a fresh one and nothing is left running once the launched app is closed.
+    ``progress`` reports the launch stages (see :meth:`App.launch`).
+    """
     from wintestkit.app import App
+    from wintestkit.errors import AppNotRunningError
+    from wintestkit.uia import win32
 
     settings = config.app
     if settings is None or settings.path is None:
@@ -66,6 +74,11 @@ def launch_app(config: WtkConfig) -> App:
             "no application to launch: set path in [tool.wintestkit.app] (or pass --wtk-app PATH)",
             key="app.path",
         )
+    name = settings.process or Path(settings.path).name
+    if win32.pids_by_name(name):
+        log.info("closing the running %s before launching a fresh copy", name)
+        with contextlib.suppress(AppNotRunningError):  # it may exit on its own meanwhile
+            App.attach(process=name).close(timeout=settings.close_timeout)
     return App.launch(
         settings.path,
         args=settings.args,
@@ -73,6 +86,7 @@ def launch_app(config: WtkConfig) -> App:
         env=settings.env,
         process=settings.process,
         startup_timeout=settings.startup_timeout,
+        progress=progress,
     )
 
 

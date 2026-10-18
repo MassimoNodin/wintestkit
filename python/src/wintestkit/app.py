@@ -6,7 +6,7 @@ import logging
 import os
 import subprocess
 import time
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from types import TracebackType
 from typing import Any
@@ -63,8 +63,13 @@ class App:
         env: Mapping[str, str] | None = None,
         process: str | None = None,
         startup_timeout: float = 30.0,
+        progress: Callable[[str], None] | None = None,
     ) -> App:
-        """Start ``path`` and wait until it shows a main window."""
+        """Start ``path`` and wait until it shows a main window.
+
+        ``progress`` is called with ``"process"`` once the process has started and with
+        ``"window"`` once it is waiting for the main window.
+        """
         __tracebackhide__ = True
         exe = Path(path)
         if not exe.is_file():
@@ -82,7 +87,9 @@ class App:
             raise AppError(f"Could not start {exe}: {exc}") from exc
         app = cls(process_name, launched=True, popen=popen, baseline=baseline)
         log.info("launched %s (pid %d)", exe, popen.pid)
-        app._wait_for_startup(startup_timeout)
+        if progress is not None:
+            progress("process")
+        app._wait_for_startup(startup_timeout, progress)
         return app
 
     @classmethod
@@ -215,11 +222,15 @@ class App:
 
     # -- internals ------------------------------------------------------------------------------
 
-    def _wait_for_startup(self, startup_timeout: float) -> None:
+    def _wait_for_startup(
+        self, startup_timeout: float, progress: Callable[[str], None] | None = None
+    ) -> None:
         __tracebackhide__ = True
         assert self._popen is not None
         deadline = time.monotonic() + startup_timeout
         self._wait_for_input_idle(self._popen.pid, min(10.0, startup_timeout))
+        if progress is not None:
+            progress("window")
         while True:
             try:
                 self.main_window()

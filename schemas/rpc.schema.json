@@ -252,6 +252,33 @@
       "required": [],
       "additionalProperties": false
     },
+    "AppProcessesParams": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    },
+    "RunningProcess": {
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "pids": { "type": "array", "items": { "type": "integer", "minimum": 0 } },
+        "windowTitle": { "type": "string" }
+      },
+      "required": ["name", "pids", "windowTitle"],
+      "additionalProperties": false
+    },
+    "AppProcessesResult": {
+      "type": "object",
+      "properties": {
+        "processes": {
+          "type": "array",
+          "items": { "$ref": "rpc.schema.json#/$defs/RunningProcess" }
+        }
+      },
+      "required": ["processes"],
+      "additionalProperties": false
+    },
     "AppLaunchResult": {
       "type": "object",
       "properties": {
@@ -433,6 +460,9 @@
         "durationMs": {
           "type": "number",
           "minimum": 0
+        },
+        "bringToFront": {
+          "type": "boolean"
         }
       },
       "required": ["nodeId"],
@@ -453,6 +483,99 @@
     },
     "SuggestLocatorResult": {
       "$ref": "rpc.schema.json#/$defs/Suggestion"
+    },
+    "DefinitionMatch": {
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "qualname": { "type": "string" },
+        "kind": { "enum": ["element", "elements", "window"] },
+        "elementType": { "type": "string" },
+        "locator": { "type": "string" },
+        "file": { "type": "string" },
+        "line": { "type": "integer", "minimum": 1 },
+        "range": { "$ref": "common.schema.json#/$defs/Range" },
+        "pages": { "type": "array", "items": { "type": "string" } },
+        "pageCount": { "type": "integer", "minimum": 1 }
+      },
+      "required": ["id", "qualname", "kind", "locator", "file", "line", "pages", "pageCount"],
+      "additionalProperties": false
+    },
+    "DefinitionError": {
+      "type": "object",
+      "properties": {
+        "file": { "type": "string" },
+        "message": { "type": "string" }
+      },
+      "required": ["file", "message"],
+      "additionalProperties": false
+    },
+    "InspectDefinitionsParams": {
+      "type": "object",
+      "properties": {
+        "nodeId": {
+          "type": "string"
+        }
+      },
+      "required": ["nodeId"],
+      "additionalProperties": false
+    },
+    "InspectDefinitionsResult": {
+      "type": "object",
+      "properties": {
+        "definitions": {
+          "type": "array",
+          "items": { "$ref": "rpc.schema.json#/$defs/DefinitionMatch" }
+        },
+        "errors": {
+          "type": "array",
+          "items": { "$ref": "rpc.schema.json#/$defs/DefinitionError" }
+        },
+        "pageCount": { "type": "integer", "minimum": 0 }
+      },
+      "required": ["definitions", "errors", "pageCount"],
+      "additionalProperties": false
+    },
+    "NodeCoverage": {
+      "type": "object",
+      "properties": {
+        "count": { "type": "integer", "minimum": 1 },
+        "first": { "type": "string" }
+      },
+      "required": ["count", "first"],
+      "additionalProperties": false
+    },
+    "InspectCoverageParams": {
+      "type": "object",
+      "properties": {
+        "nodeIds": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "maxItems": 500
+        }
+      },
+      "required": ["nodeIds"],
+      "additionalProperties": false
+    },
+    "InspectCoverageResult": {
+      "type": "object",
+      "properties": {
+        "covered": {
+          "type": "object",
+          "additionalProperties": { "$ref": "rpc.schema.json#/$defs/NodeCoverage" }
+        },
+        "pending": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": ["covered", "pending"],
+      "additionalProperties": false
+    },
+    "AppStartingNotification": {
+      "type": "object",
+      "properties": {
+        "stage": { "enum": ["process", "window"] }
+      },
+      "required": ["stage"],
+      "additionalProperties": false
     },
     "SpyStartParams": {
       "type": "object",

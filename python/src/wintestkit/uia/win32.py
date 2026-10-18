@@ -63,6 +63,7 @@ SM_CYVIRTUALSCREEN = 79
 GW_OWNER = 4
 GA_ROOT = 2
 SW_RESTORE = 9
+SW_SHOWNOACTIVATE = 4
 ASFW_ANY = 0xFFFFFFFF
 
 PROCESS_TERMINATE = 0x0001
@@ -100,6 +101,8 @@ SWP_NOACTIVATE = 0x0010
 SWP_SHOWWINDOW = 0x0040
 SWP_HIDEWINDOW = 0x0080
 HWND_TOPMOST = -1
+HWND_NOTOPMOST = -2
+GWL_EXSTYLE = -20
 SW_HIDE = 0
 
 WH_KEYBOARD_LL = 13
@@ -318,6 +321,7 @@ SetLayeredWindowAttributes = _declare(
     user32, "SetLayeredWindowAttributes", _B, HWND, _D, wintypes.BYTE, _D
 )
 SetWindowPos = _declare(user32, "SetWindowPos", _B, HWND, HWND, _I, _I, _I, _I, _U)
+GetWindowLongW = _declare(user32, "GetWindowLongW", ctypes.c_long, HWND, _I)
 InvalidateRect = _declare(user32, "InvalidateRect", _B, HWND, ctypes.POINTER(RECT), _B)
 BeginPaint = _declare(user32, "BeginPaint", wintypes.HDC, HWND, ctypes.POINTER(PAINTSTRUCT))
 EndPaint = _declare(user32, "EndPaint", _B, HWND, ctypes.POINTER(PAINTSTRUCT))
@@ -403,6 +407,50 @@ def pids_by_name(exe: str) -> list[int]:
     """PIDs of processes whose exe name equals ``exe`` (case-insensitive)."""
     wanted = exe.lower()
     return [pid for pid, name in list_processes() if name.lower() == wanted]
+
+
+def _child_window_pids(hwnd: int, exclude: int) -> list[int]:
+    """Processes owning child windows of ``hwnd`` (other than ``exclude``), in discovery order."""
+    found: list[int] = []
+
+    @WNDENUMPROC
+    def callback(child: Any, _lparam: Any) -> bool:
+        pid = window_pid(child)
+        if pid != exclude and pid not in found:
+            found.append(pid)
+        return True
+
+    EnumChildWindows(hwnd, callback, 0)
+    return found
+
+
+def windowed_processes() -> list[tuple[str, list[int], str]]:
+    """Running applications that show a window: ``(exe name, pids, first window title)``.
+
+    UWP apps live behind an ``ApplicationFrameWindow`` owned by ``ApplicationFrameHost.exe``; their
+    real process is the owner of a child window, so that one is reported instead.
+    """
+    names = dict(list_processes())
+    found: dict[str, tuple[list[int], str]] = {}
+    for hwnd in top_level_windows():
+        title = window_text(hwnd)
+        if not title:
+            continue
+        owner = window_pid(hwnd)
+        pids = [owner]
+        if window_class_name(hwnd) == "ApplicationFrameWindow":
+            pids = _child_window_pids(hwnd, owner) or pids
+        for pid in pids:
+            name = names.get(pid)
+            if not name or name.lower() == "applicationframehost.exe":
+                continue
+            entry = found.setdefault(name, ([], title))
+            if pid not in entry[0]:
+                entry[0].append(pid)
+    return sorted(
+        ((name, sorted(pids), title) for name, (pids, title) in found.items()),
+        key=lambda item: item[0].lower(),
+    )
 
 
 def window_pid(hwnd: int) -> int:
@@ -508,6 +556,23 @@ def _tap_alt() -> None:
         events[i].ki.wVk = VK_MENU
         events[i].ki.dwFlags = flags
     SendInput(2, events, ctypes.sizeof(INPUT))
+
+
+def raise_window(hwnd: int) -> bool:
+    """Show ``hwnd`` above the other windows without activating it or taking keyboard focus.
+
+    A plain ``HWND_TOP`` is ignored when the foreground window is another process's, so the window
+    is made topmost and then returned to the normal band, which leaves it above the foreground
+    window. A minimized window is restored. Returns whether Windows accepted the z-order change.
+    """
+    if IsIconic(hwnd):
+        ShowWindow(hwnd, SW_SHOWNOACTIVATE)
+    flags = SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE
+    was_topmost = bool(GetWindowLongW(hwnd, GWL_EXSTYLE) & WS_EX_TOPMOST)
+    raised = bool(SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, flags))
+    if raised and not was_topmost:
+        SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, flags)
+    return raised
 
 
 def bring_to_foreground(hwnd: int, timeout: float = 0.5) -> bool:

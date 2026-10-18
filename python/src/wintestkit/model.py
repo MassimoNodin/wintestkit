@@ -365,6 +365,12 @@ def _scope(page: PageObject) -> Scope:
     return Scope(page.app)
 
 
+def scope_window(page: PageObject) -> WindowLocator | None:
+    """The window locator the page's elements are searched in (``None``: the main window)."""
+    __tracebackhide__ = True
+    return _scope(page).window
+
+
 def _root_locator(page: PageObject, root: _AnyElement, *, windowed: bool) -> Locator:
     """The component's root: searched in its window, never beneath the parent's root.
 

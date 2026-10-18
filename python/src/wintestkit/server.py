@@ -11,7 +11,6 @@ import queue
 import sys
 import threading
 from collections import OrderedDict
-from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, BinaryIO, cast
 
@@ -22,9 +21,10 @@ from wintestkit.errors import AppNotRunningError, ConfigError, EnvironmentNotRea
 if TYPE_CHECKING:
     from wintestkit.app import App
     from wintestkit.config import WtkConfig
+    from wintestkit.coverage import Coverage
     from wintestkit.engine.spy import SpySession
     from wintestkit.targets import ModuleLoader
-    from wintestkit.uia.element import Rect, UIAElement
+    from wintestkit.uia.element import ElementInfo, Rect, UIAElement
 
 log = logging.getLogger("wintestkit.server")
 
@@ -35,17 +35,36 @@ _PARAMS: dict[str, tuple[set[str], set[str]]] = {
     "app.status": (set(), set()),
     "app.launch": (set(), set()),
     "app.close": (set(), set()),
+    "app.processes": (set(), set()),
     "element.highlight": ({"file", "qualname"}, {"durationMs"}),
     "page.check": ({"file", "page"}, set()),
     "flow.run": ({"file", "name"}, set()),
     "inspect.roots": (set(), {"includeOtherApps"}),
     "inspect.children": ({"nodeId"}, set()),
     "inspect.properties": ({"nodeId"}, {"full", "includeAncestors"}),
-    "inspect.highlight": ({"nodeId"}, {"durationMs"}),
+    "inspect.highlight": ({"nodeId"}, {"durationMs", "bringToFront"}),
     "suggest.locator": ({"nodeId"}, set()),
+    "inspect.definitions": ({"nodeId"}, set()),
+    "inspect.coverage": ({"nodeIds"}, set()),
     "spy.start": (set(), set()),
     "spy.stop": (set(), set()),
 }
+
+
+MAX_COVERAGE_NODES = 500
+
+# Windows that XAML apps (UWP, WinUI) create to show a popup: they turn visible while a tooltip,
+# menu or flyout is open and hidden again afterwards, so they come and go in the roots list.
+POPUP_SURFACE_CLASSES = frozenset(
+    {"Xaml_WindowedPopupClass", "Microsoft.UI.Content.PopupWindowSiteBridge"}
+)
+
+
+def _is_popup_surface(window: UIAElement) -> bool:
+    try:
+        return window.class_name in POPUP_SURFACE_CLASSES
+    except Exception:
+        return False  # the window closed while reading it; registering it reports the failure
 
 
 class RpcError(Exception):
@@ -76,6 +95,8 @@ class Server:
         self.loader: ModuleLoader | None = None
         self.app: App | None = None
         self.nodes: OrderedDict[str, UIAElement] = OrderedDict()
+        self.node_infos: dict[str, ElementInfo] = {}
+        self.coverage: Coverage | None = None
         self.spy: SpySession | None = None
         self._write_lock = threading.Lock()
         self._node_lock = threading.Lock()
@@ -117,9 +138,20 @@ class Server:
                     or value < 0
                 ):
                     raise RpcError(-32602, "durationMs must be a finite nonnegative number")
-            elif key in ("full", "includeAncestors", "includeOtherApps"):
+            elif key in ("full", "includeAncestors", "includeOtherApps", "bringToFront"):
                 if not isinstance(value, bool):
                     raise RpcError(-32602, f"{key} must be a boolean")
+            elif key == "nodeIds":
+                if (
+                    not isinstance(value, list)
+                    or len(cast("list[Any]", value)) > MAX_COVERAGE_NODES
+                    or any(
+                        not isinstance(item, str) or not item for item in cast("list[Any]", value)
+                    )
+                ):
+                    raise RpcError(
+                        -32602, f"nodeIds must list at most {MAX_COVERAGE_NODES} nonempty strings"
+                    )
             elif key == "overrides":
                 if not isinstance(value, dict):
                     raise RpcError(-32602, "overrides must map paths to source strings")
@@ -185,16 +217,27 @@ class Server:
                 self._error(request_id, -32603, "internal error", {"message": str(exc)})
 
     @staticmethod
-    def _flash(
-        rect: Rect | None, params: dict[str, Any], restore: Callable[[], None] | None
-    ) -> None:
-        """Outline ``rect``, then give the foreground back to the editor window."""
+    def _raise_for_highlight(element: UIAElement) -> Rect | None:
+        """Raise the element's window without taking focus, then read its bounds.
+
+        An element without bounds (offscreen, collapsed, never laid out) has nothing to outline, so
+        its window is left alone. A minimized window is the exception: its controls have no bounds
+        until it is restored.
+        """
+        from wintestkit.engine.actions import raise_without_activating, window_is_minimized
+
+        if element.rect is None and not window_is_minimized(element):
+            return None
+        raise_without_activating(element)
+        return element.rect
+
+    @staticmethod
+    def _flash(rect: Rect | None, params: dict[str, Any]) -> None:
+        """Outline ``rect`` for a moment."""
         from wintestkit.engine import overlay
 
         if rect is not None:
-            overlay.flash(rect, int(params.get("durationMs", 1500)), block=False, after=restore)
-        elif restore is not None:
-            restore()
+            overlay.flash(rect, int(params.get("durationMs", 1500)), block=False)
 
     def _app(self, required: bool = True) -> App | None:
         from wintestkit.app import App
@@ -209,6 +252,14 @@ class Server:
             raise AppNotRunningError("App is not running. Start it or call app.launch.")
         return self.app
 
+    def _coverage(self) -> Coverage:
+        from wintestkit.coverage import Coverage
+
+        assert self.cfg is not None and self.loader is not None
+        if self.coverage is None:
+            self.coverage = Coverage(self.loader, self.cfg)
+        return self.coverage
+
     def _register(self, element: UIAElement) -> dict[str, Any]:
         from wintestkit.uia.constants import TreeScope
 
@@ -217,9 +268,11 @@ class Server:
             raise RpcError(-32005, "element has no runtime id")
         with self._node_lock:
             self.nodes[info.runtime_id] = element
+            self.node_infos[info.runtime_id] = info
             self.nodes.move_to_end(info.runtime_id)
             if len(self.nodes) > 5000:
-                self.nodes.popitem(last=False)
+                evicted, _ = self.nodes.popitem(last=False)
+                self.node_infos.pop(evicted, None)
         return {
             "nodeId": info.runtime_id,
             "info": info.to_dict(),
@@ -299,8 +352,19 @@ class Server:
             if app is None:
                 from wintestkit.pytest_plugin import launch_app
 
-                app = self.app = launch_app(self.cfg)
+                app = self.app = launch_app(
+                    self.cfg, progress=lambda stage: self.notify("app.starting", {"stage": stage})
+                )
             return {"pids": app.pids}
+        if method == "app.processes":
+            from wintestkit.uia import win32
+
+            return {
+                "processes": [
+                    {"name": name, "pids": pids, "windowTitle": title}
+                    for name, pids, title in win32.windowed_processes()
+                ]
+            }
         if method == "app.close":
             app = self._app(False)
             if app is not None:
@@ -308,6 +372,7 @@ class Server:
                 self.app = None
                 with self._node_lock:
                     self.nodes.clear()
+                    self.node_infos.clear()
             return None
         if method == "flow.run":
             from wintestkit.targets import run_flow
@@ -330,16 +395,25 @@ class Server:
                 }
             result = resolve_target(app, self.loader, Target(file, params["qualname"]), timeout=0)
             if result.uia is not None:
-                from wintestkit.engine.actions import raise_with_restore
-
-                restore = raise_with_restore(result.uia)
-                rect = result.uia.rect
+                rect = self._raise_for_highlight(result.uia)
             else:
-                restore = None
                 rect = result.element.rect if result.element is not None else None
-            self._flash(rect, params, restore)
+            self._flash(rect, params)
             return result.to_dict()
+        if method == "inspect.coverage":
+            app = self._app(False)
+            if app is None:
+                return {"covered": {}, "pending": []}
+            with self._node_lock:
+                infos = {
+                    node_id: self.node_infos[node_id]
+                    for node_id in params["nodeIds"]
+                    if node_id in self.node_infos
+                }
+            return self._coverage().covered_nodes(app, infos)
         if method == "inspect.roots":
+            if self.coverage is not None:
+                self.coverage.invalidate()  # a refresh: the UI may have changed
             app = self._app(False)
             include_other = params.get("includeOtherApps", False)
             if app is not None and not include_other:
@@ -364,7 +438,7 @@ class Server:
                             continue
                         seen.add(runtime_id)
                         roots.append(window)
-            return [self._register(root) for root in roots]
+            return [self._register(root) for root in roots if not _is_popup_surface(root)]
         if method == "spy.start":
             from wintestkit.engine.spy import SpySession
             from wintestkit.engine.suggest import suggest_locator
@@ -405,18 +479,27 @@ class Server:
                         raise
             return None
         node = self._node(params["nodeId"])
+        if method == "inspect.definitions":
+            app = self._app(False)
+            if app is None:
+                return {"definitions": [], "errors": [], "pageCount": 0}
+            return self._coverage().definitions_of(app, params["nodeId"], node.info())
         if method == "inspect.children":
             return [self._register(child) for child in node.children()]
         if method == "inspect.highlight":
-            from wintestkit.engine.actions import raise_with_restore
-
-            restore = raise_with_restore(node)
-            self._flash(node.rect, params, restore)
+            # The outline is drawn on top of every window, so raising the window is opt-in.
+            rect = (
+                self._raise_for_highlight(node) if params.get("bringToFront", False) else node.rect
+            )
+            self._flash(rect, params)
             return None
         if method == "suggest.locator":
-            from wintestkit.engine.suggest import suggest_locator
+            from wintestkit.engine.suggest import WindowSelectedError, suggest_locator
 
-            return suggest_locator(node, self._app(False)).to_dict()
+            try:
+                return suggest_locator(node, self._app(False)).to_dict()
+            except WindowSelectedError as exc:
+                raise RpcError(-32006, str(exc)) from exc
         if method == "inspect.properties":
             from wintestkit.engine.properties import SUPPORTED, inspection_values
             from wintestkit.uia.constants import PROPERTY_IDS
