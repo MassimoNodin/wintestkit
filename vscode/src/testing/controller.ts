@@ -8,7 +8,8 @@ import type { Project } from "../server/serverManager";
 import type { TestEntry } from "../protocol/generated";
 import { EventMapper, type RunAction, type TestEnd } from "./eventMapper";
 import { EventServer } from "./eventServer";
-import { runArguments, runProcess } from "./runner";
+import { readConfiguration } from "../settings/files";
+import { runArguments, runProcess, tracesByDefault } from "./runner";
 import { runDebugSession } from "./debug";
 import type { Reports } from "../report";
 import { disposeRunProfiles } from "./profiles";
@@ -384,12 +385,19 @@ export class TestController implements vscode.Disposable {
         "wintestkit",
         project.root,
       );
+      const extraArgs = settings.get<string[]>("run.extraArgs", []);
       const args = runArguments(
         url,
         nodeids,
         settings.get<boolean>("run.highlightActions", false),
-        settings.get<string[]>("run.extraArgs", []),
+        extraArgs,
         recording,
+        tracesByDefault(
+          await readConfiguration(project.root, {}, false).catch(() => ({
+            trace: undefined,
+          })),
+          extraArgs,
+        ),
       );
       const code = debug
         ? await runDebugSession(
