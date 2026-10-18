@@ -218,7 +218,11 @@ def _flow_parameters(node: ast.FunctionDef | ast.AsyncFunctionDef) -> list[dict[
 
 def _editor_runnable(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
     positional = [*node.args.posonlyargs, *node.args.args]
-    if not positional or positional[0].arg != "app":
+    if (
+        not positional
+        or positional[0].arg != "app"
+        or len(positional) <= len(node.args.defaults)
+    ):
         return False
     described = {item["name"] for item in _flow_parameters(node)}
     required = [

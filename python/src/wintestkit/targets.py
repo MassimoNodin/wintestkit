@@ -474,7 +474,13 @@ def _check_page(
     return results
 
 
-def run_flow(app: App, loader: ModuleLoader, file: Path, name: str, arguments: dict[str, Any] | None = None) -> FlowResult:
+def run_flow(
+    app: App,
+    loader: ModuleLoader,
+    file: Path,
+    name: str,
+    arguments: dict[str, Any] | None = None,
+) -> FlowResult:
     """Call the flow ``name`` of ``file`` as ``flow(app)`` (awaiting it if it is async).
 
     Only flows whose sole required parameter is ``app`` can be run. An exception raised by the
