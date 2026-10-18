@@ -11,6 +11,7 @@ import { EventServer } from "./eventServer";
 import { runArguments, runProcess } from "./runner";
 import { runDebugSession } from "./debug";
 import type { Reports } from "../report";
+import { disposeRunProfiles } from "./profiles";
 
 interface ItemData {
   project: Project;
@@ -430,6 +431,7 @@ export class TestController implements vscode.Disposable {
     this.disposed = true;
     this.active.forEach((source) => source.cancel());
     this.subscriptions.forEach((subscription) => subscription.dispose());
+    disposeRunProfiles(this.profile, this.debugProfile, this.recordingProfile);
     this.controller.dispose();
   }
 }

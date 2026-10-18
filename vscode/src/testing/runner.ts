@@ -22,8 +22,8 @@ export function runArguments(
     "--events",
     url,
     ...(highlight ? ["--highlight"] : []),
-    ...(recording ? ["--trace", "retain-on-failure"] : []),
     ...extraArgs,
+    ...(recording ? ["--trace", "retain-on-failure"] : []),
     "--",
     ...nodeids,
   ];
