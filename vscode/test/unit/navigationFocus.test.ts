@@ -623,3 +623,19 @@ describe("leaf rows under a page", () => {
     expect(css).not.toMatch(/\.item\.leaf\s*\{[^}]*padding/);
   });
 });
+
+describe("keyboard access to row actions", () => {
+  it("moves focus to row actions with F2 and restores the tree row with Escape", () => {
+    const html = navigationDocument({
+      cspSource: "csp",
+      nonce: "n",
+      iconsHref: "codicon.css",
+      section: "pages",
+      treeHtml: "",
+    });
+    expect(html).toContain('event.key === "F2"');
+    expect(html).toContain('action.tabIndex = 0');
+    expect(html).toContain('event.key === "Escape"');
+    expect(html).toContain('target.closest("[role=\'treeitem\']")?.focus()');
+  });
+});
