@@ -19,7 +19,7 @@
   const tile = (spec) => {
     // A project tile without a chevron has nothing to switch to, so it is not a button.
     const interactive = !(spec.id === "project" && !spec.chevron);
-    const node = el(interactive ? "button" : "div", "tile");
+    const node = el(interactive ? "button" : "div", "tile tile-" + spec.id);
     if (!interactive) node.classList.add("static");
     if (spec.disabled) node.disabled = true;
     if (spec.busy) {
