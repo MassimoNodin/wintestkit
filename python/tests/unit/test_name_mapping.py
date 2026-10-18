@@ -33,6 +33,8 @@ def test_import_reads_each_mapped_object_once_and_uses_supported_properties(tmp_
     [
         b'<!DOCTYPE x [<!ENTITY e "boom">]><Root/>',
         b'<!DOCTYPE x SYSTEM "file:///secret"><Root/>',
+        '<!DOCTYPE x [<!ENTITY e "boom">]><Root/>'.encode("utf-16"),
+        '<!DOCTYPE x SYSTEM "file:///secret"><Root/>'.encode("utf-16-be"),
     ],
 )
 def test_import_rejects_dtd_and_entities(tmp_path, payload):
@@ -68,3 +70,45 @@ def test_cli_refuses_overwrite_without_force_and_force_replaces(tmp_path, capsys
     assert target.read_text(encoding="utf-8") == "keep me"
     assert main(["import-namemapping", str(source), str(target), "--force"]) == 0
     assert "automation_id='Save'" in target.read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("alias", ["window", "root", "app", "check", "elements", "²", "Ⅳ", "class"])
+def test_import_aliases_are_valid_and_do_not_shadow_page_api(tmp_path, alias):
+    from wintestkit.model import PageObject
+
+    source = tmp_path / "mapping.xml"
+    source.write_text(
+        f'<Root><Item><Properties><Property name="WPFControlName" value="{alias}" />'
+        "</Properties></Item></Root>",
+        encoding="utf-8",
+    )
+    generated = convert(source)
+    module = ast.parse(generated)
+    page = next(node for node in module.body if isinstance(node, ast.ClassDef))
+    assignment = page.body[0]
+    assert isinstance(assignment, ast.Assign)
+    target = assignment.targets[0]
+    assert isinstance(target, ast.Name)
+    assert target.id not in set(dir(PageObject)) | set(PageObject.__annotations__)
+    assert "ItemStatus" not in generated
+
+
+@pytest.mark.parametrize("alias", ["a\u00b2", "Element", "Page"])
+def test_import_constructor_names_and_unicode_are_safe(tmp_path, alias):
+    source = tmp_path / "mapping.xml"
+    aliases = [alias, "Save", "K", "\u212a"]
+    source.write_text(
+        "<Root>"
+        + "".join(
+            f'<Item><Properties><Property name="WPFControlName" value="{name}" />'
+            "</Properties></Item>"
+            for name in aliases
+        )
+        + "</Root>",
+        encoding="utf-8",
+    )
+    namespace = {}
+    exec(convert(source), namespace)
+    page = namespace["ImportedPage"]
+    assert {"K", "K_2", "Save"} <= set(vars(page))
+    assert len([value for value in vars(page).values() if type(value).__name__ == "Element"]) == 4
