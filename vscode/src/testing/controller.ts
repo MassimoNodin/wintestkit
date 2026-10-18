@@ -270,7 +270,7 @@ export class TestController implements vscode.Disposable {
   ): void {
     for (const action of actions) {
       if (action.kind === "report") {
-        this.reports.record(project, action.path, action.failed);
+        this.reports.record(project, action.path, action.failed, action.passed);
         run.appendOutput(`Last run: ${action.passed} passed, ${action.failed} failed${action.path ? " · Open Last Report from the WinTestKit status menu" : ""}\r\n`);
         continue;
       }

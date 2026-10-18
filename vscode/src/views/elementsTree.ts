@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import * as vscode from "vscode";
 import type { Projects } from "../projects";
+import type { Project } from "../server/serverManager";
 import type { DiscoveryStore } from "../discovery/store";
 import type { CheckResultsStore } from "../editor/decorations";
 import { flowKey, type FlowRuns } from "../editor/flowRuns";
@@ -27,6 +28,7 @@ import {
   type NavigationSection,
 } from "./navigationModel";
 import { buildProjectTree } from "./projectTreeModel";
+import type { Reports } from "../report";
 
 interface NavigationHost {
   globalState: vscode.Memento;
@@ -48,6 +50,7 @@ export class ElementsTree
     private readonly checks: CheckResultsStore,
     private readonly flows: FlowRuns,
     private readonly host?: NavigationHost,
+    private readonly reports?: Reports,
   ) {
     this.session = new NavigationSession(
       readSection(host?.globalState.get(navigationSectionKey)),
@@ -59,6 +62,7 @@ export class ElementsTree
       discovery.onDidChange(refresh),
       checks.onDidChange(refresh),
       flows.onDidChange(refresh),
+      ...(reports ? [reports.onDidChange(refresh)] : []),
       vscode.window.registerWebviewViewProvider("wintestkit.navigation", this, {
         webviewOptions: { retainContextWhenHidden: true },
       }),
@@ -141,6 +145,10 @@ export class ElementsTree
       : buildProjectTree(discoveries);
   }
   private onMessage(value: unknown): void {
+    if (value && typeof value === "object" && (value as { type?: unknown }).type === "openLastReport") {
+      void this.reports?.open(this.currentProject());
+      return;
+    }
     const message = parseNavigationMessage(value);
     if (!message) return;
     const nodes = this.sectionNodes();
@@ -285,8 +293,13 @@ export class ElementsTree
         focusId: this.session.focus[this.session.section],
         welcome: emptyMessage(this.session.section, hasProject, nodes.length),
         showInitialize: !hasProject,
+        lastRun: this.reports?.lastRun(this.currentProject()),
       }),
     };
     return reveal ? { ...message, reveal: true } : message;
+  }
+  private currentProject(): Project | undefined {
+    const uri = vscode.window.activeTextEditor?.document.uri;
+    return (uri && this.projects.projectFor(uri)) || this.projects.all[0];
   }
 }

@@ -6,6 +6,7 @@ import {
   type NavNode,
   type NavigationSection,
 } from "./navigationModel";
+import type { LastRunSummary } from "../report";
 
 export function escapeText(value: string): string {
   return value
@@ -24,17 +25,22 @@ export function renderBody(input: {
   focusId?: string;
   welcome?: string;
   showInitialize: boolean;
+  lastRun?: LastRunSummary;
 }): string {
+  const reportAction = input.lastRun
+    ? `<div class="last-run" role="status">Last run: ${input.lastRun.passed} passed, ${input.lastRun.failed} failed <button type="button" class="link" data-open-report="true">Open report</button></div>`
+    : "";
   if (input.showInitialize)
     return (
+      reportAction +
       '<div class="empty"><p>No WinTestKit project found.</p>' +
       '<button type="button" class="link" data-initialize="true">Initialize Project</button></div>'
     );
   if (!input.nodes.length)
     return input.welcome
-      ? `<div class="empty"><p>${escapeText(input.welcome)}</p></div>`
-      : "";
-  return input.nodes
+      ? reportAction + `<div class="empty"><p>${escapeText(input.welcome)}</p></div>`
+      : reportAction;
+  return reportAction + input.nodes
     .map((node) => renderItem(node, input.expanded, input.focusId))
     .join("");
 }
@@ -323,6 +329,10 @@ segments.addEventListener("keydown", (event) => {
 });
 tree.addEventListener("click", (event) => {
   const target = event.target;
+  if (target instanceof Element && target.closest("[data-open-report]")) {
+    vscodeApi.postMessage({ type: "openLastReport" });
+    return;
+  }
   if (!(target instanceof Element)) return;
   if (target.closest("[data-initialize]")) {
     vscodeApi.postMessage({ type: "initialize" });

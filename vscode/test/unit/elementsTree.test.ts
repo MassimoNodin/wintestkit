@@ -81,7 +81,7 @@ vi.mock("vscode", () => ({
   },
 }));
 import { ElementsTree } from "../../src/views/elementsTree";
-import { navigationDocument } from "../../src/views/navigationDocument";
+import { navigationDocument, renderBody } from "../../src/views/navigationDocument";
 
 const range = {
   start: { line: 2, character: 4 },
@@ -363,6 +363,15 @@ function bootClient() {
   };
 }
 describe("navigation view", () => {
+  it("renders a project last-run report action in the view body", () => {
+    const body = renderBody({
+      nodes: [], expanded: new Set(), welcome: "Initialize the project", showInitialize: true,
+      lastRun: { passed: 4, failed: 1, report: "/project/wtk-report/index.html", at: 1 },
+    });
+    expect(body).toContain("Last run: 4 passed, 1 failed");
+    expect(body).toContain('data-open-report="true"');
+    expect(body).toContain("Initialize Project");
+  });
   it("registers one shared panel and keeps every section available", () => {
     const { tree } = createTree();
     expect([...mocks.providers.keys()]).toEqual(["wintestkit.navigation"]);
