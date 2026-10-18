@@ -56,6 +56,7 @@ export class StatusBar implements vscode.Disposable {
         void this.refresh();
       }),
       vscode.commands.registerCommand("wintestkit.statusMenu", async () => {
+        await this.refresh();
         const project = this.project();
         const running = project ? this.applicationState(project)?.running : false;
         const actions = [
