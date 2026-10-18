@@ -10,15 +10,27 @@ The extension starts one Python server per project in the background. The status
 whether the application is running; click it for **Launch App**, **Close App**, **Restart Server**,
 **Open Last Report**, **Check Environment** and **Show Output**.
 
-## Current Setup
+## Test Target
 
-The configured application appears in **Current Setup**, with its lifecycle mode and live
-**Running** or **Stopped** state on the same row. Hover over the row to access **Launch App**
-(when stopped), **Close App** (when running), **Restart App**, **Refresh App Status**, and the
-settings gear. Launch and restart require an executable path in the local configuration.
-For a process-only attach setup, start the application manually and refresh its status.
-The state updates automatically while VS Code is focused, and app actions refresh the visible Spy.
-Spy's toolbar is reserved for picking and browsing controls.
+The **Test Target** section at the top of the sidebar is a row of tiles for the application under
+test. Its title bar shows the status (**Running**, **Stopped**, **Starting…**, **Failed**) and the gear
+that opens the settings.
+
+- **Application** (icon and name, process IDs while running). Click it to browse for an executable
+  to launch, attach to a running app that has a window, or open the settings. The choice is saved
+  to `wintestkit.local.yaml`.
+- **Mode** (**Attach** or **Spawn**). **Attach** uses the app that is already running and never
+  closes it; **Spawn** starts the app for the tests (closing a running copy first) and closes it
+  when they finish. Click to switch.
+- **Project**. The workspace folder and project name; with several WinTestKit projects, click to
+  switch between them.
+- **Launch**, or **Restart** and **Close** while it runs. For a process-only attach setup the section
+  says it is waiting for the app: start it yourself, then **Check again**.
+
+While the app starts, a panel shows each stage (process started, app responding, main window shown)
+and how long it has taken against the startup timeout. If the launch fails, the reason stays under
+the tiles with **Try again** and a **Show output** link. The state updates automatically while VS Code
+is focused, and app actions refresh the visible Spy.
 
 ## CodeLens
 
@@ -70,7 +82,7 @@ both is supported. Turn the prompt off with `wintestkit.promptDisablePytestExplo
 
 ## Explorer
 
-**Current Setup**, **Explorer** and **Spy** stack in the WinTestKit activity bar, with Spy
+**Test Target**, **Explorer** and **Spy** stack in the WinTestKit activity bar, with Spy
 below Explorer. Explorer is a single view. A **Page Tree | Flows** control at the top
 switches the list, and the selected tab is remembered.
 
@@ -94,10 +106,11 @@ without importing or running your code. Run and debug tests from VS Code's Testi
 
 The **Spy** view, below Explorer, explores the live UI Automation tree of the application.
 
-- Expand windows and controls lazily. Selecting a control highlights it and brings its owning
-  window to the foreground when Windows allows it. If Windows denies that, the outline is still
-  drawn.
-- The toolbar starts with **Pick element**, **Refresh objects** and **Collapse all**. **Pick
+- Expand windows and controls lazily. Selecting a control draws an outline around it, above every
+  window. The pin button after **Collapse all** (off by default; setting
+  `wintestkit.spy.bringWindowToFront`) also brings the control's window to the front, without
+  taking keyboard focus from VS Code. The same switch applies to the **Highlight** button.
+- The toolbar starts with **Pick element**, **Refresh objects**, **Collapse all** and the pin button. **Pick
   element** (or `wtk spy` in a terminal): hold **Ctrl** and click a control in the application.
   **Esc** cancels. **Refresh objects** reloads the tree. **Pick element** and **Refresh objects**
   stay in the Spy toolbar.
@@ -125,8 +138,8 @@ does not block the basic property display.
 
 ## Project Configuration
 
-**Current Setup**, above the Explorer, shows the application name and executable icon (with a
-generic fallback). Click the row or gear to configure it. In multi-project workspaces,
+The **Test Target** section, above the Explorer, shows the application name and executable icon (with a
+generic fallback). Use the gear to edit its settings. In multi-project workspaces,
 it follows the active source file.
 
 The custom YAML editor offers **This machine** and **Shared project** tabs. On **This
@@ -137,7 +150,7 @@ lifecycle, timeouts, input mode, screenshots, reports, import paths and debuggin
 sits under the collapsed **Advanced options** section, grouped as **Application**, **Test runs**
 and **Debugging**, where override checkboxes control inheritance. Save with the toolbar or
 Ctrl+S; **Open YAML** switches to raw text for settings not shown in the form. Comments and
-other settings are preserved. Saving reloads the backend and refreshes Current Setup. Invalid
+other settings are preserved. Saving reloads the backend and refreshes the Test Target section. Invalid
 settings show actionable errors.
 
 Executable paths, working directories, arguments and viewing preferences are edited in

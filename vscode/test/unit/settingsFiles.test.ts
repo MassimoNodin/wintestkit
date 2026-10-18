@@ -17,12 +17,18 @@ vi.mock("vscode", () => {
           if (!files.has(uri.fsPath)) throw new FileSystemError();
           return Buffer.from(files.get(uri.fsPath)!);
         },
+        writeFile: async (uri: { fsPath: string }, data: Uint8Array) => {
+          files.set(uri.fsPath, Buffer.from(data).toString("utf8"));
+        },
       },
     },
   };
 });
 import * as vscode from "vscode";
-import { readConfiguration } from "../../src/settings/files";
+import {
+  readConfiguration,
+  writeLocalSettings,
+} from "../../src/settings/files";
 const root = { fsPath: "/project" } as vscode.Uri;
 describe("configuration file resolution", () => {
   beforeEach(() => files.clear());
@@ -60,5 +66,51 @@ describe("configuration file resolution", () => {
   it("reports invalid local configuration instead of ignoring it", async () => {
     files.set("/project/wintestkit.local.yaml", "timeout: nope\n");
     await expect(readConfiguration(root)).rejects.toThrow(/timeout/);
+  });
+});
+
+describe("writing local settings", () => {
+  beforeEach(() => {
+    files.clear();
+    // Every ignore pattern is already present, so the .gitignore is left alone.
+    files.set(
+      "/project/.gitignore",
+      [
+        "wintestkit.local.toml",
+        "wintestkit.local.yaml",
+        ".venv/",
+        "__pycache__/",
+        ".pytest_cache/",
+        ".ruff_cache/",
+        "wtk-report/",
+        "wtk-results/",
+      ].join("\n"),
+    );
+  });
+  it("creates the local file and sets, replaces and removes settings", async () => {
+    await writeLocalSettings(root, {
+      "app.path": "C:/Apps/Demo.exe",
+      launch: "attach",
+    });
+    let config = await readConfiguration(root);
+    expect(config["app.path"]).toBe("C:/Apps/Demo.exe");
+    expect(config.launch).toBe("attach");
+    await writeLocalSettings(root, {
+      "app.process": "Demo.exe",
+      "app.path": undefined,
+    });
+    config = await readConfiguration(root);
+    expect(config["app.process"]).toBe("Demo.exe");
+    expect(config["app.path"]).toBeUndefined();
+    expect(config.launch).toBe("attach");
+    expect(files.get("/project/wintestkit.local.yaml")).toContain(
+      "Local machine overrides",
+    );
+  });
+  it("refuses a value that is not valid for the setting", async () => {
+    await expect(
+      writeLocalSettings(root, { launch: "sometimes" }),
+    ).rejects.toThrow();
+    expect(files.has("/project/wintestkit.local.yaml")).toBe(false);
   });
 });

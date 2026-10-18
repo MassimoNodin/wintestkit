@@ -15,7 +15,7 @@ It ignores `wintestkit.local.yaml`, `wintestkit.local.toml`, `.venv/`, `__pycach
 `.pytest_cache/`, `.ruff_cache/`, `wtk-report/` and `wtk-results/`.
 Rerunning initialization adds missing rules without duplicating them. Shared defaults live
 in `wintestkit.yaml`; `--app` writes the executable path to ignored `wintestkit.local.yaml`.
-Existing configuration is preserved. In VS Code, use the gear in **Current Setup** to edit
+Existing configuration is preserved. In VS Code, use the gear in **Test Target** to edit
 these YAML files with the configuration form.
 Ignore rules do not untrack files already committed to Git.
 

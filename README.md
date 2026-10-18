@@ -107,7 +107,7 @@ app:
   path: C:/Program Files/Contoso/Orders.exe
 ```
 
-In VS Code, use the **Current Setup** gear above the Explorer to edit these files with the custom
+In VS Code, use the **Test Target** gear above the Explorer to edit these files with the custom
 YAML configuration editor. `pyproject.toml` retains pytest configuration, and legacy
 `[tool.wintestkit]` settings remain supported. Use your real executable path; relative paths
 resolve from the project directory.

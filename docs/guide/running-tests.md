@@ -42,7 +42,7 @@ or a legacy `[tool.wintestkit]` table, with matching `--wtk-*` options. Run
 ## Configuration
 
 Shared settings live in `wintestkit.yaml`; machine overrides live in ignored
-`wintestkit.local.yaml`. The Current Setup gear opens their custom YAML editor.
+`wintestkit.local.yaml`. The Test Target gear opens their custom YAML editor.
 Precedence, highest first: CLI, environment, local YAML, local TOML, shared YAML,
 legacy `[tool.wintestkit]` in `pyproject.toml`, defaults. Local TOML uses that same table.
 
@@ -91,9 +91,12 @@ The `app` fixture provides the application under test:
 
 | Mode | Behaviour |
 |---|---|
-| `per-session` (default) | Launch once for the whole run and close it at the end. If a test closes or crashes the application, the next test starts it again |
-| `per-test` | Launch before and close after every test: slow but fully isolated |
+| `per-session` (default; **Spawn** in the Test Target view) | Launch once for the whole run and close it at the end. A copy that is already running is closed first, so the tests get a fresh app and nothing is left running afterwards. If a test closes or crashes the application, the next test starts it again |
+| `per-test` | Like `per-session`, but a fresh app for every test: slow but fully isolated. Set it in the settings file |
 | `attach` | Attach to an already running instance (`app.process`, or the exe name of `app.path`); never launch or close it |
+
+The Test Target view offers just the two everyday choices: **Attach** (use the app that is
+running) and **Spawn** (WinTestKit starts the app and closes it when the tests finish).
 
 Override the mode for one test with a marker:
 
