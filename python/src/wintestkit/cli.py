@@ -28,6 +28,7 @@ def _command_modules() -> list[str]:
         "init",
         "report",
         "import_namemapping",
+        "unused",
     ]
 
 
