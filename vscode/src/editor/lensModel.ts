@@ -144,7 +144,7 @@ export function buildLenses(
     if (normalize(page.file) !== normalize(file)) continue;
     add(
       page.range.start.line,
-      "$(checklist) Check all elements in this class",
+      "$(checklist) Check all elements in this class exist",
       "wintestkit.checkPage",
       { file, page: page.qualname },
       page.qualname,
@@ -163,13 +163,6 @@ export function buildLenses(
         "wintestkit.highlightElement",
         { file, qualname: element.qualname },
         actionTooltip(status?.highlight, tooltip),
-      );
-      add(
-        element.range.start.line,
-        actionLabel("check", status?.check) || "$(check) Check",
-        "wintestkit.checkElement",
-        { file, qualname: element.qualname },
-        actionTooltip(status?.check, tooltip),
       );
     }
   }

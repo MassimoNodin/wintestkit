@@ -18,7 +18,7 @@ export const ACTION_PRESENTATION: Record<
 > = {
   highlight: { icon: "eye", title: "Highlight Element" },
   check: { icon: "check", title: "Check Element" },
-  checkPage: { icon: "check-all", title: "Check All Direct Child Elements" },
+  checkPage: { icon: "check-all", title: "Check all elements in this class exist" },
   run: { icon: "play", title: "Run Flow" },
 };
 
@@ -63,7 +63,7 @@ export function actionsFor(node: ElementNode): NavigationAction[] {
     node.file &&
     node.qualname
   )
-    actions.push("highlight", "check");
+    actions.push("highlight");
   if (context === "page" && node.file && node.page) actions.push("checkPage");
   if (context === "flow" && node.runnable && node.file) actions.push("run");
   return actions;

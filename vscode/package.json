@@ -38,7 +38,7 @@
       },
       {
         "command": "wintestkit.checkPage",
-        "title": "Check All Elements",
+        "title": "Check all elements in this class exist",
         "category": "WinTestKit",
         "icon": "$(checklist)"
       },
@@ -178,11 +178,6 @@
           "command": "wintestkit.highlightElement",
           "when": "webviewId == 'wintestkit.navigation' && webviewSection =~ /^(element|window)$/",
           "group": "navigation@1"
-        },
-        {
-          "command": "wintestkit.checkElement",
-          "when": "webviewId == 'wintestkit.navigation' && webviewSection =~ /^(element|window)$/",
-          "group": "navigation@2"
         },
         {
           "command": "wintestkit.checkPage",

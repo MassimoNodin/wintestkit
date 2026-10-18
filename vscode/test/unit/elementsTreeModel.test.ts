@@ -149,7 +149,7 @@ describe("Elements tree model", () => {
   });
 });
 describe("Window actions", () => {
-  it("lets windows be highlighted and checked", async () => {
+  it("offers only highlight for windows", async () => {
     const { actionsFor } = await import("../../src/views/navigationModel");
     const window = {
       ...element("window", 2),
@@ -157,6 +157,6 @@ describe("Window actions", () => {
       locator: { window: { title: "Demo" } },
     };
     const node = buildTree([discovery([window])])[0].children[0];
-    expect(actionsFor(node)).toEqual(["highlight", "check"]);
+    expect(actionsFor(node)).toEqual(["highlight"]);
   });
 });
