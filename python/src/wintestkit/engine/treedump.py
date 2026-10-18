@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator, Mapping
+from dataclasses import replace
 from typing import Any
 
 from wintestkit.engine.diagnose import quote
@@ -18,15 +19,18 @@ def _walk_elements(
 
     Nodes at ``max_depth`` are yielded but not expanded; at most ``max_nodes`` are yielded.
     """
-    stack: list[tuple[int, UIAElement]] = [(0, root)]
+    stack: list[tuple[int, Iterator[UIAElement]]] = [(0, iter((root,)))]
     yielded = 0
     while stack and yielded < max_nodes:
-        depth, element = stack.pop()
+        depth, siblings = stack[-1]
+        element = next(siblings, None)
+        if element is None:
+            stack.pop()
+            continue
         yield depth, element
         yielded += 1
-        if depth < max_depth:
-            children = element.find_all(TreeScope.Children, None, cached=True)
-            stack.extend((depth + 1, child) for child in reversed(children))
+        if yielded < max_nodes and depth < max_depth:
+            stack.append((depth + 1, element.iter_children()))
 
 
 def walk(
@@ -61,19 +65,46 @@ def dump(
     max_depth: int = 12,
     max_nodes: int = 3000,
     property_aliases: Mapping[str, str] | None = None,
+    max_bytes: int | None = None,
 ) -> str:
     """Indented text dump of a subtree (two spaces per level)."""
     lines: list[str] = []
     count = 0
+    remaining = max_bytes
+
+    def append_line(text: str) -> bool:
+        nonlocal remaining
+        if remaining is None:
+            lines.append(text)
+            return True
+        separator = 1 if lines else 0
+        available = max(0, remaining - separator)
+        encoded = text[:available].encode("utf-8")
+        clipped = encoded[:available].decode("utf-8", "ignore")
+        if remaining >= separator:
+            lines.append(clipped)
+            remaining -= separator + len(clipped.encode("utf-8"))
+        return len(encoded) <= available and remaining > 0 and len(text) <= available
+
     for depth, element in _walk_elements(root, max_depth, max_nodes):
-        lines.append("  " * depth + format_node(element.info()))
+        info = element.info()
+        if remaining is not None:
+            info = replace(
+                info,
+                name=info.name[:remaining],
+                class_name=info.class_name[:remaining],
+                automation_id=info.automation_id[:remaining],
+                control_type=info.control_type[:remaining],
+            )
+        if not append_line("  " * depth + format_node(info)):
+            return "\n".join(lines)
         if property_aliases is not None:
             for key, value in inspection_values(element, property_aliases).items():
-                if value != "":
-                    lines.append("  " * (depth + 1) + f"{key}: {value}")
+                if value != "" and not append_line("  " * (depth + 1) + f"{key}: {value}"):
+                    return "\n".join(lines)
         count += 1
     if count >= max_nodes:
-        lines.append(f"… (truncated at {max_nodes} nodes)")
+        append_line(f"… (truncated at {max_nodes} nodes)")
     return "\n".join(lines)
 
 

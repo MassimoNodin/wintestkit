@@ -107,7 +107,12 @@ def capture_failure(app: App | None, directory: Path) -> ArtifactSet:
             from wintestkit.engine import treedump
 
             text = _stable_tree(
-                treedump.dump(window, max_depth=TREE_MAX_DEPTH, max_nodes=TREE_MAX_NODES)
+                treedump.dump(
+                    window,
+                    max_depth=TREE_MAX_DEPTH,
+                    max_nodes=TREE_MAX_NODES,
+                    max_bytes=TREE_TEXT_MAX_BYTES,
+                )
             )
             tree_path = directory / "tree.txt"
             tree_path.parent.mkdir(parents=True, exist_ok=True)
@@ -125,7 +130,12 @@ def capture_tree_text(app: App | None) -> str | None:
     try:
         from wintestkit.engine import treedump
 
-        text = treedump.dump(app.main_window(), max_depth=TREE_MAX_DEPTH, max_nodes=TREE_MAX_NODES)
+        text = treedump.dump(
+            app.main_window(),
+            max_depth=TREE_MAX_DEPTH,
+            max_nodes=TREE_MAX_NODES,
+            max_bytes=TREE_TEXT_MAX_BYTES,
+        )
         return _stable_tree(text)
     except Exception:
         log.warning("could not capture the UI tree baseline", exc_info=True)
@@ -135,12 +145,13 @@ def capture_tree_text(app: App | None) -> str | None:
 def write_tree_diff(baseline: Path, current: Path, target: Path) -> bool:
     """Write a bounded unified diff between a previous passing tree and this failure."""
     try:
-        before, after = baseline.read_text(encoding="utf-8"), current.read_text(encoding="utf-8")
-        if (
-            len(before.encode("utf-8")) > TREE_TEXT_MAX_BYTES
-            or len(after.encode("utf-8")) > TREE_TEXT_MAX_BYTES
-        ):
+        with baseline.open("rb") as stream:
+            before_bytes = stream.read(TREE_TEXT_MAX_BYTES + 1)
+        with current.open("rb") as stream:
+            after_bytes = stream.read(TREE_TEXT_MAX_BYTES + 1)
+        if len(before_bytes) > TREE_TEXT_MAX_BYTES or len(after_bytes) > TREE_TEXT_MAX_BYTES:
             return False
+        before, after = before_bytes.decode("utf-8"), after_bytes.decode("utf-8")
         diff = list(
             difflib.unified_diff(
                 before.splitlines(),
@@ -153,9 +164,10 @@ def write_tree_diff(baseline: Path, current: Path, target: Path) -> bool:
         if not diff:
             return False
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text("\n".join(diff[:2000])[:TREE_TEXT_MAX_BYTES] + "\n", encoding="utf-8")
+        encoded = ("\n".join(diff[:2000]) + "\n").encode("utf-8")[:TREE_TEXT_MAX_BYTES]
+        target.write_bytes(encoded.decode("utf-8", "ignore").encode("utf-8"))
         return True
-    except OSError:
+    except (OSError, UnicodeError):
         return False
 
 

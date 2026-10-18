@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from typing import Any
 
 from wintestkit.uia.constants import TreeScope
@@ -85,6 +86,9 @@ class FakeElement:
 
     def children(self) -> list[FakeElement]:
         return list(self.children_list)
+
+    def iter_children(self) -> Iterator[FakeElement]:
+        yield from self.children_list
 
     def same_as(self, other: Any) -> bool:
         return self is other
