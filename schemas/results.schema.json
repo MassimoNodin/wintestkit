@@ -149,6 +149,9 @@
         "treeDump": {
           "type": "string"
         },
+        "treeDiff": {
+          "type": "string"
+        },
         "stdout": {
           "type": "string"
         },

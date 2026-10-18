@@ -244,6 +244,9 @@
             "artifactsDir": {
               "type": "string"
             },
+            "treeDiff": {
+              "type": "string"
+            },
             "trace": { "$ref": "results.schema.json#/$defs/Trace" }
           },
           "required": [

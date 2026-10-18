@@ -118,6 +118,7 @@ export type RunEvent =
       error?: ErrorInfo;
       screenshots: string[];
       artifactsDir?: string;
+      treeDiff?: string;
       trace?: Trace;
     }
   | {
@@ -860,6 +861,7 @@ export interface TestResult {
   screenshots: string[];
   trace?: Trace;
   treeDump?: string;
+  treeDiff?: string;
   stdout: string;
   stderr: string;
   log: string;

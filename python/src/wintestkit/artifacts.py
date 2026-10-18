@@ -5,6 +5,7 @@ from __future__ import annotations
 import difflib
 import hashlib
 import logging
+import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -18,6 +19,13 @@ log = logging.getLogger("wintestkit.artifacts")
 _MAX_ID_LENGTH = 120
 TREE_MAX_DEPTH = 12
 TREE_MAX_NODES = 3000
+TREE_TEXT_MAX_BYTES = 512 * 1024
+BASELINE_MAX_FILES = 500
+
+
+def _stable_tree(text: str) -> str:
+    """Drop volatile screen coordinates from UI tree text before it is persisted or compared."""
+    return re.sub(r" \(-?\d+,-?\d+ \d+x\d+\)", "", text)
 
 
 @dataclass
@@ -98,7 +106,9 @@ def capture_failure(app: App | None, directory: Path) -> ArtifactSet:
         try:
             from wintestkit.engine import treedump
 
-            text = treedump.dump(window, max_depth=TREE_MAX_DEPTH, max_nodes=TREE_MAX_NODES)
+            text = _stable_tree(
+                treedump.dump(window, max_depth=TREE_MAX_DEPTH, max_nodes=TREE_MAX_NODES)
+            )
             tree_path = directory / "tree.txt"
             tree_path.parent.mkdir(parents=True, exist_ok=True)
             tree_path.write_text(text, encoding="utf-8")
@@ -115,7 +125,8 @@ def capture_tree_text(app: App | None) -> str | None:
     try:
         from wintestkit.engine import treedump
 
-        return treedump.dump(app.main_window(), max_depth=TREE_MAX_DEPTH, max_nodes=TREE_MAX_NODES)
+        text = treedump.dump(app.main_window(), max_depth=TREE_MAX_DEPTH, max_nodes=TREE_MAX_NODES)
+        return _stable_tree(text)
     except Exception:
         log.warning("could not capture the UI tree baseline", exc_info=True)
         return None
@@ -125,12 +136,47 @@ def write_tree_diff(baseline: Path, current: Path, target: Path) -> bool:
     """Write a bounded unified diff between a previous passing tree and this failure."""
     try:
         before, after = baseline.read_text(encoding="utf-8"), current.read_text(encoding="utf-8")
-        diff = list(difflib.unified_diff(before.splitlines(), after.splitlines(),
-                                        fromfile="last passing UI tree", tofile="failing UI tree",
-                                        lineterm=""))
+        if (
+            len(before.encode("utf-8")) > TREE_TEXT_MAX_BYTES
+            or len(after.encode("utf-8")) > TREE_TEXT_MAX_BYTES
+        ):
+            return False
+        diff = list(
+            difflib.unified_diff(
+                before.splitlines(),
+                after.splitlines(),
+                fromfile="last passing UI tree",
+                tofile="failing UI tree",
+                lineterm="",
+            )
+        )
         if not diff:
             return False
-        target.write_text("\n".join(diff[:6000]) + "\n", encoding="utf-8")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("\n".join(diff[:2000])[:TREE_TEXT_MAX_BYTES] + "\n", encoding="utf-8")
         return True
     except OSError:
         return False
+
+
+def baseline_path(report_dir: Path, target: str, nodeid: str) -> Path:
+    """Stable per-target and per-test baseline location; one file is retained per pair."""
+    key = hashlib.sha256(f"{target}\0{nodeid}".encode()).hexdigest()
+    return report_dir / "ui-tree-baselines" / f"{key}.txt"
+
+
+def store_tree_text(text: str | None, path: Path) -> None:
+    """Best-effort bounded baseline store; artifacts never turn a passing test into a failure."""
+    try:
+        if text is None:
+            return
+        encoded = text.encode("utf-8")[:TREE_TEXT_MAX_BYTES].decode("utf-8", "ignore").encode()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = path.with_suffix(f".{os.getpid()}.tmp")
+        temporary.write_bytes(encoded)
+        os.replace(temporary, path)
+        files = sorted(path.parent.glob("*.txt"), key=lambda p: p.stat().st_mtime, reverse=True)
+        for stale in files[BASELINE_MAX_FILES:]:
+            stale.unlink(missing_ok=True)
+    except Exception:
+        log.warning("could not store the UI tree baseline", exc_info=True)

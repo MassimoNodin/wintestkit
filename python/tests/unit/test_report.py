@@ -42,6 +42,9 @@ def test_recorder_paths_are_portable_and_omit_unrun_tests(tmp_path: Path) -> Non
         }
     )
     recorder.record({"event": "step", "id": "run", "step": {"screenshot": "artifacts/steps/1.png"}})
+    tree_diff = tmp_path / "artifacts" / "tree-diff.txt"
+    tree_diff.parent.mkdir(parents=True)
+    tree_diff.write_text("- old\n+ new\n", encoding="utf-8")
     recorder.record(
         {
             "event": "test_end",
@@ -49,6 +52,7 @@ def test_recorder_paths_are_portable_and_omit_unrun_tests(tmp_path: Path) -> Non
             "outcome": "passed",
             "duration": 1,
             "screenshots": [str(tmp_path / "artifacts/window.png")],
+            "treeDiff": str(tree_diff),
         }
     )
     recorder.record({"event": "session_end", "time": 2, "summary": {}})
@@ -56,6 +60,7 @@ def test_recorder_paths_are_portable_and_omit_unrun_tests(tmp_path: Path) -> Non
     assert len(results["tests"]) == 1
     assert results["tests"][0]["screenshots"] == ["artifacts/window.png"]
     assert results["tests"][0]["steps"][0]["screenshot"] == "artifacts/steps/1.png"
+    assert results["tests"][0]["treeDiff"] == "artifacts/tree-diff.txt"
 
 
 def test_report_command_regenerates_html(tmp_path: Path) -> None:
