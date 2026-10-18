@@ -20,7 +20,10 @@ export class CodeLenses implements vscode.CodeLensProvider, vscode.Disposable {
       checks.onDidChange(() => this.refresh()),
       flows.onDidChange(() => this.refresh()),
       vscode.workspace.onDidChangeConfiguration((event) => {
-        if (event.affectsConfiguration("wintestkit.codeLens.enabled"))
+        if (
+          event.affectsConfiguration("wintestkit.codeLens.enabled") ||
+          event.affectsConfiguration("wintestkit.codeLens.classOnly")
+        )
           this.refresh();
       }),
       vscode.languages.registerCodeLensProvider(
