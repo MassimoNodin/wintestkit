@@ -165,6 +165,7 @@ file settings when running tests. See [configuration](running-tests.md#configura
 |---|---|---|
 | `wintestkit.pythonPath` | `""` | Python interpreter to use. Empty uses the Python extension's selection |
 | `wintestkit.codeLens.enabled` | `true` | Show the CodeLens actions |
+| `wintestkit.codeLens.classOnly` | `false` | Show only page class lenses in the editor; element actions remain in Page Tree |
 | `wintestkit.highlight.durationMs` | `1500` | How long a highlight stays on screen |
 | `wintestkit.run.extraArgs` | `[]` | Extra arguments passed to `wtk run` |
 | `wintestkit.run.highlightActions` | `false` | Flash each element before acting during runs from VS Code |
@@ -172,3 +173,16 @@ file settings when running tests. See [configuration](running-tests.md#configura
 | `wintestkit.promptDisablePytestExplorer` | `true` | Offer to disable the Python extension's pytest explorer |
 
 Logs are in the **WinTestKit** output channel (**WinTestKit: Show Output**).
+
+For a page class, **Check after flow…** lets you explicitly associate a navigation flow with that
+class. After the flow succeeds, WinTestKit checks the class against the current screen. This is
+opt-in because flows can change application state. **Sweep project using remembered reach flows**
+reuses those associations, asks for confirmation, and requires `launch: per-session` (Launch for
+tests). It checks each reached class, reports failures in Problems, and writes the latest summary to
+`wtk-report/project-sweep.md`. Cancellation takes effect between flow and check operations. Pages
+without a remembered runnable flow, and remembered flows with required parameters, appear in the
+skipped-pages section.
+
+Flows with scalar `str`, `int`, `float`, or `bool` parameters can be run from their CodeLens. WinTestKit
+prompts for required values, pre-fills defaults, validates input as a scalar, and skips the run if a
+prompt is cancelled. Flow source expressions are never evaluated as input.
