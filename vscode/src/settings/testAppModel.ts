@@ -13,6 +13,7 @@ export type TileId =
   | "close"
   | "refresh"
   | "init"
+  | "doctor"
   | "output";
 
 export interface Tile {
@@ -306,7 +307,9 @@ export function buildTestAppModel(input: TestAppInput): TestAppModel {
     model.message = {
       tone: "error",
       text: verb + ": " + state.failure.message,
-      action: { id: "output", label: "Show output" },
+      action: state.failure.environment
+        ? { id: "doctor", label: "Check Environment" }
+        : { id: "output", label: "Show output" },
     };
     tiles.push(
       launchable

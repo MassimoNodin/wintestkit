@@ -302,6 +302,31 @@ describe("Test Target tiles", () => {
 });
 
 describe("Test Target messages and manifest", () => {
+  it("offers an environment check only for a classified environment failure", () => {
+    const failed = buildTestAppModel({
+      project,
+      trusted: true,
+      config: launchable,
+      state: {
+        running: false,
+        failure: {
+          action: "launch",
+          message: "UI Automation is unavailable",
+          environment: true,
+          at: 0,
+        },
+      },
+    });
+    expect(failed.message?.action).toEqual({
+      id: "doctor",
+      label: "Check Environment",
+    });
+    expect(failed.message?.text).toContain("UI Automation is unavailable");
+    expect(parseTestAppMessage({ type: "tile", id: "doctor" })).toEqual({
+      type: "tile",
+      id: "doctor",
+    });
+  });
   it("accepts only known tiles", () => {
     expect(parseTestAppMessage({ type: "ready" })).toEqual({ type: "ready" });
     expect(parseTestAppMessage({ type: "tile", id: "launch" })).toEqual({

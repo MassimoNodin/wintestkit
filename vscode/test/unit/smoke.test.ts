@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type * as vscode from "vscode";
+import { RpcError } from "../../src/server/jsonrpc";
 
 const mocks = vi.hoisted(() => ({
   log: { info: vi.fn(), error: vi.fn(), show: vi.fn(), dispose: vi.fn() },
@@ -366,6 +367,40 @@ describe("extension scaffold", () => {
     ]);
   });
 
+  it("runs environment recovery for the originating project", async () => {
+    const projectRoot = {
+      fsPath: "C:/other",
+      toString: () => "file:///C:/other",
+    } as vscode.Uri;
+    const callback = mocks.registerCommand.mock.calls.find(
+      ([command]) => command === "wintestkit.runDoctor",
+    )?.[1];
+    await callback?.({ resourceUri: projectRoot } as vscode.TreeItem);
+    expect(mocks.runTerminal).toHaveBeenCalledWith(projectRoot, [
+      "-m",
+      "wintestkit",
+      "--root",
+      "C:/other",
+      "doctor",
+    ]);
+  });
+  it("preserves classified environment failures for the Test Target recovery action", async () => {
+    mocks.request.mockRejectedValueOnce(
+      new RpcError(-32005, "UI Automation is not available"),
+    );
+    const callback = mocks.registerCommand.mock.calls.find(
+      ([command]) => command === "wintestkit.launchApp",
+    )?.[1];
+    await callback?.();
+    expect(mocks.endTransition).toHaveBeenCalledWith(
+      expect.anything(),
+      {
+        action: "launch",
+        message: "UI Automation is not available",
+        environment: true,
+      },
+    );
+  });
   it("records why a launch failed so the Test Target section can show it", async () => {
     mocks.readConfig.mockResolvedValue({ "app.path": "C:/Apps/Demo.exe" });
     mocks.request.mockRejectedValueOnce(

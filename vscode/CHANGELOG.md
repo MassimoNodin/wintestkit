@@ -5,6 +5,8 @@ released together with the same version) are documented here.
 
 ## [Unreleased]
 
+- Classified UI Automation environment failures in Test Target offer **Check Environment** for
+  the originating project, while ordinary launch errors retain **Show output**.
 - Rename the navigation view to **Pages & Flows** and add an **Open Testing** toolbar action.
   Project initialization now offers to open Testing or the generated smoke test.
 - Spy distinguishes a stopped app from a project without pages, preserving the page catalogue
