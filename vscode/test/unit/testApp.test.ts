@@ -138,6 +138,16 @@ describe("Test Target tiles", () => {
     expect(ids(model)).toEqual(["project", "app", "mode", "restart", "close"]);
     expect(model.tiles.at(-1)).toMatchObject({ tone: "stop" });
   });
+  it("locks the application tile, without its list icon, while the app is running", () => {
+    const running = build(launchable, { running: true, pids: [12] }).tiles[1];
+    expect(running.locked).toBe(true);
+    expect(running.chevron).toBeUndefined();
+    expect(running.trailing).toBeUndefined();
+    expect(running.tooltip).toContain("Close it to choose a different one");
+    const stopped = build(launchable, { running: false }).tiles[1];
+    expect(stopped.locked).toBeUndefined();
+    expect(stopped).toMatchObject({ chevron: true, trailing: "list-selection" });
+  });
   it("never offers to launch or restart an attach-only setup", () => {
     const stopped = build(attach, { running: false });
     expect(stopped.status.label).toBe("Waiting for the app");

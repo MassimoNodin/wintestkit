@@ -24,6 +24,11 @@
       node.setAttribute("aria-busy", "true");
     }
     if (spec.tooltip) node.title = spec.tooltip;
+    if (spec.locked) {
+      // aria-disabled instead of disabled so the tooltip still shows on hover.
+      node.classList.add("locked");
+      node.setAttribute("aria-disabled", "true");
+    }
     node.setAttribute(
       "aria-label",
       spec.title + (spec.subtitle ? ", " + spec.subtitle : ""),
@@ -53,7 +58,9 @@
     if (spec.subtitle) text.append(el("span", "tile-subtitle", spec.subtitle));
     node.append(icon, text);
     if (spec.chevron) node.append(codicon((spec.trailing ?? "chevron-down") + " tile-chevron"));
-    node.addEventListener("click", () => press(spec.id));
+    node.addEventListener("click", () => {
+      if (!spec.locked) press(spec.id);
+    });
     return node;
   };
 

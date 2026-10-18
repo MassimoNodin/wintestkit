@@ -26,6 +26,8 @@ export interface Tile {
   /** Colours the codicon: launch green, stop red, attach/project orange, and so on. */
   tone?: "launch" | "stop" | "link" | "project" | "busy" | "warn";
   chevron?: boolean;
+  /** Shown but not pressable (it keeps its tooltip, which says why). */
+  locked?: boolean;
   /** The codicon shown at the tile's trailing edge (default chevron-down): what pressing it opens. */
   trailing?: string;
   disabled?: boolean;
@@ -173,9 +175,19 @@ export function buildTestAppModel(input: TestAppInput): TestAppModel {
           : undefined,
         icon: input.icon,
         codicon: "window",
-        chevron: true,
-        trailing: "list-selection",
-        tooltip: target + "\nChoose a different application",
+        // The running app is the target, so it cannot be swapped out from under the tests.
+        ...(pids
+          ? {
+              locked: true,
+              tooltip:
+                target +
+                "\nThe application is running. Close it to choose a different one.",
+            }
+          : {
+              chevron: true,
+              trailing: "list-selection",
+              tooltip: target + "\nChoose a different application",
+            }),
       }
     : {
         id: "app",

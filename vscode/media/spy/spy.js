@@ -310,14 +310,15 @@
       const scoped = active.filter(
         (task) => (task.target || "tree") === target,
       );
-      const loading = element(target + "-loading");
-      loading.hidden = !scoped.length;
+      // The object tree reports progress in its own overlay; only the details pane has a bar.
+      const loading = target === "details" ? element("details-loading") : undefined;
+      if (loading) loading.hidden = !scoped.length;
       element(target === "tree" ? "tree-region" : "details").setAttribute(
         "aria-busy",
         String(scoped.length > 0),
       );
       if (target === "tree") element("object-count").hidden = scoped.length > 0;
-      if (scoped.length) {
+      if (loading && scoped.length) {
         const current = scoped.at(-1);
         const completed = scoped.reduce((sum, task) => sum + task.completed, 0);
         const total = scoped.reduce((sum, task) => sum + task.total, 0);
@@ -353,7 +354,22 @@
     );
     const detailTasks = active.filter((task) => task.target === "details");
     const query = element("search").value.trim();
-    element("tree-empty").hidden = treeHasMatches;
+    element("tree-empty").hidden = treeHasMatches || treeTasks.length > 0;
+    // While the tree loads or reloads, blur it and say what is happening on top of it.
+    const reloading = treeTasks.length > 0;
+    element("tree-stage").dataset.busy = String(reloading);
+    element("tree-overlay").hidden = !reloading;
+    if (reloading) {
+      const current = treeTasks.at(-1);
+      const completed = treeTasks.reduce((sum, task) => sum + task.completed, 0);
+      const total = treeTasks.reduce((sum, task) => sum + task.total, 0);
+      element("tree-overlay-title").textContent = nodes.size
+        ? "Reloading objects…"
+        : "Loading objects…";
+      element("tree-overlay-detail").textContent =
+        (current.phase || current.title || "Connecting to your application.") +
+        (total ? " · " + completed + "/" + total : "");
+    }
     element("clear-filter").hidden = !query;
     element("choose-app").hidden = !(appState && appState.hasProject && !appState.appRunning && rootsLoaded);
     element("getting-started").hidden = !!(appState && appState.hasProject);

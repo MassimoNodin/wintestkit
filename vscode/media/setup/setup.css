@@ -165,3 +165,9 @@ p {
 .hint button:hover {
     text-decoration: underline;
 }
+
+.tile.locked,
+.tile.locked:hover {
+    cursor: not-allowed;
+    background: var(--surface);
+}
