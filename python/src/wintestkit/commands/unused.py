@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import argparse
 import ast
+import os
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -13,12 +15,17 @@ from wintestkit.discovery import discover
 _SKIP = {".git", ".venv", "venv", "node_modules", "build", "dist", "__pycache__", ".tox"}
 
 
-def _python_sources(root):
-    for path in root.rglob("*.py"):
-        if not any(
-            part in _SKIP or part.startswith(".") for part in path.relative_to(root).parts[:-1]
-        ):
-            yield path
+def _python_sources(root: Path, errors: list[dict[str, str]]) -> Iterator[Path]:
+    def inaccessible(error: OSError) -> None:
+        errors.append({"file": str(error.filename or root), "message": str(error)})
+
+    for directory, folders, files in os.walk(root, followlinks=False, onerror=inaccessible):
+        folders[:] = sorted(
+            folder for folder in folders if folder not in _SKIP and not folder.startswith(".")
+        )
+        for filename in sorted(files):
+            if filename.endswith(".py"):
+                yield Path(directory) / filename
 
 
 def add_parser(subparsers: Any) -> None:
@@ -34,7 +41,7 @@ def run(args: argparse.Namespace) -> int:
     # since a missed reference would otherwise create a false unused marker.
     sources: dict[str, ast.Module] = {}
     errors: list[dict[str, str]] = []
-    for path in _python_sources(root):
+    for path in _python_sources(root, errors):
         try:
             text = path.read_text(encoding="utf-8")
             sources[str(path.resolve())] = ast.parse(text, filename=str(path))
@@ -77,28 +84,21 @@ def run(args: argparse.Namespace) -> int:
                     used.update((mounted.file, e.name) for e in mounted.elements)
         for file, tree in sources.items():
             for node in ast.walk(tree):
-                name = (
-                    node.id
-                    if isinstance(node, ast.Name)
-                    else node.attr
-                    if isinstance(node, ast.Attribute)
-                    else None
-                )
-                if name is None:
+                if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
+                    name = node.id
+                elif isinstance(node, ast.Attribute):
+                    name = node.attr
+                elif isinstance(node, ast.Constant) and isinstance(node.value, str):
+                    name = node.value
+                else:
                     continue
-                is_reference = (
-                    (isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load))
-                    or isinstance(node, ast.Attribute)
-                    or (isinstance(node, ast.Constant) and node.value == name)
-                )
-                if is_reference:
-                    for page, element in definitions_by_name.get(name, ()):
-                        is_own_declaration = (
-                            str(Path(page.file).resolve()) == file
-                            and node.lineno == element.name_range.start.line + 1
-                        )
-                        if not is_own_declaration:
-                            used.add((page.file, element.name))
+                for page, element in definitions_by_name.get(name, ()):
+                    is_own_declaration = (
+                        str(Path(page.file).resolve()) == file
+                        and node.lineno == element.name_range.start.line + 1
+                    )
+                    if not is_own_declaration:
+                        used.add((page.file, element.name))
     candidates = [
         {"name": element.name, "file": page.file, "line": element.name_range.start.line + 1}
         for page in result.pages
