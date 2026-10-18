@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import type { AppStatusResult } from "./protocol/generated";
 import { ServerManager, type Project } from "./server/serverManager";
+import { runStatusMenu, statusMenuActions } from "./statusMenu";
 
 export type StartStage = "process" | "window";
 
@@ -60,21 +61,13 @@ export class StatusBar implements vscode.Disposable {
         await this.refresh();
         const project = this.project();
         const running = project ? this.applicationState(project)?.running : false;
-        const actions = [
-          ...(running
-            ? [["Restart App", "wintestkit.restartApp"], ["Close App", "wintestkit.closeApp"]]
-            : [["Launch App", "wintestkit.launchApp"]]),
-          ["Run all tests", "testing.runAll"],
-          ["Open Testing view", "wintestkit.openTesting"],
-          ["Restart Server", "wintestkit.restartServer"],
-          ["Open Last Report", "wintestkit.openReport"],
-          ["Check Environment", "wintestkit.runDoctor"],
-          ["Show Output", "wintestkit.showOutput"],
-        ];
-        const choice = await vscode.window.showQuickPick(
-          actions.map(([label, command]) => ({ label, command })),
+        await runStatusMenu(
+          statusMenuActions(!!running),
+          (actions) => vscode.window.showQuickPick(
+            actions.map((action) => ({ label: action.label, command: action.command })),
+          ),
+          (command) => vscode.commands.executeCommand(command),
         );
-        if (choice) await vscode.commands.executeCommand(choice.command);
       }),
     ];
     this.timer = setInterval(() => {
