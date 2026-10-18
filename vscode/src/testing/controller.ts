@@ -81,6 +81,12 @@ export class TestController implements vscode.Disposable {
     private readonly discovery: DiscoveryStore,
     private readonly log: vscode.LogOutputChannel,
     private readonly reports: Reports,
+    private readonly attachFailures?: {
+      /** A run is starting, so an earlier attach failure no longer describes the app. */
+      cleared(project: Project): void;
+      /** A test could not start because attach mode found the app not running. */
+      notRunning(project: Project): void;
+    },
   ) {
     this.profile = this.controller.createRunProfile(
       "Run",
@@ -322,6 +328,8 @@ export class TestController implements vscode.Disposable {
       else if (action.kind === "skipped") run.skipped(item);
       else if (action.kind === "passed") run.passed(item, action.duration);
       else if (action.kind === "failed" || action.kind === "errored") {
+        if (action.end?.error?.type === "AttachNotRunningError")
+          this.attachFailures?.notRunning(project);
         const messages = failureMessages(action.end, action.message);
         this.lastMessages.set(action.id, messages);
         if (action.kind === "failed")
@@ -347,6 +355,7 @@ export class TestController implements vscode.Disposable {
     debug = false,
     recording = false,
   ): Promise<void> {
+    this.attachFailures?.cleared(project);
     const nodeids = items.map((item) => this.metadata.get(item)!.nodeid!);
     const mapper = new EventMapper(nodeids);
     let ended!: () => void;

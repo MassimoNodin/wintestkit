@@ -6,12 +6,8 @@
   const tasks = new Map();
   let appState;
   let bringToFront = false;
-  const persisted = vscode.getState();
-  let showOtherApps = !!(
-    persisted &&
-    typeof persisted === "object" &&
-    persisted.showOtherApps
-  );
+  // Every Spy session starts with all desktop windows; the button narrows it to the app.
+  let showOtherApps = true;
   let rootsLoaded = false;
   let treeHasMatches = false;
   let hasDetails = false;
@@ -279,18 +275,6 @@
     otherApps.title = otherAppsText;
     otherApps.setAttribute("aria-label", otherAppsText);
     element("other-apps-label").textContent = otherAppsText;
-    const context = element("scope-context");
-    if (appState?.hasProject) {
-      const target = appState.targetName || "Test Target";
-      context.hidden = false;
-      context.textContent = !running
-        ? target + " isn't running. Showing other desktop windows."
-        : showOtherApps
-          ? "Showing all desktop windows."
-          : "Live: " + target;
-    } else {
-      context.hidden = true;
-    }
     const load = element("load-properties");
     load.disabled =
       !hasDetails || fullPropertiesLoading || fullPropertiesLoaded;

@@ -106,13 +106,6 @@ summary:focus-visible {
     border-bottom: 1px solid var(--border);
     background: var(--vscode-inputValidation-infoBackground, var(--raised));
 }
-#scope-context {
-    margin: 0;
-    padding: 7px 11px;
-    border-bottom: 1px solid var(--border);
-    background: var(--vscode-inputValidation-infoBackground, var(--raised));
-    font-size: 12px;
-}
 #workspace {
     display: grid;
     grid-template-columns: minmax(200px, var(--tree-width, 36%)) 5px minmax(

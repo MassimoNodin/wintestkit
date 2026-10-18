@@ -47,6 +47,10 @@ class AppNotRunningError(AppError):
     """The application under test is not running."""
 
 
+class AttachNotRunningError(AppNotRunningError):
+    """A test run in ``attach`` mode found the application not running, so it was never launched."""
+
+
 class LocatorError(WtkError):
     """An element or window locator could not be resolved to exactly one element."""
 

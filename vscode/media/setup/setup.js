@@ -24,6 +24,7 @@
       node.setAttribute("aria-busy", "true");
     }
     if (spec.tooltip) node.title = spec.tooltip;
+    if (spec.alert) node.classList.add("alert");
     if (spec.locked) {
       // aria-disabled instead of disabled so the tooltip still shows on hover.
       node.classList.add("locked");
@@ -77,11 +78,24 @@
       const hint = el("div", "hint");
       hint.dataset.tone = model.message.tone;
       hint.setAttribute("role", "status");
-      hint.append(el("span", "", model.message.text));
+      if (model.message.icon) {
+        const icon = codicon(model.message.icon);
+        icon.classList.add("hint-icon");
+        hint.append(icon);
+      }
+      hint.append(el("span", "hint-text", model.message.text));
       if (model.message.action) {
         const link = el("button", "", model.message.action.label);
         link.addEventListener("click", () => press(model.message.action.id));
         hint.append(link);
+      }
+      if (model.message.dismiss) {
+        const close = el("button", "hint-dismiss");
+        close.title = "Dismiss";
+        close.setAttribute("aria-label", "Dismiss");
+        close.append(codicon("close"));
+        close.addEventListener("click", () => press(model.message.dismiss));
+        hint.append(close);
       }
       root.append(hint);
     }

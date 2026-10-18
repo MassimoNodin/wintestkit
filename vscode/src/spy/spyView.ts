@@ -27,7 +27,7 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
   private picking = false;
   private appRunning = false;
   private targetName?: string;
-  private showOtherApps = false;
+  private showOtherApps = true;
   private revision = 0;
   private scopeRevision = 0;
   private selection = 0;
