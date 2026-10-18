@@ -164,6 +164,13 @@ export function buildLenses(
         { file, qualname: element.qualname },
         actionTooltip(status?.highlight, tooltip),
       );
+      add(
+        element.range.start.line,
+        actionLabel("check", status?.check) || "$(check) Check exists",
+        "wintestkit.checkElement",
+        { file, qualname: element.qualname },
+        actionTooltip(status?.check, tooltip),
+      );
     }
   }
   for (const flow of discovery.flows ?? []) {

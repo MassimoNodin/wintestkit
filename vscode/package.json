@@ -32,7 +32,7 @@
       },
       {
         "command": "wintestkit.checkElement",
-        "title": "Check Element",
+        "title": "Check exists",
         "category": "WinTestKit",
         "icon": "$(check)"
       },
@@ -178,6 +178,11 @@
           "command": "wintestkit.highlightElement",
           "when": "webviewId == 'wintestkit.navigation' && webviewSection =~ /^(element|window)$/",
           "group": "navigation@1"
+        },
+        {
+          "command": "wintestkit.checkElement",
+          "when": "webviewId == 'wintestkit.navigation' && webviewSection =~ /^(element|window)$/",
+          "group": "navigation@2"
         },
         {
           "command": "wintestkit.checkPage",
