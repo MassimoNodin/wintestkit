@@ -163,11 +163,13 @@ export function activate(context: vscode.ExtensionContext): {
   const withProject = async (
     action: (project: Project) => Promise<unknown>,
     target?: vscode.TreeItem,
+    propagateErrors = false,
   ): Promise<void> => {
     const project = target?.resourceUri
       ? projects.projectFor(target.resourceUri)
       : currentProject();
     if (!project) {
+      if (propagateErrors) throw new Error("Open a WinTestKit project first.");
       await vscode.window.showInformationMessage(
         "Open a WinTestKit project first.",
       );
@@ -176,13 +178,18 @@ export function activate(context: vscode.ExtensionContext): {
     try {
       await action(project);
     } catch (error) {
+      if (propagateErrors) throw error;
       log.error(String(error));
       await vscode.window.showErrorMessage(String(error));
     } finally {
       await status.refresh();
     }
   };
-  const changeApp = (methods: string[], target?: vscode.TreeItem) =>
+  const changeApp = (
+    methods: string[],
+    target?: vscode.TreeItem,
+    propagateErrors = false,
+  ) =>
     withProject(async (project) => {
       const closing = methods.includes("app.close");
       if (closing) {
@@ -245,7 +252,7 @@ export function activate(context: vscode.ExtensionContext): {
         starting.dispose();
       }
       await spy.refreshForProject(project);
-    }, target);
+    }, target, propagateErrors);
   const implemented: Record<string, (target?: vscode.TreeItem) => unknown> = {
     "wintestkit.openTesting": () =>
       vscode.commands.executeCommand("workbench.view.testing.focus"),
@@ -253,6 +260,8 @@ export function activate(context: vscode.ExtensionContext): {
     "wintestkit.showOutput": () => log.show(),
     "wintestkit.openReport": () => reports.open(currentProject()),
     "wintestkit.launchApp": (target) => changeApp(["app.launch"], target),
+    "wintestkit.launchAppStrict": (target) =>
+      changeApp(["app.launch"], target, true),
     "wintestkit.closeApp": (target) => changeApp(["app.close"], target),
     "wintestkit.restartApp": (target) =>
       changeApp(["app.close", "app.launch"], target),
@@ -273,6 +282,12 @@ export function activate(context: vscode.ExtensionContext): {
     "wintestkit.installPackage": () =>
       withProject((project) => installPackage(project.root)),
   };
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      "wintestkit.launchAppStrict",
+      (target?: vscode.TreeItem) => implemented["wintestkit.launchAppStrict"](target),
+    ),
+  );
   void onDidChangeInterpreter((folder) => {
     for (const project of projects.all) {
       if (

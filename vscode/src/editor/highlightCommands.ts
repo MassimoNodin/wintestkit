@@ -12,6 +12,7 @@ import { summarizeChecks } from "./checkStatus";
 import { CheckResultsStore } from "./decorations";
 import { formatDiagnostic, shortElement } from "./diagnostics";
 import type { ActionStatus } from "./lensModel";
+import { recoverStoppedApp } from "./appRecovery";
 
 export interface ElementTarget {
   file: string;
@@ -22,7 +23,7 @@ export interface PageTarget {
   page: string;
 }
 class AppNotRunningError extends Error {
-  constructor(readonly launch: () => Promise<unknown>) {
+  constructor(readonly project: Project) {
     super("The app isn't running.");
   }
 }
@@ -55,15 +56,10 @@ export class HighlightCommands implements vscode.Disposable {
       await action();
     } catch (error) {
       if (retry && error instanceof AppNotRunningError) {
-        const choice = await vscode.window.showInformationMessage(
-          error.message,
-          "Launch App",
-        );
-        if (choice === "Launch App")
-          await this.safe(async () => {
-            await error.launch();
+        await this.safe(async () => {
+          if (await recoverStoppedApp(error.project, this.servers))
             await action();
-          }, false);
+        }, false);
         return;
       }
       this.log.error(String(error));
@@ -97,11 +93,7 @@ export class HighlightCommands implements vscode.Disposable {
       return await connection.client.request<Result>(method, params);
     } catch (error) {
       if (error instanceof RpcError && error.code === -32002)
-        throw new AppNotRunningError(() =>
-          vscode.commands.executeCommand("wintestkit.launchApp", {
-            resourceUri: project.root,
-          }),
-        );
+        throw new AppNotRunningError(project);
       throw error;
     }
   }

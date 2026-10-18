@@ -229,6 +229,7 @@ describe("extension scaffold", () => {
     ).toEqual(
       manifest.contributes.commands
         .map((command: { command: string }) => command.command)
+        .concat("wintestkit.launchAppStrict")
         .sort(),
     );
     expect(mocks.registerWebviewViewProvider).toHaveBeenCalledWith(
@@ -332,6 +333,20 @@ describe("extension scaffold", () => {
     expect(mocks.endTransition).toHaveBeenCalledExactlyOnceWith(
       expect.anything(),
     );
+  });
+
+  it("propagates staged launch failure to recovery callers", async () => {
+    mocks.readConfig.mockResolvedValue({ "app.path": "C:/Apps/Demo.exe" });
+    mocks.request.mockRejectedValueOnce(new Error("Launch failed"));
+    const callback = mocks.registerCommand.mock.calls.find(
+      ([command]) => command === "wintestkit.launchAppStrict",
+    )?.[1];
+    await expect(callback?.()).rejects.toThrow("Launch failed");
+    expect(mocks.showError).not.toHaveBeenCalled();
+    expect(mocks.endTransition).toHaveBeenCalledWith(expect.anything(), {
+      action: "launch",
+      message: "Launch failed",
+    });
   });
 
   it("records a restart as one action: closing, then starting", async () => {

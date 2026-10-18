@@ -47,6 +47,9 @@ vi.mock("vscode", () => ({
   },
   ProgressLocation: { Notification: 15 },
 }));
+vi.mock("../../src/settings/files", () => ({
+  readConfiguration: vi.fn(async () => ({ launch: "per-session" })),
+}));
 import { HighlightCommands } from "../../src/editor/highlightCommands";
 import { RpcError } from "../../src/server/jsonrpc";
 const discovery = JSON.parse(
@@ -127,9 +130,17 @@ describe("editor highlight commands", () => {
       "element.highlight",
     ]);
     expect(mocks.executeCommand).toHaveBeenCalledWith(
-      "wintestkit.launchApp",
+      "wintestkit.launchAppStrict",
       { resourceUri: expect.anything() },
     );
+  });
+  it("does not retry when the staged launch command fails", async () => {
+    mocks.request.mockRejectedValueOnce(new RpcError(-32002, "Not running"));
+    mocks.info.mockResolvedValue("Launch App");
+    mocks.executeCommand.mockRejectedValueOnce(new Error("Launch failed"));
+    await mocks.commands.get("wintestkit.highlightElement")?.(target);
+    expect(mocks.request).toHaveBeenCalledOnce();
+    expect(mocks.error).toHaveBeenCalledWith("Launch failed", "Show Output");
   });
   it.each([0, 600])(
     "cleans up highlight before an undismissed launch prompt after %s ms",
@@ -174,7 +185,6 @@ describe("editor highlight commands", () => {
   it("does not repeat the launch prompt if the retry fails", async () => {
     mocks.request
       .mockRejectedValueOnce(new RpcError(-32002, "Not running"))
-      .mockResolvedValueOnce(null)
       .mockRejectedValueOnce(new RpcError(-32002, "Not running"));
     mocks.info.mockResolvedValue("Launch App");
     await mocks.commands.get("wintestkit.highlightElement")?.(target);
