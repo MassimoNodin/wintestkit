@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import difflib
 import hashlib
 import logging
 import re
@@ -26,6 +27,7 @@ class ArtifactSet:
     directory: Path
     screenshots: list[Path] = field(default_factory=lambda: [])
     tree_dump: Path | None = None
+    tree_diff: Path | None = None
 
     def add_screenshot(self, path: Path) -> None:
         if path not in self.screenshots:
@@ -104,3 +106,31 @@ def capture_failure(app: App | None, directory: Path) -> ArtifactSet:
         except Exception:
             log.warning("could not dump the UI tree", exc_info=True)
     return artifacts
+
+
+def capture_tree_text(app: App | None) -> str | None:
+    """Return a bounded UI tree for an app, or ``None`` when it is unavailable."""
+    if app is None:
+        return None
+    try:
+        from wintestkit.engine import treedump
+
+        return treedump.dump(app.main_window(), max_depth=TREE_MAX_DEPTH, max_nodes=TREE_MAX_NODES)
+    except Exception:
+        log.warning("could not capture the UI tree baseline", exc_info=True)
+        return None
+
+
+def write_tree_diff(baseline: Path, current: Path, target: Path) -> bool:
+    """Write a bounded unified diff between a previous passing tree and this failure."""
+    try:
+        before, after = baseline.read_text(encoding="utf-8"), current.read_text(encoding="utf-8")
+        diff = list(difflib.unified_diff(before.splitlines(), after.splitlines(),
+                                        fromfile="last passing UI tree", tofile="failing UI tree",
+                                        lineterm=""))
+        if not diff:
+            return False
+        target.write_text("\n".join(diff[:6000]) + "\n", encoding="utf-8")
+        return True
+    except OSError:
+        return False

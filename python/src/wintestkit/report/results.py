@@ -113,6 +113,8 @@ class RunRecorder:
                     tree = Path(event["artifactsDir"]) / "tree.txt"
                     if tree.is_file():
                         test["treeDump"] = self._relative(str(tree))
+                if "treeDiff" in event and Path(event["treeDiff"]).is_file():
+                    test["treeDiff"] = self._relative(event["treeDiff"])
         elif kind == "session_end":
             self.finished = event["time"]
             self.summary = copy.deepcopy(event["summary"])

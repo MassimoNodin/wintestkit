@@ -414,11 +414,23 @@ class _Controller:
             self._trace_window(run.trace, _funcarg(item, "app"))
         if call.excinfo is not None:
             run.exceptions[report.when or "call"] = call.excinfo
+        if report.when == "call" and report.passed:
+            # Retain only the latest bounded passing tree; report directory cleanup deliberately
+            # leaves this single baseline in place between runs.
+            tree = artifact_files.capture_tree_text(_funcarg(item, "app"))
+            if tree is not None:
+                baseline = self.config.report_dir / "ui-tree-baseline.txt"
+                baseline.write_text(tree, encoding="utf-8")
         if not report.failed or report.when == "teardown" or self.config.screenshots == "off":
             return
         directory = artifact_files.artifacts_dir(self.config.report_dir, item.nodeid)
         app = _funcarg(item, "app")
         captured = artifact_files.capture_failure(app, directory)
+        if captured.tree_dump is not None:
+            baseline = self.config.report_dir / "ui-tree-baseline.txt"
+            diff_path = directory / "tree-diff.txt"
+            if artifact_files.write_tree_diff(baseline, captured.tree_dump, diff_path):
+                captured.tree_diff = diff_path
         run.artifacts = captured
         item.stash[ARTIFACTS_KEY] = captured
         names = ", ".join(path.name for path in captured.screenshots) or "none"
@@ -471,6 +483,8 @@ class _Controller:
             event["location"] = location
         if run.artifacts is not None:
             event["artifactsDir"] = self._posix(run.artifacts.directory)
+            if run.artifacts.tree_diff is not None:
+                event["treeDiff"] = self._posix(run.artifacts.tree_diff)
         self._emit(event)
 
     def pytest_sessionfinish(self, session: pytest.Session, exitstatus: int) -> None:
