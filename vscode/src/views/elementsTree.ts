@@ -9,6 +9,7 @@ import { buildTree, type ElementNode } from "./elementsTreeModel";
 import { navigationDocument, renderBody } from "./navigationDocument";
 import {
   SECTION_LABEL,
+  navigationDescription,
   actionsFor,
   checkPresentation,
   emptyMessage,
@@ -65,6 +66,7 @@ export class ElementsTree
         "wintestkit.elements.goTo",
         (node: ElementNode) => this.openNode(node),
       ),
+      vscode.window.onDidChangeActiveTextEditor(refresh),
     ];
   }
   resolveWebviewView(view: vscode.WebviewView): void {
@@ -75,7 +77,7 @@ export class ElementsTree
       enableScripts: true,
       localResourceRoots: [icons],
     };
-    view.description = SECTION_LABEL[this.session.section];
+    view.description = this.description();
     view.webview.html = this.document(view);
     this.viewSubscriptions.forEach((subscription) => subscription.dispose());
     const listener = view.webview.onDidReceiveMessage((value: unknown) => {
@@ -231,8 +233,13 @@ export class ElementsTree
   private publish(reveal = false): void {
     if (!this.view || this.disposed) return;
     const payload = this.payload(reveal);
-    this.view.description = SECTION_LABEL[payload.section];
+    this.view.description = this.description(payload.section);
     void this.view.webview.postMessage(payload);
+  }
+  private description(section = this.session.section): string {
+    const uri = vscode.window.activeTextEditor?.document.uri;
+    const project = (uri && this.projects.projectFor(uri)) || this.projects.all[0];
+    return navigationDescription(section, project?.name);
   }
   private document(view: vscode.WebviewView): string {
     const payload = this.payload();
