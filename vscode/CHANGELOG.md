@@ -5,6 +5,8 @@ released together with the same version) are documented here.
 
 ## [Unreleased]
 
+- When a test run has failures, the HTML report opens straight away in the main editor area, with the side bar left open. **Open Report**
+  and **Open Last Report** use the same preview. Turn it off with `wintestkit.openReportOnFailure`.
 - Classified UI Automation environment failures in Test Target offer **Check Environment** for
   the originating project, while ordinary launch errors retain **Show output**.
 - Rename the navigation view to **Pages & Flows** and add an **Open Testing** toolbar action.

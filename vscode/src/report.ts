@@ -1,4 +1,5 @@
 import { existsSync } from "node:fs";
+import { readFile, stat } from "node:fs/promises";
 import * as path from "node:path";
 import * as vscode from "vscode";
 import type { Project, ServerManager } from "./server/serverManager";
@@ -13,6 +14,36 @@ export function reportPath(
   if (!reportDir) return undefined;
   const candidate = path.resolve(root, reportDir, "index.html");
   return exists(candidate) ? candidate : undefined;
+}
+
+/** Points the report's relative screenshot and trace paths at the folder it was written to. */
+export function previewHtml(html: string, baseHref: string): string {
+  const base = `<base href="${baseHref.replace(/"/g, "&quot;")}">`;
+  return /<head[^>]*>/i.test(html)
+    ? html.replace(/<head[^>]*>/i, (head) => head + base)
+    : base + html;
+}
+
+/**
+ * The test run announces its report before the file is written, so wait until it exists and has
+ * stopped growing. Resolves false if it never appears.
+ */
+export async function waitForFile(
+  file: string,
+  timeoutMs = 15000,
+  size: (file: string) => Promise<number | undefined> = async (target) =>
+    stat(target).then((info) => info.size, () => undefined),
+  sleep: (ms: number) => Promise<void> = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+): Promise<boolean> {
+  const step = 150;
+  let previous: number | undefined;
+  for (let waited = 0; waited <= timeoutMs; waited += step) {
+    const current = await size(file);
+    if (current !== undefined && current > 0 && current === previous) return true;
+    previous = current;
+    await sleep(step);
+  }
+  return false;
 }
 
 export function failureMessage(failed: number): string {
@@ -33,6 +64,8 @@ export class Reports {
   private latest: string | undefined;
   private readonly summaries = new Map<string, LastRunSummary>();
   private readonly listeners = new Set<(project: Project) => void>();
+  private panel?: vscode.WebviewPanel;
+  private panelDir?: string;
   constructor(
     private readonly servers: ServerManager,
     private readonly log: vscode.LogOutputChannel,
@@ -59,7 +92,47 @@ export class Reports {
       this.last.set(key, file);
       this.latest = file;
     } else this.last.delete(key);
-    if (failed > 0) void this.notify(failed, file);
+    if (failed > 0) void this.onFailure(failed, file);
+  }
+  /** Opens the report straight away; the toast is only the fallback when that is off or fails. */
+  private async onFailure(failed: number, file: string | undefined): Promise<void> {
+    if (file) {
+      try {
+        if (vscode.workspace.getConfiguration("wintestkit").get<boolean>("openReportOnFailure", true)) {
+          await this.preview(file);
+          return;
+        }
+      } catch (error) {
+        this.log?.warn?.(`Cannot preview the report: ${String(error)}`);
+      }
+    }
+    await this.notify(failed, file);
+  }
+  /** Shows the HTML report in the main editor area, leaving the side bar as it is, reusing one panel. */
+  async preview(file: string): Promise<void> {
+    const dir = path.dirname(file);
+    if (!(await waitForFile(file))) throw new Error(`the report was not written: ${file}`);
+    const html = await readFile(file, "utf8");
+    if (this.panel && this.panelDir !== dir) this.panel.dispose();
+    if (!this.panel) {
+      const panel = vscode.window.createWebviewPanel(
+        "wintestkit.report",
+        "WinTestKit Report",
+        { viewColumn: vscode.ViewColumn.Active, preserveFocus: false },
+        {
+          enableScripts: true,
+          retainContextWhenHidden: true,
+          localResourceRoots: [vscode.Uri.file(dir)],
+        },
+      );
+      panel.onDidDispose(() => {
+        if (this.panel === panel) this.panel = undefined;
+      });
+      this.panel = panel;
+      this.panelDir = dir;
+    } else this.panel.reveal(vscode.ViewColumn.Active, false);
+    const base = this.panel.webview.asWebviewUri(vscode.Uri.file(dir)).toString();
+    this.panel.webview.html = previewHtml(html, base.endsWith("/") ? base : base + "/");
   }
 
   async open(project: Project | undefined): Promise<void> {
@@ -83,7 +156,7 @@ export class Reports {
       );
       return;
     }
-    await vscode.env.openExternal(vscode.Uri.file(file));
+    await this.preview(file);
   }
 
   private async notify(
@@ -97,8 +170,7 @@ export class Reports {
       ...(file ? [openReport] : []),
       showResults,
     );
-    if (choice === openReport && file)
-      await vscode.env.openExternal(vscode.Uri.file(file));
+    if (choice === openReport && file) await this.preview(file);
     else if (choice === showResults)
       await vscode.commands.executeCommand("testing.showMostRecentOutput");
   }

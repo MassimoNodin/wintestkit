@@ -49,7 +49,7 @@ vi.mock("vscode", () => ({
   },
 }));
 import { StatusBar } from "../../src/statusBar";
-import { parseTestAppMessage } from "../../src/settings/testApp";
+import { parseTestAppMessage, TestAppView } from "../../src/settings/testApp";
 
 const project = { name: "demo" };
 const launchable = {
@@ -357,6 +357,15 @@ describe("Test Target messages and manifest", () => {
     expect(app).toMatchObject({ chevron: true, trailing: "list-selection" });
     expect(mode).toMatchObject({ chevron: true, trailing: "list-selection" });
     expect(build({}, { running: false }).tiles[1].trailing).toBe("list-selection");
+  });
+  it("clears the activity bar badge when the extension shuts down", () => {
+    const projects = { onDidChange: () => ({ dispose() {} }), all: [] };
+    const status = { onDidChangeApplication: () => ({ dispose() {} }) };
+    const view = new TestAppView(projects as never, status as never, {} as never, {} as never);
+    const fake = { badge: { value: 1, tooltip: "The last test run failed" } };
+    (view as unknown as { view: typeof fake }).view = fake;
+    view.dispose();
+    expect(fake.badge).toBeUndefined();
   });
   it("accepts only known tiles", () => {
     expect(parseTestAppMessage({ type: "ready" })).toEqual({ type: "ready" });

@@ -299,6 +299,11 @@
           "default": false,
           "description": "Bring an application's window to the front (without taking focus from VS Code) when you select or highlight one of its objects in Spy. The outline is drawn above every window either way."
         },
+        "wintestkit.openReportOnFailure": {
+          "type": "boolean",
+          "default": true,
+          "description": "Open the HTML report straight away in the main editor area when a test run has failures. When off, a notification offers to open it."
+        },
         "wintestkit.spy.markDefinedObjects": {
           "type": "boolean",
           "default": true,
