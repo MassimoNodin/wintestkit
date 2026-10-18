@@ -125,10 +125,16 @@ export class ProjectSweep implements vscode.Disposable {
             continue;
           }
           if (cancelled) break;
-          const result = await connection.client.request<PageCheckResult>(
-            "page.check",
-            { file: binding.file, page: binding.page },
-          );
+          let result: PageCheckResult;
+          try {
+            result = await connection.client.request<PageCheckResult>(
+              "page.check",
+              { file: binding.file, page: binding.page },
+            );
+          } catch (error) {
+            entries.push(`- ${binding.page}: check failed: ${String(error)}`);
+            continue;
+          }
           const failures = result.results.filter((item) => item.status !== "found");
           entries.push(
             `- ${binding.page}: ${result.results.length - failures.length}/${result.results.length} found${failures.length ? `; ${failures.length} not found or errors` : ""}`,
