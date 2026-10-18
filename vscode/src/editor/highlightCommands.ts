@@ -269,11 +269,41 @@ export class HighlightCommands implements vscode.Disposable {
         if (this.checks.setFeedback(located, "check", checked, pendingStatus))
           this.checks.set({ ...located, result: checked });
       }
-      if (!filter)
+      if (!filter) {
+        const summary = summarizeChecks(result.results);
         vscode.window.setStatusBarMessage(
-          summarizeChecks(result.results),
+          summary,
           5000,
         );
+        const failures = result.results.filter((item) => item.status !== "found");
+        if (failures.length) {
+          const choice = await vscode.window.showInformationMessage(
+            summary,
+            "View failures",
+          );
+          if (choice === "View failures") {
+            const selected = await vscode.window.showQuickPick(
+              failures.map((item) => ({
+                label: item.qualname,
+                description: item.status === "not_found" ? "Not found on the current screen" : item.status,
+                detail: item.diagnostic?.relocations?.map((relocation) => relocation.path ?? relocation.window).join("; ") ?? item.diagnostic?.hint ?? item.message,
+                item,
+              })),
+              { title: "Check failures", placeHolder: "Select an element to open its definition" },
+            );
+            if (selected) {
+              const definition = page.elements.find((element) => element.qualname === selected.item.qualname);
+              if (definition) {
+                const document = await vscode.workspace.openTextDocument(target.file);
+                const editor = await vscode.window.showTextDocument(document);
+                const position = new vscode.Position(definition.range.start.line, definition.range.start.character);
+                editor.selection = new vscode.Selection(position, position);
+                editor.revealRange(new vscode.Range(position, position), vscode.TextEditorRevealType.InCenter);
+              }
+            }
+          }
+        }
+      }
     } catch (error) {
       for (const element of elements) {
         const result = {

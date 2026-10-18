@@ -1,6 +1,6 @@
 import type { CheckResult } from "../protocol/generated";
 
-/** Status-bar summary of a page check; not found = broken or moved. */
+/** Summary reflects the current screen; not-found results can be state-dependent. */
 export function summarizeChecks(results: readonly CheckResult[]): string {
   const count = (status: CheckResult["status"]) =>
     results.filter((r) => r.status === status).length;
@@ -14,7 +14,7 @@ export function summarizeChecks(results: readonly CheckResult[]): string {
     found +
     " found, " +
     broken +
-    " broken/moved" +
+    " not found (possibly off-screen, broken, or moved)" +
     (errors ? ", " + errors + " errors" : "") +
     "."
   );

@@ -148,7 +148,7 @@ export function buildLenses(
       "$(checklist) Check all elements in this class exist",
       "wintestkit.checkPage",
       { file, page: page.qualname },
-      page.qualname,
+      "Checks these elements against the app's current screen. Elements on screens that are not open may be reported as not found.",
     );
     if (!classOnly) for (const element of page.elements) {
       const status = feedback.get(element.id);
