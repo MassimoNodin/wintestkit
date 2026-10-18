@@ -186,7 +186,7 @@ export function activate(context: vscode.ExtensionContext): {
     withProject(async (project) => {
       const closing = methods.includes("app.close");
       if (closing) {
-        const config = await readConfiguration(project.root).catch(() => ({}));
+        const config = await readConfiguration(project.root);
         if (config.launch === "attach") {
           const name = String(config["app.process"] ?? "the attached app").replace(/\.exe$/i, "");
           const answer = await vscode.window.showWarningMessage(
