@@ -3,8 +3,9 @@ import { readFile } from "node:fs/promises";
 import * as path from "node:path";
 import * as vscode from "vscode";
 import type { Projects } from "../projects";
+import type { Reports } from "../report";
 import type { AppProcessesResult } from "../protocol/generated";
-import type { ServerManager } from "../server/serverManager";
+import type { Project, ServerManager } from "../server/serverManager";
 import type { StatusBar } from "../statusBar";
 import { executableIcon } from "./appIcon";
 import { readConfiguration, writeLocalSettings } from "./files";
@@ -30,6 +31,8 @@ const TILES = new Set<string>([
   "output",
   "doctor",
   "dismiss",
+  "openReport",
+  "dismissRun",
 ]);
 
 /** Non-breaking spaces, which a quick pick keeps, so its icons are not jammed against the label. */
@@ -61,8 +64,10 @@ export class TestAppView
     private readonly status: StatusBar,
     private readonly servers: ServerManager,
     private readonly extensionUri: vscode.Uri,
+    private readonly reports?: Reports,
   ) {
     this.subscriptions = [
+      ...(reports ? [reports.onDidChange(() => this.refresh())] : []),
       projects.onDidChange(() => this.refresh()),
       status.onDidChangeApplication(() => this.refresh()),
       vscode.window.onDidChangeActiveTextEditor(() => this.refresh()),
@@ -164,10 +169,15 @@ export class TestAppView
         config,
         state: this.status.applicationState(project),
         icon: source ? this.icon(source) : undefined,
+        lastRun: this.shownLastRun(project),
       });
     } catch (error) {
       return buildTestAppModel({ ...common, configError: String(error) });
     }
+  }
+  private shownLastRun(project: Project) {
+    const summary = this.reports?.lastRun(project);
+    return summary && !summary.dismissed ? summary : undefined;
   }
   private icon(source: string): string | undefined {
     if (!this.icons.has(source) && !this.pendingIcons.has(source)) {
@@ -215,6 +225,10 @@ export class TestAppView
           ));
         case "dismiss":
           return project ? this.status.clearAttachFailure(project) : undefined;
+        case "openReport":
+          return await this.reports?.open(project);
+        case "dismissRun":
+          return this.reports?.dismissLastRun(project);
         case "refresh":
           return void (await this.status.refresh());
         case "output":

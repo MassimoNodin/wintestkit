@@ -82,8 +82,9 @@ need a run from the terminal.)
 **Export HTML** in the panel's header (or **WinTestKit: Export Last Report as HTML**) saves the report
 as one self-contained HTML file, by default into the report folder where its screenshots and replay frames
 are found; if you save it elsewhere, keep or copy the `artifacts` folder with it.
-The Pages & Flows view also shows the current project's last-run totals and an **Open report**
-action. Runs from the Testing view record a test replay by default (`--replay on`) unless the project,
+The Test Target section shows the last run's time and totals as a notice with a **View the Report**
+link. Close it with the **×**; it also goes when VS Code clears that run's results or the window is
+reloaded. Runs from the Testing view record a test replay by default (`--replay on`) unless the project,
 the `WTK_REPLAY` environment variable or `wintestkit.run.extraArgs` choose a replay mode; set
 `replay: off` in the project settings to turn this off. **Run with recording** keeps only the
 replays of failed tests. All new report images use lossless WebP, including replay frames,

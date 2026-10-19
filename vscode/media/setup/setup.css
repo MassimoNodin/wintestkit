@@ -9,6 +9,7 @@
     --warn: var(--vscode-editorWarning-foreground, #cca700);
     --error: var(--vscode-errorForeground, #f14c4c);
     --orange: var(--vscode-charts-orange, #d18616);
+    --info: var(--vscode-notificationsInfoIcon-foreground, #3794ff);
 }
 * {
     box-sizing: border-box;
@@ -197,6 +198,50 @@ p {
 }
 .hint[data-tone="warn"] .hint-icon {
     color: var(--warn);
+}
+.hint[data-tone="info"] {
+    background: color-mix(in srgb, var(--info) 14%, var(--surface));
+    border-color: color-mix(in srgb, var(--info) 55%, var(--border));
+}
+.hint[data-tone="info"] .hint-icon {
+    color: var(--info);
+}
+.last-run .hint-text {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 14px;
+}
+.last-run .run-label {
+    line-height: 16px;
+}
+.run-label {
+    font-weight: 600;
+}
+.run-count,
+.run-report {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    line-height: 16px;
+}
+.run-count .codicon,
+.hint button.hint-action .codicon {
+    font-size: 16px;
+    line-height: 16px;
+}
+.run-count.passed .codicon {
+    color: var(--ok);
+}
+.run-count.failed .codicon {
+    color: var(--error);
+}
+.hint button.hint-action {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: inherit;
+    line-height: 16px;
 }
 .hint button.hint-dismiss {
     display: inline-flex;

@@ -147,10 +147,6 @@ export class ElementsTree
       : buildProjectTree(discoveries);
   }
   private onMessage(value: unknown): void {
-    if (value && typeof value === "object" && (value as { type?: unknown }).type === "openLastReport") {
-      void this.reports?.open(this.currentProject());
-      return;
-    }
     if (value && typeof value === "object" && (value as { type?: unknown }).type === "openGettingStarted") {
       void vscode.commands.executeCommand("wintestkit.openGettingStarted");
       return;
@@ -318,7 +314,6 @@ export class ElementsTree
           ? "No unused definitions found. Every scanned definition has at least one reference."
           : undefined,
         showInitialize: !hasProject,
-        lastRun: this.reports?.lastRun(this.currentProject()),
       }),
       ...(unusedState ? { unused: unusedState } : {}),
     };

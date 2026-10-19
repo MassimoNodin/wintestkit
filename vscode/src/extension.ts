@@ -79,11 +79,18 @@ export function activate(context: vscode.ExtensionContext): {
   };
   const status = new StatusBar(servers, currentProject);
   const configuration = new ConfigurationEditor(projects, context.extensionUri);
+  const reports = new Reports(
+    servers,
+    log,
+    context.globalState,
+    context.asAbsolutePath("media/report/template.html"),
+  );
   const setup = new TestAppView(
     projects,
     status,
     servers,
     context.extensionUri,
+    reports,
   );
   context.subscriptions.push(
     setup,
@@ -144,12 +151,6 @@ export function activate(context: vscode.ExtensionContext): {
   const checkAfterFlow = new CheckAfterFlow(projects, discovery, context.workspaceState);
   const projectSweep = new ProjectSweep(projects, discovery, servers, context.workspaceState);
   const flows = new FlowRuns(projects, discovery, servers, log, (file, name) => checkAfterFlow.afterFlow(file, name));
-  const reports = new Reports(
-    servers,
-    log,
-    context.globalState,
-    context.asAbsolutePath("media/report/template.html"),
-  );
   const lenses = new CodeLenses(projects, discovery, checks, flows);
   const unused = new UnusedDefinitions(projects, discovery);
   const elements = new ElementsTree(
