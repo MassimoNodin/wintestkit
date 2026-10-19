@@ -89,6 +89,9 @@ orders-tests/
   pages/
     __init__.py
     main.py
+  flows/
+    __init__.py
+    main.py
   tests/
     test_smoke.py
 ```
