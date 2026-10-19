@@ -73,7 +73,9 @@ The Pages & Flows view also shows the current project's last-run totals and an *
 action. Runs from the Testing view record a test replay by default (`--replay on`) unless the project,
 the `WTK_REPLAY` environment variable or `wintestkit.run.extraArgs` choose a replay mode; set
 `replay: off` in the project settings to turn this off. **Run with recording** keeps only the
-replays of failed tests. Failed-test reports open with the failed test's evidence, including
+replays of failed tests. All new report images use lossless WebP, including replay frames,
+failure screenshots and step screenshots; existing PNG reports remain readable.
+Failed-test reports open with the failed test's evidence, including
 the Test Replay when frames were captured. The report follows the VS Code theme until you pick light or
 dark with the button in its header; that choice is remembered across reloads and updates.
 

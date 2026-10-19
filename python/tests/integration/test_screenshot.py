@@ -1,23 +1,24 @@
 """Desktop screenshot and rectangle tests without a fixture app."""
 
-import struct
+from io import BytesIO
 
 import pytest
+from PIL import Image
 
 from wintestkit.uia import element, screenshot, win32
 
 pytestmark = pytest.mark.integration
 
 
-def png_size(png: bytes) -> tuple[int, int]:
-    assert png[:8] == b"\x89PNG\r\n\x1a\n"
-    width, height = struct.unpack(">II", png[16:24])
-    return width, height
+def webp_size(captured: bytes) -> tuple[int, int]:
+    with Image.open(BytesIO(captured)) as image:
+        assert image.format == "WEBP"
+        return image.size
 
 
 def test_capture_screen_matches_virtual_screen() -> None:
     screen = win32.virtual_screen_rect()
-    assert png_size(screenshot.capture_screen()) == (screen.width, screen.height)
+    assert webp_size(screenshot.capture_screen()) == (screen.width, screen.height)
 
 
 def test_capture_rejects_empty_rect() -> None:

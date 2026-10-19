@@ -7,14 +7,24 @@ import logging
 import threading
 import time
 from collections.abc import Callable
+from io import BytesIO
 from pathlib import Path
 from typing import Any
 
-from wintestkit.uia.png import encode_png
+from PIL import Image
+
+from wintestkit.uia.webp import encode_webp
 
 Pixels = tuple[int, int, bytes]
 
 log = logging.getLogger("wintestkit.replay")
+
+
+def _encode_frame(captured: bytes | Pixels) -> bytes:
+    if isinstance(captured, tuple):
+        return encode_webp(*captured)
+    with Image.open(BytesIO(captured)) as source, source.convert("RGB") as image:
+        return encode_webp(image.width, image.height, image.tobytes())
 
 
 class ReplayRecorder:
@@ -69,7 +79,7 @@ class ReplayRecorder:
         from wintestkit.uia import screenshot
 
         if self.scope == "desktop":
-            return screenshot.capture_screen()
+            return screenshot.capture_screen_pixels()
         if self.window is None:
             return None
         return screenshot.capture_window_pixels(self.window, self.window_pid)
@@ -86,20 +96,20 @@ class ReplayRecorder:
             digest = hashlib.sha256(captured).digest()
         if digest == self._digest:
             return
-        png = encode_png(*captured) if isinstance(captured, tuple) else captured
-        if len(self.frames) >= self.max_frames or self._bytes + len(png) > self.max_bytes:
+        encoded = _encode_frame(captured)
+        if len(self.frames) >= self.max_frames or self._bytes + len(encoded) > self.max_bytes:
             self.truncated = True
             return
         self.directory.mkdir(parents=True, exist_ok=True)
-        path = self.directory / f"{len(self.frames):06d}.png"
-        path.write_bytes(png)
+        path = self.directory / f"{len(self.frames):06d}.webp"
+        path.write_bytes(encoded)
         if self._stop.is_set():
             path.unlink(missing_ok=True)
             return
         self.frames.append(
             {"time": timestamp, "path": path.relative_to(self.report_dir).as_posix()}
         )
-        self._bytes += len(png)
+        self._bytes += len(encoded)
         self._digest = digest
 
     def _run(self) -> None:

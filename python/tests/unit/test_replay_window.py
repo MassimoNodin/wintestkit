@@ -37,7 +37,7 @@ def test_window_capture_uses_window_renderer(monkeypatch: pytest.MonkeyPatch) ->
         return 1, 1, b"\x00\x00\x00"
 
     monkeypatch.setattr(screenshot, "_capture_pixels", pixels)
-    assert screenshot.capture_window(42) == screenshot.encode_png(1, 1, b"\x00\x00\x00")
+    assert screenshot.capture_window(42) == screenshot.encode_webp(1, 1, b"\x00\x00\x00")
     assert calls == [(Rect(10, 20, 100, 80), 42, Rect(7, 0, 86, 73))]
 
 

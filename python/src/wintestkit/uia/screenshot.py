@@ -1,15 +1,19 @@
 # pyright: basic
-"""Screen capture to PNG using GDI."""
+"""Lossless WebP screen capture using GDI, with explicit PNG export."""
 
 from __future__ import annotations
 
 import ctypes
+from io import BytesIO
 from pathlib import Path
+
+from PIL import Image
 
 from wintestkit.errors import EnvironmentNotReadyError
 from wintestkit.uia import win32
 from wintestkit.uia.element import Rect, UIAElement
 from wintestkit.uia.png import encode_png
+from wintestkit.uia.webp import encode_webp
 
 DWMWA_EXTENDED_FRAME_BOUNDS = 9
 
@@ -24,7 +28,7 @@ def clip(rect: Rect, bounds: Rect) -> Rect | None:
 
 
 def capture(rect: Rect) -> bytes:
-    """Capture a screen rectangle (physical pixels, virtual-screen coordinates) as PNG bytes."""
+    """Capture a screen rectangle (physical pixels, virtual-screen coordinates) as WebP bytes."""
     return _capture_bitmap(rect)
 
 
@@ -33,7 +37,7 @@ Pixels = tuple[int, int, bytes]
 
 
 def _capture_bitmap(rect: Rect, hwnd: int | None = None, crop: Rect | None = None) -> bytes:
-    return encode_png(*_capture_pixels(rect, hwnd, crop))
+    return encode_webp(*_capture_pixels(rect, hwnd, crop))
 
 
 def _capture_pixels(rect: Rect, hwnd: int | None = None, crop: Rect | None = None) -> Pixels:
@@ -130,7 +134,12 @@ def _capture_pixels(rect: Rect, hwnd: int | None = None, crop: Rect | None = Non
 
 def capture_screen() -> bytes:
     """Capture the whole virtual screen."""
-    return capture(win32.virtual_screen_rect())
+    return encode_webp(*capture_screen_pixels())
+
+
+def capture_screen_pixels() -> Pixels:
+    """Capture uncompressed desktop pixels so replay can deduplicate before encoding."""
+    return _capture_pixels(win32.virtual_screen_rect())
 
 
 def capture_element(el: UIAElement) -> bytes | None:
@@ -165,7 +174,7 @@ def _visible_frame(hwnd: int, window: Rect) -> Rect | None:
 def capture_window(hwnd: int, expected_pid: int | None = None) -> bytes | None:
     """Render only the target HWND; never fall back to overlapping desktop pixels."""
     pixels = capture_window_pixels(hwnd, expected_pid)
-    return encode_png(*pixels) if pixels is not None else None
+    return encode_webp(*pixels) if pixels is not None else None
 
 
 def capture_window_pixels(hwnd: int, expected_pid: int | None = None) -> Pixels | None:
@@ -218,9 +227,18 @@ def trim_black_edges(width: int, height: int, rgb: bytes, limit: int = 2) -> Pix
     return right - left, bottom - top, trimmed
 
 
-def save(png: bytes, path: Path) -> Path:
-    """Write PNG bytes to ``path``, creating parent directories."""
+def save(image: bytes, path: Path) -> Path:
+    """Save to ``.webp`` (lossless) or explicitly export to ``.png`` without changing pixels."""
     path = Path(path)
+    formats = {".webp": "WEBP", ".png": "PNG"}
+    target_format = formats.get(path.suffix.lower())
+    if target_format is None:
+        raise ValueError("screenshot path must end in .webp or .png")
+    with Image.open(BytesIO(image)) as source:
+        if source.format != target_format:
+            with source.convert("RGB") as pixels:
+                encoder = encode_webp if target_format == "WEBP" else encode_png
+                image = encoder(pixels.width, pixels.height, pixels.tobytes())
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(png)
+    path.write_bytes(image)
     return path

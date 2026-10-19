@@ -33,6 +33,18 @@ describe("report page built from results.json", () => {
     expect(embedded(html).tests[0]).toMatchObject({ id: "t.py::a", outcome: "passed" });
   });
 
+  it.each(["png", "webp"])("preserves %s screenshot and replay paths", async (extension) => {
+    const test = {
+      id: "t.py::a", outcome: "failed",
+      screenshots: [`artifacts/window.${extension}`, `artifacts/desktop.${extension}`],
+      steps: [{ screenshot: `artifacts/steps/1.${extension}` }],
+      replay: { frames: [{ time: 0, path: `artifacts/replay/000000.${extension}` }] },
+    };
+    await save({ version: 1, tests: [test] });
+    const html = await buildReportHtml(dir, await readFile(TEMPLATE, "utf8"));
+    expect(embedded(html).tests[0]).toEqual(test);
+  });
+
   it("keeps test content from ending the script element or being run", async () => {
     await save({ version: 1, tests: [{ id: "x", message: "</script><img src=x onerror=alert(1)>$&" }] });
     const html = await buildReportHtml(dir, "<script type=\"application/json\" id=\"wtk-data\">__WTK_DATA__</script>");
