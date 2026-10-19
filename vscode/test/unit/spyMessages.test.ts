@@ -24,7 +24,7 @@ describe("Spy message contract", () => {
       showOtherApps: true,
     });
     expect(parseSpyRequest({ type: "chooseApp" })).toEqual({ type: "chooseApp" });
-    expect(parseSpyRequest({ type: "openGettingStarted" })).toEqual({ type: "openGettingStarted" });
+    expect(parseSpyRequest({ type: "openGettingStarted" })).toBeUndefined();
     expect(parseSpyRequest({ type: "ready", showOtherApps: "yes" })).toEqual({
       type: "ready",
     });

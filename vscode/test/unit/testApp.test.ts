@@ -1,13 +1,15 @@
 import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type * as vscode from "vscode";
+import * as vscode from "vscode";
 import type { ServerManager, Project } from "../../src/server/serverManager";
 import {
   buildTestAppModel,
+  interpreterTile,
   launchModeId,
   modeChoices,
 } from "../../src/settings/testAppModel";
 import type { ApplicationState } from "../../src/statusBar";
+import * as configurationFiles from "../../src/settings/files";
 
 const mocks = vi.hoisted(() => ({
   request: vi.fn(),
@@ -35,6 +37,7 @@ vi.mock("vscode", () => ({
     },
   },
   window: {
+    showQuickPick: vi.fn(),
     get activeTextEditor() {
       return undefined;
     },
@@ -49,6 +52,10 @@ vi.mock("vscode", () => ({
     registerCommand: () => ({ dispose() {} }),
   },
 }));
+vi.mock("../../src/python", () => ({
+  describeInterpreter: vi.fn(async () => undefined),
+  onDidChangeInterpreter: vi.fn(async () => ({ dispose() {} })),
+}));
 import { StatusBar } from "../../src/statusBar";
 import { parseTestAppMessage, TestAppView } from "../../src/settings/testApp";
 
@@ -62,15 +69,98 @@ const build = (
   config: Record<string, unknown>,
   state?: ApplicationState,
   extra: Partial<Parameters<typeof buildTestAppModel>[0]> = {},
-) => buildTestAppModel({ project, trusted: true, projectCount: 2, config, state, ...extra });
+) => buildTestAppModel({ project, trusted: true, config, state, ...extra });
 const ids = (model: ReturnType<typeof build>) =>
   model.tiles.map((tile) => tile.id);
 
 describe("Test Target tiles", () => {
-  it("offers to initialize a project when there is none", () => {
+  it.each(["interpreter", "package", "machine", "project", "app", "mode", "launch"] as const)(
+    "shows only interpreter and initialization before a project exists on the %s step", (step) => {
+      const strip = {
+        state: "ok" as const, text: "wintestkit 0.1.1",
+        source: { value: "local" as const, wheel: "C:/build/wintestkit.whl" },
+        action: { id: "installPackage" as const, label: "Install selected wheel" },
+      };
+      const model = buildTestAppModel({
+        trusted: true, interpreter: { name: "Python", path: "C:/python.exe", strip },
+        tour: {
+          step, phase: "setup", kind: "todo", title: "Setup", text: "Instructions",
+          lit: [], panel: false, buttons: [], canBack: true, canNext: false,
+        },
+      });
+      expect(model.kind).toBe("app");
+      expect(ids(model)).toEqual(["interpreter", "initProject"]);
+      expect(model.tiles[0].strip).toMatchObject({ state: "ok", text: "wintestkit 0.1.1" });
+      expect(model.tiles[0].strip?.source).toEqual(step === "package" ? strip.source : undefined);
+      expect(model.tiles[0].strip?.action).toEqual(step === "package" ? strip.action : undefined);
+      expect(model.tiles[0].disabled).toBeUndefined();
+      expect(model.tiles[1].disabled).toBeUndefined();
+    },
+  );
+  it.each(["interpreter", "package", "machine", "project", "app", "mode", "launch", "complete", "spy", "test"] as const)(
+    "keeps normal tiles and status while showing only the %s step's setup extras", (step) => {
+      const strip = {
+        state: "ok" as const, text: "wintestkit 0.1.1", tooltip: "Installed package",
+        source: { value: "local" as const, wheel: "C:/build/wintestkit.whl" },
+        action: { id: "installPackage" as const, label: "Install selected wheel" },
+      };
+      const input = {
+        interpreter: { name: "Python", version: "3.14.7", path: "C:/python.exe", strip },
+        tour: {
+          step, phase: "setup" as const, kind: "todo" as const, title: "Setup", text: "Instructions",
+          lit: [], panel: false, buttons: [], canBack: true, canNext: false,
+        },
+      };
+      const model = build(launchable, { running: false }, input);
+      expect(ids(model)).toEqual(["interpreter", "app", "mode", "launch"]);
+      expect(model.tiles[0]).toMatchObject({ title: "Python", subtitle: "Python 3.14.7" });
+      expect(model.tiles[0].strip).toMatchObject({ state: "ok", text: "wintestkit 0.1.1", tooltip: "Installed package" });
+      expect(model.tiles[0].strip?.source).toEqual(step === "package" ? strip.source : undefined);
+      expect(model.tiles[0].strip?.action).toEqual(step === "package" ? strip.action : undefined);
+      expect(build(launchable, { running: false }, { ...input, tour: undefined }).tiles[0].strip).toEqual(strip);
+    },
+  );
+  it("keeps initialization available before the project exists and removes it afterward", () => {
+    const tour = {
+      step: "project" as const, phase: "setup" as const, kind: "todo" as const,
+      title: "Create project", text: "Use Test Target", lit: ["project" as const],
+      panel: false, buttons: [], canBack: true, canNext: false,
+    };
+    const ready = buildTestAppModel({ trusted: true, tour });
+    expect(ready.tiles.map((tile) => tile.id)).toEqual(["interpreter", "initProject"]);
+    expect(ready.tour?.buttons).toEqual([]);
+    const busy = buildTestAppModel({ trusted: true, tour, initializing: true });
+    expect(busy.tiles.at(-1)).toMatchObject({ id: "initProject", disabled: true, busy: true, codicon: "loading" });
+    const machine = buildTestAppModel({ trusted: true, tour: { ...tour, step: "machine", lit: ["machine"] } });
+    expect(machine.tiles.map((tile) => tile.id)).toEqual(["interpreter", "initProject"]);
+    const initialized = buildTestAppModel({ trusted: true, project, tour });
+    expect(ids(initialized)).toEqual(["interpreter", "app", "mode", "launch"]);
+    expect(parseTestAppMessage({ type: "tile", id: "initProject" })).toEqual({ type: "tile", id: "initProject" });
+  });
+  it("asks to choose an application instead of showing the starter placeholder", () => {
+    const model = build({ "app.path": "C:/path/to/YourApp.exe" });
+    expect(model.tiles.find((tile) => tile.id === "app")?.title).not.toBe("YourApp");
+    expect(model.tiles.find((tile) => tile.id === "launch")?.disabled).toBe(true);
+  });
+  it("rejects local source messages in normal builds, including forged messages", () => {
+    vi.stubGlobal("__WTK_DEV__", false);
+    expect(parseTestAppMessage({ type: "packageSource", source: "local" })).toBeUndefined();
+    expect(parseTestAppMessage({ type: "packageSource", source: "remote" })).toBeUndefined();
+    vi.unstubAllGlobals();
+  });
+  it("accepts only valid source values in development builds", () => {
+    vi.stubGlobal("__WTK_DEV__", true);
+    expect(parseTestAppMessage({ type: "packageSource", source: "local" })).toEqual({ type: "packageSource", source: "local" });
+    expect(parseTestAppMessage({ type: "packageSource", source: "remote" })).toEqual({ type: "packageSource", source: "remote" });
+    expect(parseTestAppMessage({ type: "packageSource", source: "file:///evil" })).toBeUndefined();
+    vi.unstubAllGlobals();
+  });
+  it("does not show project initialization before the guide reaches that step", () => {
     const model = buildTestAppModel({ trusted: true });
     expect(model.kind).toBe("empty");
-    expect(ids(model)).toEqual(["init"]);
+    expect(model.tiles).toEqual([]);
+    expect(model.message?.text).toContain("No WinTestKit project");
+    expect(parseTestAppMessage({ type: "tile", id: "init" })).toBeUndefined();
   });
   it("shows no tiles in an untrusted workspace", () => {
     const model = buildTestAppModel({ project, trusted: false });
@@ -78,11 +168,11 @@ describe("Test Target tiles", () => {
     expect(model.tiles).toEqual([]);
     expect(model.message?.tone).toBe("warn");
   });
-  it("lays out project, app, mode and launch tiles when stopped", () => {
+  it("lays out interpreter, app, mode and launch tiles when stopped", () => {
     const model = build(launchable, { running: false });
     expect(model.status).toEqual({ label: "Stopped", tone: "idle" });
-    expect(ids(model)).toEqual(["project", "app", "mode", "launch"]);
-    const [projectTile, app, mode, launch] = model.tiles;
+    expect(ids(model)).toEqual(["interpreter", "app", "mode", "launch"]);
+    const [interpreter, app, mode, launch] = model.tiles;
     expect(app).toMatchObject({ title: "Demo", chevron: true });
     expect(app.tooltip).toContain("C:/Apps/Demo.exe");
     expect(mode).toMatchObject({
@@ -90,10 +180,7 @@ describe("Test Target tiles", () => {
       codicon: "rocket",
       chevron: true,
     });
-    expect(projectTile).toMatchObject({
-      title: "demo",
-      codicon: "folder-opened",
-    });
+    expect(interpreter).toMatchObject({ title: "Select interpreter", codicon: "server-environment", tone: "warn" });
     expect(launch).toMatchObject({ title: "Launch", tone: "launch" });
     expect(launch.disabled).toBeFalsy();
   });
@@ -117,19 +204,36 @@ describe("Test Target tiles", () => {
     expect(launchModeId("per-session")).toBe("per-test");
     expect(launchModeId("attach")).toBe("attach");
   });
-  it("always shows the project tile, with the workspace as its title and the project as a subtitle", () => {
-    const tile = (extra: Parameters<typeof build>[2]) =>
-      build(launchable, { running: false }, extra).tiles[0];
-    expect(tile({ workspaceName: "Calculator", projectCount: 1 })).toMatchObject({
-      id: "project",
-      title: "Calculator",
-      subtitle: "demo",
+  it("shows the Python interpreter as the first tile, and what is wrong with it", () => {
+    const tile = (interpreter?: Parameters<typeof interpreterTile>[0]) =>
+      build(launchable, { running: false }, { interpreter }).tiles[0];
+    expect(tile({ name: ".venv", version: "3.13.5", path: "C:/work/.venv/Scripts/python.exe" })).toMatchObject({
+      id: "interpreter",
+      title: ".venv",
+      subtitle: "Python 3.13.5",
+      codicon: "server-environment",
+      tone: "project",
+      chevron: true,
+      trailing: "list-selection",
     });
-    expect(tile({ workspaceName: "Calculator", projectCount: 3 }).title).toBe("Calculator");
-    const same = tile({ workspaceName: "demo" });
-    expect(same.title).toBe("demo");
-    expect(same.subtitle).toBeUndefined();
-    expect(tile({ projectCount: 1 }).title).toBe("demo");
+    expect(tile({ name: ".venv", path: "C:/p.exe" }).subtitle).toBeUndefined();
+    expect(tile({ name: ".venv", path: "C:/p.exe", overridden: true }).tooltip).toContain("wintestkit.pythonPath");
+    // Whether the package is installed is the strip under the tile; the tile itself only changes interpreter.
+    const strip = { state: "missing" as const, text: "wintestkit not installed", action: { id: "installPackage" as const, label: "Install" } };
+    const bare = tile({ name: "base", version: "3.12.1", path: "C:/py/python.exe", strip });
+    expect(bare).toMatchObject({ id: "interpreter", subtitle: "Python 3.12.1", strip });
+    expect(bare.tooltip).toContain("C:/py/python.exe");
+    expect(bare.alert).toBeUndefined();
+    expect(parseTestAppMessage({ type: "tile", id: "installPackage" })).toEqual({ type: "tile", id: "installPackage" });
+    expect(tile(undefined)).toMatchObject({ title: "Select interpreter", tone: "warn" });
+    // The Python logo is the tile's picture, in every state.
+    const logo = "data:image/svg+xml;base64,AAAA";
+    expect(interpreterTile({ name: ".venv", path: "C:/p.exe" }, logo).icon).toBe(logo);
+    expect(interpreterTile(undefined, logo).icon).toBe(logo);
+    expect(build(launchable, { running: false }, { pythonIcon: logo }).tiles[0].icon).toBe(logo);
+    expect(buildTestAppModel({ blocker: { title: "x", detail: "y" }, pythonIcon: logo, trusted: true }).tiles[0].icon).toBe(logo);
+    expect(parseTestAppMessage({ type: "tile", id: "interpreter" })).toEqual({ type: "tile", id: "interpreter" });
+    expect(parseTestAppMessage({ type: "tile", id: "project" })).toBeUndefined();
   });
   it("shows pids on the app tile and restart and close when running", () => {
     const model = build(launchable, {
@@ -139,7 +243,7 @@ describe("Test Target tiles", () => {
     });
     expect(model.status).toEqual({ label: "Running", tone: "ok" });
     expect(model.tiles[1].subtitle).toBe("PIDs 12, 34");
-    expect(ids(model)).toEqual(["project", "app", "mode", "restart", "close"]);
+    expect(ids(model)).toEqual(["interpreter", "app", "mode", "restart", "close"]);
     expect(model.tiles.at(-1)).toMatchObject({ tone: "stop" });
   });
   it("locks the application tile, without its list icon, while the app is running", () => {
@@ -190,6 +294,73 @@ describe("Test Target tiles", () => {
     expect(buildTestAppModel({ trusted: true, lastRun: { passed: 1, failed: 0, at: 1 } }).lastRun).toBeUndefined();
     expect(parseTestAppMessage({ type: "tile", id: "openReport" })).toEqual({ type: "tile", id: "openReport" });
     expect(parseTestAppMessage({ type: "tile", id: "dismissRun" })).toEqual({ type: "tile", id: "dismissRun" });
+  });
+  it("shows the guided tour's callout with the tiles it points at", () => {
+    const tour = {
+      step: "app" as const,
+      phase: "setup" as const,
+      kind: "todo" as const,
+      progress: { index: 5, total: 7 },
+      title: "Choose the application",
+      text: "Pick it.",
+      lit: ["app" as const],
+      panel: false,
+      buttons: [{ id: "pickApp" as const, label: "Choose application", primary: true }],
+      canBack: true,
+      canNext: false,
+    };
+    const model = build(launchable, { running: false }, { tour });
+    expect(model.tour).toBe(tour);
+    expect(ids(model)).toEqual(["interpreter", "app", "mode", "launch"]);
+    expect(model.resume).toBeUndefined();
+    const early = buildTestAppModel({ trusted: true, tour });
+    expect(early.tour).toBe(tour);
+    expect(early.tiles.map((tile) => tile.id)).toEqual(["interpreter", "initProject"]);
+    expect(parseTestAppMessage({ type: "tour", action: "pickApp" })).toEqual({ type: "tour", action: "pickApp" });
+    expect(parseTestAppMessage({ type: "tour", action: "rm -rf" })).toBeUndefined();
+  });
+  it("offers to resume the guided setup when it was closed with something left to do", () => {
+    const model = build(launchable, { running: false }, { resumable: true });
+    expect(model.resume).toMatchObject({ action: { id: "resumeSetup", label: "Resume setup" } });
+    expect(build(launchable, { running: false }).resume).toBeUndefined();
+    expect(parseTestAppMessage({ type: "tile", id: "resumeSetup" })).toEqual({ type: "tile", id: "resumeSetup" });
+  });
+  it("is a single Enable button, and nothing else, until the workspace is enabled", () => {
+    const model = buildTestAppModel({
+      enabled: false,
+      trusted: true,
+      project,
+      lastRun: { passed: 1, failed: 0, at: 1 },
+    });
+    expect(model.kind).toBe("disabled");
+    expect(model.tiles.map((tile) => tile.id)).toEqual(["enable"]);
+    expect(model.tiles[0].title).toBe("Enable for this workspace");
+    expect(model.message).toBeUndefined();
+    expect(model.lastRun).toBeUndefined();
+    expect(parseTestAppMessage({ type: "tile", id: "enable" })).toEqual({ type: "tile", id: "enable" });
+    expect(build(launchable, { running: false }, { enabled: true }).kind).toBe("app");
+  });
+  it("is the interpreter and a Resume button while setup is not done and the guide is closed", () => {
+    const blocker = { title: "The wintestkit package", detail: "It is not installed in C:/py/python.exe" };
+    const model = buildTestAppModel({ blocker, trusted: true, project, config: launchable, lastRun: { passed: 1, failed: 0, at: 1 } });
+    expect(model.kind).toBe("blocked");
+    expect(model.tiles.map((tile) => tile.id)).toEqual(["interpreter", "resumeSetup"]);
+    expect(model.tiles[1]).toMatchObject({
+      title: "Resume setup",
+      subtitle: "The wintestkit package needs attention",
+      tooltip: blocker.detail,
+    });
+    expect(model.message).toBeUndefined();
+    expect(model.lastRun).toBeUndefined();
+    // With the tour showing there is no need for the button: the tour is the way forward.
+    const touring = buildTestAppModel({
+      blocker,
+      trusted: true,
+      project,
+      config: launchable,
+      tour: { step: "package", phase: "setup", kind: "todo", title: "x", text: "y", lit: [], panel: false, buttons: [], canBack: false, canNext: false },
+    });
+    expect(touring.kind).toBe("app");
   });
   it("never offers to launch or restart an attach-only setup", () => {
     const stopped = build(attach, { running: false });
@@ -368,8 +539,8 @@ describe("Test Target messages and manifest", () => {
     });
   });
   it("shows what each tile opens with its trailing icon", () => {
-    const [projectTile, app, mode] = build(launchable, { running: false }).tiles;
-    expect(projectTile).toMatchObject({ chevron: true, trailing: "go-to-file" });
+    const [interpreter, app, mode] = build(launchable, { running: false }).tiles;
+    expect(interpreter).toMatchObject({ chevron: true, trailing: "list-selection" });
     expect(app).toMatchObject({ chevron: true, trailing: "list-selection" });
     expect(mode).toMatchObject({ chevron: true, trailing: "list-selection" });
     expect(build({}, { running: false }).tiles[1].trailing).toBe("list-selection");
@@ -398,19 +569,31 @@ describe("Test Target messages and manifest", () => {
     ])
       expect(parseTestAppMessage(invalid)).toBeUndefined();
   });
-  it("is a shared sidebar webview named WinTestKit with no leftover tree menus", () => {
+  it("is part of the one sidebar webview, with no leftover tree menus", () => {
     const manifest = JSON.parse(readFileSync("package.json", "utf8"));
-    expect(manifest.contributes.views.wintestkit[0]).toEqual({
-      id: "wintestkit.sidebar",
-      name: "WinTestKit",
-      type: "webview",
-    });
+    expect(manifest.contributes.views.wintestkit).toEqual([
+      { id: "wintestkit.sidebar", name: "WinTestKit", type: "webview" },
+    ]);
     expect(manifest.contributes.menus["view/item/context"]).toBeUndefined();
     expect(
       manifest.contributes.viewsWelcome?.some(
-        (entry: { view: string }) => entry.view === "wintestkit.setup",
+        (entry: { view: string }) => entry.view === "wintestkit.sidebar",
       ),
     ).toBeFalsy();
+  });
+  it("hands the messages the sidebar page sends to the part they are for", () => {
+    const projects = { onDidChange: () => ({ dispose() {} }), all: [] };
+    const status = { onDidChangeApplication: () => ({ dispose() {} }) };
+    const view = new TestAppView(projects as never, status as never, {} as never, {} as never);
+    const refresh = vi.spyOn(view, "refresh").mockImplementation(() => {});
+    view.handleMessage({ type: "ready" });
+    expect(refresh).toHaveBeenCalledOnce();
+    // What Pages & Flows sends is not Test Target's.
+    view.handleMessage({ type: "select", section: "flows" });
+    view.handleMessage({ type: "unusedScan" });
+    view.handleMessage(null);
+    expect(refresh).toHaveBeenCalledOnce();
+    view.dispose();
   });
 });
 
@@ -503,4 +686,43 @@ describe("Application status transitions", () => {
       mainWindowTitle: "Demo",
     });
   });
+});
+it.each([true, false])("confirms launch mode only after a real picker choice (selected: %s)", async (selected) => {
+  const read = vi.spyOn(configurationFiles, "readConfiguration").mockResolvedValue({ launch: "per-test" });
+  vi.mocked(vscode.window.showQuickPick).mockResolvedValueOnce(selected ? { id: "per-test" } as never : undefined);
+  const confirmMode = vi.fn(async () => {});
+  const view = new TestAppView(
+    { all: [{ root: {}, name: "demo" }], onDidChange: () => ({ dispose() {} }) } as never,
+    { onDidChangeApplication: () => ({ dispose() {} }) } as never,
+    {} as never, {} as never, undefined,
+    { confirmMode, onDidChange: () => ({ dispose() {} }) } as never,
+  );
+  view.handleMessage({ type: "tile", id: "mode" });
+  await vi.waitFor(() => expect(read).toHaveBeenCalled());
+  await Promise.resolve();
+  expect(confirmMode).toHaveBeenCalledTimes(selected ? 1 : 0);
+  view.dispose();
+  read.mockRestore();
+});
+
+it("finishes the introduction before Testing replaces the sidebar", async () => {
+  const order: string[] = [];
+  const finish = vi.fn(async () => {
+    order.push("finish");
+  });
+  vi.mocked(vscode.commands.executeCommand).mockImplementationOnce(async (command) => {
+    order.push(command);
+    return undefined;
+  });
+  const view = new TestAppView(
+    { all: [], onDidChange: () => ({ dispose() {} }) } as never,
+    { onDidChangeApplication: () => ({ dispose() {} }) } as never,
+    {} as never,
+    {} as never,
+    undefined,
+    { finish, onDidChange: () => ({ dispose() {} }) } as never,
+  );
+  view.handleMessage({ type: "tour", action: "openTesting" });
+  await vi.waitFor(() => expect(order).toEqual(["finish", "wintestkit.openTesting"]));
+  view.dispose();
 });

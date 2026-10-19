@@ -23,7 +23,7 @@ body {
     height: 100%;
 }
 /*
- * The sidebar is one page: Test Target (#card) above Pages & Flows (#pages). Test Target is as tall
+ * The sidebar is one page: Test Target (#test-target) above Pages & Flows (#pages). Test Target is as tall
  * as its content, up to all but --pages-min of the sidebar, and scrolls past that, so a tall guide
  * never pushes Pages & Flows out. Pages & Flows takes the rest and never drops below --pages-min;
  * in a sidebar too short for both, the page scrolls.
@@ -41,14 +41,14 @@ body {
     color: var(--vscode-foreground, #263345);
     background: var(--raised);
 }
-#card {
+#test-target {
     flex: 0 1 auto;
     min-height: 120px;
     max-height: max(120px, calc(100% - var(--pages-min)));
     overflow-y: auto;
 }
 /* Before the workspace is set up there is no Pages & Flows, and Test Target has the whole sidebar. */
-body.solo #card {
+body.solo #test-target {
     flex: 1 1 auto;
     min-height: 0;
     max-height: none;
@@ -82,6 +82,9 @@ p {
     grid-template-columns: repeat(auto-fit, minmax(195px, 1fr));
     gap: 8px;
     padding: 10px;
+}
+#tiles.solo {
+    grid-template-columns: 1fr;
 }
 .tile {
     display: flex;
@@ -291,4 +294,266 @@ p {
     color: inherit;
     text-decoration: none;
     background: var(--vscode-toolbar-hoverBackground, rgba(128, 128, 128, 0.2));
+}
+
+/* The interpreter tile and the strip under it are one block. */
+.tile-group {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+.tile-group .tile {
+    flex: 1;
+}
+.tile-group .tile:not(:last-child) {
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+}
+.strip {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 28px;
+    padding: 4px 10px;
+    border: 1px solid var(--border);
+    border-top: 0;
+    border-radius: 0 0 5px 5px;
+    font-size: 12px;
+    background: var(--surface);
+}
+.strip-icon {
+    flex-shrink: 0;
+    font-size: 14px;
+}
+.strip[data-state="ok"] .strip-icon {
+    color: var(--ok);
+}
+.strip[data-state="missing"],
+.strip[data-state="error"] {
+    background: color-mix(in srgb, var(--error) 14%, var(--surface));
+    border-color: var(--error);
+}
+.strip[data-state="missing"] .strip-icon,
+.strip[data-state="error"] .strip-icon {
+    color: var(--error);
+}
+.strip[data-state="outdated"] .strip-icon {
+    color: var(--warn);
+}
+.strip[data-state="busy"] .strip-icon {
+    color: var(--accent);
+}
+.strip-text {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.strip.has-source {
+    flex-wrap: wrap;
+}
+.package-source {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    width: 100%;
+}
+.package-source label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.package-source-select {
+    min-width: 0;
+    color: var(--vscode-dropdown-foreground, inherit);
+    background: var(--vscode-dropdown-background, var(--surface));
+    border: 1px solid var(--vscode-dropdown-border, var(--border));
+    font: inherit;
+}
+.package-source-path {
+    width: 100%;
+    overflow-wrap: anywhere;
+}
+.strip-action {
+    flex-shrink: 0;
+    padding: 1px 8px;
+    border: 1px solid transparent;
+    border-radius: 2px;
+    color: var(--vscode-button-foreground, #fff);
+    background: var(--vscode-button-background, #0078d4);
+    font: inherit;
+    font-size: 11px;
+    cursor: pointer;
+}
+.strip-action:hover {
+    background: var(--vscode-button-hoverBackground, #026ec1);
+}
+
+/* The guided tour: what is lit stays as it is, the rest is dulled and cannot be clicked. */
+.dimmed {
+    opacity: 0.35;
+    filter: saturate(0.5);
+    pointer-events: none;
+}
+.lit {
+    position: relative;
+    z-index: 1;
+    box-shadow:
+        0 0 0 2px var(--accent),
+        0 0 0 6px color-mix(in srgb, var(--accent) 28%, transparent);
+}
+#card.touring ~ #target-notices .hint {
+    opacity: 0.35;
+    pointer-events: none;
+}
+#setup-guide {
+    margin: 4px 10px 10px;
+}
+#setup-guide:empty {
+    display: none;
+}
+.callout {
+    --callout-color: var(--info);
+    position: relative;
+    margin: 0;
+    max-height: 100%;
+    overflow-y: auto;
+    pointer-events: auto;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+    padding: 10px 12px 8px;
+    border: 1px solid var(--callout-color);
+    border-radius: 6px;
+    background: color-mix(in srgb, var(--callout-color) 12%, var(--surface));
+}
+.callout[data-kind="attention"] {
+    --callout-color: var(--error);
+    background: color-mix(in srgb, var(--error) 22%, var(--surface));
+}
+.callout[data-kind="done"] {
+    --callout-color: var(--ok);
+}
+.callout-head {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-bottom: 6px;
+    color: var(--muted);
+    font-size: 11px;
+}
+.callout-step {
+    padding: 0 4px;
+}
+.callout-spacer {
+    flex: 1;
+}
+.nav {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    border: 0;
+    border-radius: 3px;
+    color: inherit;
+    background: transparent;
+    cursor: pointer;
+}
+.nav:hover:not(:disabled) {
+    background: var(--vscode-toolbar-hoverBackground, rgba(128, 128, 128, 0.2));
+}
+.nav:disabled {
+    opacity: 0.35;
+    cursor: default;
+}
+.callout-title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0 0 4px;
+    font-size: 13px;
+    font-weight: 600;
+}
+.callout-icon {
+    flex-shrink: 0;
+    color: var(--callout-color);
+}
+.callout-text {
+    margin: 0 0 6px;
+    font-size: 12px;
+    line-height: 1.45;
+}
+.callout-detail {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    margin: 0 0 8px;
+    color: var(--muted);
+    font-size: 11px;
+    line-height: 1.4;
+    overflow-wrap: anywhere;
+}
+.callout-detail-icon {
+    width: 14px;
+    height: 14px;
+    flex-shrink: 0;
+}
+.callout-error {
+    color: var(--error);
+}
+.callout-error > .codicon {
+    flex-shrink: 0;
+}
+.callout-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 8px;
+}
+.callout-actions button,
+.callout-foot button {
+    padding: 4px 12px;
+    border: 1px solid transparent;
+    border-radius: 2px;
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+}
+.callout-actions button:disabled {
+    opacity: 0.55;
+    cursor: default;
+}
+.callout-actions .primary {
+    color: var(--vscode-button-foreground, #fff);
+    background: var(--vscode-button-background, #0078d4);
+}
+.callout-actions .primary:hover:not(:disabled) {
+    background: var(--vscode-button-hoverBackground, #026ec1);
+}
+.callout-actions .secondary {
+    color: var(--vscode-button-secondaryForeground, inherit);
+    background: var(--vscode-button-secondaryBackground, rgba(128, 128, 128, 0.25));
+}
+.callout-actions .secondary:hover:not(:disabled) {
+    background: var(--vscode-button-secondaryHoverBackground, rgba(128, 128, 128, 0.35));
+}
+.callout-foot {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    justify-content: flex-end;
+    padding-top: 6px;
+    border-top: 1px solid color-mix(in srgb, var(--callout-color) 30%, transparent);
+}
+.callout-foot .secondary {
+    padding: 2px 10px;
+    color: #fff;
+    background: #1a1a1b;
+    border-color: #454545;
+    font-size: 11px;
+}
+.callout-foot .secondary:hover:not(:disabled) {
+    background: #2a2a2b;
 }

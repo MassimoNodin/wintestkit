@@ -15,7 +15,6 @@ vi.mock("node:child_process", () => ({ spawn: mocks.spawn }));
 vi.mock("../../src/python", () => ({
   checkWintestkit: mocks.installed,
   getInterpreter: mocks.interpreter,
-  installPackage: vi.fn(),
 }));
 vi.mock("vscode", () => ({
   EventEmitter: class {
@@ -147,12 +146,12 @@ describe("server manager", () => {
     ).toHaveBeenCalledOnce();
     expect((await manager.get(project)).python).toBe("other-python.exe");
   });
-  it("reports a missing package once without spawning", async () => {
+  it("reports a missing package without spawning or showing its own message", async () => {
     mocks.installed.mockResolvedValue({ installed: false });
     await expect(manager.get(project)).rejects.toThrow("not installed");
     await expect(manager.get(project)).rejects.toThrow("not installed");
     expect(manager.state(project)).toBe("not-installed");
-    expect(mocks.showInfo).toHaveBeenCalledOnce();
+    expect(mocks.showInfo).not.toHaveBeenCalled();
     expect(mocks.spawn).not.toHaveBeenCalled();
   });
   it("backs off after crashes and requires restart after three", async () => {

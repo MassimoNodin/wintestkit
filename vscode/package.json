@@ -106,8 +106,23 @@
         "category": "WinTestKit"
       },
       {
-        "command": "wintestkit.openGettingStarted",
-        "title": "Open Getting Started",
+        "command": "wintestkit.openSetup",
+        "title": "Open Setup Guide",
+        "category": "WinTestKit"
+      },
+      {
+        "command": "wintestkit.enable",
+        "title": "Enable for This Workspace",
+        "category": "WinTestKit"
+      },
+      {
+        "command": "wintestkit.disable",
+        "title": "Disable for This Workspace",
+        "category": "WinTestKit"
+      },
+      {
+        "command": "wintestkit.setup.recheck",
+        "title": "Check Setup",
         "category": "WinTestKit"
       },
       {
@@ -140,16 +155,6 @@
       {
         "command": "wintestkit.runDoctor",
         "title": "Check Environment (doctor)",
-        "category": "WinTestKit"
-      },
-      {
-        "command": "wintestkit.initProject",
-        "title": "Initialize Project",
-        "category": "WinTestKit"
-      },
-      {
-        "command": "wintestkit.installPackage",
-        "title": "Install wintestkit Package",
         "category": "WinTestKit"
       },
       {
@@ -215,44 +220,32 @@
         {
           "id": "wintestkit.spy",
           "name": "Spy",
-          "type": "webview"
+          "type": "webview",
+          "when": "wintestkit.enabled && !wintestkit.setupBlocked"
         }
       ]
     },
-    "walkthroughs": [
-      {
-        "id": "wintestkit.firstRun",
-        "title": "Get started with WinTestKit",
-        "description": "Choose a target, inspect it, and run your first test.",
-        "steps": [
-          { "id": "chooseApp", "title": "Choose an application", "description": "Use the app chooser in Test Target.", "media": { "markdown": "media/walkthrough/choose-app.md" }, "completionEvents": ["onContext:wintestkit.hasChosenApp"] },
-          { "id": "launchApp", "title": "Launch the application", "description": "Start the target so Spy can inspect its controls.", "media": { "markdown": "media/walkthrough/launch-app.md" }, "completionEvents": ["onCommand:wintestkit.launchApp"] },
-          { "id": "addControl", "title": "Add a control to a page", "description": "Pick a live control in Spy and add its locator to your page definitions.", "media": { "markdown": "media/walkthrough/add-control.md" }, "completionEvents": ["onCommand:wintestkit.spy.addToPage"] },
-          { "id": "checkElement", "title": "Check the locator", "description": "Confirm the page element resolves in the running application.", "media": { "markdown": "media/walkthrough/check-element.md" }, "completionEvents": ["onCommand:wintestkit.checkElement"] },
-          { "id": "runSmokeTest", "title": "Run tests", "description": "Open Testing and run the smoke test.", "media": { "markdown": "media/walkthrough/run-tests.md" }, "completionEvents": ["onCommand:testing.runAll"] }
-        ]
-      }
-    ],
-    "viewsWelcome": [
-      { "view": "wintestkit.sidebar", "contents": "No WinTestKit project is initialized. [Initialize Project](command:wintestkit.initProject)" },
-      { "view": "wintestkit.spy", "contents": "Choose an application in [Test Target](command:wintestkit.openSettings), then launch it to inspect live controls." }
-    ],
     "menus": {
       "view/title": [
         {
           "command": "wintestkit.openTesting",
-          "when": "view == wintestkit.sidebar",
+          "when": "view == wintestkit.sidebar && wintestkit.enabled && !wintestkit.setupBlocked",
           "group": "navigation@1"
         },
         {
           "command": "wintestkit.openSettings",
-          "when": "view == wintestkit.sidebar",
-          "group": "navigation"
+          "when": "view == wintestkit.sidebar && wintestkit.enabled && !wintestkit.setupBlocked",
+          "group": "navigation@3"
         },
         {
           "command": "wintestkit.elements.refresh",
-          "when": "view == wintestkit.sidebar",
-          "group": "navigation"
+          "when": "view == wintestkit.sidebar && wintestkit.enabled && !wintestkit.setupBlocked",
+          "group": "navigation@2"
+        },
+        {
+          "command": "wintestkit.disable",
+          "when": "view == wintestkit.sidebar && wintestkit.enabled",
+          "group": "9_wintestkit"
         }
       ],
       "webview/context": [
@@ -427,6 +420,9 @@
   },
   "scripts": {
     "build": "node esbuild.mjs",
+    "build:dev": "node esbuild.mjs --dev",
+    "watch:dev": "node esbuild.mjs --dev --watch",
+    "package:dev": "node scripts/package-dev.mjs",
     "watch": "node esbuild.mjs --watch",
     "typecheck": "tsc --noEmit && tsc -p test --noEmit && tsc -p test/tsconfig.unit.json",
     "lint": "eslint .",

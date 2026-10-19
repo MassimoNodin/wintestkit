@@ -106,39 +106,3 @@ export async function runTerminal(
 export async function installArguments(): Promise<string[]> {
   return ["-m", "pip", "install", "-U", "wintestkit"];
 }
-
-export async function installPackage(folder: vscode.Uri): Promise<void> {
-  let args = ["-m", "pip", "install", "-U", "wintestkit"];
-  const workspace = vscode.workspace.getWorkspaceFolder(folder);
-  if (workspace) {
-    const packageFile = vscode.Uri.joinPath(
-      workspace.uri,
-      "python",
-      "pyproject.toml",
-    );
-    try {
-      const contents = Buffer.from(
-        await vscode.workspace.fs.readFile(packageFile),
-      ).toString("utf8");
-      if (/^\s*name\s*=\s*["']wintestkit["']/m.test(contents)) {
-        const choice = await vscode.window.showInformationMessage(
-          "Install the local WinTestKit package in editable mode?",
-          "Install local",
-          "Install published",
-        );
-        if (!choice) return;
-        if (choice === "Install local")
-          args = [
-            "-m",
-            "pip",
-            "install",
-            "-e",
-            vscode.Uri.joinPath(workspace.uri, "python").fsPath,
-          ];
-      }
-    } catch {
-      args = ["-m", "pip", "install", "-U", "wintestkit"];
-    }
-  }
-  await runTerminal(folder, args);
-}

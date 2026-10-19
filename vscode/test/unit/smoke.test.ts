@@ -9,6 +9,8 @@ const mocks = vi.hoisted(() => ({
     Promise.resolve(null),
   ),
   refreshSpy: vi.fn(() => Promise.resolve()),
+  showSetup: vi.fn(() => Promise.resolve()),
+  recheckSetup: vi.fn(() => Promise.resolve()),
   refreshStatus: vi.fn(() => Promise.resolve()),
   beginTransition: vi.fn(),
   setStage: vi.fn(),
@@ -63,7 +65,6 @@ vi.mock("vscode", () => ({
   },
 }));
 vi.mock("../../src/python", () => ({
-  installPackage: vi.fn(),
   runTerminal: mocks.runTerminal,
   onDidChangeInterpreter: vi.fn(() => Promise.resolve({ dispose: vi.fn() })),
 }));
@@ -225,8 +226,39 @@ vi.mock("../../src/views/sidebarView", () => ({
   },
 }));
 vi.mock("../../src/init", () => ({
-  registerInitialize: () =>
-    mocks.registerCommand("wintestkit.initProject", () => {}),
+  initializeProject: vi.fn(() => Promise.resolve()),
+  chooseWorkspaceFolder: vi.fn(() => Promise.resolve(undefined)),
+}));
+vi.mock("../../src/setup/install", () => ({
+  PackageInstaller: class {
+    busy = false;
+    error = undefined;
+    onDidChange() {
+      return { dispose: vi.fn() };
+    }
+    dispose() {}
+  },
+}));
+vi.mock("../../src/enablement", () => ({
+  Enablement: class {
+    enabled = true;
+    onDidChange() {
+      return { dispose: vi.fn() };
+    }
+    set = vi.fn(() => Promise.resolve());
+    dispose() {}
+  },
+}));
+vi.mock("../../src/setup/monitor", () => ({
+  SetupMonitor: class {
+    tour = undefined;
+    onDidChange() {
+      return { dispose: vi.fn() };
+    }
+    show = mocks.showSetup;
+    recheck = mocks.recheckSetup;
+    dispose() {}
+  },
 }));
 vi.mock("../../src/pytestConflict", () => ({
   PytestConflict: class {
@@ -280,14 +312,16 @@ describe("extension scaffold", () => {
       "wintestkit.spy",
       expect.any(Object),
     );
+    // Test Target and Pages & Flows share one webview so that neither can be squeezed out of a short sidebar.
     expect(manifest.contributes.views.wintestkit).toEqual([
       { id: "wintestkit.sidebar", name: "WinTestKit", type: "webview" },
     ]);
+    // Spy has the panel to itself. It shows only once the workspace is enabled and set up.
     expect(manifest.contributes.viewsContainers.panel).toEqual([
       expect.objectContaining({ id: "wintestkit-spy" }),
     ]);
     expect(manifest.contributes.views["wintestkit-spy"]).toEqual([
-      { id: "wintestkit.spy", name: "Spy", type: "webview" },
+      { id: "wintestkit.spy", name: "Spy", type: "webview", when: "wintestkit.enabled && !wintestkit.setupBlocked" },
     ]);
     expect(
       JSON.stringify(manifest.contributes.menus["view/title"]),
@@ -307,7 +341,7 @@ describe("extension scaffold", () => {
     );
     expect(manifest.contributes.menus["view/title"]).toContainEqual({
       command: "wintestkit.openTesting",
-      when: "view == wintestkit.sidebar",
+      when: "view == wintestkit.sidebar && wintestkit.enabled && !wintestkit.setupBlocked",
       group: "navigation@1",
     });
   });

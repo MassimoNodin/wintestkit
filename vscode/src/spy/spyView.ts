@@ -16,6 +16,7 @@ import type {
   Suggestion,
 } from "../protocol/generated";
 import { parseSpyRequest, type SpyRequest, type SpyResponse } from "./messages";
+import type { SetupMonitor } from "../setup/monitor";
 import { readApplicationIcons } from "./appIcons";
 
 type SpyConnection = { client?: JsonRpcClient; revision: number };
@@ -55,8 +56,10 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
     private readonly servers: ServerManager,
     private readonly extensionUri: vscode.Uri,
     private readonly log: vscode.LogOutputChannel,
+    private readonly setup?: SetupMonitor,
   ) {
     this.subscriptions = [
+      ...(setup ? [setup.onDidChange(() => this.postTour())] : []),
       vscode.window.registerWebviewViewProvider("wintestkit.spy", this),
       vscode.commands.registerCommand("wintestkit.spy.startPick", async () => {
         await vscode.commands.executeCommand("wintestkit.spy.focus");
@@ -149,6 +152,10 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
   private currentProject(): Project | undefined {
     const uri = vscode.window.activeTextEditor?.document.uri;
     return (uri && this.projects.projectFor(uri)) || this.projects.all[0];
+  }
+  private postTour(): void {
+    const focus = this.setup?.focus ?? { dim: false, spyLit: false };
+    this.post({ type: "tour", dim: focus.dim, spyLit: focus.spyLit });
   }
   private post(message: SpyResponse): void {
     if (!this.disposed) void this.view?.webview.postMessage(message);
@@ -563,11 +570,8 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
       await vscode.commands.executeCommand("wintestkit.chooseApp");
       return;
     }
-    if (message.type === "openGettingStarted") {
-      await vscode.commands.executeCommand("wintestkit.openGettingStarted");
-      return;
-    }
     if (message.type === "ready") {
+      this.postTour();
       if (typeof message.showOtherApps === "boolean")
         this.showOtherApps = message.showOtherApps;
       this.invalidateScope();

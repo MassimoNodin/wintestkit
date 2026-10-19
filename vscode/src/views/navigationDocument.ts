@@ -32,20 +32,11 @@ export function renderBody(input: {
   focusId?: string;
   welcome?: string;
   notice?: string;
-  showInitialize: boolean;
 }): string {
-  if (input.showInitialize)
-    return (
-      '<div class="empty"><p>No WinTestKit project found.</p>' +
-      '<button type="button" class="link" data-initialize="true">Initialize Project</button>' +
-      '<button type="button" class="link" data-getting-started="true">Open Getting Started</button></div>'
-    );
   if (!input.nodes.length && input.notice)
     return `<div class="empty"><p>${escapeText(input.notice)}</p></div>`;
   if (!input.nodes.length)
-    return input.welcome
-      ? `<div class="empty"><p>${escapeText(input.welcome)}</p><button type="button" class="link" data-getting-started="true">Open Getting Started</button></div>`
-      : "";
+    return input.welcome ? `<div class="empty"><p>${escapeText(input.welcome)}</p></div>` : "";
   return input.nodes
     .map((node) => renderItem(node, input.expanded, input.focusId))
     .join("");
@@ -202,6 +193,13 @@ export const NAVIGATION_STYLE = `
   outline: 1px solid var(--vscode-focusBorder);
   outline-offset: -1px;
 }
+#pages.tour-dim::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  background: color-mix(in srgb, var(--vscode-sideBar-background) 62%, transparent);
+}
 #tree { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 2px 10px 8px 14px; }
 .group { margin-left: 12px; }
 #tree > .page-item > .line,
@@ -350,6 +348,14 @@ function revealRow(row) {
   else if (item.bottom > view.bottom) tree.scrollTop += item.bottom - view.bottom;
 }
 function paint(message) {
+  if (message && message.type === "tour") {
+    const pages = document.getElementById("pages");
+    if (pages) {
+      pages.classList.toggle("tour-dim", !!message.dim);
+      pages.inert = !!message.dim;
+    }
+    return;
+  }
   if (!message || message.type !== "render" || !sections.includes(message.section)) return;
   if (typeof message.html !== "string") return;
   const webviewFocused = document.hasFocus();
@@ -393,14 +399,6 @@ segments.addEventListener("keydown", (event) => {
 tree.addEventListener("click", (event) => {
   const target = event.target;
   if (!(target instanceof Element)) return;
-  if (target.closest("[data-initialize]")) {
-    vscodeApi.postMessage({ type: "initialize" });
-    return;
-  }
-  if (target.closest("[data-getting-started]")) {
-    vscodeApi.postMessage({ type: "openGettingStarted" });
-    return;
-  }
   const row = target.closest("[role='treeitem']");
   const id = row && row.getAttribute("data-id");
   if (!id) return;
@@ -434,7 +432,7 @@ tree.addEventListener("keydown", (event) => {
     target.closest("[role='treeitem']")?.focus();
     return;
   }
-  if (target instanceof Element && target.closest("[data-action], [data-initialize]") && (event.key === "Enter" || event.key === " ")) return;
+  if (target instanceof Element && target.closest("[data-action]") && (event.key === "Enter" || event.key === " ")) return;
   if (!named.has(event.key) && event.key.length !== 1) return;
   event.preventDefault();
   vscodeApi.postMessage({ type: "key", key: event.key });

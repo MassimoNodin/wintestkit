@@ -7,9 +7,10 @@ import type {
   Suggestion,
 } from "../protocol/generated";
 
+
 export type SpyRequest =
   | {
-      type: "pick" | "stopPick" | "refresh" | "addToPage" | "chooseApp" | "openGettingStarted";
+      type: "pick" | "stopPick" | "refresh" | "addToPage" | "chooseApp";
     }
   | {
       type: "ready";
@@ -27,6 +28,8 @@ export type SpyRequest =
   | { type: "openDefinition"; id: string };
 export type SpyResponse =
   | { type: "rootIcons"; icons: Record<string, string> }
+  /** The guided tour is showing: dull the panel, and light Pick element when it is the subject. */
+  | { type: "tour"; dim: boolean; spyLit: boolean }
   | {
       type: "progress";
       taskId: number;
@@ -101,10 +104,10 @@ export function parseSpyRequest(value: unknown): SpyRequest | undefined {
       ? { type: message.type, enabled: message.enabled }
       : undefined;
   if (
-    ["pick", "stopPick", "refresh", "addToPage", "chooseApp", "openGettingStarted"].includes(String(message.type))
+    ["pick", "stopPick", "refresh", "addToPage", "chooseApp"].includes(String(message.type))
   )
     return {
-      type: message.type as "pick" | "stopPick" | "refresh" | "addToPage" | "chooseApp" | "openGettingStarted",
+      type: message.type as "pick" | "stopPick" | "refresh" | "addToPage" | "chooseApp",
     };
   if (
     ["expand", "select", "highlight", "loadProperties"].includes(

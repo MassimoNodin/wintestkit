@@ -1,135 +1,114 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type * as vscode from "vscode";
 import type { Projects } from "../../src/projects";
+
 const mocks = vi.hoisted(() => ({
-  handler: undefined as (() => Promise<void>) | undefined,
   installed: vi.fn(),
+  interpreter: vi.fn(),
   execute: vi.fn(),
-  command: vi.fn(),
-  install: vi.fn(),
-  picker: vi.fn(),
-  show: vi.fn(),
-  info: vi.fn(),
-  error: vi.fn(),
+  pick: vi.fn(),
   refresh: vi.fn(),
   trusted: true,
-  folder: { name: "demo", uri: { fsPath: "C:/project with spaces" } },
+  folders: [] as { name: string; uri: { fsPath: string } }[],
+  owner: undefined as { uri: { fsPath: string } } | undefined,
+  active: undefined as { document: { uri: { fsPath: string } } } | undefined,
 }));
 vi.mock("node:util", () => ({ promisify: () => mocks.execute }));
 vi.mock("../../src/python", () => ({
-  getInterpreter: async () => "python.exe",
+  getInterpreter: mocks.interpreter,
   checkWintestkit: mocks.installed,
-  installPackage: mocks.install,
 }));
 vi.mock("vscode", () => ({
   workspace: {
     get isTrusted() {
       return mocks.trusted;
     },
-    workspaceFolders: [mocks.folder],
-  },
-  commands: {
-    executeCommand: mocks.command,
-    registerCommand: (_name: string, handler: () => Promise<void>) => {
-      mocks.handler = handler;
-      return { dispose() {} };
+    get workspaceFolders() {
+      return mocks.folders;
     },
-  },
-  Uri: {
-    joinPath: (root: { fsPath: string }, ...parts: string[]) => ({
-      fsPath: [root.fsPath, ...parts].join("/"),
-    }),
+    getWorkspaceFolder: () => mocks.owner,
   },
   window: {
-    showOpenDialog: mocks.picker,
-    showTextDocument: mocks.show,
-    showInformationMessage: mocks.info,
-    showErrorMessage: mocks.error,
+    get activeTextEditor() {
+      return mocks.active;
+    },
+    showQuickPick: mocks.pick,
   },
 }));
-import { registerInitialize } from "../../src/init";
+import { chooseWorkspaceFolder, initializeProject } from "../../src/init";
+
+const folder = { name: "demo", uri: { fsPath: "C:/project with spaces" } };
+const log = { info: vi.fn(), warn: vi.fn() } as unknown as vscode.LogOutputChannel;
+const projects = { refresh: mocks.refresh } as unknown as Projects;
+
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.trusted = true;
+  mocks.folders = [folder];
+  mocks.owner = undefined;
+  mocks.active = undefined;
+  mocks.interpreter.mockResolvedValue("python.exe");
   mocks.installed.mockResolvedValue({ installed: true });
   mocks.execute.mockResolvedValue({ stdout: "Created", stderr: "" });
-  mocks.picker.mockResolvedValue(undefined);
-  mocks.info.mockResolvedValue(undefined);
-  registerInitialize(
-    { refresh: mocks.refresh } as unknown as Projects,
-    {
-      info: vi.fn(),
-      warn: vi.fn(),
-      error: vi.fn(),
-      show: vi.fn(),
-    } as unknown as vscode.LogOutputChannel,
-  );
 });
-describe("Initialize Project", () => {
-  it("opens Testing from the completion notification", async () => {
-    mocks.info.mockResolvedValue("Open Testing");
-    await mocks.handler?.();
-    expect(mocks.info).toHaveBeenCalledWith(
-      "Project initialized. Run tests from VS Code's Testing view.",
-      "Open Testing",
-      "Open smoke test",
-    );
-    expect(mocks.command).toHaveBeenCalledWith("wintestkit.openTesting");
-  });
-  it("opens the smoke test from the completion notification", async () => {
-    mocks.info.mockResolvedValue("Open smoke test");
-    await mocks.handler?.();
-    expect(mocks.show).toHaveBeenLastCalledWith({
-      fsPath: "C:/project with spaces/tests/test_smoke.py",
-    });
-    expect(mocks.command).not.toHaveBeenCalled();
-  });
-  it("does not navigate when the completion notification is dismissed", async () => {
-    await mocks.handler?.();
-    expect(mocks.show).toHaveBeenCalledOnce();
-    expect(mocks.command).not.toHaveBeenCalled();
-  });
-  it("supports skipping app selection and refreshes before opening the page", async () => {
-    await mocks.handler?.();
+
+describe("initializing a project", () => {
+  it("runs wtk init in the folder without shell concatenation, then finds the new project", async () => {
+    await initializeProject(folder.uri as never, projects, log);
     expect(mocks.execute).toHaveBeenCalledWith(
       "python.exe",
-      ["-m", "wintestkit", "init", mocks.folder.uri.fsPath],
-      expect.objectContaining({
-        cwd: mocks.folder.uri.fsPath,
-        windowsHide: true,
-      }),
+      ["-m", "wintestkit", "init", "C:/project with spaces"],
+      expect.objectContaining({ cwd: "C:/project with spaces", windowsHide: true }),
     );
     expect(mocks.refresh).toHaveBeenCalledOnce();
-    expect(mocks.show).toHaveBeenCalledWith({
-      fsPath: "C:/project with spaces/pages/main.py",
-    });
+    expect(log.info).toHaveBeenCalledWith("Created");
   });
-  it("passes selected executable paths without shell concatenation", async () => {
-    mocks.picker.mockResolvedValue([{ fsPath: "C:/App Folder/App.exe" }]);
-    await mocks.handler?.();
-    expect(mocks.execute.mock.calls[0][1]).toEqual([
-      "-m",
-      "wintestkit",
-      "init",
-      mocks.folder.uri.fsPath,
-      "--app",
-      "C:/App Folder/App.exe",
-    ]);
+  it("does not ask for an application: choosing it is the guided setup's next step", async () => {
+    await initializeProject(folder.uri as never, projects, log);
+    expect(mocks.execute.mock.calls[0][1]).not.toContain("--app");
   });
-  it("offers installation instead of running a missing package", async () => {
-    mocks.installed.mockResolvedValue({ installed: false });
-    mocks.info.mockResolvedValue("Install");
-    await mocks.handler?.();
-    expect(mocks.install).toHaveBeenCalledWith(mocks.folder.uri);
-    expect(mocks.execute).not.toHaveBeenCalled();
-  });
-  it("does not execute code in an untrusted workspace", async () => {
+  it("refuses to run in an untrusted workspace", async () => {
     mocks.trusted = false;
-    await mocks.handler?.();
+    await expect(initializeProject(folder.uri as never, projects, log)).rejects.toThrow("Trust the workspace");
     expect(mocks.execute).not.toHaveBeenCalled();
-    expect(mocks.error).toHaveBeenCalledWith(
-      expect.stringContaining("Trust the workspace"),
-      "Show Output",
-    );
+  });
+  it("needs an interpreter that has the package, and says what to do first", async () => {
+    mocks.interpreter.mockResolvedValue(undefined);
+    await expect(initializeProject(folder.uri as never, projects, log)).rejects.toThrow("Select a Python interpreter");
+    mocks.interpreter.mockResolvedValue("python.exe");
+    mocks.installed.mockResolvedValue({ installed: false });
+    await expect(initializeProject(folder.uri as never, projects, log)).rejects.toThrow("Install the wintestkit package");
+    expect(mocks.execute).not.toHaveBeenCalled();
+  });
+  it("passes on what wtk init wrote to stderr as a warning", async () => {
+    mocks.execute.mockResolvedValue({ stdout: "", stderr: "Skipped existing pages/main.py" });
+    await initializeProject(folder.uri as never, projects, log);
+    expect(log.warn).toHaveBeenCalledWith("Skipped existing pages/main.py");
+  });
+});
+
+describe("choosing the workspace folder to set up", () => {
+  it("uses the only folder without asking", async () => {
+    expect(await chooseWorkspaceFolder()).toBe(folder.uri);
+    expect(mocks.pick).not.toHaveBeenCalled();
+  });
+  it("is undefined when no folder is open", async () => {
+    mocks.folders = [];
+    expect(await chooseWorkspaceFolder()).toBeUndefined();
+  });
+  it("uses the folder of the file being edited when there are several", async () => {
+    mocks.folders = [folder, { name: "other", uri: { fsPath: "C:/other" } }];
+    mocks.active = { document: { uri: { fsPath: "C:/other/a.py" } } };
+    mocks.owner = { uri: { fsPath: "C:/other" } };
+    expect(await chooseWorkspaceFolder()).toEqual({ fsPath: "C:/other" });
+    expect(mocks.pick).not.toHaveBeenCalled();
+  });
+  it("asks when there are several and no file decides", async () => {
+    const other = { name: "other", uri: { fsPath: "C:/other" } };
+    mocks.folders = [folder, other];
+    mocks.pick.mockResolvedValue({ folder: other });
+    expect(await chooseWorkspaceFolder()).toBe(other.uri);
+    mocks.pick.mockResolvedValue(undefined);
+    expect(await chooseWorkspaceFolder()).toBeUndefined();
   });
 });
