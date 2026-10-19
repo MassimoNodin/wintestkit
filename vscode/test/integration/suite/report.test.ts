@@ -5,6 +5,62 @@ import * as path from "node:path";
 import * as vscode from "vscode";
 
 suite("Report preview", () => {
+  test("report commands preserve run identity across all arguments, not the latest run", async function () {
+    this.timeout(60000);
+    const extension = vscode.extensions.getExtension("wintestkit.wintestkit");
+    assert.ok(extension);
+    const api = await extension.activate();
+    const directory = mkdtempSync(path.join(tmpdir(), "wtk-run-command-"));
+    const older = api.reports.history.newName();
+    const newer = api.reports.history.newName();
+    for (const [name, folder] of [[older, "older"], [newer, "newer"]]) {
+      const dir = path.join(directory, folder);
+      mkdirSync(dir);
+      writeFileSync(path.join(dir, "results.json"), JSON.stringify({ version: 1, tests: [] }));
+      api.reports.history.start(name, "file:///report-command-test", "test", dir);
+    }
+    const preview = api.reports.preview;
+    const reportTarget = api.tests.reportTarget;
+    const opened: string[] = [];
+    const selected: (string | undefined)[] = [];
+    api.reports.preview = async (file: string, testId?: string) => { opened.push(file); selected.push(testId); };
+    const info = { testRunName: older, controllerId: "wintestkit", resultId: "result", taskId: "task" };
+    const invoke = async (...args: unknown[]) => {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        await Promise.race([
+          vscode.commands.executeCommand("wintestkit.openRunReport", ...args),
+          new Promise<never>((_, reject) => {
+            timer = setTimeout(() => reject(new Error("The report command did not resolve its run identity")), 5000);
+          }),
+        ]);
+      } finally {
+        clearTimeout(timer);
+        await vscode.commands.executeCommand("workbench.action.closeQuickOpen");
+      }
+    };
+    try {
+      await invoke(info);
+      const item = api.tests.controller.createTestItem("report-command-test", "test");
+      await invoke(item, info);
+      assert.deepEqual(opened, [path.join(directory, "older", "index.html"), path.join(directory, "older", "index.html")]);
+      const testId = 'tests/test_a.py::test_ok[a & b]';
+      api.tests.reportTarget = () => ({ project: { root: { toString: () => "file:///report-command-test" } }, nodeid: testId });
+      await invoke(item, info);
+      assert.equal(selected[2], testId);
+      assert.equal(opened[2], path.join(directory, "older", "index.html"));
+      writeFileSync(path.join(directory, "older", "results.json"), JSON.stringify({ version: 1, tests: [{ id: testId, outcome: "passed" }] }));
+      await vscode.commands.executeCommand("wintestkit.openTestReport", item);
+      assert.equal(selected[3], testId);
+      assert.equal(opened[3], path.join(directory, "older", "index.html"));
+    } finally {
+      api.reports.preview = preview;
+      api.tests.reportTarget = reportTarget;
+      await api.reports.history.discard(older);
+      await api.reports.history.discard(newer);
+    }
+  });
+
   test("opens the HTML report inside VS Code and reuses its panel", async function () {
     this.timeout(60000);
     const extension = vscode.extensions.getExtension("wintestkit.wintestkit");

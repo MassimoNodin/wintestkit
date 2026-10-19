@@ -79,6 +79,12 @@ describe("test subprocess runner", () => {
     expect(replaysByDefault({}, ["--replay-fps", "2"], {})).toBe(true);
     expect(replaysByDefault({}, [], { WTK_REPLAY: "off" })).toBe(false);
   });
+  it("gives a run its own report folder when asked", () => {
+    const args = runArguments("tcp://localhost:1", ["test_x"], false, [], false, false, "C:/p/wtk-report/runs/r1");
+    expect(args.slice(args.indexOf("--report"), args.indexOf("--report") + 2)).toEqual(["--report", "C:/p/wtk-report/runs/r1"]);
+    expect(args.indexOf("--report")).toBeLessThan(args.indexOf("--"));
+    expect(runArguments("tcp://localhost:1", ["test_x"], false, [])).not.toContain("--report");
+  });
   it("decodes chunked Unicode output and exits without leaking cancellation subscriptions", async () => {
     const child = new Child();
     mocks.spawn.mockReturnValue(child);

@@ -12,11 +12,13 @@ import { FlowRuns } from "./editor/flowRuns";
 import { CheckAfterFlow } from "./editor/checkAfterFlow";
 import { ProjectSweep } from "./editor/projectSweep";
 import { TestController } from "./testing/controller";
+import { registerClearResults } from "./testing/clearResults";
 import { registerInitialize } from "./init";
 import { PytestConflict } from "./pytestConflict";
 import { ElementsTree } from "./views/elementsTree";
 import { UnusedDefinitions } from "./views/unusedDefinitions";
 import { Reports } from "./report";
+import { runNameFrom, testItemFrom } from "./runHistory";
 import { SpyView } from "./spy/spyView";
 import { registerInsertElement } from "./spy/insertElement";
 import { RelocationActions } from "./editor/relocationActions";
@@ -174,6 +176,7 @@ export function activate(context: vscode.ExtensionContext): {
     new PytestConflict(projects, context.workspaceState, log),
   );
   context.subscriptions.push(tests);
+  context.subscriptions.push(registerClearResults(() => tests.prepareClearResults()));
   context.subscriptions.push(
     lenses,
     checks,
@@ -313,7 +316,7 @@ export function activate(context: vscode.ExtensionContext): {
       }
       await spy.refreshForProject(project);
     }, target, propagateErrors);
-  const implemented: Record<string, (target?: vscode.TreeItem) => unknown> = {
+  const implemented: Record<string, (target?: vscode.TreeItem, ...args: unknown[]) => unknown> = {
     "wintestkit.chooseApp": () => setup.chooseApp(),
     "wintestkit.openGettingStarted": () =>
       vscode.commands.executeCommand(
@@ -327,6 +330,21 @@ export function activate(context: vscode.ExtensionContext): {
     "wintestkit.showOutput": () => log.show(),
     "wintestkit.openReport": () => reports.open(currentProject()),
     "wintestkit.exportReport": () => reports.exportHtml(currentProject()),
+    "wintestkit.openPreviousReport": () => reports.openPrevious(),
+    "wintestkit.openRunReport": (...args: unknown[]) => {
+      const item = testItemFrom(args) as vscode.TestItem | undefined;
+      const name = runNameFrom(args);
+      const target = item && tests.reportTarget(item);
+      // Without a run name nothing identifies the row's run, so let the user choose rather than guess.
+      return name
+        ? reports.openRun(name, target?.project.root.toString(), target?.nodeid)
+        : reports.openPrevious();
+    },
+    "wintestkit.openTestReport": (...args: unknown[]) => {
+      const item = testItemFrom(args) as vscode.TestItem | undefined;
+      const target = item && tests.reportTarget(item);
+      return reports.openTest(target?.project, target?.nodeid);
+    },
     "wintestkit.launchApp": (target) => changeApp(["app.launch"], target),
     "wintestkit.launchAppStrict": (target) =>
       changeApp(["app.launch"], target, true),
@@ -411,9 +429,9 @@ export function activate(context: vscode.ExtensionContext): {
     context.subscriptions.push(
       vscode.commands.registerCommand(
         contribution.command,
-        (target?: vscode.TreeItem) => {
+        (target?: vscode.TreeItem, ...args: unknown[]) => {
           if (implemented[contribution.command])
-            return implemented[contribution.command](target);
+            return implemented[contribution.command](target, ...args);
           if (contribution.command === "wintestkit.showOutput") {
             log.show();
           } else {

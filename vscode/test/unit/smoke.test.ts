@@ -262,7 +262,7 @@ describe("extension scaffold", () => {
     ).toEqual(
       manifest.contributes.commands
         .map((command: { command: string }) => command.command)
-        .concat("wintestkit.launchAppStrict")
+        .concat("wintestkit.launchAppStrict", "testing.clearTestResults")
         .sort(),
     );
     expect(mocks.registerWebviewViewProvider).toHaveBeenCalledWith(
