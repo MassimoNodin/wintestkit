@@ -3,8 +3,8 @@
 The **WinTestKit** extension (`wintestkit.wintestkit`) adds editor actions, Test Explorer
 integration, an **Explorer** for the Page Tree and Flows, and a **Spy** below it. It needs the
 [Python extension](https://marketplace.visualstudio.com/items?itemName=ms-python.python) and the
-`wintestkit` package in the selected interpreter. When the package is missing, the extension
-offers to install it (**WinTestKit: Install wintestkit Package**).
+`wintestkit` package in the selected interpreter. A guided setup in the sidebar walks you through
+choosing the interpreter, installing the package and creating a project (see [Guided setup](#guided-setup)).
 
 The extension starts one Python server per project in the background. The status bar shows
 whether the application is running; click it for **Launch App**, **Close App**, **Restart Server**,
@@ -22,8 +22,7 @@ that opens the settings.
 - **Mode** (**Attach** or **Launch for tests**). **Attach** uses the app that is already running and never
   closes it; **Launch for tests** starts the app for the tests (closing a running copy first) and closes it
   when they finish. Click to switch.
-- **Project**. The workspace folder and project name; with several WinTestKit projects, click to
-  switch between them.
+- **Python interpreter** (first tile, with the package strip under it). Click to choose another interpreter.
 - **Launch**, or **Restart** and **Close** while it runs. For a process-only attach setup the section
   says it is waiting for the app: start it yourself, then **Check again**.
 
@@ -157,7 +156,7 @@ The **Spy** view, below Explorer, explores the live UI Automation tree of the ap
 
 Every folder with `wintestkit.yaml` or a `pyproject.toml` containing `[tool.wintestkit]` is a project, including
 nested folders and multi-root workspaces. Each project has its own server, tests and elements.
-**WinTestKit: Initialize Project** creates the starter files described in
+The guided setup creates the starter files described in
 [Getting started](getting-started.md).
 
 The inspector loads essential properties first. To read the complete property list and
@@ -170,9 +169,61 @@ does not block the basic property display.
 The **Test Target** section, above the Explorer, shows the application name and executable icon (with a
 generic fallback). Use the gear to edit its settings. In multi-project workspaces,
 it follows the active source file.
-Use **WinTestKit: Open Getting Started** to reopen the five-step walkthrough. The Pages & Flows
-empty state offers it alongside project initialization; Spy offers it when no project is open and
-**Choose app** when a project has no running target.
+Its first tile is the **Python interpreter** the tests run with (its environment name, such as `.venv`,
+and Python version), with a strip under it that says whether `wintestkit` is installed there: a green
+version when it is, a red **Install** button when it is not, and an **Update to …** button when the
+installed package is older than the one this extension expects. Click the tile to choose another
+interpreter, the strip to install or update. If `wintestkit.pythonPath` is set, the tile offers to stop
+overriding it.
+
+### Guided setup
+
+WinTestKit does nothing in a workspace until you enable it there. Until then the WinTestKit sidebar is a
+single **Enable for this workspace** button: no projects are read, no server starts and no checks run.
+Pressing it starts the guided setup.
+
+The guide is built into the sidebar. Each required step lights the part of Test Target it is about,
+dulls everything else (including Pages & Flows and Spy), and shows instructions directly below the
+button group. Use the real controls above the instructions rather than duplicate tutorial buttons.
+Before a project exists, only the interpreter and **Initialize project** tiles appear. After
+initialization, the application, launch mode and launch controls appear. Background check updates
+preserve your scroll position:
+
+1. **Choose a Python interpreter**: the interpreter tile.
+2. **Install WinTestKit** into it: only the package strip is highlighted. Click **Install** on that
+   strip; the callout has no duplicate install button. Installation runs in the background with progress
+   on the strip, and the guide checks again when it finishes. If it fails, click **Try again** on the strip.
+3. **Check this machine**: shown only when an environment check fails (the same checks as `wtk doctor`).
+4. **Create the test project**: shown only when the folder has no WinTestKit project; it adds pages, flows
+   and a smoke test without overwriting anything.
+5. **Choose the application**: the application tile.
+6. **Launch mode**: click the mode tile and select how the application should start.
+7. **Start the application**: the launch tile.
+
+After that you can **Continue to extra features**. WinTestKit opens **WinTestKit Spy** in the bottom
+panel and moves the optional tutorial there, beside the controls it introduces. Matching handoff
+arrows link the original sidebar callout with the new tutorial box; **Show tutorial in bottom panel**
+reveals it again if you switch panel tabs. The sidebar and Spy stay usable throughout the extras.
+The tutorial introduces Spy, picking controls, browsing objects and toolbar tools, inspecting
+properties, copying locators and adding them to pages, finding existing definitions, organizing
+pages and flows, and running tests and reviewing reports. **Back** and **Next** navigate without
+changing the project; the first **Back** returns to the sidebar completion card. **Finish** closes
+the tutorial. **Skip tutorial** dismisses it without disabling WinTestKit. Return to the sidebar
+after running a test to see its result and report link in Test Target. Alternatively,
+**Close introduction**. **‹** goes back one step without undoing anything and **›** returns; **✕**
+closes the guide, and while something required is still missing the sidebar shows an interpreter tile and
+a **Resume setup** button (also **WinTestKit: Open Setup Guide**). A workspace that was already set up
+when the guide was introduced is not walked through it.
+
+The guide also repairs. WinTestKit keeps checking what it set up, and when a step that worked stops
+working (the interpreter is deleted, the package is uninstalled, the project's files are removed, the
+application's executable is gone, or the application runs elevated while VS Code does not) the guide
+comes back at that step with a red callout saying what is wrong, and a notification names it if the
+sidebar is closed. A stopped application is not a problem. **WinTestKit: Check Setup** looks again on
+demand.
+
+**Disable for this workspace** (the red button in the callout, **WinTestKit: Disable for This Workspace**,
+or the Test Target menu) returns the sidebar to the Enable button. The choice is remembered per workspace.
 
 The custom YAML editor offers **This machine** and **Shared project** tabs. On **This
 machine**, **Start the application** shows only **Application executable**, with **Browse…**;

@@ -125,10 +125,11 @@ nested projects and multi-root workspaces.
 | WinTestKit: Open Last Report | Open the report of the last run in a panel, drawn from its `results.json` |
 | Open in Report (Testing sidebar) | Open the newest retained report containing the clicked test, with that test selected |
 | WinTestKit: Export Last Report as HTML | Save the report as one self-contained HTML file |
+| WinTestKit: Open Setup Guide | Show the guided setup in the sidebar; it also comes back by itself at a step that stopped working |
+| WinTestKit: Enable / Disable for This Workspace | WinTestKit does nothing in a workspace until it is enabled there |
+| WinTestKit: Check Setup | Re-run the checks behind the guided setup |
 | WinTestKit: Open Report from a Previous Run… | Pick any earlier Testing-view run whose report is still stored |
 | WinTestKit: Check Environment (doctor) | Run `wtk doctor` in a terminal |
-| WinTestKit: Initialize Project | Create a starter project without overwriting files |
-| WinTestKit: Install wintestkit Package | Install the package into the selected interpreter |
 | WinTestKit: Restart Server | Restart the per-project Python server |
 | WinTestKit: Show Output | Show the WinTestKit log |
 

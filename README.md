@@ -75,7 +75,7 @@ wtk init --app "C:/Program Files/Contoso/Orders.exe"
 ```
 
 This creates a starter page, a smoke test and project settings without overwriting existing
-files. You can also use **WinTestKit: Initialize Project** in VS Code.
+files. In VS Code the guided setup in the WinTestKit sidebar does this for you.
 
 Your project will look like this:
 
