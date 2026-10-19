@@ -194,20 +194,24 @@
           "title": "WinTestKit",
           "icon": "media/activity.svg"
         }
+      ],
+      "panel": [
+        {
+          "id": "wintestkit-spy",
+          "title": "WinTestKit Spy",
+          "icon": "media/activity.svg"
+        }
       ]
     },
     "views": {
       "wintestkit": [
         {
-          "id": "wintestkit.setup",
-          "name": "Test Target",
+          "id": "wintestkit.sidebar",
+          "name": "WinTestKit",
           "type": "webview"
-        },
-        {
-          "id": "wintestkit.navigation",
-          "name": "Pages & Flows",
-          "type": "webview"
-        },
+        }
+      ],
+      "wintestkit-spy": [
         {
           "id": "wintestkit.spy",
           "name": "Spy",
@@ -230,46 +234,46 @@
       }
     ],
     "viewsWelcome": [
-      { "view": "wintestkit.navigation", "contents": "No WinTestKit project is initialized. [Initialize Project](command:wintestkit.initProject)" },
+      { "view": "wintestkit.sidebar", "contents": "No WinTestKit project is initialized. [Initialize Project](command:wintestkit.initProject)" },
       { "view": "wintestkit.spy", "contents": "Choose an application in [Test Target](command:wintestkit.openSettings), then launch it to inspect live controls." }
     ],
     "menus": {
       "view/title": [
         {
           "command": "wintestkit.openTesting",
-          "when": "view == wintestkit.navigation",
+          "when": "view == wintestkit.sidebar",
           "group": "navigation@1"
         },
         {
           "command": "wintestkit.openSettings",
-          "when": "view == wintestkit.setup",
+          "when": "view == wintestkit.sidebar",
           "group": "navigation"
         },
         {
           "command": "wintestkit.elements.refresh",
-          "when": "view == wintestkit.navigation",
+          "when": "view == wintestkit.sidebar",
           "group": "navigation"
         }
       ],
       "webview/context": [
         {
           "command": "wintestkit.highlightElement",
-          "when": "webviewId == 'wintestkit.navigation' && webviewSection =~ /^(element|window)$/",
+          "when": "webviewId == 'wintestkit.sidebar' && webviewSection =~ /^(element|window)$/",
           "group": "navigation@1"
         },
         {
           "command": "wintestkit.checkElement",
-          "when": "webviewId == 'wintestkit.navigation' && webviewSection =~ /^(element|window)$/",
+          "when": "webviewId == 'wintestkit.sidebar' && webviewSection =~ /^(element|window)$/",
           "group": "navigation@2"
         },
         {
           "command": "wintestkit.checkPage",
-          "when": "webviewId == 'wintestkit.navigation' && webviewSection == page",
+          "when": "webviewId == 'wintestkit.sidebar' && webviewSection == page",
           "group": "navigation@3"
         },
         {
           "command": "wintestkit.runFlow",
-          "when": "webviewId == 'wintestkit.navigation' && webviewSection == flow && flowName",
+          "when": "webviewId == 'wintestkit.sidebar' && webviewSection == flow && flowName",
           "group": "navigation@4"
         }
       ],

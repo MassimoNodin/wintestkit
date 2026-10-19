@@ -39,7 +39,8 @@ def test_sign_in(app):
   captured output, parameterized cases and failure details including expected/actual diffs.
   Run and Debug profiles are in the Testing view; debugging uses the Python Debugger with
   normal breakpoints.
-- **Pages & Flows.** One view, with **Spy** below it, and a **Page Tree | Flows** control that
+- **Pages & Flows.** Shares the sidebar with **Test Target**, with minimum section heights
+  and independent scrolling. **Spy** lives in the separate **WinTestKit Spy** bottom panel. A **Page Tree | Flows** control
   remembers the selected tab. Browse pages with their child pages and elements nested by `within`
   containers, and reusable flow functions grouped by file. Jump to definitions,
   highlight/check page elements, or run flows that only need `app` inline. Use the beaker action in the view header to open VS Code's Testing view and run or debug tests.
@@ -55,7 +56,7 @@ def test_sign_in(app):
 
 The Spy uses control-type icons, chevrons and dotted branch guides to make the live
 hierarchy easier to navigate. A wide view places the object tree beside the inspector;
-a narrow sidebar stacks them vertically. Drag the divider, or focus it and use the
+a narrow view stacks them vertically. Drag the divider, or focus it and use the
 arrow keys, to resize the panes. Colours follow your VS Code theme.
 
 Use **Filter loaded objects** to search names, control types, classes and automation

@@ -1,6 +1,7 @@
 (() => {
-  const vscode = acquireVsCodeApi();
+  const vscode = window.vscodeApi ?? acquireVsCodeApi();
   const root = document.getElementById("card");
+  const pages = document.getElementById("pages");
   let model;
 
   const el = (tag, className, text) => {
@@ -68,6 +69,9 @@
   const render = () => {
     root.replaceChildren();
     if (!model) return;
+    const solo = model.kind === "untrusted";
+    document.body.classList.toggle("solo", solo);
+    pages.hidden = solo;
     if (model.tiles.length) {
       const grid = el("div");
       grid.id = "tiles";

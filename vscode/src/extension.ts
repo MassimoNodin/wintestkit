@@ -24,6 +24,7 @@ import { registerInsertElement } from "./spy/insertElement";
 import { RelocationActions } from "./editor/relocationActions";
 import { computeInsertion } from "./spy/insertionModel";
 import { ConfigurationEditor, settingsEditorId } from "./settings/editor";
+import { SidebarView } from "./views/sidebarView";
 import { TestAppView } from "./settings/testApp";
 import type { AppStatusResult } from "./protocol/generated";
 import { readConfiguration } from "./settings/files";
@@ -162,7 +163,7 @@ export function activate(context: vscode.ExtensionContext): {
     reports,
     unused,
   );
-  context.subscriptions.push(elements, flows, checkAfterFlow, projectSweep, unused);
+  context.subscriptions.push(elements, new SidebarView(context.extensionUri, setup, elements), flows, checkAfterFlow, projectSweep, unused);
   const spy = new SpyView(projects, servers, context.extensionUri, log);
   context.subscriptions.push(spy);
   context.subscriptions.push(

@@ -5,10 +5,23 @@ import {
   reduceNavigation,
   type NavNode,
 } from "../../src/views/navigationModel";
-import {
-  navigationDocument,
-  renderBody,
-} from "../../src/views/navigationDocument";
+import { renderBody } from "../../src/views/navigationDocument";
+import { sidebarDocument } from "../../src/views/sidebarDocument";
+
+/** The sidebar page around the Pages & Flows part, as the extension builds it. */
+function navigationDocument(options: {
+  cspSource: string;
+  nonce: string;
+  iconsHref: string;
+  section: "pages" | "flows";
+  treeHtml: string;
+}): string {
+  return sidebarDocument({
+    ...options,
+    stylesHref: "setup.css",
+    scriptHref: "setup.js",
+  });
+}
 
 const nodes: NavNode[] = [
   {
@@ -302,7 +315,7 @@ function navigationScript(): string {
     section: "pages",
     treeHtml: "",
   });
-  const script = /<script nonce="n">([\s\S]*)<\/script>/.exec(html)?.[1];
+  const script = /<script nonce="n">([\s\S]*?)<\/script>/.exec(html)?.[1];
   if (!script) throw new Error("missing navigation script");
   return script;
 }

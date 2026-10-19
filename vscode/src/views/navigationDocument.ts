@@ -112,17 +112,8 @@ function renderItem(
   );
 }
 
-const STYLE = `
-html, body { height: 100%; margin: 0; }
-body {
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  color: var(--vscode-foreground);
-  background: var(--vscode-sideBar-background);
-  font-family: var(--vscode-font-family, "Segoe UI", sans-serif);
-  font-size: var(--vscode-font-size, 13px);
-}
+/** The styles of the Pages & Flows part; the sidebar document around it owns the page layout. */
+export const NAVIGATION_STYLE = `
 #segments {
   display: flex;
   flex: 0 0 auto;
@@ -312,8 +303,12 @@ body {
 }
 `;
 
-const SCRIPT = `
-const vscodeApi = acquireVsCodeApi();
+/**
+ * The script of the Pages & Flows part. It runs before the Test Target script in the same page
+ * and shares its `acquireVsCodeApi()` handle, which a page may only obtain once.
+ */
+export const NAVIGATION_SCRIPT = `
+const vscodeApi = (window.vscodeApi ??= acquireVsCodeApi());
 const sections = ["pages", "flows"];
 const labels = { pages: "Page Tree", flows: "Flows" };
 const actions = ["highlight", "check", "checkPage", "run"];
@@ -447,10 +442,8 @@ tree.addEventListener("keydown", (event) => {
 vscodeApi.postMessage({ type: "ready" });
 `;
 
-export function navigationDocument(options: {
-  cspSource: string;
-  nonce: string;
-  iconsHref: string;
+/** The Pages & Flows part of the sidebar: its tabs, the unused-definition tools and the tree. */
+export function navigationMarkup(options: {
   section: NavigationSection;
   treeHtml: string;
 }): string {
@@ -464,26 +457,9 @@ export function navigationDocument(options: {
       `<span class="tab-label">${SECTION_LABEL[section]}</span></button>`
     );
   }).join("");
-  const html = `<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8" />
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src {{cspSource}} 'nonce-{{nonce}}'; font-src {{cspSource}}; script-src 'nonce-{{nonce}}'" />
-<link rel="stylesheet" href="{{icons}}" />
-<style nonce="{{nonce}}">${STYLE}</style>
-</head>
-<body>
-<div id="segments" role="tablist" aria-label="Page Tree and Flows">{{tabs}}</div>
-<div id="unused-tools" role="toolbar" aria-label="Unused definitions" hidden><button id="unused-scan" type="button" class="tool"><span class="codicon codicon-search" aria-hidden="true"></span><span class="tool-label">Find unused definitions</span></button><button id="unused-toggle" type="button" class="tool" aria-pressed="false" disabled><span class="codicon codicon-eye" aria-hidden="true"></span><span class="tool-label">Show unused</span><span id="unused-count" class="badge" hidden></span></button></div>
-<div id="tree" role="tree" aria-label="{{treeLabel}}" tabindex="0"><!--TREE--></div>
-<script nonce="{{nonce}}">${SCRIPT}</script>
-</body>
-</html>`;
-  return html
-    .replaceAll("{{cspSource}}", options.cspSource)
-    .replaceAll("{{nonce}}", options.nonce)
-    .replaceAll("{{icons}}", options.iconsHref)
-    .replaceAll("{{tabs}}", tabs)
-    .replaceAll("{{treeLabel}}", SECTION_LABEL[options.section])
-    .replace("<!--TREE-->", options.treeHtml);
+  return (
+    `<div id="segments" role="tablist" aria-label="Page Tree and Flows">${tabs}</div>\n` +
+    `<div id="unused-tools" role="toolbar" aria-label="Unused definitions" hidden><button id="unused-scan" type="button" class="tool"><span class="codicon codicon-search" aria-hidden="true"></span><span class="tool-label">Find unused definitions</span></button><button id="unused-toggle" type="button" class="tool" aria-pressed="false" disabled><span class="codicon codicon-eye" aria-hidden="true"></span><span class="tool-label">Show unused</span><span id="unused-count" class="badge" hidden></span></button></div>\n` +
+    `<div id="tree" role="tree" aria-label="${SECTION_LABEL[options.section]}" tabindex="0">${options.treeHtml}</div>`
+  );
 }

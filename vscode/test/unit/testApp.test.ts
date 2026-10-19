@@ -398,11 +398,11 @@ describe("Test Target messages and manifest", () => {
     ])
       expect(parseTestAppMessage(invalid)).toBeUndefined();
   });
-  it("is a webview view named Test Target with no leftover tree menus", () => {
+  it("is a shared sidebar webview named WinTestKit with no leftover tree menus", () => {
     const manifest = JSON.parse(readFileSync("package.json", "utf8"));
     expect(manifest.contributes.views.wintestkit[0]).toEqual({
-      id: "wintestkit.setup",
-      name: "Test Target",
+      id: "wintestkit.sidebar",
+      name: "WinTestKit",
       type: "webview",
     });
     expect(manifest.contributes.menus["view/item/context"]).toBeUndefined();

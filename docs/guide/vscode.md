@@ -109,9 +109,11 @@ both is supported. Turn the prompt off with `wintestkit.promptDisablePytestExplo
 
 ## Explorer
 
-**Test Target**, **Explorer** and **Spy** stack in the WinTestKit activity bar, with Spy
-below Explorer. Explorer is a single view. A **Page Tree | Flows** control at the top
-switches the list, and the selected tab is remembered.
+**Test Target** and **Pages & Flows** share one WinTestKit sidebar view. Test Target
+keeps at least 120px and Pages & Flows at least 160px; each section scrolls its own
+content, and the sidebar scrolls when it is too short for both minimums.
+**Spy** opens separately in the **WinTestKit Spy** bottom panel.
+A **Page Tree | Flows** control switches the list, and the selected tab is remembered.
 
 - **Page Tree** shows only pages that are not children of another page at the root,
   with spacing and dividers between root trees. Expand a page to reveal its elements
