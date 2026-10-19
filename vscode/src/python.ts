@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import * as path from "node:path";
 import { PythonExtension } from "@vscode/python-extension";
 import * as vscode from "vscode";
 
@@ -13,6 +14,43 @@ export async function getInterpreter(
   const active = api.environments.getActiveEnvironmentPath(folder);
   const resolved = await api.environments.resolveEnvironment(active);
   return resolved?.executable.uri?.fsPath;
+}
+
+export interface InterpreterInfo {
+  /** The python executable. */
+  path: string;
+  /** What to call it: its environment's name, or the folder it lives in, such as `.venv`. */
+  name: string;
+  version?: string;
+  /** `wintestkit.pythonPath` is set, so it wins over the Python extension's selection. */
+  overridden: boolean;
+}
+
+/** The interpreter WinTestKit uses for a folder, in words a person recognises. */
+export async function describeInterpreter(
+  folder: vscode.Uri,
+): Promise<InterpreterInfo | undefined> {
+  const configured = vscode.workspace
+    .getConfiguration("wintestkit", folder)
+    .get<string>("pythonPath")
+    ?.trim();
+  const api = await PythonExtension.api();
+  const resolved = await api.environments.resolveEnvironment(
+    configured || api.environments.getActiveEnvironmentPath(folder),
+  );
+  const executable = configured || resolved?.executable.uri?.fsPath;
+  if (!executable) return undefined;
+  const prefix = resolved?.executable.sysPrefix;
+  const version = resolved?.version;
+  return {
+    path: executable,
+    name:
+      resolved?.environment?.name ||
+      path.basename(prefix || path.dirname(path.dirname(executable))) ||
+      path.basename(executable),
+    version: version?.major !== undefined ? `${version.major}.${version.minor}.${version.micro}` : undefined,
+    overridden: !!configured,
+  };
 }
 
 export async function onDidChangeInterpreter(
@@ -63,6 +101,10 @@ export async function runTerminal(
     shellArgs: args,
   });
   terminal.show();
+}
+
+export async function installArguments(): Promise<string[]> {
+  return ["-m", "pip", "install", "-U", "wintestkit"];
 }
 
 export async function installPackage(folder: vscode.Uri): Promise<void> {

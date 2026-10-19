@@ -1,5 +1,6 @@
 import * as path from "node:path";
 import * as vscode from "vscode";
+import type { Enablement } from "./enablement";
 import type { Project } from "./server/serverManager";
 
 export function normalizedPath(
@@ -40,7 +41,10 @@ export class Projects implements vscode.Disposable {
   private readonly changed = new vscode.EventEmitter<readonly Project[]>();
   readonly onDidChange = this.changed.event;
   private readonly subscriptions: vscode.Disposable[];
-  constructor(private readonly log: vscode.LogOutputChannel) {
+  constructor(
+    private readonly log: vscode.LogOutputChannel,
+    private readonly enablement?: Enablement,
+  ) {
     const watcher = vscode.workspace.createFileSystemWatcher(
       "**/{pyproject.toml,wintestkit.yaml,wintestkit.local.yaml,wintestkit.local.toml}",
     );
@@ -53,10 +57,12 @@ export class Projects implements vscode.Disposable {
       watcher.onDidChange(refresh),
       watcher.onDidDelete(refresh),
       vscode.workspace.onDidChangeWorkspaceFolders(refresh),
+      ...(enablement ? [enablement.onDidChange(refresh)] : []),
     ];
   }
+  /** No projects at all until WinTestKit is enabled for the workspace, so nothing else starts. */
   get all(): readonly Project[] {
-    return this.projects;
+    return this.enablement && !this.enablement.enabled ? [] : this.projects;
   }
   /**
    * Makes ``project`` the one views fall back to (``all[0]``) when no open file belongs to a
@@ -81,10 +87,15 @@ export class Projects implements vscode.Disposable {
       this.projects.map((project) => project.root.fsPath),
       uri.fsPath,
     );
-    return this.projects.find((project) => project.root.fsPath === root);
+    return this.all.find((project) => project.root.fsPath === root);
   }
   async refresh(): Promise<void> {
     const revision = ++this.revision;
+    if (this.enablement && !this.enablement.enabled) {
+      await vscode.commands.executeCommand("setContext", "wintestkit.hasProject", false);
+      this.changed.fire(this.all);
+      return;
+    }
     try {
       const files = await vscode.workspace.findFiles(
         "**/{pyproject.toml,wintestkit.yaml}",
