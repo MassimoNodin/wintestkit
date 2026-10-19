@@ -4,6 +4,8 @@ import type * as vscode from "vscode";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Projects } from "../../src/projects";
 import type { ServerManager } from "../../src/server/serverManager";
+import type { SetupMonitor } from "../../src/setup/monitor";
+import type { TourView } from "../../src/setup/tour";
 
 const mocks = vi.hoisted(() => ({
   request: vi.fn(),
@@ -108,7 +110,7 @@ describe("Spy view bridge", () => {
     mocks.configListeners.splice(0, mocks.configListeners.length);
     mocks.editorListeners.splice(0, mocks.editorListeners.length);
   });
-  const create = async (connect?: () => Promise<unknown>) => {
+  const create = async (connect?: () => Promise<unknown>, setup?: SetupMonitor) => {
     const project = {
       root: { fsPath: "C:/demo", toString: () => "demo" },
       name: "demo",
@@ -146,6 +148,7 @@ describe("Spy view bridge", () => {
       } as unknown as ServerManager,
       { fsPath: path.resolve(".") } as vscode.Uri,
       { error: vi.fn() } as unknown as vscode.LogOutputChannel,
+      setup,
     );
     let receive: (value: unknown) => void = () => {};
     let visibility: () => void = () => {};
@@ -192,6 +195,46 @@ describe("Spy view bridge", () => {
       },
     };
   };
+  it("opens the bottom Spy panel once on tutorial entry and forwards its navigation", async () => {
+    let tutorial: TourView | undefined;
+    let changed = () => {};
+    const back = vi.fn(() => { tutorial = undefined; changed(); });
+    const next = vi.fn();
+    const skip = vi.fn(async () => {});
+    const finish = vi.fn(async () => {});
+    const close = vi.fn();
+    const setup = {
+      get tour() { return tutorial; },
+      get focus() { return { dim: false, spyLit: !!tutorial }; },
+      onDidChange: (listener: () => void) => { changed = listener; return { dispose() {} }; },
+      back, next, skip, finish, close,
+    } as unknown as SetupMonitor;
+    const fixture = await create(undefined, setup);
+    expect(mocks.command).not.toHaveBeenCalledWith("wintestkit.spy.focus");
+    tutorial = {
+      step: "spy", phase: "extras", kind: "todo", title: "Meet Spy", text: "Explore the panel.",
+      lit: ["spy"], panel: false, buttons: [{ id: "next", label: "Next" }], canBack: true, canNext: false,
+    };
+    changed();
+    await vi.waitFor(() => expect(mocks.command).toHaveBeenCalledWith("wintestkit.spy.focus"));
+    expect(mocks.command).toHaveBeenCalledWith("workbench.action.positionPanelBottom");
+    expect(fixture.sent.at(-1)).toMatchObject({ type: "tour", tutorial: { step: "spy" } });
+    tutorial = { ...tutorial, step: "spyPick", spyTarget: "pick" };
+    changed();
+    expect(mocks.command.mock.calls.filter(([command]) => command === "wintestkit.spy.focus")).toHaveLength(1);
+    for (const [action, handler] of [["next", next], ["skip", skip], ["finish", finish], ["close", close]] as const) {
+      fixture.receive({ type: "tour", action });
+      expect(handler).toHaveBeenCalledOnce();
+    }
+    fixture.receive({ type: "tour", action: "back" });
+    expect(back).toHaveBeenCalledOnce();
+    expect(mocks.command).toHaveBeenCalledWith("wintestkit.sidebar.focus");
+    expect(fixture.sent.at(-1)).toMatchObject({ type: "tour", tutorial: undefined });
+    fixture.receive({ type: "tour", action: "next" });
+    expect(next).toHaveBeenCalledOnce();
+    fixture.provider.dispose();
+  });
+
   it("refreshes after app actions only for the visible matching project", async () => {
     const fixture = await create();
     const project = {

@@ -445,6 +445,13 @@ p {
 .callout-step {
     padding: 0 4px;
 }
+.tutorial-handoff-arrow {
+    float: right;
+    margin: 0 0 8px 12px;
+    color: var(--info);
+    font-size: 48px;
+    line-height: 1;
+}
 .callout-spacer {
     flex: 1;
 }

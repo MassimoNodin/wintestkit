@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { parseSpyRequest, suggestionText } from "../../src/spy/messages";
+import { parseSpyRequest, suggestionText, SPY_TOUR_ACTIONS } from "../../src/spy/messages";
 
 describe("Spy message contract", () => {
+  it("accepts only navigation actions from the optional tutorial", () => {
+    for (const action of SPY_TOUR_ACTIONS)
+      expect(parseSpyRequest({ type: "tour", action })).toEqual({ type: "tour", action });
+    for (const action of [undefined, "launch", "pickApp", "execute", 12])
+      expect(parseSpyRequest({ type: "tour", action })).toBeUndefined();
+  });
   it("allows only known message types and validates payloads", () => {
     expect(
       parseSpyRequest({ type: "select", nodeId: "node:1", extra: "ignored" }),
