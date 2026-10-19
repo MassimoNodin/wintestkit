@@ -13,7 +13,7 @@ describe("package build isolation", () => {
     };
     const production = await bundle(false);
     const development = await bundle(true);
-    for (const marker of ["development.packageSource.", "Use local wheel", "Development: select a trusted WinTestKit wheel"]) {
+    for (const marker of ["development.packageSource.", "Use local wheel", "Development: select a trusted WinTestKit wheel", "Back Up and Reset", "wintestkit-reset-"]) {
       expect(production).not.toContain(marker);
       expect(development).toContain(marker);
     }

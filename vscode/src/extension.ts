@@ -16,6 +16,7 @@ import { registerClearResults } from "./testing/clearResults";
 import { Enablement } from "./enablement";
 import { PackageInstaller } from "./setup/install";
 import { SetupMonitor } from "./setup/monitor";
+import { registerDevReset } from "./setup/devReset";
 import { PytestConflict } from "./pytestConflict";
 import { ElementsTree } from "./views/elementsTree";
 import { SidebarView } from "./views/sidebarView";
@@ -38,6 +39,7 @@ interface CommandContribution {
 
 const RPC_TIMEOUT_OVERHEAD_SECONDS = 5;
 const MAX_APP_RPC_TIMEOUT_SECONDS = 24 * 60 * 60;
+declare const __WTK_DEV__: boolean;
 
 function appRpcTimeoutMs(
   configured: unknown,
@@ -111,6 +113,12 @@ export function activate(context: vscode.ExtensionContext): {
     enablement,
     log,
   );
+  if (typeof __WTK_DEV__ !== "undefined" && __WTK_DEV__)
+    registerDevReset(context, async () => {
+      await enablement.set(false);
+      await setupMonitor.check();
+      await servers.stopAll();
+    }, () => installer.busy || setup.initializingProject);
   context.subscriptions.push(
     setup,
     setupMonitor,
@@ -468,6 +476,7 @@ export function activate(context: vscode.ExtensionContext): {
         "wintestkit.spy.startPick",
         "wintestkit.spy.refresh",
         "wintestkit.spy.revealRelocation",
+        "wintestkit.dev.resetRepository",
       ].includes(contribution.command)
     )
       continue;

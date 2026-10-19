@@ -17,6 +17,11 @@ run(["esbuild.mjs", "--dev", "--outfile=" + path.join(stage, "dist/extension.js"
 for (const name of ["media", "README.md", "LICENSE", "CHANGELOG.md"])
   await cp(path.join(root, name), path.join(stage, name), { recursive: true });
 manifest.displayName = manifest.displayName + " (Development)";
+manifest.contributes.commands.push({
+  command: "wintestkit.dev.resetRepository",
+  title: "Development: Reset Repository and Introduction",
+  category: "WinTestKit",
+});
 manifest.description = "Development build: permits explicitly selected local Python wheels. " + manifest.description;
 delete manifest.scripts;
 delete manifest.dependencies;
