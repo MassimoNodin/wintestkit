@@ -95,6 +95,8 @@ def run(args: argparse.Namespace) -> int:
     for relative, content in {
         "pages/__init__.py": "",
         "pages/main.py": _template("main.py.tmpl", title=title),
+        "flows/__init__.py": "",
+        "flows/main.py": _template("flow_main.py.tmpl"),
         "tests/__init__.py": "",
         "tests/test_smoke.py": _template("test_smoke.py.tmpl"),
     }.items():

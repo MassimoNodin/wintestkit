@@ -20,7 +20,7 @@ def test_init_creates_a_valid_starter_project(tmp_path: Path) -> None:
     assert loaded.app.path == Path("C:/Apps/My App.exe")
     assert "My App.exe" not in (root / "wintestkit.yaml").read_text(encoding="utf-8")
     assert config["tool"]["pytest"]["ini_options"]["testpaths"] == ["tests"]
-    for relative in ["pages/main.py", "tests/test_smoke.py"]:
+    for relative in ["pages/main.py", "flows/main.py", "tests/test_smoke.py"]:
         ast.parse((root / relative).read_text(encoding="utf-8"))
     assert 'Window(title="My App")' in (root / "pages/main.py").read_text(encoding="utf-8")
     assert (root / ".gitignore").read_text(encoding="utf-8").splitlines() == [
