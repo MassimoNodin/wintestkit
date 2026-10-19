@@ -64,8 +64,8 @@ def run(args: argparse.Namespace) -> int:
         raise common.CommandError(
             f"cannot update invalid pyproject.toml: {error}", common.EXIT_USAGE
         ) from error
-    app_path = Path(args.app or "C:/path/to/YourApp.exe")
-    title = json.dumps(app_path.stem, ensure_ascii=False)
+    app_path = Path(args.app) if args.app else None
+    title = json.dumps(app_path.stem if app_path else "YourApp", ensure_ascii=False)
     additions: list[str] = []
     tool_value: object = config.get("tool", {})
     tool = cast(dict[str, Any], tool_value)
@@ -114,10 +114,10 @@ def run(args: argparse.Namespace) -> int:
         ),
         force=False,
     )
-    local = (
-        "# Machine-specific settings. Do not commit this file.\napp:\n  path: "
-        + json.dumps(app_path.as_posix(), ensure_ascii=False)
-        + "\n"
+    local = "# Machine-specific settings. Do not commit this file.\n" + (
+        "app:\n  path: " + json.dumps(app_path.as_posix(), ensure_ascii=False) + "\n"
+        if app_path
+        else "{}\n"
     )
     if args.app or "wintestkit" not in tool:
         _write(root / "wintestkit.local.yaml", local, force=False)
