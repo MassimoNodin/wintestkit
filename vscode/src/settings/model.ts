@@ -52,9 +52,9 @@ export const settingFields: SettingField[] = [
     label: "Application lifecycle",
     kind: "select",
     description:
-      "Start once per session, once per test, or attach to a running app.",
-    default: "per-session",
-    choices: ["per-session", "per-test", "attach"],
+      "Start a fresh app for every test, or attach to a running app.",
+    default: "per-test",
+    choices: ["per-test", "attach"],
     group: "Application",
   },
   {

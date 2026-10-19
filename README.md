@@ -96,7 +96,7 @@ orders-tests/
 Shared settings go in `wintestkit.yaml`:
 
 ```yaml
-launch: per-session
+launch: per-test
 timeout: 10
 ```
 
@@ -111,8 +111,8 @@ In VS Code, use the **Test Target** gear above the Explorer to edit these files 
 YAML configuration editor. `pyproject.toml` retains pytest configuration, and legacy
 `[tool.wintestkit]` settings remain supported. Use your real executable path; relative paths
 resolve from the project directory.
-`per-session` launches the app once for the test run and closes it afterwards. Use `per-test`
-for a fresh application per test, or `attach` to use an application that is already running.
+`per-test` starts a fresh app for every test and closes it afterwards. Use `attach` to use an
+application that is already running.
 See [configuration and launch modes](docs/guide/running-tests.md).
 
 Check the environment before continuing:
@@ -255,8 +255,8 @@ using your project settings. Actions and assertions wait automatically; avoid fi
 Use a dedicated test account and do not commit real credentials.
 
 Add more `test_*.py` files under `tests/` and share reusable window/control definitions under
-`pages/`. Tests should start from a known state: reset the app through a fixture or choose
-`launch = "per-test"` when a fresh process provides the isolation you need. See the
+`pages/`. Tests should start from a known state: reset any state kept outside the app
+(a database, files) through a fixture, because each test already gets a fresh process. See the
 [Calculator tests](examples/calculator-tests) for fixture and parametrization patterns;
 adapt their app-specific locators when targeting your own application.
 

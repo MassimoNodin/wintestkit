@@ -53,7 +53,7 @@ describe("configuration file resolution", () => {
     expect(config.timeout).toBe(14);
     expect(config["app.process"]).toBe("Shared.exe");
     expect(config["app.path"]).toBe("C:/Apps/Local.exe");
-    expect(config.launch).toBe("per-session");
+    expect(config.launch).toBe("per-test");
   });
   it("previews an unsaved document without writing it", async () => {
     files.set("/project/wintestkit.yaml", "timeout: 10\n");

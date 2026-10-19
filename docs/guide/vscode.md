@@ -189,8 +189,7 @@ Logs are in the **WinTestKit** output channel (**WinTestKit: Show Output**).
 For a page class, **Check after flow…** lets you explicitly associate a navigation flow with that
 class. After the flow succeeds, WinTestKit checks the class against the current screen. This is
 opt-in because flows can change application state. **Sweep project using remembered reach flows**
-reuses those associations, asks for confirmation, and requires Launch for tests (`launch: per-session`
-or `launch: per-test`). It checks each reached class, reports failures in Problems, and writes the latest summary to
+reuses those associations, asks for confirmation, and requires Launch for tests (`launch: per-test`). It checks each reached class, reports failures in Problems, and writes the latest summary to
 `wtk-report/project-sweep.md`. Cancellation takes effect between flow and check operations. Pages
 without a remembered runnable flow, and remembered flows with required parameters, appear in the
 skipped-pages section.

@@ -8,7 +8,7 @@ import pytest
 
 from wintestkit.app import App
 from wintestkit.errors import AppNotRunningError
-from wintestkit.pytest_plugin import _SessionApp, launch_app
+from wintestkit.pytest_plugin import launch_app
 from wintestkit.uia import win32
 
 
@@ -96,15 +96,3 @@ def test_a_copy_that_exits_while_closing_does_not_stop_the_launch(
     monkeypatch.setattr(App, "attach", staticmethod(vanished))
     assert launch_app(_config()) is calls.launched
     assert calls.events == ["launch Demo.exe"]
-
-
-def test_the_session_app_is_closed_when_the_run_ends(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    calls = _Calls(monkeypatch, running=[])
-    session = _SessionApp()
-    config = _config()
-    assert session.get(config) is calls.launched
-    session.close(config)
-    assert calls.events == ["launch Demo.exe", "close launched (3s)"]
-    assert session.app is None

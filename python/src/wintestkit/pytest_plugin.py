@@ -103,23 +103,6 @@ def launch_app(config: WtkConfig, progress: Callable[[str], None] | None = None)
     )
 
 
-class _SessionApp:
-    """Launches the application once per session and relaunches it if a test killed it."""
-
-    def __init__(self) -> None:
-        self.app: App | None = None
-
-    def get(self, config: WtkConfig) -> App:
-        if self.app is None or not self.app.is_running():
-            self.app = launch_app(config)
-        return self.app
-
-    def close(self, config: WtkConfig) -> None:
-        if self.app is not None and self.app.launched and self.app.is_running():
-            self.app.close(timeout=config.app.close_timeout if config.app else 10.0)
-        self.app = None
-
-
 # -- options and configuration --------------------------------------------------------------------
 
 _OPTION_TO_KEY = {
@@ -252,7 +235,6 @@ class _Controller:
         self.recorder = RunRecorder(self.config.report_dir)
         self.report_enabled = not config.getoption("wtk_no_report", False)
         self.report_path: str | None = None
-        self.session_app = _SessionApp()
         self.runs: dict[str, _Run] = {}
         self.finished: list[_Finished] = []
         self.collect_errors: list[dict[str, str]] = []
@@ -613,17 +595,8 @@ def wtk_config(request: pytest.FixtureRequest) -> WtkConfig:
     return _effective_config(request)
 
 
-@pytest.fixture(scope="session")
-def _wtk_session_app(request: pytest.FixtureRequest) -> Generator[_SessionApp, None, None]:
-    holder = _SessionApp()
-    yield holder
-    holder.close(_effective_config(request))
-
-
 @pytest.fixture
-def app(
-    request: pytest.FixtureRequest, _wtk_session_app: _SessionApp
-) -> Generator[App, None, None]:
+def app(request: pytest.FixtureRequest) -> Generator[App, None, None]:
     """The application under test, launched or attached according to the launch mode."""
     from wintestkit.app import App
 
@@ -632,22 +605,42 @@ def app(
     mode: Any = _marker_kwargs(node, "wtk").get("launch", config.launch)
     if mode not in LAUNCH_MODES:
         raise ConfigError(f"invalid launch mode {mode!r} in the wtk marker", key="launch")
+    name = _app_name(config)
     if mode == "attach":
         if config.app is None:
             raise ConfigError("no application to attach to: set [tool.wintestkit.app]", key="app")
-        try:
-            attached = App.attach(process=config.app.process_name)
-        except AppNotRunningError:
-            raise _AttachNotRunning(config.app.process_name) from None
+        with runtime.step("app.attach", config.app.process_name, config.app.process_name):
+            try:
+                attached = App.attach(process=config.app.process_name)
+            except AppNotRunningError:
+                raise _AttachNotRunning(config.app.process_name) from None
+            _verify_started(attached, config)
         yield attached
-    elif mode == "per-session":
-        yield _wtk_session_app.get(config)
     else:
-        launched = launch_app(config)
+        with runtime.step("app.start", name, _app_path(config)):
+            launched = launch_app(config)
+            _verify_started(launched, config)
         try:
             yield launched
         finally:
             launched.close(timeout=config.app.close_timeout if config.app else 10.0)
+
+
+def _app_name(config: WtkConfig) -> str:
+    settings = config.app
+    if settings is None:
+        return "the app"
+    return settings.process or (Path(settings.path).name if settings.path else "the app")
+
+
+def _app_path(config: WtkConfig) -> str:
+    return str(config.app.path) if config.app and config.app.path else ""
+
+
+def _verify_started(app: App, config: WtkConfig) -> None:
+    """The application is running and has shown its main window."""
+    __tracebackhide__ = True
+    app.main_window(timeout=config.app.startup_timeout if config.app else 10.0)
 
 
 class _AttachNotRunning(AttachNotRunningError, pytest.fail.Exception):
@@ -671,7 +664,7 @@ class _AttachNotRunning(AttachNotRunningError, pytest.fail.Exception):
                 "To fix this, either:",
                 f"  - start {process} yourself and run the tests again, or",
                 '  - switch the launch mode to "Launch for tests" (Test Target in the editor, '
-                "or launch: per-session in the settings) so WinTestKit starts the app for you.",
+                "or launch: per-test in the settings) so WinTestKit starts the app for you.",
             ]
         )
         AttachNotRunningError.__init__(self, message)

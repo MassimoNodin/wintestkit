@@ -80,7 +80,7 @@ Timeout precedence: call `timeout=` > `Element(timeout=)` > `@pytest.mark.wtk(ti
 
 `App.attach(process="X.exe")`, `App.launch(path, process=...)`, `app.close()`, `app.launched`,
 `app.main_window(timeout=...)`. The plugin provides the fixtures `app` (launch mode from
-`[tool.wintestkit] launch = "attach" | "per-session" | "per-test"`), `page` and `wtk_config`.
+`[tool.wintestkit] launch = "attach" | "per-test"`), `page` and `wtk_config`.
 
 ## Custom controls
 

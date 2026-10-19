@@ -10,6 +10,7 @@ import { executableIcon } from "./appIcon";
 import { readConfiguration, writeLocalSettings } from "./files";
 import {
   buildTestAppModel,
+  launchModeId,
   modeChoices,
   type TestAppModel,
   type TileId,
@@ -244,7 +245,7 @@ export class TestAppView
     const project = this.currentProject();
     if (!project) return;
     const config = await readConfiguration(project.root);
-    const current = String(config.launch ?? "per-session");
+    const current = launchModeId(config.launch);
     const choice = await vscode.window.showQuickPick(
       modeChoices.map((mode) => ({
         label: "$(" + mode.codicon + ")" + ICON_GAP + mode.title,
@@ -312,7 +313,7 @@ export class TestAppView
         await this.save({
           "app.path": picked.fsPath,
           "app.process": undefined,
-          launch: "per-session",
+          launch: "per-test",
         });
       if (picked) await vscode.commands.executeCommand("setContext", "wintestkit.hasChosenApp", true);
     } else {

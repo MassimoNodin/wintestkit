@@ -66,7 +66,7 @@ export class ProjectSweep implements vscode.Disposable {
     const config = await readConfiguration(project.root);
     if (config.launch === "attach") {
       await vscode.window.showWarningMessage(
-        "Project sweep requires Launch for tests mode. Select either per-session or per-test launch in Test Target settings, then try again.",
+        "Project sweep requires Launch for tests mode. Choose Launch for tests in the Test Target settings, then try again.",
       );
       return;
     }

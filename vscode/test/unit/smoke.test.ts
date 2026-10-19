@@ -545,7 +545,7 @@ describe("extension scaffold", () => {
   });
 
   it("confirms a process that Launch mode did not start", async () => {
-    mocks.readConfig.mockResolvedValue({ "app.path": "C:/Apps/Demo.exe", launch: "per-session" });
+    mocks.readConfig.mockResolvedValue({ "app.path": "C:/Apps/Demo.exe", launch: "per-test" });
     mocks.request.mockResolvedValueOnce({ running: true, pids: [9], owned: false });
     const callback = mocks.registerCommand.mock.calls.find(
       ([registered]) => registered === "wintestkit.closeApp",

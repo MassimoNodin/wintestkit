@@ -43,7 +43,7 @@ vi.mock("vscode", () => ({
   },
 }));
 vi.mock("../../src/settings/files", () => ({
-  readConfiguration: vi.fn(async () => ({ launch: "per-session" })),
+  readConfiguration: vi.fn(async () => ({ launch: "per-test" })),
 }));
 import { FlowRuns, flowKey } from "../../src/editor/flowRuns";
 

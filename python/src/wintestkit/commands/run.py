@@ -35,7 +35,7 @@ def add_parser(subparsers: Any) -> None:
         description="Run the tests with pytest. Put raw pytest arguments after `--`.",
     )
     parser.add_argument("tests", nargs="*", metavar="TESTS", help="test ids or paths")
-    parser.add_argument("--launch", choices=("per-test", "per-session", "attach"))
+    parser.add_argument("--launch", choices=("per-test", "attach"))
     parser.add_argument("--timeout", type=float, metavar="SECONDS")
     parser.add_argument("--app", metavar="PATH")
     parser.add_argument("--input-mode", dest="input_mode", choices=("pattern", "mouse"))

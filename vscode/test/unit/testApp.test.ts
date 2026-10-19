@@ -4,6 +4,7 @@ import type * as vscode from "vscode";
 import type { ServerManager, Project } from "../../src/server/serverManager";
 import {
   buildTestAppModel,
+  launchModeId,
   modeChoices,
 } from "../../src/settings/testAppModel";
 import type { ApplicationState } from "../../src/statusBar";
@@ -54,7 +55,7 @@ import { parseTestAppMessage, TestAppView } from "../../src/settings/testApp";
 const project = { name: "demo" };
 const launchable = {
   "app.path": "C:/Apps/Demo.exe",
-  launch: "per-session",
+  launch: "per-test",
 };
 const attach = { "app.process": "CalculatorApp.exe", launch: "attach" };
 const build = (
@@ -96,9 +97,9 @@ describe("Test Target tiles", () => {
     expect(launch).toMatchObject({ title: "Launch", tone: "launch" });
     expect(launch.disabled).toBeFalsy();
   });
-  it("offers launch for tests first by default, but still shows a per-test setting", () => {
+  it("offers launch for tests first by default, and treats the removed per-session value the same", () => {
     expect(modeChoices.map((mode) => [mode.id, mode.title])).toEqual([
-      ["per-session", "Launch for tests"],
+      ["per-test", "Launch for tests"],
       ["attach", "Attach"],
     ]);
     expect(
@@ -109,9 +110,12 @@ describe("Test Target tiles", () => {
       codicon: "link",
     });
     expect(
-      build({ ...launchable, launch: "per-test" }, { running: false }).tiles[2]
+      build({ ...launchable, launch: "per-session" }, { running: false }).tiles[2]
         .title,
-    ).toBe("Launch per test");
+    ).toBe("Launch for tests");
+    expect(launchModeId(undefined)).toBe("per-test");
+    expect(launchModeId("per-session")).toBe("per-test");
+    expect(launchModeId("attach")).toBe("attach");
   });
   it("always shows the project tile, with the workspace as its title and the project as a subtitle", () => {
     const tile = (extra: Parameters<typeof build>[2]) =>
@@ -186,7 +190,7 @@ describe("Test Target tiles", () => {
   });
   it("explains that Launch for tests needs an executable instead of saying it attaches", () => {
     const model = build(
-      { "app.process": "CalculatorApp.exe", launch: "per-session" },
+      { "app.process": "CalculatorApp.exe", launch: "per-test" },
       { running: false },
     );
     expect(model.status.label).toBe("Needs an executable");

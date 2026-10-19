@@ -95,7 +95,7 @@ class Server:
         self.loader: ModuleLoader | None = None
         self.app: App | None = None
         # Ownership is deliberately independent of the configured launch mode. The server can
-        # attach to a process it did not start, including in per-session mode.
+        # attach to a process it did not start.
         self._owned_app_pids: set[int] | None = None
         self.nodes: OrderedDict[str, UIAElement] = OrderedDict()
         self.node_infos: dict[str, ElementInfo] = {}

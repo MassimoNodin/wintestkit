@@ -386,7 +386,7 @@ describe("settings editor script", () => {
     view.must("launch-override").onchange?.();
     expect(changes(view.posts).at(-1)).toMatchObject({
       key: "launch",
-      value: "per-session",
+      value: "per-test",
       remove: false,
       version: 3,
     });

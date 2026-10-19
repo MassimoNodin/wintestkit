@@ -307,7 +307,7 @@ def _check_app_running(cfg: WtkConfig | None) -> Check:
             title,
             "warn",
             f"{name} is not running",
-            "WinTestKit starts it for `launch = per-session/per-test`; start it yourself to "
+            "WinTestKit starts it for `launch = per-test`; start it yourself to "
             "use `attach` or to highlight elements from the editor.",
         )
     return Check("app_running", title, "ok", f"{name} (pid {', '.join(str(p) for p in pids)})")

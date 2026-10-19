@@ -48,7 +48,7 @@ vi.mock("vscode", () => ({
   ProgressLocation: { Notification: 15 },
 }));
 vi.mock("../../src/settings/files", () => ({
-  readConfiguration: vi.fn(async () => ({ launch: "per-session" })),
+  readConfiguration: vi.fn(async () => ({ launch: "per-test" })),
 }));
 import { HighlightCommands } from "../../src/editor/highlightCommands";
 import { RpcError } from "../../src/server/jsonrpc";

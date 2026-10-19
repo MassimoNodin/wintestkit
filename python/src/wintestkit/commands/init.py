@@ -108,7 +108,7 @@ def run(args: argparse.Namespace) -> int:
         + (
             "{}\n"
             if "wintestkit" in tool
-            else "launch: per-session\ntimeout: 10\nscreenshots: on-failure\n"
+            else "launch: per-test\ntimeout: 10\nscreenshots: on-failure\n"
         ),
         force=False,
     )
