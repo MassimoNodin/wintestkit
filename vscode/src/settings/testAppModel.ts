@@ -1,4 +1,6 @@
 import * as path from "node:path";
+import type { TourView } from "../setup/tour";
+import { isStarterAppPath } from "../setup/health";
 import type { ApplicationState } from "../statusBar";
 
 export type Tone = "ok" | "busy" | "warn" | "error" | "idle";
@@ -7,20 +9,34 @@ export type Tone = "ok" | "busy" | "warn" | "error" | "idle";
 export type TileId =
   | "app"
   | "mode"
-  | "project"
+  | "interpreter"
   | "launch"
   | "restart"
   | "close"
   | "refresh"
-  | "init"
   | "doctor"
   | "dismiss"
   | "output"
   | "openReport"
-  | "dismissRun";
+  | "dismissRun"
+  | "enable"
+  | "resumeSetup"
+  | "installPackage"
+  | "initProject"
+  | "recheck";
+
+/** The strip under the interpreter tile: whether wintestkit is installed in it, and how to fix that. */
+export interface TileStrip {
+  source?: { value: "remote" | "local"; wheel?: string };
+  state: "ok" | "missing" | "outdated" | "busy" | "error";
+  text: string;
+  tooltip?: string;
+  action?: { id: TileId; label: string };
+}
 
 export interface Tile {
   id: TileId;
+  strip?: TileStrip;
   title: string;
   subtitle?: string;
   /** The application's own icon (a PNG data URI), shown instead of the codicon when known. */
@@ -42,7 +58,7 @@ export interface Tile {
 }
 
 export interface TestAppModel {
-  kind: "empty" | "untrusted" | "app";
+  kind: "disabled" | "blocked" | "empty" | "untrusted" | "app";
   status: { label: string; tone: Tone };
   tiles: Tile[];
   message?: {
@@ -54,6 +70,10 @@ export interface TestAppModel {
     /** The tile id the message's dismiss button sends. */
     dismiss?: TileId;
   };
+  /** The guided setup is closed but not finished: a notice offers to resume it. */
+  resume?: { tone: Tone; text: string; action: { id: TileId; label: string }; icon: string };
+  /** The step of the guided tour to show: a callout, with the rest of the sidebar dulled. */
+  tour?: TourView;
   /** The result of the last Testing-view run: an informational notice the user can close. */
   lastRun?: {
     passed: number;
@@ -69,13 +89,64 @@ export interface TestAppModel {
   badge?: string;
 }
 
+/** The Python interpreter the tests run with, as the first tile shows it. */
+export interface InterpreterView {
+  name: string;
+  version?: string;
+  path: string;
+  overridden?: boolean;
+  /** Whether wintestkit is installed in it. */
+  strip?: TileStrip;
+}
+
+export function interpreterTile(
+  interpreter: InterpreterView | undefined,
+  icon?: string,
+): Tile {
+  if (!interpreter)
+    return {
+      id: "interpreter",
+      icon,
+      title: "Select interpreter",
+      codicon: "server-environment",
+      tone: "warn",
+      chevron: true,
+      trailing: "list-selection",
+      tooltip: "Choose the Python interpreter that runs your tests",
+    };
+  return {
+    id: "interpreter",
+    icon,
+    title: interpreter.name,
+    subtitle: interpreter.version ? "Python " + interpreter.version : undefined,
+    codicon: "server-environment",
+    tone: "project",
+    strip: interpreter.strip,
+    chevron: true,
+    trailing: "list-selection",
+    tooltip:
+      interpreter.path +
+      (interpreter.overridden ? "\nSet by the wintestkit.pythonPath setting" : "") +
+      "\nChoose a different Python interpreter",
+  };
+}
+
 export interface TestAppInput {
+  initializing?: boolean;
+  /** The interpreter tests run with; none means none is selected. */
+  interpreter?: InterpreterView;
+  /** The Python logo, as an SVG data URI, for the interpreter tile. */
+  pythonIcon?: string;
+  /** A step WinTestKit cannot work without is not done and the guide is closed: the view is one button. */
+  blocker?: { title: string; detail: string };
+  /** The step of the guided tour to show. */
+  tour?: TourView;
+  /** The guide was closed with something left to do. */
+  resumable?: boolean;
+  /** False until the user enables WinTestKit for this workspace; then the view is one button. */
+  enabled?: boolean;
   project?: { name: string };
   trusted: boolean;
-  /** Projects in the workspace; the project tile only offers a switch when there are several. */
-  projectCount?: number;
-  /** Name of the workspace folder holding the project, shown above the project name. */
-  workspaceName?: string;
   /** Flat settings as read from the project's configuration files. */
   config?: Record<string, unknown>;
   configError?: string;
@@ -123,7 +194,58 @@ function startingStatus(stage?: "process" | "window"): string {
 }
 
 export function buildTestAppModel(input: TestAppInput): TestAppModel {
+  if (input.enabled === false)
+    return {
+      kind: "disabled",
+      status: { label: "Off", tone: "idle" },
+      tiles: [
+        {
+          id: "enable",
+          title: "Enable for this workspace",
+          codicon: "check",
+          tone: "launch",
+          tooltip: "Turn WinTestKit on for this workspace and start the guided setup",
+        },
+      ],
+    };
+  if (input.blocker && !input.tour)
+    return {
+      kind: "blocked",
+      status: { label: "Setup needed", tone: "warn" },
+      tiles: [
+        interpreterTile(input.interpreter, input.pythonIcon),
+        {
+          id: "resumeSetup",
+          title: "Resume setup",
+          subtitle: input.blocker.title + " needs attention",
+          codicon: "checklist",
+          tone: "warn",
+          tooltip: input.blocker.detail,
+        },
+      ],
+    };
   const model = buildModel(input);
+  if (input.tour) {
+    model.tour = input.tour;
+    if (!input.project)
+      model.tiles.push({
+        id: "initProject", title: input.initializing ? "Initializing project…" : "Initialize project",
+        codicon: input.initializing ? "loading" : "new-folder", disabled: input.initializing,
+        busy: input.initializing, tone: input.initializing ? "busy" : "project",
+        tooltip: "Create pages, flows, settings and a smoke test without overwriting existing files",
+      });
+    if (input.tour.step !== "package")
+      model.tiles = model.tiles.map((tile) => tile.strip ? {
+        ...tile, strip: { ...tile.strip, action: undefined, source: undefined },
+      } : tile);
+  }
+  else if (input.resumable)
+    model.resume = {
+      tone: "warn",
+      text: "Setup is not finished.",
+      action: { id: "resumeSetup", label: "Resume setup" },
+      icon: "checklist",
+    };
   if (model.kind === "app" && input.lastRun)
     model.lastRun = {
       passed: input.lastRun.passed,
@@ -149,19 +271,12 @@ function buildModel(input: TestAppInput): TestAppModel {
     tiles,
     message: { tone, text },
   });
-  if (!input.project)
+  if (!input.project && !input.tour)
     return bare(
       "empty",
       { label: "Not set up", tone: "idle" },
       "No WinTestKit project found in this workspace.",
-      [
-        {
-          id: "init",
-          title: "Initialize Project",
-          codicon: "add",
-          tone: "launch",
-        },
-      ],
+      [],
     );
   if (!input.trusted)
     return bare(
@@ -179,10 +294,16 @@ function buildModel(input: TestAppInput): TestAppModel {
       [],
       "error",
     );
+  if (!input.project)
+    return {
+      kind: "app",
+      status: { label: "Setting up", tone: "busy" },
+      tiles: [interpreterTile(input.interpreter, input.pythonIcon)],
+    };
 
   const config = input.config ?? {};
   const file =
-    typeof config["app.path"] === "string" && config["app.path"].trim()
+    typeof config["app.path"] === "string" && config["app.path"].trim() && !isStarterAppPath(config["app.path"])
       ? config["app.path"]
       : undefined;
   const processName =
@@ -244,20 +365,7 @@ function buildModel(input: TestAppInput): TestAppModel {
     trailing: "list-selection",
     tooltip: mode.description + "\nChoose how the app is started",
   };
-  const projectTile: Tile = {
-    id: "project",
-    title: input.workspaceName || input.project.name,
-    subtitle:
-      input.workspaceName && input.workspaceName !== input.project.name
-        ? input.project.name
-        : undefined,
-    codicon: "folder-opened",
-    tone: "project",
-    chevron: true,
-    trailing: "go-to-file",
-    tooltip: "Show the project folder in the Explorer",
-  };
-  const tiles: Tile[] = [projectTile, appTile, modeTile];
+  const tiles: Tile[] = [interpreterTile(input.interpreter, input.pythonIcon), appTile, modeTile];
   const model: TestAppModel = {
     kind: "app",
     status: { label: "Checking…", tone: "idle" },

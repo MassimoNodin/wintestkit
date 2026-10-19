@@ -16,13 +16,15 @@ await copyFile(
 );
 
 const options = {
+  define: { __WTK_DEV__: String(process.argv.includes("--dev")) },
+  minifySyntax: true,
   entryPoints: ["src/extension.ts"],
   bundle: true,
   platform: "node",
   format: "cjs",
   target: "node20",
   external: ["vscode"],
-  outfile: "dist/extension.js",
+  outfile: process.argv.find((arg) => arg.startsWith("--outfile="))?.slice(10) ?? "dist/extension.js",
   sourcemap: true,
   logLevel: "info",
 };

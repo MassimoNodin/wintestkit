@@ -324,7 +324,7 @@ export class NavigationSession {
 }
 
 export type NavigationMessage =
-  | { type: "ready" | "initialize" }
+  | { type: "ready" }
   | { type: "select"; section: NavigationSection }
   | { type: "segmentKey" | "key"; key: string }
   | { type: "toggle" | "open"; id: string }
@@ -337,8 +337,7 @@ export function parseNavigationMessage(
     return undefined;
   const message = value as Record<string, unknown>;
   if ("command" in message || "commandId" in message) return undefined;
-  if (message.type === "ready" || message.type === "initialize")
-    return { type: message.type };
+  if (message.type === "ready") return { type: "ready" };
   if (message.type === "select" && isSection(message.section))
     return { type: "select", section: message.section };
   if (
@@ -373,7 +372,6 @@ function isNodeId(value: unknown): value is string {
 
 export type NavigationEffect =
   | { type: "render"; openId?: string; reveal?: boolean }
-  | { type: "initialize" }
   | { type: "action"; action: NavigationAction; id: string };
 
 export function reduceNavigation(
@@ -385,8 +383,6 @@ export function reduceNavigation(
   switch (message.type) {
     case "ready":
       return { type: "render" };
-    case "initialize":
-      return { type: "initialize" };
     case "select":
       session.select(message.section);
       return { type: "render" };
@@ -425,8 +421,8 @@ export function emptyMessage(
   count: number,
 ): string | undefined {
   if (count > 0) return undefined;
-  if (!hasProject) return "Open or initialize a WinTestKit project to see its pages and flows.";
-  if (section === "pages") return "No page definitions found. Initialize the project or add a Page class.";
+  if (!hasProject) return "Set up WinTestKit to see this project's pages and flows.";
+  if (section === "pages") return "No page definitions found. Add a Page class.";
   if (section === "flows")
     return "Add reusable Python functions under flows/ to see them here.";
   return undefined;

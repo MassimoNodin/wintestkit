@@ -493,14 +493,13 @@ describe("navigation view", () => {
       const restored = mocks.posted.at(-1) as { html: string };
       expect(restored.html).toContain(">lonely<");
     });
-    it("explains an empty filtered tree instead of pointing at Getting Started", () => {
+    it("explains an empty filtered tree", () => {
       const stub = unusedStub({ scanned: true, ids: [] });
       const { tree } = createTree(hostFor(), { result: withElements, unused: stub });
       resolve(tree);
       mocks.listener?.({ type: "unusedToggle" });
       const payload = mocks.posted.at(-1) as { html: string };
       expect(payload.html).toContain("No unused definitions found");
-      expect(payload.html).not.toContain("data-getting-started");
     });
     it("ignores the toggle until a scan has produced results and does not start a second scan", () => {
       const stub = unusedStub({ scanned: false });
@@ -547,10 +546,19 @@ describe("navigation view", () => {
       expect(tools.hidden).toBe(true);
     });
   });
-  it("offers initialization and Getting Started in the instantiated no-project webview", () => {
-    const body = renderBody({ nodes: [], expanded: new Set(), showInitialize: true });
-    expect(body).toContain('data-initialize="true"');
-    expect(body).toContain('data-getting-started="true"');
+  it("has no initialization or Getting Started button: the guided setup in Test Target does that", () => {
+    const body = renderBody({ nodes: [], expanded: new Set(), welcome: "Set up WinTestKit" });
+    expect(body).toContain("Set up WinTestKit");
+    expect(body).not.toContain("data-initialize");
+    expect(body).not.toContain("data-getting-started");
+    expect(body).not.toContain("<button");
+  });
+  it("dulls itself when the guided setup is showing", () => {
+    const { tree } = createTree(hostFor());
+    resolve(tree);
+    const document = (mocks.html ?? "") as string;
+    expect(document).toContain('message.type === "tour"');
+    expect(document).toContain("tour-dim");
   });
   it("leaves the view description empty", () => {
     const { tree } = createTree(hostFor());
@@ -560,7 +568,7 @@ describe("navigation view", () => {
     mocks.activeEditorListener?.(mocks.activeEditor);
     expect(view.description).toBe("");
   });
-  it("registers one shared panel and keeps every section available", () => {
+  it("leaves the view to the sidebar and keeps every section available", () => {
     const { tree } = createTree();
     expect(mocks.providers.size).toBe(0);
     expect(tree.getChildren().map((node) => node.label)).toEqual(["Main"]);

@@ -713,3 +713,19 @@ pre {
     color: var(--muted);
     font-size: 12px;
 }
+
+/* The guided setup is showing in Test Target: dull this panel, but keep Pick element lit when it is the subject. */
+body.tour-dim::after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    background: color-mix(in srgb, var(--vscode-sideBar-background, #181818) 62%, transparent);
+}
+#pick.tour-lit {
+    position: relative;
+    z-index: 60;
+    box-shadow:
+        0 0 0 2px var(--vscode-focusBorder, #0078d4),
+        0 0 0 6px color-mix(in srgb, var(--vscode-focusBorder, #0078d4) 28%, transparent);
+}

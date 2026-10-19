@@ -65,7 +65,6 @@ function body(expanded: ReadonlySet<string>, focusId?: string): string {
     nodes,
     expanded,
     focusId,
-    showInitialize: false,
   });
 }
 
@@ -328,6 +327,16 @@ function bootClient() {
   const listeners: Array<(event: { data: unknown }) => void> = [];
   const segments = new HTMLElement("segments");
   const tree = new HTMLElement("tree");
+  const dimmed = new Set<string>();
+  const pages = {
+    inert: false,
+    classList: {
+      toggle(name: string, enabled: boolean) {
+        if (enabled) dimmed.add(name);
+        else dimmed.delete(name);
+      },
+    },
+  };
   const tabs: Record<string, HTMLElement> = {};
   for (const section of ["pages", "flows"]) {
     const tab = new HTMLElement("tab-" + section);
@@ -342,7 +351,7 @@ function bootClient() {
     {
       document: {
         getElementById: (id: string) =>
-          id === "segments" ? segments : id === "tree" ? tree : null,
+          id === "segments" ? segments : id === "tree" ? tree : id === "pages" ? pages : null,
         get activeElement() {
           return active.current;
         },
@@ -370,6 +379,11 @@ function bootClient() {
     tree,
     focusLog,
     webviewFocused,
+    pages,
+    dimmed,
+    tour(dim: boolean) {
+      for (const listener of listeners) listener({ data: { type: "tour", dim } });
+    },
     active: () => active.current,
     paint(section: string, html: string, reveal = false) {
       for (const listener of listeners)
@@ -398,6 +412,15 @@ function bootClient() {
 }
 
 describe("navigation document focus", () => {
+  it("blocks keyboard interaction with Pages & Flows only while touring", () => {
+    const client = bootClient();
+    client.tour(true);
+    expect(client.pages.inert).toBe(true);
+    expect(client.dimmed.has("tour-dim")).toBe(true);
+    client.tour(false);
+    expect(client.pages.inert).toBe(false);
+    expect(client.dimmed.has("tour-dim")).toBe(false);
+  });
   it("keeps the expanded row focused after a chevron click repaint", () => {
     const client = bootClient();
     expect(client.posts[0]).toEqual({ type: "ready" });

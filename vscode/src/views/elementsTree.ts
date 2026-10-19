@@ -29,6 +29,7 @@ import type { Reports } from "../report";
 import type { UnusedDefinitions } from "./unusedDefinitions";
 import { annotateUnused, type UnusedLookup } from "./unusedAnnotation";
 import type { UnusedToolsState } from "./navigationDocument";
+import type { SetupMonitor } from "../setup/monitor";
 
 interface NavigationHost {
   globalState: vscode.Memento;
@@ -36,9 +37,8 @@ interface NavigationHost {
   extensionUri: vscode.Uri;
 }
 
-export class ElementsTree
-  implements vscode.Disposable
-{
+/** The Pages & Flows part of the sidebar view (see `SidebarView`). */
+export class ElementsTree implements vscode.Disposable {
   private readonly session: NavigationSession;
   private readonly subscriptions: vscode.Disposable[];
   private view?: vscode.WebviewView;
@@ -52,6 +52,7 @@ export class ElementsTree
     private readonly host?: NavigationHost,
     private readonly reports?: Reports,
     private readonly unused?: UnusedDefinitions,
+    private readonly setup?: SetupMonitor,
   ) {
     this.session = new NavigationSession(
       readSection(host?.globalState.get(navigationSectionKey)),
@@ -65,6 +66,7 @@ export class ElementsTree
       flows.onDidChange(refresh),
       ...(reports ? [reports.onDidChange(refresh)] : []),
       ...(unused ? [unused.onDidChange(refresh)] : []),
+      ...(setup ? [setup.onDidChange(() => this.postFocus())] : []),
       vscode.commands.registerCommand(
         "wintestkit.elements.goTo",
         (node: ElementNode) => this.openNode(node),
@@ -142,10 +144,6 @@ export class ElementsTree
       : buildProjectTree(discoveries);
   }
   private onMessage(value: unknown): void {
-    if (value && typeof value === "object" && (value as { type?: unknown }).type === "openGettingStarted") {
-      void vscode.commands.executeCommand("wintestkit.openGettingStarted");
-      return;
-    }
     if (value && typeof value === "object" && (value as { type?: unknown }).type === "unusedScan") {
       if (!this.unused || this.unused.scanning) return;
       void this.unused.scan().then((summary) => {
@@ -174,10 +172,6 @@ export class ElementsTree
       message.type === "key"
     )
       this.persist();
-    if (effect.type === "initialize") {
-      void vscode.commands.executeCommand("wintestkit.initProject");
-      return;
-    }
     if (effect.type === "action") {
       this.showFailure(this.perform(effect.action, effect.id));
       this.publish();
@@ -256,6 +250,12 @@ export class ElementsTree
     if (!this.view || this.disposed) return;
     const payload = this.payload(reveal);
     void this.view.webview.postMessage(payload);
+    this.postFocus();
+  }
+  /** While the guided setup shows in Test Target this panel is dulled. */
+  private postFocus(): void {
+    if (!this.view || this.disposed || !this.setup) return;
+    void this.view.webview.postMessage({ type: "tour", dim: this.setup.focus.dim });
   }
   private payload(reveal = false): {
     type: "render";
@@ -294,7 +294,6 @@ export class ElementsTree
         notice: unusedState?.filtering && nodes.length === 0
           ? "No unused definitions found. Every scanned definition has at least one reference."
           : undefined,
-        showInitialize: !hasProject,
       }),
       ...(unusedState ? { unused: unusedState } : {}),
     };

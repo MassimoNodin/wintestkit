@@ -355,7 +355,6 @@
     }
     element("clear-filter").hidden = !query;
     element("choose-app").hidden = !(appState && appState.hasProject && !appState.appRunning && rootsLoaded);
-    element("getting-started").hidden = !!(appState && appState.hasProject);
     if (!treeHasMatches) {
       if (!nodes.size && treeTasks.length)
         emptyState(
@@ -719,7 +718,6 @@
     element("search").focus();
   });
   element("choose-app").addEventListener("click", () => post("chooseApp"));
-  element("getting-started").addEventListener("click", () => post("openGettingStarted"));
   element("collapse").addEventListener("click", () => {
     element("search").value = "";
     for (const entry of nodes.values()) entry.open = false;
@@ -851,6 +849,11 @@
     const message = event.data;
     if (message.type === "progress") {
       progress(message);
+    } else if (message.type === "tour") {
+      const dimmed = !!message.dim && !message.spyLit;
+      document.body.classList.toggle("tour-dim", dimmed);
+      document.body.inert = dimmed;
+      element("pick").classList.toggle("tour-lit", !!message.spyLit);
     } else if (message.type === "rootIcons") {
       rootIcons = message.icons;
       for (const entry of nodes.values()) rootIcon(entry);

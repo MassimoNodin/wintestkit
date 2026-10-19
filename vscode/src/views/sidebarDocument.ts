@@ -11,6 +11,7 @@ import type { NavigationSection } from "./navigationModel";
  *
  * Both parts post to the extension and are told apart there by the shape of the message. The
  * Pages & Flows script comes first because it takes the page's single `acquireVsCodeApi()` handle.
+ * Pages & Flows stays hidden until Test Target says the workspace is set up enough to have one.
  */
 export function sidebarDocument(options: {
   cspSource: string;
@@ -35,7 +36,11 @@ export function sidebarDocument(options: {
 <title>WinTestKit</title>
 </head>
 <body>
-<main id="card" aria-live="polite"><p class="muted loading">Loading…</p></main>
+<main id="test-target">
+<div id="card" aria-live="polite"><p class="muted loading">Loading…</p></div>
+<aside id="setup-guide" aria-live="polite" aria-label="WinTestKit setup instructions"></aside>
+<div id="target-notices" aria-live="polite"></div>
+</main>
 <section id="pages" aria-label="Pages and Flows" hidden>
 ${navigationMarkup({ section: options.section, treeHtml: options.treeHtml })}
 </section>

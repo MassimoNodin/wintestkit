@@ -1,6 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import * as vscode from "vscode";
-import { checkWintestkit, getInterpreter, installPackage } from "../python";
+import { checkWintestkit, getInterpreter } from "../python";
 import type { InitializeResult } from "../protocol/generated";
 import { JsonRpcClient, LineSplitter, RpcError } from "./jsonrpc";
 
@@ -23,7 +23,6 @@ interface Entry {
   crashes: number[];
   generation: number;
   state: ServerState;
-  notified: boolean;
   blocked?: boolean;
   startupError?: RpcError;
 }
@@ -59,7 +58,6 @@ export class ServerManager implements vscode.Disposable {
         crashes: [],
         generation: 0,
         state: "stopped",
-        notified: false,
       };
       this.entries.set(key, entry);
     }
@@ -94,23 +92,7 @@ export class ServerManager implements vscode.Disposable {
       throw new Error("server start cancelled");
     if (!packageInfo.installed) {
       entry.state = "not-installed";
-      if (!entry.notified) {
-        entry.notified = true;
-        void vscode.window
-          .showInformationMessage(
-            `The wintestkit package isn't installed in ${python}.`,
-            "Install",
-            "Select Interpreter",
-          )
-          .then((choice) => {
-            if (choice === "Install")
-              void installPackage(entry.project.root).catch((error) =>
-                this.log.error(String(error)),
-              );
-            if (choice === "Select Interpreter")
-              void vscode.commands.executeCommand("python.setInterpreter");
-          });
-      }
+      // The guided setup notices this and offers to fix it, so there is no message here.
       throw new Error("wintestkit is not installed");
     }
     const level = vscode.workspace
@@ -222,11 +204,9 @@ export class ServerManager implements vscode.Disposable {
         root: entry.project.root.fsPath,
       });
       if (initialized.protocolVersion !== 1) {
-        const choice = await vscode.window.showErrorMessage(
-          "WinTestKit extension and Python package versions are incompatible",
-          "Install matching version",
+        void vscode.window.showErrorMessage(
+          "WinTestKit extension and Python package versions are incompatible. Update the package from the interpreter tile in Test Target.",
         );
-        if (choice) await installPackage(entry.project.root);
         throw new Error("incompatible WinTestKit protocol version");
       }
     } catch (error) {
@@ -283,7 +263,6 @@ export class ServerManager implements vscode.Disposable {
     if (entry) {
       await this.stop(entry);
       entry.crashes = [];
-      entry.notified = false;
       entry.blocked = false;
     }
     return this.get(project);
@@ -308,6 +287,9 @@ export class ServerManager implements vscode.Disposable {
       connection.client.dispose();
     }
     processHandle?.kill();
+  }
+  async stopAll(): Promise<void> {
+    await Promise.all([...this.entries.values()].map((entry) => this.stop(entry)));
   }
   async shutdown(): Promise<void> {
     if (this.disposed) return;

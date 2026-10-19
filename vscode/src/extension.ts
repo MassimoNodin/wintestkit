@@ -1,6 +1,6 @@
 ﻿import * as vscode from "vscode";
 import { createLog } from "./log";
-import { installPackage, onDidChangeInterpreter, runTerminal } from "./python";
+import { onDidChangeInterpreter, runTerminal } from "./python";
 import { ServerManager, type Project } from "./server/serverManager";
 import { StatusBar } from "./statusBar";
 import { Projects } from "./projects";
@@ -13,9 +13,12 @@ import { CheckAfterFlow } from "./editor/checkAfterFlow";
 import { ProjectSweep } from "./editor/projectSweep";
 import { TestController } from "./testing/controller";
 import { registerClearResults } from "./testing/clearResults";
-import { registerInitialize } from "./init";
+import { Enablement } from "./enablement";
+import { PackageInstaller } from "./setup/install";
+import { SetupMonitor } from "./setup/monitor";
 import { PytestConflict } from "./pytestConflict";
 import { ElementsTree } from "./views/elementsTree";
+import { SidebarView } from "./views/sidebarView";
 import { UnusedDefinitions } from "./views/unusedDefinitions";
 import { Reports } from "./report";
 import { runNameFrom, testItemFrom } from "./runHistory";
@@ -24,7 +27,6 @@ import { registerInsertElement } from "./spy/insertElement";
 import { RelocationActions } from "./editor/relocationActions";
 import { computeInsertion } from "./spy/insertionModel";
 import { ConfigurationEditor, settingsEditorId } from "./settings/editor";
-import { SidebarView } from "./views/sidebarView";
 import { TestAppView } from "./settings/testApp";
 import type { AppStatusResult } from "./protocol/generated";
 import { readConfiguration } from "./settings/files";
@@ -73,7 +75,9 @@ export function activate(context: vscode.ExtensionContext): {
   log.info("WinTestKit activated");
   const servers = new ServerManager(log);
   activeServers = servers;
-  const projects = new Projects(log);
+  const enablement = new Enablement(context.workspaceState);
+  context.subscriptions.push(enablement);
+  const projects = new Projects(log, enablement);
   const currentProject = (): Project | undefined => {
     const document = vscode.window.activeTextEditor?.document.uri;
     return (document && projects.projectFor(document)) || projects.all[0];
@@ -86,15 +90,30 @@ export function activate(context: vscode.ExtensionContext): {
     context.globalState,
     context.asAbsolutePath("media/report/template.html"),
   );
+  const installer = new PackageInstaller(log, context.workspaceState);
+  context.subscriptions.push(installer);
+  const setupMonitor = new SetupMonitor(
+    projects,
+    status,
+    context.workspaceState,
+    log,
+    enablement,
+    installer,
+    (context.extension.packageJSON as { version?: string }).version,
+  );
   const setup = new TestAppView(
     projects,
     status,
     servers,
     context.extensionUri,
     reports,
+    setupMonitor,
+    enablement,
+    log,
   );
   context.subscriptions.push(
     setup,
+    setupMonitor,
     vscode.window.registerCustomEditorProvider(
       settingsEditorId,
       configuration,
@@ -126,7 +145,7 @@ export function activate(context: vscode.ExtensionContext): {
       setTimeout(() => {
         configTimers.delete(key);
         setup.refresh();
-        if (vscode.workspace.isTrusted)
+        if (vscode.workspace.isTrusted && enablement.enabled)
           void servers
             .restart(project)
             .catch((error) =>
@@ -162,9 +181,17 @@ export function activate(context: vscode.ExtensionContext): {
     context,
     reports,
     unused,
+    setupMonitor,
   );
-  context.subscriptions.push(elements, new SidebarView(context.extensionUri, setup, elements), flows, checkAfterFlow, projectSweep, unused);
-  const spy = new SpyView(projects, servers, context.extensionUri, log);
+  context.subscriptions.push(
+    elements,
+    new SidebarView(context.extensionUri, setup, elements),
+    flows,
+    checkAfterFlow,
+    projectSweep,
+    unused,
+  );
+  const spy = new SpyView(projects, servers, context.extensionUri, log, setupMonitor);
   context.subscriptions.push(spy);
   context.subscriptions.push(
     registerInsertElement(projects, discovery, log),
@@ -174,7 +201,6 @@ export function activate(context: vscode.ExtensionContext): {
     notRunning: (project) => status.recordAttachFailure(project),
   });
   context.subscriptions.push(
-    registerInitialize(projects, log),
     new PytestConflict(projects, context.workspaceState, log),
   );
   context.subscriptions.push(tests);
@@ -205,6 +231,30 @@ export function activate(context: vscode.ExtensionContext): {
       void status.refresh();
     }),
   );
+  /**
+   * The folder setup steps work on. Installing the package and checking the machine come before there
+   * is a project, so this falls back to the workspace folder (asking when there are several).
+   */
+  const setupFolder = async (target?: vscode.TreeItem): Promise<vscode.Uri | undefined> => {
+    const project = target?.resourceUri
+      ? projects.projectFor(target.resourceUri)
+      : currentProject();
+    if (project) return project.root;
+    const folders = vscode.workspace.workspaceFolders ?? [];
+    if (folders.length <= 1) {
+      if (!folders.length)
+        await vscode.window.showInformationMessage("Open a workspace folder first.");
+      return folders[0]?.uri;
+    }
+    const active = vscode.window.activeTextEditor?.document.uri;
+    const own = active && vscode.workspace.getWorkspaceFolder(active);
+    if (own) return own.uri;
+    const picked = await vscode.window.showQuickPick(
+      folders.map((folder) => ({ label: folder.name, description: folder.uri.fsPath, folder })),
+      { placeHolder: "Choose the folder to set up" },
+    );
+    return picked?.folder.uri;
+  };
   const withProject = async (
     action: (project: Project) => Promise<unknown>,
     target?: vscode.TreeItem,
@@ -320,12 +370,13 @@ export function activate(context: vscode.ExtensionContext): {
     }, target, propagateErrors);
   const implemented: Record<string, (target?: vscode.TreeItem, ...args: unknown[]) => unknown> = {
     "wintestkit.chooseApp": () => setup.chooseApp(),
-    "wintestkit.openGettingStarted": () =>
-      vscode.commands.executeCommand(
-        "workbench.action.openWalkthrough",
-        "wintestkit#wintestkit.firstRun",
-        false,
-      ),
+    "wintestkit.openSetup": () => setupMonitor.show(),
+    "wintestkit.setup.recheck": () => setupMonitor.recheck(),
+    "wintestkit.enable": async () => {
+      await enablement.set(true);
+      await setupMonitor.show();
+    },
+    "wintestkit.disable": () => enablement.set(false),
     "wintestkit.openTesting": () =>
       vscode.commands.executeCommand("workbench.view.testing.focus"),
     "wintestkit.elements.refresh": () => projects.refresh(),
@@ -357,20 +408,13 @@ export function activate(context: vscode.ExtensionContext): {
       withProject((project) => spy.refreshForProject(project), target),
     "wintestkit.restartServer": () =>
       withProject((project) => servers.restart(project)),
-    "wintestkit.runDoctor": (target) =>
-      withProject(
-        (project) =>
-          runTerminal(project.root, [
-            "-m",
-            "wintestkit",
-            "--root",
-            project.root.fsPath,
-            "doctor",
-          ]),
-        target,
-      ),
-    "wintestkit.installPackage": () =>
-      withProject((project) => installPackage(project.root)),
+    "wintestkit.runDoctor": async (target) => {
+      const folder = await setupFolder(target);
+      if (folder)
+        await runTerminal(folder, ["-m", "wintestkit", "--root", folder.fsPath, "doctor"]).catch(
+          (error) => vscode.window.showErrorMessage(String(error)),
+        );
+    },
   };
   context.subscriptions.push(
     vscode.commands.registerCommand(
@@ -419,7 +463,6 @@ export function activate(context: vscode.ExtensionContext): {
         "wintestkit.runFlow",
         "wintestkit.checkAfterFlow",
         "wintestkit.sweepProject",
-        "wintestkit.initProject",
         "wintestkit.openSettings",
         "wintestkit.elements.goTo",
         "wintestkit.spy.startPick",

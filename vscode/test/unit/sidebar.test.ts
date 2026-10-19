@@ -41,7 +41,12 @@ describe("sidebar page", () => {
     expect(html).toContain('id="tree" role="tree" aria-label="Page Tree"');
   });
   it("puts the tree in untouched, whatever it contains", () => {
+    expect(html).toContain('id="setup-guide" aria-live="polite"');
     expect(html).toContain("<div>$&</div>");
+  });
+  it("keeps the instructions directly after the controls, ahead of notices and Pages & Flows", () => {
+    expect(html).toMatch(/<main id="test-target">\s*<div id="card"[^>]*>[^]*?<\/div>\s*<aside id="setup-guide"[^>]*><\/aside>\s*<div id="target-notices"[^>]*><\/div>\s*<\/main>/);
+    expect(html.indexOf('id="setup-guide"')).toBeLessThan(html.indexOf('id="pages"'));
   });
   it("allows only its own scripts and styles", () => {
     expect(html).toContain(
@@ -66,17 +71,25 @@ describe("sidebar layout", () => {
   const css = readFileSync("media/setup/setup.css", "utf8");
   it("lets Test Target grow only until Pages & Flows is down to its minimum", () => {
     expect(css).toMatch(/--pages-min:\s*\d+px/);
-    expect(css).toMatch(/#card\s*{[^}]*max-height:\s*max\(\d+px,\s*calc\(100% - var\(--pages-min\)\)\)[^}]*overflow-y:\s*auto/);
+    expect(css).toMatch(/#test-target\s*{[^}]*max-height:\s*max\(\d+px,\s*calc\(100% - var\(--pages-min\)\)\)[^}]*overflow-y:\s*auto/);
   });
   it("never shrinks Pages & Flows below that minimum", () => {
     expect(css).toMatch(/#pages\s*{[^}]*min-height:\s*var\(--pages-min\)/);
   });
   it("keeps Test Target usable when both sections need more height than the sidebar", () => {
-    expect(css).toMatch(/#card\s*{[^}]*min-height:\s*120px/);
+    expect(css).toMatch(/#test-target\s*{[^}]*min-height:\s*120px/);
     expect(css).toMatch(/body\s*{[^}]*overflow-y:\s*auto/);
   });
   it("gives Test Target the whole sidebar when it is the only part", () => {
-    expect(css).toMatch(/body\.solo #card\s*{[^}]*max-height:\s*none/);
+    expect(css).toMatch(/body\.solo #test-target\s*{[^}]*max-height:\s*none/);
+  });
+  it("dulls only Pages & Flows during the guide", () => {
+    expect(css).toMatch(/#setup-guide:empty\s*{[^}]*display:\s*none/);
+    expect(css).not.toMatch(/#setup-guide\s*{[^}]*position:\s*fixed/);
+    expect(css).toMatch(/\.callout\s*{[^}]*overflow-y:\s*auto/);
+    const html = sidebarDocument(page);
+    expect(html).toContain("#pages.tour-dim::after");
+    expect(html).not.toContain("body.tour-dim");
   });
 });
 
