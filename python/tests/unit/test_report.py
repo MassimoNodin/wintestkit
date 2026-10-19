@@ -74,7 +74,7 @@ def test_report_command_handles_missing_results(tmp_path: Path) -> None:
     assert main(["report", str(tmp_path)]) == 2
 
 
-def test_trace_paths_are_portable_and_payload_is_not_mutated(tmp_path: Path) -> None:
+def test_replay_paths_are_portable_and_payload_is_not_mutated(tmp_path: Path) -> None:
     recorder = RunRecorder(tmp_path)
     recorder.record(
         {
@@ -82,7 +82,7 @@ def test_trace_paths_are_portable_and_payload_is_not_mutated(tmp_path: Path) -> 
             "tests": [{"id": "test", "name": "test", "file": str(tmp_path / "test.py"), "line": 0}],
         }
     )
-    trace = {
+    replay = {
         "startedAt": 1,
         "duration": 1,
         "truncated": False,
@@ -95,12 +95,12 @@ def test_trace_paths_are_portable_and_payload_is_not_mutated(tmp_path: Path) -> 
             "outcome": "passed",
             "duration": 1,
             "screenshots": [],
-            "trace": trace,
+            "replay": replay,
         }
     )
-    recorded = recorder.results()["tests"][0]["trace"]
+    recorded = recorder.results()["tests"][0]["replay"]
     assert recorded["frames"][0]["path"] == "artifacts/frame.png"
-    assert trace["frames"][0]["path"] == str(tmp_path / "artifacts/frame.png")
+    assert replay["frames"][0]["path"] == str(tmp_path / "artifacts/frame.png")
 
 
 def embedded_results(html: str) -> dict:
@@ -176,3 +176,17 @@ def test_recorder_retains_editor_and_run_metadata(tmp_path: Path) -> None:
     assert test["line"] == 9
     assert test["markers"] == ["smoke"]
     assert test["outcome"] == "error"
+
+
+def test_regenerating_a_report_keeps_the_ui_trees(tmp_path: Path) -> None:
+    import argparse
+
+    from wintestkit.commands import report as report_command
+
+    (tmp_path / "artifacts").mkdir()
+    (tmp_path / "artifacts" / "tree.txt").write_text('Window "App"\n', encoding="utf-8")
+    results = {"version": 1, "tests": [{"id": "t.py::a", "treeDump": "artifacts/tree.txt"}]}
+    (tmp_path / "results.json").write_text(json.dumps(results), encoding="utf-8")
+    args = argparse.Namespace(directory=str(tmp_path), root=str(tmp_path), open_browser=False)
+    assert report_command.run(args) == 0
+    assert 'Window \\"App\\"' in (tmp_path / "index.html").read_text(encoding="utf-8")

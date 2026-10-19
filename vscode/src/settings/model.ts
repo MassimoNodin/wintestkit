@@ -99,8 +99,8 @@ export const settingFields: SettingField[] = [
     group: "Evidence",
   },
   {
-    key: "trace",
-    label: "Screenshot trace recording",
+    key: "replay",
+    label: "Test replay recording",
     kind: "select",
     description: "Capture screenshots for playback in the HTML report.",
     default: "off",
@@ -108,8 +108,8 @@ export const settingFields: SettingField[] = [
     group: "Evidence",
   },
   {
-    key: "trace_fps",
-    label: "Trace capture rate (FPS)",
+    key: "replay_fps",
+    label: "Replay capture rate (FPS)",
     kind: "number",
     default: 15,
     minimum: 0,
@@ -117,8 +117,8 @@ export const settingFields: SettingField[] = [
     group: "Evidence",
   },
   {
-    key: "trace_scope",
-    label: "Trace capture scope",
+    key: "replay_scope",
+    label: "Replay capture scope",
     kind: "select",
     default: "window",
     choices: ["window", "desktop"],
@@ -249,7 +249,7 @@ export function validateSettings(
       (typeof entry !== "number" ||
         !Number.isFinite(entry) ||
         entry < (field.minimum ?? 0) ||
-        (key === "trace_fps" && entry <= 0) ||
+        (key === "replay_fps" && entry <= 0) ||
         (field.maximum !== undefined && entry > field.maximum) ||
         (key === "slow_mo_ms" && !Number.isInteger(entry)))
     )

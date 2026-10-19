@@ -14,10 +14,10 @@ from wintestkit.uia.png import encode_png
 
 Pixels = tuple[int, int, bytes]
 
-log = logging.getLogger("wintestkit.trace")
+log = logging.getLogger("wintestkit.replay")
 
 
-class TraceRecorder:
+class ReplayRecorder:
     """Capture on one worker, dropping missed ticks rather than queueing screenshots."""
 
     def __init__(
@@ -31,7 +31,7 @@ class TraceRecorder:
         max_bytes: int = 104857600,
         capture: Callable[[], bytes | Pixels | None] | None = None,
     ) -> None:
-        self.directory = directory / "trace"
+        self.directory = directory / "replay"
         self.report_dir = report_dir
         self.interval = 1 / fps
         self.scope = scope
@@ -49,7 +49,7 @@ class TraceRecorder:
         self._capture = capture or self._capture_window
         self._stop = threading.Event()
         self._wake = threading.Event()
-        self._thread = threading.Thread(target=self._run, name="wtk-trace", daemon=True)
+        self._thread = threading.Thread(target=self._run, name="wtk-replay", daemon=True)
         self._result: dict[str, Any] | None = None
 
     def start(self) -> None:
@@ -112,7 +112,7 @@ class TraceRecorder:
                 self._sample()
             except Exception as exc:
                 if self.error is None:
-                    log.warning("trace capture failed: %s", exc)
+                    log.warning("replay capture failed: %s", exc)
                 self.error = f"Screenshot capture failed: {exc}"
             now = time.monotonic()
             due = max(due + self.interval, now)
@@ -144,7 +144,7 @@ class TraceRecorder:
                 try:
                     (self.report_dir / frame["path"]).unlink(missing_ok=True)
                 except OSError as exc:
-                    log.warning("could not discard trace frame: %s", exc)
+                    log.warning("could not discard replay frame: %s", exc)
             result["frames"] = []
         self._result = result
         return result

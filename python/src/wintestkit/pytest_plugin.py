@@ -34,9 +34,9 @@ from wintestkit.config import (
 )
 from wintestkit.errors import AppNotRunningError, AttachNotRunningError, ConfigError, WtkError
 from wintestkit.events import EventSink, open_sink
+from wintestkit.replay import ReplayRecorder
 from wintestkit.report.html import write_report
 from wintestkit.report.results import RunRecorder, prepare_directory
-from wintestkit.trace import TraceRecorder
 
 if TYPE_CHECKING:
     from wintestkit.app import App
@@ -51,11 +51,11 @@ _ENV_VARS = (
     "WTK_TIMEOUT",
     "WTK_INPUT_MODE",
     "WTK_SCREENSHOTS",
-    "WTK_TRACE",
-    "WTK_TRACE_FPS",
-    "WTK_TRACE_SCOPE",
-    "WTK_TRACE_MAX_FRAMES",
-    "WTK_TRACE_MAX_BYTES",
+    "WTK_REPLAY",
+    "WTK_REPLAY_FPS",
+    "WTK_REPLAY_SCOPE",
+    "WTK_REPLAY_MAX_FRAMES",
+    "WTK_REPLAY_MAX_BYTES",
 )
 
 
@@ -114,9 +114,9 @@ _OPTION_TO_KEY = {
     "wtk_highlight": "highlight_actions",
     "wtk_slowmo": "slow_mo_ms",
     "wtk_report": "report_dir",
-    "wtk_trace": "trace",
-    "wtk_trace_fps": "trace_fps",
-    "wtk_trace_scope": "trace_scope",
+    "wtk_replay": "replay",
+    "wtk_replay_fps": "replay_fps",
+    "wtk_replay_scope": "replay_scope",
 }
 
 
@@ -128,16 +128,21 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     group.addoption("--wtk-input-mode", choices=INPUT_MODES, help="default click strategy")
     group.addoption("--wtk-screenshots", choices=SCREENSHOT_MODES, help="when to capture screens")
     group.addoption(
-        "--wtk-trace", choices=("off", "on", "retain-on-failure"), help="record a trace"
+        "--wtk-replay", choices=("off", "on", "retain-on-failure"), help="record a test replay"
     )
-    group.addoption("--wtk-trace-fps", type=float, help="target trace frames per second (up to 30)")
-    group.addoption("--wtk-trace-scope", choices=("window", "desktop"), help="trace capture area")
+    group.addoption(
+        "--wtk-replay-fps", type=float, help="target replay frames per second (up to 30)"
+    )
+    group.addoption("--wtk-replay-scope", choices=("window", "desktop"), help="replay capture area")
     group.addoption(
         "--wtk-highlight", action="store_true", default=None, help="flash elements before acting"
     )
     group.addoption("--wtk-slowmo", type=int, metavar="MS", help="pause after every action")
     group.addoption("--wtk-report", metavar="DIR", help="report directory")
     group.addoption("--wtk-no-report", action="store_true", help="do not write a report")
+    group.addoption(
+        "--wtk-no-html", action="store_true", help="write results.json but not the HTML report"
+    )
     group.addoption(
         "--wtk-ui-tree-diff", action="store_true", help="retain bounded per-test UI tree baselines"
     )
@@ -207,7 +212,7 @@ class _Run:
     artifacts: artifact_files.ArtifactSet | None = None
     tree_baseline: str | None = None
     step_screenshots: list[Path] = field(default_factory=lambda: [])
-    trace: TraceRecorder | None = None
+    replay: ReplayRecorder | None = None
 
 
 @dataclass
@@ -234,6 +239,7 @@ class _Controller:
         self.started = time.time()
         self.recorder = RunRecorder(self.config.report_dir)
         self.report_enabled = not config.getoption("wtk_no_report", False)
+        self.write_html = not config.getoption("wtk_no_html", False)
         self.report_path: str | None = None
         self.runs: dict[str, _Run] = {}
         self.finished: list[_Finished] = []
@@ -245,8 +251,8 @@ class _Controller:
     def close(self) -> None:
         self.remove_listener()
         for run in self.runs.values():
-            if run.trace is not None:
-                run.trace.stop()
+            if run.replay is not None:
+                run.replay.stop()
         if self.sink is not None:
             self.sink.close()
             self.sink = None
@@ -318,10 +324,10 @@ class _Controller:
         if not test_id:
             return
         run = self.runs.get(test_id)
-        if run is not None and run.trace is not None:
-            if run.trace.window is None and self.current is not None:
-                self._trace_window(run.trace, _funcarg(self.current, "app"))
-            run.trace.request_frame()
+        if run is not None and run.replay is not None:
+            if run.replay.window is None and self.current is not None:
+                self._replay_window(run.replay, _funcarg(self.current, "app"))
+            run.replay.request_frame()
         if self.config.screenshots == "every-step" and self.current is not None:
             app = _funcarg(self.current, "app")
             directory = artifact_files.artifacts_dir(self.config.report_dir, test_id)
@@ -340,17 +346,17 @@ class _Controller:
         runtime.begin_test(item.nodeid)
         self.current = item
         self.runs[item.nodeid] = _Run(item.nodeid)
-        if self.report_enabled and self.config.trace != "off":
-            trace = TraceRecorder(
+        if self.report_enabled and self.config.replay != "off":
+            replay = ReplayRecorder(
                 artifact_files.artifacts_dir(self.config.report_dir, item.nodeid),
                 self.config.report_dir,
-                fps=self.config.trace_fps,
-                scope=self.config.trace_scope,
-                max_frames=self.config.trace_max_frames,
-                max_bytes=self.config.trace_max_bytes,
+                fps=self.config.replay_fps,
+                scope=self.config.replay_scope,
+                max_frames=self.config.replay_max_frames,
+                max_bytes=self.config.replay_max_bytes,
             )
-            self.runs[item.nodeid].trace = trace
-            trace.start()
+            self.runs[item.nodeid].replay = replay
+            replay.start()
         marker = item.get_closest_marker("wtk")
         if marker is None:
             return
@@ -367,13 +373,13 @@ class _Controller:
             runtime.set_config(dataclasses.replace(current, timeout=float(timeout)))
 
     @staticmethod
-    def _trace_window(trace: TraceRecorder, app: Any) -> None:
-        if app is None or trace.scope != "window":
+    def _replay_window(replay: ReplayRecorder, app: Any) -> None:
+        if app is None or replay.scope != "window":
             return
         try:
-            trace.set_window(int(app.main_window().native_window_handle))
+            replay.set_window(int(app.main_window().native_window_handle))
         except Exception as exc:
-            log.debug("trace window not available: %s", exc)
+            log.debug("replay window not available: %s", exc)
 
     @pytest.hookimpl(hookwrapper=True)
     def pytest_fixture_setup(
@@ -383,8 +389,8 @@ class _Controller:
         if fixturedef.argname != "app" or outcome.excinfo is not None:
             return
         run = self.runs.get(self.current.nodeid) if self.current is not None else None
-        if run is not None and run.trace is not None:
-            self._trace_window(run.trace, outcome.get_result())
+        if run is not None and run.replay is not None:
+            self._replay_window(run.replay, outcome.get_result())
 
     @pytest.hookimpl(trylast=True)
     def pytest_runtest_teardown(self, item: pytest.Item, nextitem: pytest.Item | None) -> None:
@@ -401,8 +407,8 @@ class _Controller:
         outcome = yield
         report: pytest.TestReport = outcome.get_result()
         run = self.runs.setdefault(item.nodeid, _Run(item.nodeid))
-        if report.when == "setup" and run.trace is not None:
-            self._trace_window(run.trace, _funcarg(item, "app"))
+        if report.when == "setup" and run.replay is not None:
+            self._replay_window(run.replay, _funcarg(item, "app"))
         if call.excinfo is not None:
             run.exceptions[report.when or "call"] = call.excinfo
         tree_diff_enabled = bool(self.pytest_config.getoption("wtk_ui_tree_diff", False))
@@ -466,14 +472,14 @@ class _Controller:
             "duration": duration,
             "screenshots": [self._posix(p) for p in paths],
         }
-        if run.trace is not None:
-            discard = self.config.trace == "retain-on-failure" and outcome not in (
+        if run.replay is not None:
+            discard = self.config.replay == "retain-on-failure" and outcome not in (
                 "failed",
                 "error",
             )
-            trace_result = run.trace.stop(discard=discard)
+            replay_result = run.replay.stop(discard=discard)
             if not discard:
-                event["trace"] = trace_result
+                event["replay"] = replay_result
         if outcome == "skipped":
             skipped = next((item for item in run.reports.values() if item.skipped), None)
             if skipped is not None:
@@ -516,12 +522,18 @@ class _Controller:
             event["junitPath"] = self._posix(Path(str(junit)).resolve())
         self._emit(event)
         if self.report_enabled:
-            write_report(self.config.report_dir, self.recorder.results())
+            write_report(self.config.report_dir, self.recorder.results(), html=self.write_html)
             self.report_path = str(event["reportPath"])
 
     def pytest_terminal_summary(self, terminalreporter: Any) -> None:
         if self.report_path:
-            terminalreporter.write_line(f"Report: {self.report_path}")
+            label = "Report" if self.write_html else "Results"
+            path = (
+                self.report_path
+                if self.write_html
+                else str(Path(self.report_path).with_name("results.json"))
+            )
+            terminalreporter.write_line(f"{label}: {path}")
 
 
 ARTIFACTS_KEY = pytest.StashKey[artifact_files.ArtifactSet]()

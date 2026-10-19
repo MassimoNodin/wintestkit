@@ -8,7 +8,7 @@ from typing import Any
 import pytest
 
 from wintestkit import runtime
-from wintestkit.trace import TraceRecorder
+from wintestkit.replay import ReplayRecorder
 
 
 def test_pytest_results_match_events(
@@ -88,14 +88,14 @@ def test_session_end_reports_output_paths(pytester: pytest.Pytester) -> None:
 
 
 @pytest.mark.parametrize("mode", ["on", "retain-on-failure"])
-def test_trace_results_and_events_match_contract(
+def test_replay_results_and_events_match_contract(
     pytester: pytest.Pytester,
     monkeypatch: pytest.MonkeyPatch,
     validate: Callable[[str, str, Any], None],
     mode: str,
 ) -> None:
-    monkeypatch.setattr(TraceRecorder, "_capture_window", lambda self: b"fake-png")
-    pytester.makepyprojecttoml(f'[tool.wintestkit]\nscreenshots = "off"\ntrace = "{mode}"\n')
+    monkeypatch.setattr(ReplayRecorder, "_capture_window", lambda self: b"fake-png")
+    pytester.makepyprojecttoml(f'[tool.wintestkit]\nscreenshots = "off"\nreplay = "{mode}"\n')
     pytester.makepyfile("""
 import time
 import pytest
@@ -105,47 +105,63 @@ def test_ok():
         time.sleep(0.06)
 def test_failure():
     time.sleep(0.06)
-    assert False, "trace failure"
+    assert False, "replay failure"
 @pytest.fixture
 def broken():
     time.sleep(0.06)
     raise RuntimeError("setup failed")
 def test_setup_error(broken): pass
 """)
-    result = pytester.runpytest("--wtk-events=trace-events.ndjson")
+    result = pytester.runpytest("--wtk-events=replay-events.ndjson")
     result.assert_outcomes(passed=1, failed=1, errors=1)
     results = json.loads((pytester.path / "wtk-report/results.json").read_text(encoding="utf-8"))
     validate("results.schema.json", "Results", results)
     events = [
         json.loads(line)
-        for line in (pytester.path / "trace-events.ndjson").read_text(encoding="utf-8").splitlines()
+        for line in (pytester.path / "replay-events.ndjson")
+        .read_text(encoding="utf-8")
+        .splitlines()
     ]
     for event in events:
         validate("events.schema.json", "RunEvent", event)
     endings = {event["id"]: event for event in events if event["event"] == "test_end"}
     for test in results["tests"]:
         retained = mode == "on" or test["outcome"] in ("failed", "error")
-        assert ("trace" in test) == retained
+        assert ("replay" in test) == retained
         if retained:
-            trace = test["trace"]
-            assert trace == endings[test["id"]]["trace"]
-            assert len(trace["frames"]) == 1
-            assert trace["duration"] >= 0.06
-            assert (pytester.path / "wtk-report" / trace["frames"][0]["path"]).is_file()
+            replay = test["replay"]
+            assert replay == endings[test["id"]]["replay"]
+            assert len(replay["frames"]) == 1
+            assert replay["duration"] >= 0.06
+            assert (pytester.path / "wtk-report" / replay["frames"][0]["path"]).is_file()
     expected = 3 if mode == "on" else 2
     assert len(list((pytester.path / "wtk-report").rglob("*.png"))) == expected
     runtime.reset()
 
 
-def test_no_report_disables_trace_capture(
+def test_no_report_disables_replay_capture(
     pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    def unexpected_start(self: TraceRecorder) -> None:
-        raise AssertionError("trace must be disabled with --wtk-no-report")
+    def unexpected_start(self: ReplayRecorder) -> None:
+        raise AssertionError("replay must be disabled with --wtk-no-report")
 
-    monkeypatch.setattr(TraceRecorder, "start", unexpected_start)
-    pytester.makepyprojecttoml('[tool.wintestkit]\nscreenshots = "off"\ntrace = "on"\n')
+    monkeypatch.setattr(ReplayRecorder, "start", unexpected_start)
+    pytester.makepyprojecttoml('[tool.wintestkit]\nscreenshots = "off"\nreplay = "on"\n')
     pytester.makepyfile("def test_ok(): pass")
     pytester.runpytest("--wtk-no-report").assert_outcomes(passed=1)
     assert not (pytester.path / "wtk-report").exists()
+    runtime.reset()
+
+
+def test_no_html_writes_results_without_the_html_report(pytester: pytest.Pytester) -> None:
+    pytester.makepyprojecttoml('[tool.wintestkit]\nscreenshots = "off"\n')
+    pytester.makepyfile("def test_ok(): pass")
+    directory = pytester.path / "wtk-report"
+    directory.mkdir()
+    (directory / "index.html").write_text("stale", encoding="utf-8")
+    result = pytester.runpytest("--wtk-no-html")
+    result.assert_outcomes(passed=1)
+    assert (directory / "results.json").is_file()
+    assert not (directory / "index.html").exists()
+    result.stdout.fnmatch_lines(["Results: *results.json"])
     runtime.reset()

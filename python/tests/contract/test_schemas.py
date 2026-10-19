@@ -128,7 +128,12 @@ def definition_examples() -> dict[str, dict[str, Any]]:
         "DiscoverParams": {"overrides": {"C:/wtk/pages/main.py": "class MainPage: pass"}},
         "DiscoverResult": discovery,
         "AppStatusParams": {},
-        "AppStatusResult": {"running": True, "pids": [1234], "owned": True, "mainWindowTitle": "WTK Demo"},
+        "AppStatusResult": {
+            "running": True,
+            "pids": [1234],
+            "owned": True,
+            "mainWindowTitle": "WTK Demo",
+        },
         "AppProcessesParams": {},
         "RunningProcess": {
             "name": "CalculatorApp.exe",
@@ -254,10 +259,10 @@ def definition_examples() -> dict[str, dict[str, Any]]:
         "results.schema.json": {
             "Results": results,
             "TestResult": results["tests"][0],
-            "Trace": {
+            "Replay": {
                 "startedAt": 1.0,
                 "duration": 0.5,
-                "frames": [{"time": 0.1, "path": "trace/0001.png"}],
+                "frames": [{"time": 0.1, "path": "replay/0001.png"}],
                 "truncated": False,
             },
         },

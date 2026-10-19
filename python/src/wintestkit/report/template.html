@@ -43,8 +43,8 @@ button{font:inherit;color:inherit;cursor:pointer}
 .app{flex:1;min-height:0;display:grid;grid-template-columns:280px minmax(0,1fr) 76px 400px}
 .app.panel-closed{grid-template-columns:280px minmax(0,1fr) 76px}
 .app.panel-closed .panel{display:none}
-.app.trace{grid-template-columns:1fr}
-.app.trace>:not(.traceview){display:none}
+.app.replay{grid-template-columns:1fr}
+.app.replay>:not(.replayview){display:none}
 
 /* sidebar */
 .side{background:var(--card);border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
@@ -182,8 +182,8 @@ mark{background:#ffe58a;color:#000;border-radius:2px}
 .log .ERROR{color:var(--red)}.log .WARNING{font-weight:700}.log .DEBUG{color:var(--faint)}
 .noout{color:var(--muted);padding:16px 0}
 
-/* trace */
-.traceview{overflow:auto;padding:18px 28px 28px}
+/* replay */
+.replayview{overflow:auto;padding:18px 28px 28px}
 .back{display:inline-flex;align-items:center;gap:8px;color:var(--blue);background:none;border:0;padding:0;font-size:15px}
 .trhead{max-width:1100px;margin:14px auto 14px}
 .trhead h1{font-size:24px;font-weight:600;margin:0}
@@ -229,7 +229,7 @@ mark{background:#ffe58a;color:#000;border-radius:2px}
 
 svg{vertical-align:middle;flex-shrink:0}.shotbox img,.stage img{display:block;max-width:100%;height:auto}.stage img{max-height:580px;object-fit:contain}.thumb img{width:100%;aspect-ratio:16/10;object-fit:contain;background:var(--soft)}.file>span:not(.fails){overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.stepsub,.props dd{overflow-wrap:anywhere}.main pre,.panel pre{white-space:pre-wrap;overflow-wrap:anywhere}td.st svg{display:block;margin:auto}.broke{grid-template-columns:minmax(0,1fr) minmax(180px,40%)}.panel{min-width:0}.thumb{min-width:0}tr.not_run td{color:var(--faint)}
 @media(max-width:1150px){.app{grid-template-columns:220px minmax(0,1fr) 76px 330px}.app.panel-closed{grid-template-columns:220px minmax(0,1fr) 76px}.runinfo{white-space:normal}.counts{gap:12px}.main{padding:18px}.broke{grid-template-columns:1fr}}
-.app:not(.trace)>.traceview{display:none}.app.trace,.app.trace.panel-closed{grid-template-columns:1fr}
+.app:not(.replay)>.replayview{display:none}.app.replay,.app.replay.panel-closed{grid-template-columns:1fr}
 </style>
 </head>
 <body>
@@ -250,7 +250,7 @@ const theme=(()=>{
   new MutationObserver(()=>{if(!chosen)apply()}).observe(document.body,{attributes:true,attributeFilter:["class"]});
   media.addEventListener("change",()=>{if(!chosen)apply()});
   apply();
-  return{get:()=>root.dataset.theme,onChange:f=>listeners.push(f),
+  return{get:()=>root.dataset.theme,onChange:f=>listeners.push(f),inVsCode:!!host,post:message=>host?.postMessage(message),
     set(value){chosen=value;apply();
       if(host)host.postMessage({type:"wtk-theme",theme:value});
       else try{localStorage.setItem(key,value)}catch{}}};
@@ -260,6 +260,7 @@ const theme=(()=>{
   <div class="brand"><svg xmlns="http://www.w3.org/2000/svg" class="logo" width="30" height="30" viewBox="205 165 840 890" fill="none" aria-hidden="true"><defs><linearGradient id="grad-cube-top" gradientUnits="userSpaceOnUse" x1="520" y1="200" x2="697" y2="618"><stop stop-color="#ffffff"/><stop offset=".57" stop-color="#fbfdff"/><stop offset="1" stop-color="#f1f6fc"/></linearGradient><linearGradient id="grad-cube-left" gradientUnits="userSpaceOnUse" x1="340" y1="441" x2="568" y2="1000"><stop stop-color="#f0f5fb"/><stop offset=".31" stop-color="#e9f0f8"/><stop offset=".61" stop-color="#f9fcff"/><stop offset="1" stop-color="#e4eefb"/></linearGradient><linearGradient id="grad-cube-right" gradientUnits="userSpaceOnUse" x1="1026" y1="483" x2="652" y2="986"><stop stop-color="#f5f9fe"/><stop offset=".45" stop-color="#e8f0fa"/><stop offset=".74" stop-color="#f9fcff"/><stop offset="1" stop-color="#e2ecf9"/></linearGradient><linearGradient id="grad-front-seam-left" gradientUnits="userSpaceOnUse" x1="599" y1="800" x2="627" y2="800"><stop stop-color="#ffffff"/><stop offset="1" stop-color="#f4f9ff"/></linearGradient><linearGradient id="grad-front-seam-right" gradientUnits="userSpaceOnUse" x1="627" y1="800" x2="653" y2="800"><stop stop-color="#edf4fd"/><stop offset="1" stop-color="#ffffff"/></linearGradient><linearGradient id="grad-t-face" gradientUnits="userSpaceOnUse" x1="581" y1="209" x2="792" y2="488"><stop stop-color="#05c7f5"/><stop offset=".38" stop-color="#00aeff"/><stop offset=".72" stop-color="#0095fa"/><stop offset="1" stop-color="#0077ef"/></linearGradient><linearGradient id="grad-t-front-bevel" gradientUnits="userSpaceOnUse" x1="415" y1="439" x2="579" y2="536"><stop stop-color="#0069f2"/><stop offset="1" stop-color="#003acc"/></linearGradient><linearGradient id="grad-t-right-bevel" gradientUnits="userSpaceOnUse" x1="796" y1="398" x2="884" y2="454"><stop stop-color="#006de9"/><stop offset="1" stop-color="#0043c4"/></linearGradient><linearGradient id="grad-t-plane-light" gradientUnits="userSpaceOnUse" x1="601" y1="278" x2="810" y2="426"><stop stop-color="#52e4ff" stop-opacity=".28"/><stop offset="1" stop-color="#00b4ff" stop-opacity="0"/></linearGradient><linearGradient id="grad-w-upright-left" gradientUnits="userSpaceOnUse" x1="369.12" y1="504.12" x2="136.12" y2="737.12"><stop offset="0.0000" stop-color="#0057e4"/><stop offset="0.1667" stop-color="#0052e2"/><stop offset="0.3333" stop-color="#005cee"/><stop offset="0.5000" stop-color="#005bee"/><stop offset="0.6667" stop-color="#0052e9"/><stop offset="0.8333" stop-color="#004ce8"/><stop offset="1.0000" stop-color="#004be8"/></linearGradient><linearGradient id="grad-w-left-diagonal" gradientUnits="userSpaceOnUse" x1="421.90" y1="757.77" x2="220.08" y2="768.35"><stop offset="0.0000" stop-color="#003dba"/><stop offset="0.1667" stop-color="#0043c8"/><stop offset="0.3333" stop-color="#0049d2"/><stop offset="0.5000" stop-color="#004ad6"/><stop offset="0.6667" stop-color="#004cd9"/><stop offset="0.8333" stop-color="#004cd9"/><stop offset="1.0000" stop-color="#004ad7"/></linearGradient><linearGradient id="grad-w-left-inner-bevel" gradientUnits="userSpaceOnUse" x1="431.60" y1="781.74" x2="315.08" y2="876.10"><stop offset="0.0000" stop-color="#01126e"/><stop offset="0.1667" stop-color="#002899"/><stop offset="0.3333" stop-color="#002da7"/><stop offset="0.5000" stop-color="#0033af"/><stop offset="0.6667" stop-color="#0037b6"/><stop offset="0.8333" stop-color="#0039b7"/><stop offset="1.0000" stop-color="#0040c1"/></linearGradient><linearGradient id="grad-w-centre-diagonal" gradientUnits="userSpaceOnUse" x1="497.53" y1="610.65" x2="406.64" y2="949.86"><stop offset="0.0000" stop-color="#06c7fd"/><stop offset="0.1667" stop-color="#009afe"/><stop offset="0.3333" stop-color="#0086fe"/><stop offset="0.5000" stop-color="#0085fe"/><stop offset="0.6667" stop-color="#007efe"/><stop offset="0.8333" stop-color="#0069f9"/><stop offset="1.0000" stop-color="#005af0"/></linearGradient><linearGradient id="grad-w-upright-right" gradientUnits="userSpaceOnUse" x1="536.20" y1="552.00" x2="536.20" y2="1030.00"><stop offset="0.0000" stop-color="#006cf8"/><stop offset="0.1667" stop-color="#006af6"/><stop offset="0.3333" stop-color="#007afd"/><stop offset="0.5000" stop-color="#0078fd"/><stop offset="0.6667" stop-color="#006af9"/><stop offset="0.8333" stop-color="#005af4"/><stop offset="1.0000" stop-color="#000000"/></linearGradient><linearGradient id="grad-w-right-fold" gradientUnits="userSpaceOnUse" x1="452.62" y1="899.71" x2="623.63" y2="945.53"><stop offset="0.0000" stop-color="#003cc0"/><stop offset="0.1667" stop-color="#0039c1"/><stop offset="0.3333" stop-color="#003dcb"/><stop offset="0.5000" stop-color="#0042d4"/><stop offset="0.6667" stop-color="#0048de"/><stop offset="0.8333" stop-color="#0049e1"/><stop offset="1.0000" stop-color="#014de7"/></linearGradient><linearGradient id="grad-w-left-edge" gradientUnits="userSpaceOnUse" x1="222" y1="407" x2="222" y2="825"><stop stop-color="#008cff"/><stop offset="1" stop-color="#0045e6"/></linearGradient><linearGradient id="grad-k-stem" gradientUnits="userSpaceOnUse" x1="604.59" y1="646.35" x2="814.17" y2="934.82"><stop offset="0.0000" stop-color="#293748"/><stop offset="0.1667" stop-color="#2c3b4d"/><stop offset="0.3333" stop-color="#2b3b4e"/><stop offset="0.5000" stop-color="#243345"/><stop offset="0.6667" stop-color="#1a293a"/><stop offset="0.8333" stop-color="#142438"/><stop offset="1.0000" stop-color="#122134"/></linearGradient><linearGradient id="grad-k-upper-arm" gradientUnits="userSpaceOnUse" x1="989.93" y1="381.56" x2="784.01" y2="785.70"><stop offset="0.0000" stop-color="#1f2c3b"/><stop offset="0.1667" stop-color="#202e3e"/><stop offset="0.3333" stop-color="#253344"/><stop offset="0.5000" stop-color="#1f2e3f"/><stop offset="0.6667" stop-color="#213143"/><stop offset="0.8333" stop-color="#1c2c3e"/><stop offset="1.0000" stop-color="#152435"/></linearGradient><linearGradient id="grad-k-upper-fold" gradientUnits="userSpaceOnUse" x1="956" y1="568" x2="801" y2="730"><stop stop-color="#243444" stop-opacity="0"/><stop offset="1" stop-color="#091a2b" stop-opacity=".44"/></linearGradient><linearGradient id="grad-k-lower-arm" gradientUnits="userSpaceOnUse" x1="816.67" y1="708.72" x2="1001.52" y2="858.41"><stop offset="0.0000" stop-color="#0e1a2a"/><stop offset="0.1667" stop-color="#122030"/><stop offset="0.3333" stop-color="#172639"/><stop offset="0.5000" stop-color="#1a293c"/><stop offset="0.6667" stop-color="#1b2a3d"/><stop offset="0.8333" stop-color="#1a293c"/><stop offset="1.0000" stop-color="#1c2a3a"/></linearGradient><linearGradient id="grad-k-lower-fold" gradientUnits="userSpaceOnUse" x1="768" y1="773" x2="903" y2="889"><stop stop-color="#0e1c2b"/><stop offset="1" stop-color="#111e2c"/></linearGradient><linearGradient id="grad-k-top-bevel" gradientUnits="userSpaceOnUse" x1="652" y1="608" x2="759" y2="548"><stop stop-color="#566575"/><stop offset=".5" stop-color="#6a7785"/><stop offset="1" stop-color="#40505f"/></linearGradient><linearGradient id="grad-k-arm-top-bevel" gradientUnits="userSpaceOnUse" x1="896" y1="476" x2="1031" y2="402"><stop stop-color="#5c6976"/><stop offset="1" stop-color="#82909f"/></linearGradient><linearGradient id="grad-k-left-bevel" gradientUnits="userSpaceOnUse" x1="650" y1="812" x2="657" y2="812"><stop stop-color="#182432"/><stop offset="1" stop-color="#3c4a59"/></linearGradient><filter id="t-shadow" x="-20%" y="-30%" width="140%" height="170%" color-interpolation-filters="sRGB"><feGaussianBlur stdDeviation="4"/></filter></defs><g id="white-cube"><path id="left-white-face" d="M222 406 627 622 627 1044 223 824Z" fill="url(#grad-cube-left)"/><path id="right-white-face" d="M627 622 1031 400 1031 822 627 1044Z" fill="url(#grad-cube-right)"/><path id="top-white-face" d="M222 406 626 177 1031 400 627 622Z" fill="url(#grad-cube-top)"/><path id="left-top-rim" d="M222 406 627 622" stroke="#ffffff" stroke-width="1.5"/><path id="right-top-rim" d="M627 622 1031 400" stroke="#ffffff" stroke-width="1.5"/><path id="left-front-separator" d="M600 607 627 622 627 1044 600 1030Z" fill="url(#grad-front-seam-left)"/><path id="right-front-separator" d="M627 622 650 609 650 1031 627 1044Z" fill="url(#grad-front-seam-right)"/><path id="front-corner-highlight" d="M627 623V1043" stroke="#ffffff" stroke-opacity=".65" stroke-width="1"/></g><g id="top-t"><path id="t-cast-shadow" d="M657.9 200.5 993 385.4 876.9 451.5 795.1 406.3 572.5 532.9 401.1 438.3 623.7 311.7 541.8 266.5Z" fill="#2165b5" opacity=".15" filter="url(#t-shadow)"/><path id="t-depth" d="M657.9 202.5 993 387.4 876.9 453.5 795.1 408.3 572.5 534.9 401.1 440.3 623.7 313.7 541.8 268.5Z" fill="#0052da"/><path id="t-crossbar-right-bevel" d="M993 377.4 876.9 443.5 876.9 453.5 993 387.4Z" fill="url(#grad-t-right-bevel)"/><path id="t-stem-right-bevel" d="M795.1 398.3 572.5 524.9 572.5 534.9 795.1 408.3Z" fill="url(#grad-t-right-bevel)"/><path id="t-stem-front-bevel" d="M401.1 430.3 572.5 524.9 572.5 534.9 401.1 440.3Z" fill="url(#grad-t-front-bevel)"/><path id="t-left-crossbar-bevel" d="M541.8 258.5 623.7 303.7 623.7 313.7 541.8 268.5Z" fill="url(#grad-t-front-bevel)"/><path id="t-main-surface" d="M657.9 192.5 993 377.4 876.9 443.5 795.1 398.3 572.5 524.9 401.1 430.3 623.7 303.7 541.8 258.5Z" fill="url(#grad-t-face)"/><path id="t-subtle-surface-light" d="M657.9 192.5 993 377.4 876.9 443.5 795.1 398.3 572.5 524.9 401.1 430.3 623.7 303.7 541.8 258.5Z" fill="url(#grad-t-plane-light)"/><path id="t-back-edge-glint" d="M542.3 258.4 657.9 192.9 992.2 377.3" stroke="#55d8ff" stroke-opacity=".65" stroke-width="1.5" stroke-linejoin="round"/><path id="t-front-edge-glint" d="M401.8 430.2 572.5 524.3 794.6 398.3" stroke="#00c5ff" stroke-opacity=".56" stroke-width="1.2" stroke-linejoin="round"/></g><g id="left-w"><path id="w-left-upright" d="M223 407 328 463 328 697 223 824Z" fill="url(#grad-w-upright-left)"/><path id="w-left-diagonal" d="M223 824 413 588 414 760 315 876Z" fill="url(#grad-w-left-diagonal)"/><path id="w-left-lower-bevel" d="M315 876 414 760 414 792 345 892Z" fill="url(#grad-w-left-inner-bevel)"/><path id="w-right-upright" d="M493 552 601 607 601 1030 493 973 493 749Z" fill="url(#grad-w-upright-right)"/><path id="w-centre-sloping-face" d="M413 588 421 591 493 749 493 973 484 968 414 792Z" fill="url(#grad-w-centre-diagonal)"/><path id="w-right-diagonal-fold" d="M493 749 601 948 601 1030 493 973Z" fill="url(#grad-w-right-fold)"/><path id="w-outer-left-bevel" d="M222 406 225 410 225 824 223 824Z" fill="url(#grad-w-left-edge)"/><path id="w-left-top-bevel" d="M223 407 328 463 328 468 223 411Z" fill="#54d4ff"/><path id="w-left-inner-edge" d="M324.5 463 328 464.8 328 697 324.5 701.4Z" fill="#0064f0"/><path id="w-right-top-bevel" d="M493 552 601 607 598 612 493 557Z" fill="#27d1ff"/><path id="w-centre-ridge-bevel" d="M413 588 421 591 496 746 493 749Z" fill="#10c7ff"/><path id="w-centre-left-ridge" d="M223.7 823.1 413 588.9" stroke="#008dff" stroke-width="1.5"/><path id="w-centre-fold-line" d="M414 591V790" stroke="#00a1ff" stroke-opacity=".58" stroke-width="1.2"/><path id="w-right-outer-edge" d="M598 612 601 607 601 1030 598 1028.4Z" fill="#0054f0"/><path id="w-top-outer-glint" d="M223 407 327.4 462.9M493.3 552.8 600 607.2" stroke="#87eaff" stroke-opacity=".76" stroke-width=".9"/></g><g id="right-k"><path id="k-lower-arm" d="M763 775 871 682 1031 790 1031 822 904 893Z" fill="url(#grad-k-lower-arm)"/><path id="k-lower-arm-bottom-bevel" d="M763 775 904 888 1031 817 1031 822 904 893Z" fill="url(#grad-k-lower-fold)"/><path id="k-upper-arm" d="M763 672 893 477 1032 403 1032 521 775 779 763 775Z" fill="url(#grad-k-upper-arm)"/><path id="k-upper-arm-fold" opacity=".18" d="M893 477 969 584 775 779 763 775 763 672Z" fill="url(#grad-k-upper-fold)"/><path id="k-upper-arm-top-bevel" d="M890 474 1027 399 1032 403 895 480 763 679 763 671Z" fill="url(#grad-k-arm-top-bevel)"/><path id="k-upper-diagonal-edge-glint" d="M892.3 477.5 764.4 673.6" stroke="#8995a1" stroke-opacity=".24" stroke-width="1.1"/><path id="k-stem-front" d="M656 609 763 551 763 972 656 1031Z" fill="url(#grad-k-stem)"/><path id="k-stem-left-bevel" d="M650 606 656 609 656 1031 650 1027Z" fill="url(#grad-k-left-bevel)"/><path id="k-stem-top-bevel" d="M650 606 757 547 763 551 656 610Z" fill="url(#grad-k-top-bevel)"/><path id="k-stem-right-edge" d="M760.8 552.2 763 551 763 972 760.8 973.2Z" fill="#122335" opacity=".55"/><path id="k-stem-top-glint" d="M650.7 606 756.9 547.5" stroke="#a5b1bc" stroke-opacity=".63" stroke-width="1"/><path id="k-arm-top-glint" d="M895 475 1027.5 400" stroke="#b1beca" stroke-opacity=".58" stroke-width="1"/></g></svg> WinTestKit <b>Test Report</b></div>
   <div class="runinfo" id="runinfo"></div>
   <div class="counts" id="counts"></div>
+  <button class="btn" id="export-html" type="button" hidden title="Save this report as a single HTML file">Export HTML</button>
   <button class="theme-toggle" id="theme-toggle" type="button"></button>
 </header>
 <div class="app" id="app">
@@ -271,7 +272,7 @@ const theme=(()=>{
   <main class="main" id="main"></main>
   <div class="rail" id="rail" role="tablist" aria-label="Investigate"></div>
   <aside class="panel" id="panel"></aside>
-  <section class="traceview" id="trace"></section>
+  <section class="replayview" id="replay"></section>
 </div>
 <div class="toast" id="toast"></div>
 
@@ -363,19 +364,19 @@ const TESTS=(Array.isArray(DATA.tests)?DATA.tests:[]).map((raw,index)=>{
   while(diagnostic?.within&&!diagnostic.candidates?.length)diagnostic=diagnostic.within;
   error.kind=diagnostic?.kind||error.kind||(/assert/i.test(error.type)?'assertion':'unknown');
   error.locator=diagnostic?.locator||error.locator||failed?.loc||'';
-  const frames=(raw.trace?.frames||[]).filter(frame=>typeof frame.path==='string');
-  const traceStart=raw.trace?.startedAt;
+  const frames=(raw.replay?.frames||[]).filter(frame=>typeof frame.path==='string');
+  const replayStart=raw.replay?.startedAt;
   let elapsed=0;
   steps.forEach(step=>{
     elapsed+=step.dur;
-    const end=traceStart&&step.start?step.start-traceStart+step.dur:elapsed;
+    const end=replayStart&&step.start?step.start-replayStart+step.dur:elapsed;
     const frame=frames.filter(frame=>Number(frame.time)<=end).at(-1);
     step.shot=frame?.path||null;
     step.at=step.status==='not_run'?null:Math.max(0,end-step.dur);
   });
 
   return {...raw,id:raw.id||'test-'+index,file:(raw.id?.split('::')[0]||raw.file||'Unknown file').replace(/\\/g,'/'),status:status(raw.outcome),dur:Number(raw.duration)||0,
-    frames,line:Number(raw.line||0)+1,name:raw.name||raw.id||'Unnamed test',steps,error,diagnostic,hasTrace:frames.length>0,
+    frames,line:Number(raw.line||0)+1,name:raw.name||raw.id||'Unnamed test',steps,error,diagnostic,hasReplay:frames.length>0,
     failureShot:raw.screenshots?.[0]||failed?.screenshot||failed?.shot,skip:text(raw.message)||'No skip reason was recorded.',
     out:Object.fromEntries(['stdout','stderr','log'].map(key=>[key,text(raw[key]).replace(/\r\n/g,'\n').replace(/\n$/,'').split('\n').filter((line,i,all)=>line||all.length>1)]))};
 });
@@ -395,18 +396,18 @@ const cur=()=>byId(st.sel);
 const failIdx=t=>t.steps?t.steps.findIndex(s=>s.status==='failed'):-1;
 const PANELS=[['diagnostics','Diagnostics'],['tree','UI Tree'],['output','Output'],['details','Details']];
 
-function writeHash(){const p=new URLSearchParams({t:st.sel,p:st.panel});if(!st.open)p.set('closed','1');if(st.view==='trace'){p.set('v','trace');p.set('at',st.at.toFixed(2));if(st.spacing==='steps')p.set('sp','steps')}history.replaceState(null,'',location.href.split('#')[0]+'#'+p)}
+function writeHash(){const p=new URLSearchParams({t:st.sel,p:st.panel});if(!st.open)p.set('closed','1');if(st.view==='replay'){p.set('v','replay');p.set('at',st.at.toFixed(2));if(st.spacing==='steps')p.set('sp','steps')}history.replaceState(null,'',location.href.split('#')[0]+'#'+p)}
 function readHash(){const p=new URLSearchParams(location.hash.slice(1));
   const t=byId(p.get('t'));st.sel=t?t.id:(TESTS.find(x=>x.status==='failed')||TESTS[0])?.id;
   st.panel=PANELS.some(x=>x[0]===p.get('p'))?p.get('p'):defaultPanel(cur());st.open=!p.get('closed');
-  st.view=p.get('v')==='trace'&&cur()?.hasTrace?'trace':'test';
+  st.view=p.get('v')==='replay'&&cur()?.hasReplay?'replay':'test';
   st.spacing=p.get('sp')==='steps'?'steps':'time';
   const at=Number.parseFloat(p.get('at')),step=Number.parseInt(p.get('f'),10);
-  st.at=Number.isFinite(at)?at:cur()?traceTimeFor(cur(),Number.isFinite(step)?step:failIdx(cur())):0}
+  st.at=Number.isFinite(at)?at:cur()?replayTimeFor(cur(),Number.isFinite(step)?step:failIdx(cur())):0}
 const defaultPanel=t=>t?.status==='failed'?'diagnostics':'details';
 
 function select(id){if(st.sel!==id){const prevDefault=defaultPanel(cur());st.sel=id;const t=cur();
-  if(st.panel===prevDefault)st.panel=defaultPanel(t);st.cand=0;st.treeSel=null;st.out=null;st.at=traceTimeFor(t,failIdx(t))}
+  if(st.panel===prevDefault)st.panel=defaultPanel(t);st.cand=0;st.treeSel=null;st.out=null;st.at=replayTimeFor(t,failIdx(t))}
   st.view='test';render()}
 
 /* ---------- header ---------- */
@@ -444,19 +445,19 @@ function renderMain(){
    el('div',{class:'field'},el('p',{class:'lbl',text:'Error type'}),el('span',{class:'chip mono',text:error.type})),
    el('div',{class:'field'},el('p',{class:'lbl',text:'Message'}),el('div',{text:error.message})),
    el('div',{class:'field'},el('p',{class:'lbl',text:'Failed at'}),el('div',{text:step?`Step ${index+1}: ${step.name}`:test.location?`${test.location.file}:${Number(test.location.line)+1}`:'Outside a recorded step'}),error.locator?el('code',{class:'loc mono',text:error.locator}):null),
-   test.hasTrace?el('button',{class:'btn primary',onclick:()=>openTrace(Math.max(0,index))},'Open Trace Viewer',svg(ICON.arrow)):null),
+   test.hasReplay?el('button',{class:'btn primary',onclick:()=>openReplay(Math.max(0,index))},'Open Test Replay',svg(ICON.arrow)):null),
    test.failureShot?el('div',{class:'shotbox'},image(test.failureShot,'Screen at the moment of failure'),el('div',{class:'shotcap',text:'Screen at the moment of failure'})):null));
  }
  if(test.status==='passed'){
   const count=test.steps.length;
   main.append(el('div',{class:'card broke ok-card'},el('div',{},el('h3',{},svg(ICON.passed),'Test passed'),
    el('p',{class:'okline',text:count?(count===1?'The 1 recorded step passed':`All ${count} recorded steps passed`)+` in ${fmt(test.dur)}.`:`The test finished without errors in ${fmt(test.dur)}.`}),
-   test.hasTrace?el('button',{class:'btn primary',onclick:()=>openTraceAt(0)},'Open Trace Viewer',svg(ICON.arrow))
-    :el('p',{class:'muted',text:'No trace was recorded for this test. Run with --trace on to replay passing tests.'}))));
+   test.hasReplay?el('button',{class:'btn primary',onclick:()=>openReplayAt(0)},'Open Test Replay',svg(ICON.arrow))
+    :el('p',{class:'muted',text:'No replay was recorded for this test. Run with --replay on to record one.'}))));
  }
  if(test.status==='skipped')main.append(el('div',{class:'card'},el('h3',{text:'Skipped'}),el('div',{class:'skipbox',text:test.skip})));
  const body=el('tbody');
- test.steps.forEach((step,index)=>body.append(el('tr',{class:step.status+(step.shot?' click':''),tabindex:step.shot?'0':null,onclick:step.shot?()=>openTrace(index):null,onkeydown:step.shot?event=>{if(event.key==='Enter')openTrace(index)}:null},el('td',{class:'n',text:index+1}),el('td',{class:'st'},svg(ICON[step.status])),el('td',{},step.name,step.loc?el('span',{class:'stepsub',text:step.loc}):null),el('td',{class:'d',text:step.status==='not_run'?'Not run':fmt(step.dur)}))));
+ test.steps.forEach((step,index)=>body.append(el('tr',{class:step.status+(step.shot?' click':''),tabindex:step.shot?'0':null,onclick:step.shot?()=>openReplay(index):null,onkeydown:step.shot?event=>{if(event.key==='Enter')openReplay(index)}:null},el('td',{class:'n',text:index+1}),el('td',{class:'st'},svg(ICON[step.status])),el('td',{},step.name,step.loc?el('span',{class:'stepsub',text:step.loc}):null),el('td',{class:'d',text:step.status==='not_run'?'Not run':fmt(step.dur)}))));
  main.append(el('div',{class:'card'},el('h3',{text:'Test Steps'}),test.steps.length?el('table',{},el('thead',{},el('tr',{},...['#','Status','Step','Duration'].map(label=>el('th',{text:label})))),body):el('div',{class:'passnote',text:'No steps were recorded.'})));
 }
 function diagView(test,panel){
@@ -529,7 +530,7 @@ function detailsView(test,panel){
  const box=(title,rows)=>el('div',{class:'box'},el('h4',{text:title}),properties(rows));
  panel.append(box('Machine',[['Windows',environment.windows],['Machine name',environment.machine],['Screen',screen?`${screen.width} \u00d7 ${screen.height} at ${Math.round(screen.scale*100)}% scale`:null],['Python',environment.python],['WinTestKit',environment.wintestkit]]),box('Run',[['Started',longDate(RUN.started)],['Finished',longDate(RUN.finished)],['Duration',fmt(RUN.duration)],...(RUN.command?[['Command',RUN.command]]:[])]));
 }
-/* ---------- trace viewer ---------- */
+/* ---------- test replay ---------- */
 /* Plays the recorded frames on their own clock: each frame stays up until the next one was
    captured, so the replay keeps the pace of the real run. Steps are markers on that clock. */
 const SPEEDS=[0.5,1,2,4];
@@ -538,7 +539,7 @@ function timeline(t){
   if(t._timeline)return t._timeline;
   const frames=t.frames.map(frame=>({time:Math.max(0,Number(frame.time)||0),path:frame.path})).sort((a,b)=>a.time-b.time);
   const marks=t.steps.map((step,index)=>({...step,index,start:step.at,end:step.at==null?null:step.at+step.dur}));
-  const total=Math.max(Number(t.trace?.duration)||0,frames.at(-1)?.time||0,...marks.map(mark=>mark.end||0),0.1);
+  const total=Math.max(Number(t.replay?.duration)||0,frames.at(-1)?.time||0,...marks.map(mark=>mark.end||0),0.1);
   return t._timeline={frames,marks,total};
 }
 function frameAt(frames,time){let low=0,high=frames.length-1,found=0;
@@ -547,15 +548,15 @@ const markAt=(marks,time)=>marks.reduce((found,mark,index)=>mark.start!=null&&ma
 const preloaded=new Map();
 function preload(path){if(preloaded.has(path))return;const img=new Image();img.decoding='async';img.src=path;preloaded.set(path,img)}
 /* A step opens at its start so playing it shows the action; the failure opens at the moment it failed. */
-function traceTimeFor(t,index){const{marks,total}=timeline(t),mark=marks[index];
+function replayTimeFor(t,index){const{marks,total}=timeline(t),mark=marks[index];
   if(!mark||mark.start==null)return total;
   return mark.status==='failed'?Math.max(mark.start,mark.end-0.001):mark.start}
-function openTraceAt(at){$('#trace').scrollTop=0;st.view='trace';st.at=at;render()}
-function openTrace(index){$('#trace').scrollTop=0;st.view='trace';st.at=traceTimeFor(cur(),index);render()}
-let traceUi=null;
-function stopPlay(){if(st.playing!=null)cancelAnimationFrame(st.playing);st.playing=null;if(st.view==='trace')traceUi?.update(true)}
+function openReplayAt(at){$('#replay').scrollTop=0;st.view='replay';st.at=at;render()}
+function openReplay(index){$('#replay').scrollTop=0;st.view='replay';st.at=replayTimeFor(cur(),index);render()}
+let replayUi=null;
+function stopPlay(){if(st.playing!=null)cancelAnimationFrame(st.playing);st.playing=null;if(st.view==='replay')replayUi?.update(true)}
 function renderTrace(){
-  const t=cur(),box=$('#trace');box.replaceChildren();
+  const t=cur(),box=$('#replay');box.replaceChildren();
   const{frames,marks,total}=timeline(t),failed=marks.find(mark=>mark.status==='failed');
   st.at=Math.max(0,Math.min(total,Number.isFinite(st.at)?st.at:0));
   /* Two ways to lay out the track. By time (the default) a dot sits where its step really started and
@@ -573,11 +574,11 @@ function renderTrace(){
     return anchors[i]+(scaled-i)*(anchors[i+1]-anchors[i])};
   const counter=el('span'),stamp=el('span'),time=el('span',{class:'time'}),caption=el('div',{class:'caption'});
   box.append(el('div',{class:'trhead'},el('button',{class:'back',onclick:()=>{stopPlay();st.view='test';render()}},svg(ICON.left),'Back to test'),
-    el('h1',{style:'margin-top:12px',text:'Trace — '+t.name}),
+    el('h1',{style:'margin-top:12px',text:'Test Replay — '+t.name}),
     el('div',{class:'meta',style:'margin:6px 0 0'},el('span',{},svg(PY),t.file.split('/').pop()),counter,stamp)));
   const img=frames.length?image(frames[0].path,'Recorded application window'):null;
   if(img){img.loading='eager';img.decoding='sync'}
-  box.append(el('div',{class:'stage'},img||el('div',{class:'nr'},el('b',{text:'No frames recorded'}),el('div',{text:t.trace?.error||'The trace has no images.'}))));
+  box.append(el('div',{class:'stage'},img||el('div',{class:'nr'},el('b',{text:'No frames recorded'}),el('div',{text:t.replay?.error||'The replay has no images.'}))));
   box.append(caption);
   const fill=el('div',{class:'fill'}),head=el('div',{class:'head'});
   const track=el('div',{class:'track',role:'slider',tabindex:'0','aria-label':'Playback position','aria-valuemin':'0','aria-valuemax':total.toFixed(2)},
@@ -596,7 +597,7 @@ function renderTrace(){
     el('button',{class:'ctl','aria-label':'Previous step',onclick:()=>stepBy(-1)},svg(ICON.prev)),
     el('button',{class:'ctl','aria-label':'Next step',onclick:()=>stepBy(1)},svg(ICON.next)),
     time,track,speed,spacing,
-    failed?el('button',{class:'jump',onclick:()=>{stopPlay();seek(traceTimeFor(t,failed.index));writeHash()}},svg(ICON.target),'Jump to failure'):null));
+    failed?el('button',{class:'jump',onclick:()=>{stopPlay();seek(replayTimeFor(t,failed.index));writeHash()}},svg(ICON.target),'Jump to failure'):null));
   const thumbs=marks.length?el('div',{class:'thumbs'},...marks.map(mark=>el('button',{class:'thumb '+mark.status,disabled:mark.start==null,
     onclick:()=>{stopPlay();seek(mark.start);writeHash()}},
     mark.shot?image(mark.shot,'Screen after '+mark.name):el('span',{class:'blank',text:mark.status==='not_run'?'Not run':'No frame'}),
@@ -630,7 +631,7 @@ function renderTrace(){
       if(st.at>=total){st.playing=null;update();writeHash();return}
       st.playing=requestAnimationFrame(tick);update()};
     st.playing=requestAnimationFrame(tick);update()}
-  traceUi={update,stepBy,play,seek};
+  replayUi={update,stepBy,play,seek};
   update(true);
 }
 
@@ -651,17 +652,17 @@ const nothing=(p,msg)=>p.append(el('div',{class:'ok'},msg));
 
 
 function render(){
- const app=$('#app');app.classList.toggle('trace',st.view==='trace');app.classList.toggle('panel-closed',!st.open);
+ const app=$('#app');app.classList.toggle('replay',st.view==='replay');app.classList.toggle('panel-closed',!st.open);
  if(!TESTS.length){$('#main').replaceChildren(el('h1',{text:'No tests were recorded.'}));$('#panel').replaceChildren();return}
- if(st.view==='trace')renderTrace();else{stopPlay();renderNav();renderMain();renderRail();if(st.open)renderPanel()}
+ if(st.view==='replay')renderTrace();else{stopPlay();renderNav();renderMain();renderRail();if(st.open)renderPanel()}
  writeHash();
 }
 $('#q').addEventListener('input',event=>{st.q=event.target.value;renderNav()});
 window.addEventListener('hashchange',()=>{stopPlay();readHash();render()});
-document.addEventListener('keydown',event=>{if(st.view!=='trace'||event.target.matches('input,textarea'))return;
+document.addEventListener('keydown',event=>{if(st.view!=='replay'||event.target.matches('input,textarea'))return;
  if(event.key==='Escape'){stopPlay();st.view='test';render()}
- if(event.key==='ArrowLeft'||event.key==='ArrowRight'){event.preventDefault();traceUi?.stepBy(event.key==='ArrowRight'?1:-1)}
- if(event.key===' '&&!event.target.matches('button,select')){event.preventDefault();st.playing!=null?stopPlay():traceUi?.play()}
+ if(event.key==='ArrowLeft'||event.key==='ArrowRight'){event.preventDefault();replayUi?.stepBy(event.key==='ArrowRight'?1:-1)}
+ if(event.key===' '&&!event.target.matches('button,select')){event.preventDefault();st.playing!=null?stopPlay():replayUi?.play()}
 });
 const SUN='<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M4.6 4.6l1.4 1.4M18 18l1.4 1.4M2.5 12h2M19.5 12h2M4.6 19.4L6 18M18 6l1.4-1.4"/></svg>';
 const MOON='<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M20 14.5A8 8 0 019.5 4a8 8 0 1010.5 10.5z"/></svg>';
@@ -669,6 +670,7 @@ function renderThemeToggle(){const button=$('#theme-toggle'),dark=theme.get()===
   button.replaceChildren(svg(dark?SUN:MOON));button.title=label;button.setAttribute('aria-label',label)}
 $('#theme-toggle').addEventListener('click',()=>theme.set(theme.get()==='dark'?'light':'dark'));
 theme.onChange(renderThemeToggle);renderThemeToggle();
+if(theme.inVsCode){const exportButton=$('#export-html');exportButton.hidden=false;exportButton.addEventListener('click',()=>theme.post({type:'wtk-export'}))}
 readHash();renderHeader();render();
 </script>
 </body>

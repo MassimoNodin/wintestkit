@@ -103,15 +103,15 @@ describe("YAML configuration editing", () => {
     ].map((field) => field.key);
     expect(keys.sort()).toEqual(settingFields.map((field) => field.key).sort());
   });
-  it("groups evidence controls separately and bounds trace FPS like the backend", () => {
+  it("groups evidence controls separately and bounds replay FPS like the backend", () => {
     const evidence = settingSections("shared").advanced.find((group) => group.group === "Evidence");
     expect(evidence?.fields.map((field) => field.key)).toEqual([
-      "screenshots", "trace", "trace_fps", "trace_scope",
+      "screenshots", "replay", "replay_fps", "replay_scope",
     ]);
-    expect(settingFields.find((field) => field.key === "trace_fps")).toMatchObject({ minimum: 0, maximum: 30 });
+    expect(settingFields.find((field) => field.key === "replay_fps")).toMatchObject({ minimum: 0, maximum: 30 });
     for (const fps of [0, -1, 30.01])
-      expect(() => updateSetting("{}", "shared", "trace_fps", fps, false)).toThrow();
-    expect(() => updateSetting("{}", "shared", "trace_fps", 30, false)).not.toThrow();
+      expect(() => updateSetting("{}", "shared", "replay_fps", fps, false)).toThrow();
+    expect(() => updateSetting("{}", "shared", "replay_fps", 30, false)).not.toThrow();
   });
   it("keeps machine-only options out of shared sections", () => {
     const shared = settingSections("shared");

@@ -3,7 +3,7 @@
   "$id": "https://wintestkit.dev/schemas/results.schema.json",
   "$ref": "#/$defs/Results",
   "$defs": {
-    "Trace": {
+    "Replay": {
       "type": "object",
       "properties": {
         "startedAt": { "type": "number" },
@@ -149,7 +149,7 @@
             "type": "string"
           }
         },
-        "trace": { "$ref": "results.schema.json#/$defs/Trace" },
+        "replay": { "$ref": "results.schema.json#/$defs/Replay" },
         "treeDump": {
           "type": "string"
         },
