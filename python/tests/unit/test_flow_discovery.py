@@ -93,7 +93,11 @@ def test_flags_flows_whose_only_required_parameter_is_app(tmp_path: Path) -> Non
 
 
 def test_discovers_typed_scalar_flow_parameters_and_safe_defaults(tmp_path: Path) -> None:
-    write(tmp_path, "flows/navigation.py", 'def tour(app, count: int, label: str = "home", fast: bool = False): pass')
+    write(
+        tmp_path,
+        "flows/navigation.py",
+        'def tour(app, count: int, label: str = "home", fast: bool = False): pass',
+    )
     flow = discover(tmp_path).flows[0]
     assert flow.runnable is True
     assert flow.to_dict()["parameters"] == [

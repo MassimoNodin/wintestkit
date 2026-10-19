@@ -399,7 +399,8 @@ class Server:
             arguments = params.get("arguments", {})
             if not isinstance(arguments, dict):
                 raise RpcError(-32602, "flow arguments must be an object")
-            return run_flow(app, self.loader, file, params["name"], arguments).to_dict()
+            flow_arguments = cast("dict[str, Any]", arguments)
+            return run_flow(app, self.loader, file, params["name"], flow_arguments).to_dict()
         if method in ("element.highlight", "page.check"):
             app = self._app()
             assert app is not None
