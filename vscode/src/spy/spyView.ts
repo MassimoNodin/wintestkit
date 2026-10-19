@@ -23,6 +23,7 @@ type SpyConnection = { client?: JsonRpcClient; revision: number };
 
 export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
   private view?: vscode.WebviewView;
+  private extrasActive = false;
   private client?: JsonRpcClient;
   private project?: Project;
   private picking = false;
@@ -59,7 +60,7 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
     private readonly setup?: SetupMonitor,
   ) {
     this.subscriptions = [
-      ...(setup ? [setup.onDidChange(() => this.postTour())] : []),
+      ...(setup ? [setup.onDidChange(() => this.syncTour())] : []),
       vscode.window.registerWebviewViewProvider("wintestkit.spy", this),
       vscode.commands.registerCommand("wintestkit.spy.startPick", async () => {
         await vscode.commands.executeCommand("wintestkit.spy.focus");
@@ -155,7 +156,20 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
   }
   private postTour(): void {
     const focus = this.setup?.focus ?? { dim: false, spyLit: false };
-    this.post({ type: "tour", dim: focus.dim, spyLit: focus.spyLit });
+    const tour = this.setup?.tour;
+    this.post({ type: "tour", dim: focus.dim, spyLit: focus.spyLit, tutorial: tour?.phase === "extras" ? tour : undefined });
+  }
+  private syncTour(): void {
+    const extras = this.setup?.tour?.phase === "extras";
+    const opening = extras && !this.extrasActive;
+    this.extrasActive = extras;
+    this.postTour();
+    if (opening) void this.safe(async () => {
+      await vscode.commands.executeCommand("workbench.action.positionPanelBottom");
+      if (this.disposed || this.setup?.tour?.phase !== "extras") return;
+      await vscode.commands.executeCommand("wintestkit.spy.focus");
+      this.postTour();
+    });
   }
   private post(message: SpyResponse): void {
     if (!this.disposed) void this.view?.webview.postMessage(message);
@@ -566,6 +580,21 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
     if (this.client) await this.client.request("spy.stop");
   }
   private async handle(message: SpyRequest): Promise<void> {
+    if (message.type === "tour") {
+      const setup = this.setup;
+      if (setup?.tour?.phase !== "extras") return;
+      switch (message.action) {
+        case "back":
+          setup.back();
+          if (setup.tour?.phase !== "extras") await vscode.commands.executeCommand("wintestkit.sidebar.focus");
+          return;
+        case "next": return setup.next();
+        case "close": return setup.close();
+        case "skip": return setup.skip();
+        case "finish": return setup.finish();
+        case "disable": return void (await vscode.commands.executeCommand("wintestkit.disable"));
+      }
+    }
     if (message.type === "chooseApp") {
       await vscode.commands.executeCommand("wintestkit.chooseApp");
       return;

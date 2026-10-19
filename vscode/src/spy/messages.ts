@@ -6,9 +6,12 @@ import type {
   NodeInfo,
   Suggestion,
 } from "../protocol/generated";
+import type { TourView } from "../setup/tour";
 
+export const SPY_TOUR_ACTIONS = ["back", "next", "close", "disable", "skip", "finish"] as const;
 
 export type SpyRequest =
+  | { type: "tour"; action: (typeof SPY_TOUR_ACTIONS)[number] }
   | {
       type: "pick" | "stopPick" | "refresh" | "addToPage" | "chooseApp";
     }
@@ -29,7 +32,7 @@ export type SpyRequest =
 export type SpyResponse =
   | { type: "rootIcons"; icons: Record<string, string> }
   /** The guided tour is showing: dull the panel, and light Pick element when it is the subject. */
-  | { type: "tour"; dim: boolean; spyLit: boolean }
+  | { type: "tour"; dim: boolean; spyLit: boolean; tutorial?: TourView }
   | {
       type: "progress";
       taskId: number;
@@ -95,6 +98,10 @@ export type SpyResponse =
 export function parseSpyRequest(value: unknown): SpyRequest | undefined {
   if (!value || typeof value !== "object") return;
   const message = value as Record<string, unknown>;
+  if (message.type === "tour")
+    return SPY_TOUR_ACTIONS.includes(message.action as (typeof SPY_TOUR_ACTIONS)[number])
+      ? { type: "tour", action: message.action as (typeof SPY_TOUR_ACTIONS)[number] }
+      : undefined;
   if (message.type === "ready")
     return typeof message.showOtherApps === "boolean"
       ? { type: "ready", showOtherApps: message.showOtherApps }

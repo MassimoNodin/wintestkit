@@ -2,6 +2,62 @@
   const vscode = acquireVsCodeApi();
   const element = (id) => document.getElementById(id);
   const post = (type, values = {}) => vscode.postMessage({ type, ...values });
+  let tutorialTarget;
+  let tutorialStep;
+  const tutorialNode = (tag, className, text) => {
+    const node = document.createElement(tag);
+    node.className = className;
+    if (text) node.textContent = text;
+    return node;
+  };
+  const tutorialButton = (label, action, primary = false) => {
+    const button = tutorialNode("button", primary ? "" : "secondary", label);
+    button.addEventListener("click", () => post("tour", { action }));
+    return button;
+  };
+  const renderTutorial = (view) => {
+    const guide = element("extra-tutorial");
+    const scrollTop = guide.scrollTop;
+    guide.replaceChildren();
+    guide.hidden = !view;
+    tutorialTarget?.classList.remove("tutorial-spotlight");
+    tutorialTarget = undefined;
+    if (!view) {
+      tutorialStep = undefined;
+      return;
+    }
+    const head = tutorialNode("div", "tutorial-head");
+    head.append(tutorialNode("span", "tutorial-arrival", "↘"),
+      tutorialNode("span", "tutorial-label", "Optional Extra Feature Tutorial"));
+    if (view.progress) head.append(tutorialNode("span", "tutorial-progress",
+      view.progress.index + " of " + view.progress.total));
+    const close = tutorialButton("Close", "close");
+    close.setAttribute("aria-label", "Close optional tutorial");
+    head.append(close);
+    guide.append(head,
+      tutorialNode("p", "tutorial-origin", "From Test Target → WinTestKit Spy"),
+      tutorialNode("h2", "tutorial-title", view.title),
+      tutorialNode("p", "tutorial-text", view.text));
+    const actions = tutorialNode("div", "tutorial-actions");
+    const back = tutorialButton("Back", "back");
+    back.disabled = !view.canBack;
+    actions.append(back);
+    for (const button of view.buttons) actions.append(tutorialButton(button.label, button.id, button.primary));
+    const skip = tutorialButton("Skip tutorial", "skip");
+    skip.classList.add("tutorial-skip");
+    const cancel = tutorialButton("Cancel WinTestKit Setup", "disable");
+    cancel.classList.add("tutorial-cancel");
+    actions.append(cancel, skip);
+    guide.append(actions);
+    guide.scrollTop = tutorialStep === view.step ? scrollTop : 0;
+    tutorialStep = view.step;
+    if (view.spyTarget) {
+      const preferred = element(view.spyTarget);
+      tutorialTarget = preferred.hidden || (view.spyTarget === "definitions-group" && element("property-groups").hidden)
+        ? element("details") : preferred;
+      tutorialTarget.classList.add("tutorial-spotlight");
+    }
+  };
   const nodes = new Map();
   const tasks = new Map();
   let appState;
@@ -853,7 +909,8 @@
       const dimmed = !!message.dim && !message.spyLit;
       document.body.classList.toggle("tour-dim", dimmed);
       document.body.inert = dimmed;
-      element("pick").classList.toggle("tour-lit", !!message.spyLit);
+      element("pick").classList.toggle("tour-lit", message.tutorial ? message.tutorial.spyTarget === "pick" : !!message.spyLit);
+      renderTutorial(message.tutorial);
     } else if (message.type === "rootIcons") {
       rootIcons = message.icons;
       for (const entry of nodes.values()) rootIcon(entry);

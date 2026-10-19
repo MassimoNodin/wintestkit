@@ -128,6 +128,54 @@ const model = {
 };
 
 describe("introduction clients", () => {
+  it("hands the tutorial off from the sidebar to the Spy panel", () => {
+    const sidebar = client("setup");
+    const tutorial = { ...tour, step: "spy", phase: "extras", title: "Meet Spy", text: "Explore its features." };
+    sidebar.send({ type: "model", model: { ...model, tour: tutorial } });
+    const guide = sidebar.element("setup-guide");
+    expect(guide.querySelector(".tutorial-handoff-arrow")?.textContent).toBe("↘");
+    expect(guide.querySelector(".callout-title")?.textContent).toBe("Continue in WinTestKit Spy below");
+    expect(sidebar.element("card").querySelectorAll("[data-area]").every((node) => !node.inert)).toBe(true);
+    guide.querySelector(".secondary")?.listeners.click();
+    expect(sidebar.posts.at(-1)).toEqual({ type: "tour", action: "openSpy" });
+    const spy = client("spy");
+    spy.send({ type: "tour", dim: false, spyLit: true, tutorial });
+    expect(spy.element("extra-tutorial").hidden).toBe(false);
+    expect(spy.element("extra-tutorial").querySelector(".tutorial-title")?.textContent).toBe("Meet Spy");
+    expect(spy.element("extra-tutorial").querySelector(".tutorial-arrival")?.textContent).toBe("↘");
+    spy.element("extra-tutorial").querySelector(".tutorial-cancel")?.listeners.click();
+    expect(spy.posts.at(-1)).toEqual({ type: "tour", action: "disable" });
+    spy.element("extra-tutorial").querySelector(".tutorial-skip")?.listeners.click();
+    expect(spy.posts.at(-1)).toEqual({ type: "tour", action: "skip" });
+    spy.send({ type: "tour", dim: false, spyLit: false });
+    expect(spy.element("extra-tutorial").hidden).toBe(true);
+  });
+
+  it("moves the feature spotlight and keeps tutorial navigation working", () => {
+    const spy = client("spy");
+    const tutorial = { ...tour, phase: "extras", step: "spyPick", spyTarget: "pick", buttons: [{ id: "next", label: "Next" }] };
+    spy.send({ type: "tour", dim: false, spyLit: true, tutorial });
+    expect(spy.element("pick").classList.contains("tutorial-spotlight")).toBe(true);
+    spy.element("extra-tutorial").scrollTop = 35;
+    spy.send({ type: "tour", dim: false, spyLit: true, tutorial });
+    expect(spy.element("extra-tutorial").scrollTop).toBe(35);
+    const actions = spy.element("extra-tutorial").querySelector(".tutorial-actions")!;
+    actions.children[0].listeners.click();
+    expect(spy.posts.at(-1)).toEqual({ type: "tour", action: "back" });
+    actions.children[1].listeners.click();
+    expect(spy.posts.at(-1)).toEqual({ type: "tour", action: "next" });
+    spy.send({ type: "tour", dim: false, spyLit: true, tutorial: { ...tutorial, step: "spyBrowse", spyTarget: "tree-pane" } });
+    expect(spy.element("extra-tutorial").scrollTop).toBe(0);
+    expect(spy.element("pick").classList.contains("tutorial-spotlight")).toBe(false);
+    expect(spy.element("tree-pane").classList.contains("tutorial-spotlight")).toBe(true);
+    spy.element("locator-panel").hidden = true;
+    spy.send({ type: "tour", dim: false, spyLit: true, tutorial: { ...tutorial, step: "spyLocators", spyTarget: "locator-panel" } });
+    expect(spy.element("tree-pane").classList.contains("tutorial-spotlight")).toBe(false);
+    expect(spy.element("details").classList.contains("tutorial-spotlight")).toBe(true);
+    spy.send({ type: "tour", dim: false, spyLit: false });
+    expect(spy.element("details").classList.contains("tutorial-spotlight")).toBe(false);
+  });
+
   it.each(["complete", "spy", "test"])("labels the %s card as the optional extra feature tutorial", (step) => {
     const page = client("setup");
     page.send({ type: "model", model: { ...model, tour: {

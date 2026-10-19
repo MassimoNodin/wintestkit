@@ -73,6 +73,53 @@ summary:focus-visible {
     color: var(--muted);
     font-size: 11px;
 }
+#extra-tutorial {
+    flex-shrink: 0;
+    max-height: min(250px, 48vh);
+    overflow-y: auto;
+    margin: 8px 10px;
+    padding: 10px 12px;
+    border: 1px solid var(--accent);
+    border-radius: 6px;
+    background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+}
+.tutorial-head,
+.tutorial-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+.tutorial-head {
+    font-size: 11px;
+    color: var(--muted);
+}
+.tutorial-arrival {
+    color: var(--accent);
+    font-size: 22px;
+    line-height: 1;
+}
+.tutorial-head button,
+.tutorial-cancel {
+    margin-left: auto;
+}
+.tutorial-origin {
+    margin: 3px 0 6px;
+    color: var(--muted);
+    font-size: 11px;
+}
+.tutorial-title {
+    margin: 0 0 5px;
+    font-size: 13px;
+}
+.tutorial-text {
+    margin: 0 0 8px;
+    line-height: 1.5;
+}
+.tutorial-spotlight {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+}
 .toolbar {
     display: flex;
     align-items: center;

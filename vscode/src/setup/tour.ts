@@ -13,7 +13,9 @@ export const SETUP_STEPS = [
 export type SetupStep = (typeof SETUP_STEPS)[number];
 
 /** What is offered once setup is done. */
-export const EXTRA_STEPS = ["spy", "test"] as const;
+export const EXTRA_STEPS = [
+  "spy", "spyPick", "spyBrowse", "spyProperties", "spyLocators", "spyDefinitions", "pagesFlows", "test",
+] as const;
 export type ExtraStep = (typeof EXTRA_STEPS)[number];
 export type SpyTourTarget = "pick" | "tree-pane" | "details" | "locator-panel" | "definitions-group";
 
@@ -258,18 +260,56 @@ function completeView(): TourView {
 
 function extraView(extra: ExtraStep): TourView {
   const index = EXTRA_STEPS.indexOf(extra);
+  const content: Record<ExtraStep, { title: string; text: string; spyTarget?: SpyTourTarget }> = {
+    spy: {
+      title: "Meet WinTestKit Spy",
+      text: "This bottom panel is your live UI Automation workbench. The object browser on the left explores desktop windows and controls; the inspector on the right explains the selected object and helps turn it into reusable test code. You can try the real controls as you follow this optional tutorial.",
+    },
+    spyPick: {
+      title: "Pick a control from the application",
+      text: "Click Pick element, then hold Ctrl and click a control in your application. Spy selects it in the tree, inspects its properties and suggests a locator. Press Esc to stop picking. Picking is useful when you can see a control but do not know where it lives in the object tree.",
+      spyTarget: "pick",
+    },
+    spyBrowse: {
+      title: "Explore the object browser",
+      text: "Expand windows and controls on the left, or use the search field to filter loaded objects. Refresh objects reloads the tree and Collapse all folds it. The scope button switches between all desktop windows and only your selected app. Select an object to inspect it; the pin button can bring its window to the front.",
+      spyTarget: "tree-pane",
+    },
+    spyProperties: {
+      title: "Understand the selected object",
+      text: "The inspector groups identity, state, geometry and automation information so you can understand a control before writing a test. Highlight outlines the selected object on screen. Expand All properties and click Load all properties when you need the complete property list and supported patterns. Select or pick an object first if this area is empty.",
+      spyTarget: "details",
+    },
+    spyLocators: {
+      title: "Turn controls into reusable locators",
+      text: "After you select or pick a control, Suggested locator shows Python code and whether it uniquely identifies that control. Copy locator copies the code. Add to page inserts it into an existing or new page, adds imports and leaves the change unsaved for review. A scoped locator can reuse a container to distinguish similar controls.",
+      spyTarget: "locator-panel",
+    },
+    spyDefinitions: {
+      title: "Find controls already defined in pages",
+      text: "Defined in pages links the selected control to matching definitions in your page files. Open a match to jump to its Python definition instead of creating a duplicate. The object tree also marks controls that are already defined, and those markers refresh when you save a page. Select an object to see its matches.",
+      spyTarget: "definitions-group",
+    },
+    pagesFlows: {
+      title: "Organize pages and reusable flows",
+      text: "Back in the WinTestKit sidebar, Page Tree organizes your page classes and their controls; click an entry to open its definition. Flows lists reusable Python workflows. Eligible flows can run directly against the application. Keep locators in pages and multi-step interactions in flows so tests stay readable. The sidebar remains usable during this tutorial.",
+    },
+    test: {
+      title: "Run tests and inspect the result",
+      text: "Click Finish when you are ready, then open Testing in the Activity Bar and use Run Test beside the smoke test. Testing runs and debugs your tests; Test Target shows the latest result and its report link. Return to the WinTestKit sidebar after a run to inspect failures and review the report. Finishing this tutorial does not change your application or project.",
+    },
+  };
   return {
+    ...content[extra],
     step: extra,
     phase: "extras",
     kind: "todo",
     progress: { index: index + 1, total: EXTRA_STEPS.length },
-    title: extra === "spy" ? "Look inside the application" : "Run your first test",
-    text: extra === "spy"
-      ? "Open Spy from View > Open View > Spy in the panel below the editor. Click Pick element, then point at a control to see how WinTestKit sees it and add it to a page."
-      : "Click Finish, then click Testing in the Activity Bar and use the Run Test button beside the smoke test. Return to the WinTestKit sidebar afterwards to see the result and its report link in Test Target, above Pages & Flows.",
     lit: ["spy"],
     panel: false,
-    buttons: extra === "spy" ? [{ id: "next", label: "Next" }] : [{ id: "finish", label: "Finish" }],
+    buttons: index === EXTRA_STEPS.length - 1
+      ? [{ id: "finish", label: "Finish", primary: true }]
+      : [{ id: "next", label: "Next", primary: true }],
     canBack: true,
     canNext: false,
   };

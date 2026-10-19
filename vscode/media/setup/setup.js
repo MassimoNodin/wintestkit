@@ -192,6 +192,20 @@
   };
   /** The callout of the guided tour: what to do next, with the buttons for it. */
   const callout = (step) => {
+    if (step.phase === "extras") {
+      const handoff = el("section", "callout tutorial-handoff");
+      handoff.setAttribute("aria-label", "Tutorial continues in WinTestKit Spy");
+      const head = el("div", "callout-head");
+      head.append(el("span", "callout-step", "Optional Extra Feature Tutorial"));
+      handoff.append(head,
+        el("span", "tutorial-handoff-arrow", "↘"),
+        el("h2", "callout-title", "Continue in WinTestKit Spy below"),
+        el("p", "callout-text", "The tutorial has moved to the bottom panel, beside the controls it introduces. Follow the matching arrow there."));
+      const reveal = el("button", "secondary", "Show tutorial in bottom panel");
+      reveal.addEventListener("click", () => tour("openSpy"));
+      handoff.append(reveal);
+      return handoff;
+    }
     const box = el("section", "callout");
     box.dataset.kind = step.kind;
     box.setAttribute("aria-label", step.title);
@@ -303,7 +317,7 @@
     if (model.tour) {
       const box = callout(model.tour);
       guide.append(box);
-      if (grid) spotlight(model.tour, grid);
+      if (grid && model.tour.phase !== "extras") spotlight(model.tour, grid);
       if (step === shownStep) box.scrollTop = guideScroll;
     }
     for (const message of [model.message, model.resume])
