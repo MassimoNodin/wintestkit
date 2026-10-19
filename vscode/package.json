@@ -116,6 +116,11 @@
         "category": "WinTestKit"
       },
       {
+        "command": "wintestkit.exportReport",
+        "title": "Export Last Report as HTML",
+        "category": "WinTestKit"
+      },
+      {
         "command": "wintestkit.runDoctor",
         "title": "Check Environment (doctor)",
         "category": "WinTestKit"

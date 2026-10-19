@@ -3,7 +3,7 @@ vi.mock("vscode", () => ({
   window: { showErrorMessage: vi.fn(async () => undefined), showInformationMessage: vi.fn(async () => undefined) },
   env: { openExternal: vi.fn(async () => true) },
 }));
-import { failureMessage, isReportTheme, previewHtml, reportPath, Reports, waitForFile } from "../../src/report";
+import { failureMessage, isReportTheme, previewHtml, reportPath, Reports, resultsFile, waitForFile } from "../../src/report";
 import type { Project } from "../../src/server/serverManager";
 
 describe("report location", () => {
@@ -12,8 +12,14 @@ describe("report location", () => {
       "C:/p/r/index.html",
     );
   });
+  it("only needs the saved results, not an HTML file", () => {
+    const hasResults = (file: string) => file.endsWith("results.json");
+    expect(reportPath("C:/p/r/index.html", "x", "C:/p", hasResults)).toBe("C:/p/r/index.html");
+    expect(resultsFile("C:/p/r/index.html")).toMatch(/r.results.json$/);
+    expect(reportPath("C:/p/r/index.html", undefined, "C:/p", (file) => file.endsWith("index.html"))).toBeUndefined();
+  });
   it("falls back to <root>/<report_dir>/index.html", () => {
-    const found = (file: string) => file.endsWith("index.html");
+    const found = (file: string) => file.endsWith("results.json");
     const result = reportPath(undefined, "wtk-report", "/proj", found);
     expect(result).toMatch(/wtk-report.index\.html$/);
   });

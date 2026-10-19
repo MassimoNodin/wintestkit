@@ -142,7 +142,12 @@ export function activate(context: vscode.ExtensionContext): {
   const checkAfterFlow = new CheckAfterFlow(projects, discovery, context.workspaceState);
   const projectSweep = new ProjectSweep(projects, discovery, servers, context.workspaceState);
   const flows = new FlowRuns(projects, discovery, servers, log, (file, name) => checkAfterFlow.afterFlow(file, name));
-  const reports = new Reports(servers, log, context.globalState);
+  const reports = new Reports(
+    servers,
+    log,
+    context.globalState,
+    context.asAbsolutePath("media/report/template.html"),
+  );
   const lenses = new CodeLenses(projects, discovery, checks, flows);
   const unused = new UnusedDefinitions(projects, discovery);
   const elements = new ElementsTree(
@@ -321,6 +326,7 @@ export function activate(context: vscode.ExtensionContext): {
     "wintestkit.elements.refresh": () => projects.refresh(),
     "wintestkit.showOutput": () => log.show(),
     "wintestkit.openReport": () => reports.open(currentProject()),
+    "wintestkit.exportReport": () => reports.exportHtml(currentProject()),
     "wintestkit.launchApp": (target) => changeApp(["app.launch"], target),
     "wintestkit.launchAppStrict": (target) =>
       changeApp(["app.launch"], target, true),

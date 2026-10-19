@@ -33,11 +33,16 @@ def render(results: dict[str, Any], directory: Path | None = None) -> str:
     return template.replace("__WTK_DATA__", data)
 
 
-def write_report(directory: Path, results: dict[str, Any]) -> Path:
+def write_report(directory: Path, results: dict[str, Any], *, html: bool = True) -> Path:
+    """Write ``results.json`` and, unless ``html`` is false, the self-contained ``index.html``.
+
+    Returns where the HTML report is (or would be); ``results.json`` is always written first.
+    """
     directory.mkdir(parents=True, exist_ok=True)
     (directory / "results.json").write_text(
         json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8"
     )
     target = directory / "index.html"
-    target.write_text(render(results, directory), encoding="utf-8")
+    if html:
+        target.write_text(render(results, directory), encoding="utf-8")
     return target.resolve()

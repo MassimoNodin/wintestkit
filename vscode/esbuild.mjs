@@ -8,6 +8,13 @@ for (const file of ["codicon.css", "codicon.ttf"])
     "media/codicons/" + file,
   );
 
+// The report page is the Python package's template; the panel fills it from results.json.
+await mkdir("media/report", { recursive: true });
+await copyFile(
+  "../python/src/wintestkit/report/template.html",
+  "media/report/template.html",
+);
+
 const options = {
   entryPoints: ["src/extension.ts"],
   bundle: true,
