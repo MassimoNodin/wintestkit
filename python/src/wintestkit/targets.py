@@ -518,8 +518,7 @@ def run_flow(
             missing = set(required[1:]) - set(values)
             if missing:
                 raise TargetError(
-                    "flow arguments are missing required parameters: "
-                    + ", ".join(sorted(missing))
+                    "flow arguments are missing required parameters: " + ", ".join(sorted(missing))
                 )
             if set(values) - allowed:
                 raise TargetError("flow arguments contain unknown parameter names")
@@ -528,9 +527,7 @@ def run_flow(
                 expected = (
                     annotation
                     if annotation in (str, int, float, bool)
-                    else {"str": str, "int": int, "float": float, "bool": bool}.get(
-                        annotation
-                    )
+                    else {"str": str, "int": int, "float": float, "bool": bool}.get(annotation)
                 )
                 if expected is None or type(value) is not expected:
                     raise TargetError(f"flow argument {key!r} must be a supported typed scalar")

@@ -147,7 +147,6 @@
       return;
     }
     const errors = message.errors || [];
-    const matches = message.definitions || [];
     // One row per file: definitions in the same file share it (the first, by line, is opened).
     const files = new Map();
     for (const definition of message.definitions || []) {
@@ -527,7 +526,6 @@
   };
   let picking = false;
   let selected;
-  let observedInfo;
   let suggestion;
   // Whether the selected object has an on-screen rectangle to outline.
   let highlightable = true;
@@ -542,7 +540,6 @@
     table("all-properties", {});
     detailsError = "";
     const info = nodes.get(nodeId).node.info;
-    observedInfo = info;
     element("selection-name").textContent =
       info.name || info.automationId || info.controlType;
     element("selection-type").textContent = info.controlType;

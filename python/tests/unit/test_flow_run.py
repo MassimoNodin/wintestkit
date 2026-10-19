@@ -49,9 +49,7 @@ def test_passes_validated_scalar_arguments_with_future_annotations(tmp_path: Pat
             assert label == "safe"
     """,
     )
-    result = run_flow(
-        "fake-app", ModuleLoader(load_config(tmp_path)), file, "tour", {"count": 3}
-    )
+    result = run_flow("fake-app", ModuleLoader(load_config(tmp_path)), file, "tour", {"count": 3})
     assert result.status == "passed"
     rejected = run_flow(
         "fake-app", ModuleLoader(load_config(tmp_path)), file, "tour", {"count": "3"}
