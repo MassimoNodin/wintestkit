@@ -1,5 +1,4 @@
-﻿import { randomBytes } from "node:crypto";
-import * as vscode from "vscode";
+﻿import * as vscode from "vscode";
 import type { Projects } from "../projects";
 import type { Project } from "../server/serverManager";
 import type { DiscoveryStore } from "../discovery/store";
@@ -7,7 +6,7 @@ import type { CheckResultsStore } from "../editor/decorations";
 import { flowKey, type FlowRuns } from "../editor/flowRuns";
 import type { DiscoveryResult } from "../protocol/generated";
 import { buildTree, type ElementNode } from "./elementsTreeModel";
-import { navigationDocument, renderBody } from "./navigationDocument";
+import { renderBody } from "./navigationDocument";
 import {
   actionsFor,
   checkPresentation,
@@ -38,7 +37,7 @@ interface NavigationHost {
 }
 
 export class ElementsTree
-  implements vscode.WebviewViewProvider, vscode.Disposable
+  implements vscode.Disposable
 {
   private readonly session: NavigationSession;
   private readonly subscriptions: vscode.Disposable[];
@@ -66,9 +65,6 @@ export class ElementsTree
       flows.onDidChange(refresh),
       ...(reports ? [reports.onDidChange(refresh)] : []),
       ...(unused ? [unused.onDidChange(refresh)] : []),
-      vscode.window.registerWebviewViewProvider("wintestkit.navigation", this, {
-        webviewOptions: { retainContextWhenHidden: true },
-      }),
       vscode.commands.registerCommand(
         "wintestkit.elements.goTo",
         (node: ElementNode) => this.openNode(node),
@@ -76,26 +72,25 @@ export class ElementsTree
       vscode.window.onDidChangeActiveTextEditor(refresh),
     ];
   }
-  resolveWebviewView(view: vscode.WebviewView): void {
-    if (!this.host || this.disposed) return;
+  /** Starts publishing to the sidebar's webview, whose page the sidebar view builds. */
+  attach(view: vscode.WebviewView): void {
+    if (this.disposed) return;
     this.view = view;
-    const icons = vscode.Uri.joinPath(this.host.extensionUri, "media", "codicons");
-    view.webview.options = {
-      enableScripts: true,
-      localResourceRoots: [icons],
-    };
-    view.webview.html = this.document(view);
     this.viewSubscriptions.forEach((subscription) => subscription.dispose());
-    const listener = view.webview.onDidReceiveMessage((value: unknown) => {
-      if (!this.disposed && this.view === view) this.onMessage(value);
-    });
     this.viewSubscriptions = [
-      listener,
       view.onDidDispose(() => {
-        listener.dispose();
         if (this.view === view) this.view = undefined;
       }),
     ];
+  }
+  /** What the sidebar page shows for this part before the first update arrives. */
+  initial(): { section: NavigationSection; treeHtml: string } {
+    const { section, html } = this.payload();
+    return { section, treeHtml: html };
+  }
+  /** Takes a message from the sidebar page; the ones that are not this part's are ignored. */
+  handleMessage(value: unknown): void {
+    if (!this.disposed) this.onMessage(value);
   }
   getChildren(node?: ElementNode, section?: NavigationSection): ElementNode[] {
     if (node) return node.children;
@@ -261,20 +256,6 @@ export class ElementsTree
     if (!this.view || this.disposed) return;
     const payload = this.payload(reveal);
     void this.view.webview.postMessage(payload);
-  }
-  private document(view: vscode.WebviewView): string {
-    const payload = this.payload();
-    return navigationDocument({
-      cspSource: view.webview.cspSource,
-      nonce: randomBytes(16).toString("hex"),
-      iconsHref: view.webview
-        .asWebviewUri(
-          vscode.Uri.joinPath(this.host!.extensionUri, "media", "codicons", "codicon.css"),
-        )
-        .toString(),
-      section: payload.section,
-      treeHtml: payload.html,
-    });
   }
   private payload(reveal = false): {
     type: "render";

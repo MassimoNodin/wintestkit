@@ -211,8 +211,15 @@ vi.mock("../../src/spy/spyView", () => ({
 vi.mock("../../src/views/elementsTree", () => ({
   ElementsTree: class {
     constructor() {
-      mocks.registerWebviewViewProvider("wintestkit.navigation", {});
       mocks.registerCommand("wintestkit.elements.goTo", () => {});
+    }
+    dispose() {}
+  },
+}));
+vi.mock("../../src/views/sidebarView", () => ({
+  SidebarView: class {
+    constructor() {
+      mocks.registerWebviewViewProvider("wintestkit.sidebar", {});
     }
     dispose() {}
   },
@@ -266,7 +273,7 @@ describe("extension scaffold", () => {
         .sort(),
     );
     expect(mocks.registerWebviewViewProvider).toHaveBeenCalledWith(
-      "wintestkit.navigation",
+      "wintestkit.sidebar",
       expect.any(Object),
     );
     expect(mocks.registerWebviewViewProvider).toHaveBeenCalledWith(
@@ -274,8 +281,12 @@ describe("extension scaffold", () => {
       expect.any(Object),
     );
     expect(manifest.contributes.views.wintestkit).toEqual([
-      { id: "wintestkit.setup", name: "Test Target", type: "webview" },
-      { id: "wintestkit.navigation", name: "Pages & Flows", type: "webview" },
+      { id: "wintestkit.sidebar", name: "WinTestKit", type: "webview" },
+    ]);
+    expect(manifest.contributes.viewsContainers.panel).toEqual([
+      expect.objectContaining({ id: "wintestkit-spy" }),
+    ]);
+    expect(manifest.contributes.views["wintestkit-spy"]).toEqual([
       { id: "wintestkit.spy", name: "Spy", type: "webview" },
     ]);
     expect(
@@ -296,7 +307,7 @@ describe("extension scaffold", () => {
     );
     expect(manifest.contributes.menus["view/title"]).toContainEqual({
       command: "wintestkit.openTesting",
-      when: "view == wintestkit.navigation",
+      when: "view == wintestkit.sidebar",
       group: "navigation@1",
     });
   });

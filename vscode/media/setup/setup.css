@@ -18,13 +18,51 @@ body.vscode-dark,
 body.vscode-high-contrast {
     color-scheme: dark;
 }
+html,
 body {
+    height: 100%;
+}
+/*
+ * The sidebar is one page: Test Target (#card) above Pages & Flows (#pages). Test Target is as tall
+ * as its content, up to all but --pages-min of the sidebar, and scrolls past that, so a tall guide
+ * never pushes Pages & Flows out. Pages & Flows takes the rest and never drops below --pages-min;
+ * in a sidebar too short for both, the page scrolls.
+ */
+body {
+    --pages-min: 160px;
+    display: flex;
+    flex-direction: column;
     margin: 0;
     padding: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
     font-family: var(--vscode-font-family, "Segoe UI", sans-serif);
     font-size: var(--vscode-font-size, 13px);
     color: var(--vscode-foreground, #263345);
     background: var(--raised);
+}
+#card {
+    flex: 0 1 auto;
+    min-height: 120px;
+    max-height: max(120px, calc(100% - var(--pages-min)));
+    overflow-y: auto;
+}
+/* Before the workspace is set up there is no Pages & Flows, and Test Target has the whole sidebar. */
+body.solo #card {
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: none;
+}
+#pages {
+    position: relative;
+    display: flex;
+    flex: 1 1 var(--pages-min);
+    flex-direction: column;
+    min-height: var(--pages-min);
+    border-top: 1px solid var(--border);
+}
+.loading {
+    padding: 10px;
 }
 button {
     font: inherit;

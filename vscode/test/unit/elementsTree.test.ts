@@ -89,7 +89,8 @@ vi.mock("vscode", () => ({
   },
 }));
 import { ElementsTree } from "../../src/views/elementsTree";
-import { navigationDocument, renderBody } from "../../src/views/navigationDocument";
+import { renderBody } from "../../src/views/navigationDocument";
+import { sidebarDocument } from "../../src/views/sidebarDocument";
 
 const range = {
   start: { line: 2, character: 4 },
@@ -142,6 +143,20 @@ const result: DiscoveryResult = {
     },
   ],
 };
+/** The sidebar page around the Pages & Flows part, as the extension builds it. */
+function navigationDocument(options: {
+  cspSource: string;
+  nonce: string;
+  iconsHref: string;
+  section: "pages" | "flows";
+  treeHtml: string;
+}): string {
+  return sidebarDocument({
+    ...options,
+    stylesHref: "https://styles/setup.css",
+    scriptHref: "https://scripts/setup.js",
+  });
+}
 const trees: ElementsTree[] = [];
 function createTree(
   host?: {
@@ -248,8 +263,14 @@ function resolve(tree: ElementsTree) {
     visible: true,
     show: () => undefined,
   };
-  tree.resolveWebviewView(view as unknown as vscode.WebviewView);
-  mocks.html = webview.html;
+  tree.attach(view as unknown as vscode.WebviewView);
+  mocks.listener = (value) => tree.handleMessage(value);
+  mocks.html = navigationDocument({
+    cspSource: webview.cspSource,
+    nonce: "n",
+    iconsHref: webview.asWebviewUri({ fsPath: "C:/ext/media/codicons/codicon.css" }).toString(),
+    ...tree.initial(),
+  });
   return view;
 }
 class ClientNode {
@@ -333,7 +354,7 @@ function bootClient() {
     section: "pages",
     treeHtml: "",
   });
-  const script = /<script nonce="n">([\s\S]*)<\/script>/.exec(html)?.[1];
+  const script = /<script nonce="n">([\s\S]*?)<\/script>/.exec(html)?.[1];
   if (!script) throw new Error("missing navigation script");
   clientFocus.current = null;
   const posts: unknown[] = [];
@@ -541,8 +562,7 @@ describe("navigation view", () => {
   });
   it("registers one shared panel and keeps every section available", () => {
     const { tree } = createTree();
-    expect([...mocks.providers.keys()]).toEqual(["wintestkit.navigation"]);
-    expect(mocks.providers.get("wintestkit.navigation")).toBe(tree);
+    expect(mocks.providers.size).toBe(0);
     expect(tree.getChildren().map((node) => node.label)).toEqual(["Main"]);
     expect(tree.getChildren(undefined, "flows")[0].kind).toBe("flow");
   });

@@ -1,5 +1,3 @@
-import { randomBytes } from "node:crypto";
-import { readFile } from "node:fs/promises";
 import * as path from "node:path";
 import * as vscode from "vscode";
 import type { Projects } from "../projects";
@@ -50,11 +48,12 @@ export function parseTestAppMessage(
 
 /** The "Test Target" section: the application under test, how it starts, and its project. */
 export class TestAppView
-  implements vscode.WebviewViewProvider, vscode.Disposable
+  implements vscode.Disposable
 {
   private view?: vscode.WebviewView;
   private disposed = false;
   private readonly subscriptions: vscode.Disposable[];
+  private viewSubscriptions: vscode.Disposable[] = [];
   private readonly icons = new Map<string, string | undefined>();
   private readonly pendingIcons = new Set<string>();
   private rendering = false;
@@ -71,53 +70,29 @@ export class TestAppView
       projects.onDidChange(() => this.refresh()),
       status.onDidChangeApplication(() => this.refresh()),
       vscode.window.onDidChangeActiveTextEditor(() => this.refresh()),
-      vscode.window.registerWebviewViewProvider("wintestkit.setup", this),
     ];
   }
-  async resolveWebviewView(view: vscode.WebviewView): Promise<void> {
+  /** Starts publishing to the sidebar's webview, whose page the sidebar view builds. */
+  attach(view: vscode.WebviewView): void {
+    if (this.disposed) return;
     this.view = view;
     // A badge from before a restart or reload describes a run this session knows nothing about.
     view.badge = undefined;
-    const assets = vscode.Uri.joinPath(this.extensionUri, "media", "setup");
-    const icons = vscode.Uri.joinPath(this.extensionUri, "media", "codicons");
-    view.webview.options = {
-      enableScripts: true,
-      localResourceRoots: [assets, icons],
-    };
-    const nonce = randomBytes(24).toString("hex");
-    let html = await readFile(
-      vscode.Uri.joinPath(assets, "setup.html").fsPath,
-      "utf8",
-    );
-    for (const [name, value] of Object.entries({
-      cspSource: view.webview.cspSource,
-      nonce,
-      css: view.webview
-        .asWebviewUri(vscode.Uri.joinPath(assets, "setup.css"))
-        .toString(),
-      js: view.webview
-        .asWebviewUri(vscode.Uri.joinPath(assets, "setup.js"))
-        .toString(),
-      icons: view.webview
-        .asWebviewUri(vscode.Uri.joinPath(icons, "codicon.css"))
-        .toString(),
-    }))
-      html = html.replaceAll("{{" + name + "}}", value);
-    if (this.disposed || this.view !== view) return;
-    view.webview.html = html;
-    this.subscriptions.push(
-      view.webview.onDidReceiveMessage((value) => {
-        const message = parseTestAppMessage(value);
-        if (message?.type === "ready") this.refresh();
-        else if (message?.type === "tile") void this.run(message.id);
-      }),
+    this.viewSubscriptions.forEach((subscription) => subscription.dispose());
+    this.viewSubscriptions = [
       view.onDidChangeVisibility(() => {
         if (view.visible) this.refresh();
       }),
       view.onDidDispose(() => {
         if (this.view === view) this.view = undefined;
       }),
-    );
+    ];
+  }
+  /** Takes a message from the sidebar page; the ones that are not this part's are ignored. */
+  handleMessage(value: unknown): void {
+    const message = parseTestAppMessage(value);
+    if (message?.type === "ready") this.refresh();
+    else if (message?.type === "tile") void this.run(message.id);
   }
   refresh(): void {
     if (this.disposed || !this.view) return;
@@ -360,6 +335,7 @@ export class TestAppView
   dispose(): void {
     this.disposed = true;
     if (this.view) this.view.badge = undefined;
+    this.viewSubscriptions.forEach((subscription) => subscription.dispose());
     this.subscriptions.forEach((subscription) => subscription.dispose());
   }
 }
