@@ -149,7 +149,9 @@ The report is a single HTML file that opens from disk without a server. It has s
 filter by outcome, a search box, and per test: the failure message and location, the resolution
 diagnostic, every step with its duration (the failed step is highlighted), screenshots, a link to
 the UI tree dump and captured stdout, stderr and logs. Failure artifacts are stored under
-`wtk-report/artifacts/<test>/` (`window.png`, `desktop.png`, `tree.txt`). Results are also saved
+`wtk-report/artifacts/<test>/` (`window.webp`, `desktop.webp`, `tree.txt`). Failure and step
+screenshots, like replay frames, use lossless WebP with unchanged pixels and dimensions.
+Older PNG reports remain readable. Results are also saved
 as `wtk-report/results.json`.
 
 WinTestKit clears only the files it created in the report directory (`index.html`,
@@ -160,6 +162,13 @@ WinTestKit clears only the files it created in the report directory (`index.html
 wtk report --open
 wtk report out/report
 ```
+
+For external tools that require PNG, import `Path` from `pathlib` and `screenshot` from
+`wintestkit.uia`, then explicitly export with
+`screenshot.save(screenshot.capture_screen(), Path("desktop.png"))`.
+
+Capture functions return WebP bytes by default. `screenshot.save` writes the format selected by
+the `.webp` or `.png` filename extension, converting losslessly when needed.
 
 ## Test replay
 
@@ -193,7 +202,9 @@ MP4 recording.
 Recording is off by default for `pytest` and `wtk run` (runs started from the VS Code Testing view
 turn it on unless a replay mode is set) and independent of the existing screenshots setting. A background
 worker targets 15 frames per second, with additional capture requests after actions. It keeps
-only changed frames, drops missed sampling ticks rather than building a queue, and stops at
+only changed frames as lossless WebP images (`replay/*.webp`), preserving their original pixels
+and dimensions. Older PNG recordings remain readable; failure and step screenshots also use WebP.
+The worker drops missed sampling ticks rather than building a queue, and stops at
 the per-test frame or byte limit. The report marks truncated and unavailable recordings.
 Capture failures do not change the test outcome. Passing and skipped replays are deleted in
 `retain-on-failure` mode; failed tests and setup/teardown errors retain them.

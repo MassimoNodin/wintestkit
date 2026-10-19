@@ -2,13 +2,74 @@
 
 import json
 from collections.abc import Callable
+from io import BytesIO
 from pathlib import Path
 from typing import Any
 
 import pytest
+from PIL import Image
 
 from wintestkit import runtime
+from wintestkit.engine import treedump
 from wintestkit.replay import ReplayRecorder
+from wintestkit.uia import screenshot
+from wintestkit.uia.webp import encode_webp
+
+
+def test_webp_screenshots_flow_through_results_and_events(
+    pytester: pytest.Pytester,
+    monkeypatch: pytest.MonkeyPatch,
+    validate: Callable[[str, str, Any], None],
+) -> None:
+    runtime.reset()
+    pixels = b"\x11\x77\xee"
+    captured = encode_webp(1, 1, pixels)
+    monkeypatch.setattr(screenshot, "capture_window", lambda hwnd: captured)
+    monkeypatch.setattr(screenshot, "capture_screen", lambda: captured)
+    monkeypatch.setattr(treedump, "dump", lambda *args, **kwargs: "Window")
+    pytester.makepyprojecttoml('[tool.wintestkit]\nscreenshots = "every-step"\n')
+    pytester.makeconftest("""
+import pytest
+from unittest.mock import Mock
+@pytest.fixture
+def app():
+    return Mock()
+""")
+    pytester.makepyfile("""
+from wintestkit import runtime
+def test_failure(app):
+    with runtime.step("click", "Main", "Window", {}):
+        assert False, "screenshot verification"
+""")
+    pytester.runpytest("--wtk-events=events.ndjson").assert_outcomes(failed=1)
+    directory = pytester.path / "wtk-report"
+    results = json.loads((directory / "results.json").read_text(encoding="utf-8"))
+    validate("results.schema.json", "Results", results)
+    events = [
+        json.loads(line)
+        for line in (pytester.path / "events.ndjson").read_text(encoding="utf-8").splitlines()
+    ]
+    for event in events:
+        validate("events.schema.json", "RunEvent", event)
+    test = results["tests"][0]
+    assert {Path(path).name for path in test["screenshots"]} == {
+        "window.webp",
+        "desktop.webp",
+        "1.webp",
+    }
+    assert test["steps"][0]["screenshot"].endswith("/steps/1.webp")
+    ending = next(event for event in events if event["event"] == "test_end")
+    assert {Path(path).name for path in ending["screenshots"]} == {
+        "window.webp",
+        "desktop.webp",
+        "1.webp",
+    }
+    for path in test["screenshots"]:
+        with Image.open(BytesIO((directory / path).read_bytes())) as image:
+            assert image.format == "WEBP"
+            assert image.tobytes() == pixels
+    assert not list(directory.rglob("*.png"))
+    runtime.reset()
 
 
 def test_pytest_results_match_events(
@@ -94,7 +155,7 @@ def test_replay_results_and_events_match_contract(
     validate: Callable[[str, str, Any], None],
     mode: str,
 ) -> None:
-    monkeypatch.setattr(ReplayRecorder, "_capture_window", lambda self: b"fake-png")
+    monkeypatch.setattr(ReplayRecorder, "_capture_window", lambda self: (1, 1, b"\xff\x00\x00"))
     pytester.makepyprojecttoml(f'[tool.wintestkit]\nscreenshots = "off"\nreplay = "{mode}"\n')
     pytester.makepyfile("""
 import time
@@ -135,7 +196,7 @@ def test_setup_error(broken): pass
             assert replay["duration"] >= 0.06
             assert (pytester.path / "wtk-report" / replay["frames"][0]["path"]).is_file()
     expected = 3 if mode == "on" else 2
-    assert len(list((pytester.path / "wtk-report").rglob("*.png"))) == expected
+    assert len(list((pytester.path / "wtk-report").rglob("*.webp"))) == expected
     runtime.reset()
 
 

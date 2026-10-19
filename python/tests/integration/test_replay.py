@@ -1,11 +1,11 @@
 """Native isolated-window capture with a controlled, non-sensitive test window."""
 
-import struct
 import time
-import zlib
+from io import BytesIO
 from pathlib import Path
 
 import pytest
+from PIL import Image
 
 from wintestkit.replay import ReplayRecorder
 from wintestkit.uia import screenshot, win32
@@ -29,19 +29,20 @@ def test_window_capture_excludes_overlapping_window(tmp_path: Path) -> None:
         cover.update()
         cover.lift()
         root.update()
-        png = screenshot.capture_window(hwnd, win32.window_pid(hwnd))
-        assert png is not None
-        width, height = struct.unpack(">II", png[16:24])
-        position = 8
-        compressed = b""
-        while position < len(png):
-            length = struct.unpack(">I", png[position : position + 4])[0]
-            if png[position + 4 : position + 8] == b"IDAT":
-                compressed += png[position + 8 : position + 8 + length]
-            position += 12 + length
-        raw = zlib.decompress(compressed)
-        offset = (height // 2) * (width * 3 + 1) + 1 + (width // 2) * 3
-        assert raw[offset : offset + 3] == bytes((255, 0, 0))
+        captured = screenshot.capture_window(hwnd, win32.window_pid(hwnd))
+        assert captured is not None
+        with Image.open(BytesIO(captured)) as image:
+            assert image.format == "WEBP"
+            assert image.convert("RGB").getpixel((image.width // 2, image.height // 2)) == (
+                255,
+                0,
+                0,
+            )
+            expected_pixels = image.convert("RGB").tobytes()
+        exported = screenshot.save(captured, tmp_path / "export.png")
+        with Image.open(exported) as image:
+            assert image.format == "PNG"
+            assert image.convert("RGB").tobytes() == expected_pixels
         replay = ReplayRecorder(tmp_path, tmp_path, fps=10)
         replay.set_window(hwnd)
         replay.start()
@@ -53,7 +54,15 @@ def test_window_capture_excludes_overlapping_window(tmp_path: Path) -> None:
         finally:
             result = replay.stop()
         assert result["frames"], result
-        assert (tmp_path / result["frames"][0]["path"]).is_file()
+        recorded = tmp_path / result["frames"][0]["path"]
+        assert recorded.suffix == ".webp"
+        with Image.open(recorded) as image:
+            assert image.format == "WEBP"
+            assert image.convert("RGB").getpixel((image.width // 2, image.height // 2)) == (
+                255,
+                0,
+                0,
+            )
     finally:
         if cover is not None:
             cover.destroy()

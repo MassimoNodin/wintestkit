@@ -3,6 +3,8 @@
 import json
 from pathlib import Path
 
+import pytest
+
 from wintestkit.cli import main
 from wintestkit.report.html import TREE_TEXT_LIMIT, render, write_report
 from wintestkit.report.results import RunRecorder, prepare_directory
@@ -29,7 +31,8 @@ def test_embedded_json_cannot_end_script() -> None:
     assert "innerHTML" not in html
 
 
-def test_recorder_paths_are_portable_and_omit_unrun_tests(tmp_path: Path) -> None:
+@pytest.mark.parametrize("extension", ["png", "webp"])
+def test_recorder_paths_are_portable_and_omit_unrun_tests(tmp_path: Path, extension: str) -> None:
     recorder = RunRecorder(tmp_path)
     recorder.record({"event": "session_start", "time": 1})
     recorder.record(
@@ -41,7 +44,9 @@ def test_recorder_paths_are_portable_and_omit_unrun_tests(tmp_path: Path) -> Non
             ],
         }
     )
-    recorder.record({"event": "step", "id": "run", "step": {"screenshot": "artifacts/steps/1.png"}})
+    recorder.record(
+        {"event": "step", "id": "run", "step": {"screenshot": f"artifacts/steps/1.{extension}"}}
+    )
     tree_diff = tmp_path / "artifacts" / "tree-diff.txt"
     tree_diff.parent.mkdir(parents=True)
     tree_diff.write_text("- old\n+ new\n", encoding="utf-8")
@@ -51,15 +56,15 @@ def test_recorder_paths_are_portable_and_omit_unrun_tests(tmp_path: Path) -> Non
             "id": "run",
             "outcome": "passed",
             "duration": 1,
-            "screenshots": [str(tmp_path / "artifacts/window.png")],
+            "screenshots": [str(tmp_path / f"artifacts/window.{extension}")],
             "treeDiff": str(tree_diff),
         }
     )
     recorder.record({"event": "session_end", "time": 2, "summary": {}})
     results = recorder.results()
     assert len(results["tests"]) == 1
-    assert results["tests"][0]["screenshots"] == ["artifacts/window.png"]
-    assert results["tests"][0]["steps"][0]["screenshot"] == "artifacts/steps/1.png"
+    assert results["tests"][0]["screenshots"] == [f"artifacts/window.{extension}"]
+    assert results["tests"][0]["steps"][0]["screenshot"] == f"artifacts/steps/1.{extension}"
     assert results["tests"][0]["treeDiff"] == "artifacts/tree-diff.txt"
 
 
@@ -74,7 +79,10 @@ def test_report_command_handles_missing_results(tmp_path: Path) -> None:
     assert main(["report", str(tmp_path)]) == 2
 
 
-def test_replay_paths_are_portable_and_payload_is_not_mutated(tmp_path: Path) -> None:
+@pytest.mark.parametrize("extension", ["png", "webp"])
+def test_replay_paths_are_portable_and_payload_is_not_mutated(
+    tmp_path: Path, extension: str
+) -> None:
     recorder = RunRecorder(tmp_path)
     recorder.record(
         {
@@ -86,7 +94,7 @@ def test_replay_paths_are_portable_and_payload_is_not_mutated(tmp_path: Path) ->
         "startedAt": 1,
         "duration": 1,
         "truncated": False,
-        "frames": [{"time": 0, "path": str(tmp_path / "artifacts/frame.png")}],
+        "frames": [{"time": 0, "path": str(tmp_path / f"artifacts/frame.{extension}")}],
     }
     recorder.record(
         {
@@ -99,8 +107,8 @@ def test_replay_paths_are_portable_and_payload_is_not_mutated(tmp_path: Path) ->
         }
     )
     recorded = recorder.results()["tests"][0]["replay"]
-    assert recorded["frames"][0]["path"] == "artifacts/frame.png"
-    assert replay["frames"][0]["path"] == str(tmp_path / "artifacts/frame.png")
+    assert recorded["frames"][0]["path"] == f"artifacts/frame.{extension}"
+    assert replay["frames"][0]["path"] == str(tmp_path / f"artifacts/frame.{extension}")
 
 
 def embedded_results(html: str) -> dict:

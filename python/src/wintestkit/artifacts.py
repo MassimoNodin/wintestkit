@@ -67,17 +67,17 @@ def capture_step_screenshot(app: App | None, directory: Path, seq: int) -> Path 
     try:
         from wintestkit.uia import screenshot
 
-        png = screenshot.capture_window(app.main_window().native_window_handle)
-        if png is None:
+        image = screenshot.capture_window(app.main_window().native_window_handle)
+        if image is None:
             return None
-        return screenshot.save(png, directory / "steps" / f"{seq}.png")
+        return screenshot.save(image, directory / "steps" / f"{seq}.webp")
     except Exception:
         log.warning("could not capture the step screenshot", exc_info=True)
         return None
 
 
 def capture_failure(app: App | None, directory: Path) -> ArtifactSet:
-    """Capture ``window.png``, ``desktop.png`` and ``tree.txt``.
+    """Capture ``window.webp``, ``desktop.webp`` and ``tree.txt``.
 
     Every artifact is captured independently and best effort: one failing does not stop the
     others, and nothing here ever raises.
@@ -89,16 +89,16 @@ def capture_failure(app: App | None, directory: Path) -> ArtifactSet:
             window = app.main_window()
             from wintestkit.uia import screenshot
 
-            png = screenshot.capture_window(window.native_window_handle)
-            if png is not None:
-                artifacts.add_screenshot(screenshot.save(png, directory / "window.png"))
+            image = screenshot.capture_window(window.native_window_handle)
+            if image is not None:
+                artifacts.add_screenshot(screenshot.save(image, directory / "window.webp"))
         except Exception:
             log.warning("could not capture the window screenshot", exc_info=True)
     try:
         from wintestkit.uia import screenshot
 
         artifacts.add_screenshot(
-            screenshot.save(screenshot.capture_screen(), directory / "desktop.png")
+            screenshot.save(screenshot.capture_screen(), directory / "desktop.webp")
         )
     except Exception:
         log.warning("could not capture the desktop screenshot", exc_info=True)
