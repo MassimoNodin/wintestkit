@@ -76,10 +76,59 @@ describe("report location", () => {
     expect(reports.lastRun(second)).toMatchObject({ passed: 3, failed: 0 });
     expect(reports.lastRun(undefined)).toBeUndefined();
     expect(changed).toHaveBeenCalledTimes(2);
+    // A new window starts with an empty Testing view, so nothing is restored into it.
     const restored = new Reports({} as never, {} as never, state as never);
-    expect(restored.lastRun(first)).toMatchObject({ passed: 7, failed: 2 });
+    expect(restored.lastRun(first)).toBeUndefined();
     reports.record(first, undefined, 0, 2);
     expect(reports.lastRun(first)).toMatchObject({ passed: 2, failed: 0 });
     expect(reports.lastRun(first)?.report).toBeUndefined();
+  });
+  it("drops the last-run summary of the projects whose results were cleared", () => {
+    const saved: Record<string, unknown> = {};
+    const state = {
+      get: (key: string) => saved[key],
+      update: async (key: string, value: unknown) => { saved[key] = value; },
+    };
+    const reports = new Reports({} as never, {} as never, state as never);
+    const first = { root: { toString: () => "file:///one", fsPath: "/one" } } as Project;
+    const second = { root: { toString: () => "file:///two", fsPath: "/two" } } as Project;
+    reports.record(first, undefined, 0, 2);
+    reports.record(second, undefined, 0, 3);
+    const changed = vi.fn();
+    reports.onDidChange(changed);
+    reports.clearLastRuns([first]);
+    reports.clearLastRuns([first]);
+    expect(changed).toHaveBeenCalledTimes(1);
+    expect(reports.lastRun(first)).toBeUndefined();
+    expect(reports.lastRun(second)).toMatchObject({ passed: 3 });
+    expect(new Reports({} as never, {} as never, state as never).lastRun(first)).toBeUndefined();
+  });
+  it("drops the notice of a run whose results were cleared, but not a newer run's", () => {
+    const reports = new Reports({} as never, {} as never, undefined);
+    const project = { root: { toString: () => "file:///one", fsPath: "/one" } } as Project;
+    reports.record(project, undefined, 0, 2, "run a");
+    reports.record(project, undefined, 1, 5, "run b");
+    reports.clearRun("run a");
+    expect(reports.lastRun(project)).toMatchObject({ passed: 5, run: "run b" });
+    reports.clearRun("run b");
+    expect(reports.lastRun(project)).toBeUndefined();
+  });
+  it("dismisses a project's last-run notice until the next run", () => {
+    const saved: Record<string, unknown> = {};
+    const state = {
+      get: (key: string) => saved[key],
+      update: async (key: string, value: unknown) => { saved[key] = value; },
+    };
+    const reports = new Reports({} as never, {} as never, state as never);
+    const project = { root: { toString: () => "file:///one", fsPath: "/one" } } as Project;
+    const changed = vi.fn();
+    reports.record(project, "/one/report/index.html", 0, 2);
+    reports.onDidChange(changed);
+    reports.dismissLastRun(project);
+    reports.dismissLastRun(project);
+    expect(changed).toHaveBeenCalledTimes(1);
+    expect(reports.lastRun(project)).toMatchObject({ passed: 2, dismissed: true });
+    reports.record(project, "/one/report/index.html", 0, 2);
+    expect(reports.lastRun(project)?.dismissed).toBeUndefined();
   });
 });

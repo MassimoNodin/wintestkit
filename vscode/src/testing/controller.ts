@@ -226,12 +226,14 @@ export class TestController implements vscode.Disposable {
     }
   }
   prepareClearResults(): () => Promise<void> {
-    const roots = this.projects.all.map((project) => project.root.toString());
+    const projects = [...this.projects.all];
+    const roots = projects.map((project) => project.root.toString());
     const names = this.reports.history.all()
       .filter((entry) => !this.activeRunNames.has(entry.name))
       .map((entry) => entry.name);
     return async () => {
       await Promise.all(names.map((name) => this.reports.history.discard(name, roots)));
+      this.reports.clearLastRuns(projects);
       const cleared = new Set(names.map((name) => RUN_CONTEXT_PREFIX + name));
       for (const [id, messages] of this.lastMessages)
         if (messages.some((message) => message.contextValue && cleared.has(message.contextValue)))
@@ -287,6 +289,7 @@ export class TestController implements vscode.Disposable {
     if (name)
       run.onDidDispose(() => {
         if (this.disposed) return;
+        this.reports.clearRun(name);
         this.reports.history
           .discard(name)
           .catch((error) => this.log.warn(String(error)));
@@ -336,7 +339,7 @@ export class TestController implements vscode.Disposable {
   ): void {
     for (const action of actions) {
       if (action.kind === "report") {
-        this.reports.record(project, action.path, action.failed, action.passed);
+        this.reports.record(project, action.path, action.failed, action.passed, run.name);
         this.reports.history.finish(run.name, project.root.toString(), {
           failed: action.failed,
           passed: action.passed,

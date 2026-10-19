@@ -99,6 +99,55 @@
       }
       root.append(hint);
     }
+    if (model.lastRun) root.append(lastRunNotice(model.lastRun));
+  };
+
+  /** "Today at 1:09 PM", "Yesterday at 4:30 PM", or the date for anything older. */
+  const when = (at) => {
+    const date = new Date(at);
+    const time = date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    const day = (value) => new Date(value.getFullYear(), value.getMonth(), value.getDate()).getTime();
+    const apart = Math.round((day(new Date()) - day(date)) / 86400000);
+    const label = apart === 0 ? "Today" : apart === 1 ? "Yesterday" : date.toLocaleDateString();
+    return label + " at " + time;
+  };
+
+  /** An informational notice: blue, closable, with the totals and a link to the report. */
+  const lastRunNotice = (run) => {
+    const hint = el("div", "hint last-run");
+    hint.dataset.tone = "info";
+    hint.setAttribute("role", "status");
+    const icon = codicon("info");
+    icon.classList.add("hint-icon");
+    const count = (name, value, noun) => {
+      const label = value + " " + (value === 1 ? "test" : "tests") + " " + noun;
+      const item = el("span", "run-count " + name);
+      item.append(codicon(name === "passed" ? "pass" : "error"), el("span", "", label));
+      return item;
+    };
+    const text = el("span", "hint-text");
+    text.append(
+      el("span", "run-label", "Last run was " + when(run.at)),
+      count("passed", run.passed, "passed"),
+      count("failed", run.failed, "failed"),
+    );
+    if (run.report) {
+      const open = el("span", "run-report");
+      const link = el("button", "hint-action");
+      link.title = "Open the report";
+      link.append(codicon("go-to-file"), el("span", "", "View the Report"));
+      link.addEventListener("click", () => press(run.open));
+      open.append(link, el("span", "", "to diagnose issues"));
+      text.append(open);
+    }
+    hint.append(icon, text);
+    const close = el("button", "hint-dismiss");
+    close.title = "Dismiss";
+    close.setAttribute("aria-label", "Dismiss");
+    close.append(codicon("close"));
+    close.addEventListener("click", () => press(run.dismiss));
+    hint.append(close);
+    return hint;
   };
 
   window.addEventListener("message", (event) => {

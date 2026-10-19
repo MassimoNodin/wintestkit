@@ -75,6 +75,10 @@ export interface LastRunSummary {
   failed: number;
   report?: string;
   at: number;
+  /** The run that produced it, so clearing that run's results clears the notice. */
+  run?: string;
+  /** The user closed the notice in the Test Target; the next run shows it again. */
+  dismissed?: boolean;
 }
 
 const LAST_RUNS_KEY = "wintestkit.lastRuns";
@@ -102,8 +106,9 @@ export class Reports {
       if (removed) this.forget(removed);
       this.listeners.forEach((listener) => listener());
     });
-    const saved = state?.get<Record<string, LastRunSummary>>(LAST_RUNS_KEY) ?? {};
-    for (const [root, summary] of Object.entries(saved)) this.summaries.set(root, summary);
+    // The Testing view starts empty in a new window, so the last-run notice does too. Older
+    // versions saved these summaries; drop what they left behind.
+    if (state?.get(LAST_RUNS_KEY) !== undefined) void state.update(LAST_RUNS_KEY, undefined);
   }
 
   onDidChange(listener: () => void): vscode.Disposable {
@@ -113,11 +118,32 @@ export class Reports {
   lastRun(project: Project | undefined): LastRunSummary | undefined {
     return project && this.summaries.get(project.root.toString());
   }
-  record(project: Project, file: string | undefined, failed: number, passed = 0): void {
+  /** The Testing view's results were cleared, so the notice about them goes too. */
+  clearLastRuns(projects: readonly Project[]): void {
+    let removed = false;
+    for (const project of projects)
+      removed = this.summaries.delete(project.root.toString()) || removed;
+    if (!removed) return;
+    this.listeners.forEach((listener) => listener());
+  }
+  /** The results of one run were cleared; its notice goes unless a newer run replaced it. */
+  clearRun(name: string): void {
+    let removed = false;
+    for (const [root, summary] of this.summaries)
+      if (summary.run === name) removed = this.summaries.delete(root) || removed;
+    if (removed) this.listeners.forEach((listener) => listener());
+  }
+  dismissLastRun(project: Project | undefined): void {
+    const key = project?.root.toString();
+    const summary = key && this.summaries.get(key);
+    if (!key || !summary || summary.dismissed) return;
+    this.summaries.set(key, { ...summary, dismissed: true });
+    this.listeners.forEach((listener) => listener());
+  }
+  record(project: Project, file: string | undefined, failed: number, passed = 0, run?: string): void {
     const key = project.root.toString();
-    const summary = { passed, failed, report: file, at: Date.now() };
+    const summary = { passed, failed, report: file, at: Date.now(), run };
     this.summaries.set(key, summary);
-    void this.state?.update(LAST_RUNS_KEY, Object.fromEntries(this.summaries));
     this.listeners.forEach((listener) => listener());
     if (file) {
       this.last.set(key, file);
@@ -270,7 +296,6 @@ export class Reports {
       this.panel = undefined;
       this.panelDir = undefined;
     }
-    void this.state?.update(LAST_RUNS_KEY, Object.fromEntries(this.summaries));
   }
 
   /** Lets the user pick any earlier Testing-view run whose report is still stored. */

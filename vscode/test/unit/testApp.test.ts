@@ -179,6 +179,18 @@ describe("Test Target tiles", () => {
     expect(build(launchable, failed).tiles[2].alert).toBeUndefined();
     expect(build(attach, { running: false }).tiles[2].alert).toBeUndefined();
   });
+  it("shows the last run as a closable notice with a report button, alongside other messages", () => {
+    const model = build(launchable, { running: false }, { lastRun: { passed: 6, failed: 0, at: 1000, report: "/r/index.html" } });
+    expect(model.lastRun).toEqual({ passed: 6, failed: 0, at: 1000, report: true, open: "openReport", dismiss: "dismissRun" });
+    expect(build(launchable, { running: false }, { lastRun: { passed: 1, failed: 2, at: 1 } }).lastRun?.report).toBe(false);
+    expect(build(launchable, { running: false }).lastRun).toBeUndefined();
+    const failed = build(attach, { running: false, attachFailure: { at: 1 } }, { lastRun: { passed: 0, failed: 1, at: 1 } });
+    expect(failed.message?.dismiss).toBe("dismiss");
+    expect(failed.lastRun).toMatchObject({ failed: 1, dismiss: "dismissRun" });
+    expect(buildTestAppModel({ trusted: true, lastRun: { passed: 1, failed: 0, at: 1 } }).lastRun).toBeUndefined();
+    expect(parseTestAppMessage({ type: "tile", id: "openReport" })).toEqual({ type: "tile", id: "openReport" });
+    expect(parseTestAppMessage({ type: "tile", id: "dismissRun" })).toEqual({ type: "tile", id: "dismissRun" });
+  });
   it("never offers to launch or restart an attach-only setup", () => {
     const stopped = build(attach, { running: false });
     expect(stopped.status.label).toBe("Waiting for the app");

@@ -525,14 +525,6 @@ describe("navigation view", () => {
       client.paint("flows", { scanning: false, scanned: true, count: 3, filtering: false });
       expect(tools.hidden).toBe(true);
     });
-  });  it("renders a project last-run report action in the view body", () => {
-    const body = renderBody({
-      nodes: [], expanded: new Set(), welcome: "Initialize the project", showInitialize: true,
-      lastRun: { passed: 4, failed: 1, report: "/project/wtk-report/index.html", at: 1 },
-    });
-    expect(body).toContain("Last run: 4 passed, 1 failed");
-    expect(body).toContain('data-open-report="true"');
-    expect(body).toContain("Initialize Project");
   });
   it("offers initialization and Getting Started in the instantiated no-project webview", () => {
     const body = renderBody({ nodes: [], expanded: new Set(), showInitialize: true });

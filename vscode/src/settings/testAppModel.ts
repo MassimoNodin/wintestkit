@@ -15,7 +15,9 @@ export type TileId =
   | "init"
   | "doctor"
   | "dismiss"
-  | "output";
+  | "output"
+  | "openReport"
+  | "dismissRun";
 
 export interface Tile {
   id: TileId;
@@ -52,6 +54,17 @@ export interface TestAppModel {
     /** The tile id the message's dismiss button sends. */
     dismiss?: TileId;
   };
+  /** The result of the last Testing-view run: an informational notice the user can close. */
+  lastRun?: {
+    passed: number;
+    failed: number;
+    /** When the run finished (ms since the epoch). */
+    at: number;
+    /** Whether there is a report to open. */
+    report: boolean;
+    open: TileId;
+    dismiss: TileId;
+  };
   /** Shown as a badge on the WinTestKit icon in the activity bar, with this tooltip. */
   badge?: string;
 }
@@ -68,6 +81,8 @@ export interface TestAppInput {
   configError?: string;
   state?: ApplicationState;
   icon?: string;
+  /** The last run's totals, left out once the user has dismissed them. */
+  lastRun?: { passed: number; failed: number; at: number; report?: string };
 }
 
 const MODES: Record<
@@ -108,6 +123,20 @@ function startingStatus(stage?: "process" | "window"): string {
 }
 
 export function buildTestAppModel(input: TestAppInput): TestAppModel {
+  const model = buildModel(input);
+  if (model.kind === "app" && input.lastRun)
+    model.lastRun = {
+      passed: input.lastRun.passed,
+      failed: input.lastRun.failed,
+      at: input.lastRun.at,
+      report: !!input.lastRun.report,
+      open: "openReport",
+      dismiss: "dismissRun",
+    };
+  return model;
+}
+
+function buildModel(input: TestAppInput): TestAppModel {
   const bare = (
     kind: TestAppModel["kind"],
     status: TestAppModel["status"],
