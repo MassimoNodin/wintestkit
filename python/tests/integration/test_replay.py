@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from wintestkit.trace import TraceRecorder
+from wintestkit.replay import ReplayRecorder
 from wintestkit.uia import screenshot, win32
 
 pytestmark = pytest.mark.integration
@@ -18,7 +18,7 @@ def test_window_capture_excludes_overlapping_window(tmp_path: Path) -> None:
     root = tkinter.Tk()
     cover = None
     try:
-        root.title("WinTestKit trace capture verification")
+        root.title("WinTestKit replay capture verification")
         root.geometry("320x200+80+80")
         root.configure(background="#ff0000")
         root.update()
@@ -42,16 +42,16 @@ def test_window_capture_excludes_overlapping_window(tmp_path: Path) -> None:
         raw = zlib.decompress(compressed)
         offset = (height // 2) * (width * 3 + 1) + 1 + (width // 2) * 3
         assert raw[offset : offset + 3] == bytes((255, 0, 0))
-        trace = TraceRecorder(tmp_path, tmp_path, fps=10)
-        trace.set_window(hwnd)
-        trace.start()
+        replay = ReplayRecorder(tmp_path, tmp_path, fps=10)
+        replay.set_window(hwnd)
+        replay.start()
         try:
             deadline = time.monotonic() + 3
-            while not trace.frames and time.monotonic() < deadline:
+            while not replay.frames and time.monotonic() < deadline:
                 root.update()
                 time.sleep(0.01)
         finally:
-            result = trace.stop()
+            result = replay.stop()
         assert result["frames"], result
         assert (tmp_path / result["frames"][0]["path"]).is_file()
     finally:

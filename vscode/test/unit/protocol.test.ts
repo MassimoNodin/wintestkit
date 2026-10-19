@@ -269,12 +269,12 @@ const results = {
         },
       ],
       screenshots: ["artifacts/sign-in/step-1.png"],
-      trace: {
+      replay: {
         startedAt: 1791936000,
         duration: 0.2,
         frames: [
-          { time: 0, path: "artifacts/sign-in/trace/0001.png" },
-          { time: 0.1, path: "artifacts/sign-in/trace/0002.png" },
+          { time: 0, path: "artifacts/sign-in/replay/0001.png" },
+          { time: 0.1, path: "artifacts/sign-in/replay/0002.png" },
         ],
         truncated: false,
       },
@@ -388,12 +388,12 @@ const events = [
     ],
     artifactsDir: "C:/wtk/examples/demo-tests/wtk-report/artifacts/sign-in",
     treeDiff: "C:/wtk/examples/demo-tests/wtk-report/artifacts/sign-in/tree-diff.txt",
-    trace: {
+    replay: {
       startedAt: 1791936000,
       duration: 0.2,
       frames: [
-        { time: 0, path: "artifacts/sign-in/trace/0001.png" },
-        { time: 0.1, path: "artifacts/sign-in/trace/0002.png" },
+        { time: 0, path: "artifacts/sign-in/replay/0001.png" },
+        { time: 0.1, path: "artifacts/sign-in/replay/0002.png" },
       ],
       truncated: false,
     },

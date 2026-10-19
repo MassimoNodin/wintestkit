@@ -107,11 +107,11 @@ def test_run_builds_the_pytest_command_line(
             "junit.xml",
             "--events",
             "tcp://127.0.0.1:9",
-            "--trace",
+            "--replay",
             "retain-on-failure",
-            "--trace-fps",
+            "--replay-fps",
             "8",
-            "--trace-scope",
+            "--replay-scope",
             "desktop",
             "-k",
             "login",
@@ -144,11 +144,11 @@ def test_run_builds_the_pytest_command_line(
         "out",
         "--wtk-events",
         "tcp://127.0.0.1:9",
-        "--wtk-trace",
+        "--wtk-replay",
         "retain-on-failure",
-        "--wtk-trace-fps",
+        "--wtk-replay-fps",
         "8.0",
-        "--wtk-trace-scope",
+        "--wtk-replay-scope",
         "desktop",
         "--wtk-highlight",
         "--junitxml=junit.xml",
@@ -179,6 +179,14 @@ def test_run_no_report_flag(
     ready_environment(monkeypatch)
     main(["--root", str(project), "run", "--no-report"])
     assert fake_pytest.calls[0][0] == ["--wtk-no-report"]
+
+
+def test_run_no_html_flag(
+    project: Path, fake_pytest: FakePytest, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ready_environment(monkeypatch)
+    main(["--root", str(project), "run", "--no-html"])
+    assert fake_pytest.calls[0][0] == ["--wtk-no-html"]
 
 
 def test_run_restores_the_working_directory(
@@ -246,6 +254,7 @@ def test_build_pytest_args_is_pure() -> None:
         tests=["a"],
         highlight=False,
         no_report=False,
+        no_html=False,
         junit=None,
         keyword=None,
         marker=None,

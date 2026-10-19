@@ -120,7 +120,7 @@ export type RunEvent =
       screenshots: string[];
       artifactsDir?: string;
       treeDiff?: string;
-      trace?: Trace;
+      replay?: Replay;
     }
   | {
       event: "session_end";
@@ -225,6 +225,7 @@ export interface ProtocolContracts {
   Range?: Range;
   Rect?: Rect;
   Relocation?: Relocation;
+  Replay?: Replay;
   Results?: Results;
   RunEvent?: RunEvent;
   RunningProcess?: RunningProcess;
@@ -245,7 +246,6 @@ export interface ProtocolContracts {
   TestEntry?: TestEntry;
   TestOutcome?: TestOutcome;
   TestResult?: TestResult;
-  Trace?: Trace;
   WindowLocatorData?: WindowLocatorData;
 }
 /**
@@ -813,6 +813,20 @@ export interface PageCheckResult {
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "Replay".
+ */
+export interface Replay {
+  startedAt: number;
+  duration: number;
+  frames: {
+    time: number;
+    path: string;
+  }[];
+  truncated: boolean;
+  error?: string;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
  * via the `definition` "Results".
  */
 export interface Results {
@@ -869,7 +883,7 @@ export interface TestResult {
   error?: ErrorInfo;
   steps: StepEvent[];
   screenshots: string[];
-  trace?: Trace;
+  replay?: Replay;
   treeDump?: string;
   treeDiff?: string;
   stdout: string;
@@ -893,20 +907,6 @@ export interface StepEvent {
   status: "passed" | "failed";
   error?: ErrorInfo;
   screenshot?: string;
-}
-/**
- * This interface was referenced by `ProtocolContracts`'s JSON-Schema
- * via the `definition` "Trace".
- */
-export interface Trace {
-  startedAt: number;
-  duration: number;
-  frames: {
-    time: number;
-    path: string;
-  }[];
-  truncated: boolean;
-  error?: string;
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema

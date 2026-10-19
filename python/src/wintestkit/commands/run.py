@@ -22,9 +22,9 @@ _FORWARDED = (
     ("slowmo", "--wtk-slowmo"),
     ("report", "--wtk-report"),
     ("events", "--wtk-events"),
-    ("trace", "--wtk-trace"),
-    ("trace_fps", "--wtk-trace-fps"),
-    ("trace_scope", "--wtk-trace-scope"),
+    ("replay", "--wtk-replay"),
+    ("replay_fps", "--wtk-replay-fps"),
+    ("replay_scope", "--wtk-replay-scope"),
 )
 
 
@@ -44,11 +44,12 @@ def add_parser(subparsers: Any) -> None:
     parser.add_argument("--slowmo", type=int, metavar="MS")
     parser.add_argument("--report", metavar="DIR")
     parser.add_argument("--no-report", action="store_true")
+    parser.add_argument("--no-html", action="store_true", help="write results.json only")
     parser.add_argument("--junit", metavar="PATH")
     parser.add_argument("--events", metavar="URL")
-    parser.add_argument("--trace", choices=("off", "on", "retain-on-failure"))
-    parser.add_argument("--trace-fps", type=float, metavar="FPS")
-    parser.add_argument("--trace-scope", choices=("window", "desktop"))
+    parser.add_argument("--replay", choices=("off", "on", "retain-on-failure"))
+    parser.add_argument("--replay-fps", type=float, metavar="FPS")
+    parser.add_argument("--replay-scope", choices=("window", "desktop"))
     parser.add_argument("-k", dest="keyword", metavar="EXPR")
     parser.add_argument("-m", dest="marker", metavar="EXPR")
     parser.add_argument("-x", dest="exitfirst", action="store_true")
@@ -70,6 +71,8 @@ def build_pytest_args(args: argparse.Namespace) -> list[str]:
         argv.append("--wtk-highlight")
     if args.no_report:
         argv.append("--wtk-no-report")
+    if args.no_html:
+        argv.append("--wtk-no-html")
     if args.junit:
         argv.append(f"--junitxml={args.junit}")
     if args.keyword:

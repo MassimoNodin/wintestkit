@@ -63,14 +63,18 @@ children. Runs stream progress, captured output and failures live; assertion mis
 expected/actual diff. Cancelling a run stops the whole test process tree. Runs of the same project
 are queued.
 
-After a run with failures, a notification offers **Open Report** (the HTML report in your browser)
-and **Show Test Results**. **WinTestKit: Open Last Report** opens the latest report later.
+After a run with failures the report opens in an editor panel, or a notification offers **Open Report**
+and **Show Test Results**. **WinTestKit: Open Last Report** opens the latest report later. The panel is
+drawn straight from the run's `results.json`, so runs from the Testing view write no `index.html`.
+**Export HTML** in the panel's header (or **WinTestKit: Export Last Report as HTML**) saves the report
+as one self-contained HTML file, by default into the report folder where its screenshots and replay frames
+are found; if you save it elsewhere, keep or copy the `artifacts` folder with it.
 The Pages & Flows view also shows the current project's last-run totals and an **Open report**
-action. Runs from the Testing view record a trace by default (`--trace on`) unless the project,
-the `WTK_TRACE` environment variable or `wintestkit.run.extraArgs` choose a trace mode; set
-`trace: off` in the project settings to turn this off. **Run with recording** keeps only the
-traces of failed tests. Failed-test reports open with the failed test's evidence, including
-playback when frames were captured. The report follows the VS Code theme until you pick light or
+action. Runs from the Testing view record a test replay by default (`--replay on`) unless the project,
+the `WTK_REPLAY` environment variable or `wintestkit.run.extraArgs` choose a replay mode; set
+`replay: off` in the project settings to turn this off. **Run with recording** keeps only the
+replays of failed tests. Failed-test reports open with the failed test's evidence, including
+the Test Replay when frames were captured. The report follows the VS Code theme until you pick light or
 dark with the button in its header; that choice is remembered across reloads and updates.
 
 ### Debugging
@@ -159,7 +163,7 @@ lives in the ignored local file. Everything else (process name, arguments, worki
 lifecycle, timeouts, input mode, screenshots, reports, import paths and debugging aids)
 sits under the collapsed **Advanced options** section, grouped as **Application**, **Test runs**,
 **Evidence**, and **Debugging**, where override checkboxes control inheritance. Evidence includes
-the screenshot policy, trace mode, trace FPS (greater than 0 and no more than 30), and capture
+the screenshot policy, replay recording mode (`replay`), replay FPS (greater than 0 and no more than 30), and capture
 scope (**window** or **desktop**). Save with the toolbar or
 Ctrl+S; **Open YAML** switches to raw text for settings not shown in the form. Comments and
 other settings are preserved. Saving reloads the backend and refreshes the Test Target section. Invalid

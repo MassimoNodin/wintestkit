@@ -9,7 +9,7 @@ import type { TestEntry } from "../protocol/generated";
 import { EventMapper, type RunAction, type TestEnd } from "./eventMapper";
 import { EventServer } from "./eventServer";
 import { readConfiguration } from "../settings/files";
-import { runArguments, runProcess, tracesByDefault } from "./runner";
+import { runArguments, runProcess, replaysByDefault } from "./runner";
 import { runDebugSession } from "./debug";
 import type { Reports } from "../report";
 import { disposeRunProfiles } from "./profiles";
@@ -392,9 +392,9 @@ export class TestController implements vscode.Disposable {
         settings.get<boolean>("run.highlightActions", false),
         extraArgs,
         recording,
-        tracesByDefault(
+        replaysByDefault(
           await readConfiguration(project.root, {}, false).catch(() => ({
-            trace: undefined,
+            replay: undefined,
           })),
           extraArgs,
         ),

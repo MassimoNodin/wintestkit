@@ -13,7 +13,7 @@ wtk run -k login -x                       # pytest keyword filter, stop at the f
 wtk run --lf                              # re-run the last failures
 wtk run --launch per-test --timeout 20    # override configuration for this run
 wtk run --junit junit.xml --report out/report
-wtk run --trace retain-on-failure --trace-fps 5 --trace-scope window
+wtk run --replay retain-on-failure --replay-fps 5 --replay-scope window
 wtk run -- -p no:cacheprovider --maxfail=3  # raw pytest arguments after --
 ```
 
@@ -28,11 +28,12 @@ wtk run -- -p no:cacheprovider --maxfail=3  # raw pytest arguments after --
 | `--highlight` | Flash each element before acting |
 | `--slowmo MS` | Pause after every action (for watching a run) |
 | `--report DIR` / `--no-report` | Report directory / don't write a report |
+| `--no-html` | Write `results.json` but not `index.html` (the VS Code Testing view uses this) |
 | `--junit PATH` | Also write JUnit XML |
 | `--events URL` | Stream run events (see below) |
-| `--trace {off,on,retain-on-failure}` | Record continuous screenshot traces; off by default |
-| `--trace-fps FPS` | Sampling rate, greater than 0 and at most 30 (default 15) |
-| `--trace-scope {window,desktop}` | Capture the application window (default) or opt into the full desktop |
+| `--replay {off,on,retain-on-failure}` | Record continuous screenshot replays; off by default |
+| `--replay-fps FPS` | Sampling rate, greater than 0 and at most 30 (default 15) |
+| `--replay-scope {window,desktop}` | Capture the application window (default) or opt into the full desktop |
 | `-k EXPR`, `-m EXPR`, `-x`, `--lf` | As in pytest |
 
 Plain `pytest` works the same way: the plugin activates in projects with `wintestkit.yaml`
@@ -76,12 +77,12 @@ Shared YAML rejects application paths. Legacy paths remain supported; move them 
 `pyproject.toml` to local YAML to keep them machine-specific. Keep secrets out of shared
 configuration; advanced `app.env` settings accept string values in local YAML.
 Relative paths resolve from the project directory. Environment variables include
-`WTK_APP_PATH`, `WTK_LAUNCH`, `WTK_TIMEOUT`, `WTK_INPUT_MODE`, `WTK_SCREENSHOTS`, `WTK_TRACE`,
-`WTK_TRACE_FPS`, and `WTK_TRACE_SCOPE`; `WTK_LOG`
+`WTK_APP_PATH`, `WTK_LAUNCH`, `WTK_TIMEOUT`, `WTK_INPUT_MODE`, `WTK_SCREENSHOTS`, `WTK_REPLAY`,
+`WTK_REPLAY_FPS`, and `WTK_REPLAY_SCOPE`; `WTK_LOG`
 sets the log level of the `wintestkit` logger (`DEBUG`, `INFO`, …).
-Trace limits are configurable with `trace_max_frames` (default 3000) and `trace_max_bytes`
-(default 104857600), including environment overrides `WTK_TRACE_MAX_FRAMES` and
-`WTK_TRACE_MAX_BYTES`. Capture is best-effort and may truncate at these limits. Window capture
+Replay limits are configurable with `replay_max_frames` (default 3000) and `replay_max_bytes`
+(default 104857600), including environment overrides `WTK_REPLAY_MAX_FRAMES` and
+`WTK_REPLAY_MAX_BYTES`. Capture is best-effort and may truncate at these limits. Window capture
 is the privacy-conscious default; desktop capture is opt-in and may include unrelated on-screen
 content. Keep tracing off unless needed.
 
@@ -160,27 +161,27 @@ wtk report --open
 wtk report out/report
 ```
 
-## Screenshot trace playback
+## Test replay
 
-Record a continuous, timestamped screenshot trace alongside the normal report:
+Record a continuous, timestamped screenshot recording of the app's window, played back in the report as a **Test Replay** (the `replay` options control it):
 
 ```powershell
-wtk run --trace on
-wtk run --trace retain-on-failure --trace-fps 5
+wtk run --replay on
+wtk run --replay retain-on-failure --replay-fps 5
 wtk report --open
 ```
 
 Or save the settings in shared or local YAML:
 
 ```yaml
-trace: "retain-on-failure"
-trace_fps: 15
-trace_scope: window
-trace_max_frames: 3000
-trace_max_bytes: 104857600
+replay: "retain-on-failure"
+replay_fps: 15
+replay_scope: window
+replay_max_frames: 3000
+replay_max_bytes: 104857600
 ```
 
-Open a test's trace from its **Open Trace Viewer** button or by clicking a step. Playback runs on
+Open a test's replay from its **Open Test Replay** button or by clicking a step. Playback runs on
 the recording's own clock, so the replay keeps the pace of the real run, including waits where
 the screen does not change; the speed can be set from 0.5× to 4×. The timeline places each step's dot
 where the step really started, so the playhead moves at a constant speed; the **Timeline** menu
@@ -189,21 +190,21 @@ playhead across each gap in proportion to how long that step took. Drag the time
 and Space to play or pause. This is visual replay, not an interactive UI Automation snapshot or an
 MP4 recording.
 
-Tracing is off by default for `pytest` and `wtk run` (runs started from the VS Code Testing view
-turn it on unless a trace mode is set) and independent of the existing screenshots setting. A background
+Recording is off by default for `pytest` and `wtk run` (runs started from the VS Code Testing view
+turn it on unless a replay mode is set) and independent of the existing screenshots setting. A background
 worker targets 15 frames per second, with additional capture requests after actions. It keeps
 only changed frames, drops missed sampling ticks rather than building a queue, and stops at
 the per-test frame or byte limit. The report marks truncated and unavailable recordings.
-Capture failures do not change the test outcome. Passing and skipped traces are deleted in
+Capture failures do not change the test outcome. Passing and skipped replays are deleted in
 `retain-on-failure` mode; failed tests and setup/teardown errors retain them.
 
 Window mode renders the application's main window without copying overlapping desktop
 windows. Minimized or closed windows may have no frames; applications that do not support
 window rendering can produce blank frames. Separate popups are not included. Choose
-`--trace-scope desktop` explicitly when you need to see popups and focus changes: this records
-the entire virtual desktop, including other applications. All traces can contain visible
+`--replay-scope desktop` explicitly when you need to see popups and focus changes: this records
+the entire virtual desktop, including other applications. All replays can contain visible
 passwords or other sensitive data; screenshot pixels are not redacted. Review artifacts before
-sharing them. `--no-report` disables tracing. Copy the whole report directory, including
+sharing them. `--no-report` disables recording. Copy the whole report directory, including
 `artifacts/`, when moving or sharing a recording; `wtk report` can regenerate the player from
 saved results but cannot create frames for an older run.
 

@@ -249,7 +249,7 @@
             "treeDiff": {
               "type": "string"
             },
-            "trace": { "$ref": "results.schema.json#/$defs/Trace" }
+            "replay": { "$ref": "results.schema.json#/$defs/Replay" }
           },
           "required": [
             "event",
