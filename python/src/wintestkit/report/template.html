@@ -189,6 +189,7 @@ mark{background:#ffe58a;color:#000;border-radius:2px}
 .trhead h1{font-size:24px;font-weight:600;margin:0}
 .stage{max-width:1100px;margin:0 auto;display:grid;place-items:center;min-height:120px}
 .stage img{border-radius:8px;box-shadow:0 0 0 1px var(--line),0 6px 24px #0003}
+.card.broke.ok-card{grid-template-columns:minmax(0,1fr)}.okline{margin:0 0 16px}.ok-card .muted{margin:0}
 .stage .nr{padding:40px;border:1px dashed var(--line);border-radius:10px;width:100%}
 .stage svg{width:min(100%,760px);height:auto;filter:drop-shadow(0 4px 14px #0002)}
 .stage .nr{color:var(--muted);text-align:center}
@@ -350,8 +351,10 @@ function image(path,alt){
   if(typeof path!=='string'||!path||/^(?:[a-z][a-z\d+.-]*:|[\\/]{2}|[\\/])/i.test(path))return null;
   return el('img',{src:path.replace(/\\/g,'/'),alt,loading:'lazy'});
 }
+const APP_STEPS={'app.start':t=>`Start ${t} and verify it is running`,'app.attach':t=>`Attach to ${t} and verify it is running`};
+const stepName=step=>APP_STEPS[step.action]?.(step.target||'the app')||[step.action,step.target].filter(Boolean).join(' ')||'Step';
 const TESTS=(Array.isArray(DATA.tests)?DATA.tests:[]).map((raw,index)=>{
-  const steps=(raw.steps||[]).map(step=>({...step,status:status(step.status),name:step.name||[step.action,step.target].filter(Boolean).join(' ')||'Step',loc:step.locator||'',dur:Number(step.duration)||0,shot:null}));
+  const steps=(raw.steps||[]).map(step=>({...step,status:status(step.status),name:step.name||stepName(step),loc:step.locator||'',dur:Number(step.duration)||0,shot:null}));
   const failed=steps.find(step=>step.status==='failed');
   const error={type:'Error',message:text(raw.message)||'No error details were recorded.',...(raw.error||failed?.error||{})};
   if(!('expected' in error)){const expected=error.message.match(/^\s*Expected: (.*)$/m);if(expected)error.expected=expected[1]}
@@ -386,17 +389,18 @@ function editorLink(test){
   return 'vscode://file/'+encodeURI(file.replace(/\\/g,'/')).replace(/#/g,'%23').replace(/\?/g,'%3F')+':'+test.line;
 }
 /* ---------- state ---------- */
-const st={sel:null,panel:null,open:true,view:'test',frame:0,out:null,cand:0,collapsed:new Set(),q:'',treeSel:null,treeQ:'',playing:null,at:0,speed:1};
+const st={sel:null,panel:null,open:true,view:'test',frame:0,out:null,cand:0,collapsed:new Set(),q:'',treeSel:null,treeQ:'',playing:null,at:0,speed:1,spacing:'time'};
 const byId=id=>TESTS.find(t=>t.id===id);
 const cur=()=>byId(st.sel);
 const failIdx=t=>t.steps?t.steps.findIndex(s=>s.status==='failed'):-1;
 const PANELS=[['diagnostics','Diagnostics'],['tree','UI Tree'],['output','Output'],['details','Details']];
 
-function writeHash(){const p=new URLSearchParams({t:st.sel,p:st.panel});if(!st.open)p.set('closed','1');if(st.view==='trace'){p.set('v','trace');p.set('at',st.at.toFixed(2))}history.replaceState(null,'',location.href.split('#')[0]+'#'+p)}
+function writeHash(){const p=new URLSearchParams({t:st.sel,p:st.panel});if(!st.open)p.set('closed','1');if(st.view==='trace'){p.set('v','trace');p.set('at',st.at.toFixed(2));if(st.spacing==='steps')p.set('sp','steps')}history.replaceState(null,'',location.href.split('#')[0]+'#'+p)}
 function readHash(){const p=new URLSearchParams(location.hash.slice(1));
   const t=byId(p.get('t'));st.sel=t?t.id:(TESTS.find(x=>x.status==='failed')||TESTS[0])?.id;
   st.panel=PANELS.some(x=>x[0]===p.get('p'))?p.get('p'):defaultPanel(cur());st.open=!p.get('closed');
   st.view=p.get('v')==='trace'&&cur()?.hasTrace?'trace':'test';
+  st.spacing=p.get('sp')==='steps'?'steps':'time';
   const at=Number.parseFloat(p.get('at')),step=Number.parseInt(p.get('f'),10);
   st.at=Number.isFinite(at)?at:cur()?traceTimeFor(cur(),Number.isFinite(step)?step:failIdx(cur())):0}
 const defaultPanel=t=>t?.status==='failed'?'diagnostics':'details';
@@ -442,6 +446,13 @@ function renderMain(){
    el('div',{class:'field'},el('p',{class:'lbl',text:'Failed at'}),el('div',{text:step?`Step ${index+1}: ${step.name}`:test.location?`${test.location.file}:${Number(test.location.line)+1}`:'Outside a recorded step'}),error.locator?el('code',{class:'loc mono',text:error.locator}):null),
    test.hasTrace?el('button',{class:'btn primary',onclick:()=>openTrace(Math.max(0,index))},'Open Trace Viewer',svg(ICON.arrow)):null),
    test.failureShot?el('div',{class:'shotbox'},image(test.failureShot,'Screen at the moment of failure'),el('div',{class:'shotcap',text:'Screen at the moment of failure'})):null));
+ }
+ if(test.status==='passed'){
+  const count=test.steps.length;
+  main.append(el('div',{class:'card broke ok-card'},el('div',{},el('h3',{},svg(ICON.passed),'Test passed'),
+   el('p',{class:'okline',text:count?(count===1?'The 1 recorded step passed':`All ${count} recorded steps passed`)+` in ${fmt(test.dur)}.`:`The test finished without errors in ${fmt(test.dur)}.`}),
+   test.hasTrace?el('button',{class:'btn primary',onclick:()=>openTraceAt(0)},'Open Trace Viewer',svg(ICON.arrow))
+    :el('p',{class:'muted',text:'No trace was recorded for this test. Run with --trace on to replay passing tests.'}))));
  }
  if(test.status==='skipped')main.append(el('div',{class:'card'},el('h3',{text:'Skipped'}),el('div',{class:'skipbox',text:test.skip})));
  const body=el('tbody');
@@ -539,6 +550,7 @@ function preload(path){if(preloaded.has(path))return;const img=new Image();img.d
 function traceTimeFor(t,index){const{marks,total}=timeline(t),mark=marks[index];
   if(!mark||mark.start==null)return total;
   return mark.status==='failed'?Math.max(mark.start,mark.end-0.001):mark.start}
+function openTraceAt(at){$('#trace').scrollTop=0;st.view='trace';st.at=at;render()}
 function openTrace(index){$('#trace').scrollTop=0;st.view='trace';st.at=traceTimeFor(cur(),index);render()}
 let traceUi=null;
 function stopPlay(){if(st.playing!=null)cancelAnimationFrame(st.playing);st.playing=null;if(st.view==='trace')traceUi?.update(true)}
@@ -546,16 +558,18 @@ function renderTrace(){
   const t=cur(),box=$('#trace');box.replaceChildren();
   const{frames,marks,total}=timeline(t),failed=marks.find(mark=>mark.status==='failed');
   st.at=Math.max(0,Math.min(total,Number.isFinite(st.at)?st.at:0));
-  /* Dots are evenly spaced, one per step start; the playhead crosses each gap in proportion to the
-     time that step really took, so its speed on screen follows the recording. */
+  /* Two ways to lay out the track. By time (the default) a dot sits where its step really started and
+     the playhead moves at a constant speed. Equal steps spaces the dots evenly and the playhead crosses
+     each gap in proportion to the time that step took, so quick steps stay easy to click. */
+  const byTime=st.spacing!=='steps';
   const timed=marks.filter(mark=>mark.start!=null);
   const anchors=timed.reduce((list,mark)=>[...list,Math.max(mark.start,(list.at(-1)??-1)+1e-3)],[]);
   anchors.push(Math.max(total,(anchors.at(-1)??0)+1e-3));
   const segments=timed.length;
-  const place=at=>{if(!segments)return at/total;if(at<=anchors[0])return 0;
+  const place=at=>{if(byTime||!segments)return Math.min(1,at/total);if(at<=anchors[0])return 0;
     let i=0;while(i<segments-1&&at>=anchors[i+1])i++;
     return Math.min(1,(i+Math.min(1,(at-anchors[i])/(anchors[i+1]-anchors[i])))/segments)};
-  const timeAt=fraction=>{if(!segments)return fraction*total;const scaled=Math.max(0,Math.min(1,fraction))*segments,i=Math.min(segments-1,Math.floor(scaled));
+  const timeAt=fraction=>{if(byTime||!segments)return Math.max(0,Math.min(1,fraction))*total;const scaled=Math.max(0,Math.min(1,fraction))*segments,i=Math.min(segments-1,Math.floor(scaled));
     return anchors[i]+(scaled-i)*(anchors[i+1]-anchors[i])};
   const counter=el('span'),stamp=el('span'),time=el('span',{class:'time'}),caption=el('div',{class:'caption'});
   box.append(el('div',{class:'trhead'},el('button',{class:'back',onclick:()=>{stopPlay();st.view='test';render()}},svg(ICON.left),'Back to test'),
@@ -568,18 +582,20 @@ function renderTrace(){
   const fill=el('div',{class:'fill'}),head=el('div',{class:'head'});
   const track=el('div',{class:'track',role:'slider',tabindex:'0','aria-label':'Playback position','aria-valuemin':'0','aria-valuemax':total.toFixed(2)},
     el('div',{class:'rail2'}),fill,
-    ...timed.map((mark,i)=>el('div',{class:'tick '+mark.status,title:`${mark.index+1}. ${mark.name}`,style:`left:${i/segments*100}%`})),head);
+    ...timed.map((mark,i)=>el('div',{class:'tick '+mark.status,title:`${mark.index+1}. ${mark.name}`,style:`left:${(byTime?mark.start/total:i/segments)*100}%`})),head);
   const fromPointer=event=>{const rect=track.getBoundingClientRect();seek(timeAt((event.clientX-rect.left)/rect.width))};
   track.addEventListener('pointerdown',event=>{stopPlay();track.setPointerCapture(event.pointerId);fromPointer(event)});
   track.addEventListener('pointermove',event=>{if(track.hasPointerCapture(event.pointerId))fromPointer(event)});
   track.addEventListener('pointerup',()=>writeHash());
   const playBtn=el('button',{class:'ctl play',onclick:()=>st.playing!=null?stopPlay():play()});
+  const spacing=el('select',{class:'speed','aria-label':'Timeline spacing',title:'How the timeline is laid out',onchange:event=>{st.spacing=event.target.value;renderTrace();writeHash()}},
+    el('option',{value:'time',text:'Timeline: real time',selected:byTime}),el('option',{value:'steps',text:'Timeline: equal steps',selected:!byTime}));
   const speed=el('select',{class:'speed','aria-label':'Playback speed',onchange:event=>{st.speed=Number(event.target.value)||1}},
     ...SPEEDS.map(value=>el('option',{value:String(value),text:value+'×',selected:value===(st.speed||1)})));
   box.append(el('div',{class:'controls'},playBtn,
     el('button',{class:'ctl','aria-label':'Previous step',onclick:()=>stepBy(-1)},svg(ICON.prev)),
     el('button',{class:'ctl','aria-label':'Next step',onclick:()=>stepBy(1)},svg(ICON.next)),
-    time,track,speed,
+    time,track,speed,spacing,
     failed?el('button',{class:'jump',onclick:()=>{stopPlay();seek(traceTimeFor(t,failed.index));writeHash()}},svg(ICON.target),'Jump to failure'):null));
   const thumbs=marks.length?el('div',{class:'thumbs'},...marks.map(mark=>el('button',{class:'thumb '+mark.status,disabled:mark.start==null,
     onclick:()=>{stopPlay();seek(mark.start);writeHash()}},
