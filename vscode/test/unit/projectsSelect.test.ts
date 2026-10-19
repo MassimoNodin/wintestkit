@@ -73,6 +73,30 @@ describe("selecting the project views fall back to", () => {
     ]);
     expect(changed).toHaveBeenCalledOnce();
   });
+  it("has no projects until WinTestKit is enabled for the workspace, then finds them", async () => {
+    found.workspaceRoot = "C:/work/";
+    found.files = [{ fsPath: "C:/work/alpha/wintestkit.yaml" }];
+    const listeners = new Set<() => void>();
+    const enablement = {
+      enabled: false,
+      onDidChange: (listener: () => void) => {
+        listeners.add(listener);
+        return { dispose: () => listeners.delete(listener) };
+      },
+    };
+    found.findFiles.mockClear();
+    const projects = new Projects({ debug: vi.fn(), error: vi.fn() } as never, enablement as never);
+    await projects.refresh();
+    expect(projects.all).toEqual([]);
+    expect(projects.projectFor({ fsPath: "C:/work/alpha/a.py" } as never)).toBeUndefined();
+    expect(found.findFiles).not.toHaveBeenCalled();
+    enablement.enabled = true;
+    await projects.refresh();
+    expect(projects.all.map((project) => project.name)).toEqual(["alpha"]);
+    enablement.enabled = false;
+    await projects.refresh();
+    expect(projects.all).toEqual([]);
+  });
   it("keeps the choice when the projects are discovered again", async () => {
     const projects = await make();
     projects.select(projects.all[1]);
