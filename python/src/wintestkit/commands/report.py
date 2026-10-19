@@ -33,7 +33,7 @@ def run(args: argparse.Namespace) -> int:
         if results.get("version") != 1:
             raise ValueError("expected version 1 results")
         target = directory / "index.html"
-        target.write_text(render(results), encoding="utf-8")
+        target.write_text(render(results, directory), encoding="utf-8")
     except (OSError, ValueError) as exc:
         raise common.CommandError(f"cannot regenerate report: {exc}", common.EXIT_USAGE) from exc
     print(f"Report: {target.resolve()}")

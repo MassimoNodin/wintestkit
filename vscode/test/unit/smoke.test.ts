@@ -251,6 +251,7 @@ describe("extension scaffold", () => {
     activate({
       subscriptions,
       extension: { packageJSON: manifest },
+      asAbsolutePath: (relative: string) => "C:/ext/" + relative,
     } as unknown as vscode.ExtensionContext);
   });
 

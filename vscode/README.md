@@ -121,7 +121,8 @@ nested projects and multi-root workspaces.
 | Command | Description |
 |---|---|
 | WinTestKit: Launch App / Close App | Start or close the configured application |
-| WinTestKit: Open Last Report | Open the HTML report of the last run |
+| WinTestKit: Open Last Report | Open the report of the last run in a panel, drawn from its `results.json` |
+| WinTestKit: Export Last Report as HTML | Save the report as one self-contained HTML file |
 | WinTestKit: Check Environment (doctor) | Run `wtk doctor` in a terminal |
 | WinTestKit: Initialize Project | Create a starter project without overwriting files |
 | WinTestKit: Install wintestkit Package | Install the package into the selected interpreter |
