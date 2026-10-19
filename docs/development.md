@@ -37,6 +37,71 @@ npm run package
 Packaging writes the Windows x64 VSIX to `vscode/dist/`. Use the repository's
 **Run Extension** launch configuration to open an Extension Development Host.
 
+### Development-only package sources
+
+Use `npm run build:dev` (or `npm run watch:dev`) for a development host, or
+`npm run package:dev` to create `vscode/dist/wintestkit-dev-win32-x64-<version>.vsix`.
+The development VSIX is labelled **WinTestKit (Development)** and uses the same
+extension identity, so installing it replaces the regular extension rather than
+running both together. The packaging command builds in an isolated temporary
+directory and does not replace `dist/extension.js` with a development bundle.
+
+In a trusted workspace with a selected interpreter, the package strip shows a
+**Dev packages** dropdown: **Remote (PyPI)** or **Local wheel**. Selecting Local
+opens a file picker for a trusted `wintestkit-*.whl`; use **Choose wheel…** to
+select another build, then the existing Install button to install it. The wheel
+path is displayed before installation. Choices are saved per workspace in
+extension state, not in repository-controlled settings. A missing wheel fails
+instead of silently installing a remote package.
+
+Build the Python wheel with `uv build --directory python` from the repository
+root; select the resulting file under `python/dist/`. Use a new Python package
+version for each update test: pip may skip an already-installed wheel with the
+same version. This first increment does not publish a local feed or discover
+new local releases automatically; that design remains in
+[the local package investigation](reviews/local-package-install-updates.md).
+
+Switching to Remote and clicking **Install remote package** deliberately
+reinstalls from the configured pip index, including resolved dependencies, so
+a private local build can be replaced by a published one. Local-wheel installs
+can also fetch missing dependencies from that index; they are not offline
+installs. Use an isolated test environment and restart the WinTestKit server
+after replacing a package used by an existing backend process.
+
+Normal `npm run build` and `npm run package` always compile local installation
+support out. They expose no package-source selector and reject source-change
+messages, even with saved development state. There is no workspace setting or
+environment-variable switch to enable it in a production VSIX; install the
+regular VSIX again to remove development functionality. Production no longer
+offers editable local installs based on a workspace `pyproject.toml`. This
+separates the extension's install paths; it is not a sandbox for Python itself
+and cannot protect an interpreter or pip configuration already compromised
+outside the extension.
+
+## Retesting the introduction
+
+In the development VSIX, press **Ctrl+Shift+P** and run
+**WinTestKit: Development: Reset Repository and Introduction**. Open the test
+repository by itself and save any edited files first. The command previews the
+cleanup and asks for confirmation before changing anything.
+
+It backs up affected files to a wintestkit-reset-* directory in the system
+temporary folder, then removes the entire pages, flows, and tests folders
+(including custom code), WinTestKit settings, generated AI skill, reports/results,
+and pytest cache. It removes legacy WinTestKit configuration from pyproject.toml
+and removes pytest configuration only when it exactly matches the starter template.
+Other project configuration, Git history, .gitignore, the selected interpreter,
+the installed Python package, and development wheel selection are preserved.
+Keep the reported backup path if you need to restore anything; temporary backups
+are not permanent storage. Linked cleanup targets are refused.
+
+The command clears WinTestKit workspace state and reloads the window. Click
+**Enable for this workspace** to start the introduction again; interpreter and
+package checks still reflect what is actually installed. This command and cleanup
+implementation are absent from the standard VSIX. Setup instructions point to
+the real UI controls; only introduction navigation and cancellation remain in
+the guide itself.
+
 ## Desktop tests and Calculator example
 
 The Python desktop tests exercise native application error handling, overlay lifecycle and
