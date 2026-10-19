@@ -80,23 +80,22 @@ const MODES: Record<
     description:
       "Use the app that is already running. WinTestKit never starts or closes it.",
   },
-  "per-session": {
+  "per-test": {
     title: "Launch for tests",
     codicon: "rocket",
     description:
-      "Start the app for the tests and close it when they finish. A copy that is already running is closed first.",
-  },
-  // Still honoured when set in the settings file, but not offered in the picker.
-  "per-test": {
-    title: "Launch per test",
-    codicon: "rocket",
-    description:
-      "Start a fresh app for every test and close it afterwards. Set in the settings file.",
+      "Start a fresh app for every test and close it afterwards. A copy that is already running is closed first.",
   },
 };
 
+/** `per-session` was removed; projects that still name it get the same behaviour as `per-test`. */
+export function launchModeId(value: unknown): string {
+  const id = String(value ?? "per-test");
+  return id === "per-session" ? "per-test" : id;
+}
+
 /** The two ways to get the app, in the order the picker shows them. */
-export const modeChoices = ["per-session", "attach"].map((id) => ({
+export const modeChoices = ["per-test", "attach"].map((id) => ({
   id,
   ...MODES[id],
 }));
@@ -163,7 +162,7 @@ export function buildTestAppModel(input: TestAppInput): TestAppModel {
       : undefined;
   const target = file || processName;
   const launchable = !!file;
-  const modeId = String(config.launch ?? "per-session");
+  const modeId = launchModeId(config.launch);
   const mode = MODES[modeId] ?? {
     title: modeId,
     codicon: "history",

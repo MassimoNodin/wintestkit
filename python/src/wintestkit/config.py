@@ -14,12 +14,12 @@ import yaml
 
 from wintestkit.errors import ConfigError
 
-LaunchMode = Literal["per-test", "per-session", "attach"]
+LaunchMode = Literal["per-test", "attach"]
 InputMode = Literal["pattern", "mouse"]
 ScreenshotMode = Literal["off", "on-failure", "every-step"]
 TraceMode = Literal["off", "on", "retain-on-failure"]
 
-LAUNCH_MODES = ("per-test", "per-session", "attach")
+LAUNCH_MODES = ("per-test", "attach")
 INPUT_MODES = ("pattern", "mouse")
 SCREENSHOT_MODES = ("off", "on-failure", "every-step")
 
@@ -162,6 +162,11 @@ def find_project_root(start: Path) -> Path | None:
 
 def _fail(key: str, message: str) -> ConfigError:
     return ConfigError(f"tool.wintestkit.{key}: {message}", key=key)
+
+
+def _launch_value(value: Any) -> Any:
+    """`per-session` no longer exists; projects that still name it get a fresh app per test."""
+    return "per-test" if value == "per-session" else value
 
 
 def _enum(key: str, value: Any, allowed: tuple[str, ...]) -> str:
@@ -406,7 +411,7 @@ def load_config(start: Path | None = None, overrides: Mapping[str, Any] | None =
         _check_override_keys(overrides)
         _layer(values, {k: v for k, v in overrides.items() if v is not None})
 
-    launch = _enum("launch", values.get("launch", "per-session"), LAUNCH_MODES)
+    launch = _enum("launch", _launch_value(values.get("launch", "per-test")), LAUNCH_MODES)
     app = _build_app(root, values)
     if launch == "attach" and (app is None or (app.process is None and app.path is None)):
         raise ConfigError(

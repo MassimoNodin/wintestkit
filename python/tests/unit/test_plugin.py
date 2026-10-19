@@ -32,6 +32,11 @@ class FakeApp:
     def is_running(self) -> bool:
         return self.running
 
+    def main_window(self, timeout: float = 0.0) -> Any:
+        if not self.running:
+            raise AssertionError("verified an app that is not running")
+        return object()
+
     def close(self, timeout: float = 10.0) -> None:
         self.log.append(f"close {self.name}")
         self.running = False
@@ -63,7 +68,10 @@ def clean_runtime() -> Any:
     runtime.reset()
 
 
-def project(pytester: pytest.Pytester, launch: str = "per-session", tests: str = "") -> None:
+TWO_TESTS = "def test_one(app): pass\ndef test_two(app): pass"
+
+
+def project(pytester: pytest.Pytester, launch: str = "per-test", tests: str = "") -> None:
     pytester.makepyprojecttoml(PROJECT_TOML.format(launch=launch))
     if tests:
         pytester.makepyfile(test_ui=tests)
@@ -149,39 +157,6 @@ def test_bad_config_is_a_usage_error(pytester: pytest.Pytester) -> None:
     result.stderr.fnmatch_lines(["*tool.wintestkit.launch*invalid value*"])
 
 
-def test_per_session_launches_once_and_closes_at_the_end(
-    pytester: pytest.Pytester, fake_apps: list[str]
-) -> None:
-    project(
-        pytester,
-        tests="""
-        def test_one(app):
-            assert app.launched
-        def test_two(app):
-            assert app.launched
-        """,
-    )
-    pytester.runpytest("-p", "no:cacheprovider").assert_outcomes(passed=2)
-    assert fake_apps == ["launch 1 FakeApp.exe", "close launched-1"]
-
-
-def test_per_session_relaunches_a_crashed_app(
-    pytester: pytest.Pytester, fake_apps: list[str]
-) -> None:
-    project(
-        pytester,
-        tests="""
-        def test_one(app):
-            app.running = False   # simulate a crash
-
-        def test_two(app):
-            assert app.is_running()
-        """,
-    )
-    pytester.runpytest("-p", "no:cacheprovider").assert_outcomes(passed=2)
-    assert fake_apps == ["launch 1 FakeApp.exe", "launch 2 FakeApp.exe", "close launched-2"]
-
-
 def test_per_test_launches_and_closes_each_time(
     pytester: pytest.Pytester, fake_apps: list[str]
 ) -> None:
@@ -260,7 +235,7 @@ def test_marker_overrides_launch_mode_and_timeout(
         import pytest
         from wintestkit import runtime
 
-        @pytest.mark.wtk(launch="per-test", timeout=1.25)
+        @pytest.mark.wtk(launch="attach", timeout=1.25)
         def test_marked(app):
             assert runtime.get_config().timeout == 1.25
 
@@ -269,12 +244,7 @@ def test_marker_overrides_launch_mode_and_timeout(
         """,
     )
     pytester.runpytest("-p", "no:cacheprovider").assert_outcomes(passed=2)
-    assert fake_apps == [
-        "launch 1 FakeApp.exe",
-        "close launched-1",
-        "launch 2 FakeApp.exe",
-        "close launched-2",
-    ]
+    assert fake_apps == ["attach FakeApp.exe", "launch 1 FakeApp.exe", "close launched-1"]
 
 
 def test_marker_with_unknown_argument_errors(pytester: pytest.Pytester) -> None:
@@ -293,7 +263,7 @@ def test_marker_with_unknown_argument_errors(pytester: pytest.Pytester) -> None:
 
 
 def test_missing_app_section_is_a_clear_fixture_error(pytester: pytest.Pytester) -> None:
-    pytester.makepyprojecttoml('[tool.wintestkit]\nlaunch = "per-session"\n')
+    pytester.makepyprojecttoml('[tool.wintestkit]\nlaunch = "per-test"\n')
     pytester.makepyfile("def test_x(app): pass")
     result = pytester.runpytest("-p", "no:cacheprovider")
     result.assert_outcomes(errors=1)
@@ -347,3 +317,52 @@ def test_runtime_test_id_follows_the_running_test(pytester: pytest.Pytester) -> 
     )
     pytester.runpytest("-p", "no:cacheprovider").assert_outcomes(passed=2)
     assert runtime.current_test() is None
+
+
+def _recorded_steps(pytester: pytest.Pytester) -> list[tuple[str, str, str]]:
+    steps: list[tuple[str, str, str]] = []
+    runtime.add_step_listener(
+        lambda record: steps.append((record.action, record.target, record.status))
+    )
+    pytester.runpytest("-p", "no:cacheprovider").assert_outcomes(passed=2)
+    return steps
+
+
+def test_per_test_records_a_start_step_for_every_launch(
+    pytester: pytest.Pytester, fake_apps: list[str]
+) -> None:
+    project(pytester, tests=TWO_TESTS)
+    assert _recorded_steps(pytester) == [
+        ("app.start", "FakeApp.exe", "passed"),
+        ("app.start", "FakeApp.exe", "passed"),
+    ]
+
+
+def test_attach_records_an_attach_step(pytester: pytest.Pytester, fake_apps: list[str]) -> None:
+    project(pytester, launch="attach", tests=TWO_TESTS)
+    assert _recorded_steps(pytester) == [
+        ("app.attach", "FakeApp.exe", "passed"),
+        ("app.attach", "FakeApp.exe", "passed"),
+    ]
+
+
+def test_a_crashed_app_does_not_affect_the_next_tests_fresh_app(
+    pytester: pytest.Pytester, fake_apps: list[str]
+) -> None:
+    project(
+        pytester,
+        tests="""
+        def test_one(app):
+            app.running = False   # simulate a crash
+
+        def test_two(app):
+            assert app.is_running()
+        """,
+    )
+    pytester.runpytest("-p", "no:cacheprovider").assert_outcomes(passed=2)
+    assert fake_apps == [
+        "launch 1 FakeApp.exe",
+        "close launched-1",
+        "launch 2 FakeApp.exe",
+        "close launched-2",
+    ]

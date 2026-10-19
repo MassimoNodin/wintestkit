@@ -118,7 +118,7 @@ def definition_examples() -> dict[str, dict[str, Any]]:
             "config": {
                 "found": True,
                 "app": {"path": "C:/wtk/DemoApp.exe", "process": "DemoApp.exe"},
-                "launch": "per-session",
+                "launch": "per-test",
                 "timeout": 10,
                 "reportDir": "C:/wtk/wtk-report",
             },

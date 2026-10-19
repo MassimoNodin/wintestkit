@@ -20,7 +20,7 @@ wtk run -- -p no:cacheprovider --maxfail=3  # raw pytest arguments after --
 | Option | Meaning |
 |---|---|
 | `TESTS` | Test ids or paths |
-| `--launch {per-test,per-session,attach}` | How to get the application (see below) |
+| `--launch {per-test,attach}` | How to get the application (see below) |
 | `--timeout SECONDS` | Default auto-wait |
 | `--app PATH` | Application executable |
 | `--input-mode {pattern,mouse}` | Default click strategy |
@@ -49,7 +49,7 @@ legacy `[tool.wintestkit]` in `pyproject.toml`, defaults. Local TOML uses that s
 Shared `wintestkit.yaml` (commit this):
 
 ```yaml
-launch: per-session
+launch: per-test
 timeout: 10
 input_mode: pattern
 screenshots: on-failure
@@ -91,11 +91,10 @@ The `app` fixture provides the application under test:
 
 | Mode | Behaviour |
 |---|---|
-| `per-session` (default; **Launch for tests** in the Test Target view) | Launch once for the whole run and close it at the end. A copy that is already running is closed first, so the tests get a fresh app and nothing is left running afterwards. If a test closes or crashes the application, the next test starts it again |
-| `per-test` | Like `per-session`, but a fresh app for every test: slow but fully isolated. Set it in the settings file |
+| `per-test` (default; **Launch for tests** in the Test Target view) | Launch a fresh app for every test and close it when the test ends. A copy that is already running is closed first, so every test starts from a clean app and nothing is left running afterwards |
 | `attach` | Attach to an already running instance (`app.process`, or the exe name of `app.path`); never launch or close it |
 
-The Test Target view offers just the two everyday choices: **Attach** (use the app that is
+The Test Target view offers exactly these two choices, and the setting it saves is the only one that decides how the app is obtained: **Attach** (use the app that is
 running) and **Launch for tests** (WinTestKit starts the app and closes it when the tests finish).
 
 Override the mode for one test with a marker:
@@ -108,22 +107,22 @@ def test_first_start_shows_the_welcome_page(app): ...
 
 ### Resetting state between tests
 
-With `per-session`, tests share one application instance, so each test should start from a known
-state. Put the reset in an autouse fixture; the demo project uses the application's own
-**File > Reset**:
+Each test gets a fresh application, so most tests need no reset. If your application keeps state
+outside the process (a database, files, a server), put the reset in an autouse fixture; the demo
+project uses the application's own **File > Reset**:
 
 ```python
 # pseudo-code
 @pytest.fixture(autouse=True)
 def reset_demo(main: MainPage) -> None:
-    """Start every test from a clean app: the app is shared by the whole session."""
+    """Start every test from a clean app, including any state kept outside the process."""
     main.menu_file.click()
     main.menu_reset.click()
     expect(main.status).to_have_text("Ready")
 ```
 
 Other options: close open dialogs and navigate home, restore test data through an API or
-database, or use `per-test` for the few tests that need a fresh process.
+database, or `attach` to a running app when you need to inspect it by hand.
 
 ## Fixtures and markers
 
@@ -183,9 +182,10 @@ trace_max_bytes: 104857600
 
 Open a test's trace from its **Open Trace Viewer** button or by clicking a step. Playback runs on
 the recording's own clock, so the replay keeps the pace of the real run, including waits where
-the screen does not change; the speed can be set from 0.5× to 4×. The timeline has one
-evenly spaced dot per step and the playhead crosses each gap in proportion to how long that step
-took. Drag the timeline, click a dot or a thumbnail, or use the arrow keys to move between steps,
+the screen does not change; the speed can be set from 0.5× to 4×. The timeline places each step's dot
+where the step really started, so the playhead moves at a constant speed; the **Timeline** menu
+next to the speed control switches to equal steps, which spaces the dots evenly and moves the
+playhead across each gap in proportion to how long that step took. Drag the timeline, click a dot or a thumbnail, or use the arrow keys to move between steps,
 and Space to play or pause. This is visual replay, not an interactive UI Automation snapshot or an
 MP4 recording.
 

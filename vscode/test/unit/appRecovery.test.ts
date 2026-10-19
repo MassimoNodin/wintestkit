@@ -27,7 +27,7 @@ beforeEach(() => {
 
 describe("stopped app recovery", () => {
   it("uses the staged launch command in Launch for tests mode", async () => {
-    vi.mocked(readConfiguration).mockResolvedValue({ launch: "per-session" });
+    vi.mocked(readConfiguration).mockResolvedValue({ launch: "per-test" });
     mocks.info.mockResolvedValue("Launch App");
     await expect(recoverStoppedApp(project, servers)).resolves.toBe(true);
     expect(mocks.execute).toHaveBeenCalledWith("wintestkit.launchAppStrict", {
@@ -62,7 +62,7 @@ describe("stopped app recovery", () => {
   });
 
   it("does not report recovery after launch command rejects", async () => {
-    vi.mocked(readConfiguration).mockResolvedValue({ launch: "per-session" });
+    vi.mocked(readConfiguration).mockResolvedValue({ launch: "per-test" });
     mocks.info.mockResolvedValue("Launch App");
     mocks.execute.mockRejectedValue(new Error("launch failed"));
     await expect(recoverStoppedApp(project, servers)).rejects.toThrow(

@@ -21,7 +21,7 @@ checks marked *quick* before every run.
 | Display scaling | warns when monitors use different scales | Use one scale for reproducible screenshots |
 | WinTestKit configuration | `[tool.wintestkit]` is invalid (fails) or missing (warns) | Fix `pyproject.toml` or run `wtk init` |
 | Application executable | `app.path` doesn't exist | Fix the path or build the application |
-| Application is running | warns when it isn't | Nothing to do for `per-session`/`per-test`; start it for `attach` |
+| Application is running | warns when it isn't | Nothing to do for `per-test`; start it for `attach` |
 | Privilege level matches the application | the application is elevated and WinTestKit isn't | Run the terminal, VS Code or the CI agent as administrator |
 | comtypes cache is writable | warns when the comtypes wrapper cache can't be written | Install into a writable virtual environment |
 

@@ -63,7 +63,7 @@ def test_defaults_without_pyproject(tmp_path: Path) -> None:
     assert config.found is False
     assert config.root == tmp_path.resolve()
     assert config.app is None
-    assert config.launch == "per-session"
+    assert config.launch == "per-test"
     assert config.timeout == 10.0
     assert config.input_mode == "pattern"
     assert config.screenshots == "on-failure"
@@ -175,13 +175,13 @@ def test_nearest_pyproject_with_table_wins(tmp_path: Path) -> None:
 def test_environment_overrides_pyproject(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     write_pyproject(tmp_path, FULL)
     monkeypatch.setenv("WTK_TIMEOUT", "7.5")
-    monkeypatch.setenv("WTK_LAUNCH", "per-session")
+    monkeypatch.setenv("WTK_LAUNCH", "attach")
     monkeypatch.setenv("WTK_INPUT_MODE", "pattern")
     monkeypatch.setenv("WTK_SCREENSHOTS", "off")
     monkeypatch.setenv("WTK_APP_PATH", "elsewhere/Other.exe")
     config = load_config(tmp_path)
     assert config.timeout == 7.5
-    assert config.launch == "per-session"
+    assert config.launch == "attach"
     assert config.input_mode == "pattern"
     assert config.screenshots == "off"
     assert config.app is not None
@@ -240,10 +240,15 @@ def test_unknown_override_key(tmp_path: Path) -> None:
         load_config(tmp_path, {"app.nope": 1})
 
 
+def test_the_removed_per_session_launch_mode_means_a_fresh_app_per_test(tmp_path: Path) -> None:
+    write_pyproject(tmp_path, 'launch = "per-session"')
+    assert load_config(tmp_path).launch == "per-test"
+
+
 @pytest.mark.parametrize(
     ("body", "key", "fragment"),
     [
-        ('launch = "sometimes"', "launch", "'per-test', 'per-session', 'attach'"),
+        ('launch = "sometimes"', "launch", "'per-test', 'attach'"),
         ('input_mode = "touch"', "input_mode", "'pattern', 'mouse'"),
         ('screenshots = "always"', "screenshots", "'off', 'on-failure', 'every-step'"),
         ("timeout = 0", "timeout", "greater than 0"),
