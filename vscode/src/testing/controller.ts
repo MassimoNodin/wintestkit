@@ -9,6 +9,11 @@ import type { TestEntry } from "../protocol/generated";
 import { EventMapper, type RunAction, type TestEnd } from "./eventMapper";
 import { EventServer } from "./eventServer";
 import { readConfiguration } from "../settings/files";
+import {
+  DEFAULT_KEEP_RUNS,
+  RUN_CONTEXT_PREFIX,
+  runDirectory,
+} from "../runHistory";
 import { runArguments, runProcess, replaysByDefault } from "./runner";
 import { runDebugSession } from "./debug";
 import type { Reports } from "../report";
@@ -23,6 +28,7 @@ interface ItemData {
 export function failureMessages(
   end?: TestEnd,
   fallback?: string,
+  runName?: string,
 ): vscode.TestMessage[] {
   const text = end?.message ?? end?.error?.message ?? fallback ?? "Test failed";
   const markdown = new vscode.MarkdownString();
@@ -59,6 +65,9 @@ export function failureMessages(
     diff.location = message.location;
     messages.push(diff);
   }
+  if (runName)
+    for (const each of messages)
+      each.contextValue = RUN_CONTEXT_PREFIX + runName;
   return messages;
 }
 
@@ -72,6 +81,8 @@ export class TestController implements vscode.Disposable {
   private readonly metadata = new WeakMap<vscode.TestItem, ItemData>();
   private readonly queues = new Map<string, Promise<void>>();
   private readonly active = new Set<vscode.CancellationTokenSource>();
+  private readonly activeRunNames = new Set<string>();
+  private reportContextVersion = 0;
   private readonly subscriptions: vscode.Disposable[];
   private readonly profile: vscode.TestRunProfile;
   private readonly debugProfile: vscode.TestRunProfile;
@@ -114,6 +125,7 @@ export class TestController implements vscode.Disposable {
     this.subscriptions = [
       discovery.onDidChange(() => this.rebuild()),
       projects.onDidChange(() => this.rebuild()),
+      reports.onDidChange(() => { void this.refreshReportContexts(); }),
     ];
     this.rebuild();
   }
@@ -184,6 +196,48 @@ export class TestController implements vscode.Disposable {
       } else roots.push(...files.values());
     }
     this.controller.items.replace(roots);
+    void this.refreshReportContexts();
+  }
+  private async refreshReportContexts(): Promise<void> {
+    const version = ++this.reportContextVersion;
+    const projects = await Promise.all(this.projects.all.map(async (project) =>
+      [project.root.toString(), await this.reports.reportedTestIds(project)] as const));
+    if (this.disposed || version !== this.reportContextVersion) return;
+    const available = new Map(projects);
+    const reportItems: string[] = [];
+    for (const item of this.items.values()) {
+      const data = this.metadata.get(item);
+      const nodeid = data?.nodeid;
+      const ids = data && available.get(data.project.root.toString());
+      if (nodeid && ids && [...ids].some((id) =>
+        id === nodeid || id.startsWith(nodeid + "::") || id.startsWith(nodeid + "[")))
+        reportItems.push(item.id);
+    }
+    await vscode.commands.executeCommand("setContext", "wintestkit.reportTestIds", reportItems);
+    if (this.disposed || version !== this.reportContextVersion) return;
+    const reported = new Set(reportItems);
+    for (const item of this.items.values()) {
+      const hasReport = reported.has(item.id);
+      const tagId = "wintestkit.reportAvailable";
+      if (item.tags.some((tag) => tag.id === tagId) !== hasReport)
+        item.tags = hasReport
+          ? [...item.tags, new vscode.TestTag(tagId)]
+          : item.tags.filter((tag) => tag.id !== tagId);
+    }
+  }
+  prepareClearResults(): () => Promise<void> {
+    const roots = this.projects.all.map((project) => project.root.toString());
+    const names = this.reports.history.all()
+      .filter((entry) => !this.activeRunNames.has(entry.name))
+      .map((entry) => entry.name);
+    return async () => {
+      await Promise.all(names.map((name) => this.reports.history.discard(name, roots)));
+      const cleared = new Set(names.map((name) => RUN_CONTEXT_PREFIX + name));
+      for (const [id, messages] of this.lastMessages)
+        if (messages.some((message) => message.contextValue && cleared.has(message.contextValue)))
+          this.lastMessages.delete(id);
+      await this.refreshReportContexts();
+    };
   }
   private range(test: TestEntry): vscode.Range {
     return new vscode.Range(
@@ -225,7 +279,18 @@ export class TestController implements vscode.Disposable {
     debug = false,
     recording = false,
   ): Promise<void> {
-    const run = this.controller.createTestRun(request);
+    // Each run gets a unique name so a button on one of its test rows can tell VS Code's history
+    // which run it belongs to; debug runs write no report and need none.
+    const name = debug ? undefined : this.reports.history.newName();
+    const run = this.controller.createTestRun(request, name);
+    if (name) this.activeRunNames.add(name);
+    if (name)
+      run.onDidDispose(() => {
+        if (this.disposed) return;
+        this.reports.history
+          .discard(name)
+          .catch((error) => this.log.warn(String(error)));
+      });
     const cancellation = new vscode.CancellationTokenSource();
     this.active.add(cancellation);
     const subscriptions = [
@@ -260,6 +325,8 @@ export class TestController implements vscode.Disposable {
       this.active.delete(cancellation);
       cancellation.dispose();
       run.end();
+      if (name) this.activeRunNames.delete(name);
+      await this.refreshReportContexts();
     }
   }
   private apply(
@@ -270,7 +337,13 @@ export class TestController implements vscode.Disposable {
     for (const action of actions) {
       if (action.kind === "report") {
         this.reports.record(project, action.path, action.failed, action.passed);
-        run.appendOutput(`Last run: ${action.passed} passed, ${action.failed} failed${action.path ? " · Open Last Report from the WinTestKit status menu" : ""}\r\n`);
+        this.reports.history.finish(run.name, project.root.toString(), {
+          failed: action.failed,
+          passed: action.passed,
+        });
+        run.appendOutput(
+          `Last run: ${action.passed} passed, ${action.failed} failed${action.path ? " · Open Last Report from the WinTestKit status menu" : ""}\r\n`,
+        );
         continue;
       }
       const key = action.id && this.key(project, action.id);
@@ -331,7 +404,7 @@ export class TestController implements vscode.Disposable {
       else if (action.kind === "failed" || action.kind === "errored") {
         if (action.end?.error?.type === "AttachNotRunningError")
           this.attachFailures?.notRunning(project);
-        const messages = failureMessages(action.end, action.message);
+        const messages = failureMessages(action.end, action.message, run.name);
         this.lastMessages.set(action.id, messages);
         if (action.kind === "failed")
           run.failed(item, messages, action.duration);
@@ -347,6 +420,48 @@ export class TestController implements vscode.Disposable {
           this.lastMessages.delete(action.id);
       }
     }
+  }
+  /** The project a test row belongs to, for buttons on the Test Results rows. */
+  projectOf(item: vscode.TestItem): Project | undefined {
+    return this.reportTarget(item)?.project;
+  }
+
+  reportTarget(item: vscode.TestItem): ItemData | undefined {
+    const known = this.items.get(item.id);
+    const data = this.metadata.get(item) ?? (known && this.metadata.get(known));
+    if (data) return data;
+    for (const project of this.projects.all) {
+      const prefix = this.key(project, "");
+      if (item.id.startsWith(prefix)) return { project, nodeid: item.id.slice(prefix.length) || undefined };
+    }
+    return undefined;
+  }
+  /** Gives this run its own report folder, so earlier runs keep theirs. */
+  private async startRunReport(
+    project: Project,
+    name: string | undefined,
+    settings: vscode.WorkspaceConfiguration,
+  ): Promise<string | undefined> {
+    if (!name) return undefined;
+    const config = await readConfiguration(project.root).catch(
+      () => ({}) as Record<string, unknown>,
+    );
+    const configured =
+      typeof config.report_dir === "string" && config.report_dir
+        ? config.report_dir
+        : "wtk-report";
+    const dir = runDirectory(project.root.fsPath, configured, name);
+    this.reports.history.start(
+      name,
+      project.root.toString(),
+      project.name,
+      dir,
+    );
+    const keep = settings.get<number>("keepRunReports", DEFAULT_KEEP_RUNS);
+    void this.reports.history
+      .prune(keep)
+      .catch((error) => this.log.warn(String(error)));
+    return dir;
   }
   private async runProject(
     project: Project,
@@ -386,6 +501,9 @@ export class TestController implements vscode.Disposable {
         project.root,
       );
       const extraArgs = settings.get<string[]>("run.extraArgs", []);
+      const reportDir = debug
+        ? undefined
+        : await this.startRunReport(project, run.name, settings);
       const args = runArguments(
         url,
         nodeids,
@@ -398,6 +516,7 @@ export class TestController implements vscode.Disposable {
           })),
           extraArgs,
         ),
+        reportDir,
       );
       const code = debug
         ? await runDebugSession(

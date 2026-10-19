@@ -397,8 +397,8 @@ const failIdx=t=>t.steps?t.steps.findIndex(s=>s.status==='failed'):-1;
 const PANELS=[['diagnostics','Diagnostics'],['tree','UI Tree'],['output','Output'],['details','Details']];
 
 function writeHash(){const p=new URLSearchParams({t:st.sel,p:st.panel});if(!st.open)p.set('closed','1');if(st.view==='replay'){p.set('v','replay');p.set('at',st.at.toFixed(2));if(st.spacing==='steps')p.set('sp','steps')}history.replaceState(null,'',location.href.split('#')[0]+'#'+p)}
-function readHash(){const p=new URLSearchParams(location.hash.slice(1));
-  const t=byId(p.get('t'));st.sel=t?t.id:(TESTS.find(x=>x.status==='failed')||TESTS[0])?.id;
+function readHash(initialTest){const p=new URLSearchParams(initialTest?'':location.hash.slice(1));
+  const t=byId(initialTest||p.get('t'));st.sel=t?t.id:(TESTS.find(x=>x.status==='failed')||TESTS[0])?.id;
   st.panel=PANELS.some(x=>x[0]===p.get('p'))?p.get('p'):defaultPanel(cur());st.open=!p.get('closed');
   st.view=p.get('v')==='replay'&&cur()?.hasReplay?'replay':'test';
   st.spacing=p.get('sp')==='steps'?'steps':'time';
@@ -671,7 +671,7 @@ function renderThemeToggle(){const button=$('#theme-toggle'),dark=theme.get()===
 $('#theme-toggle').addEventListener('click',()=>theme.set(theme.get()==='dark'?'light':'dark'));
 theme.onChange(renderThemeToggle);renderThemeToggle();
 if(theme.inVsCode){const exportButton=$('#export-html');exportButton.hidden=false;exportButton.addEventListener('click',()=>theme.post({type:'wtk-export'}))}
-readHash();renderHeader();render();
+readHash(decodeURIComponent(document.querySelector('meta[name="wtk-test"]')?.content||''));renderHeader();render();
 </script>
 </body>
 </html>

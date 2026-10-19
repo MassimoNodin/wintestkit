@@ -1,6 +1,7 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import * as path from "node:path";
+import { runInNewContext } from "node:vm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   buildReportHtml,
@@ -26,6 +27,28 @@ const embedded = (html: string): { tests: Record<string, unknown>[] } => {
 };
 
 describe("report page built from results.json", () => {
+  it("selects the requested test instead of the first failure or a previous webview hash", async () => {
+    const template = await readFile(TEMPLATE, "utf8");
+    const script = template.slice(template.indexOf("function readHash("), template.indexOf("const defaultPanel="));
+    const testId = 'tests/t.py::test_ok[a & "b"/雪]';
+    const tests = [{ id: "failed", status: "failed" }, { id: testId, status: "passed" }];
+    const state = { sel: "", panel: "", open: false };
+    const context = {
+      URLSearchParams, st: state, TESTS: tests, requested: testId,
+      location: { hash: "#t=failed&p=diagnostics&closed=1" },
+      byId: (id: string) => tests.find((test) => test.id === id),
+      cur: () => tests.find((test) => test.id === state.sel),
+      PANELS: [["diagnostics", "Diagnostics"], ["details", "Details"]],
+      defaultPanel: (test: { status: string }) => test.status === "failed" ? "diagnostics" : "details",
+      replayTimeFor: () => 0, failIdx: () => -1,
+    };
+    runInNewContext(script + ";readHash(requested);", context);
+    expect(state).toMatchObject({ sel: testId, panel: "details", open: true });
+    runInNewContext(script + ";readHash();", context);
+    expect(state).toMatchObject({ sel: "failed", panel: "diagnostics", open: false });
+    expect(template).toContain('readHash(decodeURIComponent(document.querySelector(\'meta[name="wtk-test"]\')?.content||\'\'))');
+  });
+
   it("fills the template with the saved results", async () => {
     await save({ version: 1, tests: [{ id: "t.py::a", name: "a", outcome: "passed" }] });
     const html = await buildReportHtml(dir, await readFile(TEMPLATE, "utf8"));

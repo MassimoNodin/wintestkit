@@ -66,6 +66,19 @@ are queued.
 After a run with failures the report opens in an editor panel, or a notification offers **Open Report**
 and **Show Test Results**. **WinTestKit: Open Last Report** opens the latest report later. The panel is
 drawn straight from the run's `results.json`, so runs from the Testing view write no `index.html`.
+Every run started from the Testing view keeps its own report in `<report dir>/runs/<run time>/`, so older
+runs in the Test Results panel still have theirs. Hover over a WinTestKit test row and click
+**Open Test Report for This Run** to open that run's report with the clicked test selected.
+The Testing sidebar also offers **Open in Report** on hover when a stored report contains the test. It opens the newest retained report
+containing that test, even when a newer partial run did not include it. On a file or test group,
+it selects a failing test in that group, or the first matching test when none failed.
+**WinTestKit: Open Report from a Previous Run…** lists stored runs, passing runs included.
+A run's report is deleted when VS Code clears that run. **Clear All Results** also deletes retained
+reports and their screenshots/replay frames after an editor reload, closes the deleted report's panel,
+and removes its report actions and cached totals. Active runs and other workspaces' reports are preserved.
+Terminal-generated reports and exported copies outside those run folders are not deleted. The oldest reports are deleted beyond
+`wintestkit.keepRunReports` (default 20). (UI tree diffs, which keep their baselines in the report folder,
+need a run from the terminal.)
 **Export HTML** in the panel's header (or **WinTestKit: Export Last Report as HTML**) saves the report
 as one self-contained HTML file, by default into the report folder where its screenshots and replay frames
 are found; if you save it elsewhere, keep or copy the `artifacts` folder with it.

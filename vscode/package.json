@@ -121,6 +121,23 @@
         "category": "WinTestKit"
       },
       {
+        "command": "wintestkit.openPreviousReport",
+        "title": "Open Report from a Previous Run…",
+        "category": "WinTestKit"
+      },
+      {
+        "command": "wintestkit.openRunReport",
+        "title": "Open Test Report for This Run",
+        "category": "WinTestKit",
+        "icon": "$(link-external)"
+      },
+      {
+        "command": "wintestkit.openTestReport",
+        "title": "Open in Report",
+        "category": "WinTestKit",
+        "icon": "$(link-external)"
+      },
+      {
         "command": "wintestkit.runDoctor",
         "title": "Check Environment (doctor)",
         "category": "WinTestKit"
@@ -256,7 +273,36 @@
           "group": "navigation@4"
         }
       ],
+      "testing/message/context": [
+        {
+          "command": "wintestkit.openRunReport",
+          "when": "testMessage =~ /^wintestkit.run:/",
+          "group": "inline@9"
+        }
+      ],
+      "testing/item/context": [
+        {
+          "command": "wintestkit.openTestReport",
+          "when": "controllerId == wintestkit && testing.testItemHasUri && testId in wintestkit.reportTestIds",
+          "group": "inline@9"
+        }
+      ],
+      "testing/item/result": [
+        {
+          "command": "wintestkit.openRunReport",
+          "when": "controllerId == wintestkit && peekItemType == test",
+          "group": "inline@9"
+        }
+      ],
       "commandPalette": [
+        {
+          "command": "wintestkit.openTestReport",
+          "when": "false"
+        },
+        {
+          "command": "wintestkit.openRunReport",
+          "when": "false"
+        },
         {
           "command": "wintestkit.highlightElement",
           "when": "false"
@@ -303,6 +349,12 @@
           "type": "boolean",
           "default": false,
           "description": "Bring an application's window to the front (without taking focus from VS Code) when you select or highlight one of its objects in Spy. The outline is drawn above every window either way."
+        },
+        "wintestkit.keepRunReports": {
+          "type": "number",
+          "default": 20,
+          "minimum": 1,
+          "description": "How many runs started from the Testing view keep their own report. VS Code's Test Results buttons open these; the oldest are deleted beyond this number, and a run's report is also deleted when VS Code clears that run."
         },
         "wintestkit.openReportOnFailure": {
           "type": "boolean",

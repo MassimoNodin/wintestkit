@@ -15,6 +15,7 @@ export function runArguments(
   extraArgs: string[],
   recording = false,
   defaultReplay = false,
+  reportDir?: string,
 ): string[] {
   return [
     "-m",
@@ -23,6 +24,7 @@ export function runArguments(
     "--events",
     url,
     "--no-html",
+    ...(reportDir ? ["--report", reportDir] : []),
     ...(highlight ? ["--highlight"] : []),
     ...(defaultReplay ? ["--replay", "on"] : []),
     ...extraArgs,
