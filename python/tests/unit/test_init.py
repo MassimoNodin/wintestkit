@@ -10,6 +10,12 @@ from wintestkit.commands.init import skill_files
 from wintestkit.config import load_config
 
 
+def test_init_without_app_leaves_application_unconfigured(tmp_path: Path) -> None:
+    assert main(["init", str(tmp_path)]) == 0
+    assert load_config(tmp_path).app is None
+    assert "YourApp.exe" not in (tmp_path / "wintestkit.local.yaml").read_text(encoding="utf-8")
+
+
 def test_init_creates_a_valid_starter_project(tmp_path: Path) -> None:
     root = tmp_path / "new project"
     assert main(["init", str(root), "--app", "C:/Apps/My App.exe"]) == 0
