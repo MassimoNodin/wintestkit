@@ -50,7 +50,7 @@ vi.mock("vscode", () => {
   };
 });
 import { SetupMonitor } from "../../src/setup/monitor";
-import { EXTRA_STEPS } from "../../src/setup/tour";
+import { EXTRA_STEPS, SETUP_STEPS } from "../../src/setup/tour";
 
 const root = { fsPath: "C:/work", toString: () => "file:///C:/work" };
 const project = { root, name: "work" };
@@ -104,27 +104,57 @@ describe("setup monitor", () => {
   });
   afterEach(() => vi.useRealTimers());
 
-  it("does not walk a workspace through setup that was already set up", async () => {
+  it("starts the first introduction even in an already configured workspace", async () => {
     const { monitor, values } = make();
     await settle();
-    expect(monitor.tour).toBeUndefined();
+    expect(monitor.tour).toMatchObject({ step: "interpreter", phase: "setup", kind: "done", canNext: true });
     expect(monitor.resumable).toBe(false);
-    expect(values.get("wintestkit.tour.completed")).toBe(true);
+    expect(values.get("wintestkit.tour.completed")).toBeUndefined();
     monitor.dispose();
   });
 
-  it("starts the tour at the first step that is not done", async () => {
+  it("visits all seven steps without auto-advancing past healthy steps", async () => {
+    mocks.running = true;
+    const { monitor, values } = make();
+    await settle();
+    for (const [index, step] of SETUP_STEPS.entries()) {
+      expect(monitor.tour).toMatchObject({ step, progress: { index: index + 1, total: 7 } });
+      await monitor.check();
+      expect(monitor.tour?.step).toBe(step);
+      if (step === "mode") {
+        expect(monitor.tour?.canNext).toBe(false);
+        await monitor.confirmMode();
+        expect(monitor.tour?.step).toBe("mode");
+      }
+      expect(monitor.tour?.canNext).toBe(true);
+      monitor.next();
+    }
+    expect(monitor.tour?.step).toBe("complete");
+    expect(values.get("wintestkit.tour.cursor")).toBe("complete");
+    await monitor.finish();
+    expect(monitor.tour).toBeUndefined();
+    expect(values.get("wintestkit.tour.completed")).toBe(true);
+    expect(values.get("wintestkit.tour.cursor")).toBeUndefined();
+    monitor.dispose();
+  });
+
+  it("waits for the user to advance after fixing the current first-run step", async () => {
     mocks.hasProject = false;
     mocks.interpreter.mockResolvedValue(undefined);
     const { monitor } = make();
     await settle();
     expect(monitor.tour).toMatchObject({ step: "interpreter", phase: "setup", progress: { index: 1, total: 7 } });
     expect(monitor.focus).toEqual({ dim: true, spyLit: false });
-    // Picking an interpreter moves it on to installing the package.
+    monitor.next();
+    monitor.continueExtras();
+    await monitor.finish();
+    expect(monitor.tour?.step).toBe("interpreter");
     mocks.interpreter.mockResolvedValue("C:/py/python.exe");
     mocks.installed.mockResolvedValue({ installed: false });
     mocks.interpreterListeners.forEach((listener) => listener());
     await vi.advanceTimersByTimeAsync(2000);
+    expect(monitor.tour).toMatchObject({ step: "interpreter", kind: "done", canNext: true });
+    monitor.next();
     expect(monitor.tour).toMatchObject({ step: "package", lit: ["package"] });
     monitor.dispose();
   });
@@ -134,6 +164,7 @@ describe("setup monitor", () => {
     mocks.installed.mockResolvedValue({ installed: false });
     const { monitor } = make();
     await settle();
+    monitor.next();
     expect(monitor.tour?.step).toBe("package");
     monitor.back();
     expect(monitor.tour).toMatchObject({ step: "interpreter", kind: "done", canNext: true, canBack: false });
@@ -144,18 +175,20 @@ describe("setup monitor", () => {
 
   it("asks about the launch mode once, and remembers the answer", async () => {
     mocks.config.mockResolvedValue({ "app.path": "C:/Apps/Demo.exe", launch: "per-test" });
-    const { monitor, values } = make({ memento: { "wintestkit.tour.seen": true } });
+    const { monitor, values } = make({ memento: { "wintestkit.tour.cursor": "mode" } });
     await settle();
     expect(monitor.tour).toMatchObject({ step: "mode", lit: ["mode"] });
     await monitor.confirmMode();
     expect(values.get("wintestkit.tour.modeConfirmed")).toBe(true);
+    expect(monitor.tour).toMatchObject({ step: "mode", kind: "done", canNext: true });
+    monitor.next();
     expect(monitor.tour).toMatchObject({ step: "launch" });
     monitor.dispose();
   });
 
   it("finishes with the extras or by closing the introduction", async () => {
     mocks.running = true;
-    const { monitor, values } = make({ memento: { "wintestkit.tour.seen": true, "wintestkit.tour.modeConfirmed": true } });
+    const { monitor, values } = make({ memento: { "wintestkit.tour.cursor": "complete", "wintestkit.tour.modeConfirmed": true } });
     await settle();
     expect(monitor.tour?.step).toBe("complete");
     monitor.continueExtras();
@@ -194,7 +227,7 @@ describe("setup monitor", () => {
 
   it("counts closing the introduction on the last card as finishing setup", async () => {
     mocks.running = true;
-    const { monitor, values } = make({ memento: { "wintestkit.tour.seen": true, "wintestkit.tour.modeConfirmed": true } });
+    const { monitor, values } = make({ memento: { "wintestkit.tour.cursor": "complete", "wintestkit.tour.modeConfirmed": true } });
     await settle();
     monitor.close();
     expect(values.get("wintestkit.tour.completed")).toBe(true);
@@ -220,6 +253,33 @@ describe("setup monitor", () => {
     monitor.dispose();
   });
 
+  it("remembers explicit progress when the guide is closed or the extension reloads", async () => {
+    mocks.hasProject = false;
+    mocks.installed.mockResolvedValue({ installed: false });
+    const { monitor, values } = make();
+    await settle();
+    monitor.next();
+    expect(monitor.tour?.step).toBe("package");
+    monitor.close();
+    monitor.resume();
+    expect(monitor.tour?.step).toBe("package");
+    expect(values.get("wintestkit.tour.cursor")).toBe("package");
+    monitor.dispose();
+    const reloaded = make({ memento: Object.fromEntries(values) }).monitor;
+    await settle();
+    expect(reloaded.tour?.step).toBe("package");
+    reloaded.next();
+    expect(reloaded.tour?.step).toBe("package");
+    reloaded.dispose();
+  });
+
+  it.each(["invalid", 123])("ignores an invalid stored tutorial cursor: %s", async (cursor) => {
+    const { monitor } = make({ memento: { "wintestkit.tour.cursor": cursor } });
+    await settle();
+    expect(monitor.tour?.step).toBe("interpreter");
+    monitor.dispose();
+  });
+
   const finished = {
     "wintestkit.tour.seen": true,
     "wintestkit.tour.completed": true,
@@ -237,8 +297,31 @@ describe("setup monitor", () => {
     expect(monitor.tour).toBeUndefined();
     await breakPackage();
     expect(monitor.tour).toMatchObject({ step: "package", phase: "repair", kind: "attention", lit: ["package"] });
+    monitor.back();
+    monitor.next();
+    expect(monitor.tour?.step).toBe("package");
     // The sidebar is already showing it, so there is no pop-up as well.
     expect(mocks.warning).not.toHaveBeenCalled();
+    mocks.installed.mockResolvedValue({ installed: true, version: "0.1.1" });
+    await monitor.check();
+    expect(monitor.tour).toBeUndefined();
+    monitor.dispose();
+  });
+
+  it("skips healthy steps between repairs and hides the guide after the last fix", async () => {
+    const { monitor } = make({ memento: finished });
+    await settle();
+    mocks.installed.mockResolvedValue({ installed: false });
+    mocks.config.mockResolvedValue({});
+    await monitor.check();
+    expect(monitor.tour).toMatchObject({ step: "package", phase: "repair", canBack: false, canNext: false });
+    mocks.installed.mockResolvedValue({ installed: true, version: "0.1.1" });
+    await monitor.check();
+    expect(monitor.tour).toMatchObject({ step: "app", phase: "repair", canBack: false, canNext: false });
+    expect(monitor.tour?.progress).toBeUndefined();
+    mocks.config.mockResolvedValue({ "app.path": "C:/Apps/Demo.exe" });
+    await monitor.check();
+    expect(monitor.tour).toBeUndefined();
     monitor.dispose();
   });
 

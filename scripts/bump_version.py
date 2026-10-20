@@ -17,6 +17,7 @@ ROOT = Path(__file__).resolve().parent.parent
 INIT = ROOT / "python/src/wintestkit/__init__.py"
 PACKAGE = ROOT / "vscode/package.json"
 LOCK = ROOT / "vscode/package-lock.json"
+POLICY = ROOT / "vscode/src/compatibility.json"
 VERSION = re.compile(r"^\d+\.\d+\.\d+$")
 INIT_VERSION = re.compile(r'^__version__ = "([^"]*)"$', re.MULTILINE)
 
@@ -30,6 +31,9 @@ def current() -> dict[str, str]:
         str(PACKAGE.relative_to(ROOT)): json.loads(PACKAGE.read_text(encoding="utf-8"))["version"],
         str(LOCK.relative_to(ROOT)): lock["version"],
         f"{LOCK.relative_to(ROOT)} (root package)": lock["packages"][""]["version"],
+        str(POLICY.relative_to(ROOT)): json.loads(POLICY.read_text(encoding="utf-8"))[
+            "extensionVersion"
+        ],
     }
 
 
@@ -48,6 +52,12 @@ def bump(version: str) -> None:
     )
     _set_json_version(PACKAGE, version, lock=False)
     _set_json_version(LOCK, version, lock=True)
+    policy = POLICY.read_text(encoding="utf-8")
+    POLICY.write_text(
+        re.sub(r'("extensionVersion":\s*")[^"]*(")', rf"\g<1>{version}\g<2>", policy, count=1),
+        encoding="utf-8",
+        newline="",
+    )
 
 
 def main(argv: list[str] | None = None) -> int:

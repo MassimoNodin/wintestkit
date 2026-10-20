@@ -5,6 +5,19 @@ UI test automation for Windows WPF applications using Microsoft UI Automation an
 The package includes a UI Automation engine, page/element model, pytest integration,
 static discovery, environment checks, and target-based highlighting and page checks.
 
+## Installation
+
+Requires Windows and Python 3.12 or later:
+
+```powershell
+python -m pip install wintestkit
+wtk --version
+```
+
+pytest is installed automatically. For the editor tools, install the WinTestKit VS Code
+extension and select the Python environment containing this package. See the
+[user guide](https://github.com/MassimoNodin/wintestkit/blob/master/docs/guide/index.md).
+
 ## Initialize a project
 
 Run `wtk init my-tests --app "C:/Apps/My App.exe"` to create a starter page,
@@ -28,8 +41,10 @@ uv run pyright
 ```
 
 No example app is bundled. Native desktop tests require an interactive, unlocked Windows
-session, but no external demo executable. See the [development guide](../docs/development.md)
-for desktop tests and packaging, and the [Calculator example](../examples/calculator-tests)
+session, but no external demo executable. See the
+[development guide](https://github.com/MassimoNodin/wintestkit/blob/master/docs/development.md)
+for desktop tests and packaging, and the
+[Calculator example](https://github.com/MassimoNodin/wintestkit/tree/master/examples/calculator-tests)
 for application-level scenarios.
 
 ## Resolve targets

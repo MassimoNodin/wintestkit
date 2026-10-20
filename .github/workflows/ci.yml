@@ -4,6 +4,7 @@ on:
   push:
     branches: [main, master]
   pull_request:
+  workflow_call:
 
 permissions:
   contents: read
@@ -15,9 +16,10 @@ jobs:
       run:
         working-directory: python
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e
         with:
+          version: "0.12.5"
           python-version: "3.12"
           enable-cache: true
           cache-dependency-glob: python/uv.lock
@@ -28,13 +30,20 @@ jobs:
         run: uv run ruff check .
       - name: Check formatting
         run: uv run ruff format --check .
+      - name: Check release helpers
+        run: |
+          uv run ruff check ../scripts/check_release.py ../scripts/bump_version.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          uv run ruff format --check ../scripts/check_release.py ../scripts/bump_version.py
+      - name: Check compatibility policy
+        run: uv run python ../scripts/check_release.py compatibility
       - name: Check types
         run: uv run pyright
       - name: Run unit tests
         run: uv run pytest -m "not integration" --junitxml=junit-python.xml
       - name: Upload test results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: python-test-results
           path: python/junit-python.xml
@@ -42,6 +51,14 @@ jobs:
       - name: Check wheel
         working-directory: .
         run: ./scripts/check_wheel.ps1
+      - name: Upload Python distributions
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: python-dist
+          path: |
+            python/dist/*.whl
+            python/dist/*.tar.gz
+          if-no-files-found: error
 
   extension:
     runs-on: windows-latest
@@ -49,8 +66,8 @@ jobs:
       run:
         working-directory: vscode
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: "22"
           cache: npm
@@ -74,7 +91,7 @@ jobs:
       - name: Package extension
         run: npm run package
       - name: Upload extension
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: vscode-extension
           path: vscode/dist/*.vsix

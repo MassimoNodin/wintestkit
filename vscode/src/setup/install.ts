@@ -1,25 +1,10 @@
 import { execFile } from "node:child_process";
 import * as vscode from "vscode";
-import { installArguments } from "../python";
+import { checkWintestkit, installArguments } from "../python";
+import { CompatibilityError, packageCompatibility, PYTHON_REQUIREMENT } from "../compatibility";
 import { DevPackages } from "./devPackages";
 
 declare const __WTK_DEV__: boolean;
-
-/** `0.10.2` against `0.9.9`: negative, zero or positive. Anything that is not a number counts as 0. */
-export function compareVersions(first: string, second: string): number {
-  const parts = (version: string) => version.split(/[.+-]/).map((part) => Number.parseInt(part, 10) || 0);
-  const [a, b] = [parts(first), parts(second)];
-  for (let index = 0; index < Math.max(a.length, b.length); index++) {
-    const difference = (a[index] ?? 0) - (b[index] ?? 0);
-    if (difference) return difference;
-  }
-  return 0;
-}
-
-/** The installed package is older than the one this extension was built for. */
-export function isOutdated(installed: string | undefined, required: string | undefined): boolean {
-  return !!installed && !!required && compareVersions(installed, required) < 0;
-}
 
 /** The tail of pip's error output, which is where the reason is. */
 export function installFailure(output: string): string {
@@ -82,8 +67,14 @@ export class PackageInstaller implements vscode.Disposable {
         );
       });
       this.log.info(output.text);
-      if (!output.ok) this.failure = installFailure(output.text);
-      return output.ok;
+      if (!output.ok) {
+        this.failure = "Could not install " + PYTHON_REQUIREMENT + " in " + python + ": " + installFailure(output.text);
+        return false;
+      }
+      const installed = await checkWintestkit(python);
+      const issue = packageCompatibility(installed.installed ? installed.version : undefined);
+      if (issue) throw new CompatibilityError(issue, python);
+      return true;
     } catch (error) {
       this.failure = error instanceof Error ? error.message : String(error);
       this.log.info(this.failure);

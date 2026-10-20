@@ -73,52 +73,125 @@ summary:focus-visible {
     color: var(--muted);
     font-size: 11px;
 }
+/*
+ * The optional tutorial floats over the panel next to the part it explains, like the guide in the
+ * sidebar: that part stays lit and the rest is dulled, but nothing is blocked, so the real controls
+ * can be tried. spy.js puts the card beside the target and points the arrow at it.
+ */
+#tutorial-scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    pointer-events: none;
+    background: color-mix(in srgb, var(--vscode-sideBar-background, #181818) 62%, transparent);
+}
 #extra-tutorial {
-    flex-shrink: 0;
-    max-height: min(250px, 48vh);
-    overflow-y: auto;
-    margin: 8px 10px;
-    padding: 10px 12px;
+    --arrow-x: 24px;
+    --arrow-y: 24px;
+    position: absolute;
+    z-index: 70;
+    width: min(320px, calc(100vw - 16px));
+    padding: 10px 12px 8px;
     border: 1px solid var(--accent);
     border-radius: 6px;
-    background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+    background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+    box-shadow: 0 6px 18px #0000005c;
+}
+/* The arrow is a rotated square on the edge facing the target; --arrow-x or --arrow-y is where it points. */
+#extra-tutorial::before {
+    content: "";
+    position: absolute;
+    display: none;
+    width: 12px;
+    height: 12px;
+    transform: rotate(45deg);
+    border: 1px solid var(--accent);
+    background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+}
+#extra-tutorial[data-side]::before {
+    display: block;
+}
+#extra-tutorial[data-side="bottom"]::before {
+    top: -7px;
+    left: var(--arrow-x);
+    margin-left: -6px;
+    border-right: 0;
+    border-bottom: 0;
+}
+#extra-tutorial[data-side="top"]::before {
+    bottom: -7px;
+    left: var(--arrow-x);
+    margin-left: -6px;
+    border-left: 0;
+    border-top: 0;
+}
+#extra-tutorial[data-side="right"]::before {
+    left: -7px;
+    top: var(--arrow-y);
+    margin-top: -6px;
+    border-top: 0;
+    border-right: 0;
+}
+#extra-tutorial[data-side="left"]::before {
+    right: -7px;
+    top: var(--arrow-y);
+    margin-top: -6px;
+    border-bottom: 0;
+    border-left: 0;
+}
+#extra-tutorial-body {
+    max-height: calc(100vh - 40px);
+    overflow-y: auto;
 }
 .tutorial-head,
-.tutorial-actions {
+.tutorial-actions,
+.tutorial-foot {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 8px;
+    gap: 6px;
 }
 .tutorial-head {
+    margin-bottom: 4px;
     font-size: 11px;
     color: var(--muted);
 }
-.tutorial-arrival {
-    color: var(--accent);
-    font-size: 22px;
-    line-height: 1;
-}
-.tutorial-head button,
-.tutorial-cancel {
+.tutorial-head button {
     margin-left: auto;
-}
-.tutorial-origin {
-    margin: 3px 0 6px;
-    color: var(--muted);
-    font-size: 11px;
+    padding: 2px 8px;
 }
 .tutorial-title {
-    margin: 0 0 5px;
+    margin: 0 0 3px;
     font-size: 13px;
 }
 .tutorial-text {
     margin: 0 0 8px;
-    line-height: 1.5;
+    font-size: 12px;
+    line-height: 1.45;
+}
+.tutorial-foot {
+    justify-content: space-between;
+    padding-top: 6px;
+    border-top: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+}
+.tutorial-foot button {
+    padding: 2px 8px;
+    font-size: 11px;
+}
+.tutorial-cancel {
+    color: #fff;
+    border-color: transparent;
+    background: #c72e2e;
+}
+.tutorial-cancel:hover {
+    background: #a82626;
 }
 .tutorial-spotlight {
+    position: relative;
+    z-index: 60;
     outline: 2px solid var(--accent);
     outline-offset: -2px;
+    box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent) 28%, transparent);
 }
 .toolbar {
     display: flex;

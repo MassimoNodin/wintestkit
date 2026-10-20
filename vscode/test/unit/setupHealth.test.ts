@@ -65,6 +65,18 @@ describe("doctor output", () => {
 });
 
 describe("gathering health", () => {
+  it.each(["0.1.0", "0.2.0", "0.1.2rc1", undefined])("blocks unsupported package %s before doctor runs", async (version) => {
+    let doctorCalled = false;
+    const health = await gatherHealth(probes({
+      packageInfo: async () => ({ installed: true, version }),
+      doctor: async () => { doctorCalled = true; return []; },
+    }));
+    expect(health.package.state).toBe("broken");
+    expect(health.package.detail).toContain("wintestkit>=0.1.1,<0.2.0");
+    expect(health.package.detail).toContain("C:/py/python.exe");
+    expect(health.machine.state).toBe("pending");
+    expect(doctorCalled).toBe(false);
+  });
   it("is all ok when everything works, and knows the installed version", async () => {
     const health = await gatherHealth(probes());
     expect(Object.keys(health)).toEqual([...STEP_IDS]);

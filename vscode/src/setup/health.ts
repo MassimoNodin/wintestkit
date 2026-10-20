@@ -1,3 +1,5 @@
+import { packageCompatibility } from "../compatibility";
+
 /** The setup steps that can be checked, in the order the setup guide shows them. */
 export const STEP_IDS = [
   "interpreter",
@@ -150,19 +152,22 @@ export async function gatherHealth(probes: HealthProbes): Promise<Health> {
       : pending(`The selected interpreter no longer exists: ${python}`);
   const usable = interpreter.state === "ok" ? python : undefined;
   const info = usable ? await probes.packageInfo(usable) : undefined;
+  const issue = info?.installed ? packageCompatibility(info.version) : undefined;
   const packageResult: StepResult = !usable
     ? pending("Select a Python interpreter first")
     : info?.installed
-      ? { ...ok(`wintestkit ${info.version ?? ""}`.trim()), version: info.version }
+      ? issue
+        ? { state: "broken", detail: issue.message + " Selected interpreter: " + usable, version: info.version }
+        : { ...ok(`wintestkit ${info.version ?? ""}`.trim()), version: info.version }
       : pending(`The wintestkit package is not installed in ${usable}`);
   const project = await probes.project();
-  const checks = info?.installed && usable ? await probes.doctor(usable) : undefined;
-  const waiting = pending("Install the wintestkit package first");
+  const checks = info?.installed && !issue && usable ? await probes.doctor(usable) : undefined;
+  const waiting = pending("Install a compatible wintestkit package first");
   const needsProject = pending("Initialize a project first");
   return {
     interpreter,
     package: packageResult,
-    machine: !info?.installed
+    machine: !info?.installed || issue
       ? waiting
       : checks
         ? machineResult(checks)

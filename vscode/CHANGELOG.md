@@ -5,6 +5,9 @@ released together with the same version) are documented here.
 
 ## [Unreleased]
 
+- Enforce the supported Python package range and RPC protocol before connecting. Incompatible
+  packages offer direction-specific recovery actions without crash/retry loops; installation
+  selects and verifies a compatible package. CI and releases validate the compatibility policy.
 - When a test run has failures, the HTML report opens straight away in the main editor area, with the side bar left open. **Open Report**
   and **Open Last Report** use the same preview. Turn it off with `wintestkit.openReportOnFailure`.
 - Classified UI Automation environment failures in Test Target offer **Check Environment** for

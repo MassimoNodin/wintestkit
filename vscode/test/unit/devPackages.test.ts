@@ -31,17 +31,29 @@ beforeEach(() => {
 });
 
 describe("development package selection", () => {
+  it("revalidates saved local wheel selections before invoking pip", async () => {
+    const packages = new DevPackages({
+      get: () => ({ source: "local", wheel: wheel("wintestkit-0.2.0-py3-none-any.whl").fsPath }),
+    } as unknown as vscode.Memento);
+    await expect(packages.arguments(folder)).rejects.toThrow("too new");
+  });
+  it.each(["0.1.0", "0.2.0", "0.1.2rc1", "unknown"])("rejects incompatible local wheel %s", async (version) => {
+    const packages = source();
+    mocks.dialog.mockResolvedValue([wheel("wintestkit-" + version + "-py3-none-any.whl")]);
+    await expect(packages.select(folder, "local")).rejects.toThrow("requires wintestkit");
+    expect(packages.view(folder).source).toBe("remote");
+  });
   it("defaults to remote and stores a local selection outside workspace configuration", async () => {
     const packages = source();
     expect(packages.view(folder)).toEqual({ source: "remote" });
     mocks.dialog.mockResolvedValue([wheel()]);
     await packages.select(folder, "local");
     expect(packages.view(folder)).toEqual({ source: "local", wheel: wheel().fsPath });
-    expect(await packages.arguments(folder)).toEqual(["-m", "pip", "install", "--upgrade", wheel().fsPath]);
+    expect(await packages.arguments(folder)).toEqual(["-m", "pip", "install", "--upgrade", "--force-reinstall", wheel().fsPath]);
     expect(mocks.dialog).toHaveBeenCalledOnce();
     await packages.select(folder, "remote");
     expect(packages.view(folder)).toEqual({ source: "remote" });
-    expect(await packages.arguments(folder)).toEqual(["-m", "pip", "install", "--upgrade", "--force-reinstall", "wintestkit"]);
+    expect(await packages.arguments(folder)).toEqual(["-m", "pip", "install", "--upgrade", "--force-reinstall", "wintestkit>=0.1.1,<0.2.0"]);
   });
   it("preserves the selected source when the picker is cancelled", async () => {
     const packages = source();

@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import * as path from "node:path";
 import { PythonExtension } from "@vscode/python-extension";
 import * as vscode from "vscode";
+import { PYTHON_REQUIREMENT } from "./compatibility";
 
 export async function getInterpreter(
   folder: vscode.Uri,
@@ -104,5 +105,5 @@ export async function runTerminal(
 }
 
 export async function installArguments(): Promise<string[]> {
-  return ["-m", "pip", "install", "-U", "wintestkit"];
+  return ["-m", "pip", "install", "--upgrade", "--force-reinstall", PYTHON_REQUIREMENT];
 }

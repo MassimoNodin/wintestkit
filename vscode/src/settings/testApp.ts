@@ -6,7 +6,7 @@ import type { Enablement } from "../enablement";
 import type { Reports } from "../report";
 import { describeInterpreter, onDidChangeInterpreter } from "../python";
 import { chooseWorkspaceFolder, initializeProject } from "../init";
-import { isOutdated } from "../setup/install";
+import { packageCompatibility } from "../compatibility";
 import type { SetupMonitor } from "../setup/monitor";
 import { TOUR_ACTIONS, type TourAction } from "../setup/tour";
 import type { AppProcessesResult } from "../protocol/generated";
@@ -48,6 +48,7 @@ const TILES = new Set<string>([
   "enable",
   "resumeSetup",
   "installPackage",
+  "updateExtension",
   "initProject",
   "recheck",
 ]);
@@ -266,20 +267,22 @@ export class TestAppView implements vscode.Disposable {
         tooltip: installer.error,
         action: { id: "installPackage", label: "Try again" },
       };
-    if (health.package.state !== "ok")
+    if (health.package.state === "pending")
       return {
         state: "missing",
         text: "wintestkit not installed",
         action: { id: "installPackage", label: "Install" },
       };
     const version = health.package.version;
-    const required = this.setup?.requiredVersion;
-    return isOutdated(version, required)
+    const issue = packageCompatibility(version);
+    return issue
       ? {
-          state: "outdated",
-          text: "wintestkit " + version,
-          tooltip: "This extension expects wintestkit " + required + " or newer",
-          action: { id: "installPackage", label: "Update to " + required },
+          state: "error",
+          text: "wintestkit " + (version ?? "version unknown"),
+          tooltip: issue.message,
+          action: issue.updateExtension
+            ? { id: "updateExtension", label: "Update extension" }
+            : { id: "installPackage", label: "Install compatible package" },
         }
       : { state: "ok", text: "wintestkit " + (version ?? "installed") };
   }
@@ -345,6 +348,8 @@ export class TestAppView implements vscode.Disposable {
           return this.setup?.resume();
         case "installPackage":
           return await this.installPackage();
+        case "updateExtension":
+          return void (await vscode.commands.executeCommand("wintestkit.updateExtension"));
         case "dismissRun":
           return this.reports?.dismissLastRun(project);
         case "refresh":
@@ -364,14 +369,20 @@ export class TestAppView implements vscode.Disposable {
     }
   }
   /** Installs or updates wintestkit in the selected interpreter, then looks again. */
-  private async installPackage(): Promise<void> {
+  async installPackage(target?: vscode.Uri): Promise<void> {
     const setup = this.setup;
-    const folder = this.interpreterFolder();
+    const folder = target ?? this.interpreterFolder();
     if (!setup || !folder) return;
     const python = await describeInterpreter(folder);
     if (!python) return;
     const done = await setup.installer.install(folder, python.path);
-    if (done) await setup.check();
+    if (done) {
+      try {
+        await this.servers.restartUsingInterpreter(python.path);
+      } finally {
+        await setup.check();
+      }
+    }
     else if (setup.installer.error)
       void vscode.window
         .showErrorMessage("Installing wintestkit failed: " + setup.installer.error, "Show Output")
@@ -467,8 +478,8 @@ export class TestAppView implements vscode.Disposable {
     if (choice) await this.setup?.confirmMode();
   }
   /** Lets the user choose another interpreter; the monitor then checks it and the guide follows. */
-  private async pickInterpreter(): Promise<void> {
-    const folder = this.interpreterFolder();
+  async pickInterpreter(target?: vscode.Uri): Promise<void> {
+    const folder = target ?? this.interpreterFolder();
     if (!folder) return;
     const configuration = vscode.workspace.getConfiguration("wintestkit", folder);
     const configured = configuration.get<string>("pythonPath")?.trim();
@@ -495,7 +506,7 @@ export class TestAppView implements vscode.Disposable {
             : vscode.ConfigurationTarget.Global,
       );
     }
-    await vscode.commands.executeCommand("python.setInterpreter");
+    await vscode.commands.executeCommand("python.setInterpreter", folder);
   }
   private async pickApp(): Promise<void> {
     const project = this.currentProject();

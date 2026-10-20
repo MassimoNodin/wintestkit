@@ -133,10 +133,11 @@ Shared [JSON schemas](../schemas/README.md) define the Python/editor contracts. 
 
 ## Releasing
 
-Run `python scripts/bump_version.py X.Y.Z` to update the Python and extension versions.
-Add an entry to `vscode/CHANGELOG.md`. The [release workflow](../.github/workflows/release.yml)
-builds the Python distributions and VSIX packages for a version tag and can also be run
-manually with `dry_run`. Publishing depends on the credentials configured in that workflow.
+Follow the [release guide](releasing.md) for the one-time PyPI and Marketplace identity
+setup, local validation, dry runs, production tags, and recovery from partial publication.
+The release workflow runs the same CI checks on the tagged commit and publishes the tested
+Python distributions before the Windows VSIX packages. A GitHub Release is created only
+after both registries succeed. Missing required publishing settings fail the release.
 
 The [implementation plan](plan/README.md) and [research notes](research.md) are historical
 design context, not installation instructions.

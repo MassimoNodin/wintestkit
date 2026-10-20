@@ -4,10 +4,11 @@ const mocks = vi.hoisted(() => ({
   trusted: true,
   localArgs: vi.fn(async () => ["-m", "pip", "install", "--upgrade", "C:/dev/wintestkit-0.1.2-py3-none-any.whl"]),
   execFile: vi.fn(),
-  args: vi.fn(async (): Promise<string[] | undefined> => ["-m", "pip", "install", "-U", "wintestkit"]),
+  check: vi.fn(async (): Promise<{ installed: boolean; version?: string }> => ({ installed: true, version: "0.1.1" })),
+  args: vi.fn(async (): Promise<string[] | undefined> => ["-m", "pip", "install", "--upgrade", "--force-reinstall", "wintestkit>=0.1.1,<0.2.0"]),
 }));
 vi.mock("node:child_process", () => ({ execFile: mocks.execFile }));
-vi.mock("../../src/python", () => ({ installArguments: mocks.args }));
+vi.mock("../../src/python", () => ({ installArguments: mocks.args, checkWintestkit: mocks.check }));
 vi.mock("../../src/setup/devPackages", () => ({
   DevPackages: class {
     view = () => ({ source: "local" });
@@ -29,7 +30,8 @@ vi.mock("vscode", () => {
   }
   return { EventEmitter, workspace: { get isTrusted() { return mocks.trusted; } } };
 });
-import { compareVersions, installFailure, isOutdated, PackageInstaller } from "../../src/setup/install";
+import { installFailure, PackageInstaller } from "../../src/setup/install";
+import { compareReleaseVersions as compareVersions } from "../../src/compatibility";
 
 describe("package versions", () => {
   it("compares numbers, not text", () => {
@@ -38,13 +40,6 @@ describe("package versions", () => {
     expect(compareVersions("0.1", "0.1.0")).toBe(0);
     expect(compareVersions("1.0.0", "0.99.99")).toBeGreaterThan(0);
     expect(compareVersions("0.1.1+local", "0.1.1")).toBe(0);
-  });
-  it("is outdated only when both versions are known and the installed one is older", () => {
-    expect(isOutdated("0.1.0", "0.1.1")).toBe(true);
-    expect(isOutdated("0.1.1", "0.1.1")).toBe(false);
-    expect(isOutdated("0.2.0", "0.1.1")).toBe(false);
-    expect(isOutdated(undefined, "0.1.1")).toBe(false);
-    expect(isOutdated("0.1.0", undefined)).toBe(false);
   });
   it("finds the reason in pip's output", () => {
     expect(installFailure("Collecting x\nERROR: No matching distribution found for wintestkit\n")).toBe(
@@ -56,12 +51,28 @@ describe("package versions", () => {
 });
 
 describe("installing the package", () => {
+  it.each([{ installed: false }, { installed: true }])("rejects an unverifiable post-install package %j", async (installed) => {
+    finish(null);
+    mocks.check.mockResolvedValue(installed);
+    const installer = new PackageInstaller(log);
+    expect(await installer.install(folder, "python.exe")).toBe(false);
+    expect(installer.error).toBeTruthy();
+  });
+  it.each(["0.1.0", "0.2.0", "invalid"])("does not report success if pip leaves incompatible %s installed", async (version) => {
+    finish(null);
+    mocks.check.mockResolvedValue({ installed: true, version });
+    const installer = new PackageInstaller(log);
+    expect(await installer.install(folder, "python.exe")).toBe(false);
+    expect(installer.error).toContain("requires wintestkit");
+    expect(installer.error).toContain("python.exe");
+  });
   const log = { info: vi.fn() } as never;
   const folder = { fsPath: "C:/work" } as never;
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.trusted = true;
-    mocks.args.mockResolvedValue(["-m", "pip", "install", "-U", "wintestkit"]);
+    mocks.check.mockResolvedValue({ installed: true, version: "0.1.1" });
+    mocks.args.mockResolvedValue(["-m", "pip", "install", "--upgrade", "--force-reinstall", "wintestkit>=0.1.1,<0.2.0"]);
   });
   afterEach(() => vi.unstubAllGlobals());
   const finish = (error: Error | null, stdout = "", stderr = "") =>
@@ -84,7 +95,7 @@ describe("installing the package", () => {
     expect(installer.error).toBeUndefined();
     expect(mocks.execFile).toHaveBeenCalledOnce();
     expect(mocks.execFile.mock.calls[0][0]).toBe("C:/py/python.exe");
-    expect(mocks.execFile.mock.calls[0][1]).toEqual(["-m", "pip", "install", "-U", "wintestkit"]);
+    expect(mocks.execFile.mock.calls[0][1]).toEqual(["-m", "pip", "install", "--upgrade", "--force-reinstall", "wintestkit>=0.1.1,<0.2.0"]);
     expect(changed).toHaveBeenCalledTimes(2);
   });
 
@@ -106,7 +117,7 @@ describe("installing the package", () => {
     await installer.selectSource(folder, "local");
     expect(await installer.install(folder, "python.exe")).toBe(true);
     expect(mocks.localArgs).not.toHaveBeenCalled();
-    expect(mocks.execFile.mock.calls[0][1]).toEqual(["-m", "pip", "install", "-U", "wintestkit"]);
+    expect(mocks.execFile.mock.calls[0][1]).toEqual(["-m", "pip", "install", "--upgrade", "--force-reinstall", "wintestkit>=0.1.1,<0.2.0"]);
   });
   it("uses the selected wheel only in a development build", async () => {
     vi.stubGlobal("__WTK_DEV__", true);

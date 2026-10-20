@@ -1,6 +1,7 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import * as vscode from "vscode";
 import { checkWintestkit, getInterpreter } from "../python";
+import { CompatibilityError, packageCompatibility, protocolCompatibility, type CompatibilityIssue } from "../compatibility";
 import type { InitializeResult } from "../protocol/generated";
 import { JsonRpcClient, LineSplitter, RpcError } from "./jsonrpc";
 
@@ -23,8 +24,9 @@ interface Entry {
   crashes: number[];
   generation: number;
   state: ServerState;
+  python?: string;
   blocked?: boolean;
-  startupError?: RpcError;
+  startupError?: Error;
 }
 
 export class ServerManager implements vscode.Disposable {
@@ -35,6 +37,26 @@ export class ServerManager implements vscode.Disposable {
   constructor(private readonly log: vscode.LogOutputChannel) {}
   state(project: Project): ServerState {
     return this.entries.get(project.root.toString())?.state ?? "stopped";
+  }
+  private incompatible(entry: Entry, issue: CompatibilityIssue, python: string): CompatibilityError {
+    const error = new CompatibilityError(issue, python);
+    entry.startupError = error;
+    this.log.error(error.message);
+    const actions = [
+      ...(issue.updateExtension ? ["Update Extension"] : []),
+      "Install Compatible Package",
+      "Choose Interpreter",
+      "Show Output",
+    ];
+    void vscode.window.showErrorMessage(error.message, ...actions).then(async (choice) => {
+      if (choice === "Show Output") this.log.show();
+      if (choice === "Update Extension") await vscode.commands.executeCommand("wintestkit.updateExtension");
+      if (choice === "Install Compatible Package")
+        await vscode.commands.executeCommand("wintestkit.installCompatiblePackage", entry.project.root);
+      if (choice === "Choose Interpreter")
+        await vscode.commands.executeCommand("wintestkit.selectInterpreter", entry.project.root);
+    }).then(undefined, (failure) => this.log.error(String(failure)));
+    return error;
   }
   async release(project: Project): Promise<void> {
     const key = project.root.toString();
@@ -87,6 +109,7 @@ export class ServerManager implements vscode.Disposable {
     const generation = entry.generation;
     const python = await getInterpreter(entry.project.root);
     if (!python) throw new Error("Select a Python interpreter first.");
+    entry.python = python;
     const packageInfo = await checkWintestkit(python);
     if (this.disposed || generation !== entry.generation)
       throw new Error("server start cancelled");
@@ -95,6 +118,8 @@ export class ServerManager implements vscode.Disposable {
       // The guided setup notices this and offers to fix it, so there is no message here.
       throw new Error("wintestkit is not installed");
     }
+    const issue = packageCompatibility(packageInfo.version);
+    if (issue) throw this.incompatible(entry, issue, python);
     const level = vscode.workspace
       .getConfiguration("wintestkit", entry.project.root)
       .get<string>("server.logLevel", "info");
@@ -203,13 +228,12 @@ export class ServerManager implements vscode.Disposable {
       initialized = await client.request<InitializeResult>("initialize", {
         root: entry.project.root.fsPath,
       });
-      if (initialized.protocolVersion !== 1) {
-        void vscode.window.showErrorMessage(
-          "WinTestKit extension and Python package versions are incompatible. Update the package from the interpreter tile in Test Target.",
-        );
-        throw new Error("incompatible WinTestKit protocol version");
-      }
+      if (this.disposed || generation !== entry.generation)
+        throw new Error("server start cancelled");
+      const issue = protocolCompatibility(initialized?.wintestkitVersion, initialized?.protocolVersion);
+      if (issue) throw this.incompatible(entry, issue, python);
     } catch (error) {
+      if (error instanceof CompatibilityError) startupRejected = true;
       if (
         !this.disposed &&
         generation === entry.generation &&
@@ -243,6 +267,13 @@ export class ServerManager implements vscode.Disposable {
   }
   async restartIfInterpreterChanged(project: Project): Promise<void> {
     const entry = this.entries.get(project.root.toString());
+    if (entry?.startupError instanceof CompatibilityError) {
+      const startupError = entry.startupError;
+      const python = await getInterpreter(project.root);
+      if (!this.disposed && entry.startupError === startupError && python !== startupError.python)
+        await this.restart(project);
+      return;
+    }
     if (!entry?.promise) return;
     let connection: ServerConnection;
     try {
@@ -266,6 +297,12 @@ export class ServerManager implements vscode.Disposable {
       entry.blocked = false;
     }
     return this.get(project);
+  }
+  async restartUsingInterpreter(python: string): Promise<void> {
+    const projects = [...this.entries.values()]
+      .filter((entry) => entry.python === python && entry.state !== "stopped")
+      .map((entry) => entry.project);
+    await Promise.all(projects.map((project) => this.restart(project)));
   }
   private async stop(entry: Entry): Promise<void> {
     entry.generation++;
