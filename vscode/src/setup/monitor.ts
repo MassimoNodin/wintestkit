@@ -31,6 +31,7 @@ import {
   planTour,
   SETUP_STEPS,
   type ExtraStep,
+  type SetupCursor,
   type SetupStep,
   type TourContext,
   type TourView,
@@ -40,7 +41,7 @@ import { SetupTracker, type SetupProblem } from "./tracker";
 const PASSED_KEY = "wintestkit.setup.passed";
 const COMPLETED_KEY = "wintestkit.tour.completed";
 const MODE_KEY = "wintestkit.tour.modeConfirmed";
-const SEEN_KEY = "wintestkit.tour.seen";
+const CURSOR_KEY = "wintestkit.tour.cursor";
 
 function runDoctor(python: string, root: string): Promise<DoctorCheck[] | undefined> {
   return new Promise((resolve) => {
@@ -80,7 +81,7 @@ export class SetupMonitor implements vscode.Disposable {
   private completed: boolean;
   private modeConfirmed: boolean;
   private closed = false;
-  private cursor?: SetupStep;
+  private cursor?: SetupCursor;
   private extra?: ExtraStep;
   constructor(
     private readonly projects: Projects,
@@ -95,6 +96,8 @@ export class SetupMonitor implements vscode.Disposable {
     this.tracker = new SetupTracker(state.get<StepId[]>(PASSED_KEY, []));
     this.completed = state.get<boolean>(COMPLETED_KEY, false);
     this.modeConfirmed = state.get<boolean>(MODE_KEY, false);
+    const cursor = state.get<string>(CURSOR_KEY);
+    if (cursor === "complete" || SETUP_STEPS.includes(cursor as SetupStep)) this.cursor = cursor as SetupCursor;
     this.subscriptions.push(
       enablement.onDidChange(() => this.schedule(0)),
       projects.onDidChange(() => this.schedule()),
@@ -222,7 +225,6 @@ export class SetupMonitor implements vscode.Disposable {
       if (passedChanged) void this.state.update(PASSED_KEY, this.tracker.passedSteps());
       this.views = this.tracker.views(health);
       this.pythonName = await this.describePython();
-      await this.skipIntroIfSetUp(health);
       await this.publishBlocked();
       this.changed.fire();
       if (announce && !this.tour) void this.announce(announce);
@@ -240,19 +242,6 @@ export class SetupMonitor implements vscode.Disposable {
     }
   }
 
-  /**
-   * A workspace that was already set up before the guide existed should not be walked through it:
-   * the first time it is checked, if everything that can be checked is in order, the guide counts as done.
-   */
-  private async skipIntroIfSetUp(health: Health): Promise<void> {
-    if (this.state.get<boolean>(SEEN_KEY, false)) return;
-    await this.state.update(SEEN_KEY, true);
-    const ready = (["interpreter", "package", "project", "app"] as const).every(
-      (step) => health[step].state === "ok",
-    );
-    if (ready) await this.markCompleted();
-  }
-
   private async markCompleted(): Promise<void> {
     this.completed = true;
     this.modeConfirmed = true;
@@ -260,6 +249,7 @@ export class SetupMonitor implements vscode.Disposable {
     this.cursor = undefined;
     await this.state.update(COMPLETED_KEY, true);
     await this.state.update(MODE_KEY, true);
+    await this.state.update(CURSOR_KEY, undefined);
   }
 
   /** Hides the other views while WinTestKit is not set up enough to work and the guide is closed. */
@@ -304,14 +294,16 @@ export class SetupMonitor implements vscode.Disposable {
   }
 
   back(): void {
+    if (!this.tour?.canBack) return;
     if (this.extra) {
       this.extra = EXTRA_STEPS[EXTRA_STEPS.indexOf(this.extra) - 1];
-      this.cursor = undefined;
+      this.cursor = "complete";
     } else {
       const shown = this.tour?.step;
       const from = shown === "complete" ? SETUP_STEPS.length : SETUP_STEPS.indexOf(shown as SetupStep);
       if (from > 0) this.cursor = SETUP_STEPS[from - 1];
     }
+    void this.state.update(CURSOR_KEY, this.cursor);
     this.touch();
   }
 
@@ -320,11 +312,11 @@ export class SetupMonitor implements vscode.Disposable {
       const index = EXTRA_STEPS.indexOf(this.extra);
       this.extra = EXTRA_STEPS[index + 1] ?? this.extra;
     } else {
+      if (!this.tour?.canNext) return;
       const shown = this.shownSetupStep();
       if (shown) {
-        const next = SETUP_STEPS[SETUP_STEPS.indexOf(shown) + 1];
-        // Moving on from the step just before the first open one lands on it, which the tour follows.
-        this.cursor = next;
+        this.cursor = SETUP_STEPS[SETUP_STEPS.indexOf(shown) + 1] ?? "complete";
+        void this.state.update(CURSOR_KEY, this.cursor);
       }
     }
     this.touch();
@@ -339,7 +331,6 @@ export class SetupMonitor implements vscode.Disposable {
 
   resume(): void {
     this.closed = false;
-    this.cursor = undefined;
     this.touch();
   }
 
@@ -350,11 +341,13 @@ export class SetupMonitor implements vscode.Disposable {
   }
 
   continueExtras(): void {
+    if (this.tour?.step !== "complete") return;
     this.extra = "spy";
     this.touch();
   }
 
   async finish(): Promise<void> {
+    if (this.tour?.step !== "complete" && !this.extra) return;
     await this.markCompleted();
     this.touch();
   }

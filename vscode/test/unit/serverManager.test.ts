@@ -2,13 +2,14 @@ import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type * as vscode from "vscode";
+import { commands } from "vscode";
 
 const mocks = vi.hoisted(() => ({
   spawn: vi.fn(),
   installed: vi.fn(),
   interpreter: vi.fn(),
   trusted: true,
-  showError: vi.fn(() => Promise.resolve(undefined)),
+  showError: vi.fn(async (): Promise<string | undefined> => undefined),
   showInfo: vi.fn(() => Promise.resolve(undefined)),
 }));
 vi.mock("node:child_process", () => ({ spawn: mocks.spawn }));
@@ -46,13 +47,13 @@ class Child extends EventEmitter {
     return true;
   });
   requests: Record<string, unknown>[] = [];
-  constructor(initializationError?: { code: number; message: string }) {
+  constructor(initializationError?: { code: number; message: string }, initialized: unknown = { protocolVersion: 1, wintestkitVersion: "0.1.1" }) {
     super();
     this.stdin.on("data", (chunk) => {
       const request = JSON.parse(String(chunk));
       this.requests.push(request);
       const result =
-        request.method === "initialize" ? { protocolVersion: 1 } : null;
+        request.method === "initialize" ? initialized : null;
       this.stdout.write(
         JSON.stringify({
           jsonrpc: "2.0",
@@ -80,7 +81,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.trusted = true;
   mocks.interpreter.mockResolvedValue("python.exe");
-  mocks.installed.mockResolvedValue({ installed: true, version: "0.1.0" });
+  mocks.installed.mockResolvedValue({ installed: true, version: "0.1.1" });
   mocks.spawn.mockImplementation(() => new Child());
   manager = new ServerManager(log);
 });
@@ -89,6 +90,62 @@ afterEach(async () => {
   vi.useRealTimers();
 });
 describe("server manager", () => {
+  it.each(["0.1.0", "0.2.0", "1.0.0", "0.1.2rc1", "bad", undefined])("blocks incompatible probed package %s without retrying", async (version) => {
+    vi.useFakeTimers();
+    mocks.installed.mockResolvedValue({ installed: true, version });
+    await expect(manager.get(project)).rejects.toThrow("requires wintestkit>=0.1.1,<0.2.0");
+    await vi.advanceTimersByTimeAsync(60000);
+    await expect(manager.get(project)).rejects.toThrow("Selected interpreter: python.exe");
+    expect(mocks.spawn).not.toHaveBeenCalled();
+    expect(mocks.showError).toHaveBeenCalledOnce();
+    expect(manager.state(project)).toBe("error");
+  });
+  it.each([
+    null,
+    {},
+    { wintestkitVersion: "0.1.1", protocolVersion: 2 },
+    { wintestkitVersion: "0.1.1", protocolVersion: "1" },
+    { wintestkitVersion: "0.1.0", protocolVersion: 1 },
+    { wintestkitVersion: "0.2.0", protocolVersion: 1 },
+  ])("blocks incompatible initialize response %j without crash recovery", async (initialized) => {
+    vi.useFakeTimers();
+    mocks.spawn.mockImplementation(() => new Child(undefined, initialized));
+    await expect(manager.get(project)).rejects.toThrow("WinTestKit extension");
+    await vi.advanceTimersByTimeAsync(60000);
+    await expect(manager.get(project)).rejects.toThrow("WinTestKit extension");
+    const child = mocks.spawn.mock.results[0].value as Child;
+    expect(child.requests.map((request) => request.method)).toEqual(["initialize"]);
+    expect(child.kill).toHaveBeenCalledOnce();
+    expect(mocks.spawn).toHaveBeenCalledOnce();
+    expect(mocks.showError).toHaveBeenCalledOnce();
+    expect(log.error).not.toHaveBeenCalledWith(expect.stringContaining("stopped unexpectedly"));
+  });
+  it.each([
+    ["Update Extension", "wintestkit.updateExtension"],
+    ["Install Compatible Package", "wintestkit.installCompatiblePackage"],
+    ["Choose Interpreter", "wintestkit.selectInterpreter"],
+  ])("routes the %s recovery action", async (choice, command) => {
+    mocks.installed.mockResolvedValue({ installed: true, version: "0.2.0" });
+    mocks.showError.mockResolvedValueOnce(choice);
+    await expect(manager.get(project)).rejects.toThrow("too new");
+    await vi.waitFor(() => expect(commands.executeCommand).toHaveBeenCalledWith(
+      command, ...(choice === "Update Extension" ? [] : [project.root]),
+    ));
+  });
+  it("recovers after repairing the package in the selected interpreter", async () => {
+    mocks.installed.mockResolvedValue({ installed: true, version: "0.1.0" });
+    await expect(manager.get(project)).rejects.toThrow("too old");
+    mocks.installed.mockResolvedValue({ installed: true, version: "0.1.1" });
+    await manager.restartUsingInterpreter("python.exe");
+    expect(manager.state(project)).toBe("ready");
+  });
+  it("recovers from incompatibility after changing interpreters", async () => {
+    mocks.installed.mockResolvedValueOnce({ installed: true, version: "0.2.0" });
+    await expect(manager.get(project)).rejects.toThrow("too new");
+    mocks.interpreter.mockResolvedValue("compatible-python.exe");
+    await manager.restartIfInterpreterChanged(project);
+    expect((await manager.get(project)).python).toBe("compatible-python.exe");
+  });
   it("coalesces starts, initializes once and shuts down gracefully", async () => {
     const [first, second] = await Promise.all([
       manager.get(project),

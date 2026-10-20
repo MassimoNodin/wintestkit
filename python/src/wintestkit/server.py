@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, Any, BinaryIO, cast
 from wintestkit import __version__
 from wintestkit.config import load_config
 from wintestkit.errors import AppNotRunningError, ConfigError, EnvironmentNotReadyError, WtkError
+from wintestkit.protocol import PROTOCOL_VERSION
 
 if TYPE_CHECKING:
     from wintestkit.app import App
@@ -327,7 +328,7 @@ class Server:
                 }
             self.cfg, self.loader = cfg, loader
             return {
-                "protocolVersion": 1,
+                "protocolVersion": PROTOCOL_VERSION,
                 "wintestkitVersion": __version__,
                 "python": platform.python_version(),
                 "config": settings,

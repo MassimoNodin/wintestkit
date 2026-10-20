@@ -48,6 +48,26 @@ const nothing: Partial<HealthProbes> = {
 };
 
 describe("the guided setup tour", () => {
+  it("starts at step one even when the whole test stack is already healthy", async () => {
+    const ready = await context({}, { modeConfirmed: true });
+    expect(firstOpenStep(ready)).toBeUndefined();
+    expect(planTour(ready)).toMatchObject({
+      step: "interpreter", kind: "done", progress: { index: 1, total: 7 }, canNext: true,
+    });
+    for (const [index, cursor] of SETUP_STEPS.entries())
+      expect(planTour({ ...ready, cursor })).toMatchObject({
+        step: cursor, kind: "done", progress: { index: index + 1, total: 7 }, canNext: true,
+      });
+    expect(planTour({ ...ready, cursor: "complete" })?.step).toBe("complete");
+  });
+
+  it("does not let the initial cursor bypass incomplete prerequisites", async () => {
+    const missingPackage = await context({ packageInfo: async () => ({ installed: false }) }, { cursor: "complete", modeConfirmed: true });
+    expect(planTour(missingPackage)).toMatchObject({ step: "package", canNext: false });
+    const installing = await context({}, { cursor: "package", installing: true });
+    expect(planTour(installing)).toMatchObject({ step: "package", canNext: false });
+  });
+
   it("describes a clean machine check without extra action buttons", async () => {
     const tour = planTour(await context({}, { cursor: "machine" }));
     expect(tour).toMatchObject({
@@ -74,17 +94,17 @@ describe("the guided setup tour", () => {
 
   it("lights only the package strip and directs installation through its button", async () => {
     const missing = { packageInfo: async () => ({ installed: false }) };
-    const tour = planTour(await context({ ...missing, project: async () => undefined }));
+    const tour = planTour(await context({ ...missing, project: async () => undefined }, { cursor: "package" }));
     expect(tour).toMatchObject({ step: "package", lit: ["package"], canBack: true });
     expect(tour?.text).toContain(".venv");
     expect(tour?.buttons).toEqual([]);
     expect(tour?.detail).toBeUndefined();
     expect(tour?.text).toContain("Click Install in the highlighted package strip above");
-    const installing = planTour(await context({ ...missing, project: async () => undefined }, { installing: true }));
+    const installing = planTour(await context({ ...missing, project: async () => undefined }, { cursor: "package", installing: true }));
     expect(installing?.buttons).toEqual([]);
     expect(installing?.text).toContain("being installed");
     const failed = planTour(
-      await context({ ...missing, project: async () => undefined }, { installError: "no network" }),
+      await context({ ...missing, project: async () => undefined }, { cursor: "package", installError: "no network" }),
     );
     expect(failed?.detail).toBe("no network");
     expect(failed?.kind).toBe("attention");
@@ -94,32 +114,32 @@ describe("the guided setup tour", () => {
 
   it("points to the real machine and project controls without duplicate actions", async () => {
     const machine = planTour(
-      await context({ doctor: async () => [{ id: "desktop_unlocked", title: "x", status: "fail", detail: "locked" }] }),
+      await context({ doctor: async () => [{ id: "desktop_unlocked", title: "x", status: "fail", detail: "locked" }] }, { cursor: "machine" }),
     );
     expect(machine).toMatchObject({ step: "machine", panel: false, lit: ["machine"], kind: "attention" });
     expect(machine?.detail).toContain("locked");
     expect(machine?.buttons).toEqual([]);
-    const project = planTour(await context({ project: async () => undefined }));
+    const project = planTour(await context({ project: async () => undefined }, { cursor: "project" }));
     expect(project).toMatchObject({ step: "project", panel: false, lit: ["project"] });
     expect(project?.buttons).toEqual([]);
   });
 
   it("asks for the application, then the launch mode on its own, then to start it", async () => {
     const noApp = { project: async () => ({ name: "d", config: {} }) };
-    expect(planTour(await context(noApp))).toMatchObject({ step: "app", lit: ["app"] });
-    const mode = planTour(await context({}));
+    expect(planTour(await context(noApp, { cursor: "app" }))).toMatchObject({ step: "app", lit: ["app"] });
+    const mode = planTour(await context({}, { cursor: "mode" }));
     expect(mode).toMatchObject({ step: "mode", lit: ["mode"], progress: { index: 6, total: 7 } });
     expect(mode?.buttons).toEqual([]);
-    const launch = planTour(await context({ appRunning: () => false }, { modeConfirmed: true }));
+    const launch = planTour(await context({ appRunning: () => false }, { cursor: "launch", modeConfirmed: true }));
     expect(launch).toMatchObject({ step: "launch", lit: ["launch"] });
     expect(launch?.buttons).toEqual([]);
-    const attach = planTour(await context({ appRunning: () => false }, { modeConfirmed: true, launchMode: "attach" }));
+    const attach = planTour(await context({ appRunning: () => false }, { cursor: "launch", modeConfirmed: true, launchMode: "attach" }));
     expect(attach?.text).toContain("Start your application");
     expect(attach?.buttons).toEqual([]);
   });
 
   it("ends with a card that offers the extra features or closing the introduction", async () => {
-    const tour = planTour(await context({}, { modeConfirmed: true }));
+    const tour = planTour(await context({}, { cursor: "complete", modeConfirmed: true }));
     expect(tour).toMatchObject({ step: "complete", panel: true, kind: "done" });
     expect(tour?.buttons.map((button) => button.id)).toEqual(["continueExtras", "close"]);
   });
@@ -133,11 +153,13 @@ describe("the guided setup tour", () => {
     const test = planTour({ ...base, extra: "test" });
     expect(test).toMatchObject({ step: "test", progress: { index: EXTRA_STEPS.length, total: EXTRA_STEPS.length } });
     expect(test?.buttons.map((button) => button.id)).toEqual(["finish"]);
-    expect(test?.text).toContain("Return to the WinTestKit sidebar");
+    expect(test?.text).toContain("Test Target shows the result");
     for (const [index, extra] of EXTRA_STEPS.entries()) {
       const view = planTour({ ...base, extra });
       expect(view).toMatchObject({ step: extra, phase: "extras", progress: { index: index + 1, total: EXTRA_STEPS.length } });
-      expect(view?.text.length).toBeGreaterThan(100);
+      // Quick explanations: a sentence or two that fit a small card beside what they describe.
+      expect(view?.text.length).toBeGreaterThan(40);
+      expect(view?.text.length).toBeLessThan(130);
       expect(view?.buttons.map((button) => button.id)).toEqual([extra === "test" ? "finish" : "next"]);
     }
   });
@@ -189,7 +211,7 @@ describe("the guided setup tour", () => {
 
   it("explains an application that runs elevated", async () => {
     const tour = planTour(
-      await context({ doctor: async () => [{ id: "elevation", title: "x", status: "fail", detail: "pid 5 is elevated" }] }, { modeConfirmed: true }),
+      await context({ doctor: async () => [{ id: "elevation", title: "x", status: "fail", detail: "pid 5 is elevated" }] }, { cursor: "launch", modeConfirmed: true }),
     );
     expect(tour).toMatchObject({ step: "launch", kind: "attention" });
     expect(tour?.text).toContain("administrator");

@@ -12,6 +12,22 @@ whether the application is running; click it for **Launch App**, **Close App**, 
 
 ## Test Target
 
+### Package compatibility
+
+Extension 0.1.1 requires a stable `wintestkit>=0.1.1,<0.2.0` Python package and RPC
+protocol 1. The package version is checked before launching the server and both values
+are checked during initialization. Unsupported versions stop the connection rather than
+retrying it repeatedly. The message identifies the interpreter, installed version,
+supported range, and recommended fix.
+
+Use **Update Extension** for a newer backend, **Install Compatible Package** to repair the
+selected environment (this may downgrade a newer package), or **Choose Interpreter** to
+keep a different environment untouched. The installer verifies the resulting version and
+restarts affected servers. After repairing a package manually, use **Restart Server**.
+Development wheels obey the same policy; prerelease and development versions are not supported.
+
+### Application controls
+
 The **Test Target** section at the top of the sidebar is a row of tiles for the application under
 test. Its title bar shows the status (**Running**, **Stopped**, **Starting…**, **Failed**) and the gear
 that opens the settings.
@@ -189,21 +205,30 @@ Before a project exists, only the interpreter and **Initialize project** tiles a
 initialization, the application, launch mode and launch controls appear. Background check updates
 preserve your scroll position:
 
+Your first introduction always visits all seven steps in order, even when an interpreter, package
+or project is already configured. A healthy step explains what is already ready; use its **Next**
+arrow to continue. An unfinished step must be fixed using the real UI control before **Next** is
+available. Checks never advance the introduction on their own, and your place is remembered when
+you close the guide or reload VS Code. **Skip tutorial** remains an explicit opt-out.
+
 1. **Choose a Python interpreter**: the interpreter tile.
 2. **Install WinTestKit** into it: only the package strip is highlighted. Click **Install** on that
    strip; the callout has no duplicate install button. Installation runs in the background with progress
    on the strip, and the guide checks again when it finishes. If it fails, click **Try again** on the strip.
-3. **Check this machine**: shown only when an environment check fails (the same checks as `wtk doctor`).
-4. **Create the test project**: shown only when the folder has no WinTestKit project; it adds pages, flows
-   and a smoke test without overwriting anything.
+3. **Check this machine**: explains the environment checks (the same checks as `wtk doctor`) and
+   confirms when the machine and installation are ready.
+4. **Create the test project**: use **Initialize project** if one does not exist; it adds pages, flows
+   and a smoke test without overwriting anything. Existing projects still get an introduction to this step.
 5. **Choose the application**: the application tile.
 6. **Launch mode**: click the mode tile and select how the application should start.
 7. **Start the application**: the launch tile.
 
 After that you can **Continue to extra features**. WinTestKit opens **WinTestKit Spy** in the bottom
-panel and moves the optional tutorial there, beside the controls it introduces. Matching handoff
-arrows link the original sidebar callout with the new tutorial box; **Show tutorial in bottom panel**
-reveals it again if you switch panel tabs. The sidebar and Spy stay usable throughout the extras.
+panel and moves the optional tutorial there as a short card that floats over the panel beside the
+part it explains. That part is lit, the rest of the panel is dulled, and an arrow points at it.
+Matching handoff arrows link the original sidebar callout with the tutorial; **Show tutorial in
+bottom panel** reveals it again if you switch panel tabs. The sidebar and Spy stay usable throughout
+the extras, so you can try the lit control as you read.
 The tutorial introduces Spy, picking controls, browsing objects and toolbar tools, inspecting
 properties, copying locators and adding them to pages, finding existing definitions, organizing
 pages and flows, and running tests and reviewing reports. **Back** and **Next** navigate without
@@ -212,10 +237,11 @@ the tutorial. **Skip tutorial** dismisses it without disabling WinTestKit. Retur
 after running a test to see its result and report link in Test Target. Alternatively,
 **Close introduction**. **‹** goes back one step without undoing anything and **›** returns; **✕**
 closes the guide, and while something required is still missing the sidebar shows an interpreter tile and
-a **Resume setup** button (also **WinTestKit: Open Setup Guide**). A workspace that was already set up
-when the guide was introduced is not walked through it.
+a **Resume setup** button (also **WinTestKit: Open Setup Guide**).
 
-The guide also repairs. WinTestKit keeps checking what it set up, and when a step that worked stops
+After the introduction is completed or explicitly skipped, the guide only visits steps that need
+repair, skipping healthy steps before and after them. It disappears once those problems are fixed.
+WinTestKit keeps checking what it set up, and when a step that worked stops
 working (the interpreter is deleted, the package is uninstalled, the project's files are removed, the
 application's executable is gone, or the application runs elevated while VS Code does not) the guide
 comes back at that step with a red callout saying what is wrong, and a notification names it if the

@@ -101,9 +101,16 @@ updated Python package as well as the extension; after updating, run
 - Python 3.12 or later, selected through the
   [Python extension](https://marketplace.visualstudio.com/items?itemName=ms-python.python)
   (installed automatically as a dependency).
-- The `wintestkit` package in that interpreter: `pip install wintestkit` or
-  `uv add --dev wintestkit`. The extension offers to install it when it is missing.
+- A compatible stable `wintestkit` package in that interpreter. Extension 0.1.1 requires
+  `>=0.1.1,<0.2.0` and RPC protocol 1: `python -m pip install "wintestkit>=0.1.1,<0.2.0"`
+  or `uv add --dev "wintestkit>=0.1.1,<0.2.0"`. The extension offers compatible installation.
 - The application under test must run at the same elevation level as VS Code.
+
+Unsupported package versions or protocols block the connection with an explanation and
+**Update Extension**, **Install Compatible Package**, or **Choose Interpreter** actions as
+appropriate. Installing a compatible package may downgrade a newer backend. After a manual
+package repair, run **WinTestKit: Restart Server**. Prerelease and development versions are
+not supported, including when selecting a local development wheel.
 
 ## Quick start
 

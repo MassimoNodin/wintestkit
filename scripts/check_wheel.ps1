@@ -6,6 +6,7 @@ $repo = Split-Path -Parent $PSScriptRoot
 $python = Join-Path $repo "python"
 $dist = Join-Path $python "dist"
 $venv = Join-Path ([IO.Path]::GetTempPath()) ("wtk-wheel-" + [Guid]::NewGuid().ToString("N"))
+$previousVirtualEnv = $env:VIRTUAL_ENV
 
 function Invoke-Checked {
     param([string]$Description, [scriptblock]$Command)
@@ -15,8 +16,16 @@ function Invoke-Checked {
 }
 
 try {
-    if (Test-Path $dist) { Remove-Item -Recurse -Force $dist }
-    Invoke-Checked "Build sdist and wheel" { uv build --directory $python }
+    if ([IO.Path]::GetFullPath($dist) -ne [IO.Path]::GetFullPath((Join-Path $repo "python/dist"))) {
+        throw "Refusing to clean an unexpected distribution directory: $dist"
+    }
+    if (Test-Path -LiteralPath $dist) { Remove-Item -LiteralPath $dist -Recurse -Force }
+    Invoke-Checked "Build source distribution" { uv build --directory $python --sdist }
+    $sdist = Get-ChildItem $dist -Filter "wintestkit-*.tar.gz" | Select-Object -First 1
+    if (-not $sdist) { throw "No source distribution in $dist" }
+    Invoke-Checked "Build wheel from source distribution" { uv build $sdist.FullName --wheel --out-dir $dist }
+    $distributions = Get-ChildItem $dist -File | Where-Object { $_.Name -match '\.(whl|tar\.gz)$' }
+    Invoke-Checked "Validate distribution metadata" { uv run --directory $python --locked twine check --strict $distributions.FullName }
     $wheel = Get-ChildItem $dist -Filter "wintestkit-*-py3-none-any.whl" | Select-Object -First 1
     if (-not $wheel) { throw "No py3-none-any wheel in $dist" }
 
@@ -40,7 +49,8 @@ try {
     Invoke-Checked "Create virtual environment" { uv venv --python 3.12 $venv }
     $env:VIRTUAL_ENV = $venv
     $bin = Join-Path $venv "Scripts"
-    Invoke-Checked "Install wheel" { uv pip install --python (Join-Path $bin "python.exe") $wheel.FullName pytest }
+    Invoke-Checked "Install wheel without extra dependencies" { uv pip install --python (Join-Path $bin "python.exe") $wheel.FullName }
+    Invoke-Checked "Check installed dependencies" { uv pip check --python (Join-Path $bin "python.exe") }
 
     Invoke-Checked "wtk --version" { & (Join-Path $bin "wtk.exe") --version }
     Write-Host "==> wtk doctor --json"
@@ -52,9 +62,29 @@ try {
 
     Write-Host "==> pytest plugin registered"
     $help = & (Join-Path $bin "python.exe") -m pytest --help | Out-String
+    if ($LASTEXITCODE -ne 0) { throw "pytest --help failed" }
     if ($help -notmatch "wtk-launch") { throw "pytest --help does not list --wtk-launch" }
+    $smoke = Join-Path $venv "smoke"
+    New-Item -ItemType Directory -Path $smoke | Out-Null
+    @("def test_installed_wheel():", "    assert True") | Set-Content -LiteralPath (Join-Path $smoke "test_wheel.py") -Encoding utf8
+    Push-Location $smoke
+    try {
+        Invoke-Checked "Run tests through the installed CLI" { & (Join-Path $bin "wtk.exe") run --no-env-check --no-report --no-html test_wheel.py }
+    } finally {
+        Pop-Location
+    }
     Write-Host "Wheel OK: $($wheel.Name)"
 } finally {
-    Remove-Item Env:VIRTUAL_ENV -ErrorAction SilentlyContinue
-    if (Test-Path $venv) { Remove-Item -Recurse -Force $venv }
+    if ($null -eq $previousVirtualEnv) {
+        Remove-Item Env:VIRTUAL_ENV -ErrorAction SilentlyContinue
+    } else {
+        $env:VIRTUAL_ENV = $previousVirtualEnv
+    }
+    $temporaryRoot = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\') + '\'
+    $resolvedVenv = [IO.Path]::GetFullPath($venv)
+    if (-not $resolvedVenv.StartsWith($temporaryRoot, [StringComparison]::OrdinalIgnoreCase) -or
+        [IO.Path]::GetFileName($resolvedVenv) -notmatch '^wtk-wheel-[a-f0-9]{32}$') {
+        throw "Refusing to clean an unexpected temporary directory: $resolvedVenv"
+    }
+    if (Test-Path -LiteralPath $resolvedVenv) { Remove-Item -LiteralPath $resolvedVenv -Recurse -Force }
 }

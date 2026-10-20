@@ -2,6 +2,7 @@
   const vscode = acquireVsCodeApi();
   const element = (id) => document.getElementById(id);
   const post = (type, values = {}) => vscode.postMessage({ type, ...values });
+  let tutorialView;
   let tutorialTarget;
   let tutorialStep;
   const tutorialNode = (tag, className, text) => {
@@ -15,27 +16,121 @@
     button.addEventListener("click", () => post("tour", { action }));
     return button;
   };
+  /** The part the step is about; its details stand in while nothing is selected to show them. */
+  const tutorialSubject = (view) => {
+    if (!view.spyTarget) return undefined;
+    const preferred = element(view.spyTarget);
+    return preferred.hidden || (view.spyTarget === "definitions-group" && element("property-groups").hidden)
+      ? element("details")
+      : preferred;
+  };
+  /**
+   * Puts the card beside the subject, on the first side with room (below, right, left, above), and
+   * points its arrow at it. A side with too little width gets a narrower card, down to a limit. With
+   * no subject the card sits in the middle and nothing is dulled.
+   */
+  const placeTutorial = () => {
+    const guide = element("extra-tutorial");
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+    if (guide.hidden || !width || !height) return;
+    const margin = 8;
+    const gap = 12;
+    const narrowest = 240;
+    const clamp = (value, low, high) => Math.min(Math.max(value, low), Math.max(low, high));
+    const natural = () => {
+      guide.style.width = "";
+      return { w: guide.offsetWidth, h: guide.offsetHeight };
+    };
+    let size = natural();
+    let side;
+    if (tutorialTarget) {
+      const t = tutorialTarget.getBoundingClientRect();
+      // The card's size on that side of the subject, or nothing when it does not fit there.
+      const fit = (name) => {
+        const fresh = natural();
+        if (name === "bottom" || name === "top") {
+          const room = name === "bottom" ? height - margin - (t.bottom + gap) : t.top - gap - margin;
+          return fresh.h <= room ? fresh : undefined;
+        }
+        const room = name === "right" ? width - margin - (t.right + gap) : t.left - gap - margin;
+        if (room < narrowest) return undefined;
+        if (room < fresh.w) {
+          guide.style.width = room + "px";
+          fresh.w = room;
+          fresh.h = guide.offsetHeight;
+        }
+        return fresh.h <= height - 2 * margin ? fresh : undefined;
+      };
+      for (const name of ["bottom", "right", "left", "top"]) {
+        const found = fit(name);
+        if (found) {
+          side = name;
+          size = found;
+          break;
+        }
+      }
+      if (!side) size = natural();
+    }
+    const { w, h } = size;
+    let left = (width - w) / 2;
+    let top = (height - h) / 2;
+    if (tutorialTarget) {
+      const t = tutorialTarget.getBoundingClientRect();
+      const centerX = (t.left + t.right) / 2;
+      const centerY = (t.top + t.bottom) / 2;
+      if (side === "bottom" || side === "top") {
+        left = clamp(centerX - w / 2, margin, width - w - margin);
+        top = side === "bottom" ? t.bottom + gap : t.top - gap - h;
+        guide.style.setProperty("--arrow-x", clamp(centerX - left, 18, w - 18) + "px");
+      } else if (side) {
+        top = clamp(centerY - h / 2, margin, height - h - margin);
+        left = side === "right" ? t.right + gap : t.left - gap - w;
+        guide.style.setProperty("--arrow-y", clamp(centerY - top, 18, h - 18) + "px");
+      } else {
+        // No side has room, as in a very short panel: sit over the bottom edge, with no arrow.
+        left = clamp((width - w) / 2, margin, width - w - margin);
+        top = Math.max(margin, height - h - margin);
+      }
+    }
+    if (side) guide.dataset.side = side;
+    else delete guide.dataset.side;
+    guide.style.left = Math.round(left) + "px";
+    guide.style.top = Math.round(top) + "px";
+  };
+  /** Lights the subject, dulls the rest and positions the card; run again when the layout moves. */
+  const refreshTutorial = () => {
+    const subject = tutorialView ? tutorialSubject(tutorialView) : undefined;
+    if (subject !== tutorialTarget) {
+      tutorialTarget?.classList.remove("tutorial-spotlight");
+      tutorialTarget = subject;
+      tutorialTarget?.classList.add("tutorial-spotlight");
+      tutorialTarget?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+    }
+    element("tutorial-scrim").hidden = !tutorialTarget;
+    placeTutorial();
+  };
   const renderTutorial = (view) => {
     const guide = element("extra-tutorial");
-    const scrollTop = guide.scrollTop;
-    guide.replaceChildren();
+    // The card itself does not scroll, so that its arrow can sit on its edge; its body does.
+    const body = element("extra-tutorial-body");
+    const scrollTop = body.scrollTop;
+    body.replaceChildren();
     guide.hidden = !view;
-    tutorialTarget?.classList.remove("tutorial-spotlight");
-    tutorialTarget = undefined;
+    tutorialView = view;
     if (!view) {
       tutorialStep = undefined;
+      refreshTutorial();
       return;
     }
     const head = tutorialNode("div", "tutorial-head");
-    head.append(tutorialNode("span", "tutorial-arrival", "↘"),
-      tutorialNode("span", "tutorial-label", "Optional Extra Feature Tutorial"));
+    head.append(tutorialNode("span", "tutorial-label", "Tutorial"));
     if (view.progress) head.append(tutorialNode("span", "tutorial-progress",
       view.progress.index + " of " + view.progress.total));
     const close = tutorialButton("Close", "close");
     close.setAttribute("aria-label", "Close optional tutorial");
     head.append(close);
-    guide.append(head,
-      tutorialNode("p", "tutorial-origin", "From Test Target → WinTestKit Spy"),
+    body.append(head,
       tutorialNode("h2", "tutorial-title", view.title),
       tutorialNode("p", "tutorial-text", view.text));
     const actions = tutorialNode("div", "tutorial-actions");
@@ -43,21 +138,27 @@
     back.disabled = !view.canBack;
     actions.append(back);
     for (const button of view.buttons) actions.append(tutorialButton(button.label, button.id, button.primary));
+    body.append(actions);
+    const foot = tutorialNode("div", "tutorial-foot");
     const skip = tutorialButton("Skip tutorial", "skip");
     skip.classList.add("tutorial-skip");
     const cancel = tutorialButton("Cancel WinTestKit Setup", "disable");
     cancel.classList.add("tutorial-cancel");
-    actions.append(cancel, skip);
-    guide.append(actions);
-    guide.scrollTop = tutorialStep === view.step ? scrollTop : 0;
+    foot.append(skip, cancel);
+    body.append(foot);
+    body.scrollTop = tutorialStep === view.step ? scrollTop : 0;
     tutorialStep = view.step;
-    if (view.spyTarget) {
-      const preferred = element(view.spyTarget);
-      tutorialTarget = preferred.hidden || (view.spyTarget === "definitions-group" && element("property-groups").hidden)
-        ? element("details") : preferred;
-      tutorialTarget.classList.add("tutorial-spotlight");
-    }
+    refreshTutorial();
   };
+  // Selecting an object shows its parts, and resizing the panel moves everything: follow both.
+  window.addEventListener("resize", refreshTutorial);
+  if (typeof ResizeObserver === "function") {
+    const watcher = new ResizeObserver(refreshTutorial);
+    for (const id of ["workspace", "details", "property-groups"]) {
+      const node = element(id);
+      if (node) watcher.observe(node);
+    }
+  }
   const nodes = new Map();
   const tasks = new Map();
   let appState;

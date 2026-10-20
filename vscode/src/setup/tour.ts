@@ -11,6 +11,7 @@ export const SETUP_STEPS = [
   "launch",
 ] as const;
 export type SetupStep = (typeof SETUP_STEPS)[number];
+export type SetupCursor = SetupStep | "complete";
 
 /** What is offered once setup is done. */
 export const EXTRA_STEPS = [
@@ -84,8 +85,7 @@ export interface TourContext {
   completed: boolean;
   /** Where the extras are, once the user chose to continue to them. */
   extra?: ExtraStep;
-  /** A step the user went back to; ignored once setup has moved to or past it. */
-  cursor?: SetupStep;
+  cursor?: SetupCursor;
   closed: boolean;
   installing: boolean;
   /** `attach` never starts the application itself. */
@@ -118,18 +118,19 @@ export function planTour(ctx: TourContext): TourView | undefined {
   const total = SETUP_STEPS.length;
   // With nothing left open the "all done" card comes after the last step.
   const openIndex = open ? SETUP_STEPS.indexOf(open) : total;
-  const viewed =
-    !ctx.completed && ctx.cursor && SETUP_STEPS.indexOf(ctx.cursor) < openIndex ? ctx.cursor : undefined;
-  if (!open && !viewed) return completeView();
-  const step = viewed ?? open!;
-  const view = stepView(ctx, step, viewed ? "ok" : stateOf(ctx, step));
+  const cursorIndex = ctx.cursor === "complete" ? total : SETUP_STEPS.indexOf(ctx.cursor ?? "interpreter");
+  const indexToShow = ctx.completed ? openIndex : Math.min(cursorIndex, openIndex);
+  if (indexToShow === total) return completeView();
+  const step = SETUP_STEPS[indexToShow];
+  const state = stateOf(ctx, step);
+  const view = stepView(ctx, step, state);
   const index = SETUP_STEPS.indexOf(step);
   return {
     ...view,
     phase: ctx.completed ? "repair" : "setup",
     progress: ctx.completed ? undefined : { index: index + 1, total },
     canBack: !ctx.completed && index > 0,
-    canNext: !!viewed,
+    canNext: !ctx.completed && state === "ok" && !(step === "package" && ctx.installing),
   };
 }
 
@@ -262,41 +263,41 @@ function extraView(extra: ExtraStep): TourView {
   const index = EXTRA_STEPS.indexOf(extra);
   const content: Record<ExtraStep, { title: string; text: string; spyTarget?: SpyTourTarget }> = {
     spy: {
-      title: "Meet WinTestKit Spy",
-      text: "This bottom panel is your live UI Automation workbench. The object browser on the left explores desktop windows and controls; the inspector on the right explains the selected object and helps turn it into reusable test code. You can try the real controls as you follow this optional tutorial.",
+      title: "Meet Spy",
+      text: "This panel is Spy. Browse the controls of your running app on the left, inspect the selected one on the right.",
     },
     spyPick: {
-      title: "Pick a control from the application",
-      text: "Click Pick element, then hold Ctrl and click a control in your application. Spy selects it in the tree, inspects its properties and suggests a locator. Press Esc to stop picking. Picking is useful when you can see a control but do not know where it lives in the object tree.",
+      title: "Pick a control",
+      text: "Click Pick element, then Ctrl+click a control in your app to jump to it in the tree. Esc stops picking.",
       spyTarget: "pick",
     },
     spyBrowse: {
-      title: "Explore the object browser",
-      text: "Expand windows and controls on the left, or use the search field to filter loaded objects. Refresh objects reloads the tree and Collapse all folds it. The scope button switches between all desktop windows and only your selected app. Select an object to inspect it; the pin button can bring its window to the front.",
+      title: "Browse the objects",
+      text: "Expand windows and controls, or filter them with the search box. Select one to inspect it.",
       spyTarget: "tree-pane",
     },
     spyProperties: {
-      title: "Understand the selected object",
-      text: "The inspector groups identity, state, geometry and automation information so you can understand a control before writing a test. Highlight outlines the selected object on screen. Expand All properties and click Load all properties when you need the complete property list and supported patterns. Select or pick an object first if this area is empty.",
+      title: "Inspect the selection",
+      text: "Identity, state and geometry of the selected control. Highlight outlines it on screen.",
       spyTarget: "details",
     },
     spyLocators: {
-      title: "Turn controls into reusable locators",
-      text: "After you select or pick a control, Suggested locator shows Python code and whether it uniquely identifies that control. Copy locator copies the code. Add to page inserts it into an existing or new page, adds imports and leaves the change unsaved for review. A scoped locator can reuse a container to distinguish similar controls.",
+      title: "Get a locator",
+      text: "Spy suggests Python code that finds the control. Copy it, or use Add to page to insert it.",
       spyTarget: "locator-panel",
     },
     spyDefinitions: {
-      title: "Find controls already defined in pages",
-      text: "Defined in pages links the selected control to matching definitions in your page files. Open a match to jump to its Python definition instead of creating a duplicate. The object tree also marks controls that are already defined, and those markers refresh when you save a page. Select an object to see its matches.",
+      title: "Already defined?",
+      text: "Matching definitions in your pages are listed here, so you can jump to one instead of duplicating it.",
       spyTarget: "definitions-group",
     },
     pagesFlows: {
-      title: "Organize pages and reusable flows",
-      text: "Back in the WinTestKit sidebar, Page Tree organizes your page classes and their controls; click an entry to open its definition. Flows lists reusable Python workflows. Eligible flows can run directly against the application. Keep locators in pages and multi-step interactions in flows so tests stay readable. The sidebar remains usable during this tutorial.",
+      title: "Pages & Flows",
+      text: "In the sidebar, Page Tree lists your pages and their controls, and Flows lists workflows you can run.",
     },
     test: {
-      title: "Run tests and inspect the result",
-      text: "Click Finish when you are ready, then open Testing in the Activity Bar and use Run Test beside the smoke test. Testing runs and debugs your tests; Test Target shows the latest result and its report link. Return to the WinTestKit sidebar after a run to inspect failures and review the report. Finishing this tutorial does not change your application or project.",
+      title: "Run your tests",
+      text: "Click Finish, then open Testing and run the smoke test. Test Target shows the result and report link.",
     },
   };
   return {

@@ -16,7 +16,10 @@ class Node {
   src = "";
   alt = "";
   scrollTop = 0;
-  style = {
+  offsetWidth = 0;
+  offsetHeight = 0;
+  rect?: { top: number; bottom: number; left: number; right: number };
+  style: Record<string, unknown> & { values: Map<string, string>; setProperty: (name: string, value: string) => void } = {
     values: new Map<string, string>(),
     setProperty: (name: string, value: string) => { this.style.values.set(name, value); },
   };
@@ -48,7 +51,7 @@ class Node {
     this.listeners[type] = callback;
   }
   getBoundingClientRect() {
-    return {
+    return this.rect ?? {
       top: this.dataset.area ? 20 : 0,
       bottom: this.dataset.area ? 60 : 120,
       left: 0,
@@ -71,7 +74,7 @@ class Node {
   }
 }
 
-function client(file: "setup" | "spy") {
+function client(file: "setup" | "spy", viewport: { width?: number } = {}) {
   const nodes = new Map<string, Node>();
   const element = (id: string) => {
     if (!nodes.has(id)) nodes.set(id, new Node());
@@ -93,6 +96,7 @@ function client(file: "setup" | "spy") {
       },
       window: {
         innerHeight: 320,
+        innerWidth: viewport.width,
         vscodeApi: api,
         addEventListener: (type: string, callback: typeof receive) => {
           if (type === "message") receive = callback;
@@ -141,11 +145,10 @@ describe("introduction clients", () => {
     const spy = client("spy");
     spy.send({ type: "tour", dim: false, spyLit: true, tutorial });
     expect(spy.element("extra-tutorial").hidden).toBe(false);
-    expect(spy.element("extra-tutorial").querySelector(".tutorial-title")?.textContent).toBe("Meet Spy");
-    expect(spy.element("extra-tutorial").querySelector(".tutorial-arrival")?.textContent).toBe("↘");
-    spy.element("extra-tutorial").querySelector(".tutorial-cancel")?.listeners.click();
+    expect(spy.element("extra-tutorial-body").querySelector(".tutorial-title")?.textContent).toBe("Meet Spy");
+    spy.element("extra-tutorial-body").querySelector(".tutorial-cancel")?.listeners.click();
     expect(spy.posts.at(-1)).toEqual({ type: "tour", action: "disable" });
-    spy.element("extra-tutorial").querySelector(".tutorial-skip")?.listeners.click();
+    spy.element("extra-tutorial-body").querySelector(".tutorial-skip")?.listeners.click();
     expect(spy.posts.at(-1)).toEqual({ type: "tour", action: "skip" });
     spy.send({ type: "tour", dim: false, spyLit: false });
     expect(spy.element("extra-tutorial").hidden).toBe(true);
@@ -156,16 +159,16 @@ describe("introduction clients", () => {
     const tutorial = { ...tour, phase: "extras", step: "spyPick", spyTarget: "pick", buttons: [{ id: "next", label: "Next" }] };
     spy.send({ type: "tour", dim: false, spyLit: true, tutorial });
     expect(spy.element("pick").classList.contains("tutorial-spotlight")).toBe(true);
-    spy.element("extra-tutorial").scrollTop = 35;
+    spy.element("extra-tutorial-body").scrollTop = 35;
     spy.send({ type: "tour", dim: false, spyLit: true, tutorial });
-    expect(spy.element("extra-tutorial").scrollTop).toBe(35);
-    const actions = spy.element("extra-tutorial").querySelector(".tutorial-actions")!;
+    expect(spy.element("extra-tutorial-body").scrollTop).toBe(35);
+    const actions = spy.element("extra-tutorial-body").querySelector(".tutorial-actions")!;
     actions.children[0].listeners.click();
     expect(spy.posts.at(-1)).toEqual({ type: "tour", action: "back" });
     actions.children[1].listeners.click();
     expect(spy.posts.at(-1)).toEqual({ type: "tour", action: "next" });
     spy.send({ type: "tour", dim: false, spyLit: true, tutorial: { ...tutorial, step: "spyBrowse", spyTarget: "tree-pane" } });
-    expect(spy.element("extra-tutorial").scrollTop).toBe(0);
+    expect(spy.element("extra-tutorial-body").scrollTop).toBe(0);
     expect(spy.element("pick").classList.contains("tutorial-spotlight")).toBe(false);
     expect(spy.element("tree-pane").classList.contains("tutorial-spotlight")).toBe(true);
     spy.element("locator-panel").hidden = true;
@@ -174,6 +177,46 @@ describe("introduction clients", () => {
     expect(spy.element("details").classList.contains("tutorial-spotlight")).toBe(true);
     spy.send({ type: "tour", dim: false, spyLit: false });
     expect(spy.element("details").classList.contains("tutorial-spotlight")).toBe(false);
+  });
+
+  describe("Spy tutorial card", () => {
+    const tutorial = { ...tour, phase: "extras", buttons: [{ id: "next", label: "Next" }] };
+    function open(step: string, spyTarget?: string) {
+      const spy = client("spy", { width: 900 });
+      const guide = spy.element("extra-tutorial");
+      guide.offsetWidth = 320;
+      guide.offsetHeight = 150;
+      spy.element("pick").rect = { top: 8, bottom: 36, left: 10, right: 120 };
+      spy.element("tree-pane").rect = { top: 50, bottom: 320, left: 10, right: 400 };
+      spy.element("details").rect = { top: 50, bottom: 320, left: 480, right: 890 };
+      spy.send({ type: "tour", dim: false, spyLit: true, tutorial: { ...tutorial, step, spyTarget } });
+      return { spy, guide };
+    }
+    const at = (guide: Node) => [guide.dataset.side, guide.style.left, guide.style.top];
+    it("sits below a control at the top and points at it", () => {
+      const { spy, guide } = open("spyPick", "pick");
+      expect(at(guide)).toEqual(["bottom", "8px", "48px"]);
+      expect(guide.style.values.get("--arrow-x")).toBe("57px");
+      expect(spy.element("tutorial-scrim").hidden).toBe(false);
+    });
+    it("moves beside a part too tall to sit below, on the side with room", () => {
+      const tree = open("spyBrowse", "tree-pane");
+      expect(at(tree.guide)).toEqual(["right", "412px", "110px"]);
+      expect(tree.guide.style.values.get("--arrow-y")).toBe("75px");
+      const details = open("spyProperties", "details");
+      expect(at(details.guide)).toEqual(["left", "148px", "110px"]);
+    });
+    it("floats in the middle with nothing dulled when the step is about no part of the panel", () => {
+      const { spy, guide } = open("spy");
+      expect(at(guide)).toEqual([undefined, "290px", "85px"]);
+      expect(spy.element("tutorial-scrim").hidden).toBe(true);
+    });
+    it("takes the dulling away with the card", () => {
+      const { spy } = open("spyBrowse", "tree-pane");
+      spy.send({ type: "tour", dim: false, spyLit: false });
+      expect(spy.element("tutorial-scrim").hidden).toBe(true);
+      expect(spy.element("tree-pane").classList.contains("tutorial-spotlight")).toBe(false);
+    });
   });
 
   it.each(["complete", "spy", "test"])("labels the %s card as the optional extra feature tutorial", (step) => {

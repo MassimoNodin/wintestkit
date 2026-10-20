@@ -90,6 +90,21 @@
         "category": "WinTestKit"
       },
       {
+        "command": "wintestkit.installCompatiblePackage",
+        "title": "Install Compatible Python Package",
+        "category": "WinTestKit"
+      },
+      {
+        "command": "wintestkit.selectInterpreter",
+        "title": "Choose Python Interpreter",
+        "category": "WinTestKit"
+      },
+      {
+        "command": "wintestkit.updateExtension",
+        "title": "Check Extension Updates",
+        "category": "WinTestKit"
+      },
+      {
         "command": "wintestkit.showOutput",
         "title": "Show Output",
         "category": "WinTestKit"
@@ -417,6 +432,10 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/MassimoNodin/wintestkit.git"
+  },
+  "homepage": "https://github.com/MassimoNodin/wintestkit#readme",
+  "bugs": {
+    "url": "https://github.com/MassimoNodin/wintestkit/issues"
   },
   "scripts": {
     "build": "node esbuild.mjs",

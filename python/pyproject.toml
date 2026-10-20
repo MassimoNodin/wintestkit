@@ -9,12 +9,20 @@ license-files = ["LICENSE"]
 dependencies = [
     "comtypes>=1.4.8",
     "pillow>=12.0.0",
+    "pytest>=8.3",
     "pyyaml>=6.0.2",
 ]
 classifiers = [
     "Operating System :: Microsoft :: Windows",
     "Framework :: Pytest",
 ]
+
+[project.urls]
+Homepage = "https://github.com/MassimoNodin/wintestkit"
+Documentation = "https://github.com/MassimoNodin/wintestkit/tree/master/docs/guide"
+Repository = "https://github.com/MassimoNodin/wintestkit"
+Issues = "https://github.com/MassimoNodin/wintestkit/issues"
+Changelog = "https://github.com/MassimoNodin/wintestkit/blob/master/vscode/CHANGELOG.md"
 
 [project.scripts]
 wtk = "wintestkit.cli:main"
@@ -31,12 +39,12 @@ path = "src/wintestkit/__init__.py"
 
 [dependency-groups]
 dev = [
-    "pytest>=8.3",
     "ruff>=0.7",
     "pyright>=1.1.390",
     "jsonschema>=4.23",
     "referencing>=0.35",
     "types-pyyaml>=6.0.12.20260906",
+    "twine>=7,<8",
 ]
 
 [tool.ruff]

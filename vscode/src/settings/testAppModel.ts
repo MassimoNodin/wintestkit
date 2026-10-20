@@ -22,6 +22,7 @@ export type TileId =
   | "enable"
   | "resumeSetup"
   | "installPackage"
+  | "updateExtension"
   | "initProject"
   | "recheck";
 

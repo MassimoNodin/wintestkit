@@ -380,6 +380,11 @@ export function activate(context: vscode.ExtensionContext): {
     "wintestkit.chooseApp": () => setup.chooseApp(),
     "wintestkit.openSetup": () => setupMonitor.show(),
     "wintestkit.setup.recheck": () => setupMonitor.recheck(),
+    "wintestkit.installCompatiblePackage": (target: unknown) => setup.installPackage(target instanceof vscode.Uri ? target : undefined),
+    "wintestkit.selectInterpreter": (target: unknown) => setup.pickInterpreter(target instanceof vscode.Uri ? target : undefined),
+    "wintestkit.updateExtension": () => vscode.commands.executeCommand(
+      "workbench.extensions.action.showExtensionsWithIds", ["wintestkit.wintestkit"],
+    ),
     "wintestkit.enable": async () => {
       await enablement.set(true);
       await setupMonitor.show();
