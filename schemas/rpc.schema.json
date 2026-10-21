@@ -388,6 +388,10 @@
       "properties": {
         "includeOtherApps": {
           "type": "boolean"
+        },
+        "foregroundForProcessId": {
+          "type": "integer",
+          "minimum": 1
         }
       },
       "required": [],
@@ -398,6 +402,39 @@
       "items": {
         "$ref": "rpc.schema.json#/$defs/NodeInfo"
       }
+    },
+    "InspectRefreshParams": {
+      "$ref": "rpc.schema.json#/$defs/InspectRootsParams"
+    },
+    "InspectRefreshResult": {
+      "type": "object",
+      "properties": {
+        "nodes": {"$ref": "rpc.schema.json#/$defs/InspectRootsResult"},
+        "status": {"$ref": "rpc.schema.json#/$defs/AppStatusResult"}
+      },
+      "required": ["nodes", "status"],
+      "additionalProperties": false
+    },
+    "InspectPartialErrorData": {
+      "type": "object",
+      "properties": {
+        "nodes": {"$ref": "rpc.schema.json#/$defs/InspectRootsResult"},
+        "complete": {"const": false},
+        "errors": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "index": {"type": "integer", "minimum": 0},
+              "message": {"type": "string"}
+            },
+            "required": ["index", "message"],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": ["nodes", "complete", "errors"],
+      "additionalProperties": false
     },
     "InspectChildrenParams": {
       "type": "object",
@@ -436,6 +473,10 @@
     "InspectPropertiesResult": {
       "type": "object",
       "properties": {
+        "inspection": {
+          "type": "array",
+          "items": {"$ref": "common.schema.json#/$defs/InspectionProperty"}
+        },
         "info": {
           "$ref": "common.schema.json#/$defs/ElementInfo"
         },
@@ -584,7 +625,7 @@
     },
     "SpyStartParams": {
       "type": "object",
-      "properties": {},
+      "properties": {"sessionId": {"type": "string", "minLength": 1}},
       "required": [],
       "additionalProperties": false
     },
@@ -603,6 +644,7 @@
     "SpyHoverNotification": {
       "type": "object",
       "properties": {
+        "sessionId": {"type": "string", "minLength": 1},
         "node": {
           "$ref": "rpc.schema.json#/$defs/NodeInfo"
         }
@@ -613,6 +655,7 @@
     "SpyPickedNotification": {
       "type": "object",
       "properties": {
+        "sessionId": {"type": "string", "minLength": 1},
         "node": {
           "$ref": "rpc.schema.json#/$defs/NodeInfo"
         },
@@ -620,12 +663,12 @@
           "$ref": "rpc.schema.json#/$defs/Suggestion"
         }
       },
-      "required": ["node", "suggestion"],
+      "required": ["node"],
       "additionalProperties": false
     },
     "SpyCancelledNotification": {
       "type": "object",
-      "properties": {},
+      "properties": {"sessionId": {"type": "string", "minLength": 1}},
       "required": [],
       "additionalProperties": false
     },

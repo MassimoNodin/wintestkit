@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import logging
+import math
 import threading
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
@@ -20,6 +21,34 @@ from wintestkit.uia.constants import (
 )
 
 log = logging.getLogger("wintestkit.uia.element")
+
+
+def inspection_property(name: str, value: Any, depth: int = 0) -> dict[str, Any]:
+    """Describe UIA values without invoking object members or arbitrary string conversions."""
+    __tracebackhide__ = True
+    result: dict[str, Any] = {"name": name, "typeName": type(value).__name__}
+    if value is None or type(value) in (str, int, float, bool):
+        result["kind"] = "scalar"
+        if type(value) is float and not math.isfinite(value):
+            result.update(kind="unavailable", status="Non-finite UIA value")
+        else:
+            result["value"] = value[:4096] if type(value) is str else value
+            if type(value) is str and len(value) > 4096:
+                result["status"] = "Truncated to 4096 characters"
+    elif type(value) in (list, tuple):
+        result["kind"] = "array"
+        if depth >= 2:
+            result["status"] = "Depth limit reached"
+        else:
+            result["children"] = [
+                inspection_property(str(index), child, depth + 1)
+                for index, child in enumerate(value[:32])
+            ]
+            if len(value) > 32:
+                result["status"] = "Truncated to 32 items"
+    else:
+        result.update(kind="object", status="Opaque external UIA value; members are not read")
+    return result
 
 
 @dataclass(frozen=True, slots=True)
@@ -173,11 +202,29 @@ def _control_view_condition(condition: Any | None) -> Any:
     return uia.CreateAndCondition(view, condition)
 
 
+class ElementEnumerationError(Exception):
+    def __init__(self, elements: list[UIAElement | None], errors: list[dict[str, Any]]) -> None:
+        __tracebackhide__ = True
+        super().__init__("some UIA elements could not be enumerated")
+        self.elements = elements
+        self.errors = errors
+
+
 def array_to_list(array: Any, cached: bool = False) -> list[UIAElement]:
     __tracebackhide__ = True
     if array is None:
         return []
-    return [UIAElement(array.GetElement(i), cached=cached) for i in range(array.Length)]
+    elements: list[UIAElement | None] = []
+    errors: list[dict[str, Any]] = []
+    for index in range(array.Length):
+        try:
+            elements.append(UIAElement(array.GetElement(index), cached=cached))
+        except Exception as exc:
+            elements.append(None)
+            errors.append({"index": index, "message": str(exc)})
+    if errors:
+        raise ElementEnumerationError(elements, errors)
+    return [element for element in elements if element is not None]
 
 
 class UIAElement:
