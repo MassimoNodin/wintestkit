@@ -61,6 +61,7 @@ _TOP_LEVEL_KEYS = {
     "replay_scope",
     "replay_max_frames",
     "replay_max_bytes",
+    "object_previews",
 }
 _APP_KEYS = {"path", "args", "cwd", "env", "process", "startup_timeout", "close_timeout"}
 
@@ -75,6 +76,7 @@ _ENV_VARS = {
     "WTK_REPLAY_SCOPE": "replay_scope",
     "WTK_REPLAY_MAX_FRAMES": "replay_max_frames",
     "WTK_REPLAY_MAX_BYTES": "replay_max_bytes",
+    "WTK_OBJECT_PREVIEWS": "object_previews",
 }
 
 
@@ -121,6 +123,7 @@ class WtkConfig:
     replay_scope: Literal["window", "desktop"] = "window"
     replay_max_frames: int = 3000
     replay_max_bytes: int = 104857600
+    object_previews: bool = True
 
 
 # -- project discovery ----------------------------------------------------------------------------
@@ -299,7 +302,11 @@ def _environment_values(environ: Mapping[str, str]) -> dict[str, Any]:
         raw = environ.get(variable)
         if raw is None or raw == "":
             continue
-        if key in {"timeout", "replay_fps"}:
+        if key == "object_previews":
+            if raw.lower() not in {"true", "false", "1", "0"}:
+                raise ConfigError(f"{variable}: expected true or false", key=key)
+            values[key] = raw.lower() in {"true", "1"}
+        elif key in {"timeout", "replay_fps"}:
             try:
                 values[key] = float(raw)
             except ValueError:
@@ -435,6 +442,7 @@ def load_config(start: Path | None = None, overrides: Mapping[str, Any] | None =
             root, _string("report_dir", values.get("report_dir", "wtk-report"))
         ),
         highlight_actions=_boolean("highlight_actions", values.get("highlight_actions", False)),
+        object_previews=_boolean("object_previews", values.get("object_previews", True)),
         slow_mo_ms=_non_negative_int("slow_mo_ms", values.get("slow_mo_ms", 0)),
         python_paths=tuple(_resolve_path(root, p) for p in python_paths),
         property_aliases=_property_aliases(values.get("property_aliases", {})),
