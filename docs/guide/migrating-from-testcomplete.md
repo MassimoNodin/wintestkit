@@ -39,6 +39,22 @@ pytest instead of a proprietary IDE and project format.
 - **Code review and version control.** Pages and tests are plain Python files that diff, review
   and merge like any other code.
 
+## NameMapping importer
+
+Run `wtk import-namemapping NameMapping.xml pages/imported.py`. The command generates a flat,
+editable `Page` skeleton. It does not migrate aliases, parent-chain behavior, actions, or tests.
+Existing output is preserved; pass `--force` to replace it explicitly.
+
+`WPFControlName` becomes `automation_id` (verify that it is exposed as UIA AutomationId in Spy).
+`ClrFullClassName` is retained as `where={"ClrFullClassName": ...}`. Configure
+`property_aliases: {ClrFullClassName: ItemStatus}` in `wintestkit.yaml` only if the application
+exposes that .NET class name through UIA ItemStatus. The importer cannot read CLR properties by
+itself. Review and validate every generated locator against the live app before using it.
+
+Input is limited to 10 MiB. DTD/entity declarations and malformed XML are rejected. This parser
+does not execute XML or resolve external entities. It reads properties only from each mapped
+object's direct `Properties` collection, avoiding ancestor/descendant property duplication.
+
 ## A migrated test
 
 A keyword test that signs in and checks the welcome text becomes a page and a test function:
@@ -69,9 +85,11 @@ A data-driven loop over a table becomes a parametrized test:
 
 ## Suggested order
 
-1. Configure the application in `pyproject.toml` and check the machine with `wtk doctor`.
-2. Translate the NameMapping for one window into a `Page`, using the Spy to confirm each
-   locator. Run **Check All Elements** in VS Code (or `wtk check`) until it is green.
+1. Configure shared settings in `wintestkit.yaml` and the application path in
+   `wintestkit.local.yaml`, then check the machine with `wtk doctor`.
+2. Translate the NameMapping for one window into a `Page` (or generate a starter skeleton with
+   `wtk import-namemapping`), using the Spy to confirm each locator. Run **Check All Elements**
+   in VS Code (or `wtk check`) until it is green.
 3. Move the tests that use that window, replacing checkpoints with `expect` and removing explicit
    waits.
 4. Repeat per window, then switch CI from TestExecute to `wtk run` ([CI](ci.md)).

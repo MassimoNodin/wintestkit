@@ -55,7 +55,7 @@ Prefer, in this order:
 5. **`index`**: the n-th of several matches. Use it last; it breaks when controls are added or
    reordered.
 
-The demo application exposes only two AutomationIds, so its page shows each strategy:
+When an application exposes few AutomationIds, its page definition can combine these strategies:
 
 ```python
 # pseudo-code
@@ -150,7 +150,7 @@ def test_message_box(main: MainPage) -> None:
     main.show_message.click()
     box = MessageBox(main.app)
     expect(box.window).to_exist()
-    expect(box.text).to_have_text("Hello from demo")
+    expect(box.text).to_have_text("Hello from application")
     box.ok.click()
     expect(main.status).to_have_text("Message closed")
 ```
