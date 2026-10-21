@@ -1,4 +1,4 @@
-﻿import * as vscode from "vscode";
+import * as vscode from "vscode";
 import { createLog } from "./log";
 import { onDidChangeInterpreter, runTerminal } from "./python";
 import { ServerManager, type Project } from "./server/serverManager";
@@ -491,14 +491,6 @@ export function activate(context: vscode.ExtensionContext): {
         (target?: vscode.TreeItem, ...args: unknown[]) => {
           if (implemented[contribution.command])
             return implemented[contribution.command](target, ...args);
-          if (contribution.command === "wintestkit.showOutput") {
-            log.show();
-          } else {
-            log.info(
-              contribution.command +
-                ": not implemented in the extension scaffold",
-            );
-          }
         },
       ),
     );

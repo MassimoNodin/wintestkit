@@ -424,10 +424,6 @@ export class TestController implements vscode.Disposable {
       }
     }
   }
-  /** The project a test row belongs to, for buttons on the Test Results rows. */
-  projectOf(item: vscode.TestItem): Project | undefined {
-    return this.reportTarget(item)?.project;
-  }
 
   reportTarget(item: vscode.TestItem): ItemData | undefined {
     const known = this.items.get(item.id);

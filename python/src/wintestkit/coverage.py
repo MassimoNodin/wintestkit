@@ -297,7 +297,7 @@ class Coverage:
     @staticmethod
     def _ui_epoch(app: Any) -> tuple[Any, ...]:
         """What invalidates resolutions on its own: other processes or other (real) windows."""
-        pids = tuple(app.pids)
+        pids = tuple(sorted(app.pids))
         windows = frozenset(
             hwnd
             for hwnd in win32.top_level_windows(set(pids))
@@ -352,7 +352,8 @@ class Coverage:
     def definitions_of(self, app: Any, node_id: str, info: ElementInfo) -> dict[str, Any]:
         """Every definition that resolves to exactly ``node_id``, re-resolved now."""
         with runtime.config_scope(self.cfg):
-            self._ensure_fresh(app)
+            snapshot = _SnapshotApp(app) if app is not None else None
+            self._ensure_fresh(snapshot)
             assert self.catalogue is not None
             if app is None:
                 return {
@@ -361,7 +362,6 @@ class Coverage:
                     "pageCount": len({entry.page_class for entry in self.catalogue.entries}),
                     "appRunning": False,
                 }
-            snapshot = _SnapshotApp(app)
             fresh: dict[Any, frozenset[str]] = {}
             grouped: dict[str, list[str]] = {}
             for entry in self._candidates(info, self._kinds(info)):
@@ -412,11 +412,11 @@ class Coverage:
         not finish are returned as ``pending`` so the caller can ask again.
         """
         with runtime.config_scope(self.cfg):
-            self._ensure_fresh(app)
+            snapshot = _SnapshotApp(app) if app is not None else None
+            self._ensure_fresh(snapshot)
             # The budget covers resolving definitions, not importing the pages to index them.
             deadline = time.monotonic() + budget
             assert self.catalogue is not None
-            snapshot = _SnapshotApp(app)
             covered: dict[str, Any] = {}
             pending: list[str] = []
             for node_id, info in nodes.items():

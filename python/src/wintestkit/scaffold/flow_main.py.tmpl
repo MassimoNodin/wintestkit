@@ -9,4 +9,5 @@ def open_main_page(app: App) -> MainPage:
     """Check that the main window is showing and return its page."""
     page = MainPage(app)
     expect(page.window).to_be_visible()
+    expect(page.content).to_be_visible()
     return page

@@ -1,7 +1,7 @@
 # Shared data contracts
 
-The source of truth is `docs/plan/05-protocol.md`. These six JSON Schema draft 2020-12 documents
-encode its interfaces, unions, method parameters/results, and notification payloads.
+These six JSON Schema draft 2020-12 documents are the source of truth for interfaces, unions,
+method parameters/results, and notification payloads.
 
 | Schema | Definitions |
 |---|---|
@@ -77,5 +77,4 @@ container, not a wire payload. Do not edit generated types directly.
 
 After changing a contract, update its schema, shared fixture and typed example, regenerate the
 types, and commit them together. Unit tests regenerate twice and compare bytes with the checked-in
-file; CI also runs generation and rejects a diff. Desktop integration tests remain the separate
-T7.3 milestone.
+file; CI also runs generation and rejects a diff.
