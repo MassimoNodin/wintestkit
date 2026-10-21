@@ -106,12 +106,26 @@ describe("YAML configuration editing", () => {
   it("groups evidence controls separately and bounds replay FPS like the backend", () => {
     const evidence = settingSections("shared").advanced.find((group) => group.group === "Evidence");
     expect(evidence?.fields.map((field) => field.key)).toEqual([
-      "screenshots", "replay", "replay_fps", "replay_scope",
+      "screenshots", "object_previews", "replay", "replay_fps", "replay_scope",
     ]);
     expect(settingFields.find((field) => field.key === "replay_fps")).toMatchObject({ minimum: 0, maximum: 30 });
     for (const fps of [0, -1, 30.01])
       expect(() => updateSetting("{}", "shared", "replay_fps", fps, false)).toThrow();
     expect(() => updateSetting("{}", "shared", "replay_fps", 30, false)).not.toThrow();
+  });
+  it("allows portable object previews to be disabled in shared or local settings", () => {
+    for (const scope of ["shared", "local"] as const) {
+      const source = updateSetting("{}", scope, "object_previews", false, false);
+      expect(parseSettings(source, scope).toJS()).toEqual({ object_previews: false });
+      expect(() =>
+        updateSetting(source, scope, "object_previews", "false", false),
+      ).toThrow(/true or false/);
+    }
+    expect(settingFields.find((field) => field.key === "object_previews")).toMatchObject({
+      kind: "boolean",
+      default: true,
+      group: "Evidence",
+    });
   });
   it("keeps machine-only options out of shared sections", () => {
     const shared = settingSections("shared");

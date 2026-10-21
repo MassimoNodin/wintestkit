@@ -1,15 +1,43 @@
 (() => {
   const vscode = acquireVsCodeApi();
   const element = (id) => document.getElementById(id);
-  const post = (type, values = {}) => vscode.postMessage({ type, ...values });
+  const post = (type, values = {}) => {
+    if (tutorialView && type !== "tour" && type !== "ready") return;
+    vscode.postMessage({ type, ...values });
+  };
   let tutorialView;
   let tutorialTarget;
+  let tutorialSpotlights = [];
   let tutorialStep;
+  const blockTutorialAction = (event) => {
+    if (!tutorialView || event.target.closest?.("#extra-tutorial")) return;
+    if (event.type === "keydown" && ["Tab", "PageUp", "PageDown"].includes(event.key)) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  };
+  for (const type of ["click", "dblclick", "auxclick", "pointerdown", "pointerup", "keydown", "beforeinput", "input", "change", "contextmenu", "dragstart", "drop"])
+    document.addEventListener(type, blockTutorialAction, true);
   const tutorialNode = (tag, className, text) => {
     const node = document.createElement(tag);
     node.className = className;
     if (text) node.textContent = text;
     return node;
+  };
+  /** VS Code's own icon for the Testing view (codicon "beaker"), drawn as the SVG it ships. */
+  const BEAKER_SVG = '<svg width="16" height="16" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg" fill="currentColor"><path d="M12 0.998993C12.276 0.998993 12.5 1.22299 12.5 1.49899C12.5 1.77499 12.276 1.99899 12 1.99899H11.004V6.68299C11.004 7.26299 11.148 7.83299 11.423 8.34299L13.819 12.789C14.358 13.788 13.634 15.001 12.499 15.001H3.50101C2.36501 15.001 1.64301 13.788 2.18101 12.789L4.57501 8.34499C4.85001 7.83499 4.99401 7.26399 4.99401 6.68499V1.99899H4.00001C3.72401 1.99899 3.50001 1.77499 3.50001 1.49899C3.50001 1.22299 3.72401 0.998993 4.00001 0.998993H12ZM5.99401 1.99899V6.68599C5.99401 7.43099 5.80901 8.16399 5.45601 8.81999L4.82101 9.99899H11.18L10.543 8.81699C10.19 8.16099 10.005 7.42799 10.005 6.68199V1.99899H5.99401ZM11.718 10.999H4.28201L3.06201 13.263C2.88201 13.597 3.12401 14 3.50201 14H12.499C12.877 14 13.119 13.596 12.939 13.263L11.718 10.999Z"/></svg>';
+  /** Text in which `$(beaker)` stands for the Testing view's icon, as in VS Code's own labels. */
+  const tutorialText = (text) => {
+    const paragraph = tutorialNode("p", "tutorial-text");
+    text.split(/\$\(beaker\)/).forEach((part, index) => {
+      if (index > 0) {
+        const icon = tutorialNode("span", "tutorial-icon");
+        icon.innerHTML = BEAKER_SVG;
+        icon.setAttribute("aria-hidden", "true");
+        paragraph.append(icon);
+      }
+      if (part) paragraph.append(tutorialNode("span", "", part));
+    });
+    return paragraph;
   };
   const tutorialButton = (label, action, primary = false) => {
     const button = tutorialNode("button", primary ? "" : "secondary", label);
@@ -20,14 +48,16 @@
   const tutorialSubject = (view) => {
     if (!view.spyTarget) return undefined;
     const preferred = element(view.spyTarget);
-    return preferred.hidden || (view.spyTarget === "definitions-group" && element("property-groups").hidden)
+    return preferred.hidden
       ? element("details")
-      : preferred;
+      : view.spyTarget === "definitions-group"
+        ? element("definitions-pane")
+        : preferred;
   };
   /**
    * Puts the card beside the subject, on the first side with room (below, right, left, above), and
    * points its arrow at it. A side with too little width gets a narrower card, down to a limit. With
-   * no subject the card sits in the middle and nothing is dulled.
+   * no subject the card sits in the middle.
    */
   const placeTutorial = () => {
     const guide = element("extra-tutorial");
@@ -100,17 +130,34 @@
   };
   /** Lights the subject, dulls the rest and positions the card; run again when the layout moves. */
   const refreshTutorial = () => {
+    const inspector = element("details");
+    inspector.classList.toggle("inspector-narrow", inspector.clientWidth <= 560);
     const subject = tutorialView ? tutorialSubject(tutorialView) : undefined;
+    const extraTargets = tutorialView?.spyTarget === "pick"
+      ? ["refresh", "collapse", "bring-front"]
+      : tutorialView?.spyTarget === "selection-summary" && subject === element("selection-summary")
+        ? ["highlight"] : [];
+    const spotlights = [subject, ...extraTargets.map(element)].filter(Boolean);
+    if (tutorialView?.spyTarget === "definitions-group" && coverage.has(selected)) {
+      const row = nodes.get(selected)?.row;
+      if (row) spotlights.push(row);
+    }
+    for (const target of tutorialSpotlights)
+      if (!spotlights.includes(target)) target.classList.remove("tutorial-spotlight");
+    for (const target of spotlights) target.classList.add("tutorial-spotlight");
+    tutorialSpotlights = spotlights;
     if (subject !== tutorialTarget) {
-      tutorialTarget?.classList.remove("tutorial-spotlight");
       tutorialTarget = subject;
-      tutorialTarget?.classList.add("tutorial-spotlight");
       tutorialTarget?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
     }
-    element("tutorial-scrim").hidden = !tutorialTarget;
+    element("tutorial-scrim").hidden = !tutorialView;
     placeTutorial();
   };
   const renderTutorial = (view) => {
+    if (JSON.stringify(tutorialView) === JSON.stringify(view)) {
+      refreshTutorial();
+      return;
+    }
     const guide = element("extra-tutorial");
     // The card itself does not scroll, so that its arrow can sit on its edge; its body does.
     const body = element("extra-tutorial-body");
@@ -132,20 +179,13 @@
     head.append(close);
     body.append(head,
       tutorialNode("h2", "tutorial-title", view.title),
-      tutorialNode("p", "tutorial-text", view.text));
+      tutorialText(view.text));
     const actions = tutorialNode("div", "tutorial-actions");
     const back = tutorialButton("Back", "back");
     back.disabled = !view.canBack;
     actions.append(back);
     for (const button of view.buttons) actions.append(tutorialButton(button.label, button.id, button.primary));
     body.append(actions);
-    const foot = tutorialNode("div", "tutorial-foot");
-    const skip = tutorialButton("Skip tutorial", "skip");
-    skip.classList.add("tutorial-skip");
-    const cancel = tutorialButton("Cancel WinTestKit Setup", "disable");
-    cancel.classList.add("tutorial-cancel");
-    foot.append(skip, cancel);
-    body.append(foot);
     body.scrollTop = tutorialStep === view.step ? scrollTop : 0;
     tutorialStep = view.step;
     refreshTutorial();
@@ -154,7 +194,7 @@
   window.addEventListener("resize", refreshTutorial);
   if (typeof ResizeObserver === "function") {
     const watcher = new ResizeObserver(refreshTutorial);
-    for (const id of ["workspace", "details", "property-groups"]) {
+    for (const id of ["workspace", "details", "selection-summary", "properties-pane", "property-groups"]) {
       const node = element(id);
       if (node) watcher.observe(node);
     }
@@ -408,7 +448,7 @@
   const renderBringToFront = () => {
     const button = element("bring-front");
     const text =
-      "Bring window to front when selecting: " + (bringToFront ? "on" : "off");
+      "Bring window to front when highlighting: " + (bringToFront ? "on" : "off");
     button.setAttribute("aria-pressed", String(bringToFront));
     button.title = text;
     button.setAttribute("aria-label", text);
@@ -416,6 +456,17 @@
       "codicon codicon-" + (bringToFront ? "pinned" : "pin");
   };
   const renderStatus = () => {
+    if (savedDefinition) {
+      element("tree-stage").dataset.busy = "false";
+      element("tree-overlay").hidden = true;
+      element("details-loading").hidden = true;
+      for (const id of ["property-groups", "definitions-group", "properties-empty", "locator-panel", "details-empty", "inspection-section"])
+        element(id).hidden = true;
+      element("selection-summary").hidden = false;
+      for (const id of ["highlight", "load-properties", "copy", "add", "other-apps"])
+        element(id).disabled = true;
+      return;
+    }
     renderBringToFront();
     const otherApps = element("other-apps");
     const running = !!(appState && appState.appRunning);
@@ -555,6 +606,8 @@
         );
     }
     element("property-groups").hidden = !hasDetails;
+    element("definitions-group").hidden = !hasDetails;
+    element("properties-empty").hidden = hasDetails;
     element("locator-panel").hidden = !hasDetails;
     element("selection-summary").hidden = !hasDetails && !selected;
     element("details-empty").hidden = hasDetails;
@@ -683,9 +736,58 @@
   let picking = false;
   let selected;
   let suggestion;
+  let savedDefinition = false;
+  const renderObjectPreview = (preview, reason) => {
+    const image = element("object-preview-image");
+    image.hidden = true;
+    image.src = "";
+    element("object-preview").hidden = false;
+    element("object-preview-status").textContent = reason || "No saved last-test preview is available.";
+    if (!preview || typeof preview.cropDataUrl !== "string" ||
+      !/^data:image\/webp;base64,[A-Za-z0-9+/]+={0,2}$/.test(preview.cropDataUrl)) return;
+    image.src = preview.cropDataUrl;
+    image.hidden = false;
+    element("object-preview-status").textContent = "Captured by a test at " + preview.capturedAt + " (UTC). Not a live capture.";
+  };
+  const renderInspection = (properties) => {
+    const tree = element("inspection-tree");
+    tree.replaceChildren();
+    element("inspection-section").hidden = !Array.isArray(properties) || !properties.length;
+    let remaining = 500;
+    const safeText = (value) => typeof value === "string" ? value.slice(0, 2000) : "";
+    const append = (parent, entries, depth) => {
+      if (!Array.isArray(entries)) return;
+      for (const property of entries) {
+        if (remaining-- <= 0) {
+          parent.append(tutorialNode("p", "muted", "Inspection display limit reached."));
+          return;
+        }
+        if (!property || typeof property !== "object") continue;
+        const label = safeText(property.name) + " (" + safeText(property.typeName) + ")";
+        if (property.kind === "object" || property.kind === "array") {
+          const branch = document.createElement("details");
+          branch.append(tutorialNode("summary", "", label));
+          if (property.status) branch.append(tutorialNode("p", "muted", safeText(property.status)));
+          if (depth >= 6) branch.append(tutorialNode("p", "muted", "Inspection depth limit reached."));
+          else append(branch, property.children, depth + 1);
+          parent.append(branch);
+        } else {
+          const scalar = property.value;
+          const value = scalar === null ? "null" : typeof scalar === "string" ? safeText(scalar)
+            : typeof scalar === "boolean" || (typeof scalar === "number" && Number.isFinite(scalar)) ? String(scalar) : "";
+          parent.append(tutorialNode("div", "inspection-value", label + ": " +
+            (property.kind === "unavailable" ? safeText(property.status) || "Unavailable" : value)));
+        }
+      }
+    };
+    append(tree, properties, 0);
+  };
   // Whether the selected object has an on-screen rectangle to outline.
   let highlightable = true;
   const choose = (nodeId) => {
+    if (savedDefinition) return;
+    element("object-preview").hidden = true;
+    renderInspection(undefined);
     focusSelected(nodeId);
     suggestion = undefined;
     hasDetails = false;
@@ -898,11 +1000,12 @@
     if (suggestion) post("addToPage");
   });
   element("highlight").addEventListener("click", () => {
-    if (selected) post("highlight", { nodeId: selected });
+    if (selected && !savedDefinition) post("highlight", { nodeId: selected });
   });
   element("load-properties").addEventListener("click", () => {
     if (
       !selected ||
+      savedDefinition ||
       !hasDetails ||
       fullPropertiesLoading ||
       fullPropertiesLoaded
@@ -1004,10 +1107,42 @@
   });
   window.addEventListener("message", (event) => {
     const message = event.data;
+    if (message.type === "savedDefinition") {
+      savedDefinition = true;
+      nodes.clear();
+      coverage.clear();
+      element("tree").replaceChildren();
+      selected = undefined;
+      suggestion = undefined;
+      hasDetails = false;
+      selecting = false;
+      tasks.clear();
+      renderSuggestion(undefined);
+      renderInspection(undefined);
+      element("selection-name").textContent = message.qualname;
+      element("selection-type").textContent = "Saved definition (offline)";
+      renderObjectPreview(message.preview, message.reason);
+      element("object-preview-status").textContent += " Use Refresh to return to live Spy.";
+      renderStatus();
+      return;
+    }
+    if (savedDefinition && !["roots", "tour", "state"].includes(message.type)) return;
     if (message.type === "progress") {
-      progress(message);
+      if (!message.done && message.completed === 0 && message.target === "tree")
+        element("enumeration-status").hidden = true;
+      if (!tutorialView) progress(message);
     } else if (message.type === "tour") {
-      const dimmed = !!message.dim && !message.spyLit;
+      if (!!message.tutorial !== !!tutorialView) {
+        tasks.clear();
+        selecting = false;
+        fullPropertiesLoading = false;
+        treeError = "";
+        detailsError = "";
+        failureTarget = undefined;
+        for (const entry of nodes.values()) entry.loading = false;
+        renderStatus();
+      }
+      const dimmed = false;
       document.body.classList.toggle("tour-dim", dimmed);
       document.body.inert = dimmed;
       element("pick").classList.toggle("tour-lit", message.tutorial ? message.tutorial.spyTarget === "pick" : !!message.spyLit);
@@ -1017,6 +1152,10 @@
       for (const entry of nodes.values()) rootIcon(entry);
       selectionIcon(selected);
     } else if (message.type === "state") {
+      if (savedDefinition && message.picking) {
+        savedDefinition = false;
+        element("object-preview").hidden = true;
+      }
       appState = message;
       if (typeof message.showOtherApps === "boolean")
         showOtherApps = message.showOtherApps;
@@ -1034,6 +1173,9 @@
       );
       renderStatus();
     } else if (message.type === "roots") {
+      savedDefinition = false;
+      element("object-preview").hidden = true;
+      renderInspection(undefined);
       hint("");
       rootIcons = {};
       coverage.clear();
@@ -1073,6 +1215,7 @@
         renderNodes(entry.children, message.nodes);
         entry.loaded = true;
         entry.loading = false;
+        if (message.expanded) entry.open = true;
         entry.row.removeAttribute("aria-busy");
         if (!message.nodes.length) {
           entry.node.hasChildren = false;
@@ -1080,7 +1223,7 @@
           entry.toggle.disabled = true;
           entry.row.removeAttribute("aria-expanded");
         }
-        renderStatus();
+        filter();
       }
     } else if (message.type === "suggestion") {
       if (message.nodeId !== selected) return;
@@ -1101,6 +1244,7 @@
         else coverage.delete(id);
         applyMarker(nodes.get(id));
       }
+      if (tutorialView) refreshTutorial();
     } else if (message.type === "propertiesLoading") {
       if (message.nodeId !== selected) return;
       fullPropertiesLoading = message.loading;
@@ -1110,6 +1254,7 @@
       fullPropertiesLoaded = true;
       fullPropertiesLoading = false;
       table("all-properties", message.properties.properties);
+      renderInspection(message.properties.inspection);
       const info = message.properties.info;
       table("automation-properties", {
         Framework: info.frameworkId,
@@ -1118,6 +1263,8 @@
       });
       renderStatus();
     } else if (message.type === "selected") {
+      element("object-preview").hidden = true;
+      renderInspection(message.properties.inspection);
       hint("");
       focusSelected(message.nodeId);
       hasDetails = true;
@@ -1162,6 +1309,13 @@
       });
       table("all-properties", message.properties.properties);
       renderSuggestion(message.suggestion);
+      renderStatus();
+    } else if (message.type === "objectPreview") {
+      if (message.nodeId === selected) renderObjectPreview(message.preview, message.reason);
+    } else if (message.type === "enumerationIncomplete") {
+      element("enumeration-status").textContent = message.message;
+      element("enumeration-status").hidden = false;
+      hint(message.message);
       renderStatus();
     } else if (message.type === "hover") {
       hint(

@@ -98,6 +98,10 @@ export class SetupMonitor implements vscode.Disposable {
     this.modeConfirmed = state.get<boolean>(MODE_KEY, false);
     const cursor = state.get<string>(CURSOR_KEY);
     if (cursor === "complete" || SETUP_STEPS.includes(cursor as SetupStep)) this.cursor = cursor as SetupCursor;
+    else if (!this.completed && EXTRA_STEPS.includes(cursor as ExtraStep)) {
+      this.extra = EXTRA_STEPS[0];
+      this.closed = true;
+    }
     this.subscriptions.push(
       enablement.onDidChange(() => this.schedule(0)),
       projects.onDidChange(() => this.schedule()),
@@ -222,7 +226,8 @@ export class SetupMonitor implements vscode.Disposable {
       if (this.disposed) return;
       this.current = health;
       const { announce, passedChanged } = this.tracker.update(health);
-      if (passedChanged) void this.state.update(PASSED_KEY, this.tracker.passedSteps());
+      if (passedChanged) void this.state.update(PASSED_KEY, this.tracker.passedSteps())
+        .then(undefined, (error) => this.log.warn(`Cannot save setup checks: ${String(error)}`));
       this.views = this.tracker.views(health);
       this.pythonName = await this.describePython();
       await this.publishBlocked();
@@ -247,9 +252,12 @@ export class SetupMonitor implements vscode.Disposable {
     this.modeConfirmed = true;
     this.extra = undefined;
     this.cursor = undefined;
-    await this.state.update(COMPLETED_KEY, true);
-    await this.state.update(MODE_KEY, true);
-    await this.state.update(CURSOR_KEY, undefined);
+    this.touch();
+    await Promise.all([
+      this.state.update(COMPLETED_KEY, true),
+      this.state.update(MODE_KEY, true),
+      this.state.update(CURSOR_KEY, undefined),
+    ]);
   }
 
   /** Hides the other views while WinTestKit is not set up enough to work and the guide is closed. */
@@ -283,8 +291,19 @@ export class SetupMonitor implements vscode.Disposable {
   // -- what the tour's buttons do to the tour itself -------------------------------------------
 
   private touch(): void {
-    void this.publishBlocked();
+    void this.publishBlocked().then(undefined, (error) => this.log.warn(`Cannot publish setup context: ${String(error)}`));
     this.changed.fire();
+  }
+
+  private saveCursor(): void {
+    const cursor = this.extra ?? this.cursor;
+    void this.state.update(CURSOR_KEY, cursor).then(undefined, (error) => {
+      this.log.warn(`Cannot save tutorial progress: ${String(error)}`);
+      if (this.extra && cursor === this.extra) {
+        this.closed = true;
+        this.touch();
+      }
+    });
   }
 
   /** The step the tour is showing, among the setup steps. */
@@ -303,7 +322,7 @@ export class SetupMonitor implements vscode.Disposable {
       const from = shown === "complete" ? SETUP_STEPS.length : SETUP_STEPS.indexOf(shown as SetupStep);
       if (from > 0) this.cursor = SETUP_STEPS[from - 1];
     }
-    void this.state.update(CURSOR_KEY, this.cursor);
+    this.saveCursor();
     this.touch();
   }
 
@@ -311,12 +330,13 @@ export class SetupMonitor implements vscode.Disposable {
     if (this.extra) {
       const index = EXTRA_STEPS.indexOf(this.extra);
       this.extra = EXTRA_STEPS[index + 1] ?? this.extra;
+      this.saveCursor();
     } else {
       if (!this.tour?.canNext) return;
       const shown = this.shownSetupStep();
       if (shown) {
         this.cursor = SETUP_STEPS[SETUP_STEPS.indexOf(shown) + 1] ?? "complete";
-        void this.state.update(CURSOR_KEY, this.cursor);
+        this.saveCursor();
       }
     }
     this.touch();
@@ -324,13 +344,18 @@ export class SetupMonitor implements vscode.Disposable {
 
   close(): void {
     const step = this.tour?.step;
-    if (step === "complete" || this.extra) void this.markCompleted();
     this.closed = true;
-    this.touch();
+    if (step === "complete" || this.extra) {
+      void this.markCompleted().catch((error) => this.log.warn(`Cannot save tutorial completion: ${String(error)}`));
+    } else {
+      this.touch();
+    }
   }
 
   resume(): void {
+    if (this.closed && this.extra) this.extra = EXTRA_STEPS[0];
     this.closed = false;
+    if (this.extra) this.saveCursor();
     this.touch();
   }
 
@@ -343,19 +368,18 @@ export class SetupMonitor implements vscode.Disposable {
   continueExtras(): void {
     if (this.tour?.step !== "complete") return;
     this.extra = "spy";
+    this.saveCursor();
     this.touch();
   }
 
   async finish(): Promise<void> {
     if (this.tour?.step !== "complete" && !this.extra) return;
     await this.markCompleted();
-    this.touch();
   }
 
   async skip(): Promise<void> {
     this.closed = true;
     await this.markCompleted();
-    this.touch();
   }
 
   /** Whether another view should dull itself, and whether Spy's Pick button is the lit one. */

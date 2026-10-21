@@ -59,7 +59,7 @@ const make = (options: { enabled?: boolean; memento?: Record<string, unknown> } 
   const values = new Map<string, unknown>(Object.entries(options.memento ?? {}));
   const memento = {
     get: <T>(key: string, fallback?: T) => (values.has(key) ? (values.get(key) as T) : fallback),
-    update: async (key: string, value: unknown) => void values.set(key, value),
+    update: vi.fn(async (key: string, value: unknown) => void values.set(key, value)),
   };
   const projects = {
     get all() {
@@ -74,16 +74,17 @@ const make = (options: { enabled?: boolean; memento?: Record<string, unknown> } 
   };
   const enablement = { enabled: options.enabled ?? true, onDidChange: () => ({ dispose() {} }) };
   const installer = { busy: false, error: undefined, onDidChange: () => ({ dispose() {} }) };
+  const log = { warn: vi.fn(), debug: vi.fn() };
   const monitor = new SetupMonitor(
     projects as never,
     status as never,
     memento as never,
-    { warn: vi.fn(), debug: vi.fn() } as never,
+    log as never,
     enablement as never,
     installer as never,
     "0.1.1",
   );
-  return { monitor, values, installer };
+  return { monitor, values, installer, memento, log };
 };
 const contexts = (key: string) =>
   mocks.execute.mock.calls.filter(([name, id]) => name === "setContext" && id === key).map(([, , value]) => value);
@@ -193,17 +194,21 @@ describe("setup monitor", () => {
     expect(monitor.tour?.step).toBe("complete");
     monitor.continueExtras();
     expect(monitor.tour).toMatchObject({ step: "spy", phase: "extras" });
+    expect(values.get("wintestkit.tour.cursor")).toBe("spy");
     expect(monitor.focus).toEqual({ dim: false, spyLit: true });
     for (const step of EXTRA_STEPS.slice(1)) {
       monitor.next();
       expect(monitor.tour?.step).toBe(step);
+      expect(values.get("wintestkit.tour.cursor")).toBe(step);
     }
     for (const step of [...EXTRA_STEPS.slice(0, -1)].reverse()) {
       monitor.back();
       expect(monitor.tour?.step).toBe(step);
+      expect(values.get("wintestkit.tour.cursor")).toBe(step);
     }
     monitor.back();
     expect(monitor.tour?.step).toBe("complete");
+    expect(values.get("wintestkit.tour.cursor")).toBe("complete");
     await monitor.finish();
     expect(values.get("wintestkit.tour.completed")).toBe(true);
     expect(monitor.tour).toBeUndefined();
@@ -220,6 +225,173 @@ describe("setup monitor", () => {
     expect(monitor.tour).toBeUndefined();
     expect(monitor.resumable).toBe(false);
     expect(mocks.execute).not.toHaveBeenCalledWith("wintestkit.disable");
+    await monitor.check();
+    expect(monitor.tour).toBeUndefined();
+    monitor.dispose();
+  });
+
+  it.each(EXTRA_STEPS)("pauses persisted extras at %s on reload until explicitly resumed", async (step) => {
+    mocks.running = true;
+    const { monitor, values } = make({ memento: {
+      "wintestkit.tour.cursor": "complete",
+      "wintestkit.tour.modeConfirmed": true,
+    } });
+    await settle();
+    monitor.continueExtras();
+    for (const previous of EXTRA_STEPS) {
+      if (previous === step) break;
+      monitor.next();
+    }
+    expect(values.get("wintestkit.tour.cursor")).toBe(step);
+    monitor.dispose();
+
+    const reloaded = make({ memento: Object.fromEntries(values) }).monitor;
+    await settle();
+    expect(reloaded.tour).toBeUndefined();
+    expect(reloaded.resumable).toBe(true);
+    expect(reloaded.focus).toEqual({ dim: false, spyLit: false });
+    mocks.running = false;
+    await reloaded.check();
+    expect(reloaded.tour).toBeUndefined();
+    expect(reloaded.resumable).toBe(true);
+    expect(reloaded.focus).toEqual({ dim: false, spyLit: false });
+    reloaded.resume();
+    expect(reloaded.tour).toMatchObject({ step: "spy", phase: "extras" });
+    reloaded.back();
+    expect(reloaded.tour?.step).toBe("launch");
+    mocks.running = true;
+    await reloaded.check();
+    expect(reloaded.tour?.step).toBe("complete");
+    reloaded.dispose();
+  });
+
+  it("opening the sidebar explicitly restarts paused extras at the first card", async () => {
+    const { monitor, values } = make({ memento: {
+      "wintestkit.tour.cursor": "spyLocators",
+      "wintestkit.tour.modeConfirmed": true,
+    } });
+    await settle();
+    expect(monitor.tour).toBeUndefined();
+    await monitor.show();
+    expect(monitor.tour).toMatchObject({ step: "spy", phase: "extras" });
+    expect(values.get("wintestkit.tour.cursor")).toBe("spy");
+    expect(mocks.execute).toHaveBeenCalledWith("workbench.view.extension.wintestkit");
+    monitor.dispose();
+  });
+
+  it("pauses extras when their progress cannot be saved and allows an explicit restart", async () => {
+    mocks.running = true;
+    const { monitor, values, memento, log } = make({ memento: {
+      "wintestkit.tour.cursor": "complete",
+      "wintestkit.tour.modeConfirmed": true,
+    } });
+    await settle();
+    memento.update.mockRejectedValueOnce(new Error("storage unavailable"));
+    monitor.continueExtras();
+    await settle();
+    expect(monitor.tour).toBeUndefined();
+    expect(monitor.resumable).toBe(true);
+    expect(monitor.focus).toEqual({ dim: false, spyLit: false });
+    expect(log.warn).toHaveBeenCalledWith(expect.stringContaining("Cannot save tutorial progress"));
+    monitor.resume();
+    expect(monitor.tour?.step).toBe("spy");
+    expect(values.get("wintestkit.tour.cursor")).toBe("spy");
+    monitor.next();
+    memento.update.mockRejectedValueOnce(new Error("storage unavailable"));
+    monitor.next();
+    await settle();
+    expect(monitor.tour).toBeUndefined();
+    expect(monitor.resumable).toBe(true);
+    monitor.resume();
+    expect(monitor.tour?.step).toBe("spy");
+    monitor.back();
+    expect(monitor.tour?.step).toBe("complete");
+    monitor.dispose();
+  });
+
+  it.each([
+    { action: "finish", extras: false },
+    { action: "skip", extras: false },
+    { action: "finish", extras: true },
+    { action: "skip", extras: true },
+  ] as const)("$action publishes completion before rejected persistence (extras: $extras)", async ({ action, extras }) => {
+    mocks.running = true;
+    const { monitor, memento } = make({ memento: {
+      "wintestkit.tour.cursor": "complete",
+      "wintestkit.tour.modeConfirmed": true,
+    } });
+    await settle();
+    if (extras) {
+      monitor.continueExtras();
+      monitor.next();
+    }
+    const changed = vi.fn();
+    monitor.onDidChange(changed);
+    memento.update.mockClear();
+    memento.update.mockImplementation(async () => {
+      expect(changed).toHaveBeenCalled();
+      expect(monitor.tour).toBeUndefined();
+      expect(monitor.resumable).toBe(false);
+      expect(monitor.focus).toEqual({ dim: false, spyLit: false });
+      throw new Error("storage unavailable");
+    });
+    const completion = monitor[action]();
+    expect(changed).toHaveBeenCalledTimes(1);
+    expect(monitor.tour).toBeUndefined();
+    expect(monitor.focus).toEqual({ dim: false, spyLit: false });
+    await expect(completion).rejects.toThrow("storage unavailable");
+    expect(memento.update).toHaveBeenCalledWith("wintestkit.tour.completed", true);
+    expect(memento.update).toHaveBeenCalledWith("wintestkit.tour.modeConfirmed", true);
+    expect(memento.update).toHaveBeenCalledWith("wintestkit.tour.cursor", undefined);
+    await monitor.check();
+    expect(monitor.tour).toBeUndefined();
+    expect(monitor.resumable).toBe(false);
+    monitor.dispose();
+  });
+
+  it("closing extras persists completion so reopening and reloading do not replay them", async () => {
+    mocks.running = true;
+    const { monitor, values } = make({ memento: {
+      "wintestkit.tour.cursor": "spySelection",
+      "wintestkit.tour.modeConfirmed": true,
+    } });
+    await settle();
+    monitor.resume();
+    monitor.next();
+    monitor.close();
+    expect(monitor.tour).toBeUndefined();
+    expect(monitor.resumable).toBe(false);
+    await settle();
+    await monitor.show();
+    expect(monitor.tour).toBeUndefined();
+    monitor.dispose();
+    expect(values.get("wintestkit.tour.completed")).toBe(true);
+    expect(values.get("wintestkit.tour.cursor")).toBeUndefined();
+    const reloaded = make({ memento: Object.fromEntries(values) }).monitor;
+    await settle();
+    expect(reloaded.tour).toBeUndefined();
+    expect(reloaded.resumable).toBe(false);
+    expect(reloaded.focus).toEqual({ dim: false, spyLit: false });
+    reloaded.dispose();
+  });
+
+  it.each(["complete", "spyPick"])("closing %s catches failed completion writes without replay", async (cursor) => {
+    mocks.running = true;
+    const { monitor, memento, log } = make({ memento: {
+      "wintestkit.tour.cursor": cursor,
+      "wintestkit.tour.modeConfirmed": true,
+    } });
+    await settle();
+    if (monitor.resumable) monitor.resume();
+    memento.update.mockRejectedValue(new Error("storage unavailable"));
+    monitor.close();
+    expect(monitor.tour).toBeUndefined();
+    expect(monitor.resumable).toBe(false);
+    expect(monitor.focus).toEqual({ dim: false, spyLit: false });
+    await settle();
+    expect(log.warn).toHaveBeenCalledWith(expect.stringContaining("Cannot save tutorial completion"));
+    await monitor.show();
+    expect(monitor.tour).toBeUndefined();
     await monitor.check();
     expect(monitor.tour).toBeUndefined();
     monitor.dispose();

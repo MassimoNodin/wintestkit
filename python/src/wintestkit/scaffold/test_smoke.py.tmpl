@@ -5,3 +5,4 @@ from wintestkit import expect
 
 def test_main_window_is_visible(app):
     expect(MainPage(app).window).to_be_visible()
+    expect(MainPage(app).content).to_be_visible()

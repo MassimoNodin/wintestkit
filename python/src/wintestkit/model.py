@@ -830,6 +830,17 @@ class BoundControl(_BoundBase):
         element = resolve(_scope(self.page), self.locator)
         if self.definition.validate:
             self.check_type(element)
+        try:
+            if (
+                runtime.object_previews_active()
+                and not isinstance(self.definition, Elements)
+                and self.locator.item is None
+            ):
+                from wintestkit.object_previews import capture_bound
+
+                capture_bound(self, element)
+        except Exception:
+            pass
         return element
 
     def _actionable(self, timeout: float | None) -> UIAElement:
