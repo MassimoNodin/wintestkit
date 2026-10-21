@@ -99,6 +99,15 @@ export const settingFields: SettingField[] = [
     group: "Evidence",
   },
   {
+    key: "object_previews",
+    label: "Save last-successful element images",
+    kind: "boolean",
+    description:
+      "Save an element crop and a red-outlined app image with the project. Both may contain sensitive information.",
+    default: true,
+    group: "Evidence",
+  },
+  {
     key: "replay",
     label: "Test replay recording",
     kind: "select",

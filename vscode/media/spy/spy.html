@@ -42,8 +42,8 @@
                 id="bring-front"
                 class="icon-button secondary"
                 aria-pressed="false"
-                aria-label="Bring window to front when selecting: off"
-                title="Bring window to front when selecting: off"
+                aria-label="Bring window to front when highlighting: off"
+                title="Bring window to front when highlighting: off"
             >
                 <span
                     id="bring-front-icon"
@@ -65,6 +65,7 @@
         </header>
         <main id="workspace">
             <section id="tree-pane" class="pane" aria-label="Object browser">
+                <p id="enumeration-status" class="muted" role="status" hidden></p>
                 <div class="pane-heading">
                     <h1>Objects</h1>
                     <span id="object-count" class="muted">0 loaded</span>
@@ -146,131 +147,164 @@
                         >Highlight
                     </button>
                 </div>
-                <div id="selection-summary" hidden>
-                    <img
-                        id="selection-app-icon"
-                        class="app-icon"
-                        alt=""
-                        hidden
-                    />
-                    <span
-                        id="selection-icon"
-                        class="control-icon codicon codicon-inspect"
-                        aria-hidden="true"
-                    ></span>
-                    <div>
-                        <h2 id="selection-name">No object selected</h2>
-                        <p id="selection-type" class="muted">
-                            Select a control to inspect its properties.
-                        </p>
-                    </div>
-                </div>
-                <div class="properties-scroll">
-                    <div id="details-empty" class="empty-state" role="status">
-                        <span
-                            id="details-empty-icon"
-                            class="codicon codicon-inspect"
-                            aria-hidden="true"
-                        ></span>
-                        <h2 id="details-empty-title">No object selected</h2>
-                        <p id="details-empty-description">
-                            Select a control in the object tree or use Pick
-                            element to inspect it.
-                        </p>
-                    </div>
-                    <div id="property-groups" hidden>
-                        <section
-                            id="definitions-group"
-                            class="property-group"
-                            aria-label="Defined in pages"
-                        >
-                            <h3>Defined in pages</h3>
-                            <p
-                                id="definitions-status"
-                                class="muted"
-                                role="status"
-                            ></p>
-                            <ul id="definitions-list"></ul>
-                        </section>
-                        <section class="property-group">
-                            <h3>Identity</h3>
-                            <table>
-                                <tbody id="properties"></tbody>
-                            </table>
-                        </section>
-                        <section class="property-group">
-                            <h3>State</h3>
-                            <table>
-                                <tbody id="state-properties"></tbody>
-                            </table>
-                        </section>
-                        <section class="property-group">
-                            <h3>Geometry</h3>
-                            <table>
-                                <tbody id="geometry-properties"></tbody>
-                            </table>
-                        </section>
-                        <section class="property-group">
-                            <h3>Automation</h3>
-                            <table>
-                                <tbody id="automation-properties"></tbody>
-                            </table>
-                        </section>
-                        <details
-                            id="all-properties-section"
-                            class="property-group"
-                        >
-                            <summary>All properties</summary>
-                            <div class="property-loading-actions">
-                                <button
-                                    id="load-properties"
-                                    class="secondary"
-                                    disabled
-                                >
-                                    Load all properties
-                                </button>
-                                <p
-                                    id="properties-status"
-                                    class="muted"
-                                    role="status"
-                                >
-                                    Additional properties and supported patterns
-                                    load on demand.
+                <div class="inspector-columns">
+                    <div id="selection-main">
+                        <div id="selection-summary" hidden>
+                            <img
+                                id="selection-app-icon"
+                                class="app-icon"
+                                alt=""
+                                hidden
+                            />
+                            <span
+                                id="selection-icon"
+                                class="control-icon codicon codicon-inspect"
+                                aria-hidden="true"
+                            ></span>
+                            <div>
+                                <h2 id="selection-name">No object selected</h2>
+                                <p id="selection-type" class="muted">
+                                    Select a control to inspect its properties.
                                 </p>
                             </div>
-                            <table>
-                                <tbody id="all-properties"></tbody>
-                            </table>
-                        </details>
+                        </div>
+                        <div id="definitions-pane" class="selection-scroll">
+                            <div
+                                id="details-empty"
+                                class="empty-state"
+                                role="status"
+                            >
+                                <span
+                                    id="details-empty-icon"
+                                    class="codicon codicon-inspect"
+                                    aria-hidden="true"
+                                ></span>
+                                <h2 id="details-empty-title">
+                                    No object selected
+                                </h2>
+                                <p id="details-empty-description">
+                                    Select a control in the object tree or use
+                                    Pick element to inspect it.
+                                </p>
+                            </div>
+                            <section
+                                id="definitions-group"
+                                class="property-group"
+                                aria-label="Defined in pages"
+                                hidden
+                            >
+                                <h3>Defined in pages</h3>
+                                <p
+                                    id="definitions-status"
+                                    class="muted"
+                                    role="status"
+                                ></p>
+                                <ul id="definitions-list"></ul>
+                            </section>
+                        </div>
+                        <section
+                            id="locator-panel"
+                            class="locator-panel"
+                            aria-label="Suggested locator"
+                            hidden
+                        >
+                            <div class="locator-heading">
+                                <h2>Suggested locator</h2>
+                                <span id="badge" hidden></span>
+                            </div>
+                            <pre><code id="code">Select an object to generate a locator.</code></pre>
+                            <div class="actions">
+                                <button id="copy" class="secondary" disabled>
+                                    <span
+                                        class="codicon codicon-copy"
+                                        aria-hidden="true"
+                                    ></span
+                                    >Copy locator</button
+                                ><button id="add" disabled>
+                                    <span
+                                        class="codicon codicon-add"
+                                        aria-hidden="true"
+                                    ></span
+                                    >Add to page…
+                                </button>
+                            </div>
+                        </section>
                     </div>
+                    <section
+                        id="properties-pane"
+                        aria-label="Object properties"
+                    >
+                        <div class="pane-heading"><h2>Properties</h2></div>
+                        <div class="properties-scroll">
+                            <section id="object-preview" class="property-group" hidden aria-label="Last-test object preview">
+                                <h3>Last-test preview</h3>
+                                <p id="object-preview-status" class="muted" role="status"></p>
+                                <img id="object-preview-image" alt="Saved object crop from the last test" hidden />
+                            </section>
+                            <section id="inspection-section" class="property-group" hidden>
+                                <h3>Inspection</h3>
+                                <div id="inspection-tree" aria-label="Read-only inspection properties"></div>
+                            </section>
+                            <p id="properties-empty" class="muted">
+                                Select an object to inspect its properties.
+                            </p>
+                            <div id="property-groups" hidden>
+                                <section class="property-group">
+                                    <h3>Identity</h3>
+                                    <table>
+                                        <tbody id="properties"></tbody>
+                                    </table>
+                                </section>
+                                <section class="property-group">
+                                    <h3>State</h3>
+                                    <table>
+                                        <tbody id="state-properties"></tbody>
+                                    </table>
+                                </section>
+                                <section class="property-group">
+                                    <h3>Geometry</h3>
+                                    <table>
+                                        <tbody id="geometry-properties"></tbody>
+                                    </table>
+                                </section>
+                                <section class="property-group">
+                                    <h3>Automation</h3>
+                                    <table>
+                                        <tbody
+                                            id="automation-properties"
+                                        ></tbody>
+                                    </table>
+                                </section>
+                                <details
+                                    id="all-properties-section"
+                                    class="property-group"
+                                >
+                                    <summary>All properties</summary>
+                                    <div class="property-loading-actions">
+                                        <button
+                                            id="load-properties"
+                                            class="secondary"
+                                            disabled
+                                        >
+                                            Load all properties
+                                        </button>
+                                        <p
+                                            id="properties-status"
+                                            class="muted"
+                                            role="status"
+                                        >
+                                            Additional properties and supported
+                                            patterns load on demand.
+                                        </p>
+                                    </div>
+                                    <table>
+                                        <tbody id="all-properties"></tbody>
+                                    </table>
+                                </details>
+                            </div>
+                        </div>
+                    </section>
                 </div>
-                <section
-                    id="locator-panel"
-                    class="locator-panel"
-                    aria-label="Suggested locator"
-                    hidden
-                >
-                    <div class="locator-heading">
-                        <h2>Suggested locator</h2>
-                        <span id="badge" hidden></span>
-                    </div>
-                    <pre><code id="code">Select an object to generate a locator.</code></pre>
-                    <div class="actions">
-                        <button id="copy" class="secondary" disabled>
-                            <span
-                                class="codicon codicon-copy"
-                                aria-hidden="true"
-                            ></span
-                            >Copy locator</button
-                        ><button id="add" disabled>
-                            <span
-                                class="codicon codicon-add"
-                                aria-hidden="true"
-                            ></span
-                            >Add to page…
-                        </button>
-                    </div>
-                </section>
             </section>
         </main>
         <script nonce="{{nonce}}" src="{{js}}"></script>
