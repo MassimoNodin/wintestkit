@@ -179,6 +179,15 @@ def capture_window(hwnd: int, expected_pid: int | None = None) -> bytes | None:
 
 def capture_window_pixels(hwnd: int, expected_pid: int | None = None) -> Pixels | None:
     """Like :func:`capture_window` but uncompressed, so unchanged frames can skip encoding."""
+    frame = capture_window_frame(hwnd, expected_pid)
+    if frame is None:
+        return None
+    bounds, rgb = frame
+    return bounds.width, bounds.height, rgb
+
+
+def capture_window_frame(hwnd: int, expected_pid: int | None = None) -> tuple[Rect, bytes] | None:
+    """Render one HWND, retaining the screen origin through frame cropping and black trim."""
     if expected_pid is not None and win32.window_pid(hwnd) != expected_pid:
         return None
     if not win32.IsWindowVisible(hwnd) or win32.IsIconic(hwnd):
@@ -192,7 +201,25 @@ def capture_window_pixels(hwnd: int, expected_pid: int | None = None) -> Pixels 
     rect = Rect(bounds.left, bounds.top, bounds.right - bounds.left, bounds.bottom - bounds.top)
     if rect.is_empty():
         return None
-    return trim_black_edges(*_capture_pixels(rect, hwnd, _visible_frame(hwnd, rect)))
+    visible = _visible_frame(hwnd, rect)
+    width, height, rgb = _capture_pixels(rect, hwnd, visible)
+    if not get_rect(hwnd, ctypes.byref(bounds)):
+        return None
+    if rect != Rect(
+        bounds.left, bounds.top, bounds.right - bounds.left, bounds.bottom - bounds.top
+    ):
+        return None
+    if expected_pid is not None and win32.window_pid(hwnd) != expected_pid:
+        return None
+    trimmed, pixels = _trim_black_frame(width, height, rgb)
+    if not win32.IsWindowVisible(hwnd) or win32.IsIconic(hwnd):
+        return None
+    return Rect(
+        rect.left + (visible.left if visible else 0) + trimmed.left,
+        rect.top + (visible.top if visible else 0) + trimmed.top,
+        trimmed.width,
+        trimmed.height,
+    ), pixels
 
 
 def trim_black_edges(width: int, height: int, rgb: bytes, limit: int = 2) -> Pixels:
@@ -201,6 +228,11 @@ def trim_black_edges(width: int, height: int, rgb: bytes, limit: int = 2) -> Pix
     A rendered window keeps a hairline of the invisible border on some edges; real content is
     almost never pure black along a whole edge, so this only removes that remnant.
     """
+    bounds, pixels = _trim_black_frame(width, height, rgb, limit)
+    return bounds.width, bounds.height, pixels
+
+
+def _trim_black_frame(width: int, height: int, rgb: bytes, limit: int = 2) -> tuple[Rect, bytes]:
     stride = width * 3
 
     def row_black(y: int) -> bool:
@@ -220,11 +252,11 @@ def trim_black_edges(width: int, height: int, rgb: bytes, limit: int = 2) -> Pix
     while width - right < limit and right - 1 > left and column_black(right - 1):
         right -= 1
     if (left, top, right, bottom) == (0, 0, width, height):
-        return width, height, rgb
+        return Rect(0, 0, width, height), rgb
     trimmed = b"".join(
         rgb[y * stride + left * 3 : y * stride + right * 3] for y in range(top, bottom)
     )
-    return right - left, bottom - top, trimmed
+    return Rect(left, top, right - left, bottom - top), trimmed
 
 
 def save(image: bytes, path: Path) -> Path:
