@@ -148,6 +148,8 @@ class SpySession:
             self._events.put(("stop", 0, 0))
 
     def _callback(self, callback: Callable[..., None], *args: UIAElement) -> None:
+        if self._stop.is_set():
+            return
         try:
             callback(*args)
         except Exception:
@@ -198,6 +200,8 @@ class SpySession:
                     if pending is not None and time.monotonic() - last_hover >= self._throttle:
                         element = self._element_at(*pending)
                         pending = None
+                        if self._stop.is_set():
+                            break
                         last_hover = time.monotonic()
                         if element is None:
                             overlay.hide()

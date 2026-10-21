@@ -364,7 +364,7 @@ You do not have to guess which test broke because of a move: a failing member of
 ```python
 # pseudo-code
 @pytest.fixture(autouse=True)
-def reset_demo(main: MainPage) -> None:
+def reset_app(main: MainPage) -> None:
     """Start every test from a clean app: the app is shared by the whole session."""
     main.menu_file.click()
     main.menu_reset.click()
@@ -373,3 +373,17 @@ def reset_demo(main: MainPage) -> None:
 
 Pages are discovered statically (without importing your code) by `wtk discover`, the Explorer
 **Pages** tab and CodeLens, so define them as plain class attributes at class level.
+
+## Finding unused definitions
+
+Run `wtk unused` or `wtk unused --json`. The report lists page element declarations with no
+statically visible source reference. Treat it as a review aid, never as coverage or a deletion list.
+
+The analyzer parses each in-scope Python file once. It excludes common dependency and build trees
+such as `node_modules`, `.venv`, `build`, and `dist`. It counts loaded names, attributes and string
+references, and conservatively counts inherited page members and mounted component members as
+used. A Python encoding or syntax error suppresses all unused findings and is reported under
+`errors`; the analyzer does not guess around files it could not read or parse.
+
+Reflection, external consumers and references generated outside the scanned project can still be
+missed. Review each result manually before removing a locator. This command does not alter source.

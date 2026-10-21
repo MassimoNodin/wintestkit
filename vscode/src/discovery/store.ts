@@ -4,7 +4,6 @@ import type {
   DiscoveryResult,
   ElementEntry,
   PageEntry,
-  TestEntry,
 } from "../protocol/generated";
 import { ServerManager, type Project } from "../server/serverManager";
 import { LatestRefresh } from "./refresh";
@@ -130,16 +129,6 @@ export class DiscoveryStore implements vscode.Disposable {
     return this.selected(project)
       .flatMap((result) => result.pages)
       .find((page) => page.id === id);
-  }
-  testById(id: string, project?: Project): TestEntry | undefined {
-    return this.selected(project)
-      .flatMap((result) => result.tests)
-      .find((test) => test.id === id);
-  }
-  elementById(id: string, project?: Project): ElementEntry | undefined {
-    return this.selected(project)
-      .flatMap((result) => result.pages.flatMap((page) => page.elements))
-      .find((element) => element.id === id);
   }
   private selected(project?: Project): DiscoveryResult[] {
     const result = project ? this.get(project) : undefined;

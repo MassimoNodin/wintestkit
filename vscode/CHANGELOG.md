@@ -5,6 +5,35 @@ released together with the same version) are documented here.
 
 ## [Unreleased]
 
+- Restore reloaded optional tutorials paused and resumable; release tutorial UI state before
+  saving completion, and ignore picker activity from hidden, cancelled, or superseded sessions.
+- Coalesce Spy refresh requests, share root/status snapshots, cache fresh child descriptions,
+  queue coverage work, and cache application icons by executable for the extension-host session.
+  Surviving objects remain visible with a warning when enumeration is incomplete.
+- Save paired last-successful test-time element images with the project: an element crop for
+  Selected object and a separate red-outlined owning-window image retained for future use.
+  Saved definitions can show their crop offline; image capture has privacy guards and an opt-out.
+- Show bounded, expandable external UI Automation inspection values without reflecting opaque
+  CLR objects. Remove verified dead helpers, duplicate dispatch paths, and obsolete historical
+  documentation while retaining current usage guidance.
+
+- Guide Spy users through eight concise, value-focused steps in visual order, with separate
+  selection and Properties explanations, ending on the Testing tab icon. Keep Pick element and its three adjacent controls
+  sharp during the toolbar step, and spotlight Highlight with the selection summary.
+- Split the selected object inspector into selection details, page definitions and locator
+  on the left, with independently scrolling Properties on the right. Narrow inspectors
+  stack the sections, and the tutorial highlights the dedicated Properties section.
+- Show all desktop applications in the Spy tutorial snapshot while selecting the hosting
+  VS Code example. Blur the introduction background and remove Skip tutorial and Cancel
+  setup from all Spy tutorial cards, retaining ordinary navigation and Close.
+- Keep the first Spy tutorial step available while its snapshot loads; only wait when
+  advancing from step two to three. Clear stale object-loading overlays and preserve
+  navigation buttons across unchanged tutorial updates.
+
+- Make the optional Spy tutorial read-only while preserving hover effects and scrolling.
+  Select the hosting VS Code window's second direct child automatically and keep its
+  snapshot fixed. The generated MainPage defines that pane as content, independent of
+  workspace titles, for a real match in Defined in pages.
 - Enforce the supported Python package range and RPC protocol before connecting. Incompatible
   packages offer direction-specific recovery actions without crash/retry loops; installation
   selects and verifies a compatible package. CI and releases validate the compatibility policy.

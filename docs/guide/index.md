@@ -11,12 +11,13 @@ application under test.
 | [Getting started](getting-started.md) | Install, create a project, write and run the first test |
 | [Pages and elements](pages-and-elements.md) | `Page`, `Window`, `Element`, `Elements`, `within`, organizing pages |
 | [Locators for WPF](locators-for-wpf.md) | Strict matching, diagnostics, locator strategies, lists, grids, dialogs |
+| [Property matching](property-matching.md) | Custom UIA properties, `where={...}`, property aliases |
 | [Actions and assertions](actions-and-assertions.md) | Every action, auto-waiting, `expect`, timeouts |
 | [Running tests](running-tests.md) | `wtk run`, launch modes, fixtures, reports, JUnit, exit codes |
 | [VS Code](vscode.md) | CodeLens, Test Explorer, debugging, Explorer (Pages, Flows, Tests), Spy |
 | [CI](ci.md) | Running UI tests on a build agent |
 | [Troubleshooting](troubleshooting.md) | `wtk doctor`, common failures, logs |
-| [Migrating from TestComplete](migrating-from-testcomplete.md) | Concept mapping |
+| [Migrating from TestComplete](migrating-from-testcomplete.md) | Concept mapping and NameMapping migration |
 
 Start with the [installation and first-test walkthrough](../../README.md). The
 [`examples/calculator-tests`](../../examples/calculator-tests) project demonstrates pages,

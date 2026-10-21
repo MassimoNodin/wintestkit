@@ -9,7 +9,7 @@ image matching. This extension is the editor side of the
 from wintestkit import Element, Page, Window, expect
 
 class MainPage(Page):
-    window = Window(title="WTK Demo")
+    window = Window(title="Contoso Orders")
     username = Element(control_type="Edit", class_name="TextBox")
     sign_in = Element(control_type="Button", name="Sign in")
     status = Element(automation_id="StatusText")
@@ -86,8 +86,10 @@ matches, unselected objects and loading or inspection failures. Existing content
 stays visible during refresh; selecting another object replaces stale properties
 with an in-place loading state. No estimated percentages are used for UI Automation calls.
 
-Selecting an object or pressing **Highlight** asks the Python backend to bring the
-control's owning application window to the foreground before drawing its outline.
+Selecting an object inspects it without highlighting. Press **Highlight** in the
+top-right corner to draw its outline. When **Bring window to front when highlighting**
+is enabled, Spy also asks the Python backend to bring the control's owning application
+window to the foreground before drawing its outline.
 Child controls raise their containing window; minimized windows are restored. This
 does not click the control or explicitly change its keyboard focus. Activation is
 best-effort: if Windows denies it, highlighting still proceeds. CodeLens **Highlight**,
@@ -121,8 +123,15 @@ not supported, including when selecting a local development wheel.
 4. Use the **Highlight Element** CodeLens to confirm each locator.
 5. Run tests from the Test Explorer or `wtk run` in a terminal.
 
-WinTestKit detects every `pyproject.toml` that contains a `[tool.wintestkit]` table, including
-nested projects and multi-root workspaces.
+WinTestKit detects projects containing `wintestkit.yaml` or a legacy `pyproject.toml`
+`[tool.wintestkit]` table, including nested projects and multi-root workspaces.
+
+The optional Spy tutorial is read-only: it selects the second direct child of the hosting
+VS Code window and holds the object tree and selection fixed. Hover effects, tooltips,
+scrolling, and tutorial navigation still work; normal Spy actions unlock when you leave.
+The generated `pages/main.py` keeps the `MainPage` name and defines this VS Code pane as
+`content`, so a fresh project's **Defined in pages** section shows a real match. Adapt
+these example locators before using the starter tests with a different application.
 
 ## Commands
 
@@ -170,6 +179,7 @@ repository's **Run Extension** launch configuration for an Extension Development
 No example application is bundled. The end-to-end suite checks static discovery and CodeLens
 against the Calculator example without launching an app; see the repository's
 [development guide](https://github.com/MassimoNodin/wintestkit/blob/master/docs/development.md).
-# Unused definition estimates
+
+## Unused definition estimates
 
 The Page Tree offers **Find unused definitions** as an on-demand static estimate. It asks VS Code's Python reference provider for each discovered definition (up to 300 per project). A result with no references beyond its declaration is marked **possibly unused (static estimate)**. **Show unused** filters the Page Tree after a scan. Dynamic access, reflection, inheritance, mounted definitions, and providers with incomplete knowledge can produce false positives; results are not coverage and must not drive automatic removal. If the reference provider is unavailable or errors for a definition, that definition remains unknown and is not marked unused. Editing Python, changing discovery, or changing projects invalidates results.

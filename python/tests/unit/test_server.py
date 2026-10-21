@@ -192,8 +192,36 @@ def test_app_processes_lists_the_running_apps_with_windows(
     }
 
 
-def test_roots_include_other_apps_only_when_asked(
+def test_tutorial_roots_use_only_the_verified_host_window(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    server, output, _ = make_server(tmp_path, monkeypatch)
+    request(server, output, "initialize", {"root": str(tmp_path)})
+    host = RpcElement("Window", "Any workspace - Visual Studio Code")
+    monkeypatch.setattr(
+        "wintestkit.uia.win32.foreground_window_for_process",
+        lambda pid: 123 if pid == 456 else None,
+    )
+    monkeypatch.setattr("wintestkit.uia.element.from_handle", lambda hwnd: host)
+    roots = request(server, output, "inspect.roots", {"foregroundForProcessId": 456})["result"]
+    assert [node["info"]["name"] for node in roots] == [host.name]
+    error = request(server, output, "inspect.roots", {"foregroundForProcessId": 789})["error"]
+    assert "Focus the VS Code window" in error["message"]
+
+
+@pytest.mark.parametrize("pid", [True, False, 0, -1, "123", 1.5, None])
+def test_tutorial_roots_validate_host_process_id(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, pid: object
+) -> None:
+    server, output, _ = make_server(tmp_path, monkeypatch)
+    request(server, output, "initialize", {"root": str(tmp_path)})
+    result = request(server, output, "inspect.roots", {"foregroundForProcessId": pid})
+    assert result["error"]["code"] == -32602
+
+
+@pytest.mark.parametrize("method", ["inspect.roots", "inspect.refresh"])
+def test_roots_include_other_apps_only_when_asked(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, method: str
 ) -> None:
     server, output, _button = make_server(tmp_path, monkeypatch)
     request(server, output, "initialize", {"root": str(tmp_path)})
@@ -219,13 +247,23 @@ def test_roots_include_other_apps_only_when_asked(
         "wintestkit.uia.com.get_uia",
         lambda: type("Uia", (), {"GetRootElement": lambda self: object()})(),
     )
-    scoped = request(server, output, "inspect.roots")["result"]
+
+    def roots(params: Any = None) -> Any:
+        result = request(server, output, method, params)["result"]
+        if method == "inspect.refresh":
+            assert set(result) == {"nodes", "status"}
+            assert result["status"]["running"] is True
+            return result["nodes"]
+        assert isinstance(result, list)
+        return result
+
+    scoped = roots()
     assert [node["info"]["name"] for node in scoped] == ["Demo"]
     assert desktop_reads == 0
-    widened = request(server, output, "inspect.roots", {"includeOtherApps": True})["result"]
+    widened = roots({"includeOtherApps": True})
     assert [node["info"]["name"] for node in widened] == ["Demo", "Notepad"]
     assert desktop_reads == 1
-    restored = request(server, output, "inspect.roots", {"includeOtherApps": False})["result"]
+    restored = roots({"includeOtherApps": False})
     assert [node["info"]["name"] for node in restored] == ["Demo"]
     assert desktop_reads == 1
 

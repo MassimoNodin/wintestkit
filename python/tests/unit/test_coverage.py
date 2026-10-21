@@ -8,6 +8,7 @@ from fakes import FakeApp, FakeElement
 from rpc_support import RpcElement, make_server, request
 
 from wintestkit import coverage as coverage_module
+from wintestkit.commands.init import _template
 from wintestkit.engine import query
 
 PAGES = """
@@ -66,9 +67,49 @@ def _project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Any, Any,
     return server, output, registered
 
 
+@pytest.mark.parametrize(
+    "title",
+    ["test - Visual Studio Code", "Different workspace - Visual Studio Code", "Visual Studio Code"],
+)
+def test_generated_mainpage_matches_the_second_direct_child_for_any_workspace(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, title: str
+) -> None:
+    server, output, _ = make_server(tmp_path, monkeypatch)
+    (tmp_path / "page.py").write_text(_template("main.py.tmpl"), encoding="utf-8")
+    first = RpcElement("Pane")
+    second = RpcElement("Pane", title, children=[RpcElement("Pane", "nested")])
+    window = RpcElement("Window", title, children=[first, second])
+    other = RpcElement(
+        "Window",
+        "Other workspace - Visual Studio Code",
+        children=[RpcElement("Pane"), RpcElement("Pane", "other")],
+    )
+    server.app = FakeApp([window, other], process_name="Code.exe")
+    request(server, output, "initialize", {"root": str(tmp_path)})
+    selected = server._register(second)
+    definitions = _definitions(server, output, selected)
+    assert [definition["qualname"] for definition in definitions] == ["MainPage.content"]
+    assert _definitions(server, output, server._register(first)) == []
+    assert _definitions(server, output, server._register(second.children_list[0])) == []
+    assert _definitions(server, output, server._register(other.children_list[1])) == []
+
+
 def _definitions(server: Any, output: Any, node: dict[str, Any]) -> list[dict[str, Any]]:
     response = request(server, output, "inspect.definitions", {"nodeId": node["nodeId"]})
     return response["result"]["definitions"]  # type: ignore[no-any-return]
+
+
+def test_coverage_epoch_ignores_process_enumeration_order(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(coverage_module.win32, "top_level_windows", lambda pids: [])
+
+    class App:
+        def __init__(self) -> None:
+            self.pids = [3, 1]
+
+    app = App()
+    original = coverage_module.Coverage._ui_epoch(app)
+    app.pids = [1, 3]
+    assert coverage_module.Coverage._ui_epoch(app) == original
 
 
 def test_a_definition_is_listed_only_for_the_node_it_resolves_to(
@@ -150,6 +191,61 @@ def test_each_distinct_locator_is_resolved_once_and_kept(
     request(server, output, "inspect.roots")  # a refresh forgets the resolutions
     request(server, output, "inspect.coverage", {"nodeIds": ids})
     assert len(calls) == 2 * first
+
+
+@pytest.mark.parametrize("partial", [False, True])
+def test_fresh_children_invalidate_replaced_descendants_without_rebuilding_catalogue(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, partial: bool
+) -> None:
+    server, output, nodes = _project(tmp_path, monkeypatch)
+    original_id = nodes["ok"]["nodeId"]
+    initial = request(server, output, "inspect.coverage", {"nodeIds": [original_id]})["result"]
+    assert original_id in initial["covered"]
+    engine = server._coverage()
+    catalogue = engine.catalogue
+    epoch = engine._ui_epoch(server.app)
+    window = server.app.windows[0]
+    replacement = RpcElement("Button", "OK")
+    window.children_list.clear()
+    window.add(replacement)
+    if partial:
+        stale = window.add(RpcElement("Button", "stale"))
+
+        def unavailable(*args: Any) -> Any:
+            raise RuntimeError("stale child")
+
+        monkeypatch.setattr(stale, "info", unavailable)
+    assert engine._ui_epoch(server.app) == epoch
+    response = request(server, output, "inspect.children", {"nodeId": nodes["window"]["nodeId"]})
+    if partial:
+        assert response["error"]["code"] == -32005
+        children = response["error"]["data"]["nodes"]
+    else:
+        children = response["result"]
+    assert [node["nodeId"] for node in children] == [replacement.runtime_id]
+    assert engine._resolved == {}
+    assert engine.catalogue is catalogue
+    infos = {replacement.runtime_id: server.node_infos[replacement.runtime_id]}
+    pending = engine.covered_nodes(server.app, infos, budget=0)
+    assert pending == {"covered": {}, "pending": [replacement.runtime_id]}
+    calls: list[str] = []
+    original_resolve = engine._resolve
+
+    def counting(app: Any, entry: Any) -> Any:
+        calls.append(entry.page_path)
+        return original_resolve(app, entry)
+
+    monkeypatch.setattr(engine, "_resolve", counting)
+    params = {"nodeIds": [original_id, replacement.runtime_id]}
+    updated = request(server, output, "inspect.coverage", params)["result"]
+    assert updated["pending"] == []
+    assert replacement.runtime_id in updated["covered"]
+    assert original_id not in updated["covered"]
+    assert engine.catalogue is catalogue
+    first = len(calls)
+    assert first > 0
+    assert request(server, output, "inspect.coverage", params)["result"] == updated
+    assert len(calls) == first
 
 
 def test_only_candidates_that_can_match_are_resolved(

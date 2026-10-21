@@ -148,12 +148,31 @@ without importing or running your code. Run and debug tests from VS Code's Testi
 
 ## Spy
 
+The optional Spy tutorial is a read-only walkthrough. It expands the current VS Code
+window and selects its second direct child: the named content pane. Objects and Selected
+object stay fixed while the guide is open. Hover effects, tooltips, scrolling, and tutorial
+navigation remain available, but clicks and keyboard actions on Spy controls do nothing.
+Normal interaction returns when you finish, close, or skip the tutorial.
+
+Reloading the extension during the optional walkthrough restores it paused rather than replaying
+blocking UI. Resume it explicitly from the setup guide. Spy never dims itself solely because
+another view owns a setup step without a local tutorial callout.
+
+Initialization keeps `pages/main.py` and `MainPage`. Its example window targets the
+frontmost `Code.exe` window, and `content = Element(depth=1, index=1)` identifies the second
+direct child without using a workspace title. This is a real definition shown under
+**Defined in pages**, not tutorial-only display data. Existing page files are not overwritten;
+adapt the example locators when testing a different application. If the VS Code window or
+its expected content pane cannot be identified, the guide explains why instead of choosing
+another object.
+
 The **Spy** view, below Explorer, explores the live UI Automation tree of the application.
 
-- Expand windows and controls lazily. Selecting a control draws an outline around it, above every
+- Expand windows and controls lazily. Selecting a control inspects it without highlighting.
+  Use the **Highlight** button in the top-right corner to draw its outline above every
   window. The pin button after **Collapse all** (off by default; setting
   `wintestkit.spy.bringWindowToFront`) also brings the control's window to the front, without
-  taking keyboard focus from VS Code. The same switch applies to the **Highlight** button.
+  taking keyboard focus from VS Code when using **Highlight**.
 - The toolbar starts with **Pick element**, **Refresh objects**, **Collapse all** and the pin button. **Pick
   element** (or `wtk spy` in a terminal): hold **Ctrl** and click a control in the application.
   **Esc** cancels. **Refresh objects** reloads the tree. **Pick element** and **Refresh objects**
@@ -164,6 +183,19 @@ The **Spy** view, below Explorer, explores the live UI Automation tree of the ap
   **Show Only Selected App**. The choice is remembered.
 - The details show the control's properties, supported patterns and a **suggested locator** that
   is marked unique, or not unique with the number of matches.
+- Inspection values can be expanded as bounded, read-only object or array trees. These are
+  external UI Automation values, not arbitrary .NET members: opaque CLR properties such as
+  WPF `BorderThickness` or brush internals require application-side support and are not reflected.
+- Selecting a saved single element in **Pages & Flows** opens its last-test element crop in
+  **Selected object**, while retaining source navigation. The timestamp identifies a saved test
+  lookup, not a live screenshot. This works without the application or automation server running.
+  Use Spy's **Refresh objects** button to return to live inspection (or the active tutorial).
+  A live object with multiple matching definitions does not choose an arbitrary saved image.
+  See [Last-successful element images](running-tests.md#last-successful-element-images) for
+  storage, portability, and privacy controls. The separate red-outlined window image stays on disk.
+- Refresh keeps direct-child loading lazy and coalesces overlapping requests. If a control
+  disappears during enumeration, surviving objects remain visible with an incomplete-result
+  warning; refresh again when the application has settled.
 - **Add to page…** inserts the locator into an existing page or a new page file, adds
   imports, reuses an existing element as `within=` when it matches the container, and reveals the
   new line. The change stays unsaved so you can review it.

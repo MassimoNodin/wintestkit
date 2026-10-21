@@ -93,7 +93,6 @@ _WINDOW_KEYS = {
     "automation_id": "automationId",
     "index": "index",
 }
-_STRING_KEYS = {"automationId", "name", "controlType", "className", "title", "process"}
 _MATCHER_KEYS = {"automationId", "name", "className", "title"}
 _REGEX_FLAGS = {
     "I": "i",

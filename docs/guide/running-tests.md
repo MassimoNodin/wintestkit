@@ -34,6 +34,7 @@ wtk run -- -p no:cacheprovider --maxfail=3  # raw pytest arguments after --
 | `--replay {off,on,retain-on-failure}` | Record continuous screenshot replays; off by default |
 | `--replay-fps FPS` | Sampling rate, greater than 0 and at most 30 (default 15) |
 | `--replay-scope {window,desktop}` | Capture the application window (default) or opt into the full desktop |
+| `--wtk-ui-tree-diff` | Opt into UI tree diff evidence against prior passing baselines (pytest flag) |
 | `-k EXPR`, `-m EXPR`, `-x`, `--lf` | As in pytest |
 
 Plain `pytest` works the same way: the plugin activates in projects with `wintestkit.yaml`
@@ -78,7 +79,7 @@ Shared YAML rejects application paths. Legacy paths remain supported; move them 
 configuration; advanced `app.env` settings accept string values in local YAML.
 Relative paths resolve from the project directory. Environment variables include
 `WTK_APP_PATH`, `WTK_LAUNCH`, `WTK_TIMEOUT`, `WTK_INPUT_MODE`, `WTK_SCREENSHOTS`, `WTK_REPLAY`,
-`WTK_REPLAY_FPS`, and `WTK_REPLAY_SCOPE`; `WTK_LOG`
+`WTK_REPLAY_FPS`, `WTK_REPLAY_SCOPE`, and `WTK_OBJECT_PREVIEWS`; `WTK_LOG`
 sets the log level of the `wintestkit` logger (`DEBUG`, `INFO`, …).
 Replay limits are configurable with `replay_max_frames` (default 3000) and `replay_max_bytes`
 (default 104857600), including environment overrides `WTK_REPLAY_MAX_FRAMES` and
@@ -109,13 +110,13 @@ def test_first_start_shows_the_welcome_page(app): ...
 ### Resetting state between tests
 
 Each test gets a fresh application, so most tests need no reset. If your application keeps state
-outside the process (a database, files, a server), put the reset in an autouse fixture; the demo
-project uses the application's own **File > Reset**:
+outside the process (a database, files, a server), put the reset in an autouse fixture; for
+example, using the application's own **File > Reset**:
 
 ```python
 # pseudo-code
 @pytest.fixture(autouse=True)
-def reset_demo(main: MainPage) -> None:
+def reset_app(main: MainPage) -> None:
     """Start every test from a clean app, including any state kept outside the process."""
     main.menu_file.click()
     main.menu_reset.click()
@@ -218,6 +219,57 @@ passwords or other sensitive data; screenshot pixels are not redacted. Review ar
 sharing them. `--no-report` disables recording. Copy the whole report directory, including
 `artifacts/`, when moving or sharing a recording; `wtk report` can regenerate the player from
 saved results but cannot create frames for an older run.
+
+## Last-successful element images
+
+During a test's call phase, a successful unique lookup of a declared single `Element` can
+save two images: a clean element crop and its owning application window with the element
+outlined in red. The images describe the successful lookup, not whether the whole test passed.
+Discovery, Spy inspection, setup, teardown, and editor checks do not update them.
+
+Capture is best-effort and never changes the test result. Password or sensitive targets,
+unavailable windows, and untrustworthy or partially visible bounds are skipped. Capture uses
+the owning window rather than a desktop screenshot, without bringing it forward. It may be
+unavailable for applications whose windows cannot be captured reliably.
+
+A bounded privacy scan also skips windows with recognized sensitive controls, or when the
+control tree cannot be checked completely within its limits. This is not a guarantee that all
+secrets can be detected in application pixels. Derived grid rows and cells do not replace the
+image belonging to the declared grid.
+
+The latest published pair and its manifest live under `object-previews/` in the project root,
+keyed by the declaring page member. This is separate from `wtk-report/`: clearing reports
+does not remove saved-object images. Copy this directory with the page source when moving or
+sharing the project. Old image revisions may remain temporarily to protect active readers.
+
+Images can contain sensitive application data, including other controls in the window image.
+Review them before committing or sharing the project. Disable future capture in shared
+`wintestkit.yaml` or machine-specific `wintestkit.local.yaml`:
+
+```yaml
+object_previews: false
+```
+
+The environment override is `WTK_OBJECT_PREVIEWS=false`. Disabling capture does not delete
+existing images; remove `object-previews/` separately if they must not be retained.
+
+## UI tree diff evidence
+
+Enable with `pytest --wtk-ui-tree-diff`. On successful tests, WinTestKit captures a bounded main
+window tree and keeps one baseline per test ID and configured app target. Later failures for that
+same pair write a text diff to `tree-diff.txt` in the test's artifacts and record it as `treeDiff`
+in `results.json`; the HTML report does not display it. Baselines are capped at 512 KiB each, and
+the baseline directory keeps at most 500 files, pruning oldest entries. Screen coordinates are
+removed before comparison; names, AutomationIds, classes, and hierarchy remain.
+
+Capture is disabled with `--wtk-no-report` or `--wtk-screenshots=off`, and is opt-in by default.
+Baseline capture and writes are best-effort, so they do not fail a passing test. Keep the local
+report directory private: tree text can contain application labels or identifiers.
+
+The comparison covers the bounded main window, not a selected failing container. It requires a
+prior passing run of the same test and target and is a structural text diff, not a semantic or
+visual assertion. There may be no useful diff when a test has no `app` fixture or the UIA tree is
+unavailable.
 
 ## JUnit XML
 

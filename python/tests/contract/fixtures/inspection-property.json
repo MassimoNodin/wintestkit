@@ -1,0 +1,11 @@
+{
+  "name": "UIA values",
+  "typeName": "list",
+  "kind": "array",
+  "children": [
+    {"name": "0", "typeName": "str", "kind": "scalar", "value": "Sign in"},
+    {"name": "1", "typeName": "NoneType", "kind": "scalar", "value": null},
+    {"name": "2", "typeName": "UIA", "kind": "unavailable", "status": "Provider unavailable"},
+    {"name": "3", "typeName": "IUnknown", "kind": "object", "status": "Opaque external UIA value"}
+  ]
+}

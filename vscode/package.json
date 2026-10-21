@@ -360,7 +360,7 @@
         "wintestkit.spy.bringWindowToFront": {
           "type": "boolean",
           "default": false,
-          "description": "Bring an application's window to the front (without taking focus from VS Code) when you select or highlight one of its objects in Spy. The outline is drawn above every window either way."
+          "description": "Bring an application's window to the front (without taking focus from VS Code) when you highlight one of its objects in Spy. Selecting an object only inspects it. The outline is drawn above every window either way."
         },
         "wintestkit.keepRunReports": {
           "type": "number",

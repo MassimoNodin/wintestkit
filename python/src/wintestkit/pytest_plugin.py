@@ -56,6 +56,7 @@ _ENV_VARS = (
     "WTK_REPLAY_SCOPE",
     "WTK_REPLAY_MAX_FRAMES",
     "WTK_REPLAY_MAX_BYTES",
+    "WTK_OBJECT_PREVIEWS",
 )
 
 
@@ -371,6 +372,11 @@ class _Controller:
             current = runtime.get_config()
             self.restore_timeout = current.timeout
             runtime.set_config(dataclasses.replace(current, timeout=float(timeout)))
+
+    @pytest.hookimpl(hookwrapper=True)
+    def pytest_runtest_call(self, item: pytest.Item) -> Generator[None, Any, None]:
+        with runtime.object_preview_test_context():
+            yield
 
     @staticmethod
     def _replay_window(replay: ReplayRecorder, app: Any) -> None:

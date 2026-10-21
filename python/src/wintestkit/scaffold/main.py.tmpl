@@ -1,7 +1,8 @@
-"""Define the application's window and elements here."""
+"""A VS Code example that works without a workspace-specific window title."""
 
-from wintestkit import Page, Window
+from wintestkit import Element, Page, Window
 
 
 class MainPage(Page):
-    window = Window(title=$title)
+    window = Window(process="Code.exe", index=0)
+    content = Element(depth=1, index=1)

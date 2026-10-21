@@ -2,6 +2,22 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://wintestkit.dev/schemas/common.schema.json",
   "$defs": {
+    "InspectionProperty": {
+      "type": "object",
+      "properties": {
+        "name": {"type": "string"},
+        "typeName": {"type": "string"},
+        "kind": {"type": "string", "enum": ["scalar", "object", "array", "unavailable"]},
+        "value": {"type": ["string", "number", "boolean", "null"]},
+        "children": {
+          "type": "array",
+          "items": {"$ref": "common.schema.json#/$defs/InspectionProperty"}
+        },
+        "status": {"type": "string"}
+      },
+      "required": ["name", "typeName", "kind"],
+      "additionalProperties": false
+    },
     "Position": {
       "type": "object",
       "properties": {

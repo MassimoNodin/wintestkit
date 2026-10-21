@@ -237,6 +237,15 @@ export class ElementsTree implements vscode.Disposable {
       selection: range,
     });
     editor.revealRange(range, vscode.TextEditorRevealType.InCenterIfOutsideViewport);
+    if (node.elementId && node.qualname && node.kind !== "window") {
+      const project = this.projects.projectFor(vscode.Uri.file(node.file));
+      if (project)
+        await vscode.commands.executeCommand("wintestkit.spy.showDefinition", {
+          id: node.elementId,
+          qualname: node.qualname,
+          projectRoot: project.root.fsPath,
+        });
+    }
   }
   private persist(): void {
     if (!this.host) return;

@@ -142,16 +142,6 @@ export type ShutdownParams = Record<string, never>;
 export type ShutdownResult = null;
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
- * via the `definition` "SpyCancelledNotification".
- */
-export type SpyCancelledNotification = Record<string, never>;
-/**
- * This interface was referenced by `ProtocolContracts`'s JSON-Schema
- * via the `definition` "SpyStartParams".
- */
-export type SpyStartParams = Record<string, never>;
-/**
- * This interface was referenced by `ProtocolContracts`'s JSON-Schema
  * via the `definition` "SpyStartResult".
  */
 export type SpyStartResult = null;
@@ -207,10 +197,14 @@ export interface ProtocolContracts {
   InspectDefinitionsResult?: InspectDefinitionsResult;
   InspectHighlightParams?: InspectHighlightParams;
   InspectHighlightResult?: InspectHighlightResult;
+  InspectPartialErrorData?: InspectPartialErrorData;
   InspectPropertiesParams?: InspectPropertiesParams;
   InspectPropertiesResult?: InspectPropertiesResult;
+  InspectRefreshParams?: InspectRefreshParams;
+  InspectRefreshResult?: InspectRefreshResult;
   InspectRootsParams?: InspectRootsParams;
   InspectRootsResult?: InspectRootsResult;
+  InspectionProperty?: InspectionProperty;
   ItemSelectorData?: ItemSelectorData;
   LocatorData?: LocatorData;
   LogNotification?: LogNotification;
@@ -757,6 +751,18 @@ export interface InspectHighlightParams {
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "InspectPartialErrorData".
+ */
+export interface InspectPartialErrorData {
+  nodes: InspectRootsResult;
+  complete: false;
+  errors: {
+    index: number;
+    message: string;
+  }[];
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
  * via the `definition` "InspectPropertiesParams".
  */
 export interface InspectPropertiesParams {
@@ -775,6 +781,7 @@ export interface InspectPropertiesParams {
  * via the `definition` "InspectPropertiesResult".
  */
 export interface InspectPropertiesResult {
+  inspection?: InspectionProperty[];
   info: ElementInfo;
   properties: {
     [k: string]: string;
@@ -783,10 +790,35 @@ export interface InspectPropertiesResult {
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "InspectionProperty".
+ */
+export interface InspectionProperty {
+  name: string;
+  typeName: string;
+  kind: "scalar" | "object" | "array" | "unavailable";
+  value?: string | number | boolean | null;
+  children?: InspectionProperty[];
+  status?: string;
+}
+export interface InspectRefreshParams {
+  includeOtherApps?: boolean;
+  foregroundForProcessId?: number;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "InspectRefreshResult".
+ */
+export interface InspectRefreshResult {
+  nodes: InspectRootsResult;
+  status: AppStatusResult;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
  * via the `definition` "InspectRootsParams".
  */
 export interface InspectRootsParams {
   includeOtherApps?: boolean;
+  foregroundForProcessId?: number;
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
@@ -910,9 +942,17 @@ export interface StepEvent {
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "SpyCancelledNotification".
+ */
+export interface SpyCancelledNotification {
+  sessionId?: string;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
  * via the `definition` "SpyHoverNotification".
  */
 export interface SpyHoverNotification {
+  sessionId?: string;
   node: NodeInfo;
 }
 /**
@@ -920,8 +960,9 @@ export interface SpyHoverNotification {
  * via the `definition` "SpyPickedNotification".
  */
 export interface SpyPickedNotification {
+  sessionId?: string;
   node: NodeInfo;
-  suggestion: Suggestion;
+  suggestion?: Suggestion;
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
@@ -943,6 +984,13 @@ export interface Suggestion {
     code: string;
     locator: WindowLocatorData;
   };
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "SpyStartParams".
+ */
+export interface SpyStartParams {
+  sessionId?: string;
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
@@ -990,6 +1038,14 @@ export interface ElementResult1 {
   diagnostic?: Diagnostic;
   message?: string;
   durationMs: number;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "InspectRefreshParams".
+ */
+export interface InspectRootsParams1 {
+  includeOtherApps?: boolean;
+  foregroundForProcessId?: number;
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
