@@ -588,6 +588,52 @@ describe("navigation view", () => {
       },
     );
   });
+  it("shows a saved element preview while retaining source navigation", async () => {
+    const { tree } = createTree();
+    const element: ElementNode = {
+      id: "pages/main.py::Main.username",
+      elementId: "pages/main.py::Main.username",
+      label: "username",
+      qualname: "Main.username",
+      file: "/project/pages/main.py",
+      range,
+      description: "Edit",
+      kind: "element",
+      icon: "symbol-field",
+      children: [],
+    };
+    await mocks.commands.get("wintestkit.elements.goTo")!(element);
+    expect(mocks.show).toHaveBeenCalledWith(
+      { fsPath: element.file },
+      { selection: expect.objectContaining({ startLine: 2, startCharacter: 4 }) },
+    );
+    expect(mocks.execute).toHaveBeenCalledWith("wintestkit.spy.showDefinition", {
+      id: element.elementId,
+      qualname: element.qualname,
+      projectRoot: "/project",
+    });
+    tree.dispose();
+  });
+  it("does not request element previews for saved window definitions", async () => {
+    createTree();
+    const window: ElementNode = {
+      id: "pages/main.py::Main.window",
+      elementId: "pages/main.py::Main.window",
+      label: "window",
+      qualname: "Main.window",
+      file: "/project/pages/main.py",
+      range,
+      description: "Window",
+      kind: "window",
+      icon: "window",
+      children: [],
+    };
+    await mocks.commands.get("wintestkit.elements.goTo")!(window);
+    expect(mocks.execute).not.toHaveBeenCalledWith(
+      "wintestkit.spy.showDefinition",
+      expect.anything(),
+    );
+  });
   it("colors check status icons with the testing theme tokens", () => {
     const { tree, checks } = createTree();
     checks.results.set("Main.username", {

@@ -18,6 +18,7 @@ class Node {
   scrollTop = 0;
   offsetWidth = 0;
   offsetHeight = 0;
+  clientWidth = 900;
   rect?: { top: number; bottom: number; left: number; right: number };
   style: Record<string, unknown> & { values: Map<string, string>; setProperty: (name: string, value: string) => void } = {
     values: new Map<string, string>(),
@@ -85,6 +86,7 @@ function client(file: "setup" | "spy", viewport: { width?: number } = {}) {
     void event;
   };
   const posts: unknown[] = [];
+  const captures = new Map<string, (event: unknown) => void>();
   const api = { postMessage(message: unknown) { posts.push(message); } };
   vm.runInNewContext(
     readFileSync("media/" + file + "/" + file + ".js", "utf8"),
@@ -93,6 +95,7 @@ function client(file: "setup" | "spy", viewport: { width?: number } = {}) {
         body,
         getElementById: element,
         createElement: () => new Node(),
+        addEventListener: (type: string, listener: (event: unknown) => void) => captures.set(type, listener),
       },
       window: {
         innerHeight: 320,
@@ -107,7 +110,19 @@ function client(file: "setup" | "spy", viewport: { width?: number } = {}) {
       requestAnimationFrame: (callback: () => void) => callback(),
     },
   );
-  return { body, element, posts, send: (data: unknown) => receive({ data }) };
+  const dispatch = (type: string, id: string, key?: string, tutorial = false) => {
+    let prevented = false;
+    let stopped = false;
+    captures.get(type)?.({
+      type, key,
+      target: { closest: () => tutorial ? element("extra-tutorial") : undefined },
+      preventDefault: () => { prevented = true; },
+      stopImmediatePropagation: () => { stopped = true; },
+    });
+    if (!stopped) element(id).listeners[type]?.();
+    return { prevented, stopped };
+  };
+  return { body, element, posts, dispatch, send: (data: unknown) => receive({ data }) };
 }
 
 const tour = {
@@ -132,6 +147,32 @@ const model = {
 };
 
 describe("introduction clients", () => {
+  it.each(["click", "dblclick", "auxclick", "pointerdown", "pointerup", "keydown", "beforeinput", "input", "change", "contextmenu", "dragstart", "drop"])("blocks %s outside the Spy tutorial without disabling the controls", (type) => {
+    const spy = client("spy");
+    const tutorial = { ...tour, phase: "extras", step: "spyPick", spyTarget: "pick" };
+    spy.send({ type: "tour", dim: false, spyLit: true, tutorial });
+    expect(spy.dispatch(type, "pick", "Enter")).toEqual({ prevented: true, stopped: true });
+    expect(spy.element("pick").disabled).toBe(false);
+    expect(spy.body.inert).toBe(false);
+    expect(spy.element("pick").classList.contains("tutorial-spotlight")).toBe(true);
+    expect(spy.dispatch(type, "", "Enter", true)).toEqual({ prevented: false, stopped: false });
+    spy.send({ type: "tour", dim: false, spyLit: false });
+    expect(spy.dispatch(type, "", "Enter")).toEqual({ prevented: false, stopped: false });
+  });
+  it("preserves hover, scrolling, and focus navigation in the read-only Spy tutorial", () => {
+    const spy = client("spy");
+    spy.send({ type: "tour", dim: false, spyLit: true, tutorial: { ...tour, phase: "extras" } });
+    for (const type of ["mouseover", "pointerover", "mousemove", "wheel"])
+      expect(spy.dispatch(type, "")).toEqual({ prevented: false, stopped: false });
+    for (const key of ["Tab", "PageUp", "PageDown"])
+      expect(spy.dispatch("keydown", "", key)).toEqual({ prevented: false, stopped: false });
+    const before = spy.posts.length;
+    spy.element("refresh").listeners.click();
+    expect(spy.posts).toHaveLength(before);
+    spy.send({ type: "tour", dim: false, spyLit: false });
+    spy.dispatch("click", "refresh");
+    expect(spy.posts.at(-1)).toEqual({ type: "refresh" });
+  });
   it("hands the tutorial off from the sidebar to the Spy panel", () => {
     const sidebar = client("setup");
     const tutorial = { ...tour, step: "spy", phase: "extras", title: "Meet Spy", text: "Explore its features." };
@@ -146,12 +187,77 @@ describe("introduction clients", () => {
     spy.send({ type: "tour", dim: false, spyLit: true, tutorial });
     expect(spy.element("extra-tutorial").hidden).toBe(false);
     expect(spy.element("extra-tutorial-body").querySelector(".tutorial-title")?.textContent).toBe("Meet Spy");
-    spy.element("extra-tutorial-body").querySelector(".tutorial-cancel")?.listeners.click();
-    expect(spy.posts.at(-1)).toEqual({ type: "tour", action: "disable" });
-    spy.element("extra-tutorial-body").querySelector(".tutorial-skip")?.listeners.click();
-    expect(spy.posts.at(-1)).toEqual({ type: "tour", action: "skip" });
+    expect(spy.element("extra-tutorial-body").querySelector(".tutorial-cancel")).toBeUndefined();
+    expect(spy.element("extra-tutorial-body").querySelector(".tutorial-skip")).toBeUndefined();
     spy.send({ type: "tour", dim: false, spyLit: false });
     expect(spy.element("extra-tutorial").hidden).toBe(true);
+  });
+
+  it("keeps all four pick controls sharp and restores them on the next step", () => {
+    const spy = client("spy");
+    const tutorial = { ...tour, phase: "extras", step: "spyPick", spyTarget: "pick" };
+    spy.send({ type: "tour", dim: false, spyLit: true, tutorial });
+    for (const id of ["pick", "refresh", "collapse", "bring-front"]) {
+      expect(spy.element(id).classList.contains("tutorial-spotlight")).toBe(true);
+      expect(spy.dispatch("click", id)).toEqual({ prevented: true, stopped: true });
+    }
+    expect(spy.element("other-apps").classList.contains("tutorial-spotlight")).toBe(false);
+    spy.send({ type: "tour", dim: false, spyLit: true, tutorial: { ...tutorial, step: "spyBrowse", spyTarget: "tree-pane" } });
+    for (const id of ["pick", "refresh", "collapse", "bring-front"])
+      expect(spy.element(id).classList.contains("tutorial-spotlight")).toBe(false);
+  });
+
+  it("highlights the selection summary and Highlight without lighting Properties", () => {
+    const spy = client("spy");
+    spy.send({ type: "selected", nodeId: "pane", properties: { info: { name: "VS Code", controlType: "Pane" }, properties: {} } });
+    spy.send({ type: "tour", dim: false, spyLit: true, tutorial: { ...tour, phase: "extras", step: "spySelection", spyTarget: "selection-summary" } });
+    for (const id of ["selection-summary", "highlight"])
+      expect(spy.element(id).classList.contains("tutorial-spotlight")).toBe(true);
+    expect(spy.element("properties-pane").classList.contains("tutorial-spotlight")).toBe(false);
+    spy.send({ type: "tour", dim: false, spyLit: false });
+    for (const id of ["selection-summary", "highlight"])
+      expect(spy.element(id).classList.contains("tutorial-spotlight")).toBe(false);
+  });
+
+  it("outlines the visible definitions scroll area rather than its clipped contents", () => {
+    const spy = client("spy", { width: 900 });
+    spy.send({ type: "selected", nodeId: "pane", properties: { info: { name: "VS Code", controlType: "Pane" }, properties: {} } });
+    spy.element("definitions-pane").rect = { top: 100, bottom: 170, left: 16, right: 351 };
+    spy.element("definitions-group").rect = { top: 100, bottom: 184, left: 16, right: 341 };
+    const guide = spy.element("extra-tutorial");
+    guide.offsetWidth = 320;
+    guide.offsetHeight = 150;
+    spy.send({ type: "tour", dim: false, spyLit: true, tutorial: { ...tour, phase: "extras", step: "spyDefinitions", spyTarget: "definitions-group" } });
+    expect(spy.element("definitions-pane").classList.contains("tutorial-spotlight")).toBe(true);
+    expect(spy.element("definitions-group").classList.contains("tutorial-spotlight")).toBe(false);
+    expect(spy.element("locator-panel").classList.contains("tutorial-spotlight")).toBe(false);
+    expect([guide.dataset.side, guide.style.left, guide.style.top]).toEqual(["right", "363px", "60px"]);
+    spy.send({ type: "tour", dim: false, spyLit: false });
+    expect(spy.element("definitions-pane").classList.contains("tutorial-spotlight")).toBe(false);
+  });
+
+  it("draws the Testing view's beaker SVG where the text names it", () => {
+    const spy = client("spy");
+    spy.send({ type: "tour", dim: false, spyLit: true, tutorial: { ...tour, phase: "extras", step: "test", text: "Open the Testing tab ($(beaker)) now." } });
+    const icon = spy.element("extra-tutorial-body").querySelector(".tutorial-icon") as unknown as { innerHTML: string };
+    expect(icon.innerHTML).toContain('<svg width="16" height="16" viewBox="0 0 16 16"');
+    expect(icon.innerHTML).toContain("M12 0.998993C12.276");
+    expect(icon.innerHTML).not.toContain("$(beaker)");
+  });
+
+  it("falls back to the inspector when definitions are hidden", () => {
+    const spy = client("spy");
+    spy.element("definitions-group").hidden = true;
+    spy.send({ type: "tour", dim: false, spyLit: true, tutorial: { ...tour, phase: "extras", step: "spyDefinitions", spyTarget: "definitions-group" } });
+    expect(spy.element("details").classList.contains("tutorial-spotlight")).toBe(true);
+    expect(spy.element("definitions-pane").classList.contains("tutorial-spotlight")).toBe(false);
+  });
+
+  it.each([400, 560, 900])("stacks narrow inspector columns at width %s without a stacking context", (width) => {
+    const spy = client("spy");
+    spy.element("details").clientWidth = width;
+    spy.send({ type: "tour", dim: false, spyLit: true, tutorial: { ...tour, phase: "extras", step: "spyProperties", spyTarget: "properties-pane" } });
+    expect(spy.element("details").classList.contains("inspector-narrow")).toBe(width <= 560);
   });
 
   it("moves the feature spotlight and keeps tutorial navigation working", () => {
@@ -179,6 +285,22 @@ describe("introduction clients", () => {
     expect(spy.element("details").classList.contains("tutorial-spotlight")).toBe(false);
   });
 
+  it("shows and clears definitions and the separate property section together", () => {
+    const spy = client("spy");
+    expect(spy.element("property-groups").hidden).toBe(true);
+    expect(spy.element("definitions-group").hidden).toBe(true);
+    expect(spy.element("properties-empty").hidden).toBe(false);
+    spy.send({ type: "selected", nodeId: "pane", properties: { info: { name: "VS Code", controlType: "Pane" }, properties: {} } });
+    expect(spy.element("property-groups").hidden).toBe(false);
+    expect(spy.element("definitions-group").hidden).toBe(false);
+    expect(spy.element("properties-empty").hidden).toBe(true);
+    expect(spy.element("properties").children.length).toBeGreaterThan(0);
+    spy.send({ type: "roots", nodes: [] });
+    expect(spy.element("property-groups").hidden).toBe(true);
+    expect(spy.element("definitions-group").hidden).toBe(true);
+    expect(spy.element("properties-empty").hidden).toBe(false);
+  });
+
   describe("Spy tutorial card", () => {
     const tutorial = { ...tour, phase: "extras", buttons: [{ id: "next", label: "Next" }] };
     function open(step: string, spyTarget?: string) {
@@ -189,6 +311,7 @@ describe("introduction clients", () => {
       spy.element("pick").rect = { top: 8, bottom: 36, left: 10, right: 120 };
       spy.element("tree-pane").rect = { top: 50, bottom: 320, left: 10, right: 400 };
       spy.element("details").rect = { top: 50, bottom: 320, left: 480, right: 890 };
+      spy.element("properties-pane").rect = { top: 50, bottom: 320, left: 480, right: 890 };
       spy.send({ type: "tour", dim: false, spyLit: true, tutorial: { ...tutorial, step, spyTarget } });
       return { spy, guide };
     }
@@ -203,13 +326,23 @@ describe("introduction clients", () => {
       const tree = open("spyBrowse", "tree-pane");
       expect(at(tree.guide)).toEqual(["right", "412px", "110px"]);
       expect(tree.guide.style.values.get("--arrow-y")).toBe("75px");
-      const details = open("spyProperties", "details");
+      const details = open("spyProperties", "properties-pane");
       expect(at(details.guide)).toEqual(["left", "148px", "110px"]);
+      expect(details.spy.element("properties-pane").classList.contains("tutorial-spotlight")).toBe(true);
     });
-    it("floats in the middle with nothing dulled when the step is about no part of the panel", () => {
+    it("blurs the background of the centered introduction without a spotlight", () => {
       const { spy, guide } = open("spy");
       expect(at(guide)).toEqual([undefined, "290px", "85px"]);
-      expect(spy.element("tutorial-scrim").hidden).toBe(true);
+      expect(spy.element("tutorial-scrim").hidden).toBe(false);
+      expect(readFileSync("media/spy/spy.css", "utf8")).toContain("backdrop-filter: blur(3px)");
+    });
+    it.each(["spy", "spyPick", "spyBrowse", "spySelection", "spyDefinitions", "spyLocators", "spyProperties", "test"])("omits skip and cancel controls from %s", (step) => {
+      const { spy } = open(step);
+      const body = spy.element("extra-tutorial-body");
+      expect(body.querySelector(".tutorial-foot")).toBeUndefined();
+      expect(body.querySelector(".tutorial-skip")).toBeUndefined();
+      expect(body.querySelector(".tutorial-cancel")).toBeUndefined();
+      expect(body.querySelector(".tutorial-actions")).toBeDefined();
     });
     it("takes the dulling away with the card", () => {
       const { spy } = open("spyBrowse", "tree-pane");
@@ -469,11 +602,60 @@ describe("introduction clients", () => {
     ).toBeDefined();
   });
 
-  it("unlocks the whole Spy panel during its extra, not only Pick element", () => {
+  it("renders bounded expandable inspection data as text while retaining flat property tables", () => {
+    const page = client("spy");
+    const scalar = { name: "<script>unsafe</script>", typeName: "String", kind: "scalar", value: "<img src=x onerror=unsafe>" };
+    page.send({ type: "selected", nodeId: "control", properties: {
+      info: { name: "Control", controlType: "Button" }, properties: { Legacy: "flat" },
+      inspection: [{ name: "Model", typeName: "UIA", kind: "object", children: [scalar,
+        { name: "Unavailable", typeName: "UIA", kind: "unavailable", status: "Not supported" }] }],
+    } });
+    expect(page.element("inspection-section").hidden).toBe(false);
+    const branch = page.element("inspection-tree").children[0];
+    expect(branch.children[0].textContent).toBe("Model (UIA)");
+    expect(branch.children[1].textContent).toContain("<img src=x onerror=unsafe>");
+    expect(branch.children[2].textContent).toContain("Not supported");
+    expect(page.element("all-properties").children).toHaveLength(1);
+    page.send({ type: "allProperties", nodeId: "control", properties: {
+      info: {}, properties: {}, inspection: Array.from({ length: 1000 }, () => scalar),
+    } });
+    expect(page.element("inspection-tree").children).toHaveLength(501);
+    expect(page.element("inspection-tree").children.at(-1)?.textContent).toContain("limit reached");
+  });
+
+  it("shows only last-test crop data in explicit offline mode and ignores stale live details", () => {
+    const page = client("spy");
+    page.send({ type: "savedDefinition", id: "pages/Page.py::Page.button", qualname: "Page.button", preview: {
+      capturedAt: "2026-10-20T12:34:56.000Z", cropDataUrl: "data:image/webp;base64,YWJj",
+      windowDataUrl: "data:image/webp;base64,dW51c2Vk",
+    } });
+    expect(page.element("selection-name").textContent).toBe("Page.button");
+    expect(page.element("object-preview-image").src).toBe("data:image/webp;base64,YWJj");
+    expect(page.element("object-preview-status").textContent).toContain("2026-10-20T12:34:56.000Z");
+    expect(page.element("object-preview-status").textContent).toContain("Not a live capture");
+    expect(page.element("highlight").disabled).toBe(true);
+    expect(page.element("load-properties").disabled).toBe(true);
+    page.send({ type: "selected", nodeId: "old", properties: { info: { name: "stale" }, properties: {} } });
+    expect(page.element("selection-name").textContent).toBe("Page.button");
+    const before = page.posts.length;
+    page.dispatch("click", "highlight");
+    page.dispatch("click", "load-properties");
+    expect(page.posts).toHaveLength(before);
+  });
+
+  it("keeps partial enumeration warnings visible alongside retained nodes", () => {
+    const page = client("spy");
+    page.send({ type: "enumerationIncomplete", message: "Incomplete object enumeration. Window closed" });
+    page.send({ type: "roots", nodes: [] });
+    expect(page.element("enumeration-status").hidden).toBe(false);
+    expect(page.element("enumeration-status").textContent).toContain("Window closed");
+  });
+
+  it("fails open without a local actionable callout and preserves Spy tutorial hover", () => {
     const page = client("spy");
     page.send({ type: "tour", dim: true, spyLit: false });
-    expect(page.body.inert).toBe(true);
-    expect(page.body.classList.contains("tour-dim")).toBe(true);
+    expect(page.body.inert).toBe(false);
+    expect(page.body.classList.contains("tour-dim")).toBe(false);
     page.send({ type: "tour", dim: true, spyLit: true });
     expect(page.body.inert).toBe(false);
     expect(page.body.classList.contains("tour-dim")).toBe(false);

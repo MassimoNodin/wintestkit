@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseSpyRequest, suggestionText, SPY_TOUR_ACTIONS } from "../../src/spy/messages";
+import { parseSpyRequest, SPY_TOUR_ACTIONS } from "../../src/spy/messages";
 
 describe("Spy message contract", () => {
   it("accepts only navigation actions from the optional tutorial", () => {
@@ -66,26 +66,5 @@ describe("Spy message contract", () => {
     expect(
       parseSpyRequest({ type: "addToPage", suggestion: { code: "unsafe" } }),
     ).toEqual({ type: "addToPage" });
-  });
-  it("formats helpers before the picked element", () => {
-    expect(
-      suggestionText({
-        locator: {},
-        code: 'Element(name="OK", within=panel)',
-        attributeName: "ok",
-        helpers: [
-          {
-            attributeName: "panel",
-            code: 'Element(name="Panel")',
-            locator: {},
-          },
-        ],
-        unique: true,
-        matchCount: 1,
-        strategy: "within",
-      }),
-    ).toBe(
-      'panel = Element(name="Panel")\nok = Element(name="OK", within=panel)',
-    );
   });
 });

@@ -7,6 +7,7 @@ import type {
   Suggestion,
 } from "../protocol/generated";
 import type { TourView } from "../setup/tour";
+import type { ObjectPreview } from "./objectPreviews";
 
 export const SPY_TOUR_ACTIONS = ["back", "next", "close", "disable", "skip", "finish"] as const;
 
@@ -30,6 +31,9 @@ export type SpyRequest =
   | { type: "copy"; text: string }
   | { type: "openDefinition"; id: string };
 export type SpyResponse =
+  | { type: "savedDefinition"; id: string; qualname: string; preview?: ObjectPreview; reason?: string }
+  | { type: "objectPreview"; nodeId: string; preview?: ObjectPreview; reason?: string }
+  | { type: "enumerationIncomplete"; message: string; nodeId?: string }
   | { type: "rootIcons"; icons: Record<string, string> }
   /** The guided tour is showing: dull the panel, and light Pick element when it is the subject. */
   | { type: "tour"; dim: boolean; spyLit: boolean; tutorial?: TourView }
@@ -55,7 +59,7 @@ export type SpyResponse =
       bringToFront: boolean;
     }
   | { type: "roots"; nodes: NodeInfo[] }
-  | { type: "children"; nodeId: string; nodes: NodeInfo[] }
+  | { type: "children"; nodeId: string; nodes: NodeInfo[]; expanded?: boolean }
   | {
       type: "selected";
       nodeId: string;
@@ -90,7 +94,7 @@ export type SpyResponse =
   | {
       type: "picked";
       node: NodeInfo;
-      suggestion: Suggestion;
+      suggestion?: Suggestion;
       ancestors: NodeInfo[];
     }
   | { type: "error"; message: string };
@@ -140,13 +144,4 @@ export function parseSpyRequest(value: unknown): SpyRequest | undefined {
     message.id.length <= 2048
   )
     return { type: "openDefinition", id: message.id };
-}
-
-export function suggestionText(suggestion: Suggestion): string {
-  return [
-    ...suggestion.helpers.map(
-      (helper) => helper.attributeName + " = " + helper.code,
-    ),
-    suggestion.attributeName + " = " + suggestion.code,
-  ].join("\n");
 }

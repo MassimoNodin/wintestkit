@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   commands: new Map<string, (...args: unknown[]) => unknown>(),
   information: vi.fn(() => Promise.resolve(undefined)),
   icons: vi.fn(() => Promise.resolve({} as Record<string, string>)),
+  previews: vi.fn(() => Promise.resolve(undefined as unknown)),
   activeEditor: undefined as
     { document: { uri: { fsPath: string; toString(): string } } } | undefined,
   editorListeners: [] as Array<() => void>,
@@ -29,6 +30,9 @@ const mocks = vi.hoisted(() => ({
 }));
 vi.mock("../../src/spy/appIcons", () => ({
   readApplicationIcons: mocks.icons,
+}));
+vi.mock("../../src/spy/objectPreviews", () => ({
+  readObjectPreview: mocks.previews,
 }));
 vi.mock("vscode", () => ({
   ConfigurationTarget: { Global: 1 },
@@ -88,9 +92,16 @@ vi.mock("vscode", () => ({
     showTextDocument: mocks.showDocument,
   },
   commands: {
-    registerCommand: (name: string, handler: (...args: unknown[]) => unknown) => {
+    registerCommand: (
+      name: string,
+      handler: (...args: unknown[]) => unknown,
+    ) => {
       mocks.commands.set(name, handler);
-      return { dispose() { mocks.commands.delete(name); } };
+      return {
+        dispose() {
+          mocks.commands.delete(name);
+        },
+      };
     },
     executeCommand: mocks.command,
   },
@@ -109,8 +120,16 @@ describe("Spy view bridge", () => {
     mocks.bringToFront = false;
     mocks.configListeners.splice(0, mocks.configListeners.length);
     mocks.editorListeners.splice(0, mocks.editorListeners.length);
+    mocks.previews.mockReset().mockResolvedValue(undefined);
   });
-  const create = async (connect?: () => Promise<unknown>, setup?: SetupMonitor) => {
+  const latestSession = (): string | undefined => {
+    const call = [...mocks.request.mock.calls].reverse().find((entry) => entry[0] === "spy.start");
+    return (call?.[1] as { sessionId?: string } | undefined)?.sessionId;
+  };
+  const create = async (
+    connect?: () => Promise<unknown>,
+    setup?: SetupMonitor,
+  ) => {
     const project = {
       root: { fsPath: "C:/demo", toString: () => "demo" },
       name: "demo",
@@ -179,6 +198,7 @@ describe("Spy view bridge", () => {
     await provider.resolveWebviewView(view as unknown as vscode.WebviewView);
     return {
       provider,
+      client,
       sent,
       receive: (value: unknown) => receive(value),
       view,
@@ -195,43 +215,499 @@ describe("Spy view bridge", () => {
       },
     };
   };
+  const tutorialView = (): TourView => ({
+    step: "spy",
+    phase: "extras",
+    kind: "todo",
+    title: "Meet Spy",
+    text: "Explore the panel.",
+    lit: ["spy"],
+    panel: false,
+    buttons: [{ id: "next", label: "Next" }],
+    canBack: true,
+    canNext: false,
+  });
+  const tutorialResponses = (name = "any workspace - Visual Studio Code") => {
+    const root = {
+      nodeId: "code-window",
+      info: { controlType: "Window", name, processId: 42 },
+      hasChildren: true,
+    };
+    const children = [
+      { nodeId: "first-child", info: { controlType: "Pane", name: "" } },
+      { nodeId: "content", info: { controlType: "Pane", name } },
+    ];
+    const suggestion = {
+      attributeName: "content",
+      code: "Element(depth=1, index=1)",
+      helpers: [],
+    };
+    const definition = { id: "main-content", qualname: "MainPage.content" };
+    mocks.request.mockImplementation(async (method: string) => {
+      if (method === "inspect.roots") return [root];
+      if (method === "inspect.children") return children;
+      if (method === "inspect.properties")
+        return { info: children[1].info, properties: {}, ancestors: [] };
+      if (method === "suggest.locator") return suggestion;
+      if (method === "inspect.definitions")
+        return {
+          definitions: [definition],
+          errors: [],
+          pageCount: 1,
+          appRunning: true,
+        };
+      if (method === "app.status") return { running: true };
+      return null;
+    });
+    return { root, children, definition };
+  };
   it("opens the bottom Spy panel once on tutorial entry and forwards its navigation", async () => {
+    tutorialResponses();
     let tutorial: TourView | undefined;
     let changed = () => {};
-    const back = vi.fn(() => { tutorial = undefined; changed(); });
+    const back = vi.fn(() => {
+      tutorial = undefined;
+      changed();
+    });
     const next = vi.fn();
     const skip = vi.fn(async () => {});
     const finish = vi.fn(async () => {});
     const close = vi.fn();
     const setup = {
-      get tour() { return tutorial; },
-      get focus() { return { dim: false, spyLit: !!tutorial }; },
-      onDidChange: (listener: () => void) => { changed = listener; return { dispose() {} }; },
-      back, next, skip, finish, close,
+      get tour() {
+        return tutorial;
+      },
+      get focus() {
+        return { dim: false, spyLit: !!tutorial };
+      },
+      onDidChange: (listener: () => void) => {
+        changed = listener;
+        return { dispose() {} };
+      },
+      back,
+      next,
+      skip,
+      finish,
+      close,
     } as unknown as SetupMonitor;
     const fixture = await create(undefined, setup);
     expect(mocks.command).not.toHaveBeenCalledWith("wintestkit.spy.focus");
     tutorial = {
-      step: "spy", phase: "extras", kind: "todo", title: "Meet Spy", text: "Explore the panel.",
-      lit: ["spy"], panel: false, buttons: [{ id: "next", label: "Next" }], canBack: true, canNext: false,
+      step: "spy",
+      phase: "extras",
+      kind: "todo",
+      title: "Meet Spy",
+      text: "Explore the panel.",
+      lit: ["spy"],
+      panel: false,
+      buttons: [{ id: "next", label: "Next" }],
+      canBack: true,
+      canNext: false,
     };
     changed();
-    await vi.waitFor(() => expect(mocks.command).toHaveBeenCalledWith("wintestkit.spy.focus"));
-    expect(mocks.command).toHaveBeenCalledWith("workbench.action.positionPanelBottom");
-    expect(fixture.sent.at(-1)).toMatchObject({ type: "tour", tutorial: { step: "spy" } });
+    await vi.waitFor(() =>
+      expect(mocks.command).toHaveBeenCalledWith("wintestkit.spy.focus"),
+    );
+    await vi.waitFor(() =>
+      expect(fixture.sent.some((message) => message.type === "selected")).toBe(
+        true,
+      ),
+    );
+    expect(mocks.command).toHaveBeenCalledWith(
+      "workbench.action.positionPanelBottom",
+    );
+    expect(fixture.sent.at(-1)).toMatchObject({
+      type: "tour",
+      tutorial: { step: "spy" },
+    });
     tutorial = { ...tutorial, step: "spyPick", spyTarget: "pick" };
     changed();
-    expect(mocks.command.mock.calls.filter(([command]) => command === "wintestkit.spy.focus")).toHaveLength(1);
-    for (const [action, handler] of [["next", next], ["skip", skip], ["finish", finish], ["close", close]] as const) {
+    expect(
+      mocks.command.mock.calls.filter(
+        ([command]) => command === "wintestkit.spy.focus",
+      ),
+    ).toHaveLength(1);
+    for (const [action, handler] of [
+      ["next", next],
+      ["skip", skip],
+      ["finish", finish],
+      ["close", close],
+    ] as const) {
       fixture.receive({ type: "tour", action });
       expect(handler).toHaveBeenCalledOnce();
     }
     fixture.receive({ type: "tour", action: "back" });
     expect(back).toHaveBeenCalledOnce();
     expect(mocks.command).toHaveBeenCalledWith("wintestkit.sidebar.focus");
-    expect(fixture.sent.at(-1)).toMatchObject({ type: "tour", tutorial: undefined });
+    expect(
+      fixture.sent.filter((message) => message.type === "tour").at(-1),
+    ).toMatchObject({ type: "tour", tutorial: undefined });
     fixture.receive({ type: "tour", action: "next" });
     expect(next).toHaveBeenCalledOnce();
+    fixture.provider.dispose();
+  });
+
+  it.each([
+    "test - Visual Studio Code",
+    "another workspace - Visual Studio Code",
+    "Visual Studio Code",
+  ])(
+    "selects the hosting window's second child for %s and freezes its snapshot",
+    async (name) => {
+      const expected = tutorialResponses(name);
+      const setup = {
+        tour: tutorialView(),
+        focus: {},
+        onDidChange: () => ({ dispose() {} }),
+      } as unknown as SetupMonitor;
+      const fixture = await create(undefined, setup);
+      fixture.receive({ type: "ready" });
+      await vi.waitFor(() =>
+        expect(
+          fixture.sent.some((message) => message.type === "definitions"),
+        ).toBe(true),
+      );
+      expect(mocks.request).toHaveBeenCalledWith("inspect.roots", {
+        foregroundForProcessId: process.pid,
+      });
+      expect(fixture.sent).toContainEqual({
+        type: "children",
+        nodeId: expected.root.nodeId,
+        nodes: expected.children,
+        expanded: true,
+      });
+      expect(
+        fixture.sent.find((message) => message.type === "selected"),
+      ).toMatchObject({ nodeId: "content" });
+      expect(
+        fixture.sent.find((message) => message.type === "definitions"),
+      ).toMatchObject({ definitions: [expected.definition] });
+      const count = fixture.sent.length;
+      mocks.request.mockClear();
+      for (const type of [
+        "refresh",
+        "pick",
+        "chooseApp",
+        "addToPage",
+        "copy",
+        "select",
+        "expand",
+        "highlight",
+        "loadProperties",
+        "openDefinition",
+        "showOtherApps",
+        "bringToFront",
+      ])
+        fixture.receive({
+          type,
+          nodeId: "first-child",
+          id: "main-content",
+          text: "copy",
+          enabled: false,
+        });
+      mocks.notifications.get("spy.picked")?.({ node: expected.children[0] });
+      mocks.notifications.get("spy.hover")?.({ node: expected.children[0] });
+      await fixture.provider.refresh();
+      await mocks.commands.get("wintestkit.spy.startPick")?.();
+      await mocks.commands.get("wintestkit.spy.revealRelocation")?.(
+        "elsewhere",
+      );
+      expect(mocks.request).not.toHaveBeenCalled();
+      expect(mocks.clipboard).not.toHaveBeenCalled();
+      expect(fixture.sent).toHaveLength(count);
+      fixture.provider.dispose();
+    },
+  );
+
+  it.each(["visibility", "ready", "resolve"])(
+    "restores the current tutorial and frozen example after %s",
+    async (reason) => {
+      tutorialResponses();
+      const tutorial: TourView = {
+        ...tutorialView(),
+        step: "spyProperties",
+        spyTarget: "properties-pane",
+      };
+      const fixture = await create(undefined, {
+        tour: tutorial,
+        focus: {},
+        onDidChange: () => ({ dispose() {} }),
+      } as unknown as SetupMonitor);
+      fixture.receive({ type: "ready" });
+      await vi.waitFor(() =>
+        expect(fixture.sent.at(-1)).toMatchObject({
+          type: "tour",
+          tutorial: { step: "spyProperties" },
+        }),
+      );
+      await vi.waitFor(() =>
+        expect(fixture.sent.some((message) => message.type === "coverage")).toBe(true),
+      );
+      const snapshot = fixture.sent.filter((message) => message.type !== "tour");
+      fixture.sent.length = 0;
+      mocks.request.mockClear();
+      fixture.view.visible = false;
+      fixture.visibility();
+      fixture.view.visible = true;
+      if (reason === "visibility") fixture.visibility();
+      else {
+        if (reason === "resolve")
+          await fixture.provider.resolveWebviewView(
+            fixture.view as unknown as vscode.WebviewView,
+          );
+        fixture.receive({ type: "ready" });
+      }
+      await vi.waitFor(() =>
+        expect(fixture.sent.filter((message) => message.type !== "tour")).toEqual(snapshot),
+      );
+      expect(fixture.sent.at(-1)).toMatchObject({
+        type: "tour",
+        tutorial: { step: "spyProperties", spyTarget: "properties-pane" },
+      });
+      expect(mocks.request.mock.calls).toEqual([["spy.stop"]]);
+      fixture.provider.dispose();
+    },
+  );
+
+  it.each([true, false])(
+    "shows all desktop apps while retaining the host (enumerated: %s)",
+    async (includeHost) => {
+      const expected = tutorialResponses();
+      const respond = mocks.request.getMockImplementation()!;
+      const otherApp = {
+        nodeId: "other-app",
+        info: { controlType: "Window", name: "Notepad", processId: 73 },
+      };
+      mocks.request.mockImplementation(
+        async (method: string, params?: { includeOtherApps?: boolean }) => {
+          if (method === "inspect.roots" && params?.includeOtherApps)
+            return includeHost ? [expected.root, otherApp] : [otherApp];
+          return respond(method);
+        },
+      );
+      const setup = {
+        tour: tutorialView(),
+        focus: {},
+        onDidChange: () => ({ dispose() {} }),
+      } as unknown as SetupMonitor;
+      const fixture = await create(undefined, setup);
+      fixture.receive({ type: "ready" });
+      await vi.waitFor(() =>
+        expect(
+          fixture.sent.some((message) => message.type === "definitions"),
+        ).toBe(true),
+      );
+      expect(mocks.request).toHaveBeenCalledWith("inspect.roots", {
+        includeOtherApps: true,
+      });
+      expect(fixture.sent).toContainEqual({
+        type: "roots",
+        nodes: [expected.root, otherApp],
+      });
+      expect(
+        fixture.sent.find((message) => message.type === "state"),
+      ).toMatchObject({ showOtherApps: true });
+      expect(
+        fixture.sent.find((message) => message.type === "selected"),
+      ).toMatchObject({ nodeId: "content" });
+      expect(
+        fixture.sent.find((message) => message.type === "definitions"),
+      ).toMatchObject({ definitions: [expected.definition] });
+      fixture.provider.dispose();
+    },
+  );
+
+  it("does not select a substitute when the expected content pane is missing", async () => {
+    tutorialResponses();
+    const respond = mocks.request.getMockImplementation()!;
+    mocks.request.mockImplementation((method: string) =>
+      method === "inspect.children" ? Promise.resolve([]) : respond(method),
+    );
+    const next = vi.fn();
+    const fixture = await create(undefined, {
+      tour: { ...tutorialView(), step: "spyPick" },
+      focus: {},
+      next,
+      onDidChange: () => ({ dispose() {} }),
+    } as unknown as SetupMonitor);
+    fixture.receive({ type: "ready" });
+    await vi.waitFor(() =>
+      expect(fixture.sent.at(-1)).toMatchObject({
+        type: "tour",
+        tutorial: {
+          text: expect.stringContaining("second child"),
+          buttons: [],
+        },
+      }),
+    );
+    fixture.receive({ type: "tour", action: "next" });
+    expect(next).not.toHaveBeenCalled();
+    expect(fixture.sent.some((message) => message.type === "selected")).toBe(
+      false,
+    );
+    fixture.provider.dispose();
+  });
+
+  it("only waits for the snapshot between tutorial steps two and three", async () => {
+    tutorialResponses();
+    const respond = mocks.request.getMockImplementation()!;
+    let finishProperties: (value: unknown) => void = () => {};
+    mocks.request.mockImplementation((method: string) =>
+      method === "inspect.properties"
+        ? new Promise((resolve) => {
+            finishProperties = resolve;
+          })
+        : respond(method),
+    );
+    let tutorial = tutorialView();
+    let changed = () => {};
+    const next = vi.fn(() => {
+      tutorial = { ...tutorial, step: "spyPick" };
+      changed();
+    });
+    const fixture = await create(undefined, {
+      get tour() {
+        return tutorial;
+      },
+      focus: {},
+      next,
+      onDidChange: (listener: () => void) => {
+        changed = listener;
+        return { dispose() {} };
+      },
+    } as unknown as SetupMonitor);
+    fixture.receive({ type: "ready" });
+    await vi.waitFor(() =>
+      expect(mocks.request).toHaveBeenCalledWith("inspect.properties", {
+        nodeId: "content",
+      }),
+    );
+    expect(
+      fixture.sent.filter((message) => message.type === "tour").at(-1),
+    ).toMatchObject({
+      tutorial: {
+        step: "spy",
+        text: "Explore the panel.",
+        buttons: [{ id: "next" }],
+      },
+    });
+    fixture.receive({ type: "tour", action: "next" });
+    expect(next).toHaveBeenCalledOnce();
+    expect(fixture.sent.at(-1)).toMatchObject({
+      tutorial: {
+        step: "spyPick",
+        buttons: [],
+        text: expect.stringContaining("Preparing the objects preview"),
+      },
+    });
+    fixture.receive({ type: "tour", action: "next" });
+    expect(next).toHaveBeenCalledOnce();
+    finishProperties({ info: { name: "content" } });
+    await vi.waitFor(() =>
+      expect(fixture.sent.at(-1)).toMatchObject({
+        tutorial: { step: "spyPick", buttons: [{ id: "next" }] },
+      }),
+    );
+    fixture.receive({ type: "tour", action: "next" });
+    expect(next).toHaveBeenCalledTimes(2);
+    fixture.provider.dispose();
+  });
+
+  it("restores ordinary Spy actions after closing the tutorial", async () => {
+    tutorialResponses();
+    let tutorial: TourView | undefined = tutorialView();
+    let changed = () => {};
+    const fixture = await create(undefined, {
+      get tour() {
+        return tutorial;
+      },
+      focus: {},
+      onDidChange: (listener: () => void) => {
+        changed = listener;
+        return { dispose() {} };
+      },
+    } as unknown as SetupMonitor);
+    fixture.receive({ type: "ready" });
+    await vi.waitFor(() =>
+      expect(fixture.sent.some((message) => message.type === "selected")).toBe(
+        true,
+      ),
+    );
+    tutorial = undefined;
+    changed();
+    fixture.receive({ type: "copy", text: "available again" });
+    expect(mocks.clipboard).toHaveBeenCalledWith("available again");
+    fixture.provider.dispose();
+  });
+
+  it("does not publish a late tutorial snapshot after the tutorial closes", async () => {
+    tutorialResponses();
+    const respond = mocks.request.getMockImplementation()!;
+    let finishProperties: (value: unknown) => void = () => {};
+    mocks.request.mockImplementation((method: string) =>
+      method === "inspect.properties"
+        ? new Promise((resolve) => {
+            finishProperties = resolve;
+          })
+        : respond(method),
+    );
+    let tutorial: TourView | undefined = tutorialView();
+    let changed = () => {};
+    const fixture = await create(undefined, {
+      get tour() {
+        return tutorial;
+      },
+      focus: {},
+      onDidChange: (listener: () => void) => {
+        changed = listener;
+        return { dispose() {} };
+      },
+    } as unknown as SetupMonitor);
+    fixture.receive({ type: "ready" });
+    await vi.waitFor(() =>
+      expect(mocks.request).toHaveBeenCalledWith("inspect.properties", {
+        nodeId: "content",
+      }),
+    );
+    tutorial = undefined;
+    changed();
+    finishProperties({ info: { name: "late object" } });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(fixture.sent.some((message) => message.type === "selected")).toBe(
+      false,
+    );
+    expect(
+      fixture.sent.filter((message) => message.type === "tour").at(-1),
+    ).toMatchObject({ tutorial: undefined });
+    fixture.provider.dispose();
+  });
+
+  it("keeps the displayed tutorial snapshot fixed through server and workspace changes", async () => {
+    tutorialResponses();
+    const fixture = await create(undefined, {
+      tour: tutorialView(),
+      focus: {},
+      onDidChange: () => ({ dispose() {} }),
+    } as unknown as SetupMonitor);
+    fixture.receive({ type: "ready" });
+    await vi.waitFor(() =>
+      expect(
+        fixture.sent.some((message) => message.type === "definitions"),
+      ).toBe(true),
+    );
+    const count = fixture.sent.length;
+    fixture.serverChanged("ready");
+    fixture.activate({
+      root: { fsPath: "C:/another", toString: () => "another" },
+      name: "another",
+    });
+    fixture.visibility();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(
+      fixture.sent.slice(count).filter((message) => message.type !== "tour"),
+    ).toEqual(
+      fixture.sent.slice(0, count).filter((message) => message.type !== "tour"),
+    );
     fixture.provider.dispose();
   });
 
@@ -242,7 +718,7 @@ describe("Spy view bridge", () => {
       name: "demo",
     } as import("../../src/server/serverManager").Project;
     mocks.request.mockImplementation((method: string) =>
-      Promise.resolve(method === "app.status" ? { running: true } : []),
+      Promise.resolve(method === "inspect.refresh" ? { nodes: [], status: { running: true } } : []),
     );
     await fixture.provider.refreshForProject({
       ...project,
@@ -254,7 +730,7 @@ describe("Spy view bridge", () => {
     expect(mocks.request).not.toHaveBeenCalled();
     fixture.view.visible = true;
     await fixture.provider.refreshForProject(project);
-    expect(mocks.request).toHaveBeenCalledWith("app.status");
+    expect(mocks.request).toHaveBeenCalledWith("inspect.refresh", { includeOtherApps: true });
     expect(fixture.sent).toContainEqual({ type: "roots", nodes: [] });
     fixture.provider.dispose();
   });
@@ -286,14 +762,14 @@ describe("Spy view bridge", () => {
   it("scopes roots to the current app until other apps are requested", async () => {
     mocks.request.mockImplementation((method: string) =>
       Promise.resolve(
-        method === "app.status" ? { running: true, pids: [7] } : [],
+        method === "inspect.refresh" ? { nodes: [], status: { running: true, pids: [7] } } : [],
       ),
     );
     const fixture = await create();
     const rootCalls = () =>
-      mocks.request.mock.calls.filter((call) => call[0] === "inspect.roots");
+      mocks.request.mock.calls.filter((call) => call[0] === "inspect.refresh");
     fixture.receive({ type: "ready", showOtherApps: false });
-    await vi.waitFor(() => expect(rootCalls()).toEqual([["inspect.roots"]]));
+    await vi.waitFor(() => expect(rootCalls()).toEqual([["inspect.refresh"]]));
     expect(fixture.sent).toContainEqual(
       expect.objectContaining({
         type: "state",
@@ -306,7 +782,7 @@ describe("Spy view bridge", () => {
     fixture.receive({ type: "showOtherApps", enabled: true });
     await vi.waitFor(() =>
       expect(rootCalls()).toEqual([
-        ["inspect.roots", { includeOtherApps: true }],
+        ["inspect.refresh", { includeOtherApps: true }],
       ]),
     );
     expect(fixture.sent).toContainEqual(
@@ -321,23 +797,54 @@ describe("Spy view bridge", () => {
     fixture.receive({ type: "refresh" });
     await vi.waitFor(() =>
       expect(rootCalls()).toEqual([
-        ["inspect.roots", { includeOtherApps: true }],
+        ["inspect.refresh", { includeOtherApps: true }],
       ]),
     );
     mocks.request.mockClear();
     fixture.receive({ type: "showOtherApps", enabled: false });
-    await vi.waitFor(() => expect(rootCalls()).toEqual([["inspect.roots"]]));
+    await vi.waitFor(() => expect(rootCalls()).toEqual([["inspect.refresh"]]));
     mocks.request.mockClear();
     fixture.receive({ type: "showOtherApps", enabled: "yes" });
     await new Promise((resolve) => setTimeout(resolve, 10));
     expect(mocks.request).not.toHaveBeenCalled();
     fixture.provider.dispose();
   });
+  it("separates properties from the selection summary, definitions and locator", () => {
+    const html = readFileSync("media/spy/spy.html", "utf8");
+    const css = readFileSync("media/spy/spy.css", "utf8");
+    const selection = html.slice(
+      html.indexOf('id="selection-main"'),
+      html.indexOf('id="properties-pane"'),
+    );
+    const properties = html.slice(html.indexOf('id="properties-pane"'));
+    for (const id of [
+      "selection-summary",
+      "definitions-group",
+      "locator-panel",
+    ])
+      expect(selection).toContain(`id="${id}"`);
+    expect(selection).not.toContain('id="property-groups"');
+    for (const id of [
+      "property-groups",
+      "properties",
+      "state-properties",
+      "geometry-properties",
+      "automation-properties",
+      "all-properties",
+    ])
+      expect(properties).toContain(`id="${id}"`);
+    expect(properties).not.toContain('id="definitions-group"');
+    expect(css).toContain(
+      "grid-template-columns: minmax(0, 1fr) minmax(0, 1fr)",
+    );
+    expect(css).toContain("#details.inspector-narrow .inspector-columns");
+    expect(css).not.toContain("container-type:");
+  });
   it("keeps the scope control visible without any scope text", () => {
     const script = readFileSync("media/spy/spy.js", "utf8");
     const html = readFileSync("media/spy/spy.html", "utf8");
-    expect(script).toContain('otherApps.hidden = false');
-    expect(script).toContain('otherApps.disabled = !running');
+    expect(script).toContain("otherApps.hidden = false");
+    expect(script).toContain("otherApps.disabled = !running");
     expect(script).not.toContain("Showing");
     expect(html).not.toContain("scope-context");
   });
@@ -347,7 +854,9 @@ describe("Spy view bridge", () => {
     const css = readFileSync("media/spy/spy.css", "utf8");
     expect(html).toContain('id="tree-overlay" role="status"');
     expect(html).toContain('id="tree-stage"');
-    expect(script).toContain('element("tree-stage").dataset.busy = String(reloading)');
+    expect(script).toContain(
+      'element("tree-stage").dataset.busy = String(reloading)',
+    );
     expect(script).toContain("Reloading objects…");
     expect(css).toContain('#tree-stage[data-busy="true"] #tree-region');
     expect(css).toContain("filter: blur(3px)");
@@ -375,12 +884,12 @@ describe("Spy view bridge", () => {
       (method: string, params?: { includeOtherApps?: boolean }) => {
         if (method === "app.status")
           return Promise.resolve({ running: true, pids: [7] });
-        if (method === "inspect.roots") {
+        if (method === "inspect.refresh") {
           rootCalls += 1;
-          return new Promise((resolve) => {
+          return new Promise<unknown[]>((resolve) => {
             if (params?.includeOtherApps) finishSecond = resolve;
             else finishFirst = resolve;
-          });
+          }).then((nodes) => ({ nodes, status: { running: true } }));
         }
         if (method === "inspect.properties")
           return new Promise((resolve) => {
@@ -422,8 +931,8 @@ describe("Spy view bridge", () => {
   it("keeps the other-apps scope when revealing a picked control", async () => {
     mocks.request.mockImplementation((method: string) =>
       Promise.resolve(
-        method === "app.status"
-          ? { running: true }
+        method === "inspect.refresh"
+          ? { nodes: [], status: { running: true } }
           : method === "inspect.properties"
             ? {
                 info: { controlType: "Button", name: "Save" },
@@ -439,16 +948,17 @@ describe("Spy view bridge", () => {
     fixture.receive({ type: "showOtherApps", enabled: false });
     fixture.receive({ type: "showOtherApps", enabled: true });
     await vi.waitFor(() =>
-      expect(mocks.request).toHaveBeenCalledWith("inspect.roots", {
+      expect(mocks.request).toHaveBeenCalledWith("inspect.refresh", {
         includeOtherApps: true,
       }),
     );
     mocks.request.mockClear();
     fixture.receive({ type: "pick" });
     await vi.waitFor(() =>
-      expect(mocks.notifications.has("spy.picked")).toBe(true),
+      expect(latestSession()).toBeTypeOf("string"),
     );
     mocks.notifications.get("spy.picked")?.({
+      sessionId: latestSession(),
       node: { nodeId: "picked", info: { controlType: "Button", name: "Save" } },
       suggestion: { helpers: [], code: "Element()" },
     });
@@ -463,7 +973,7 @@ describe("Spy view bridge", () => {
     let finishReveal: (nodes: unknown[]) => void = () => {};
     let finishRefresh: (nodes: unknown[]) => void = () => {};
     mocks.request.mockImplementation(
-      (method: string, params?: { includeOtherApps?: boolean }) => {
+      (method: string) => {
         if (method === "app.status")
           return Promise.resolve({ running: true, pids: [7] });
         if (method === "inspect.properties")
@@ -472,11 +982,11 @@ describe("Spy view bridge", () => {
             properties: {},
             ancestors: [],
           });
+        if (method === "inspect.refresh")
+          return new Promise<unknown[]>((resolve) => { finishRefresh = resolve; })
+            .then((nodes) => ({ nodes, status: { running: true } }));
         if (method === "inspect.roots")
-          return new Promise((resolve) => {
-            if (params?.includeOtherApps) finishRefresh = resolve;
-            else finishReveal = resolve;
-          });
+          return new Promise((resolve) => { finishReveal = resolve; });
         return Promise.resolve(undefined);
       },
     );
@@ -484,9 +994,10 @@ describe("Spy view bridge", () => {
     fixture.receive({ type: "showOtherApps", enabled: false });
     fixture.receive({ type: "pick" });
     await vi.waitFor(() =>
-      expect(mocks.notifications.has("spy.picked")).toBe(true),
+      expect(latestSession()).toBeTypeOf("string"),
     );
     mocks.notifications.get("spy.picked")?.({
+      sessionId: latestSession(),
       node: { nodeId: "picked", info: { controlType: "Button", name: "Save" } },
       suggestion: { helpers: [], code: "Element()" },
     });
@@ -495,7 +1006,7 @@ describe("Spy view bridge", () => {
     );
     fixture.receive({ type: "showOtherApps", enabled: true });
     await vi.waitFor(() =>
-      expect(mocks.request).toHaveBeenCalledWith("inspect.roots", {
+      expect(mocks.request).toHaveBeenCalledWith("inspect.refresh", {
         includeOtherApps: true,
       }),
     );
@@ -527,7 +1038,7 @@ describe("Spy view bridge", () => {
     );
     const fixture = await create(connect);
     mocks.request.mockImplementation((method: string) =>
-      Promise.resolve(method === "app.status" ? { running: true } : []),
+      Promise.resolve(method === "inspect.refresh" ? { nodes: [], status: { running: true } } : []),
     );
     fixture.receive({ type: "ready" });
     await vi.waitFor(() => expect(connect).toHaveBeenCalledOnce());
@@ -570,7 +1081,7 @@ describe("Spy view bridge", () => {
   it("loads executable icons after roots and reports each refresh phase", async () => {
     const roots = [{ nodeId: "root", info: { processId: 123 } }];
     mocks.request.mockImplementation((method: string) =>
-      Promise.resolve(method === "app.status" ? { running: true } : roots),
+      Promise.resolve(method === "inspect.refresh" ? { nodes: roots, status: { running: true } } : roots),
     );
     mocks.icons.mockResolvedValueOnce({ "123": "data:image/png;base64,abcd" });
     const fixture = await create();
@@ -589,12 +1100,12 @@ describe("Spy view bridge", () => {
       (message) => message.type === "progress",
     );
     expect(
-      progress.some((message) => message.phase === "Loading application icons"),
+      progress.some((message) => message.phase === "Refreshing root windows"),
     ).toBe(true);
     expect(progress.at(-1)).toMatchObject({
       done: true,
-      completed: 4,
-      total: 4,
+      completed: 2,
+      total: 2,
     });
     expect(new Set(progress.map((message) => message.taskId)).size).toBe(1);
     fixture.provider.dispose();
@@ -651,8 +1162,8 @@ describe("Spy view bridge", () => {
     let finishIcons: (value: Record<string, string>) => void = () => {};
     mocks.request.mockImplementation((method: string) =>
       Promise.resolve(
-        method === "app.status"
-          ? { running: true }
+        method === "inspect.refresh"
+          ? { nodes: [{ nodeId: "root", info: { processId: 123 } }], status: { running: true } }
           : [{ nodeId: "root", info: { processId: 123 } }],
       ),
     );
@@ -830,30 +1341,35 @@ describe("Spy view bridge", () => {
       );
       fixture.receive({ type: "select", nodeId });
       await vi.waitFor(() =>
-        expect(highlightCalls().length).toBeGreaterThan(0),
+        expect(
+          fixture.sent.some((message) => message.type === "suggestion"),
+        ).toBe(true),
       );
     };
-    it("is off by default, so selecting only outlines the object", async () => {
-      const fixture = await create();
-      await selectNode(fixture);
-      expect(highlightCalls()[0]).toEqual([
-        "inspect.highlight",
-        { nodeId: "control", bringToFront: false },
-      ]);
-      fixture.provider.dispose();
-    });
-    it("raises the window when the option is on, for selection and the Highlight button", async () => {
-      mocks.bringToFront = true;
-      const fixture = await create();
-      await selectNode(fixture);
-      fixture.receive({ type: "highlight", nodeId: "control" });
-      await vi.waitFor(() => expect(highlightCalls()).toHaveLength(2));
-      expect(highlightCalls().map(([, params]) => params)).toEqual([
-        { nodeId: "control", bringToFront: true },
-        { nodeId: "control", bringToFront: true },
-      ]);
-      fixture.provider.dispose();
-    });
+    it.each([false, true])(
+      "never highlights on selection when bringToFront is %s",
+      async (bringToFront) => {
+        mocks.bringToFront = bringToFront;
+        const fixture = await create();
+        await selectNode(fixture);
+        expect(highlightCalls()).toHaveLength(0);
+        fixture.provider.dispose();
+      },
+    );
+    it.each([false, true])(
+      "only highlights through the button with bringToFront %s",
+      async (bringToFront) => {
+        mocks.bringToFront = bringToFront;
+        const fixture = await create();
+        await selectNode(fixture);
+        fixture.receive({ type: "highlight", nodeId: "control" });
+        await vi.waitFor(() => expect(highlightCalls()).toHaveLength(1));
+        expect(highlightCalls().map(([, params]) => params)).toEqual([
+          { nodeId: "control", bringToFront },
+        ]);
+        fixture.provider.dispose();
+      },
+    );
     it("saves the toggle to the user settings and tells the panel", async () => {
       const fixture = await create();
       fixture.receive({ type: "bringToFront", enabled: true });
@@ -987,8 +1503,8 @@ describe("Spy view bridge", () => {
     mocks.request.mockImplementation((method: string) => {
       if (method === "app.status")
         return Promise.resolve({ running: true, pids: [7] });
-      if (method === "inspect.roots")
-        return Promise.resolve([
+      if (method === "inspect.refresh")
+        return Promise.resolve({ nodes: [
           {
             nodeId: "a",
             info: { processId: 7, name: "A", controlType: "Window" },
@@ -997,7 +1513,7 @@ describe("Spy view bridge", () => {
             nodeId: "b",
             info: { processId: 7, name: "B", controlType: "Window" },
           },
-        ]);
+        ], status: { running: true, pids: [7] } });
       if (method === "inspect.coverage") return Promise.resolve(coverage());
       return Promise.resolve(undefined);
     });
@@ -1081,9 +1597,10 @@ describe("Spy view bridge", () => {
     const fixture = await create();
     fixture.receive({ type: "pick" });
     await vi.waitFor(() =>
-      expect(mocks.notifications.has("spy.picked")).toBe(true),
+      expect(latestSession()).toBeTypeOf("string"),
     );
     mocks.notifications.get("spy.picked")?.({
+      sessionId: latestSession(),
       node: { nodeId: "picked", info: { controlType: "Button", name: "Save" } },
       suggestion: { helpers: [], code: "Element()" },
     });
@@ -1125,9 +1642,10 @@ describe("Spy view bridge", () => {
     const fixture = await create();
     fixture.receive({ type: "pick" });
     await vi.waitFor(() =>
-      expect(mocks.notifications.has("spy.picked")).toBe(true),
+      expect(latestSession()).toBeTypeOf("string"),
     );
     mocks.notifications.get("spy.picked")?.({
+      sessionId: latestSession(),
       node: picked,
       suggestion: { helpers: [], code: "Element()" },
     });
@@ -1260,8 +1778,8 @@ describe("Spy view bridge", () => {
     );
     expect(progress.at(-1)).toMatchObject({
       nodeId: "control",
-      completed: 4,
-      total: 4,
+      completed: 3,
+      total: 3,
       done: true,
       failed: false,
     });
@@ -1269,7 +1787,7 @@ describe("Spy view bridge", () => {
   });
   it("refreshes roots, stops picking when hidden, and releases notifications", async () => {
     mocks.request.mockImplementation((method: string) =>
-      Promise.resolve(method === "app.status" ? { running: true } : []),
+      Promise.resolve(method === "inspect.refresh" ? { nodes: [], status: { running: true } } : []),
     );
     const fixture = await create();
     fixture.receive({ type: "ready" });
@@ -1286,7 +1804,7 @@ describe("Spy view bridge", () => {
         ),
       ).toBe(true),
     );
-    mocks.notifications.get("spy.cancelled")?.({});
+    mocks.notifications.get("spy.cancelled")?.({ sessionId: latestSession() });
     expect(fixture.sent.at(-1)?.picking).toBe(false);
     fixture.view.visible = false;
     fixture.visibility();
@@ -1300,7 +1818,7 @@ describe("Spy view bridge", () => {
     mocks.request.mockImplementation((method: string) =>
       method === "inspect.children"
         ? Promise.reject(new RpcError(-32005, "gone"))
-        : Promise.resolve(method === "app.status" ? { running: false } : []),
+        : Promise.resolve(method === "inspect.refresh" ? { nodes: [], status: { running: false } } : []),
     );
     const fixture = await create();
     fixture.receive({ type: "expand", nodeId: "stale" });
@@ -1337,9 +1855,10 @@ describe("Spy view bridge", () => {
     const fixture = await create();
     fixture.receive({ type: "pick" });
     await vi.waitFor(() =>
-      expect(mocks.notifications.has("spy.picked")).toBe(true),
+      expect(latestSession()).toBeTypeOf("string"),
     );
     mocks.notifications.get("spy.picked")?.({
+      sessionId: latestSession(),
       node: { nodeId: "picked", info: { controlType: "Button", name: "Save" } },
       suggestion: { helpers: [], code: "Element()" },
     });
@@ -1404,9 +1923,10 @@ describe("Spy view bridge", () => {
     );
     fixture.receive({ type: "pick" });
     await vi.waitFor(() =>
-      expect(mocks.notifications.has("spy.picked")).toBe(true),
+      expect(latestSession()).toBeTypeOf("string"),
     );
     mocks.notifications.get("spy.picked")?.({
+      sessionId: latestSession(),
       node: { nodeId: "picked", info: { controlType: "Button", name: "Save" } },
       suggestion: { helpers: [], code: "Element()" },
     });
@@ -1468,9 +1988,10 @@ describe("Spy view bridge", () => {
     );
     fixture.receive({ type: "pick" });
     await vi.waitFor(() =>
-      expect(mocks.notifications.has("spy.picked")).toBe(true),
+      expect(latestSession()).toBeTypeOf("string"),
     );
     mocks.notifications.get("spy.picked")?.({
+      sessionId: latestSession(),
       node: picked,
       suggestion: { helpers: [], code: "Element()" },
     });
@@ -1486,6 +2007,212 @@ describe("Spy view bridge", () => {
     ).toEqual([]);
     fixture.provider.dispose();
   });
+  it.each(["hide", "stop", "dispose"])("does not start a picker after %s while connecting", async (action) => {
+    let finishConnection: (value: unknown) => void = () => {};
+    const connect = vi.fn(() => new Promise((resolve) => { finishConnection = resolve; }));
+    const fixture = await create(connect);
+    mocks.request.mockResolvedValue(undefined);
+    fixture.receive({ type: "pick" });
+    await vi.waitFor(() => expect(connect).toHaveBeenCalledOnce());
+    if (action === "hide") {
+      fixture.view.visible = false;
+      fixture.visibility();
+    } else if (action === "stop") fixture.receive({ type: "stopPick" });
+    else fixture.provider.dispose();
+    finishConnection({ client: fixture.client });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(mocks.request.mock.calls.some((call) => call[0] === "spy.start")).toBe(false);
+    fixture.provider.dispose();
+  });
+
+  it("ignores notifications from stopped and superseded picker sessions", async () => {
+    mocks.request.mockResolvedValue(undefined);
+    const fixture = await create();
+    fixture.receive({ type: "pick" });
+    await vi.waitFor(() => expect(latestSession()).toBeTypeOf("string"));
+    const first = latestSession();
+    fixture.receive({ type: "stopPick" });
+    fixture.receive({ type: "pick" });
+    await vi.waitFor(() => expect(latestSession()).not.toBe(first));
+    const before = fixture.sent.length;
+    mocks.notifications.get("spy.hover")?.({ sessionId: first, node: { nodeId: "old" } });
+    mocks.notifications.get("spy.picked")?.({ sessionId: first, node: { nodeId: "old" } });
+    mocks.notifications.get("spy.cancelled")?.({ sessionId: first });
+    expect(fixture.sent.slice(before)).toEqual([]);
+    mocks.notifications.get("spy.hover")?.({ sessionId: latestSession(), node: { nodeId: "current" } });
+    expect(fixture.sent.at(-1)).toMatchObject({ type: "hover", node: { nodeId: "current" } });
+    fixture.provider.dispose();
+  });
+
+  it("shows picked properties before icons or a separately requested locator complete", async () => {
+    let finishLocator: (value: unknown) => void = () => {};
+    const picked = { nodeId: "picked", info: { controlType: "Button", name: "Save" } };
+    mocks.icons.mockImplementationOnce(() => new Promise(() => {}));
+    mocks.request.mockImplementation((method: string, params?: { nodeId?: string }) => {
+      if (method === "inspect.properties") return Promise.resolve({ info: picked.info, properties: {}, ancestors: [] });
+      if (method === "inspect.roots") return Promise.resolve([]);
+      if (method === "suggest.locator" && params?.nodeId === "picked") return new Promise((resolve) => { finishLocator = resolve; });
+      if (method === "suggest.locator") return Promise.resolve({ helpers: [], code: "Element()" });
+      return Promise.resolve(undefined);
+    });
+    const fixture = await create();
+    fixture.receive({ type: "pick" });
+    await vi.waitFor(() => expect(latestSession()).toBeTypeOf("string"));
+    mocks.notifications.get("spy.picked")?.({ sessionId: latestSession(), node: picked });
+    await vi.waitFor(() => expect(fixture.sent.some((message) => message.type === "selected")).toBe(true));
+    expect(mocks.request).toHaveBeenCalledWith("suggest.locator", { nodeId: "picked" });
+    fixture.receive({ type: "select", nodeId: "newer" });
+    await vi.waitFor(() => expect(fixture.sent.some((message) => message.type === "selected" && message.nodeId === "newer")).toBe(true));
+    finishLocator({ helpers: [], code: "Element()" });
+    await Promise.resolve();
+    expect(fixture.sent.some((message) => message.type === "suggestion" && message.nodeId === "picked")).toBe(false);
+    fixture.provider.dispose();
+  });
+
+  it("coalesces concurrent refreshes and consumes the combined status snapshot", async () => {
+    let finish: (value: unknown) => void = () => {};
+    mocks.markers = false;
+    mocks.request.mockImplementation((method: string) => method === "inspect.refresh"
+      ? new Promise((resolve) => { finish = resolve; }) : Promise.resolve(undefined));
+    const fixture = await create();
+    const first = fixture.provider.refresh();
+    const second = fixture.provider.refresh();
+    await vi.waitFor(() => expect(mocks.request).toHaveBeenCalledWith("inspect.refresh", { includeOtherApps: true }));
+    expect(mocks.request.mock.calls.filter((call) => call[0] === "inspect.refresh")).toHaveLength(1);
+    finish({ nodes: [], status: { running: true, mainWindowTitle: "Combined snapshot" } });
+    await Promise.all([first, second]);
+    expect(mocks.request).not.toHaveBeenCalledWith("app.status");
+    expect(fixture.sent).toContainEqual(expect.objectContaining({ type: "state", targetName: "Combined snapshot", appRunning: true }));
+    fixture.provider.dispose();
+  });
+
+  it("retains partial nodes and reports incomplete enumeration instead of retrying a full tree", async () => {
+    const node = { nodeId: "partial", info: { controlType: "Window" } };
+    mocks.markers = false;
+    mocks.request.mockImplementation((method: string) => {
+      if (method === "inspect.refresh") return Promise.reject(new RpcError(-32005, "partial", {
+        nodes: [node], complete: false, errors: [{ index: 1, message: "Window closed" }],
+      }));
+      return Promise.resolve({ running: false });
+    });
+    const fixture = await create();
+    await fixture.provider.refresh();
+    expect(fixture.sent).toContainEqual({ type: "roots", nodes: [node] });
+    expect(fixture.sent).toContainEqual(expect.objectContaining({ type: "enumerationIncomplete", message: expect.stringContaining("Window closed") }));
+    expect(fixture.sent.some((message) => message.type === "error")).toBe(false);
+    fixture.provider.dispose();
+  });
+
+  it("queues newly expanded coverage IDs without invalidating in-flight coverage", async () => {
+    let finishCoverage: (value: unknown) => void = () => {};
+    const root = { nodeId: "a", info: { controlType: "Window" } };
+    const child = { nodeId: "b", info: { controlType: "Button" } };
+    mocks.request.mockImplementation((method: string, params?: { nodeIds?: string[] }) => {
+      if (method === "inspect.refresh") return Promise.resolve({ nodes: [root], status: { running: true } });
+      if (method === "inspect.children") return Promise.resolve([child]);
+      if (method === "inspect.coverage" && params?.nodeIds?.includes("a"))
+        return new Promise((resolve) => { finishCoverage = resolve; });
+      if (method === "inspect.coverage") return Promise.resolve({ covered: {}, pending: [] });
+      return Promise.resolve(undefined);
+    });
+    const fixture = await create();
+    await fixture.provider.refresh();
+    fixture.receive({ type: "expand", nodeId: "a" });
+    await vi.waitFor(() => expect(fixture.sent.some((message) => message.type === "children")).toBe(true));
+    finishCoverage({ covered: { a: { count: 1, first: "Page.window" } }, pending: [] });
+    await vi.waitFor(() => expect(fixture.sent.filter((message) => message.type === "coverage")).toHaveLength(2));
+    expect(fixture.sent.filter((message) => message.type === "coverage").map((message) => message.nodeIds)).toEqual([["a"], ["b"]]);
+    fixture.provider.dispose();
+  });
+
+  it("opens a saved definition without connecting and never sends its ID to runtime inspection", async () => {
+    const connect = vi.fn();
+    const fixture = await create(connect, {
+      tour: tutorialView(), focus: {}, onDidChange: () => ({ dispose() {} }),
+    } as unknown as SetupMonitor);
+    await mocks.commands.get("wintestkit.spy.showDefinition")?.({
+      id: "pages/Login.py::LoginPage.submit", qualname: "LoginPage.submit", projectRoot: "C:/demo",
+    });
+    fixture.receive({ type: "ready" });
+    fixture.receive({ type: "highlight", nodeId: "pages/Login.py::LoginPage.submit" });
+    fixture.receive({ type: "loadProperties", nodeId: "pages/Login.py::LoginPage.submit" });
+    await fixture.provider.refresh();
+    expect(connect).not.toHaveBeenCalled();
+    expect(mocks.request).not.toHaveBeenCalled();
+    expect(mocks.command).toHaveBeenCalledWith("wintestkit.spy.focus");
+    expect(fixture.sent.at(-1)).toMatchObject({ type: "savedDefinition", qualname: "LoginPage.submit" });
+    fixture.provider.dispose();
+  });
+
+  it("rejects saved definitions outside Projects before reading preview files", async () => {
+    const fixture = await create();
+    await mocks.commands.get("wintestkit.spy.showDefinition")?.({ id: "pages/Login.py::LoginPage.submit", qualname: "LoginPage.submit", projectRoot: "C:/outside" });
+    expect(mocks.previews).not.toHaveBeenCalled();
+    expect(fixture.sent.at(-1)).toMatchObject({ type: "error", message: expect.stringContaining("known WinTestKit project") });
+    fixture.provider.dispose();
+  });
+
+  it("returns from a saved preview to live objects through Refresh", async () => {
+    mocks.request.mockImplementation((method: string) => Promise.resolve(
+      method === "inspect.refresh" ? { nodes: [], status: { running: false } } : undefined,
+    ));
+    const fixture = await create();
+    await mocks.commands.get("wintestkit.spy.showDefinition")?.({
+      id: "pages/Page.py::Page.first", qualname: "Page.first", projectRoot: "C:/demo",
+    });
+    expect(mocks.request).not.toHaveBeenCalled();
+    fixture.receive({ type: "refresh" });
+    await vi.waitFor(() => expect(fixture.sent).toContainEqual({ type: "roots", nodes: [] }));
+    expect(mocks.request).toHaveBeenCalledWith("inspect.refresh", { includeOtherApps: true });
+    fixture.provider.dispose();
+  });
+
+  it("restores active tutorial callouts when leaving a saved preview to pick", async () => {
+    tutorialResponses();
+    const fixture = await create(undefined, {
+      tour: tutorialView(), focus: {}, onDidChange: () => ({ dispose() {} }),
+    } as unknown as SetupMonitor);
+    await mocks.commands.get("wintestkit.spy.showDefinition")?.({
+      id: "pages/Page.py::Page.first", qualname: "Page.first", projectRoot: "C:/demo",
+    });
+    const before = fixture.sent.length;
+    fixture.receive({ type: "pick" });
+    await vi.waitFor(() => expect(fixture.sent.slice(before)).toContainEqual(
+      expect.objectContaining({ type: "tour", tutorial: expect.objectContaining({ phase: "extras" }) }),
+    ));
+    expect(mocks.request.mock.calls.some((call) => call[0] === "spy.start")).toBe(false);
+    fixture.provider.dispose();
+  });
+
+  it("does not let an older saved preview overwrite a newer definition selection", async () => {
+    let finishFirst: (value: unknown) => void = () => {};
+    mocks.previews.mockImplementationOnce(() => new Promise((resolve) => { finishFirst = resolve; }));
+    const fixture = await create();
+    const first = mocks.commands.get("wintestkit.spy.showDefinition")?.({ id: "pages/Page.py::Page.first", qualname: "Page.first", projectRoot: "C:/demo" });
+    await vi.waitFor(() => expect(mocks.previews).toHaveBeenCalledOnce());
+    await mocks.commands.get("wintestkit.spy.showDefinition")?.({ id: "pages/Page.py::Page.second", qualname: "Page.second", projectRoot: "C:/demo" });
+    const before = fixture.sent.length;
+    finishFirst({ capturedAt: "old" });
+    await first;
+    expect(fixture.sent.slice(before)).toEqual([]);
+    expect(fixture.sent.at(-1)).toMatchObject({ type: "savedDefinition", id: "pages/Page.py::Page.second" });
+    fixture.provider.dispose();
+  });
+
+  it("does not arbitrarily read a preview when multiple definitions match", async () => {
+    mocks.request.mockImplementation((method: string) => Promise.resolve(method === "inspect.properties"
+      ? { info: {}, properties: {}, ancestors: [] } : method === "suggest.locator"
+        ? { helpers: [], code: "Element()" } : method === "inspect.definitions"
+          ? { definitions: [{ id: "pages/Page.py::Page.first" }, { id: "pages/Page.py::Page.second" }], errors: [], pageCount: 1, appRunning: true }
+          : undefined));
+    const fixture = await create();
+    fixture.receive({ type: "select", nodeId: "control" });
+    await vi.waitFor(() => expect(fixture.sent.some((message) => message.type === "objectPreview")).toBe(true));
+    expect(mocks.previews).not.toHaveBeenCalled();
+    expect(fixture.sent).toContainEqual(expect.objectContaining({ type: "objectPreview", reason: expect.stringContaining("Multiple definitions") }));
+    fixture.provider.dispose();
+  });
+
   it("does not let a superseded connection clear newer roots", async () => {
     const client = {
       request: mocks.request,
@@ -1504,8 +2231,8 @@ describe("Spy view bridge", () => {
     const fixture = await create(connect);
     mocks.request.mockImplementation((method: string) =>
       Promise.resolve(
-        method === "app.status"
-          ? { running: true }
+        method === "inspect.refresh"
+          ? { nodes: [{ nodeId: "fresh", info: { processId: 1 } }], status: { running: true } }
           : [{ nodeId: "fresh", info: { processId: 1 } }],
       ),
     );
