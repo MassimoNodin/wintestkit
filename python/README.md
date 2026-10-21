@@ -23,8 +23,11 @@ extension and select the Python environment containing this package. See the
 Run `wtk init my-tests --app "C:/Apps/My App.exe"` to create a starter page,
 smoke test, pytest configuration, and report ignore entry. Existing metadata,
 configuration, and Python files are preserved. `--force` replaces starter Python
-files only; it does not overwrite application settings. Review the window title
-in `pages/main.py`, then run `wtk doctor` and `wtk run` from the new folder.
+files only; it does not overwrite application settings. The generated `MainPage` in
+`pages/main.py` is a VS Code walkthrough example: it targets the frontmost `Code.exe`
+window and its second direct UI Automation child, without relying on the workspace title.
+The smoke test and starter flow check both. For your own application, replace these example
+locators with its window and controls before running `wtk doctor` and `wtk run`.
 
 ## Development
 
@@ -83,9 +86,9 @@ inspecting another process. Window and point selection options are mutually excl
 The suggestion engine (`wintestkit.engine.suggest`) verifies generated locators
 against the selected element, prioritizing stable IDs, names, classes, scoped
 ancestors, and finally positional indices. Helpers precede dependent declarations;
-index suggestions are fragile if the UI order changes. In the current demo the
-username TextBox is globally unique, so the documented candidate ordering selects
-`class_name` rather than the plan example expected `within=credentials`.
+index suggestions are fragile if the UI order changes. When an element is globally
+unique, candidate ordering selects simpler properties such as `class_name` rather
+than nested container scopes.
 
 ## Pick locators
 
@@ -100,7 +103,7 @@ not launch an application or change elevation; it requires an unlocked desktop.
 `wtk serve --stdio` accepts one JSON-RPC 2.0 object per UTF-8 line. Send
 `initialize` with `{ "root": "absolute/project/path" }` first. It supports
 discovery, app lifecycle, target checks/highlights, inspector nodes, suggestions,
-and Spy notifications, as specified in `docs/plan/05-protocol.md`. Ordinary
+and Spy notifications, as specified in `schemas/rpc.schema.json`. Ordinary
 requests execute sequentially; Spy stop and shutdown bypass queued work.
 Standard output is protocol-only, including when user modules print. Shutdown
 and input EOF clean up Spy but leave the application open. Inspector node IDs

@@ -58,8 +58,7 @@ Build the Python wheel with `uv build --directory python` from the repository
 root; select the resulting file under `python/dist/`. Use a new Python package
 version for each update test: pip may skip an already-installed wheel with the
 same version. This first increment does not publish a local feed or discover
-new local releases automatically; that design remains in
-[the local package investigation](reviews/local-package-install-updates.md).
+new local releases automatically.
 
 Switching to Remote and clicking **Install remote package** deliberately
 reinstalls from the configured pip index, including resolved dependencies, so
@@ -138,6 +137,3 @@ setup, local validation, dry runs, production tags, and recovery from partial pu
 The release workflow runs the same CI checks on the tagged commit and publishes the tested
 Python distributions before the Windows VSIX packages. A GitHub Release is created only
 after both registries succeed. Missing required publishing settings fail the release.
-
-The [implementation plan](plan/README.md) and [research notes](research.md) are historical
-design context, not installation instructions.
