@@ -8,7 +8,6 @@ import tomllib
 from importlib.resources import files
 from importlib.resources.abc import Traversable
 from pathlib import Path
-from string import Template
 from typing import Any, cast
 
 from wintestkit.commands import common
@@ -27,9 +26,8 @@ def add_parser(subparsers: Any) -> None:
     parser.set_defaults(handler=run)
 
 
-def _template(name: str, **values: str) -> str:
-    source = files("wintestkit.scaffold").joinpath(name).read_text(encoding="utf-8")
-    return Template(source).substitute(values)
+def _template(name: str) -> str:
+    return files("wintestkit.scaffold").joinpath(name).read_text(encoding="utf-8")
 
 
 def skill_files(source: Traversable | None = None, prefix: str = "") -> dict[str, str]:
@@ -65,7 +63,6 @@ def run(args: argparse.Namespace) -> int:
             f"cannot update invalid pyproject.toml: {error}", common.EXIT_USAGE
         ) from error
     app_path = Path(args.app) if args.app else None
-    title = json.dumps(app_path.stem if app_path else "YourApp", ensure_ascii=False)
     additions: list[str] = []
     tool_value: object = config.get("tool", {})
     tool = cast(dict[str, Any], tool_value)
@@ -94,7 +91,7 @@ def run(args: argparse.Namespace) -> int:
         print("Skipped existing pyproject.toml configuration")
     for relative, content in {
         "pages/__init__.py": "",
-        "pages/main.py": _template("main.py.tmpl", title=title),
+        "pages/main.py": _template("main.py.tmpl"),
         "flows/__init__.py": "",
         "flows/main.py": _template("flow_main.py.tmpl"),
         "tests/__init__.py": "",

@@ -149,19 +149,43 @@ describe("the guided setup tour", () => {
     const spy = planTour({ ...base, extra: "spy" });
     expect(spy).toMatchObject({ step: "spy", phase: "extras", lit: ["spy"], progress: { index: 1, total: EXTRA_STEPS.length } });
     expect(spy?.buttons.map((button) => button.id)).toEqual(["next"]);
-    expect(spy?.text).toContain("panel");
+    expect(spy?.text).toContain("Only tutorial navigation works");
     const test = planTour({ ...base, extra: "test" });
     expect(test).toMatchObject({ step: "test", progress: { index: EXTRA_STEPS.length, total: EXTRA_STEPS.length } });
     expect(test?.buttons.map((button) => button.id)).toEqual(["finish"]);
-    expect(test?.text).toContain("Test Target shows the result");
+    expect(test?.text).toContain("Check Test Target for the result");
+    expect(test?.text).toContain("Testing tab ($(beaker))");
     for (const [index, extra] of EXTRA_STEPS.entries()) {
       const view = planTour({ ...base, extra });
       expect(view).toMatchObject({ step: extra, phase: "extras", progress: { index: index + 1, total: EXTRA_STEPS.length } });
-      // Quick explanations: a sentence or two that fit a small card beside what they describe.
       expect(view?.text.length).toBeGreaterThan(40);
-      expect(view?.text.length).toBeLessThan(130);
+      expect(view?.text.length).toBeLessThanOrEqual(280);
+      expect(view?.text).not.toMatch(/—|After the tutorial/i);
       expect(view?.buttons.map((button) => button.id)).toEqual([extra === "test" ? "finish" : "next"]);
     }
+  });
+
+  it("follows the eight-step visual sequence with separate selection and properties", async () => {
+    const base = await context({}, { modeConfirmed: true });
+    const expected = [
+      ["spy", "Meet Spy", undefined],
+      ["spyPick", "Pick a control", "pick"],
+      ["spyBrowse", "Explore Objects", "tree-pane"],
+      ["spySelection", "Confirm your selection", "selection-summary"],
+      ["spyDefinitions", "Find existing definitions", "definitions-group"],
+      ["spyLocators", "Create a locator", "locator-panel"],
+      ["spyProperties", "Inspect Properties", "properties-pane"],
+      ["test", "Run your first test", undefined],
+    ] as const;
+    expect(EXTRA_STEPS).toEqual(expected.map(([step]) => step));
+    for (const [extra, title, spyTarget] of expected) {
+      const view = planTour({ ...base, extra });
+      expect(view?.title).toBe(title);
+      expect(view?.spyTarget).toBe(spyTarget);
+    }
+    expect(planTour({ ...base, extra: "spyPick" })?.text).toContain("The three adjacent buttons");
+    expect(planTour({ ...base, extra: "spyPick" })?.text).toContain("bring the selected object's window to the front when highlighting.");
+    expect(planTour({ ...base, extra: "spyBrowse" })?.text).toContain("then select an object to inspect");
   });
 
   it("lets the user go back to a finished step and forward again, never past the first open one", async () => {
