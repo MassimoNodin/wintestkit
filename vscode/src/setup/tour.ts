@@ -15,10 +15,10 @@ export type SetupCursor = SetupStep | "complete";
 
 /** What is offered once setup is done. */
 export const EXTRA_STEPS = [
-  "spy", "spyPick", "spyBrowse", "spyProperties", "spyLocators", "spyDefinitions", "pagesFlows", "test",
+  "spy", "spyPick", "spyBrowse", "spySelection", "spyDefinitions", "spyLocators", "spyProperties", "test",
 ] as const;
 export type ExtraStep = (typeof EXTRA_STEPS)[number];
-export type SpyTourTarget = "pick" | "tree-pane" | "details" | "locator-panel" | "definitions-group";
+export type SpyTourTarget = "pick" | "tree-pane" | "selection-summary" | "details" | "properties-pane" | "locator-panel" | "definitions-group";
 
 export type TourStep = SetupStep | "complete" | ExtraStep;
 
@@ -264,40 +264,41 @@ function extraView(extra: ExtraStep): TourView {
   const content: Record<ExtraStep, { title: string; text: string; spyTarget?: SpyTourTarget }> = {
     spy: {
       title: "Meet Spy",
-      text: "This panel is Spy. Browse the controls of your running app on the left, inspect the selected one on the right.",
+      text: "Spy helps you find application elements, inspect their properties, and create reusable locators for your tests. Spy's controls are disabled during this walkthrough. Only tutorial navigation works.",
     },
     spyPick: {
       title: "Pick a control",
-      text: "Click Pick element, then Ctrl+click a control in your app to jump to it in the tree. Esc stops picking.",
+      text: "Click Pick element, then Ctrl+Click an element in the application. Spy reveals and selects it in Objects. Press Esc to stop picking.\n\nThe three adjacent buttons refresh Objects, collapse all branches below, and bring the selected object's window to the front when highlighting.",
       spyTarget: "pick",
     },
     spyBrowse: {
-      title: "Browse the objects",
-      text: "Expand windows and controls, or filter them with the search box. Select one to inspect it.",
+      title: "Explore Objects",
+      text: "Discover elements and their hierarchy. Expand or collapse branches, then select an object to inspect it's attributes. Use the filter to search loaded objects.",
       spyTarget: "tree-pane",
     },
-    spyProperties: {
-      title: "Inspect the selection",
-      text: "Identity, state and geometry of the selected control. Highlight outlines it on screen.",
-      spyTarget: "details",
+    spySelection: {
+      title: "Confirm your selection",
+      text: "Check the selected object's name and type. Use Highlight to outline it in the application and confirm you have the right element.",
+      spyTarget: "selection-summary",
     },
-    spyLocators: {
-      title: "Get a locator",
-      text: "Spy suggests Python code that finds the control. Copy it, or use Add to page to insert it.",
-      spyTarget: "locator-panel",
+    spyProperties: {
+      title: "Inspect Properties",
+      text: "Use Properties to identify elements and understand their state. Review Identity, State, Geometry, and Automation. Load all properties for more detail.",
+      spyTarget: "properties-pane",
     },
     spyDefinitions: {
-      title: "Already defined?",
-      text: "Matching definitions in your pages are listed here, so you can jump to one instead of duplicating it.",
+      title: "Find existing definitions",
+      text: "Avoid defining the same control twice. Defined in pages shows matching definitions. A green tick in the object tree marks a control already defined in your pages.",
       spyTarget: "definitions-group",
     },
-    pagesFlows: {
-      title: "Pages & Flows",
-      text: "In the sidebar, Page Tree lists your pages and their controls, and Flows lists workflows you can run.",
+    spyLocators: {
+      title: "Create a locator",
+      text: "Turn your selection into Python code. Check the locator's uniqueness status, then use Copy locator or Add to page to reuse it in your tests.",
+      spyTarget: "locator-panel",
     },
     test: {
-      title: "Run your tests",
-      text: "Click Finish, then open Testing and run the smoke test. Test Target shows the result and report link.",
+      title: "Run your first test",
+      text: "Click Finish to enable Spy's controls. Open the Testing tab ($(beaker)) in the Activity Bar and run the generated smoke test. Check Test Target for the result and open the report when available.",
     },
   };
   return {

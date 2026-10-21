@@ -28,7 +28,10 @@ def test_init_creates_a_valid_starter_project(tmp_path: Path) -> None:
     assert config["tool"]["pytest"]["ini_options"]["testpaths"] == ["tests"]
     for relative in ["pages/main.py", "flows/main.py", "tests/test_smoke.py"]:
         ast.parse((root / relative).read_text(encoding="utf-8"))
-    assert 'Window(title="My App")' in (root / "pages/main.py").read_text(encoding="utf-8")
+    page = (root / "pages/main.py").read_text(encoding="utf-8")
+    assert 'Window(process="Code.exe", index=0)' in page
+    assert "content = Element(depth=1, index=1)" in page
+    assert "class MainPage(Page)" in page
     assert (root / ".gitignore").read_text(encoding="utf-8").splitlines() == [
         "wintestkit.local.toml",
         "wintestkit.local.yaml",
@@ -78,7 +81,7 @@ def test_force_replaces_only_starter_files(tmp_path: Path) -> None:
     page = tmp_path / "pages" / "main.py"
     page.write_text("custom = True\n", encoding="utf-8")
     assert main(["init", str(tmp_path), "--force", "--app", "C:/Replacement.exe"]) == 0
-    assert 'Window(title="Replacement")' in page.read_text(encoding="utf-8")
+    assert 'Window(process="Code.exe", index=0)' in page.read_text(encoding="utf-8")
     config = load_config(tmp_path)
     assert config.app is not None
     assert config.app.path == Path("C:/Original.exe")
