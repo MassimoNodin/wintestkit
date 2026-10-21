@@ -40,14 +40,15 @@ _PARAMS: dict[str, tuple[set[str], set[str]]] = {
     "element.highlight": ({"file", "qualname"}, {"durationMs"}),
     "page.check": ({"file", "page"}, set()),
     "flow.run": ({"file", "name"}, {"arguments"}),
-    "inspect.roots": (set(), {"includeOtherApps"}),
+    "inspect.roots": (set(), {"includeOtherApps", "foregroundForProcessId"}),
+    "inspect.refresh": (set(), {"includeOtherApps", "foregroundForProcessId"}),
     "inspect.children": ({"nodeId"}, set()),
     "inspect.properties": ({"nodeId"}, {"full", "includeAncestors"}),
     "inspect.highlight": ({"nodeId"}, {"durationMs", "bringToFront"}),
     "suggest.locator": ({"nodeId"}, set()),
     "inspect.definitions": ({"nodeId"}, set()),
     "inspect.coverage": ({"nodeIds"}, set()),
-    "spy.start": (set(), set()),
+    "spy.start": (set(), {"sessionId"}),
     "spy.stop": (set(), set()),
 }
 
@@ -142,6 +143,9 @@ class Server:
                     or value < 0
                 ):
                     raise RpcError(-32602, "durationMs must be a finite nonnegative number")
+            elif key == "foregroundForProcessId":
+                if type(value) is not int or value <= 0:
+                    raise RpcError(-32602, "foregroundForProcessId must be a positive integer")
             elif key in ("full", "includeAncestors", "includeOtherApps", "bringToFront"):
                 if not isinstance(value, bool):
                     raise RpcError(-32602, f"{key} must be a boolean")
@@ -296,12 +300,67 @@ class Server:
             raise RpcError(-32005, "unknown node id")
         return node.as_live()
 
-    def stop_spy(self) -> None:
+    def stop_spy(self, expected_epoch: int | None = None) -> None:
         with self._spy_lock:
+            if expected_epoch is not None and expected_epoch != self._spy_epoch:
+                return
             self._spy_epoch += 1
             session, self.spy = self.spy, None
         if session is not None:
             session.stop()
+
+    def _register_nodes(
+        self,
+        elements: list[UIAElement] | list[UIAElement | None],
+        errors: list[dict[str, Any]] | None = None,
+        source_indices: list[int] | None = None,
+    ) -> list[dict[str, Any]]:
+        nodes: list[dict[str, Any]] = []
+        errors = list(errors or [])
+        for index, element in enumerate(elements):
+            if element is None:
+                continue
+            try:
+                nodes.append(self._register(element))
+            except Exception as exc:
+                errors.append(
+                    {
+                        "index": source_indices[index] if source_indices is not None else index,
+                        "message": str(exc),
+                    }
+                )
+        if errors:
+            raise RpcError(
+                -32005,
+                "some elements are unavailable",
+                {"nodes": nodes, "complete": False, "errors": errors},
+            )
+        return nodes
+
+    def _app_status(
+        self, app: App | None, pids: list[int], windows: list[UIAElement] | None = None
+    ) -> dict[str, Any]:
+        owned = bool(pids) and self._owned_app_pids == set(pids)
+        if self._owned_app_pids is not None and not owned:
+            self._owned_app_pids = None
+        status: dict[str, Any] = {"running": bool(pids), "pids": pids, "owned": owned}
+        if app is not None:
+            if windows is None:
+                with contextlib.suppress(WtkError):
+                    status["mainWindowTitle"] = app.main_window().name
+            else:
+                from wintestkit.uia import win32
+
+                for window in windows:
+                    try:
+                        if window.control_type == "Window" and not win32.window_owner(
+                            window.native_window_handle
+                        ):
+                            status["mainWindowTitle"] = window.name
+                            break
+                    except Exception:
+                        continue
+        return status
 
     def dispatch(self, method: str, params: dict[str, Any], spy_epoch: int | None = None) -> Any:
         from wintestkit.targets import ModuleLoader, Target, check_page, resolve_target
@@ -346,22 +405,7 @@ class Server:
         if method == "app.status":
             app = self._app(False)
             pids = app.pids if app is not None else []
-            owned = bool(pids) and self._owned_app_pids == set(pids)
-            if self._owned_app_pids is not None and not owned:
-                # PID replacement or any other unexpected process set change invalidates our
-                # ownership claim. Reattaching later must never silently restore it.
-                self._owned_app_pids = None
-            status: dict[str, Any] = {
-                "running": bool(pids),
-                "pids": pids,
-                "owned": owned,
-            }
-            if app is not None:
-                # Apps such as UWP Calculator have no top-level window of their own process; the
-                # app is still running, so the title is simply omitted.
-                with contextlib.suppress(WtkError):
-                    status["mainWindowTitle"] = app.main_window().name
-            return status
+            return self._app_status(app, pids)
         if method == "app.launch":
             app = self._app(False)
             if app is None:
@@ -432,56 +476,103 @@ class Server:
                     if node_id in self.node_infos
                 }
             return self._coverage().covered_nodes(app, infos)
-        if method == "inspect.roots":
+        if method in ("inspect.roots", "inspect.refresh"):
             if self.coverage is not None:
-                self.coverage.invalidate()  # a refresh: the UI may have changed
+                self.coverage.invalidate()
             app = self._app(False)
+            pids = list(app.pids) if app is not None else []
+            windows = list(app.top_level_windows()) if app is not None else []
+            status = self._app_status(app, pids, windows) if method == "inspect.refresh" else None
+            if "foregroundForProcessId" in params:
+                from wintestkit.uia import element, win32
+
+                hwnd = win32.foreground_window_for_process(params["foregroundForProcessId"])
+                if hwnd is None:
+                    raise RpcError(
+                        -32001,
+                        "Focus the VS Code window hosting WinTestKit, "
+                        "then reopen the Spy tutorial.",
+                    )
+                nodes = self._register_nodes([element.from_handle(hwnd)])
+                return {"nodes": nodes, "status": status} if status is not None else nodes
             include_other = params.get("includeOtherApps", False)
+            enumeration_errors: list[dict[str, Any]] = []
+            roots: list[UIAElement | None]
             if app is not None and not include_other:
-                roots = app.top_level_windows()
+                roots = list(windows)
+                source_indices = list(range(len(roots)))
             else:
                 from wintestkit.uia import com
-                from wintestkit.uia.element import UIAElement
+                from wintestkit.uia.element import ElementEnumerationError, UIAElement
 
-                desktop = UIAElement(com.get_uia().GetRootElement()).children()
+                desktop: list[UIAElement | None]
+                try:
+                    desktop = list(UIAElement(com.get_uia().GetRootElement()).children())
+                except ElementEnumerationError as exc:
+                    desktop = exc.elements
+                    enumeration_errors = exc.errors
                 if app is None:
                     roots = desktop
+                    source_indices = list(range(len(roots)))
                 else:
-                    roots = list(app.top_level_windows())
-                    seen = {root.runtime_id for root in roots}
-                    pids = set(app.pids)
-                    for window in desktop:
+                    roots = list(windows)
+                    source_indices = list(range(len(roots)))
+                    seen: set[str] = set()
+                    for root in windows:
+                        with contextlib.suppress(Exception):
+                            seen.add(root.runtime_id)
+                    for index, window in enumerate(desktop):
+                        if window is None:
+                            continue
                         try:
                             runtime_id = window.runtime_id
                             if not runtime_id or runtime_id in seen or window.process_id in pids:
                                 continue
                         except Exception:
+                            roots.append(window)
+                            source_indices.append(index)
                             continue
                         seen.add(runtime_id)
                         roots.append(window)
-            return [self._register(root) for root in roots if not _is_popup_surface(root)]
+                        source_indices.append(index)
+            nodes = self._register_nodes(
+                [
+                    root if root is not None and not _is_popup_surface(root) else None
+                    for root in roots
+                ],
+                enumeration_errors,
+                source_indices,
+            )
+            return {"nodes": nodes, "status": status} if status is not None else nodes
         if method == "spy.start":
             from wintestkit.engine.spy import SpySession
-            from wintestkit.engine.suggest import suggest_locator
 
             app = self._app(False)
             pids = frozenset(app.pids) if app is not None else None
+            epoch = self._spy_epoch
+            session_params = {"sessionId": params["sessionId"]} if "sessionId" in params else {}
+
+            def publish(method: str, element: UIAElement) -> None:
+                with self._spy_lock:
+                    if epoch != self._spy_epoch or self.spy is not session:
+                        return
+                node = self._register(element)
+                with self._spy_lock:
+                    if epoch == self._spy_epoch and self.spy is session:
+                        self.notify(method, {"node": node, **session_params})
 
             def hover(element: UIAElement) -> None:
-                self.notify("spy.hover", {"node": self._register(element)})
+                publish("spy.hover", element)
 
             def pick(element: UIAElement) -> None:
-                self.notify(
-                    "spy.picked",
-                    {
-                        "node": self._register(element),
-                        "suggestion": suggest_locator(element, app).to_dict(),
-                    },
-                )
+                publish("spy.picked", element)
 
             def cancel() -> None:
-                self.notify("spy.cancelled", {})
-                self.stop_spy()
+                with self._spy_lock:
+                    if epoch != self._spy_epoch or self.spy is not session:
+                        return
+                    self.notify("spy.cancelled", session_params)
+                self.stop_spy(expected_epoch=epoch)
 
             with self._spy_lock:
                 if self._stopping.is_set() or (
@@ -489,6 +580,7 @@ class Server:
                 ):
                     return None
                 if self.spy is None:
+                    epoch = self._spy_epoch
                     session = SpySession(
                         hover, pick, cancel, None if pids is None else pids.__contains__
                     )
@@ -497,6 +589,7 @@ class Server:
                         session.start()
                     except Exception:
                         self.spy = None
+                        self._spy_epoch += 1
                         raise
             return None
         node = self._node(params["nodeId"])
@@ -504,7 +597,16 @@ class Server:
             app = self._app(False)
             return self._coverage().definitions_of(app, params["nodeId"], node.info())
         if method == "inspect.children":
-            return [self._register(child) for child in node.children()]
+            from wintestkit.uia.constants import TreeScope
+            from wintestkit.uia.element import ElementEnumerationError
+
+            if self.coverage is not None:
+                self.coverage.invalidate()
+            try:
+                children = node.find_all(TreeScope.Children, cached=True)
+            except ElementEnumerationError as exc:
+                return self._register_nodes(exc.elements, exc.errors)
+            return self._register_nodes(children)
         if method == "inspect.highlight":
             # The outline is drawn on top of every window, so raising the window is opt-in.
             rect = (
@@ -522,26 +624,37 @@ class Server:
         if method == "inspect.properties":
             from wintestkit.engine.properties import SUPPORTED, inspection_values
             from wintestkit.uia.constants import PROPERTY_IDS
+            from wintestkit.uia.element import inspection_property
 
             properties: dict[str, str] = {}
+            inspection: list[dict[str, Any]] = []
             full = params.get("full", False)
             for name in PROPERTY_IDS if full else ():
                 try:
                     value = node.get_property(name)
+                    description = inspection_property(name, value)
+                    inspection.append(description)
                     properties[name] = (
-                        ", ".join(map(str, cast("list[Any] | tuple[Any, ...]", value)))
-                        if isinstance(value, list | tuple)
-                        else str(value)
+                        ", ".join(
+                            str(child.get("value", child.get("status", "[array]")))
+                            for child in description["children"]
+                        )
+                        if description["kind"] == "array" and "children" in description
+                        else str(description.get("value", description.get("status", "")))
                     )
-                except Exception:
-                    continue
+                except Exception as exc:
+                    inspection.append(
+                        {
+                            "name": name,
+                            "typeName": "UIA",
+                            "kind": "unavailable",
+                            "status": str(exc)[:512],
+                        }
+                    )
             if not full:
-                properties.update(
-                    {
-                        key: str(value)
-                        for key, value in inspection_values(node, self.cfg.property_aliases).items()
-                    }
-                )
+                values = inspection_values(node, self.cfg.property_aliases)
+                inspection.extend(inspection_property(key, value) for key, value in values.items())
+                properties.update({key: str(value) for key, value in values.items()})
             for alias, target in self.cfg.property_aliases.items():
                 property_name = SUPPORTED[target].uia_name if full else target
                 if property_name in properties:
@@ -559,6 +672,7 @@ class Server:
                 "info": node.info(with_patterns=full).to_dict(),
                 "properties": properties,
                 "ancestors": list(reversed(ancestors)),
+                "inspection": inspection,
             }
         raise RpcError(-32601, "method not found")
 
@@ -601,6 +715,7 @@ class Server:
                         request["_spyEpoch"] = self._spy_epoch
                     requests.put(request)
             requests.put(finished)
+            self.stop_spy()
             worker.join(timeout=5 if self._stopping.is_set() else None)
         finally:
             self._stopping.set()

@@ -68,6 +68,7 @@ def test_rpc_results(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, validate: 
         ),
         ("page.check", {"file": "page.py", "page": "Main"}, "PageCheckResult"),
         ("inspect.roots", {}, "InspectRootsResult"),
+        ("inspect.refresh", {}, "InspectRefreshResult"),
         ("inspect.children", {"nodeId": node["nodeId"]}, "InspectChildrenResult"),
         ("inspect.properties", {"nodeId": node["nodeId"]}, "InspectPropertiesResult"),
         (

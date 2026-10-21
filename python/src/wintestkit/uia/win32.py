@@ -411,6 +411,34 @@ def list_processes() -> list[tuple[int, str]]:
     return processes
 
 
+def foreground_window_for_process(process_id: int) -> int | None:
+    """Return the foreground window only if its owner is this process or an ancestor."""
+    hwnd = GetForegroundWindow()
+    if not hwnd:
+        return None
+    owner = window_pid(hwnd)
+    snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)
+    if snapshot is None or snapshot == INVALID_HANDLE_VALUE:
+        return None
+    parents: dict[int, int] = {}
+    try:
+        entry = PROCESSENTRY32W()
+        entry.dwSize = ctypes.sizeof(PROCESSENTRY32W)
+        available = Process32FirstW(snapshot, ctypes.byref(entry))
+        while available:
+            parents[int(entry.th32ProcessID)] = int(entry.th32ParentProcessID)
+            available = Process32NextW(snapshot, ctypes.byref(entry))
+    finally:
+        CloseHandle(snapshot)
+    seen: set[int] = set()
+    while process_id in parents and process_id not in seen:
+        if process_id == owner:
+            return int(hwnd)
+        seen.add(process_id)
+        process_id = parents[process_id]
+    return None
+
+
 def pids_by_name(exe: str) -> list[int]:
     """PIDs of processes whose exe name equals ``exe`` (case-insensitive)."""
     wanted = exe.lower()

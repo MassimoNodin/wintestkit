@@ -28,6 +28,7 @@ def run_events() -> list[dict[str, Any]]:
     ("schema_file", "def_name", "filename"),
     [
         ("common.schema.json", "ElementInfo", "element-info.json"),
+        ("common.schema.json", "InspectionProperty", "inspection-property.json"),
         ("common.schema.json", "Diagnostic", "diagnostic.json"),
         ("discovery.schema.json", "DiscoveryResult", "discovery.json"),
         ("step.schema.json", "StepEvent", "step.json"),
@@ -87,6 +88,12 @@ def definition_examples() -> dict[str, dict[str, Any]]:
     node = {"nodeId": element["runtimeId"], "info": element, "hasChildren": False}
     element_result = {"status": "found", "element": element, "durationMs": 12.5}
     common = {
+        "InspectionProperty": {
+            "name": "Name",
+            "typeName": "str",
+            "kind": "scalar",
+            "value": "Sign in",
+        },
         "Position": {"line": 0, "character": 0},
         "Range": discovery["tests"][0]["range"],
         "Rect": element["rect"],
@@ -161,6 +168,16 @@ def definition_examples() -> dict[str, dict[str, Any]]:
         "FlowRunResult": {"status": "failed", "durationMs": 12.5, "message": "AssertionError: x"},
         "InspectRootsParams": {},
         "InspectRootsResult": [node],
+        "InspectRefreshParams": {},
+        "InspectRefreshResult": {
+            "nodes": [node],
+            "status": {"running": True, "pids": [1234], "owned": False},
+        },
+        "InspectPartialErrorData": {
+            "nodes": [node],
+            "complete": False,
+            "errors": [{"index": 1, "message": "element unavailable"}],
+        },
         "InspectChildrenParams": {"nodeId": node["nodeId"]},
         "InspectChildrenResult": [node],
         "InspectPropertiesParams": {"nodeId": node["nodeId"]},
