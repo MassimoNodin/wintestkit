@@ -296,5 +296,6 @@ discovery for this workspace or accept WinTestKit's prompt to do so.
 - [CI guide](docs/guide/ci.md): run UI suites on an interactive Windows test machine.
 - [Calculator example](examples/calculator-tests): pages, navigation flows and tests for Windows Calculator.
 - [Development guide](docs/development.md): build, validate and package this repository.
+- [Commit messages](docs/commit-messages.md): the format every commit uses.
 
 Created in [T3 Code](https://t3.codes).
