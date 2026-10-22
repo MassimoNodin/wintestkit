@@ -463,7 +463,7 @@
       for (const id of ["property-groups", "definitions-group", "properties-empty", "locator-panel", "details-empty", "inspection-section"])
         element(id).hidden = true;
       element("selection-summary").hidden = false;
-      for (const id of ["highlight", "load-properties", "copy", "add", "other-apps"])
+      for (const id of ["highlight", "load-properties", "copy", "add", "generate", "other-apps"])
         element(id).disabled = true;
       return;
     }
@@ -737,18 +737,59 @@
   let selected;
   let suggestion;
   let savedDefinition = false;
-  const renderObjectPreview = (preview, reason) => {
+  // The preview shows either the object alone (the default) or its window with the object
+  // outlined; the choice stays while the selection changes.
+  let previewMode = "element";
+  let previewImages;
+  const webpUrl = (value) =>
+    typeof value === "string" && /^data:image\/webp;base64,[A-Za-z0-9+/]+={0,2}$/.test(value);
+  const showPreview = (reason) => {
     const image = element("object-preview-image");
-    image.hidden = true;
-    image.src = "";
+    const context = previewMode === "context";
+    element("preview-element").setAttribute("aria-pressed", String(!context));
+    element("preview-context").setAttribute("aria-pressed", String(context));
     element("object-preview").hidden = false;
-    element("object-preview-status").textContent = reason || "No saved last-test preview is available.";
-    if (!preview || typeof preview.cropDataUrl !== "string" ||
-      !/^data:image\/webp;base64,[A-Za-z0-9+/]+={0,2}$/.test(preview.cropDataUrl)) return;
-    image.src = preview.cropDataUrl;
-    image.hidden = false;
-    element("object-preview-status").textContent = "Captured by a test at " + preview.capturedAt + " (UTC). Not a live capture.";
+    const source = previewImages && (context ? previewImages.windowDataUrl : previewImages.elementDataUrl);
+    image.hidden = !source;
+    element("preview-open").disabled = !source;
+    if (!source) {
+      image.src = "";
+      element("object-preview-status").textContent = reason || "No preview is available.";
+      return;
+    }
+    if (image.src !== source) image.src = source;
+    image.alt = context ? "The selected object outlined in red inside its window" : "The selected object";
+    element("object-preview-status").textContent =
+      (previewImages.capturedAt
+        ? "Captured by a test at " + previewImages.capturedAt + " (UTC). Not a live capture."
+        : "Live capture.") + (context ? " The object is outlined in red." : "");
   };
+  const renderObjectPreview = (preview, reason) => {
+    previewImages = preview && webpUrl(preview.elementDataUrl) && webpUrl(preview.windowDataUrl)
+      ? {
+        elementDataUrl: preview.elementDataUrl,
+        windowDataUrl: preview.windowDataUrl,
+        capturedAt: typeof preview.capturedAt === "string" ? preview.capturedAt : undefined,
+      }
+      : undefined;
+    showPreview(reason);
+  };
+  const loadingPreview = () => {
+    previewImages = undefined;
+    showPreview("Capturing preview…");
+  };
+  // The built-in image viewer does the zooming and panning.
+  const openPreview = () => {
+    const source = previewImages && (previewMode === "context" ? previewImages.windowDataUrl : previewImages.elementDataUrl);
+    if (source) post("openPreview", { view: previewMode === "context" ? "window" : "element", dataUrl: source });
+  };
+  element("preview-open").addEventListener("click", openPreview);
+  element("object-preview-image").addEventListener("click", openPreview);
+  for (const [id, mode] of [["preview-element", "element"], ["preview-context", "context"]])
+    element(id).addEventListener("click", () => {
+      previewMode = mode;
+      showPreview(element("object-preview-status").textContent);
+    });
   const renderInspection = (properties) => {
     const tree = element("inspection-tree");
     tree.replaceChildren();
@@ -786,7 +827,7 @@
   let highlightable = true;
   const choose = (nodeId) => {
     if (savedDefinition) return;
-    element("object-preview").hidden = true;
+    loadingPreview();
     renderInspection(undefined);
     focusSelected(nodeId);
     suggestion = undefined;
@@ -804,7 +845,7 @@
     setIcon(element("selection-icon"), info.controlType);
     selectionIcon(nodeId);
     renderDefinitions({ state: "loading" });
-    for (const id of ["copy", "add"]) element(id).disabled = true;
+    locatorState("idle");
     highlightable = true;
     renderHighlight();
     renderStatus();
@@ -832,8 +873,16 @@
       row.className = "node";
       row.setAttribute("role", "treeitem");
       row.dataset.nodeId = node.nodeId;
+      // A window of the selected application. One without a title of its own (TeamViewer's) is
+      // called by the application's name rather than by its control type.
+      const selectedApp =
+        parent.id === "tree" &&
+        !!appState?.appPids?.includes(node.info.processId);
       const name =
-        node.info.name || node.info.automationId || node.info.controlType;
+        node.info.name ||
+        (selectedApp && appState.appName) ||
+        node.info.automationId ||
+        node.info.controlType;
       row.setAttribute("aria-label", name + ", " + node.info.controlType);
       row.setAttribute("aria-posinset", String(index + 1));
       row.setAttribute("aria-setsize", String(values.length));
@@ -873,6 +922,14 @@
       const text = document.createElement("span");
       text.textContent = name;
       label.append(icon, text);
+      if (selectedApp) {
+        const marker = document.createElement("span");
+        marker.className = "app-marker codicon codicon-pass";
+        marker.setAttribute("role", "img");
+        marker.title = "Selected application" + (appState.appName ? ": " + appState.appName : "");
+        marker.setAttribute("aria-label", marker.title);
+        label.append(marker);
+      }
       label.addEventListener("click", () => choose(node.nodeId));
       label.addEventListener("dblclick", () =>
         expand(node.nodeId, !nodes.get(node.nodeId).open),
@@ -933,15 +990,36 @@
         ? "Nothing to highlight: this object has no on-screen rectangle. It may be hidden, collapsed, not laid out yet or in a minimized window."
         : "";
   };
+  // The locator is generated only on request: it can take 20+ seconds in a large application.
+  // States: idle (offer the button), generating (spinner), ready (the locator), or idle again with
+  // the reason it could not be made.
+  let locatorBusy = false;
+  const locatorState = (state, reason) => {
+    locatorBusy = state === "generating";
+    const idle = state === "idle";
+    // Once the locator is shown the button/progress row has nothing to hold, so it must not leave a gap.
+    element("locator-slot").hidden = state === "ready";
+    element("generate").hidden = !idle;
+    element("locator-busy").hidden = state !== "generating";
+    element("locator-result").hidden = !(state === "ready" || !!reason);
+    element("locator-actions").hidden = state !== "ready";
+    element("generate").disabled = !idle;
+    element("generate-label").textContent = reason ? "Try again" : "Generate suggested locator";
+    if (state !== "ready") {
+      element("badge").hidden = true;
+      element("code").textContent = reason || "";
+    }
+    for (const id of ["copy", "add"]) element(id).disabled = state !== "ready";
+  };
   const renderSuggestion = (value) => {
     suggestion = value;
-    element("badge").hidden = !value;
     renderHighlight();
-    for (const id of ["copy", "add"]) element(id).disabled = !value;
     if (!value) {
-      element("code").textContent = "Generating locator…";
+      locatorState("idle");
       return;
     }
+    locatorState("ready");
+    element("badge").hidden = false;
     element("code").textContent = [
       ...value.helpers.map(
         (helper) => helper.attributeName + " = " + helper.code,
@@ -992,6 +1070,11 @@
     vscode.setState({ ...(vscode.getState() || {}), showOtherApps });
     renderStatus();
     post("showOtherApps", { enabled: showOtherApps });
+  });
+  element("generate").addEventListener("click", () => {
+    if (!selected || savedDefinition) return;
+    locatorState("generating");
+    post("generateLocator", { nodeId: selected });
   });
   element("copy").addEventListener("click", () =>
     post("copy", { text: element("code").textContent }),
@@ -1204,9 +1287,7 @@
         "Select a control to inspect its properties.";
       setIcon(element("selection-icon"), "");
       selectionIcon(undefined);
-      element("code").textContent = "Select an object to generate a locator.";
-      element("badge").hidden = true;
-      for (const id of ["copy", "add"]) element(id).disabled = true;
+      locatorState("idle");
       highlightable = true;
       renderHighlight();
     } else if (message.type === "children") {
@@ -1228,12 +1309,12 @@
     } else if (message.type === "suggestion") {
       if (message.nodeId !== selected) return;
       renderSuggestion(message.suggestion);
+    } else if (message.type === "suggestionLoading") {
+      if (message.nodeId === selected) locatorState("generating");
     } else if (message.type === "suggestionUnavailable") {
       if (message.nodeId !== selected) return;
       suggestion = undefined;
-      element("badge").hidden = true;
-      for (const id of ["copy", "add"]) element(id).disabled = true;
-      element("code").textContent = message.reason;
+      locatorState("idle", message.reason);
     } else if (message.type === "definitions") {
       if (message.nodeId !== selected) return;
       renderDefinitions(message);
@@ -1263,7 +1344,9 @@
       });
       renderStatus();
     } else if (message.type === "selected") {
-      element("object-preview").hidden = true;
+      // The tutorial has no live app to capture; otherwise the host sends the preview next.
+      if (tutorialView) element("object-preview").hidden = true;
+      else loadingPreview();
       renderInspection(message.properties.inspection);
       hint("");
       focusSelected(message.nodeId);
@@ -1308,7 +1391,8 @@
           : "Not loaded",
       });
       table("all-properties", message.properties.properties);
-      renderSuggestion(message.suggestion);
+      // A locator the user already asked for keeps its spinner while the details arrive.
+      if (message.suggestion || !locatorBusy) renderSuggestion(message.suggestion);
       renderStatus();
     } else if (message.type === "objectPreview") {
       if (message.nodeId === selected) renderObjectPreview(message.preview, message.reason);

@@ -232,21 +232,15 @@ def test_roots_include_other_apps_only_when_asked(
     owned = RpcElement("Window", "Owned dialog")
     owned.process_id = 1
     desktop_reads = 0
+    handles = {10: window, 11: owned, 12: other}
 
-    class RootElement:
-        def __init__(self, _raw: object) -> None:
-            pass
+    def desktop_windows() -> list[int]:
+        nonlocal desktop_reads
+        desktop_reads += 1
+        return list(handles)
 
-        def children(self) -> list[Any]:
-            nonlocal desktop_reads
-            desktop_reads += 1
-            return [window, owned, other]
-
-    monkeypatch.setattr("wintestkit.uia.element.UIAElement", RootElement)
-    monkeypatch.setattr(
-        "wintestkit.uia.com.get_uia",
-        lambda: type("Uia", (), {"GetRootElement": lambda self: object()})(),
-    )
+    monkeypatch.setattr("wintestkit.uia.win32.desktop_windows", desktop_windows)
+    monkeypatch.setattr("wintestkit.uia.element.from_handle", lambda hwnd: handles[hwnd])
 
     def roots(params: Any = None) -> Any:
         result = request(server, output, method, params)["result"]
@@ -266,6 +260,28 @@ def test_roots_include_other_apps_only_when_asked(
     restored = roots({"includeOtherApps": False})
     assert [node["info"]["name"] for node in restored] == ["Demo"]
     assert desktop_reads == 1
+
+
+def test_roots_skip_a_window_that_closes_while_listing_the_desktop(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from wintestkit.errors import UIAError
+
+    server, output, _button = make_server(tmp_path, monkeypatch)
+    request(server, output, "initialize", {"root": str(tmp_path)})
+    other = RpcElement("Window", "Notepad")
+    other.process_id = 2
+
+    def from_handle(hwnd: int) -> Any:
+        if hwnd == 11:
+            raise UIAError("The UI element is no longer available", element_gone=True)
+        return other
+
+    monkeypatch.setattr("wintestkit.uia.win32.desktop_windows", lambda: [11, 12])
+    monkeypatch.setattr("wintestkit.uia.element.from_handle", from_handle)
+    response = request(server, output, "inspect.roots", {"includeOtherApps": True})
+    assert "error" not in response
+    assert "Notepad" in [node["info"]["name"] for node in response["result"]]
 
 
 def test_roots_leave_out_transient_popup_windows(

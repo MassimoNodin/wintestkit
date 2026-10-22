@@ -623,10 +623,166 @@ describe("introduction clients", () => {
     expect(page.element("inspection-tree").children.at(-1)?.textContent).toContain("limit reached");
   });
 
-  it("shows only last-test crop data in explicit offline mode and ignores stale live details", () => {
+  describe("suggested locator", () => {
+    const select = (page: ReturnType<typeof client>, nodeId = "control") =>
+      page.send({ type: "selected", nodeId, properties: { info: { name: nodeId, controlType: "Button" }, properties: {} } });
+    const generate = (page: ReturnType<typeof client>) => page.element("generate").listeners.click();
+    const requests = (page: ReturnType<typeof client>) =>
+      page.posts.filter((post) => (post as { type?: string }).type === "generateLocator");
+    it("offers only the button, without the actions, instead of generating by itself", () => {
+      const page = client("spy");
+      select(page);
+      expect(page.element("locator-slot").hidden).toBe(false);
+      expect(page.element("generate").hidden).toBe(false);
+      expect(page.element("generate").disabled).toBe(false);
+      expect(page.element("locator-busy").hidden).toBe(true);
+      expect(page.element("locator-result").hidden).toBe(true);
+      expect(page.element("locator-actions").hidden).toBe(true);
+      expect(requests(page)).toHaveLength(0);
+    });
+
+    it("shows a spinner while generating and the locator when it arrives", () => {
+      const page = client("spy");
+      select(page);
+      generate(page);
+      expect(requests(page)).toEqual([{ type: "generateLocator", nodeId: "control" }]);
+      expect(page.element("locator-busy").hidden).toBe(false);
+      expect(page.element("locator-slot").hidden).toBe(false);
+      expect(page.element("generate").hidden).toBe(true);
+      expect(page.element("locator-result").hidden).toBe(true);
+      expect(page.element("locator-actions").hidden).toBe(true);
+      page.send({ type: "suggestion", nodeId: "control", suggestion: {
+        helpers: [], code: 'Button(name="Save")', attributeName: "save", unique: true, matchCount: 1, strategy: "name",
+      } });
+      expect(page.element("locator-busy").hidden).toBe(true);
+      expect(page.element("generate").hidden).toBe(true);
+      expect(page.element("locator-slot").hidden).toBe(true); // no empty row between the title and the code
+      expect(page.element("locator-result").hidden).toBe(false);
+      expect(page.element("locator-actions").hidden).toBe(false);
+      expect(page.element("code").textContent).toBe('save = Button(name="Save")');
+      expect(page.element("badge").hidden).toBe(false);
+      expect(page.element("copy").disabled).toBe(false);
+      expect(page.element("add").disabled).toBe(false);
+    });
+
+    it("keeps the spinner when the details arrive after the button was pressed", () => {
+      const page = client("spy");
+      select(page);
+      generate(page);
+      select(page);
+      expect(page.element("locator-busy").hidden).toBe(false);
+    });
+
+    it("explains a failure and lets the user try again", () => {
+      const page = client("spy");
+      select(page);
+      generate(page);
+      page.send({ type: "suggestionUnavailable", nodeId: "control", reason: "pipe closed" });
+      expect(page.element("locator-busy").hidden).toBe(true);
+      expect(page.element("locator-result").hidden).toBe(false);
+      expect(page.element("code").textContent).toBe("pipe closed");
+      expect(page.element("locator-slot").hidden).toBe(false);
+      expect(page.element("generate").hidden).toBe(false);
+      expect(page.element("generate").disabled).toBe(false);
+      expect(page.element("generate-label").textContent).toBe("Try again");
+      expect(page.element("locator-actions").hidden).toBe(true);
+      generate(page);
+      expect(requests(page)).toHaveLength(2);
+      expect(page.element("locator-busy").hidden).toBe(false);
+    });
+
+    it("ignores a locator for an object that is no longer selected", () => {
+      const page = client("spy");
+      select(page, "next");
+      generate(page);
+      page.send({ type: "suggestion", nodeId: "control", suggestion: {
+        helpers: [], code: "Button()", attributeName: "old", unique: true, matchCount: 1, strategy: "name",
+      } });
+      expect(page.element("locator-busy").hidden).toBe(false);
+      expect(page.element("code").textContent).toBe("");
+    });
+
+    it("does nothing when there is no selection", () => {
+      const page = client("spy");
+      generate(page);
+      expect(requests(page)).toHaveLength(0);
+    });
+  });
+
+  describe("object preview", () => {
+    const element = "data:image/webp;base64,ZWxlbWVudA==";
+    const context = "data:image/webp;base64,d2luZG93";
+    const select = (page: ReturnType<typeof client>, nodeId = "control") =>
+      page.send({ type: "selected", nodeId, properties: { info: { name: nodeId, controlType: "Button" }, properties: {} } });
+    const click = (page: ReturnType<typeof client>, id: string) => page.element(id).listeners.click();
+
+    it("shows the element by default and switches to the outlined window and back", () => {
+      const page = client("spy");
+      select(page);
+      expect(page.element("object-preview").hidden).toBe(false);
+      expect(page.element("object-preview-image").hidden).toBe(true);
+      expect(page.element("object-preview-status").textContent).toContain("Capturing");
+      page.send({ type: "objectPreview", nodeId: "control", preview: { elementDataUrl: element, windowDataUrl: context } });
+      expect(page.element("object-preview-image").src).toBe(element);
+      expect(page.element("object-preview-image").hidden).toBe(false);
+      expect(page.element("object-preview-status").textContent).toContain("Live capture");
+      click(page, "preview-context");
+      expect(page.element("object-preview-image").src).toBe(context);
+      expect(page.element("object-preview-status").textContent).toContain("outlined in red");
+      click(page, "preview-element");
+      expect(page.element("object-preview-image").src).toBe(element);
+    });
+
+    it("keeps the chosen view when another object is selected", () => {
+      const page = client("spy");
+      select(page);
+      page.send({ type: "objectPreview", nodeId: "control", preview: { elementDataUrl: element, windowDataUrl: context } });
+      click(page, "preview-context");
+      select(page, "next");
+      page.send({ type: "objectPreview", nodeId: "next", preview: { elementDataUrl: element, windowDataUrl: context } });
+      expect(page.element("object-preview-image").src).toBe(context);
+    });
+
+    it("opens whichever view is showing in the image viewer, and only once there is an image", () => {
+      const page = client("spy");
+      select(page);
+      expect(page.element("preview-open").disabled).toBe(true);
+      click(page, "preview-open");
+      expect(page.posts.some((post) => (post as { type?: string }).type === "openPreview")).toBe(false);
+      page.send({ type: "objectPreview", nodeId: "control", preview: { elementDataUrl: element, windowDataUrl: context } });
+      expect(page.element("preview-open").disabled).toBe(false);
+      click(page, "preview-open");
+      expect(page.posts.at(-1)).toEqual({ type: "openPreview", view: "element", dataUrl: element });
+      click(page, "preview-context");
+      page.element("object-preview-image").listeners.click();
+      expect(page.posts.at(-1)).toEqual({ type: "openPreview", view: "window", dataUrl: context });
+    });
+
+    it("ignores a preview for an object that is no longer selected", () => {
+      const page = client("spy");
+      select(page, "next");
+      page.send({ type: "objectPreview", nodeId: "control", preview: { elementDataUrl: element, windowDataUrl: context } });
+      expect(page.element("object-preview-image").hidden).toBe(true);
+    });
+
+    it("explains why there is no image and rejects anything that is not a WebP data URL", () => {
+      const page = client("spy");
+      select(page);
+      page.send({ type: "objectPreview", nodeId: "control", reason: "The window cannot be captured." });
+      expect(page.element("object-preview-image").hidden).toBe(true);
+      expect(page.element("object-preview-status").textContent).toBe("The window cannot be captured.");
+      page.send({ type: "objectPreview", nodeId: "control", preview: {
+        elementDataUrl: "https://example.test/a.png", windowDataUrl: context,
+      }, reason: "Unsafe image." });
+      expect(page.element("object-preview-image").hidden).toBe(true);
+      expect(page.element("object-preview-status").textContent).toBe("Unsafe image.");
+    });
+  });
+
+  it("shows the saved last-test images in explicit offline mode and ignores stale live details", () => {
     const page = client("spy");
     page.send({ type: "savedDefinition", id: "pages/Page.py::Page.button", qualname: "Page.button", preview: {
-      capturedAt: "2026-10-20T12:34:56.000Z", cropDataUrl: "data:image/webp;base64,YWJj",
+      capturedAt: "2026-10-20T12:34:56.000Z", elementDataUrl: "data:image/webp;base64,YWJj",
       windowDataUrl: "data:image/webp;base64,dW51c2Vk",
     } });
     expect(page.element("selection-name").textContent).toBe("Page.button");

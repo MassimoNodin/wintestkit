@@ -181,18 +181,34 @@ The **Spy** view, below Explorer, explores the live UI Automation tree of the ap
   scope. It reads **Show Other Apps** by default, when the tree lists only the current
   application's windows. Click it to append other desktop windows after those; it then reads
   **Show Only Selected App**. The choice is remembered.
-- The details show the control's properties, supported patterns and a **suggested locator** that
-  is marked unique, or not unique with the number of matches.
+- The details show the control's properties and supported patterns. The **suggested locator** is
+  made only when you press **Generate suggested locator**, because it searches the whole window
+  for each candidate and can take 20 seconds or more in a large application. A spinner shows
+  while it runs, during which Spy cannot do anything else. The result is marked unique, or not
+  unique with the number of matches. If it fails, the button changes to **Try again**.
 - Inspection values can be expanded as bounded, read-only object or array trees. These are
   external UI Automation values, not arbitrary .NET members: opaque CLR properties such as
   WPF `BorderThickness` or brush internals require application-side support and are not reflected.
-- Selecting a saved single element in **Pages & Flows** opens its last-test element crop in
-  **Selected object**, while retaining source navigation. The timestamp identifies a saved test
-  lookup, not a live screenshot. This works without the application or automation server running.
-  Use Spy's **Refresh objects** button to return to live inspection (or the active tutorial).
-  A live object with multiple matching definitions does not choose an arbitrary saved image.
-  See [Last-successful element images](running-tests.md#last-successful-element-images) for
-  storage, portability, and privacy controls. The separate red-outlined window image stays on disk.
+- The **Preview** section of the properties shows the selected object. By default it shows
+  just the element; **In context** switches to its whole window with the object outlined in red.
+  Both fit the same fixed-size frame, however large or small the image, and the choice stays
+  while you select other objects. It is a live capture taken when you select the object; the
+  window is rendered without being brought forward. Click the image, or the button beside the
+  toggle, to open the current view in VS Code’s built-in image viewer for zooming and panning;
+  it is the only time an image is written to disk (see below). There is no image
+  when the object has no on-screen rectangle or its window is minimized or cannot be rendered,
+  and the section says why. Opening an image saves it to a private temporary folder, deletes it
+  when its editor tab closes and removes the rest when VS Code shuts down; the viewer shows the
+  capture at the size sent (at most 1600 px on its longest edge). Live previews need `wintestkit` 0.1.1 or newer in the project's
+  environment. Unlike the images saved by tests, a live preview is not screened for sensitive
+  controls, so it can show whatever the window shows.
+- Selecting a saved single element in **Pages & Flows** shows the same section from the images
+  its last test saved: the element crop and the outlined window, with the same toggle. The
+  timestamp identifies a saved test lookup, not a live screenshot. This works without the
+  application or automation server running. Use Spy's **Refresh objects** button to return to
+  live inspection (or the active tutorial). See
+  [Last-successful element images](running-tests.md#last-successful-element-images) for
+  storage, portability, and privacy controls.
 - Refresh keeps direct-child loading lazy and coalesces overlapping requests. If a control
   disappears during enumeration, surviving objects remain visible with an incomplete-result
   warning; refresh again when the application has settled.

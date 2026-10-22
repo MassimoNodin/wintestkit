@@ -198,6 +198,8 @@ export interface ProtocolContracts {
   InspectHighlightParams?: InspectHighlightParams;
   InspectHighlightResult?: InspectHighlightResult;
   InspectPartialErrorData?: InspectPartialErrorData;
+  InspectPreviewParams?: InspectPreviewParams;
+  InspectPreviewResult?: InspectPreviewResult;
   InspectPropertiesParams?: InspectPropertiesParams;
   InspectPropertiesResult?: InspectPropertiesResult;
   InspectRefreshParams?: InspectRefreshParams;
@@ -216,6 +218,7 @@ export interface ProtocolContracts {
   PageCheckResult?: PageCheckResult;
   PageEntry?: PageEntry;
   Position?: Position;
+  PreviewImage?: PreviewImage;
   Range?: Range;
   Rect?: Rect;
   Relocation?: Relocation;
@@ -760,6 +763,31 @@ export interface InspectPartialErrorData {
     index: number;
     message: string;
   }[];
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "InspectPreviewParams".
+ */
+export interface InspectPreviewParams {
+  nodeId: string;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "InspectPreviewResult".
+ */
+export interface InspectPreviewResult {
+  element?: PreviewImage;
+  window?: PreviewImage;
+  reason?: string;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "PreviewImage".
+ */
+export interface PreviewImage {
+  data: string;
+  width: number;
+  height: number;
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema

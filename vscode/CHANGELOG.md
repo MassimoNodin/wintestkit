@@ -7,6 +7,39 @@ Unreleased changes must be moved to a dated candidate section before a release c
 
 ## [Unreleased]
 
+- List the desktop's windows for Spy's "show other apps" scope with `EnumWindows` instead of UI
+  Automation's desktop root. UI Automation visits every hidden window of every process, so one slow
+  provider on the machine made each refresh take around six seconds, queued status checks behind
+  it, and let short-lived windows vanish before they were read (reported as an incomplete
+  enumeration). The same roots now load in about 0.1 s.
+- Generate Spy's suggested locator only when asked, with a **Generate suggested locator** button (its tooltip, and the progress text, warn that large applications can take 20 seconds or
+  more) and a spinner while it runs. It no
+  longer holds up the rest of the selected object's details (definitions, preview) on selection.
+- Replace the "Last-test preview" in Spy's properties with a **Preview** section: a live capture of
+  the selected object, switchable between the element alone (the default) and its window with the
+  object outlined in red. Every image is fitted inside the same fixed-size frame. Saved
+  definitions show their last-test images in the same section. Needs the new `inspect.preview`
+  server method (the `wintestkit` package from this version). Click the image, or the button
+  beside the toggle, to open it in VS Code’s built-in image viewer to zoom and pan; the file is
+  private, temporary and deleted when its tab closes.
+- Stop Spy's objects view from reloading by itself. It no longer reloads when the panel tab is
+  shown again (the view now keeps its state while hidden), when a project file changes, or after
+  an element has vanished. It reloads on the reload button, with the picker, and when nothing has
+  loaded yet.
+- Mark the selected application's windows in Spy's objects view with a blue tick, and call a window
+  that has no title of its own by the application's name instead of "Window".
+- Show elements whose provider returns an empty runtime id (such as TeamViewer's custom-drawn
+  content) in Spy instead of reporting an incomplete enumeration. They are keyed by their place
+  under the parent, so they can be expanded and inspected like any other node.
+- Remove the gutter icons beside page elements, and the inline "✓ found" text on passing ones. Only
+  elements that are not found, ambiguous or errored are marked inline, after the code on the
+  element's line instead of before it; **Check: Found** stays in the CodeLens.
+- Fix **Pick element** doing nothing on such elements: every hover and pick in TeamViewer failed with
+  "element has no runtime id". A picked element is now keyed by its place below the nearest
+  ancestor that has an id, matching the tree, and its ancestors are revealed as usual. Siblings are
+  told apart by their properties because UI Automation cannot compare these elements reliably.
+  Hovering skips that lookup, which can take a few hundred milliseconds in a deep tree.
+
 ## [0.1.1rc1] - 2026-10-22
 
 First public prerelease. Install the extension's pre-release channel together with

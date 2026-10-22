@@ -37,3 +37,9 @@ def test_hosted_windows(monkeypatch: pytest.MonkeyPatch, visible_only: bool) -> 
     assert win32.top_level_windows() == [101, 102, 103, 104]
     assert enumerated == []
     assert win32.top_level_windows(set()) == []
+
+
+def test_desktop_windows_leave_out_cloaked_shell_windows(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(win32, "top_level_windows", lambda: [1, 2, 3])
+    monkeypatch.setattr(win32, "is_cloaked", lambda handle: handle == 2)
+    assert win32.desktop_windows() == [1, 3]

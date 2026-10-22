@@ -6,6 +6,8 @@ import * as path from "node:path";
 const manifestLimit = 64 * 1024;
 const imageLimit = 16 * 1024 * 1024;
 const dimensionLimit = 16384;
+/** Largest preview data URL accepted from the webview: a 16 MiB image in base64. */
+export const MAX_PREVIEW_DATA_URL = Math.ceil((imageLimit * 4) / 3) + "data:image/webp;base64,".length + 4;
 
 export interface ObjectPreview {
   definitionId: string;
@@ -15,6 +17,15 @@ export interface ObjectPreview {
   width: number;
   height: number;
   cropDataUrl: string;
+  windowDataUrl: string;
+}
+
+/** What the Spy webview shows for an object: its crop and its window with the object outlined. */
+export interface PreviewImages {
+  elementDataUrl: string;
+  windowDataUrl: string;
+  /** Present for images saved by a test; a live capture has none. */
+  capturedAt?: string;
 }
 
 export function definitionPreviewKey(definitionId: string): string {
@@ -69,7 +80,8 @@ async function boundedRead(root: string, file: string, limit: number): Promise<B
   }
 }
 
-export function validatePreviewWebp(bytes: Buffer, width: number, height: number): void {
+/** Checks a still WebP image; its dimensions must match when they are known. */
+export function validatePreviewWebp(bytes: Buffer, width?: number, height?: number): void {
   if (bytes.length < 20 || bytes.length > imageLimit || bytes.toString("ascii", 0, 4) !== "RIFF" ||
     bytes.toString("ascii", 8, 12) !== "WEBP" || bytes.readUInt32LE(4) + 8 !== bytes.length)
     throw new Error("Invalid saved WebP image.");
@@ -101,7 +113,7 @@ export function validatePreviewWebp(bytes: Buffer, width: number, height: number
       actualHeight = ((bits >>> 14) & 0x3fff) + 1;
       frame = true;
     }
-    if (actualWidth !== undefined && (actualWidth !== width || actualHeight !== height))
+    if (actualWidth !== undefined && width !== undefined && (actualWidth !== width || actualHeight !== height))
       throw new Error("Saved preview dimensions do not match its manifest.");
     offset = start + length + (length % 2);
   }
@@ -133,13 +145,42 @@ export async function readObjectPreview(projectRoot: string, definitionId: strin
     (manifest.width as number) * (manifest.height as number) > 64 * 1024 * 1024)
     throw new Error("Invalid saved preview manifest.");
   const cropPath = await checkedPath(root, ["object-previews", key, manifest.crop as string], imageLimit);
-  await checkedPath(root, ["object-previews", key, manifest.window as string], imageLimit);
+  const windowPath = await checkedPath(root, ["object-previews", key, manifest.window as string], imageLimit);
   const crop = await boundedRead(root, cropPath, imageLimit);
   validatePreviewWebp(crop, manifest.width as number, manifest.height as number);
+  const window = await boundedRead(root, windowPath, imageLimit);
+  validatePreviewWebp(window);
   return {
     definitionId, captureId: manifest.captureId, capturedAt: manifest.capturedAt,
     locatorFingerprint: manifest.locatorFingerprint,
     width: manifest.width as number, height: manifest.height as number,
     cropDataUrl: "data:image/webp;base64," + crop.toString("base64"),
+    windowDataUrl: "data:image/webp;base64," + window.toString("base64"),
   };
+}
+
+export function savedPreviewImages(preview: ObjectPreview): PreviewImages {
+  return { elementDataUrl: preview.cropDataUrl, windowDataUrl: preview.windowDataUrl, capturedAt: preview.capturedAt };
+}
+
+/** Validates a live capture from the automation server before it reaches the webview. */
+export function livePreviewImages(result: unknown): PreviewImages | string {
+  if (!result || typeof result !== "object") return "The automation server returned no preview.";
+  const value = result as { reason?: unknown; element?: unknown; window?: unknown };
+  if (typeof value.reason === "string" && !value.element && !value.window) return value.reason;
+  const urls: string[] = [];
+  for (const image of [value.element, value.window]) {
+    const entry = image as { data?: unknown; width?: unknown; height?: unknown } | undefined;
+    if (!entry || typeof entry.data !== "string" || !/^[A-Za-z0-9+/]+={0,2}$/.test(entry.data) ||
+      !Number.isInteger(entry.width) || !Number.isInteger(entry.height))
+      return "The automation server returned an invalid preview.";
+    const bytes = Buffer.from(entry.data, "base64");
+    try {
+      validatePreviewWebp(bytes, entry.width as number, entry.height as number);
+    } catch {
+      return "The automation server returned an invalid preview.";
+    }
+    urls.push("data:image/webp;base64," + entry.data);
+  }
+  return { elementDataUrl: urls[0], windowDataUrl: urls[1] };
 }

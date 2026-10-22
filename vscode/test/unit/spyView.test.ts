@@ -25,13 +25,24 @@ const mocks = vi.hoisted(() => ({
   configListeners: [] as Array<
     (event: { affectsConfiguration(key: string): boolean }) => void
   >,
+  showPreview: vi.fn<(view: string, dataUrl: string) => Promise<void>>(() => Promise.resolve()),
+  disposeViewer: vi.fn(),
+  providerRegistrations: [] as unknown[][],
+  projectListeners: [] as Array<() => void>,
   openDocument: vi.fn((uri: unknown) => Promise.resolve({ uri })),
   showDocument: vi.fn(() => Promise.resolve(undefined)),
 }));
 vi.mock("../../src/spy/appIcons", () => ({
   readApplicationIcons: mocks.icons,
 }));
-vi.mock("../../src/spy/objectPreviews", () => ({
+vi.mock("../../src/spy/previewViewer", () => ({
+  PreviewViewer: class {
+    show = mocks.showPreview;
+    dispose = mocks.disposeViewer;
+  },
+}));
+vi.mock("../../src/spy/objectPreviews", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../src/spy/objectPreviews")>()),
   readObjectPreview: mocks.previews,
 }));
 vi.mock("vscode", () => ({
@@ -78,7 +89,10 @@ vi.mock("vscode", () => ({
     get activeTextEditor() {
       return mocks.activeEditor;
     },
-    registerWebviewViewProvider: () => ({ dispose() {} }),
+    registerWebviewViewProvider: (...args: unknown[]) => {
+      mocks.providerRegistrations.push(args);
+      return { dispose() {} };
+    },
     onDidChangeActiveTextEditor: (callback: () => void) => {
       mocks.editorListeners.push(callback);
       return {
@@ -120,6 +134,8 @@ describe("Spy view bridge", () => {
     mocks.bringToFront = false;
     mocks.configListeners.splice(0, mocks.configListeners.length);
     mocks.editorListeners.splice(0, mocks.editorListeners.length);
+    mocks.providerRegistrations.splice(0);
+    mocks.projectListeners.splice(0);
     mocks.previews.mockReset().mockResolvedValue(undefined);
   });
   const latestSession = (): string | undefined => {
@@ -155,10 +171,13 @@ describe("Spy view bridge", () => {
         all: known,
         projectFor: (uri: { toString(): string }) =>
           known.find((item) => item.root.toString() === uri.toString()),
-        onDidChange: () => ({ dispose() {} }),
+        onDidChange: (listener: () => void) => {
+          mocks.projectListeners.push(listener);
+          return { dispose() {} };
+        },
       } as unknown as Projects,
       {
-        get: connect || (() => Promise.resolve({ client })),
+        get: connect || (() => Promise.resolve({ client, initialized: { config: { app: { process: "Demo.exe" } } } })),
         state: () => serverState,
         onDidChange: (callback: (value: typeof project) => void) => {
           serverChanged = () => callback(project);
@@ -1049,6 +1068,7 @@ describe("Spy view bridge", () => {
         request: mocks.request,
         onNotification: () => ({ dispose() {} }),
       },
+      initialized: { config: {} },
     });
     rejectConnection(new Error("server stopped"));
     await vi.waitFor(() =>
@@ -1212,79 +1232,115 @@ describe("Spy view bridge", () => {
     ).toBe(true);
     fixture.provider.dispose();
   });
-  it("shows basic properties before a slow locator is ready", async () => {
-    let finishLocator: (value: unknown) => void = () => {};
-    mocks.request.mockImplementation((method: string) => {
-      if (method === "inspect.properties")
-        return Promise.resolve({
-          info: { name: "Save" },
-          properties: {},
-          ancestors: [],
-        });
-      if (method === "suggest.locator")
-        return new Promise((resolve) => {
-          finishLocator = resolve;
-        });
-      return Promise.resolve(undefined);
+  describe("suggested locator", () => {
+    const answer = (locator: () => Promise<unknown>) =>
+      mocks.request.mockImplementation((method: string) => {
+        if (method === "inspect.properties")
+          return Promise.resolve({ info: { name: "Save", controlType: "Button" }, properties: {}, ancestors: [] });
+        if (method === "suggest.locator") return locator();
+        return Promise.resolve(undefined);
+      });
+    const select = async (nodeId = "control") => {
+      const fixture = await create();
+      fixture.receive({ type: "select", nodeId });
+      await vi.waitFor(() => expect(fixture.sent.some((message) => message.type === "selected")).toBe(true));
+      return fixture;
+    };
+    const locatorRequests = () => mocks.request.mock.calls.filter(([method]) => method === "suggest.locator");
+
+    it("does not generate a locator just because an object was selected", async () => {
+      answer(() => Promise.resolve({ helpers: [], code: "Element()" }));
+      const fixture = await select();
+      await vi.waitFor(() => expect(mocks.request).toHaveBeenCalledWith("inspect.definitions", { nodeId: "control" }));
+      expect(locatorRequests()).toHaveLength(0);
+      expect(fixture.sent.find((message) => message.type === "selected")).not.toHaveProperty("suggestion");
+      expect(fixture.sent.some((message) => message.type === "suggestion" || message.type === "suggestionLoading")).toBe(false);
+      fixture.provider.dispose();
     });
-    const fixture = await create();
-    fixture.receive({ type: "select", nodeId: "control" });
-    await vi.waitFor(() =>
-      expect(fixture.sent.some((message) => message.type === "selected")).toBe(
-        true,
-      ),
-    );
-    expect(mocks.request).toHaveBeenCalledWith("inspect.properties", {
-      nodeId: "control",
+
+    it("loads definitions and the preview without waiting for a locator", async () => {
+      answer(() => new Promise(() => {}));
+      const fixture = await select();
+      await vi.waitFor(() => expect(fixture.sent.some((message) => message.type === "objectPreview")).toBe(true));
+      expect(fixture.sent.some((message) => message.type === "definitions" && message.state !== "loading")).toBe(true);
+      fixture.provider.dispose();
     });
-    expect(
-      fixture.sent.find((message) => message.type === "selected"),
-    ).not.toHaveProperty("suggestion");
-    expect(fixture.sent.some((message) => message.type === "suggestion")).toBe(
-      false,
-    );
-    finishLocator({ helpers: [], code: "Element()" });
-    await vi.waitFor(() =>
-      expect(
-        fixture.sent.some((message) => message.type === "suggestion"),
-      ).toBe(true),
-    );
-    fixture.provider.dispose();
-  });
-  it("reports a window as having no locator instead of leaving it loading", async () => {
-    mocks.request.mockImplementation((method: string) => {
-      if (method === "inspect.properties")
-        return Promise.resolve({
-          info: { name: "App", controlType: "Window" },
-          properties: {},
-          ancestors: [],
-        });
-      if (method === "suggest.locator")
-        return Promise.reject(
-          new RpcError(-32006, "Select a window descendant"),
-        );
-      return Promise.resolve(undefined);
+
+    it("reports that it is generating, then delivers the locator, when asked", async () => {
+      let finish: (value: unknown) => void = () => {};
+      answer(() => new Promise((resolve) => { finish = resolve; }));
+      const fixture = await select();
+      fixture.receive({ type: "generateLocator", nodeId: "control" });
+      await vi.waitFor(() => expect(fixture.sent).toContainEqual({ type: "suggestionLoading", nodeId: "control" }));
+      expect(fixture.sent.some((message) => message.type === "suggestion")).toBe(false);
+      finish({ helpers: [], code: "Element()" });
+      await vi.waitFor(() => expect(fixture.sent.some((message) => message.type === "suggestion" && message.nodeId === "control")).toBe(true));
+      expect(locatorRequests()).toHaveLength(1);
+      fixture.provider.dispose();
     });
-    const fixture = await create();
-    fixture.receive({ type: "select", nodeId: "window" });
-    await vi.waitFor(() =>
-      expect(
-        fixture.sent.some(
-          (message) => message.type === "suggestionUnavailable",
-        ),
-      ).toBe(true),
-    );
-    expect(
-      fixture.sent.find((message) => message.type === "suggestionUnavailable"),
-    ).toEqual({
-      type: "suggestionUnavailable",
-      nodeId: "window",
-      reason: "Select a window descendant",
+
+    it("reports a window as having no locator instead of leaving it loading", async () => {
+      answer(() => Promise.reject(new RpcError(-32006, "Select a window descendant")));
+      const fixture = await select("window");
+      fixture.receive({ type: "generateLocator", nodeId: "window" });
+      await vi.waitFor(() => expect(fixture.sent.some((message) => message.type === "suggestionUnavailable")).toBe(true));
+      expect(fixture.sent.find((message) => message.type === "suggestionUnavailable")).toEqual({
+        type: "suggestionUnavailable", nodeId: "window", reason: "Select a window descendant",
+      });
+      expect(fixture.sent.some((message) => message.type === "error")).toBe(false);
+      fixture.provider.dispose();
     });
-    expect(fixture.sent.some((message) => message.type === "error")).toBe(
-      false,
-    );
-    fixture.provider.dispose();
+
+    it("reports other failures so the button can be tried again", async () => {
+      answer(() => Promise.reject(new Error("pipe closed")));
+      const fixture = await select();
+      fixture.receive({ type: "generateLocator", nodeId: "control" });
+      await vi.waitFor(() => expect(fixture.sent).toContainEqual({ type: "suggestionUnavailable", nodeId: "control", reason: "pipe closed" }));
+      fixture.provider.dispose();
+    });
+
+    it("ignores a request for an object that is not the selected one", async () => {
+      answer(() => Promise.resolve({ helpers: [], code: "Element()" }));
+      const fixture = await select("control");
+      fixture.receive({ type: "generateLocator", nodeId: "other" });
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      expect(locatorRequests()).toHaveLength(0);
+      fixture.provider.dispose();
+    });
+
+    it("drops a locator that finishes after another object was selected", async () => {
+      let finish: (value: unknown) => void = () => {};
+      answer(() => new Promise((resolve) => { finish = resolve; }));
+      const fixture = await select("control");
+      fixture.receive({ type: "generateLocator", nodeId: "control" });
+      await vi.waitFor(() => expect(locatorRequests()).toHaveLength(1));
+      fixture.receive({ type: "select", nodeId: "newer" });
+      await vi.waitFor(() => expect(fixture.sent.some((message) => message.type === "selected" && message.nodeId === "newer")).toBe(true));
+      finish({ helpers: [], code: "Element()" });
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      expect(fixture.sent.some((message) => message.type === "suggestion")).toBe(false);
+      fixture.provider.dispose();
+    });
+
+    it("does not generate a locator for a picked object until asked", async () => {
+      answer(() => Promise.resolve({ helpers: [], code: "Element()" }));
+      mocks.request.mockImplementation((method: string) => {
+        if (method === "inspect.properties") return Promise.resolve({ info: { controlType: "Button", name: "Save" }, properties: {}, ancestors: [] });
+        if (method === "inspect.roots") return Promise.resolve([]);
+        if (method === "suggest.locator") return Promise.resolve({ helpers: [], code: "Element()" });
+        return Promise.resolve(undefined);
+      });
+      const fixture = await create();
+      fixture.receive({ type: "pick" });
+      await vi.waitFor(() => expect(latestSession()).toBeTypeOf("string"));
+      mocks.notifications.get("spy.picked")?.({ sessionId: latestSession(), node: { nodeId: "picked", info: { controlType: "Button", name: "Save" } } });
+      await vi.waitFor(() => expect(fixture.sent.some((message) => message.type === "selected" && message.nodeId === "picked")).toBe(true));
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      expect(locatorRequests()).toHaveLength(0);
+      fixture.receive({ type: "generateLocator", nodeId: "picked" });
+      await vi.waitFor(() => expect(fixture.sent.some((message) => message.type === "suggestion" && message.nodeId === "picked")).toBe(true));
+      fixture.provider.dispose();
+    });
   });
   const definition = {
     id: "pages/main.py::MainPage.save",
@@ -1342,7 +1398,7 @@ describe("Spy view bridge", () => {
       fixture.receive({ type: "select", nodeId });
       await vi.waitFor(() =>
         expect(
-          fixture.sent.some((message) => message.type === "suggestion"),
+          fixture.sent.some((message) => message.type === "selected"),
         ).toBe(true),
       );
     };
@@ -1778,8 +1834,8 @@ describe("Spy view bridge", () => {
     );
     expect(progress.at(-1)).toMatchObject({
       nodeId: "control",
-      completed: 3,
-      total: 3,
+      completed: 2,
+      total: 2,
       done: true,
       failed: false,
     });
@@ -1814,7 +1870,7 @@ describe("Spy view bridge", () => {
     fixture.provider.dispose();
     expect(fixture.notificationDisposals).toHaveLength(3);
   });
-  it("refreshes stale node handles instead of retaining a broken tree", async () => {
+  it("reports stale node handles without reloading the tree on its own", async () => {
     mocks.request.mockImplementation((method: string) =>
       method === "inspect.children"
         ? Promise.reject(new RpcError(-32005, "gone"))
@@ -1825,11 +1881,71 @@ describe("Spy view bridge", () => {
     await vi.waitFor(() =>
       expect(fixture.sent).toContainEqual({
         type: "error",
-        message: "The element is gone; refreshed.",
+        message: "The element is gone. Reload the objects view to refresh it.",
       }),
     );
-    expect(fixture.sent.some((message) => message.type === "roots")).toBe(true);
+    expect(mocks.request).not.toHaveBeenCalledWith("inspect.refresh", expect.anything());
+    expect(mocks.request).not.toHaveBeenCalledWith("inspect.refresh");
     fixture.provider.dispose();
+  });
+  describe("automatic reloads", () => {
+    const refreshes = () =>
+      mocks.request.mock.calls.filter((call) => call[0] === "inspect.refresh").length;
+    const loaded = async () => {
+      mocks.markers = false;
+      mocks.request.mockImplementation((method: string) =>
+        Promise.resolve(method === "inspect.refresh" ? { nodes: [], status: { running: true, pids: [7] } } : []),
+      );
+      const fixture = await create();
+      fixture.receive({ type: "ready" });
+      await vi.waitFor(() => expect(refreshes()).toBe(1));
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      return fixture;
+    };
+    const settle = () => new Promise((resolve) => setTimeout(resolve, 30));
+
+    it("keeps the webview alive while the panel tab is hidden", async () => {
+      const fixture = await create();
+      expect(mocks.providerRegistrations).toHaveLength(1);
+      expect(mocks.providerRegistrations[0][2]).toEqual({
+        webviewOptions: { retainContextWhenHidden: true },
+      });
+      fixture.provider.dispose();
+    });
+
+    it("does not reload a loaded tree when the panel is shown again", async () => {
+      const fixture = await loaded();
+      fixture.visibility();
+      await settle();
+      expect(refreshes()).toBe(1);
+      fixture.provider.dispose();
+    });
+
+    it("does not reload a loaded tree when project files change", async () => {
+      const fixture = await loaded();
+      for (const listener of mocks.projectListeners) listener();
+      await settle();
+      expect(refreshes()).toBe(1);
+      fixture.provider.dispose();
+    });
+
+    it("loads when the panel is shown before anything has loaded", async () => {
+      mocks.markers = false;
+      mocks.request.mockImplementation((method: string) =>
+        Promise.resolve(method === "inspect.refresh" ? { nodes: [], status: { running: true, pids: [7] } } : []),
+      );
+      const fixture = await create();
+      fixture.visibility();
+      await vi.waitFor(() => expect(refreshes()).toBe(1));
+      fixture.provider.dispose();
+    });
+
+    it("still reloads when the reload button is pressed", async () => {
+      const fixture = await loaded();
+      fixture.receive({ type: "refresh" });
+      await vi.waitFor(() => expect(refreshes()).toBe(2));
+      fixture.provider.dispose();
+    });
   });
   it("does not let an in-flight pick overwrite a newer row selection", async () => {
     let finishPick: (value: unknown) => void = () => {};
@@ -2019,7 +2135,7 @@ describe("Spy view bridge", () => {
       fixture.visibility();
     } else if (action === "stop") fixture.receive({ type: "stopPick" });
     else fixture.provider.dispose();
-    finishConnection({ client: fixture.client });
+    finishConnection({ client: fixture.client, initialized: { config: {} } });
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(mocks.request.mock.calls.some((call) => call[0] === "spy.start")).toBe(false);
     fixture.provider.dispose();
@@ -2044,15 +2160,12 @@ describe("Spy view bridge", () => {
     fixture.provider.dispose();
   });
 
-  it("shows picked properties before icons or a separately requested locator complete", async () => {
-    let finishLocator: (value: unknown) => void = () => {};
+  it("shows picked properties before icons complete", async () => {
     const picked = { nodeId: "picked", info: { controlType: "Button", name: "Save" } };
     mocks.icons.mockImplementationOnce(() => new Promise(() => {}));
-    mocks.request.mockImplementation((method: string, params?: { nodeId?: string }) => {
+    mocks.request.mockImplementation((method: string) => {
       if (method === "inspect.properties") return Promise.resolve({ info: picked.info, properties: {}, ancestors: [] });
       if (method === "inspect.roots") return Promise.resolve([]);
-      if (method === "suggest.locator" && params?.nodeId === "picked") return new Promise((resolve) => { finishLocator = resolve; });
-      if (method === "suggest.locator") return Promise.resolve({ helpers: [], code: "Element()" });
       return Promise.resolve(undefined);
     });
     const fixture = await create();
@@ -2060,12 +2173,6 @@ describe("Spy view bridge", () => {
     await vi.waitFor(() => expect(latestSession()).toBeTypeOf("string"));
     mocks.notifications.get("spy.picked")?.({ sessionId: latestSession(), node: picked });
     await vi.waitFor(() => expect(fixture.sent.some((message) => message.type === "selected")).toBe(true));
-    expect(mocks.request).toHaveBeenCalledWith("suggest.locator", { nodeId: "picked" });
-    fixture.receive({ type: "select", nodeId: "newer" });
-    await vi.waitFor(() => expect(fixture.sent.some((message) => message.type === "selected" && message.nodeId === "newer")).toBe(true));
-    finishLocator({ helpers: [], code: "Element()" });
-    await Promise.resolve();
-    expect(fixture.sent.some((message) => message.type === "suggestion" && message.nodeId === "picked")).toBe(false);
     fixture.provider.dispose();
   });
 
@@ -2083,6 +2190,22 @@ describe("Spy view bridge", () => {
     await Promise.all([first, second]);
     expect(mocks.request).not.toHaveBeenCalledWith("app.status");
     expect(fixture.sent).toContainEqual(expect.objectContaining({ type: "state", targetName: "Combined snapshot", appRunning: true }));
+    fixture.provider.dispose();
+  });
+
+  it("tells the webview which application is selected so its root windows can be marked", async () => {
+    mocks.markers = false;
+    mocks.request.mockImplementation((method: string) =>
+      Promise.resolve(method === "inspect.refresh" ? { nodes: [], status: { running: true, pids: [7, 9] } } : undefined),
+    );
+    const fixture = await create();
+    await fixture.provider.refresh();
+    expect(fixture.sent).toContainEqual(expect.objectContaining({ type: "state", appName: "Demo", appPids: [7, 9] }));
+    mocks.request.mockImplementation((method: string) =>
+      Promise.resolve(method === "inspect.refresh" ? { nodes: [], status: { running: false, pids: [] } } : undefined),
+    );
+    await fixture.provider.refresh();
+    expect(fixture.sent.filter((message) => message.type === "state").at(-1)).toMatchObject({ appPids: [] });
     fixture.provider.dispose();
   });
 
@@ -2199,18 +2322,84 @@ describe("Spy view bridge", () => {
     fixture.provider.dispose();
   });
 
-  it("does not arbitrarily read a preview when multiple definitions match", async () => {
-    mocks.request.mockImplementation((method: string) => Promise.resolve(method === "inspect.properties"
-      ? { info: {}, properties: {}, ancestors: [] } : method === "suggest.locator"
-        ? { helpers: [], code: "Element()" } : method === "inspect.definitions"
-          ? { definitions: [{ id: "pages/Page.py::Page.first" }, { id: "pages/Page.py::Page.second" }], errors: [], pageCount: 1, appRunning: true }
-          : undefined));
-    const fixture = await create();
-    fixture.receive({ type: "select", nodeId: "control" });
-    await vi.waitFor(() => expect(fixture.sent.some((message) => message.type === "objectPreview")).toBe(true));
-    expect(mocks.previews).not.toHaveBeenCalled();
-    expect(fixture.sent).toContainEqual(expect.objectContaining({ type: "objectPreview", reason: expect.stringContaining("Multiple definitions") }));
-    fixture.provider.dispose();
+  describe("opening a preview in the image viewer", () => {
+    const url = "data:image/webp;base64,UklGRhoAAABXRUJQVlA4TA0AAAAvAAAAEAcQERGIiP4HAA==";
+    it("hands the chosen image to the viewer, live or saved", async () => {
+      mocks.showPreview.mockClear();
+      const fixture = await create();
+      fixture.receive({ type: "openPreview", view: "window", dataUrl: url });
+      await vi.waitFor(() => expect(mocks.showPreview).toHaveBeenCalledWith("window", url));
+      fixture.provider.dispose();
+      expect(mocks.disposeViewer).toHaveBeenCalled();
+    });
+    it("reports a viewer failure in the panel", async () => {
+      mocks.showPreview.mockRejectedValueOnce(new Error("disk full"));
+      const fixture = await create();
+      fixture.receive({ type: "openPreview", view: "element", dataUrl: url });
+      await vi.waitFor(() => expect(fixture.sent).toContainEqual({ type: "error", message: "disk full" }));
+      fixture.provider.dispose();
+    });
+    it.each([
+      { view: "other", dataUrl: url },
+      { view: "element", dataUrl: "https://example.test/a.webp" },
+      { view: "element", dataUrl: 5 },
+      { view: "element", dataUrl: url + "x".repeat(30_000_000) },
+    ])("ignores a malformed request %#", async (request) => {
+      mocks.showPreview.mockClear();
+      const fixture = await create();
+      fixture.receive({ type: "openPreview", ...request });
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(mocks.showPreview).not.toHaveBeenCalled();
+      fixture.provider.dispose();
+    });
+  });
+
+  describe("live object preview", () => {
+    const webp = "UklGRhoAAABXRUJQVlA4TA0AAAAvAAAAEAcQERGIiP4HAA==";
+    const select = async (preview: () => Promise<unknown>) => {
+      mocks.request.mockImplementation((method: string) =>
+        method === "inspect.preview" ? preview() : Promise.resolve(method === "inspect.properties"
+          ? { info: {}, properties: {}, ancestors: [] } : method === "suggest.locator"
+            ? { helpers: [], code: "Element()" } : method === "inspect.definitions"
+              ? { definitions: [], errors: [], pageCount: 1, appRunning: true } : undefined));
+      const fixture = await create();
+      fixture.receive({ type: "select", nodeId: "control" });
+      await vi.waitFor(() => expect(fixture.sent.some((message) => message.type === "objectPreview")).toBe(true));
+      return fixture;
+    };
+    it("asks the server for the selected object's crop and window and forwards validated images", async () => {
+      const entry = { data: webp, width: 1, height: 1 };
+      const fixture = await select(() => Promise.resolve({ element: entry, window: entry }));
+      expect(mocks.request).toHaveBeenCalledWith("inspect.preview", { nodeId: "control" });
+      const url = "data:image/webp;base64," + webp;
+      expect(fixture.sent).toContainEqual({ type: "objectPreview", nodeId: "control",
+        preview: { elementDataUrl: url, windowDataUrl: url } });
+      expect(mocks.previews).not.toHaveBeenCalled();
+      fixture.provider.dispose();
+    });
+    it("forwards the reason when the server cannot capture", async () => {
+      const fixture = await select(() => Promise.resolve({ reason: "The window cannot be captured." }));
+      expect(fixture.sent).toContainEqual({ type: "objectPreview", nodeId: "control", reason: "The window cannot be captured." });
+      fixture.provider.dispose();
+    });
+    it("rejects a malformed capture instead of forwarding it", async () => {
+      const fixture = await select(() => Promise.resolve({ element: { data: "AAAA", width: 1, height: 1 }, window: {} }));
+      const message = fixture.sent.find((entry) => entry.type === "objectPreview");
+      expect(message).toMatchObject({ reason: "The automation server returned an invalid preview." });
+      expect(message).not.toHaveProperty("preview");
+      fixture.provider.dispose();
+    });
+    it("explains that an older wintestkit package cannot capture previews", async () => {
+      const fixture = await select(() => Promise.reject(new RpcError(-32601, "method not found")));
+      expect(fixture.sent).toContainEqual(expect.objectContaining({ type: "objectPreview", reason: expect.stringContaining("newer wintestkit") }));
+      fixture.provider.dispose();
+    });
+    it("reports a failed capture without disturbing the selection", async () => {
+      const fixture = await select(() => Promise.reject(new Error("pipe closed")));
+      expect(fixture.sent).toContainEqual(expect.objectContaining({ type: "objectPreview", reason: expect.stringContaining("pipe closed") }));
+      expect(fixture.sent.some((message) => message.type === "selected")).toBe(true);
+      fixture.provider.dispose();
+    });
   });
 
   it("does not let a superseded connection clear newer roots", async () => {
@@ -2221,10 +2410,10 @@ describe("Spy view bridge", () => {
         return { dispose: () => mocks.notifications.delete(name) };
       },
     };
-    const pending: Array<(value: { client: typeof client }) => void> = [];
+    const pending: Array<(value: { client: typeof client; initialized: unknown }) => void> = [];
     const connect = vi.fn(
       () =>
-        new Promise<{ client: typeof client }>((resolve) => {
+        new Promise<{ client: typeof client; initialized: unknown }>((resolve) => {
           pending.push(resolve);
         }),
     );
@@ -2243,7 +2432,7 @@ describe("Spy view bridge", () => {
       name: "other",
     });
     await vi.waitFor(() => expect(pending).toHaveLength(2));
-    pending[1]({ client });
+    pending[1]({ client, initialized: { config: {} } });
     await vi.waitFor(() =>
       expect(
         fixture.sent.filter((message) => message.type === "roots"),
@@ -2254,7 +2443,7 @@ describe("Spy view bridge", () => {
         },
       ]),
     );
-    pending[0]({ client });
+    pending[0]({ client, initialized: { config: {} } });
     await first;
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(fixture.sent.filter((message) => message.type === "roots")).toEqual([

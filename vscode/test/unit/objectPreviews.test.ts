@@ -1,9 +1,9 @@
 import { createHash } from "node:crypto";
-import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import * as path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { definitionPreviewKey, readObjectPreview, validatePreviewWebp } from "../../src/spy/objectPreviews";
+import { definitionPreviewKey, livePreviewImages, readObjectPreview, savedPreviewImages, validatePreviewWebp } from "../../src/spy/objectPreviews";
 
 const definitionId = "pages/Login.py::LoginPage.submit";
 const image = Buffer.from("UklGRhoAAABXRUJQVlA4TA0AAAAvAAAAEAcQERGIiP4HAA==", "base64");
@@ -44,14 +44,20 @@ describe("saved definition object previews", () => {
     expect(() => definitionPreviewKey(id)).toThrow("canonical");
   });
 
-  it("returns only the crop and original last-test timestamp, retaining the full window on disk", async () => {
-    const { root, directory } = await fixture();
+  it("returns the crop and the outlined window with the original last-test timestamp", async () => {
+    const { root } = await fixture();
     const preview = await readObjectPreview(root, definitionId);
+    const url = "data:image/webp;base64," + image.toString("base64");
     expect(preview).toMatchObject({ definitionId, capturedAt: "2026-10-20T12:34:56.000Z", width: 1, height: 1,
-      cropDataUrl: "data:image/webp;base64," + image.toString("base64") });
-    expect(preview).not.toHaveProperty("window");
-    expect(preview).not.toHaveProperty("windowDataUrl");
-    expect(await readFile(path.join(directory, "test-123.window.webp"))).toEqual(image);
+      cropDataUrl: url, windowDataUrl: url });
+    expect(savedPreviewImages(preview!)).toEqual({ elementDataUrl: url, windowDataUrl: url,
+      capturedAt: "2026-10-20T12:34:56.000Z" });
+  });
+
+  it("rejects a saved window image that is not a still WebP", async () => {
+    const { root, directory } = await fixture();
+    await writeFile(path.join(directory, "test-123.window.webp"), Buffer.from("not an image at all, really"));
+    await expect(readObjectPreview(root, definitionId)).rejects.toThrow();
   });
 
   it("returns unavailable when the manifest has not been recorded", async () => {
@@ -99,5 +105,23 @@ describe("saved definition object previews", () => {
     expect(() => validatePreviewWebp(image.subarray(0, 20), 1, 1)).toThrow();
     expect(() => validatePreviewWebp(Buffer.from("<svg onload='unsafe'/>"), 1, 1)).toThrow();
     expect(() => validatePreviewWebp(image, 2, 1)).toThrow("dimensions");
+  });
+});
+
+describe("live preview results", () => {
+  const entry = { data: image.toString("base64"), width: 1, height: 1 };
+  it("turns a valid capture into data URLs for the webview", () => {
+    const url = "data:image/webp;base64," + entry.data;
+    expect(livePreviewImages({ element: entry, window: entry })).toEqual({ elementDataUrl: url, windowDataUrl: url });
+  });
+  it("passes the reason through when there is nothing to show", () => {
+    expect(livePreviewImages({ reason: "The window cannot be captured." })).toBe("The window cannot be captured.");
+  });
+  it.each([
+    undefined, null, "text", {}, { element: entry }, { element: entry, window: { ...entry, data: "not base64!" } },
+    { element: entry, window: { ...entry, width: 2 } }, { element: entry, window: { ...entry, data: "AAAA" } },
+    { element: entry, window: { data: entry.data, width: 1.5, height: 1 } },
+  ])("rejects a malformed result %#", (value) => {
+    expect(typeof livePreviewImages(value)).toBe("string");
   });
 });

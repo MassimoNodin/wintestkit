@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import json
 import logging
 import math
@@ -45,6 +46,7 @@ _PARAMS: dict[str, tuple[set[str], set[str]]] = {
     "inspect.children": ({"nodeId"}, set()),
     "inspect.properties": ({"nodeId"}, {"full", "includeAncestors"}),
     "inspect.highlight": ({"nodeId"}, {"durationMs", "bringToFront"}),
+    "inspect.preview": ({"nodeId"}, set()),
     "suggest.locator": ({"nodeId"}, set()),
     "inspect.definitions": ({"nodeId"}, set()),
     "inspect.coverage": ({"nodeIds"}, set()),
@@ -272,12 +274,82 @@ class Server:
             self.coverage = Coverage(self.loader, self.cfg)
         return self.coverage
 
-    def _register(self, element: UIAElement) -> dict[str, Any]:
+    @staticmethod
+    def _signature(element: UIAElement) -> tuple[Any, ...]:
+        """What tells siblings apart when UI Automation cannot compare elements reliably."""
+        rect = element.rect
+        return (
+            element.control_type,
+            element.name,
+            element.automation_id,
+            element.class_name,
+            None if rect is None else (rect.left, rect.top, rect.width, rect.height),
+            element.is_offscreen,
+        )
+
+    def _positional_id(self, element: UIAElement) -> str | None:
+        """Key for an element without a runtime id: its path of sibling positions below the
+        nearest ancestor that has one, written the way ``inspect.children`` writes it.
+
+        ``CompareElements`` cannot tell such elements apart reliably (a menu's items all compare
+        equal), so siblings are matched by their properties first. Siblings that are identical in
+        every property resolve to the first of them.
+        """
+        from wintestkit.uia.constants import TreeScope
+        from wintestkit.uia.element import ElementEnumerationError
+
+        path: list[int] = []
+        current = element
+        for _ in range(64):
+            parent = current.parent()
+            if parent is None:
+                return None
+            try:
+                siblings: list[UIAElement | None] = list(
+                    parent.as_live().find_all(TreeScope.Children, cached=True)
+                )
+            except ElementEnumerationError as exc:
+                siblings = exc.elements
+            wanted = self._signature(current)
+            twins = [
+                (index, sibling)
+                for index, sibling in enumerate(siblings)
+                if sibling is not None and self._signature(sibling) == wanted
+            ]
+            if not twins:
+                return None
+            position = next((i for i, sibling in twins if sibling.same_as(current)), twins[0][0])
+            path.append(position)
+            with contextlib.suppress(Exception):
+                parent_id = parent.runtime_id
+                if parent_id:
+                    return parent_id + "".join(f"~{index}" for index in reversed(path))
+            current = parent
+        return None
+
+    def _register(
+        self, element: UIAElement, fallback_id: str | None = None, locate: bool = True
+    ) -> dict[str, Any]:
+        """Remember ``element`` under its node id and describe it for the editor.
+
+        With ``locate=False`` an element that has no runtime id is only described, with an empty
+        node id and without being remembered: finding its place among its siblings is slow, and a
+        hover hint does not need it.
+        """
         from wintestkit.uia.constants import TreeScope
 
         info = element.info()
+        if not info.runtime_id and not fallback_id and not locate:
+            return {"nodeId": "", "info": info.to_dict(), "hasChildren": False}
         if not info.runtime_id:
-            raise RpcError(-32005, "element has no runtime id")
+            # Some providers (TeamViewer's custom-drawn content) return an empty runtime id. A node
+            # needs a key, so its place under the parent stands in for it: stable between refreshes
+            # as long as the siblings keep their order. A caller that does not know the parent
+            # (the picker, the ancestors of a picked object) has it worked out.
+            fallback_id = fallback_id or self._positional_id(element)
+            if fallback_id is None:
+                raise RpcError(-32005, "element has no runtime id")
+            info = dataclasses.replace(info, runtime_id=fallback_id)
         with self._node_lock:
             self.nodes[info.runtime_id] = element
             self.node_infos[info.runtime_id] = info
@@ -314,6 +386,7 @@ class Server:
         elements: list[UIAElement] | list[UIAElement | None],
         errors: list[dict[str, Any]] | None = None,
         source_indices: list[int] | None = None,
+        parent_id: str | None = None,
     ) -> list[dict[str, Any]]:
         nodes: list[dict[str, Any]] = []
         errors = list(errors or [])
@@ -321,7 +394,8 @@ class Server:
             if element is None:
                 continue
             try:
-                nodes.append(self._register(element))
+                fallback_id = None if parent_id is None else f"{parent_id}~{index}"
+                nodes.append(self._register(element, fallback_id))
             except Exception as exc:
                 errors.append(
                     {
@@ -496,21 +570,20 @@ class Server:
                 nodes = self._register_nodes([element.from_handle(hwnd)])
                 return {"nodes": nodes, "status": status} if status is not None else nodes
             include_other = params.get("includeOtherApps", False)
-            enumeration_errors: list[dict[str, Any]] = []
             roots: list[UIAElement | None]
             if app is not None and not include_other:
                 roots = list(windows)
                 source_indices = list(range(len(roots)))
             else:
-                from wintestkit.uia import com
-                from wintestkit.uia.element import ElementEnumerationError, UIAElement
+                from wintestkit.errors import UIAError
+                from wintestkit.uia import element, win32
 
-                desktop: list[UIAElement | None]
-                try:
-                    desktop = list(UIAElement(com.get_uia().GetRootElement()).children())
-                except ElementEnumerationError as exc:
-                    desktop = exc.elements
-                    enumeration_errors = exc.errors
+                desktop: list[UIAElement | None] = []
+                for hwnd in win32.desktop_windows():
+                    try:
+                        desktop.append(element.from_handle(hwnd))
+                    except UIAError:
+                        continue  # the window closed while enumerating
                 if app is None:
                     roots = desktop
                     source_indices = list(range(len(roots)))
@@ -540,8 +613,7 @@ class Server:
                     root if root is not None and not _is_popup_surface(root) else None
                     for root in roots
                 ],
-                enumeration_errors,
-                source_indices,
+                source_indices=source_indices,
             )
             return {"nodes": nodes, "status": status} if status is not None else nodes
         if method == "spy.start":
@@ -552,17 +624,17 @@ class Server:
             epoch = self._spy_epoch
             session_params = {"sessionId": params["sessionId"]} if "sessionId" in params else {}
 
-            def publish(method: str, element: UIAElement) -> None:
+            def publish(method: str, element: UIAElement, locate: bool = True) -> None:
                 with self._spy_lock:
                     if epoch != self._spy_epoch or self.spy is not session:
                         return
-                node = self._register(element)
+                node = self._register(element, locate=locate)
                 with self._spy_lock:
                     if epoch == self._spy_epoch and self.spy is session:
                         self.notify(method, {"node": node, **session_params})
 
             def hover(element: UIAElement) -> None:
-                publish("spy.hover", element)
+                publish("spy.hover", element, locate=False)
 
             def pick(element: UIAElement) -> None:
                 publish("spy.picked", element)
@@ -605,8 +677,8 @@ class Server:
             try:
                 children = node.find_all(TreeScope.Children, cached=True)
             except ElementEnumerationError as exc:
-                return self._register_nodes(exc.elements, exc.errors)
-            return self._register_nodes(children)
+                return self._register_nodes(exc.elements, exc.errors, parent_id=params["nodeId"])
+            return self._register_nodes(children, parent_id=params["nodeId"])
         if method == "inspect.highlight":
             # The outline is drawn on top of every window, so raising the window is opt-in.
             rect = (
@@ -614,6 +686,10 @@ class Server:
             )
             self._flash(rect, params)
             return None
+        if method == "inspect.preview":
+            from wintestkit.live_preview import capture_live_preview
+
+            return capture_live_preview(node)
         if method == "suggest.locator":
             from wintestkit.engine.suggest import WindowSelectedError, suggest_locator
 
@@ -661,15 +737,19 @@ class Server:
                     properties[alias] = properties[property_name]
             ancestors: list[dict[str, Any]] = []
             parent = node.parent() if params.get("includeAncestors", False) else None
-            seen = {node.runtime_id}
+            seen = {params["nodeId"]}
             while parent is not None and len(ancestors) < 100:
-                if parent.runtime_id in seen:
+                registered = self._register(parent)
+                if registered["nodeId"] in seen:
                     break
-                seen.add(parent.runtime_id)
-                ancestors.append(self._register(parent))
+                seen.add(registered["nodeId"])
+                ancestors.append(registered)
                 parent = parent.parent()
+            info = node.info(with_patterns=full)
+            if not info.runtime_id:
+                info = dataclasses.replace(info, runtime_id=params["nodeId"])
             return {
-                "info": node.info(with_patterns=full).to_dict(),
+                "info": info.to_dict(),
                 "properties": properties,
                 "ancestors": list(reversed(ancestors)),
                 "inspection": inspection,
