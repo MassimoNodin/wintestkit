@@ -98,7 +98,29 @@ def raise_without_activating(el: UIAElement) -> bool:
 
 def _foreground(el: UIAElement) -> None:
     __tracebackhide__ = True
-    bring_to_front(el)
+    if not bring_to_front(el):
+        raise ActionError("Cannot activate the target window; refusing global input")
+    _validate_foreground(el)
+
+
+def _validate_foreground(el: UIAElement) -> int:
+    __tracebackhide__ = True
+    hwnd = _top_level_hwnd(el)
+    if (
+        not hwnd
+        or not win32.IsWindow(hwnd)
+        or win32.window_pid(hwnd) != el.process_id
+        or win32.GetForegroundWindow() != hwnd
+    ):
+        raise ActionError("Target window ownership or foreground changed; refusing global input")
+    return hwnd
+
+
+def _keyboard_target(el: UIAElement) -> None:
+    __tracebackhide__ = True
+    _validate_foreground(el)
+    if not el.has_keyboard_focus:
+        raise ActionError("Target control does not own keyboard focus; refusing global input")
 
 
 def focus(el: UIAElement) -> None:
@@ -128,7 +150,16 @@ def _mouse_target(el: UIAElement) -> tuple[int, int]:
 def _mouse_click(el: UIAElement, button: MouseButton = "left", count: int = 1) -> None:
     __tracebackhide__ = True
     x, y = _mouse_target(el)
+    _validate_mouse_target(el, x, y)
     input.click(x, y, button=button, count=count)
+
+
+def _validate_mouse_target(el: UIAElement, x: int, y: int) -> None:
+    __tracebackhide__ = True
+    hwnd = _validate_foreground(el)
+    hit = win32.WindowFromPoint(win32.POINT(x, y))
+    if not hit or win32.root_window(hit) != hwnd or win32.window_pid(hit) != el.process_id:
+        raise ActionError("Target point belongs to another window; refusing global input")
 
 
 def click(el: UIAElement, *, mode: InputMode = "pattern", button: MouseButton = "left") -> str:
@@ -167,15 +198,16 @@ def right_click(el: UIAElement) -> None:
 def hover(el: UIAElement) -> None:
     __tracebackhide__ = True
     x, y = _mouse_target(el)
+    _validate_mouse_target(el, x, y)
     input.move_mouse(x, y)
 
 
 # -- text -----------------------------------------------------------------------------------------
 
 
-def _is_password(el: UIAElement) -> bool:
+def is_password(el: UIAElement) -> bool:
     __tracebackhide__ = True
-    return el.class_name == "PasswordBox"
+    return el.get_property("IsPassword") == 1 or el.class_name == "PasswordBox"
 
 
 def _can_set_value(el: UIAElement) -> bool:
@@ -186,15 +218,17 @@ def _can_set_value(el: UIAElement) -> bool:
 def type_text(el: UIAElement, text: str, *, clear: bool = True, keys: bool = False) -> str:
     """Enter text; returns ``"value"`` (ValuePattern) or ``"keys"`` (keyboard input)."""
     __tracebackhide__ = True
-    if not keys and _can_set_value(el) and (clear or not _is_password(el)):
+    if not keys and _can_set_value(el) and (clear or not is_password(el)):
         try:
             patterns.set_value(el, text if clear else patterns.get_value(el) + text)
             return "value"
-        except UIAError as exc:
-            log.debug("ValuePattern.SetValue failed (%s); falling back to keys", exc)
+        except UIAError:
+            log.debug("ValuePattern.SetValue failed; falling back to keys")
     focus(el)
     # Appending needs the caret at the end: SetValue and focus changes can leave it at the start.
+    _keyboard_target(el)
     input.press("Ctrl+A Delete" if clear else "Ctrl+End")
+    _keyboard_target(el)
     input.type_text(text)
     return "keys"
 
@@ -206,9 +240,10 @@ def clear(el: UIAElement) -> None:
         try:
             patterns.set_value(el, "")
             return
-        except UIAError as exc:
-            log.debug("ValuePattern.SetValue failed (%s); falling back to keys", exc)
+        except UIAError:
+            log.debug("ValuePattern.SetValue failed; falling back to keys")
     focus(el)
+    _keyboard_target(el)
     input.press("Ctrl+A Delete")
 
 
@@ -216,13 +251,14 @@ def press(el: UIAElement, keys: str) -> None:
     """Focus the element and press key combinations such as ``"Ctrl+S"``."""
     __tracebackhide__ = True
     focus(el)
+    _keyboard_target(el)
     input.press(keys)
 
 
 def get_text(el: UIAElement) -> str:
     """The element's text: its value, document text or UIA name."""
     __tracebackhide__ = True
-    if patterns.has_pattern(el, "Value") and not _is_password(el):
+    if patterns.has_pattern(el, "Value") and not is_password(el):
         return patterns.get_value(el)
     if patterns.has_pattern(el, "Text"):
         return patterns.document_text(el)

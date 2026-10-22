@@ -3,10 +3,11 @@ import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import * as vscode from "vscode";
+import type { ExtensionApi } from "../../../src/extension";
 
 suite("Configuration editor", () => {
   test("opens native YAML editor, protects local files and supports save and undo", async () => {
-    await vscode.extensions.getExtension("wintestkit.wintestkit")!.activate();
+    await vscode.extensions.getExtension<ExtensionApi>("wintestkit.wintestkit")!.activate();
     const directory = await fs.mkdtemp(path.join(os.tmpdir(), "wtk-settings-"));
     const root = vscode.Uri.file(directory);
     const uri = vscode.Uri.joinPath(root, "wintestkit.local.yaml");

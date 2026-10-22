@@ -53,16 +53,14 @@ def ensure_com_initialized() -> None:
     global _warned_sta
     if getattr(_local, "initialized", False):
         return
-    if getattr(sys, "coinit_flags", COINIT_MULTITHREADED) != COINIT_MULTITHREADED:
+    try:
+        comtypes.CoInitializeEx(COINIT_MULTITHREADED)
+    except OSError as exc:
+        if getattr(exc, "winerror", None) not in (-2147417850, 2147549446):
+            raise
         if not _warned_sta:
             _warned_sta = True
-            log.warning("comtypes was imported with STA flags; UI Automation uses that apartment")
-    else:
-        try:
-            comtypes.CoInitializeEx(COINIT_MULTITHREADED)
-        except OSError as exc:
-            # RPC_E_CHANGED_MODE: the thread already lives in another apartment; that is fine.
-            log.debug("CoInitializeEx: %s", exc)
+            log.warning("calling thread already uses another COM apartment; using that apartment")
     _local.initialized = True
 
 

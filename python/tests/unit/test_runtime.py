@@ -150,6 +150,19 @@ def test_non_wtk_exception_uses_type_and_message() -> None:
     assert records[0].error == {"type": "KeyError", "message": "'missing'"}
 
 
+@pytest.mark.parametrize("secret", [False, True])
+def test_sensitive_arguments_also_redact_raised_and_recorded_errors(secret: bool) -> None:
+    import traceback
+
+    records, _ = collect()
+    sentinel = "PRIVATE_PROVIDER_SENTINEL"
+    arguments = {"text" if secret else "password": sentinel}
+    with pytest.raises(ActionError) as failure, step("type", "X.y", "z", arguments, secret=secret):
+        raise ValueError(sentinel)
+    assert sentinel not in str(records[0].to_dict())
+    assert sentinel not in "".join(traceback.format_exception(failure.value))
+
+
 def test_failing_to_dict_falls_back() -> None:
     records, _ = collect()
 

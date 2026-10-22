@@ -5,6 +5,22 @@
   "description": "UI test automation for Windows WPF apps — highlight elements, run tests, inspect UI.",
   "version": "0.1.1",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/MassimoNodin/wintestkit.git",
+    "directory": "vscode"
+  },
+  "bugs": {
+    "url": "https://github.com/MassimoNodin/wintestkit/issues"
+  },
+  "homepage": "https://github.com/MassimoNodin/wintestkit#readme",
+  "keywords": [
+    "wpf",
+    "ui automation",
+    "windows",
+    "testing",
+    "pytest"
+  ],
   "icon": "media/icon.png",
   "engines": {
     "vscode": "^1.95.0"
@@ -447,7 +463,7 @@
     "lint": "eslint .",
     "test": "vitest run",
     "test:integration": "tsc -p test && node ./out/test/integration/runTest.js",
-    "package": "npm run build && vsce package --target win32-x64 -o dist/",
+    "package": "npm run build && node scripts/package.mjs",
     "gen:types": "node scripts/gen-types.mjs"
   },
   "dependencies": {

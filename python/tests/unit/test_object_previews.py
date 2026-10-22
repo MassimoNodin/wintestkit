@@ -154,13 +154,35 @@ def test_only_explicit_call_context_captures(preview):
 
 
 def test_pytest_call_wrapper_restores_context_on_failure(preview):
-    hook = _Controller.pytest_runtest_call(None, SimpleNamespace())
+    hook = _Controller.pytest_runtest_call(SimpleNamespace(report_enabled=True), SimpleNamespace())
     assert not runtime.object_previews_active()
     next(hook)
     assert runtime.object_previews_active()
     with pytest.raises(RuntimeError, match="test failed"):
         hook.throw(RuntimeError("test failed"))
     assert not runtime.object_previews_active()
+
+
+def test_no_report_never_enters_preview_context_or_captures(preview, monkeypatch):
+    monkeypatch.setattr(
+        runtime,
+        "object_preview_test_context",
+        lambda: pytest.fail("no-report must not authorize preview capture"),
+    )
+    monkeypatch.setattr(
+        object_previews,
+        "_capture_bound",
+        lambda *args: pytest.fail("no-report must not capture object previews"),
+    )
+    assert runtime.get_config().object_previews
+    hook = _Controller.pytest_runtest_call(SimpleNamespace(report_enabled=False), SimpleNamespace())
+    next(hook)
+    assert not runtime.object_previews_active()
+    preview.bound.resolve_once()
+    object_previews.capture_bound(preview.bound, preview.element)
+    with pytest.raises(StopIteration):
+        next(hook)
+    assert preview.calls == []
 
 
 def test_setting_disables_capture_even_in_call_context(preview):
@@ -455,7 +477,8 @@ def test_manifest_publication_supports_non_bmp_project_paths(tmp_path):
 
 
 def test_manifest_publication_supports_long_project_paths(tmp_path):
-    directory = tmp_path.joinpath("part-" + "a" * 75, "part-" + "b" * 75)
+    padding = max(75, 260 - len(str(tmp_path)))
+    directory = tmp_path.joinpath("part-" + "a" * padding, "part-" + "b" * 75)
     directory.mkdir(parents=True)
     temporary = directory / "next.tmp"
     manifest = directory / "manifest.json"

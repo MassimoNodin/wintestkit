@@ -80,18 +80,26 @@ def _text_matches(expected: str | re.Pattern[str], actual: str) -> bool:
 class Expectation:
     """Assertions about one target. Each assertion polls until it holds or times out."""
 
-    def __init__(self, target: Target, timeout: float | None = None, negate: bool = False) -> None:
+    def __init__(
+        self,
+        target: Target,
+        timeout: float | None = None,
+        negate: bool = False,
+        *,
+        secret: bool = False,
+    ) -> None:
         __tracebackhide__ = True
         self._target = target
         self._timeout = timeout
         self._negate = negate
+        self._secret = secret
         self._locator_error: LocatorError | None = None
 
     @property
     def not_(self) -> Expectation:
         """The same assertions, but waiting for the opposite to hold."""
         __tracebackhide__ = True
-        return Expectation(self._target, self._timeout, not self._negate)
+        return Expectation(self._target, self._timeout, not self._negate, secret=self._secret)
 
     # -- target access --------------------------------------------------------------------------
 
@@ -136,15 +144,23 @@ class Expectation:
         call = f"expect({qualname}).{'not_.' if self._negate else ''}{method}({shown})"
         budget = self._budget()
         locator_text = target.locator.describe()
-        secret = isinstance(target, BoundControl) and is_password_locator(target.locator)
+        secret = self._secret or (
+            isinstance(target, BoundControl) and is_password_locator(target.locator)
+        )
         args = {"expected": expected} if has_argument else {}
         latest: list[_Outcome] = []
 
         def poll() -> bool | None:
             __tracebackhide__ = True
+            nonlocal secret
             self._locator_error = None
             try:
-                outcome = evaluate(self._element() if method != "to_have_count" else None)
+                element = self._element() if method != "to_have_count" else None
+                if element is not None:
+                    record.sensitive = True
+                    secret = secret or actions.is_password(element)
+                    record.set_arguments(args, secret=secret)
+                outcome = evaluate(element)
             except AmbiguousElementError:
                 if method != "to_exist":
                     raise
@@ -157,7 +173,9 @@ class Expectation:
             passed = (not outcome.ok) if self._negate and not outcome.missing else outcome.ok
             return True if passed else None
 
-        with runtime.step(f"expect.{method}", qualname, locator_text, args, secret=secret):
+        with runtime.step(
+            f"expect.{method}", qualname, locator_text, args, secret=secret
+        ) as record:
             try:
                 waits.wait_until(poll, budget, description=call, retry_on=())
                 return
@@ -306,10 +324,10 @@ class Expectation:
         )
 
 
-def expect(target: Target, *, timeout: float | None = None) -> Expectation:
-    """Start an assertion about a bound element, elements or window."""
+def expect(target: Target, *, timeout: float | None = None, secret: bool = False) -> Expectation:
+    """Start an assertion; secret=True hides arguments and failure details for sensitive data."""
     __tracebackhide__ = True
-    return Expectation(target, timeout)
+    return Expectation(target, timeout, secret=secret)
 
 
 class _CallableModule(types.ModuleType):
@@ -320,9 +338,11 @@ class _CallableModule(types.ModuleType):
     attribute to the module, so the module must behave like the function too.
     """
 
-    def __call__(self, target: Target, *, timeout: float | None = None) -> Expectation:
+    def __call__(
+        self, target: Target, *, timeout: float | None = None, secret: bool = False
+    ) -> Expectation:
         __tracebackhide__ = True
-        return expect(target, timeout=timeout)
+        return expect(target, timeout=timeout, secret=secret)
 
 
 sys.modules[__name__].__class__ = _CallableModule

@@ -330,6 +330,44 @@ def test_password_expectations_are_redacted(
     assert steps[-1].args == {"expected": "***"}
 
 
+@pytest.mark.parametrize("explicit", [False, True])
+@pytest.mark.parametrize("negate", [False, True])
+def test_password_failure_never_discloses_expected_or_actual(
+    page: MainPage,
+    world: World,
+    steps: list[runtime.StepRecord],
+    explicit: bool,
+    negate: bool,
+) -> None:
+    assert world.element is not None
+    world.element.properties["IsPassword"] = not explicit
+    expected = "PRIVATE_EXPECTED_SENTINEL"
+    actual = expected if negate else "PRIVATE_ACTUAL_SENTINEL"
+    world.value = actual
+    assertion = expect(page.status, timeout=0, secret=explicit)
+    if negate:
+        assertion = assertion.not_
+    with pytest.raises(AssertionError) as failure:
+        assertion.to_have_value(expected)
+    for sentinel in (expected, actual):
+        assert sentinel not in str(failure.value)
+        assert sentinel not in str([record.to_dict() for record in steps])
+    assert steps[-1].args == {"expected": "***"}
+
+
+def test_password_property_failure_hides_wanted_text(
+    page: MainPage,
+    world: World,
+    steps: list[runtime.StepRecord],
+) -> None:
+    assert world.element is not None
+    world.element.properties.update(IsPassword=True, ValueValue="PRIVATE_ACTUAL_SENTINEL")
+    with pytest.raises(AssertionError) as failure:
+        expect(page.status, timeout=0).to_have_property("ValueValue", "PRIVATE_EXPECTED_SENTINEL")
+    assert "PRIVATE_" not in str(failure.value)
+    assert "PRIVATE_" not in str(steps[-1].to_dict())
+
+
 def test_element_gone_during_evaluation_is_retried(
     page: MainPage,
     world: World,

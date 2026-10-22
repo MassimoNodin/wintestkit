@@ -132,8 +132,9 @@ Shared [JSON schemas](../schemas/README.md) define the Python/editor contracts. 
 
 ## Releasing
 
-Follow the [release guide](releasing.md) for the one-time PyPI and Marketplace identity
-setup, local validation, dry runs, production tags, and recovery from partial publication.
-The release workflow runs the same CI checks on the tagged commit and publishes the tested
-Python distributions before the Windows VSIX packages. A GitHub Release is created only
-after both registries succeed. Missing required publishing settings fail the release.
+Follow the [release guide](releasing.md) for PyPI trusted-publisher setup, independent
+publication switches, local validation, dry runs, version/channel selection and recovery
+from partial publication. PyPI, Marketplace, Open VSX and public VSIX uploads are
+independent switches; leave a switch off to keep that destination unpublished. Only enabled
+targets require publishing credentials.
+Packaging success does not establish installed-extension, native WPF or ARM64 acceptance.

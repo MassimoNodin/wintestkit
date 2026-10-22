@@ -51,7 +51,7 @@ describe("relocation code action", () => {
       ]),
     } as never);
     const actions = provider.provideCodeActions(
-      { uri: { fsPath: "C:/demo/pages/main.py" } } as never,
+      { uri: { fsPath: "c:\\demo\\pages\\main.py" } } as never,
       { startLine: 4, endLine: 4 } as never,
     );
     expect(actions).toHaveLength(1);

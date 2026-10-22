@@ -12,6 +12,7 @@ from collections.abc import Mapping
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+VERSIONS = runpy.run_path(str(ROOT / "scripts/bump_version.py"))
 
 
 def validate_compatibility(
@@ -28,7 +29,11 @@ def validate_compatibility(
         raise ValueError("Compatibility minimum must be below maximumExclusive")
     if policy["extensionVersion"] != extension_version:
         raise ValueError("Compatibility extensionVersion does not match the extension manifest")
-    if not minimum <= version(python_version) < maximum:
+    python_release, prerelease = VERSIONS["release_version"](python_version)
+    channel = policy.get("channel", "stable")
+    if channel not in ("stable", "prerelease") or prerelease != (channel == "prerelease"):
+        raise ValueError("Compatibility channel must match the Python release channel")
+    if not minimum <= python_release < maximum:
         raise ValueError("Released Python version is outside the supported compatibility range")
     version(extension_version)
     protocols = (policy["protocolVersion"], protocol, schema_protocol)
@@ -52,20 +57,34 @@ def check_compatibility() -> None:
 
 
 def release_notes(changelog: str, version: str) -> str:
+    VERSIONS["release_version"](version)
+    unreleased = re.search(
+        r"^## \[Unreleased\][^\n]*\n(.*?)(?=^## |\Z)", changelog, re.MULTILINE | re.DOTALL
+    )
+    if unreleased and unreleased.group(1).strip():
+        raise ValueError(
+            "Move all Unreleased changes into a dated candidate section before releasing"
+        )
     pattern = rf"^## \[{re.escape(version)}\][^\n]*\n(.*?)(?=^## |\Z)"
     match = re.search(pattern, changelog, re.MULTILINE | re.DOTALL)
     if not match or not match.group(1).strip():
         raise ValueError(f"vscode/CHANGELOG.md needs a non-empty [{version}] section")
+    if not re.fullmatch(
+        rf"## \[{re.escape(version)}\] - \d{{4}}-\d{{2}}-\d{{2}}", match.group(0).splitlines()[0]
+    ):
+        raise ValueError(f"Release [{version}] needs a dated YYYY-MM-DD heading")
     return match.group(1).strip() + "\n"
 
 
 def missing_configuration(environment: Mapping[str, str]) -> list[str]:
     missing = []
-    if environment.get("PUBLISH_PYPI") != "true":
-        missing.append("PUBLISH_PYPI=true (environment variable)")
-    for name in ("AZURE_CLIENT_ID", "AZURE_TENANT_ID"):
-        if not environment.get(name, "").strip():
-            missing.append(f"{name} (environment secret)")
+    for gate in ("PUBLISH_PYPI", "PUBLISH_MARKETPLACE", "PUBLISH_OVSX", "PUBLISH_PUBLIC_VSIX"):
+        if environment.get(gate, "") not in ("", "true", "false"):
+            missing.append(f"{gate}=true or false (repository variable)")
+    if environment.get("PUBLISH_MARKETPLACE") == "true":
+        for name in ("AZURE_CLIENT_ID", "AZURE_TENANT_ID"):
+            if not environment.get(name, "").strip():
+                missing.append(f"{name} (environment secret)")
     if environment.get("PUBLISH_OVSX") == "true" and not environment.get("OVSX_TOKEN", "").strip():
         missing.append("OVSX_TOKEN (environment secret)")
     return missing

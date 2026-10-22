@@ -145,7 +145,7 @@ export class CheckDecorations implements vscode.Disposable {
         const options: vscode.DecorationOptions[] = [];
         for (const entry of this.results.entries.values()) {
           if (
-            entry.page.file !== editor.document.uri.fsPath ||
+            normalizedPath(entry.page.file) !== normalizedPath(editor.document.uri.fsPath) ||
             entry.result.status !== status
           )
             continue;

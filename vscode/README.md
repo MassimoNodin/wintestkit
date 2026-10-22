@@ -5,6 +5,11 @@ Microsoft UI Automation to find controls, so tests work against the real applica
 image matching. This extension is the editor side of the
 [`wintestkit`](https://pypi.org/project/wintestkit/) Python package.
 
+The extension is in a public **pre-release** (0.1): install it from the Marketplace and
+choose **Switch to Pre-Release Version**. Expect rough edges and changes between versions.
+It needs the matching `wintestkit` Python package in your selected interpreter. Local VSIX
+build instructions are in the repository release guide.
+
 ```python
 from wintestkit import Element, Page, Window, expect
 

@@ -350,6 +350,43 @@ def test_failed_action_records_the_error(
     assert runtime_setup[0].error == {"type": "ActionError", "message": "cannot hover"}
 
 
+@pytest.mark.parametrize("explicit", [False, True])
+@pytest.mark.parametrize("method", ["type", "press"])
+def test_id_only_password_and_explicit_secret_hide_input_and_provider_errors(
+    page: MainPage,
+    recorder: Recorder,
+    monkeypatch: pytest.MonkeyPatch,
+    runtime_setup: list[runtime.StepRecord],
+    explicit: bool,
+    method: str,
+) -> None:
+    recorder.element.properties["IsPassword"] = not explicit
+    sentinel = "PRIVATE_INPUT_SENTINEL"
+
+    def fail(*args: Any, **kwargs: Any) -> None:
+        raise ActionError(f"provider rejected {sentinel}")
+
+    monkeypatch.setattr(actions, "type_text" if method == "type" else "press", fail)
+    with pytest.raises(ActionError) as failure:
+        getattr(page.status, method)(sentinel, secret=explicit)
+    assert sentinel not in str(failure.value)
+    assert sentinel not in str([record.to_dict() for record in runtime_setup])
+    assert runtime_setup[-1].status == "failed"
+
+
+def test_id_only_password_success_is_redacted(
+    page: MainPage,
+    recorder: Recorder,
+    monkeypatch: pytest.MonkeyPatch,
+    runtime_setup: list[runtime.StepRecord],
+) -> None:
+    recorder.element.properties["IsPassword"] = True
+    monkeypatch.setattr(actions, "type_text", lambda *args, **kwargs: "value")
+    page.status.type("PRIVATE_INPUT_SENTINEL")
+    assert runtime_setup[-1].args["text"] == runtime.REDACTED
+    assert "PRIVATE_INPUT_SENTINEL" not in str(runtime_setup[-1].to_dict())
+
+
 @pytest.mark.parametrize(
     ("method", "args", "action"),
     [

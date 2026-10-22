@@ -1,9 +1,16 @@
 # Changelog
 
 All notable changes to WinTestKit (the `wintestkit` Python package and this extension, which are
-released together with the same version) are documented here.
+sharing a version by default for stable releases) are documented here. Formal Python prereleases use
+an explicitly selected, distinct numeric extension version and prerelease channel metadata.
+Unreleased changes must be moved to a dated candidate section before a release can pass checks.
 
 ## [Unreleased]
+
+## [0.1.1rc1] - 2026-10-22
+
+First public prerelease. Install the extension's pre-release channel together with
+`pip install --pre "wintestkit==0.1.1rc1"`.
 
 - Restore reloaded optional tutorials paused and resumable; release tutorial UI state before
   saving completion, and ignore picker activity from hidden, cancelled, or superseded sessions.

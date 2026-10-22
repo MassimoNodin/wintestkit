@@ -988,24 +988,50 @@ class _Valued(BoundControl):
 
 class _TextEntry(_Valued):
     def type(
-        self, text: str, *, clear: bool = True, keys: bool = False, timeout: float | None = None
+        self,
+        text: str,
+        *,
+        clear: bool = True,
+        keys: bool = False,
+        timeout: float | None = None,
+        secret: bool = False,
     ) -> None:
+        """Type text; password controls and explicit secrets hide input and failure details."""
         __tracebackhide__ = True
-        secret = is_password_locator(self.locator)
-        with self.step("type", {"text": text, "clear": clear, "keys": keys}, secret=secret) as rec:
-            rec.args["strategy"] = self.perform(
-                timeout, lambda el: actions.type_text(el, text, clear=clear, keys=keys)
-            )
+        secret = secret or is_password_locator(self.locator)
+        args = {"text": text, "clear": clear, "keys": keys}
+        with self.step("type", args, secret=True) as rec:
+
+            def enter(el: UIAElement) -> str:
+                __tracebackhide__ = True
+                nonlocal secret
+                rec.sensitive = True
+                secret = secret or actions.is_password(el)
+                rec.set_arguments(args, secret=secret)
+                return actions.type_text(el, text, clear=clear, keys=keys)
+
+            rec.args["strategy"] = self.perform(timeout, enter)
 
     def clear(self, *, timeout: float | None = None) -> None:
         __tracebackhide__ = True
         with self.step("clear"):
             self.perform(timeout, actions.clear)
 
-    def press(self, keys: str, *, timeout: float | None = None) -> None:
+    def press(self, keys: str, *, timeout: float | None = None, secret: bool = False) -> None:
+        """Press keys; use secret=True to hide sensitive input on non-password controls."""
         __tracebackhide__ = True
-        with self.step("press", {"keys": keys}):
-            self.perform(timeout, lambda el: actions.press(el, keys))
+        secret = secret or is_password_locator(self.locator)
+        with self.step("press", {"keys": keys}, secret=True) as rec:
+
+            def send(el: UIAElement) -> None:
+                __tracebackhide__ = True
+                nonlocal secret
+                rec.sensitive = True
+                secret = secret or actions.is_password(el)
+                rec.set_arguments({"keys": keys}, secret=secret)
+                actions.press(el, keys)
+
+            self.perform(timeout, send)
 
 
 class _Checkable(BoundControl):

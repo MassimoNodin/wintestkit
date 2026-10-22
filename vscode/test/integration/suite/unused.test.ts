@@ -1,5 +1,6 @@
 ﻿import * as assert from "node:assert/strict";
 import * as vscode from "vscode";
+import type { ExtensionApi } from "../../../src/extension";
 
 interface ScanApi {
   scan(): Promise<{ cancelled: boolean; capped: boolean; unavailable: number }>;
@@ -11,18 +12,18 @@ interface ScanApi {
 suite("Unused definitions", () => {
   test("flags Calculator definitions that the Python language server finds no references for", async function () {
     this.timeout(240000);
-    const extension = vscode.extensions.getExtension("wintestkit.wintestkit");
+    const extension = vscode.extensions.getExtension<ExtensionApi>("wintestkit.wintestkit");
     assert.ok(extension);
     const api = await extension.activate();
     const unused = api.unused as ScanApi;
     const folder = vscode.workspace.workspaceFolders?.[0];
     assert.ok(folder);
     await vscode.commands.executeCommand("wintestkit.elements.refresh");
-    let project: unknown;
+    let project: ExtensionApi["projects"]["all"][number] | undefined;
     let pages: Array<{ qualname: string; elements: Array<{ id: string; name: string }> }> = [];
     for (let attempt = 0; attempt < 120 && pages.length === 0; attempt++) {
-      project = api.elements.projects.all[0];
-      const result = project ? api.elements.discovery.get(project) : undefined;
+      project = api.projects.all[0];
+      const result = project ? api.discovery.get(project) : undefined;
       pages = result?.pages ?? [];
       if (pages.length === 0) await new Promise((resolve) => setTimeout(resolve, 500));
     }

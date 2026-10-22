@@ -12,12 +12,13 @@ import time
 from collections.abc import Callable, Generator, Iterable, Mapping
 from contextlib import contextmanager
 from contextvars import ContextVar
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import PurePath
 from types import TracebackType
 from typing import Any, Literal, cast
 
 from wintestkit.config import WtkConfig, load_config
+from wintestkit.errors import ActionError
 
 log = logging.getLogger("wintestkit.runtime")
 
@@ -42,6 +43,14 @@ class StepRecord:
     status: Literal["passed", "failed"] = "passed"
     error: dict[str, Any] | None = None
     screenshot: str | None = None
+    sensitive: bool = field(default=False, repr=False)
+
+    def set_arguments(self, args: Mapping[str, Any], *, secret: bool) -> None:
+        __tracebackhide__ = True
+        self.sensitive = secret or any(
+            part in key.lower() for key in args for part in _SECRET_NAME_PARTS
+        )
+        self.args = _redact(args, secret)
 
     def to_dict(self) -> dict[str, Any]:
         __tracebackhide__ = True
@@ -263,6 +272,16 @@ class _StepContext:
         record.duration = time.perf_counter() - self._started
         if exc is not None:
             record.status = "failed"
+            if record.sensitive:
+                record.args = _redact(record.args, True)
+                safe_error = (
+                    AssertionError("Sensitive assertion failed (details redacted)")
+                    if isinstance(exc, AssertionError)
+                    else ActionError("Sensitive action failed (details redacted)")
+                )
+                record.error = _error_info(safe_error)
+                _notify(record)
+                raise safe_error from None
             record.error = _error_info(exc)
             _notify(record)
             return
@@ -281,7 +300,9 @@ def step(
     secret: bool = False,
 ) -> _StepContext:
     """Record one step. Arguments named like secrets (or all of them with ``secret=True``) are
-    replaced by ``"***"`` before anything is stored or sent to listeners."""
+    replaced by ``"***"`` before anything is stored or sent to listeners.
+    Sensitive failures replace provider details with a safe action or assertion error.
+    """
     __tracebackhide__ = True
     global _seq
     with _lock:
@@ -295,5 +316,7 @@ def step(
             locator=locator,
             args=_redact(args, secret),
             start=time.time(),
+            sensitive=secret
+            or any(part in key.lower() for key in (args or {}) for part in _SECRET_NAME_PARTS),
         )
     )

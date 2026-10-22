@@ -12,6 +12,7 @@ vi.mock("vscode", () => ({
   window: { showOpenDialog: mocks.dialog },
 }));
 import { DevPackages } from "../../src/setup/devPackages";
+import { ALLOW_PRERELEASE, PYTHON_REQUIREMENT } from "../../src/compatibility";
 
 const folder = { toString: () => "file:///work" } as vscode.Uri;
 function source() {
@@ -37,7 +38,7 @@ describe("development package selection", () => {
     } as unknown as vscode.Memento);
     await expect(packages.arguments(folder)).rejects.toThrow("too new");
   });
-  it.each(["0.1.0", "0.2.0", "0.1.2rc1", "unknown"])("rejects incompatible local wheel %s", async (version) => {
+  it.each(["0.1.0", "0.2.0", ...(ALLOW_PRERELEASE ? [] : ["0.1.2rc1"]), "unknown"])("rejects incompatible local wheel %s", async (version) => {
     const packages = source();
     mocks.dialog.mockResolvedValue([wheel("wintestkit-" + version + "-py3-none-any.whl")]);
     await expect(packages.select(folder, "local")).rejects.toThrow("requires wintestkit");
@@ -53,7 +54,7 @@ describe("development package selection", () => {
     expect(mocks.dialog).toHaveBeenCalledOnce();
     await packages.select(folder, "remote");
     expect(packages.view(folder)).toEqual({ source: "remote" });
-    expect(await packages.arguments(folder)).toEqual(["-m", "pip", "install", "--upgrade", "--force-reinstall", "wintestkit>=0.1.1,<0.2.0"]);
+    expect(await packages.arguments(folder)).toEqual(["-m", "pip", "install", "--upgrade", "--force-reinstall", ...(ALLOW_PRERELEASE ? ["--pre"] : []), PYTHON_REQUIREMENT]);
   });
   it("preserves the selected source when the picker is cancelled", async () => {
     const packages = source();

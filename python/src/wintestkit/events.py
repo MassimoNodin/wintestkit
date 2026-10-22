@@ -15,6 +15,7 @@ from urllib.parse import unquote, urlparse
 log = logging.getLogger("wintestkit.events")
 
 CONNECT_TIMEOUT = 5.0
+WRITE_TIMEOUT = 1.0
 
 
 class EventSink(Protocol):
@@ -66,12 +67,16 @@ class TcpSink:
         self.port = port
         self._lock = threading.Lock()
         self._socket: socket.socket | None = None
+        connection: socket.socket | None = None
         try:
             connection = socket.create_connection((host, port), timeout=CONNECT_TIMEOUT)
-            connection.settimeout(None)
+            connection.settimeout(WRITE_TIMEOUT)
             connection.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
             self._socket = connection
         except OSError:
+            if connection is not None:
+                with contextlib.suppress(OSError):
+                    connection.close()
             log.warning("could not connect to the event server %s:%d", host, port, exc_info=True)
 
     def emit(self, event: dict[str, Any]) -> None:

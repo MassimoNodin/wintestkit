@@ -3,8 +3,11 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { packageArguments, packageOptions } from "./package.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
+const options = packageOptions(process.argv.slice(2));
+const policy = JSON.parse(await readFile(path.join(root, "src/compatibility.json"), "utf8"));
 const stage = await mkdtemp(path.join(tmpdir(), "wintestkit-dev-"));
 const manifest = JSON.parse(await readFile(path.join(root, "package.json"), "utf8"));
 const run = (args, cwd) => {
@@ -29,6 +32,6 @@ delete manifest.devDependencies;
 await writeFile(path.join(stage, "package.json"), JSON.stringify(manifest, null, 2) + "\n");
 await writeFile(path.join(stage, ".vscodeignore"), "dist/*.map\n");
 await mkdir(path.join(root, "dist"), { recursive: true });
-const output = path.join(root, "dist", "wintestkit-dev-win32-x64-" + manifest.version + ".vsix");
-run([path.join(root, "node_modules/@vscode/vsce/vsce"), "package", "--no-dependencies", "--target", "win32-x64", "-o", output], stage);
+const output = path.resolve(root, options.output ?? path.join("dist", "wintestkit-dev-" + options.target + "-" + manifest.version + ".vsix"));
+run([path.join(root, "node_modules/@vscode/vsce/vsce"), ...packageArguments(manifest, policy, { ...options, output, noDependencies: true })], stage);
 console.log("Development VSIX: " + output);

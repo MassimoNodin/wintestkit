@@ -11,6 +11,7 @@ import {
   type HealthProbes,
 } from "../../src/setup/health";
 import { SetupTracker } from "../../src/setup/tracker";
+import { ALLOW_PRERELEASE, PYTHON_REQUIREMENT } from "../../src/compatibility";
 
 const check = (id: string, status: DoctorCheck["status"], detail = "detail", hint?: string): DoctorCheck => ({
   id,
@@ -65,14 +66,14 @@ describe("doctor output", () => {
 });
 
 describe("gathering health", () => {
-  it.each(["0.1.0", "0.2.0", "0.1.2rc1", undefined])("blocks unsupported package %s before doctor runs", async (version) => {
+  it.each(["0.1.0", "0.2.0", ...(ALLOW_PRERELEASE ? [] : ["0.1.2rc1"]), undefined])("blocks unsupported package %s before doctor runs", async (version) => {
     let doctorCalled = false;
     const health = await gatherHealth(probes({
       packageInfo: async () => ({ installed: true, version }),
       doctor: async () => { doctorCalled = true; return []; },
     }));
     expect(health.package.state).toBe("broken");
-    expect(health.package.detail).toContain("wintestkit>=0.1.1,<0.2.0");
+    expect(health.package.detail).toContain(PYTHON_REQUIREMENT);
     expect(health.package.detail).toContain("C:/py/python.exe");
     expect(health.machine.state).toBe("pending");
     expect(doctorCalled).toBe(false);

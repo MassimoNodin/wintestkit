@@ -7,6 +7,7 @@ import type { FlowStatus } from "./lensModel";
 import { RpcError } from "../server/jsonrpc";
 import type { ServerManager } from "../server/serverManager";
 import { recoverStoppedApp } from "./appRecovery";
+import { saveExecutionSources } from "../testing/saveSources";
 
 export interface FlowTarget {
   file: string;
@@ -68,6 +69,11 @@ export class FlowRuns implements vscode.Disposable {
     const pending: FlowStatus = { status: "running" };
     this.set(key, pending);
     try {
+      if (!(await saveExecutionSources(this.projects, project))) {
+        this.states.delete(key);
+        this.changed.fire();
+        return;
+      }
       const connection = await this.servers.get(project);
       let result: FlowRunResult;
       try {

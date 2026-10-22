@@ -27,7 +27,7 @@ wtk run -- -p no:cacheprovider --maxfail=3  # raw pytest arguments after --
 | `--screenshots {off,on-failure,every-step}` | When to capture screenshots |
 | `--highlight` | Flash each element before acting |
 | `--slowmo MS` | Pause after every action (for watching a run) |
-| `--report DIR` / `--no-report` | Report directory / don't write a report |
+| `--report DIR` / `--no-report` | Report directory / disable reports and automatic capture artifacts |
 | `--no-html` | Write `results.json` but not `index.html` (the VS Code Testing view uses this) |
 | `--junit PATH` | Also write JUnit XML |
 | `--events URL` | Stream run events (see below) |
@@ -154,6 +154,14 @@ the UI tree dump and captured stdout, stderr and logs. Failure artifacts are sto
 screenshots, like replay frames, use lossless WebP with unchanged pixels and dimensions.
 Older PNG reports remain readable. Results are also saved
 as `wtk-report/results.json`.
+
+`wtk run --no-report` (plain pytest: `--wtk-no-report`) disables automatic failure
+and step screenshots, UI tree evidence, replays and saved-object previews, as well
+as report output. It does not delete older artifacts, suppress test stdout or
+explicit event/JUnit outputs, or prevent screenshots explicitly requested by your
+own test code. `--no-html` only suppresses HTML and is not a privacy switch.
+With reports enabled, failure capture can include the whole desktop, including
+when a failing test has no `app` fixture; keep reports private and review them.
 
 WinTestKit clears only the files it created in the report directory (`index.html`,
 `results.json`, `artifacts/`) at the start of a run. To regenerate `index.html` from
