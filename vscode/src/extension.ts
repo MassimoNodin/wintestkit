@@ -220,7 +220,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
   context.subscriptions.push(
     lenses,
     checks,
-    new CheckDecorations(checks, context.extensionUri),
+    new CheckDecorations(checks),
     new HighlightCommands(projects, discovery, servers, checks, log),
     new RelocationActions(checks),
   );

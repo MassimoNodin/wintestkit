@@ -516,6 +516,35 @@
     "InspectHighlightResult": {
       "type": "null"
     },
+    "PreviewImage": {
+      "type": "object",
+      "properties": {
+        "data": { "type": "string", "pattern": "^[A-Za-z0-9+/]+={0,2}$" },
+        "width": { "type": "integer", "minimum": 1 },
+        "height": { "type": "integer", "minimum": 1 }
+      },
+      "required": ["data", "width", "height"],
+      "additionalProperties": false
+    },
+    "InspectPreviewParams": {
+      "type": "object",
+      "properties": {
+        "nodeId": {
+          "type": "string"
+        }
+      },
+      "required": ["nodeId"],
+      "additionalProperties": false
+    },
+    "InspectPreviewResult": {
+      "type": "object",
+      "properties": {
+        "element": { "$ref": "rpc.schema.json#/$defs/PreviewImage" },
+        "window": { "$ref": "rpc.schema.json#/$defs/PreviewImage" },
+        "reason": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
     "SuggestLocatorParams": {
       "type": "object",
       "properties": {

@@ -51,8 +51,9 @@ def test_sign_in(app):
   highlight/check page elements, or run flows that only need `app` inline. Use the beaker action in the view header to open VS Code's Testing view and run or debug tests.
 - **Spy.** Explore the live UI Automation tree. **Pick element** and **Refresh objects** stay in
   the Spy toolbar. Hold **Ctrl** and click a control, or press **Esc** to cancel. The Spy shows
-  properties, supported patterns and a suggested locator, and **Add to page…** inserts it into a
-  page class for you.
+  properties and supported patterns. **Generate suggested locator** (on request: it can take
+  20 seconds or more in large apps) makes a locator, and **Add to page…** inserts it into a page
+  class for you.
 - **Reports.** Every run writes a self-contained HTML report with steps, screenshots and failure
   diagnostics. After a failing run, a notification opens it; **WinTestKit: Open Last Report** opens
   it any time.

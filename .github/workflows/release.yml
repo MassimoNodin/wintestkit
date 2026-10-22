@@ -93,7 +93,20 @@ jobs:
         with:
           version: "0.12.5"
       - name: Publish tested distributions using only PyPI OIDC
-        run: uv publish --trusted-publishing always --check-url https://pypi.org/simple/ (Get-ChildItem artifacts -File).FullName
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          # Rebuilt distributions are not byte-identical, so a retry after a successful upload
+          # must not try to re-upload; skip only when PyPI already has every file by name.
+          $local = (Get-ChildItem artifacts -File).Name
+          try {
+            $remote = (Invoke-RestMethod "https://pypi.org/pypi/wintestkit/$env:VERSION/json").urls.filename
+            if (-not ($local | Where-Object { $remote -notcontains $_ })) {
+              Write-Host "PyPI already has $env:VERSION ($($local -join ', ')); skipping upload."
+              exit 0
+            }
+          } catch { Write-Host "PyPI has no $env:VERSION yet; uploading." }
+          uv publish --trusted-publishing always --check-url https://pypi.org/simple/ (Get-ChildItem artifacts -File).FullName
 
   extension:
     needs: [version, checks]

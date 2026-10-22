@@ -7,7 +7,7 @@ import type {
   Suggestion,
 } from "../protocol/generated";
 import type { TourView } from "../setup/tour";
-import type { ObjectPreview } from "./objectPreviews";
+import { MAX_PREVIEW_DATA_URL, type PreviewImages } from "./objectPreviews";
 
 export const SPY_TOUR_ACTIONS = ["back", "next", "close", "disable", "skip", "finish"] as const;
 
@@ -29,10 +29,12 @@ export type SpyRequest =
       nodeId: string;
     }
   | { type: "copy"; text: string }
+  | { type: "generateLocator"; nodeId: string }
+  | { type: "openPreview"; view: "element" | "window"; dataUrl: string }
   | { type: "openDefinition"; id: string };
 export type SpyResponse =
-  | { type: "savedDefinition"; id: string; qualname: string; preview?: ObjectPreview; reason?: string }
-  | { type: "objectPreview"; nodeId: string; preview?: ObjectPreview; reason?: string }
+  | { type: "savedDefinition"; id: string; qualname: string; preview?: PreviewImages; reason?: string }
+  | { type: "objectPreview"; nodeId: string; preview?: PreviewImages; reason?: string }
   | { type: "enumerationIncomplete"; message: string; nodeId?: string }
   | { type: "rootIcons"; icons: Record<string, string> }
   /** The guided tour is showing: dull the panel, and light Pick element when it is the subject. */
@@ -54,6 +56,9 @@ export type SpyResponse =
       picking: boolean;
       appRunning: boolean;
       targetName: string;
+      /** The selected application's name and processes: its root windows are marked in the tree. */
+      appName?: string;
+      appPids?: number[];
       hasProject: boolean;
       showOtherApps: boolean;
       bringToFront: boolean;
@@ -66,6 +71,7 @@ export type SpyResponse =
       properties: InspectPropertiesResult;
       suggestion?: Suggestion;
     }
+  | { type: "suggestionLoading"; nodeId: string }
   | { type: "suggestion"; nodeId: string; suggestion: Suggestion }
   | { type: "suggestionUnavailable"; nodeId: string; reason: string }
   | {
@@ -121,7 +127,7 @@ export function parseSpyRequest(value: unknown): SpyRequest | undefined {
       type: message.type as "pick" | "stopPick" | "refresh" | "addToPage" | "chooseApp",
     };
   if (
-    ["expand", "select", "highlight", "loadProperties"].includes(
+    ["expand", "select", "highlight", "loadProperties", "generateLocator"].includes(
       String(message.type),
     ) &&
     typeof message.nodeId === "string" &&
@@ -129,7 +135,7 @@ export function parseSpyRequest(value: unknown): SpyRequest | undefined {
   )
     return {
       type: message.type as
-        "expand" | "select" | "highlight" | "loadProperties",
+        "expand" | "select" | "highlight" | "loadProperties" | "generateLocator",
       nodeId: message.nodeId,
     };
   if (
@@ -138,6 +144,14 @@ export function parseSpyRequest(value: unknown): SpyRequest | undefined {
     message.text.length <= 100000
   )
     return { type: "copy", text: message.text };
+  if (
+    message.type === "openPreview" &&
+    (message.view === "element" || message.view === "window") &&
+    typeof message.dataUrl === "string" &&
+    message.dataUrl.startsWith("data:image/webp;base64,") &&
+    message.dataUrl.length <= MAX_PREVIEW_DATA_URL
+  )
+    return { type: "openPreview", view: message.view, dataUrl: message.dataUrl };
   if (
     message.type === "openDefinition" &&
     typeof message.id === "string" &&

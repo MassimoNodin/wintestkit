@@ -10,6 +10,7 @@ import pytest
 from rpc_support import RpcElement, make_server, request
 
 from wintestkit.engine import spy, suggest
+from wintestkit.errors import UIAError
 from wintestkit.uia import win32
 from wintestkit.uia.constants import CONTROL_TYPES, TreeScope
 from wintestkit.uia.element import (
@@ -174,10 +175,10 @@ def test_callback_blocked_in_registration_cannot_publish_after_stop(
     released = threading.Event()
     original = server._register
 
-    def register(element: Any) -> Any:
+    def register(element: Any, *args: Any, **kwargs: Any) -> Any:
         entered.set()
         assert released.wait(2)
-        return original(element)
+        return original(element, *args, **kwargs)
 
     monkeypatch.setattr(server, "_register", register)
     worker = threading.Thread(target=first.pick, args=(button,))
@@ -258,6 +259,40 @@ def test_stale_sibling_preserves_partial_nodes(
     assert error["data"]["errors"] == [{"index": 1, "message": "stale sibling"}]
 
 
+def test_children_without_a_runtime_id_are_keyed_by_their_place_under_the_parent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    server, output, button = make_server(tmp_path, monkeypatch)
+    request(server, output, "initialize", {"root": str(tmp_path)})
+    parent = server._register(button)
+    anonymous = RpcElement("Pane", "custom content")
+    anonymous.runtime_id = ""  # TeamViewer's custom-drawn content reports an empty runtime id
+    named = RpcElement("Button", "named")
+    siblings = [named, anonymous]
+    monkeypatch.setattr(button, "find_all", lambda *args, **kwargs: siblings)
+    first = request(server, output, "inspect.children", {"nodeId": parent["nodeId"]})["result"]
+    second = request(server, output, "inspect.children", {"nodeId": parent["nodeId"]})["result"]
+    anonymous_id = f"{parent['nodeId']}~1"
+    assert [node["nodeId"] for node in first] == [named.runtime_id, anonymous_id]
+    assert [node["nodeId"] for node in second] == [named.runtime_id, anonymous_id]
+    assert first[1]["info"]["runtimeId"] == anonymous_id
+    assert server.nodes[anonymous_id] is anonymous
+    # The key reaches the element again, so the node can be expanded and inspected.
+    properties = request(server, output, "inspect.properties", {"nodeId": anonymous_id})
+    assert properties["result"]["info"]["name"] == "custom content"
+
+
+def test_a_root_without_a_runtime_id_is_still_reported(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    server, output, _button = make_server(tmp_path, monkeypatch)
+    request(server, output, "initialize", {"root": str(tmp_path)})
+    assert server.app is not None
+    server.app.windows[0].runtime_id = ""  # type: ignore[attr-defined]
+    error = request(server, output, "inspect.roots")["error"]
+    assert error["data"]["errors"] == [{"index": 0, "message": "element has no runtime id"}]
+
+
 def test_com_array_retains_successful_sibling_slots() -> None:
     class Array:
         Length = 3
@@ -276,63 +311,39 @@ def test_com_array_retains_successful_sibling_slots() -> None:
 
 @pytest.mark.parametrize("method", ["inspect.roots", "inspect.refresh"])
 @pytest.mark.parametrize("attached", [False, True])
-@pytest.mark.parametrize("failed_slots,mixed", [((1,), False), ((1,), True), ((1, 4), True)])
-def test_desktop_partial_enumeration_preserves_source_indices(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    method: str,
-    attached: bool,
-    failed_slots: tuple[int, ...],
-    mixed: bool,
+def test_desktop_roots_report_unavailable_windows_by_source_index(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, method: str, attached: bool
 ) -> None:
     server, output, _ = make_server(tmp_path, monkeypatch)
     request(server, output, "initialize", {"root": str(tmp_path)})
     if not attached:
         monkeypatch.setattr(server, "_app", lambda required=True: None)
-    raw = [
-        DescriptionRaw("popup", 0, class_name="Xaml_WindowedPopupClass"),
-        DescriptionRaw("missing", 1),
-        DescriptionRaw("survivor", 2),
-        DescriptionRaw("stale", 3, unavailable=True),
-        DescriptionRaw("other", 4),
-        DescriptionRaw("last", 5),
-    ]
-    if not mixed:
-        raw = [DescriptionRaw("first", 0), DescriptionRaw("missing", 1), DescriptionRaw("last", 2)]
+    windows = {
+        100: DescriptionRaw("popup", 0, class_name="Xaml_WindowedPopupClass"),
+        101: None,  # closed while the desktop was listed
+        102: DescriptionRaw("survivor", 2),
+        103: DescriptionRaw("stale", 3, unavailable=True),
+        104: DescriptionRaw("last", 5),
+    }
 
-    class Array:
-        Length = len(raw)
+    def from_handle(hwnd: int) -> UIAElement:
+        raw = windows[hwnd]
+        if raw is None:
+            raise UIAError("The UI element is no longer available", element_gone=True)
+        return UIAElement(raw)
 
-        def GetElement(self, index: int) -> Any:
-            if index in failed_slots:
-                raise RuntimeError(f"raw slot {index} unavailable")
-            return raw[index]
-
-    class Desktop:
-        def FindAll(self, scope: int, condition: Any) -> Any:
-            assert scope == int(TreeScope.Children)
-            return Array()
-
-    monkeypatch.setattr(
-        "wintestkit.uia.com.get_uia",
-        lambda: SimpleNamespace(GetRootElement=lambda: Desktop(), ControlViewCondition=object()),
-    )
+    monkeypatch.setattr("wintestkit.uia.win32.desktop_windows", lambda: list(windows))
+    monkeypatch.setattr("wintestkit.uia.element.from_handle", from_handle)
     params = {"includeOtherApps": True} if attached else {}
     error = request(server, output, method, params)["error"]
     assert error["code"] == -32005
     data = error["data"]
     assert data["complete"] is False
-    expected = (["Demo"] if attached else []) + (["survivor"] if mixed else ["first"])
-    if mixed and 4 not in failed_slots:
-        expected.append("other")
-    expected.append("last")
-    assert [node["info"]["name"] for node in data["nodes"]] == expected
-    expected_errors = [
-        {"index": index, "message": f"raw slot {index} unavailable"} for index in failed_slots
-    ]
-    if mixed:
-        expected_errors.append({"index": 3, "message": "description unavailable"})
-    assert data["errors"] == expected_errors
+    assert [node["info"]["name"] for node in data["nodes"]] == (
+        (["Demo"] if attached else []) + ["survivor", "last"]
+    )
+    # The closed window is skipped quietly; the index counts only the windows that were listed.
+    assert data["errors"] == [{"index": 2, "message": "description unavailable"}]
     assert all(node["nodeId"] in server.nodes for node in data["nodes"])
 
 

@@ -192,6 +192,12 @@ def definition_examples() -> dict[str, dict[str, Any]]:
             "bringToFront": True,
         },
         "InspectHighlightResult": None,
+        "PreviewImage": {"data": "UklGRg==", "width": 4, "height": 2},
+        "InspectPreviewParams": {"nodeId": node["nodeId"]},
+        "InspectPreviewResult": {
+            "element": {"data": "UklGRg==", "width": 4, "height": 2},
+            "window": {"data": "UklGRg==", "width": 40, "height": 20},
+        },
         "SuggestLocatorParams": {"nodeId": node["nodeId"]},
         "SuggestLocatorResult": fixture_data("suggestion.json"),
         "DefinitionMatch": {
@@ -344,6 +350,16 @@ def test_invalid_item_selectors(validate: Validate, data: Any) -> None:
         ("rpc.schema.json", "DiscoverParams", {"overrides": {"file.py": 42}}),
         ("rpc.schema.json", "InspectRootsParams", {"includeOtherApps": "yes"}),
         ("rpc.schema.json", "InspectHighlightResult", {}),
+        (
+            "rpc.schema.json",
+            "InspectPreviewResult",
+            {"element": {"data": "not base64!", "width": 1, "height": 1}},
+        ),
+        (
+            "rpc.schema.json",
+            "InspectPreviewResult",
+            {"window": {"data": "AAAA", "width": 0, "height": 1}},
+        ),
         ("rpc.schema.json", "LogNotification", {"level": "trace", "message": "test"}),
     ],
 )

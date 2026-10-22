@@ -212,8 +212,21 @@
                                 <h2>Suggested locator</h2>
                                 <span id="badge" hidden></span>
                             </div>
-                            <pre><code id="code">Select an object to generate a locator.</code></pre>
-                            <div class="actions">
+                            <div id="locator-slot">
+                                <button
+                                    id="generate"
+                                    title="Searches the whole window for each candidate locator. In large applications this can take 20 seconds or more."
+                                >
+                                    <span class="codicon codicon-wand" aria-hidden="true"></span
+                                    ><span id="generate-label">Generate suggested locator</span>
+                                </button>
+                                <p id="locator-busy" role="status" aria-live="polite" hidden>
+                                    <span class="codicon codicon-loading locator-spinner" aria-hidden="true"></span>
+                                    Generating locator… this can take 20 seconds or more in large applications.
+                                </p>
+                            </div>
+                            <pre id="locator-result" hidden><code id="code"></code></pre>
+                            <div id="locator-actions" class="actions" hidden>
                                 <button id="copy" class="secondary" disabled>
                                     <span
                                         class="codicon codicon-copy"
@@ -236,10 +249,21 @@
                     >
                         <div class="pane-heading"><h2>Properties</h2></div>
                         <div class="properties-scroll">
-                            <section id="object-preview" class="property-group" hidden aria-label="Last-test object preview">
-                                <h3>Last-test preview</h3>
+                            <section id="object-preview" class="property-group" hidden aria-label="Object preview">
+                                <div class="preview-heading">
+                                    <h3>Preview</h3>
+                                    <button id="preview-open" class="icon-button secondary" disabled aria-label="Open the image in VS Code's image viewer" title="Open in VS Code's image viewer to zoom and pan">
+                                        <span class="codicon codicon-link-external" aria-hidden="true"></span>
+                                    </button>
+                                    <div id="preview-mode" role="group" aria-label="Preview view">
+                                        <button id="preview-element" class="secondary" aria-pressed="true" title="Show just the object">Element</button>
+                                        <button id="preview-context" class="secondary" aria-pressed="false" title="Show the object outlined in its window">In context</button>
+                                    </div>
+                                </div>
+                                <div id="object-preview-frame">
+                                    <img id="object-preview-image" alt="Preview of the selected object" hidden />
+                                </div>
                                 <p id="object-preview-status" class="muted" role="status"></p>
-                                <img id="object-preview-image" alt="Saved object crop from the last test" hidden />
                             </section>
                             <section id="inspection-section" class="property-group" hidden>
                                 <h3>Inspection</h3>

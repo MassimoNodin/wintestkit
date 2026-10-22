@@ -4,6 +4,9 @@ import type { CheckResult } from "../protocol/generated";
 import { normalizedPath } from "../projects";
 import type { ActionFeedback, ActionStatus, ElementAction } from "./lensModel";
 
+/** VS Code clamps a column past the end of a line to the end of that line. */
+const END_OF_LINE = Number.MAX_SAFE_INTEGER;
+
 export interface CheckedElement extends LocatedElement {
   result: CheckResult;
 }
@@ -88,24 +91,13 @@ export class CheckDecorations implements vscode.Disposable {
   );
   private readonly styles: Record<string, vscode.TextEditorDecorationType>;
   private readonly subscriptions: vscode.Disposable[];
-  constructor(
-    private readonly results: CheckResultsStore,
-    extensionUri: vscode.Uri,
-  ) {
+  constructor(private readonly results: CheckResultsStore) {
+    // Only problems are marked, with inline text and no gutter icon. A passing element is left
+    // unmarked; the "Check: Found" CodeLens still reports it.
     this.styles = Object.fromEntries(
-      ["found", "not_found", "ambiguous", "error"].map((status) => [
+      ["not_found", "ambiguous", "error"].map((status) => [
         status,
         vscode.window.createTextEditorDecorationType({
-          gutterIconPath: vscode.Uri.joinPath(
-            extensionUri,
-            "media",
-            status === "found"
-              ? "check.svg"
-              : status === "ambiguous"
-                ? "warning.svg"
-                : "cross.svg",
-          ),
-          gutterIconSize: "contain",
           after: { color: new vscode.ThemeColor("editorCodeLens.foreground") },
         }),
       ]),
@@ -151,15 +143,14 @@ export class CheckDecorations implements vscode.Disposable {
             continue;
           const line = entry.element.range.start.line;
           const text =
-            status === "found"
-              ? "  \u2713 found"
-              : status === "ambiguous"
-                ? "  \u26a0 " + entry.result.diagnostic?.matchCount + " matches"
-                : status === "error"
-                  ? "  \u2717 error"
-                  : "  \u2717 not found";
+            status === "ambiguous"
+              ? "  \u26a0 " + entry.result.diagnostic?.matchCount + " matches"
+              : status === "error"
+                ? "  \u2717 error"
+                : "  \u2717 not found";
           options.push({
-            range: new vscode.Range(line, 0, line, 0),
+            // An empty range at the end of the line puts the text after the code, not before it.
+            range: new vscode.Range(line, END_OF_LINE, line, END_OF_LINE),
             hoverMessage:
               entry.result.diagnostic?.message ?? entry.result.message,
             renderOptions: { after: { contentText: text } },

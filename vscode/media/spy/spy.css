@@ -200,12 +200,6 @@ summary:focus-visible {
 #other-apps {
     margin-left: auto;
 }
-#other-apps[aria-pressed="true"] {
-    background: var(
-        --vscode-toolbar-activeBackground,
-        var(--vscode-toolbar-hoverBackground)
-    );
-}
 #hint {
     margin: 0;
     padding: 8px 12px;
@@ -697,6 +691,12 @@ summary {
     font-size: 13px;
     color: var(--vscode-testing-iconPassed, #73c991);
 }
+.app-marker {
+    flex-shrink: 0;
+    margin-left: 6px;
+    font-size: 13px;
+    color: var(--vscode-textLink-foreground, #3794ff);
+}
 .property-loading-actions {
     padding: 10px 12px;
 }
@@ -730,6 +730,41 @@ td {
     padding: 12px;
     border-top: 1px solid var(--border);
     background: var(--raised);
+}
+/* The button and the progress text share one cell, so swapping them never moves anything. */
+#locator-slot {
+    display: grid;
+    align-items: center;
+    margin-top: 8px;
+}
+#locator-slot > * {
+    grid-area: 1 / 1;
+}
+#locator-slot > #generate {
+    justify-self: start;
+}
+/* Hidden but still taking up its space (the global [hidden] rule would collapse it). */
+#locator-slot > [hidden] {
+    display: inline-flex !important;
+    visibility: hidden;
+}
+#locator-busy {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    font-size: 12px;
+    color: var(--muted);
+}
+#locator-result[hidden],
+#locator-actions[hidden] {
+    display: none;
+}
+.locator-spinner {
+    flex-shrink: 0;
+    color: var(--accent);
+    transform-origin: center;
+    animation: empty-state-spin 1s linear infinite;
 }
 .locator-heading {
     display: flex;
@@ -873,14 +908,62 @@ body.tour-dim::after {
     outline-offset: -2px;
     box-shadow: none;
 }
+.preview-heading {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--raised);
+    border-bottom: 1px solid var(--border);
+}
+.preview-heading h3 {
+    flex: 1;
+    margin: 0;
+    border: 0;
+}
+#preview-open {
+    flex-shrink: 0;
+}
+#preview-mode {
+    display: flex;
+    margin-right: 8px;
+}
+#preview-mode button {
+    padding: 2px 9px;
+    border-radius: 0;
+}
+#preview-mode button:first-child {
+    border-radius: 3px 0 0 3px;
+}
+#preview-mode button:last-child {
+    margin-left: -1px;
+    border-radius: 0 3px 3px 0;
+}
+#preview-mode button[aria-pressed="true"] {
+    background: var(--vscode-button-background);
+    color: var(--vscode-button-foreground);
+}
+/* Every preview, whatever its size or proportions, is fitted inside this one rectangle. */
+#object-preview-frame {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: calc(100% - 24px);
+    height: 220px;
+    margin: 10px 12px 0;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    background: var(--vscode-editorWidget-background, var(--raised));
+}
 #object-preview-image {
     display: block;
-    max-width: 100%;
-    max-height: 320px;
+    width: 100%;
+    height: 100%;
     object-fit: contain;
-    object-position: left top;
 }
+#object-preview-image:not([hidden]) { cursor: pointer; }
 #object-preview-image[hidden] { display: none; }
+#object-preview-status { margin: 6px 12px 10px; }
 #inspection-tree { overflow-wrap: anywhere; }
 #inspection-tree details { margin-left: 12px; }
 #inspection-tree summary { cursor: pointer; }

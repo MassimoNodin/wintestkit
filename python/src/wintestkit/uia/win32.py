@@ -70,6 +70,7 @@ SM_CYVIRTUALSCREEN = 79
 
 GW_OWNER = 4
 GA_ROOT = 2
+DWMWA_CLOAKED = 14
 SW_RESTORE = 9
 SW_SHOWNOACTIVATE = 4
 ASFW_ANY = 0xFFFFFFFF
@@ -522,6 +523,25 @@ def top_level_windows(pid_set: set[int] | None = None, visible_only: bool = True
 
     EnumWindows(callback, 0)
     return found
+
+
+def is_cloaked(hwnd: int) -> bool:
+    """Whether DWM hides a visible window (shell helpers, windows on other virtual desktops)."""
+    cloaked = wintypes.DWORD(0)
+    failed = dwmapi.DwmGetWindowAttribute(
+        hwnd, DWMWA_CLOAKED, ctypes.byref(cloaked), ctypes.sizeof(cloaked)
+    )
+    return not failed and bool(cloaked.value)
+
+
+def desktop_windows() -> list[int]:
+    """The desktop's top-level windows in z-order: the ones UI Automation lists under its root.
+
+    Matches the children of the UIA root element without asking UIA. Its enumeration also visits
+    every hidden window of every process, so one slow UIA provider (a game launcher, a peripheral
+    overlay) makes it take seconds.
+    """
+    return [hwnd for hwnd in top_level_windows() if not is_cloaked(hwnd)]
 
 
 def root_window(hwnd: int) -> int:
