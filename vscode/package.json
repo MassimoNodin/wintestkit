@@ -445,14 +445,6 @@
       }
     ]
   },
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/MassimoNodin/wintestkit.git"
-  },
-  "homepage": "https://github.com/MassimoNodin/wintestkit#readme",
-  "bugs": {
-    "url": "https://github.com/MassimoNodin/wintestkit/issues"
-  },
   "scripts": {
     "build": "node esbuild.mjs",
     "build:dev": "node esbuild.mjs --dev",
