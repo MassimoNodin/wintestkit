@@ -15,6 +15,7 @@ class Node {
   textContent = "";
   src = "";
   alt = "";
+  title = "";
   scrollTop = 0;
   offsetWidth = 0;
   offsetHeight = 0;
@@ -602,25 +603,238 @@ describe("introduction clients", () => {
     ).toBeDefined();
   });
 
-  it("renders bounded expandable inspection data as text while retaining flat property tables", () => {
-    const page = client("spy");
-    const scalar = { name: "<script>unsafe</script>", typeName: "String", kind: "scalar", value: "<img src=x onerror=unsafe>" };
-    page.send({ type: "selected", nodeId: "control", properties: {
-      info: { name: "Control", controlType: "Button" }, properties: { Legacy: "flat" },
-      inspection: [{ name: "Model", typeName: "UIA", kind: "object", children: [scalar,
-        { name: "Unavailable", typeName: "UIA", kind: "unavailable", status: "Not supported" }] }],
-    } });
-    expect(page.element("inspection-section").hidden).toBe(false);
-    const branch = page.element("inspection-tree").children[0];
-    expect(branch.children[0].textContent).toBe("Model (UIA)");
-    expect(branch.children[1].textContent).toContain("<img src=x onerror=unsafe>");
-    expect(branch.children[2].textContent).toContain("Not supported");
-    expect(page.element("all-properties").children).toHaveLength(1);
-    page.send({ type: "allProperties", nodeId: "control", properties: {
-      info: {}, properties: {}, inspection: Array.from({ length: 1000 }, () => scalar),
-    } });
-    expect(page.element("inspection-tree").children).toHaveLength(501);
-    expect(page.element("inspection-tree").children.at(-1)?.textContent).toContain("limit reached");
+  describe("all properties list", () => {
+    type Page = ReturnType<typeof client>;
+    const scalar = (name: string, value: unknown) => ({ name, typeName: "str", kind: "scalar", value });
+    const array = (name: string, ...children: unknown[]) => ({ name, typeName: "tuple", kind: "array", children });
+    const element = (name: string, ...children: unknown[]) => ({ name, typeName: "UIAElement", kind: "object", children });
+    const select = (page: Page, inspection: unknown[], properties: Record<string, string> = {}) =>
+      page.send({ type: "selected", nodeId: "control", properties: {
+        info: { name: "Control", controlType: "Button" }, properties, inspection,
+      } });
+    const rows = (page: Page) => page.element("all-properties").children;
+    const part = (row: (typeof rows extends (p: Page) => infer R ? R : never)[number], name: string) =>
+      row.children[0].children[0].children.find((node) => node.className.split(" ").includes(name));
+    const names = (page: Page) => rows(page).map((row) => part(row, "property-name")?.textContent);
+    const visible = (page: Page) => rows(page).filter((row) => !row.hidden).map((row) => part(row, "property-name")?.textContent);
+    const toggle = (page: Page, rowIndex: number) => part(rows(page)[rowIndex], "property-toggle")!.listeners.click();
+    const nested = array("Rect", scalar("0", 1), scalar("1", 2));
+
+    it("is one list: the separate Inspection section is gone", () => {
+      const html = readFileSync("media/spy/spy.html", "utf8");
+      expect(html).not.toContain("inspection-section");
+      expect(html).not.toContain("inspection-tree");
+      expect(html).toContain('id="all-properties"');
+    });
+
+    it("is a plain section, with nothing to open or close", () => {
+      const html = readFileSync("media/spy/spy.html", "utf8");
+      const section = html.slice(html.indexOf('id="all-properties-section"') - 60, html.indexOf('id="all-properties"'));
+      expect(section).toContain("<section");
+      expect(section).toContain("<h3>All properties</h3>");
+      expect(section).not.toContain("<details");
+      expect(section).not.toContain("<summary");
+      expect(readFileSync("media/spy/spy.js", "utf8")).not.toContain("all-properties-section");
+    });
+
+    it("lists nothing until there is something to list, not placeholder properties", () => {
+      const page = client("spy");
+      select(page, []);
+      expect(rows(page)).toHaveLength(0);
+      expect(JSON.stringify(rows(page))).not.toMatch(/HelpText|ItemStatus|ItemType/);
+    });
+
+    it("sorts the properties alphabetically, ignoring case", () => {
+      const page = client("spy");
+      select(page, [scalar("Zeta", "z"), scalar("beta", "b"), scalar("Alpha", "a"), scalar("HelpText", "h")]);
+      expect(names(page)).toEqual(["Alpha", "beta", "HelpText", "Zeta"]);
+    });
+
+    it("keeps flat values the server sent without a description", () => {
+      const page = client("spy");
+      select(page, [scalar("Name", "n")], { Legacy: "flat", Name: "n" });
+      expect(names(page)).toEqual(["Legacy", "Name"]);
+      expect(rows(page)[0].children[1].textContent).toBe("flat");
+    });
+
+    it("shows a nested value collapsed, with an arrow, a count and its summary", () => {
+      const page = client("spy");
+      select(page, [array("RuntimeId", scalar("0", 42), scalar("1", 7))]);
+      const [row, first, second] = rows(page);
+      expect(row.dataset.expanded).toBe("false");
+      expect(part(row, "property-toggle")?.className).toContain("codicon-chevron-right");
+      expect(part(row, "property-count")?.textContent).toBe("2 nested");
+      expect(row.children[1].textContent).toBe("42, 7");
+      expect([first.hidden, second.hidden]).toEqual([true, true]);
+    });
+
+    it("opens and closes the nested values in place, marked as belonging to their parent", () => {
+      const page = client("spy");
+      select(page, [array("RuntimeId", scalar("0", 42), scalar("1", 7)), scalar("Zeta", "n")]);
+      toggle(page, 0);
+      const [parent, first, second, after] = rows(page);
+      expect(parent.dataset.expanded).toBe("true");
+      expect(part(parent, "property-toggle")?.className).toContain("codicon-chevron-down");
+      expect([first.hidden, second.hidden]).toEqual([false, false]);
+      expect(first.className).toContain("nested");
+      expect(first.dataset.depth).toBe("1");
+      expect(part(first, "nested-marker")?.textContent).toBe("\u21b3");
+      expect(first.children[0].title).toBe("RuntimeId › 0");
+      expect(first.children[1].textContent).toBe("42");
+      expect(after.className).not.toContain("nested"); // the next property is not part of it
+      expect(visible(page)).toEqual(["RuntimeId", "0", "1", "Zeta"]);
+      toggle(page, 0);
+      expect(visible(page)).toEqual(["RuntimeId", "Zeta"]);
+    });
+
+    it("supports nesting inside nesting, each level opening on its own", () => {
+      const page = client("spy");
+      select(page, [array("ControllerFor", element("0", scalar("Name", "Save"), nested))]);
+      expect(visible(page)).toEqual(["ControllerFor"]);
+      toggle(page, 0); // the element
+      expect(visible(page)).toEqual(["ControllerFor", "0"]);
+      const all = rows(page);
+      expect(all.map((row) => row.dataset.depth)).toEqual(["0", "1", "2", "2", "3", "3"]);
+      expect(all[1].children[1].textContent).toBe('"Save"'); // an element reads as its type and name
+      toggle(page, 1); // the element's own parts
+      expect(visible(page)).toEqual(["ControllerFor", "0", "Name", "Rect"]);
+      toggle(page, 3); // the array inside the element
+      expect(visible(page)).toEqual(["ControllerFor", "0", "Name", "Rect", "0", "1"]);
+      expect(rows(page)[4].dataset.path).toBe("ControllerFor/0/Rect/0");
+      expect(rows(page)[4].children[0].title).toBe("ControllerFor › 0 › Rect › 0");
+      toggle(page, 0); // closing the top hides every level below it
+      expect(visible(page)).toEqual(["ControllerFor"]);
+      toggle(page, 0); // and they come back as they were left
+      expect(visible(page)).toEqual(["ControllerFor", "0", "Name", "Rect", "0", "1"]);
+    });
+
+    it("sorts the named parts of an element but keeps array items in order", () => {
+      const page = client("spy");
+      select(page, [array("Items", element("0", scalar("Name", "n"), scalar("AutomationId", "a"), scalar("ClassName", "c")),
+        scalar("1", "x"), scalar("2", "y"))]);
+      toggle(page, 0);
+      toggle(page, 1);
+      expect(names(page)).toEqual(["Items", "0", "AutomationId", "ClassName", "Name", "1", "2"]);
+    });
+
+    it("describes an element by its type and name, and an empty array as empty", () => {
+      const page = client("spy");
+      select(page, [element("LabeledBy", scalar("ControlType", "Text"), scalar("Name", "Label")),
+        { name: "ControllerFor", typeName: "UIAElementArray", kind: "array", status: "Empty" },
+        array("Views", element("0", scalar("Name", "a")), element("1", scalar("Name", "b")))]);
+      const byName = Object.fromEntries(rows(page).map((row) => [part(row, "property-name")?.textContent, row.children[1].textContent]));
+      expect(byName).toMatchObject({ LabeledBy: 'Text "Label"', ControllerFor: "Empty", Views: "2 items" });
+      expect(part(rows(page)[0], "property-toggle")).toBeUndefined(); // nothing to open
+    });
+
+    it("renders property data as text, never as markup", () => {
+      const page = client("spy");
+      select(page, [scalar("<script>unsafe</script>", "<img src=x onerror=unsafe>")]);
+      expect(names(page)).toEqual(["<script>unsafe</script>"]);
+      expect(rows(page)[0].children[1].textContent).toBe("<img src=x onerror=unsafe>");
+    });
+
+    it("loads the complete list into the same place", () => {
+      const page = client("spy");
+      select(page, [scalar("HelpText", "h")]);
+      page.send({ type: "allProperties", nodeId: "control", properties: {
+        info: {}, properties: {}, inspection: [scalar("Name", "n"), scalar("AutomationId", "a"), array("RuntimeId", scalar("0", 1))],
+      } });
+      expect(visible(page)).toEqual(["AutomationId", "Name", "RuntimeId"]);
+    });
+
+    it("says so when the display limit cuts the list", () => {
+      const page = client("spy");
+      select(page, Array.from({ length: 4100 }, (_, index) => scalar("P" + String(index).padStart(4, "0"), "v")));
+      expect(rows(page)).toHaveLength(4001);
+      expect(rows(page).at(-1)?.children[0].textContent).toContain("Display limit reached");
+    });
+
+    it("forgets what was open when another object is selected", () => {
+      const page = client("spy");
+      select(page, [array("RuntimeId", scalar("0", 1))]);
+      toggle(page, 0);
+      page.send({ type: "selected", nodeId: "other", properties: {
+        info: { name: "Other", controlType: "Button" }, properties: {}, inspection: [array("RuntimeId", scalar("0", 1))] } });
+      expect(visible(page)).toEqual(["RuntimeId"]);
+    });
+  });
+
+  describe("pinned properties", () => {
+    type Page = ReturnType<typeof client>;
+    const select = (page: Page, properties: Record<string, string>, nodeId = "control") =>
+      page.send({ type: "selected", nodeId, properties: {
+        info: { name: "Control", controlType: "Button" }, properties,
+        inspection: Object.entries(properties).map(([name, value]) => ({ name, typeName: "str", kind: "scalar", value })),
+      } });
+    const state = (page: Page, shownProperties: unknown) =>
+      page.send({ type: "state", picking: false, appRunning: true, targetName: "App", hasProject: true,
+        showOtherApps: true, bringToFront: false, shownProperties });
+    const pin = (row: ReturnType<Page["element"]>) => row.children[2].children[0].listeners.click();
+    const pinPosts = (page: Page) => page.posts.filter((post) => (post as { type?: string }).type === "pinProperty");
+
+    it("shows a pin only on the row under the pointer or with keyboard focus", () => {
+      const css = readFileSync("media/spy/spy.css", "utf8").replace(/\s+/g, " ");
+      expect(css).toContain(".property-row .property-pin { opacity: 0; }");
+      expect(css).toContain(".property-row:hover .property-pin, .property-row:focus-within .property-pin { opacity: 1; }");
+      // hidden by opacity, not display: the button stays reachable with the keyboard
+      expect(css).not.toMatch(/\.property-pin[^{]*\{[^}]*display: none/);
+    });
+
+    it("offers a pin button on top-level properties only", () => {
+      const page = client("spy");
+      page.send({ type: "selected", nodeId: "control", properties: { info: { name: "C", controlType: "Button" }, properties: {},
+        inspection: [{ name: "RuntimeId", typeName: "tuple", kind: "array", children: [{ name: "0", kind: "scalar", value: 1 }] }] } });
+      const [parent, child] = page.element("all-properties").children;
+      expect(parent.children[2].children).toHaveLength(1);
+      expect(parent.children[2].children[0].className).toContain("codicon-pin");
+      expect(child.children[2].children).toHaveLength(0);
+    });
+
+    it("pins a property: tells the host, and shows it in the Pinned group with its value", () => {
+      const page = client("spy");
+      select(page, { HelpText: "Saves the file", Name: "Save" });
+      expect(page.element("pinned-group").hidden).toBe(true);
+      pin(page.element("all-properties").children[0]); // HelpText
+      expect(pinPosts(page)).toEqual([{ type: "pinProperty", name: "HelpText", pinned: true }]);
+      expect(page.element("pinned-group").hidden).toBe(false);
+      const [row] = page.element("pinned-properties").children;
+      expect(row.children[0].textContent).toBe("HelpText");
+      expect(row.children[1].textContent).toBe("Saves the file");
+      expect(page.element("all-properties").children[0].children[2].children[0].className).toContain("codicon-pinned");
+    });
+
+    it("unpins from either list", () => {
+      const page = client("spy");
+      state(page, ["HelpText", "Name"]);
+      select(page, { HelpText: "h", Name: "n" });
+      expect(page.element("pinned-properties").children.map((row) => row.children[0].textContent)).toEqual(["HelpText", "Name"]);
+      pin(page.element("pinned-properties").children[0]);
+      expect(pinPosts(page)).toEqual([{ type: "pinProperty", name: "HelpText", pinned: false }]);
+      expect(page.element("pinned-properties").children.map((row) => row.children[0].textContent)).toEqual(["Name"]);
+      pin(page.element("all-properties").children[1]); // Name, from the full list
+      expect(page.element("pinned-group").hidden).toBe(true);
+    });
+
+    it("takes the pinned list from the user's setting, ignoring anything that is not a property name", () => {
+      const page = client("spy");
+      state(page, ["Orientation", "<img>", 5, "has space", "HelpText"]);
+      select(page, {});
+      expect(page.element("pinned-properties").children.map((row) => row.children[0].textContent)).toEqual(["Orientation", "HelpText"]);
+      expect(page.element("pinned-properties").children[0].children[1].textContent).toBe("—"); // not read for this object
+      state(page, undefined);
+      expect(page.element("pinned-group").hidden).toBe(false); // an absent list changes nothing
+      state(page, []);
+      expect(page.element("pinned-group").hidden).toBe(true);
+    });
+
+    it("does not offer a pin for a name the setting cannot hold", () => {
+      const page = client("spy");
+      select(page, { my_alias: "x", Name: "n" });
+      const rows = page.element("all-properties").children;
+      expect(rows[0].children[2].children).toHaveLength(0); // my_alias
+      expect(rows[1].children[2].children).toHaveLength(1); // Name
+    });
   });
 
   describe("suggested locator", () => {

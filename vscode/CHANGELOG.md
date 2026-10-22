@@ -12,6 +12,16 @@ Unreleased changes must be moved to a dated candidate section before a release c
   provider on the machine made each refresh take around six seconds, queued status checks behind
   it, and let short-lived windows vanish before they were read (reported as an incomplete
   enumeration). The same roots now load in about 0.1 s.
+- Merge Spy's Inspection section into **All properties**: one list sorted alphabetically, in which
+  nested values (such as `RuntimeId`, `BoundingRectangle` and element lists) show an arrow and a
+  count and open in place, several levels deep, with the nested rows indented, tinted and marked
+  as belonging to their parent. Properties that hold UI Automation elements or element arrays
+  (`ControllerFor`, `DescribedBy`, `SelectionSelection`, ...) are now read into nested rows
+  instead of being shown as opaque.
+- Add a pin button, shown on the row under the pointer, to each property in **All properties** to show it, in a new **Pinned** group,
+  for every selected object. The list is the user setting `wintestkit.spy.shownProperties`, so it
+  is never saved in a project or its git repository. Needs the `include` parameter of
+  `inspect.properties` (the `wintestkit` package from this version).
 - Generate Spy's suggested locator only when asked, with a **Generate suggested locator** button (its tooltip, and the progress text, warn that large applications can take 20 seconds or
   more) and a spinner while it runs. It no
   longer holds up the rest of the selected object's details (definitions, preview) on selection.
@@ -34,6 +44,20 @@ Unreleased changes must be moved to a dated candidate section before a release c
 - Remove the gutter icons beside page elements, and the inline "✓ found" text on passing ones. Only
   elements that are not found, ambiguous or errored are marked inline, after the code on the
   element's line instead of before it; **Check: Found** stays in the CodeLens.
+- Make **All properties** a plain, always-visible section instead of a collapsible one, and stop
+  listing `HelpText`, `ItemStatus` and `ItemType` in it before the full list is loaded; it fills in
+  when you click **Load all properties**. Properties you pin and properties that your configured
+  aliases point at are still read on selection. (`wtk inspect` on the command line still prints
+  the three.)
+- Keep Spy's selection through a reload, a server restart or a VS Code reload: the tree is opened
+  down to the object and it is selected again. It is found by the properties of each object on its
+  route from the window, with its place among its siblings, rather than by node ids that change
+  on restart. A look-alike is never selected in its place: if the object is gone, ambiguous or
+  changed, a VS Code warning says so once and the selection is forgotten.
+- Stop the server restarting by itself about once an hour. The extension restarted it on every
+  change event for `pyproject.toml`, `wintestkit.yaml` or `wintestkit.local.yaml`, and something
+  on the machine (an indexer, scanner or sync client) sends such events for files it merely
+  touched. A file now restarts the server only when its content is different.
 - Fix **Pick element** doing nothing on such elements: every hover and pick in TeamViewer failed with
   "element has no runtime id". A picked element is now keyed by its place below the nearest
   ancestor that has an id, matching the tree, and its ancestors are revealed as usual. Siblings are

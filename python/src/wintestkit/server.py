@@ -44,7 +44,7 @@ _PARAMS: dict[str, tuple[set[str], set[str]]] = {
     "inspect.roots": (set(), {"includeOtherApps", "foregroundForProcessId"}),
     "inspect.refresh": (set(), {"includeOtherApps", "foregroundForProcessId"}),
     "inspect.children": ({"nodeId"}, set()),
-    "inspect.properties": ({"nodeId"}, {"full", "includeAncestors"}),
+    "inspect.properties": ({"nodeId"}, {"full", "includeAncestors", "include"}),
     "inspect.highlight": ({"nodeId"}, {"durationMs", "bringToFront"}),
     "inspect.preview": ({"nodeId"}, set()),
     "suggest.locator": ({"nodeId"}, set()),
@@ -56,12 +56,34 @@ _PARAMS: dict[str, tuple[set[str], set[str]]] = {
 
 
 MAX_COVERAGE_NODES = 500
+MAX_INCLUDED_PROPERTIES = 64
 
 # Windows that XAML apps (UWP, WinUI) create to show a popup: they turn visible while a tooltip,
 # menu or flyout is open and hidden again afterwards, so they come and go in the roots list.
 POPUP_SURFACE_CLASSES = frozenset(
     {"Xaml_WindowedPopupClass", "Microsoft.UI.Content.PopupWindowSiteBridge"}
 )
+
+
+def _summarize(description: dict[str, Any]) -> str:
+    """One line for a described property, as the flat property map shows it."""
+    children = cast("list[dict[str, Any]]", description.get("children", []))
+    if description["kind"] == "array" and children:
+        if all(child["kind"] == "scalar" for child in children):
+            return ", ".join(str(child.get("value")) for child in children)
+        return f"{len(children)} items"
+    if description["kind"] == "object" and children:
+        named = {child["name"]: child.get("value") for child in children}
+        label = " ".join(
+            part
+            for part in (
+                named.get("ControlType"),
+                f'"{named["Name"]}"' if named.get("Name") else None,
+            )
+            if part
+        )
+        return label or "element"
+    return str(description.get("value", description.get("status", "")))
 
 
 def _is_popup_surface(window: UIAElement) -> bool:
@@ -161,6 +183,19 @@ class Server:
                 ):
                     raise RpcError(
                         -32602, f"nodeIds must list at most {MAX_COVERAGE_NODES} nonempty strings"
+                    )
+            elif key == "include":
+                if (
+                    not isinstance(value, list)
+                    or len(cast("list[Any]", value)) > MAX_INCLUDED_PROPERTIES
+                    or any(
+                        not isinstance(item, str) or not item or len(item) > 64
+                        for item in cast("list[Any]", value)
+                    )
+                ):
+                    raise RpcError(
+                        -32602,
+                        f"include must list at most {MAX_INCLUDED_PROPERTIES} property names",
                     )
             elif key == "arguments":
                 if not isinstance(value, dict):
@@ -705,19 +740,12 @@ class Server:
             properties: dict[str, str] = {}
             inspection: list[dict[str, Any]] = []
             full = params.get("full", False)
-            for name in PROPERTY_IDS if full else ():
+
+            def read_property(name: str) -> None:
                 try:
-                    value = node.get_property(name)
-                    description = inspection_property(name, value)
+                    description = inspection_property(name, node.get_property(name))
                     inspection.append(description)
-                    properties[name] = (
-                        ", ".join(
-                            str(child.get("value", child.get("status", "[array]")))
-                            for child in description["children"]
-                        )
-                        if description["kind"] == "array" and "children" in description
-                        else str(description.get("value", description.get("status", "")))
-                    )
+                    properties[name] = _summarize(description)
                 except Exception as exc:
                     inspection.append(
                         {
@@ -727,10 +755,17 @@ class Server:
                             "status": str(exc)[:512],
                         }
                     )
+
+            for name in PROPERTY_IDS if full else ():
+                read_property(name)
             if not full:
-                values = inspection_values(node, self.cfg.property_aliases)
+                values = inspection_values(node, self.cfg.property_aliases, base=())
                 inspection.extend(inspection_property(key, value) for key, value in values.items())
                 properties.update({key: str(value) for key, value in values.items()})
+                # Properties the user pinned to the default list are read with every selection.
+                for name in dict.fromkeys(params.get("include", ())):
+                    if name in PROPERTY_IDS and name not in properties:
+                        read_property(name)
             for alias, target in self.cfg.property_aliases.items():
                 property_name = SUPPORTED[target].uia_name if full else target
                 if property_name in properties:

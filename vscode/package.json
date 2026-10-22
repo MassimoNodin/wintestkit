@@ -373,6 +373,18 @@
           "default": false,
           "description": "Show only the class check lens. Element highlight and check lenses are hidden; Page Tree controls remain available."
         },
+        "wintestkit.spy.shownProperties": {
+          "type": "array",
+          "default": [],
+          "uniqueItems": true,
+          "maxItems": 64,
+          "scope": "application",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9]{0,63}$"
+          },
+          "markdownDescription": "UI Automation properties Spy shows for every selected object, in addition to the built-in ones, in the order listed. Add one with the pin button beside a property under **All properties**. This is a user setting: it is kept with your VS Code settings and never in a project or its git repository."
+        },
         "wintestkit.spy.bringWindowToFront": {
           "type": "boolean",
           "default": false,

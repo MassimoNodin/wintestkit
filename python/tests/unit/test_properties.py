@@ -360,3 +360,26 @@ class Main(Page):
     assert elements["dynamic"].dynamic
     assert elements["dynamic"].locator == {"name": "Save"}
     assert elements["dynamic_window"].dynamic
+
+
+def test_inspection_values_read_only_what_aliases_point_at_when_given_no_base() -> None:
+    from wintestkit.engine.properties import inspection_values
+
+    button = FakeElement(
+        "Button",
+        properties={"HelpText": "Save", "ItemStatus": "Company.AddressBox", "ItemType": "x"},
+    )
+    aliases = {"ClrFullClassName": "ItemStatus"}
+    # the command line keeps its three defaults ...
+    assert set(inspection_values(button, aliases)) == {
+        "HelpText",
+        "ItemStatus",
+        "ItemType",
+        "ClrFullClassName",
+    }
+    # ... Spy's list does not
+    assert inspection_values(button, aliases, base=()) == {
+        "ItemStatus": "Company.AddressBox",
+        "ClrFullClassName": "Company.AddressBox",
+    }
+    assert inspection_values(button, {}, base=()) == {}

@@ -67,4 +67,15 @@ describe("Spy message contract", () => {
       parseSpyRequest({ type: "addToPage", suggestion: { code: "unsafe" } }),
     ).toEqual({ type: "addToPage" });
   });
+  it("accepts a pin request only for a property name and a boolean", () => {
+    expect(parseSpyRequest({ type: "pinProperty", name: "HelpText", pinned: true, x: 1 })).toEqual({
+      type: "pinProperty", name: "HelpText", pinned: true,
+    });
+    for (const request of [
+      { name: "has space", pinned: true }, { name: "", pinned: true }, { name: "1Name", pinned: true },
+      { name: "a".repeat(65), pinned: true }, { name: 5, pinned: true }, { name: "HelpText", pinned: "yes" },
+      { name: "HelpText" },
+    ])
+      expect(parseSpyRequest({ type: "pinProperty", ...request })).toBeUndefined();
+  });
 });

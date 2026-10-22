@@ -27,6 +27,8 @@ const mocks = vi.hoisted(() => ({
   >,
   showPreview: vi.fn<(view: string, dataUrl: string) => Promise<void>>(() => Promise.resolve()),
   disposeViewer: vi.fn(),
+  warning: vi.fn<(message: string) => Promise<undefined>>(() => Promise.resolve(undefined)),
+  shownProperties: [] as unknown,
   providerRegistrations: [] as unknown[][],
   projectListeners: [] as Array<() => void>,
   openDocument: vi.fn((uri: unknown) => Promise.resolve({ uri })),
@@ -64,7 +66,9 @@ vi.mock("vscode", () => ({
       get: (key: string, fallback: boolean) =>
         key === "bringWindowToFront"
           ? mocks.bringToFront
-          : mocks.markers && fallback,
+          : key === "shownProperties"
+            ? mocks.shownProperties
+            : mocks.markers && fallback,
       update: mocks.updateConfig,
     }),
     onDidChangeConfiguration: (
@@ -103,6 +107,7 @@ vi.mock("vscode", () => ({
       };
     },
     showInformationMessage: mocks.information,
+    showWarningMessage: mocks.warning,
     showTextDocument: mocks.showDocument,
   },
   commands: {
@@ -135,6 +140,9 @@ describe("Spy view bridge", () => {
     mocks.configListeners.splice(0, mocks.configListeners.length);
     mocks.editorListeners.splice(0, mocks.editorListeners.length);
     mocks.providerRegistrations.splice(0);
+    mocks.shownProperties = [];
+    mocks.updateConfig.mockClear();
+    mocks.warning.mockClear();
     mocks.projectListeners.splice(0);
     mocks.previews.mockReset().mockResolvedValue(undefined);
   });
@@ -145,6 +153,7 @@ describe("Spy view bridge", () => {
   const create = async (
     connect?: () => Promise<unknown>,
     setup?: SetupMonitor,
+    memory?: unknown,
   ) => {
     const project = {
       root: { fsPath: "C:/demo", toString: () => "demo" },
@@ -187,6 +196,7 @@ describe("Spy view bridge", () => {
       { fsPath: path.resolve(".") } as vscode.Uri,
       { error: vi.fn() } as unknown as vscode.LogOutputChannel,
       setup,
+      memory as never,
     );
     let receive: (value: unknown) => void = () => {};
     let visibility: () => void = () => {};
@@ -1205,6 +1215,31 @@ describe("Spy view bridge", () => {
     ).toEqual([
       { type: "rootIcons", icons: { "123": "data:image/png;base64,bmV3" } },
     ]);
+    fixture.provider.dispose();
+  });
+  it("still delivers icons when a row is selected while they load", async () => {
+    let finishIcons: (icons: Record<string, string>) => void = () => undefined;
+    const roots = [{ nodeId: "root", info: { processId: 123 } }];
+    mocks.request.mockImplementation((method: string) =>
+      Promise.resolve(method === "inspect.refresh" ? { nodes: roots, status: { running: true } } : roots),
+    );
+    mocks.icons.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishIcons = resolve;
+        }),
+    );
+    const fixture = await create();
+    await fixture.provider.refresh();
+    await vi.waitFor(() => expect(mocks.icons).toHaveBeenCalledTimes(1));
+    fixture.receive({ type: "select", nodeId: "root" });
+    finishIcons({ "123": "data:image/png;base64,abcd" });
+    await vi.waitFor(() =>
+      expect(fixture.sent).toContainEqual({
+        type: "rootIcons",
+        icons: { "123": "data:image/png;base64,abcd" },
+      }),
+    );
     fixture.provider.dispose();
   });
   it("reports per-node expansion progress and completes after children arrive", async () => {
@@ -2320,6 +2355,292 @@ describe("Spy view bridge", () => {
     expect(fixture.sent.slice(before)).toEqual([]);
     expect(fixture.sent.at(-1)).toMatchObject({ type: "savedDefinition", id: "pages/Page.py::Page.second" });
     fixture.provider.dispose();
+  });
+
+  describe("keeping the selection through a reload", () => {
+    const info = (controlType: string, name = "", extra: Record<string, string> = {}) =>
+      ({ controlType, name, automationId: "", className: controlType === "Window" ? "W" : "P", ...extra });
+    const root = { nodeId: "r1", hasChildren: true, info: info("Window", "App") };
+    const route = [
+      { controlType: "Window", automationId: "", name: "App", className: "W" },
+      { controlType: "Pane", automationId: "ed", name: "Editor", className: "P", index: 1 },
+      { controlType: "Button", automationId: "", name: "Save", className: "P", index: 0 },
+    ];
+    /** A server whose tree is rebuilt with new node ids on every call, as after a restart. */
+    const serve = (options: { editor?: boolean; generation?: () => number } = {}) => {
+      const { editor = true, generation = () => 1 } = options;
+      const id = (name: string) => name + generation();
+      mocks.request.mockImplementation((method: string, params?: { nodeId?: string }) => {
+        if (method === "inspect.refresh")
+          return Promise.resolve({ nodes: [{ ...root, nodeId: id("r") }], status: { running: true, pids: [1] } });
+        if (method === "inspect.children") {
+          if (params?.nodeId === id("r"))
+            return Promise.resolve([
+              { nodeId: id("a"), hasChildren: false, info: info("Pane") },
+              ...(editor ? [{ nodeId: id("ed"), hasChildren: true, info: info("Pane", "Editor", { automationId: "ed" }) }] : []),
+            ]);
+          if (params?.nodeId === id("ed"))
+            return Promise.resolve([{ nodeId: id("save"), hasChildren: false, info: info("Button", "Save") }]);
+          return Promise.resolve([]);
+        }
+        if (method === "inspect.properties")
+          return Promise.resolve({ info: info("Button", "Save"), properties: {}, ancestors: [] });
+        return Promise.resolve(undefined);
+      });
+    };
+    const selected = (fixture: Awaited<ReturnType<typeof create>>) =>
+      fixture.sent.filter((message) => message.type === "selected").map((message) => message.nodeId);
+    const memento = (initial: Record<string, unknown> = {}) => {
+      const store = new Map<string, unknown>(Object.entries(initial));
+      return {
+        store,
+        get: (key: string) => store.get(key),
+        update: vi.fn((key: string, value: unknown) => { store.set(key, value); return Promise.resolve(); }),
+      };
+    };
+    const selectSave = (fixture: Awaited<ReturnType<typeof create>>) => {
+      fixture.receive({ type: "select", nodeId: "save1", path: route });
+      return vi.waitFor(() => expect(selected(fixture)).toEqual(["save1"]));
+    };
+
+    it("selects the same object again after a reload, opening the tree down to it", async () => {
+      serve();
+      const fixture = await create();
+      await selectSave(fixture);
+      await fixture.provider.refresh();
+      await vi.waitFor(() => expect(selected(fixture)).toEqual(["save1", "save1"]));
+      const opened = fixture.sent.filter((message) => message.type === "children" && message.expanded).map((message) => message.nodeId);
+      expect(opened).toEqual(["r1", "ed1"]);
+      expect(fixture.sent).toContainEqual({ type: "selectionRestored", nodeId: "save1" });
+      expect(mocks.warning).not.toHaveBeenCalled();
+      fixture.provider.dispose();
+    });
+
+    it("finds it under the new node ids after a server restart", async () => {
+      let generation = 1;
+      serve({ generation: () => generation });
+      const fixture = await create();
+      await selectSave(fixture);
+      generation = 2; // the restarted server numbers everything afresh
+      serve({ generation: () => generation });
+      await fixture.provider.refresh();
+      await vi.waitFor(() => expect(selected(fixture)).toEqual(["save1", "save2"]));
+      expect(mocks.warning).not.toHaveBeenCalled();
+      fixture.provider.dispose();
+    });
+
+    it("says so in a VS Code notification when it is gone, once, and selects nothing", async () => {
+      serve();
+      const fixture = await create();
+      await selectSave(fixture);
+      serve({ editor: false });
+      await fixture.provider.refresh();
+      await vi.waitFor(() => expect(mocks.warning).toHaveBeenCalledOnce());
+      expect(mocks.warning.mock.calls[0][0]).toContain('Button "Save"');
+      expect(mocks.warning.mock.calls[0][0]).toContain("could not find");
+      expect(selected(fixture)).toEqual(["save1"]); // nothing new was selected
+      await fixture.provider.refresh();
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      expect(mocks.warning).toHaveBeenCalledOnce(); // it has been forgotten, so it is not repeated
+      fixture.provider.dispose();
+    });
+
+    it("reports a window that has closed", async () => {
+      serve();
+      const fixture = await create();
+      await selectSave(fixture);
+      mocks.request.mockImplementation((method: string) =>
+        Promise.resolve(method === "inspect.refresh" ? { nodes: [], status: { running: false, pids: [] } } : []));
+      await fixture.provider.refresh();
+      await vi.waitFor(() => expect(mocks.warning).toHaveBeenCalledOnce());
+      fixture.provider.dispose();
+    });
+
+    it("remembers the selection in the workspace, so a VS Code reload keeps it too", async () => {
+      serve();
+      const first = memento();
+      const before = await create(undefined, undefined, first);
+      await selectSave(before);
+      expect(first.update).toHaveBeenCalled();
+      expect(first.store.get("wintestkit.spy.selection")).toEqual({ demo: route });
+      before.provider.dispose();
+      // a new window: nothing selected yet, but the workspace remembers
+      mocks.request.mockClear();
+      serve();
+      const after = await create(undefined, undefined, first);
+      await after.provider.refresh();
+      await vi.waitFor(() => expect(selected(after)).toEqual(["save1"]));
+      after.provider.dispose();
+    });
+
+    it("ignores a damaged or foreign saved selection", async () => {
+      serve();
+      const store = memento({ "wintestkit.spy.selection": { demo: [{ controlType: 5 }], other: route } });
+      const fixture = await create(undefined, undefined, store);
+      await fixture.provider.refresh();
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      expect(selected(fixture)).toEqual([]);
+      expect(mocks.warning).not.toHaveBeenCalled();
+      fixture.provider.dispose();
+    });
+
+    it("keeps a different object the user selects after the restore", async () => {
+      serve();
+      const fixture = await create();
+      await selectSave(fixture);
+      fixture.receive({ type: "select", nodeId: "a1", path: [route[0], { controlType: "Pane", automationId: "", name: "", className: "P", index: 0 }] });
+      await vi.waitFor(() => expect(selected(fixture)).toEqual(["save1", "a1"]));
+      await fixture.provider.refresh();
+      await vi.waitFor(() => expect(selected(fixture)).toEqual(["save1", "a1", "a1"]));
+      fixture.provider.dispose();
+    });
+
+    it("does not restore after a change of scope, which is not a reload of the same view", async () => {
+      serve();
+      const fixture = await create();
+      await selectSave(fixture);
+      fixture.receive({ type: "showOtherApps", enabled: false });
+      await vi.waitFor(() => expect(mocks.request.mock.calls.filter(([method]) => method === "inspect.refresh")).toHaveLength(1));
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      expect(selected(fixture)).toEqual(["save1"]);
+      expect(mocks.warning).not.toHaveBeenCalled();
+      await fixture.provider.refresh(); // but the next ordinary reload still can
+      await vi.waitFor(() => expect(selected(fixture)).toEqual(["save1", "save1"]));
+      fixture.provider.dispose();
+    });
+
+    it("does nothing when nothing was selected", async () => {
+      serve();
+      const fixture = await create();
+      await fixture.provider.refresh();
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      expect(selected(fixture)).toEqual([]);
+      expect(mocks.warning).not.toHaveBeenCalled();
+      expect(mocks.request.mock.calls.some(([method]) => method === "inspect.children")).toBe(false);
+      fixture.provider.dispose();
+    });
+
+    it("rejects a malformed route from the webview", async () => {
+      serve();
+      const fixture = await create();
+      fixture.receive({ type: "select", nodeId: "save1", path: [{ controlType: 5 }] });
+      await vi.waitFor(() => expect(selected(fixture)).toEqual(["save1"])); // still selects
+      await fixture.provider.refresh();
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      expect(selected(fixture)).toEqual(["save1"]); // but nothing was remembered
+      fixture.provider.dispose();
+    });
+  });
+
+  describe("pinned properties", () => {
+    const properties = () =>
+      Promise.resolve({ info: { name: "Save", controlType: "Button" }, properties: {}, ancestors: [] });
+    const propertyRequests = () =>
+      mocks.request.mock.calls.filter(([method]) => method === "inspect.properties").map(([, params]) => params);
+    const lastState = (fixture: Awaited<ReturnType<typeof create>>) =>
+      fixture.sent.filter((message) => message.type === "state").at(-1);
+
+    it("keeps the list in the user's settings and tells the panel, ignoring invalid names", async () => {
+      mocks.shownProperties = ["HelpText", "bad name", "Name", "HelpText", 5, "<x>"];
+      const fixture = await create();
+      fixture.receive({ type: "ready" });
+      await vi.waitFor(() => expect(lastState(fixture)).toMatchObject({ shownProperties: ["HelpText", "Name"] }));
+      fixture.provider.dispose();
+    });
+
+    it("treats a setting that is not a list as empty", async () => {
+      mocks.shownProperties = "HelpText";
+      const fixture = await create();
+      fixture.receive({ type: "ready" });
+      await vi.waitFor(() => expect(lastState(fixture)).toMatchObject({ shownProperties: [] }));
+      fixture.provider.dispose();
+    });
+
+    it("asks the server to read the pinned properties with every selection", async () => {
+      mocks.shownProperties = ["HelpText", "Orientation"];
+      mocks.request.mockImplementation((method: string) => method === "inspect.properties" ? properties() : Promise.resolve(undefined));
+      const fixture = await create();
+      fixture.receive({ type: "select", nodeId: "control" });
+      await vi.waitFor(() => expect(propertyRequests()).toEqual([{ nodeId: "control", include: ["HelpText", "Orientation"] }]));
+      fixture.provider.dispose();
+    });
+
+    it("sends no extra names when nothing is pinned", async () => {
+      mocks.request.mockImplementation((method: string) => method === "inspect.properties" ? properties() : Promise.resolve(undefined));
+      const fixture = await create();
+      fixture.receive({ type: "select", nodeId: "control" });
+      await vi.waitFor(() => expect(propertyRequests()).toEqual([{ nodeId: "control" }]));
+      fixture.provider.dispose();
+    });
+
+    it("reads them for a picked object too", async () => {
+      mocks.shownProperties = ["HelpText"];
+      mocks.request.mockImplementation((method: string) => {
+        if (method === "inspect.properties") return Promise.resolve({ info: { controlType: "Button", name: "Save" }, properties: {}, ancestors: [] });
+        if (method === "inspect.roots") return Promise.resolve([]);
+        return Promise.resolve(undefined);
+      });
+      const fixture = await create();
+      fixture.receive({ type: "pick" });
+      await vi.waitFor(() => expect(latestSession()).toBeTypeOf("string"));
+      mocks.notifications.get("spy.picked")?.({ sessionId: latestSession(), node: { nodeId: "picked", info: { controlType: "Button", name: "Save" } } });
+      await vi.waitFor(() => expect(propertyRequests()).toEqual([{ nodeId: "picked", includeAncestors: true, include: ["HelpText"] }]));
+      fixture.provider.dispose();
+    });
+
+    it("pins and unpins in the user settings, never a project's", async () => {
+      mocks.shownProperties = ["HelpText"];
+      const fixture = await create();
+      fixture.receive({ type: "pinProperty", name: "Orientation", pinned: true });
+      await vi.waitFor(() => expect(mocks.updateConfig).toHaveBeenCalledWith("shownProperties", ["HelpText", "Orientation"], 1));
+      fixture.receive({ type: "pinProperty", name: "HelpText", pinned: false });
+      await vi.waitFor(() => expect(mocks.updateConfig).toHaveBeenCalledWith("shownProperties", [], 1));
+      fixture.provider.dispose();
+    });
+
+    it("changes nothing when the property is already pinned or already absent", async () => {
+      mocks.shownProperties = ["HelpText"];
+      const fixture = await create();
+      fixture.receive({ type: "pinProperty", name: "HelpText", pinned: true });
+      fixture.receive({ type: "pinProperty", name: "Other", pinned: false });
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      expect(mocks.updateConfig).not.toHaveBeenCalled();
+      fixture.provider.dispose();
+    });
+
+    it("never holds more than 64 pinned properties, and tells the panel when it refuses", async () => {
+      mocks.shownProperties = Array.from({ length: 64 }, (_, index) => "P" + index);
+      const fixture = await create();
+      fixture.receive({ type: "ready" });
+      await vi.waitFor(() => expect(lastState(fixture)).toBeDefined());
+      const states = fixture.sent.filter((message) => message.type === "state").length;
+      fixture.receive({ type: "pinProperty", name: "OneMore", pinned: true });
+      await vi.waitFor(() => expect(fixture.sent.some((message) => message.type === "error")).toBe(true));
+      expect(mocks.updateConfig).not.toHaveBeenCalled();
+      expect(fixture.sent.find((message) => message.type === "error")).toMatchObject({ message: expect.stringContaining("At most 64") });
+      expect(fixture.sent.filter((message) => message.type === "state").length).toBeGreaterThan(states);
+      expect(lastState(fixture)?.shownProperties).not.toContain("OneMore");
+      fixture.provider.dispose();
+    });
+
+    it("ignores a request for a name that is not a property name", async () => {
+      const fixture = await create();
+      fixture.receive({ type: "pinProperty", name: "not a name", pinned: true });
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      expect(mocks.updateConfig).not.toHaveBeenCalled();
+      fixture.provider.dispose();
+    });
+
+    it("tells the panel when the setting changes elsewhere", async () => {
+      const fixture = await create();
+      fixture.receive({ type: "ready" });
+      await vi.waitFor(() => expect(lastState(fixture)).toMatchObject({ shownProperties: [] }));
+      mocks.shownProperties = ["Orientation"];
+      for (const listener of mocks.configListeners)
+        listener({ affectsConfiguration: (key) => key === "wintestkit.spy.shownProperties" });
+      expect(lastState(fixture)).toMatchObject({ shownProperties: ["Orientation"] });
+      fixture.provider.dispose();
+    });
   });
 
   describe("opening a preview in the image viewer", () => {
