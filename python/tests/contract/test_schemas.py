@@ -180,7 +180,10 @@ def definition_examples() -> dict[str, dict[str, Any]]:
         },
         "InspectChildrenParams": {"nodeId": node["nodeId"]},
         "InspectChildrenResult": [node],
-        "InspectPropertiesParams": {"nodeId": node["nodeId"]},
+        "InspectPropertiesParams": {
+            "nodeId": node["nodeId"],
+            "include": ["HelpText", "Orientation"],
+        },
         "InspectPropertiesResult": {
             "info": element,
             "properties": {"Name": "Sign in"},
@@ -350,6 +353,9 @@ def test_invalid_item_selectors(validate: Validate, data: Any) -> None:
         ("rpc.schema.json", "DiscoverParams", {"overrides": {"file.py": 42}}),
         ("rpc.schema.json", "InspectRootsParams", {"includeOtherApps": "yes"}),
         ("rpc.schema.json", "InspectHighlightResult", {}),
+        ("rpc.schema.json", "InspectPropertiesParams", {"nodeId": "n", "include": "HelpText"}),
+        ("rpc.schema.json", "InspectPropertiesParams", {"nodeId": "n", "include": [""]}),
+        ("rpc.schema.json", "InspectPropertiesParams", {"nodeId": "n", "include": ["x"] * 65}),
         (
             "rpc.schema.json",
             "InspectPreviewResult",

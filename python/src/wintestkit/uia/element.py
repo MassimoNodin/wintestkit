@@ -12,6 +12,7 @@ from typing import Any
 
 import comtypes
 
+from wintestkit.errors import UIAError
 from wintestkit.uia import com
 from wintestkit.uia.constants import (
     CONTROL_TYPE_NAMES,
@@ -23,8 +24,90 @@ from wintestkit.uia.constants import (
 log = logging.getLogger("wintestkit.uia.element")
 
 
+# Nesting shown for a property: a list of elements, each element, and the arrays inside it.
+MAX_INSPECTION_DEPTH = 4
+_MAX_INSPECTION_ITEMS = 32
+
+
+def _uia_interfaces(value: Any) -> tuple[Any, Any] | None:
+    """The element or element-array interface behind a COM pointer, or ``None``.
+
+    Only genuine COM pointers are asked: any other object is never probed for members.
+    """
+    __tracebackhide__ = True
+    if not isinstance(value, comtypes.IUnknown):
+        return None
+    module = com.uia_module()
+    for interface, is_array in (
+        (module.IUIAutomationElementArray, True),
+        (module.IUIAutomationElement, False),
+    ):
+        try:
+            return value.QueryInterface(interface), is_array
+        except (comtypes.COMError, ValueError, TypeError):
+            continue
+    return None
+
+
+def _describe_element(name: str, raw: Any, depth: int) -> dict[str, Any]:
+    """A UIA element as a nested object: its identity and its place on screen."""
+    __tracebackhide__ = True
+    result: dict[str, Any] = {"name": name, "typeName": "UIAElement", "kind": "object"}
+    element = UIAElement(raw)
+    values: dict[str, Any] = {}
+    try:
+        rect = element.rect
+        values.update(
+            AutomationId=element.automation_id,
+            BoundingRectangle=None
+            if rect is None
+            else [rect.left, rect.top, rect.width, rect.height],
+            ClassName=element.class_name,
+            ControlType=element.control_type,
+            Name=element.name,
+            RuntimeId=[int(part) for part in raw.GetRuntimeId()],
+        )
+    except (comtypes.COMError, UIAError):
+        result["status"] = "The element is no longer available"
+        return result
+    result["children"] = [
+        inspection_property(key, value, depth + 1) for key, value in sorted(values.items())
+    ]
+    return result
+
+
+def _describe_uia_value(name: str, value: Any, depth: int) -> dict[str, Any] | None:
+    """Expand an element or element array held in a property; ``None`` for other COM values."""
+    __tracebackhide__ = True
+    found = _uia_interfaces(value)
+    if found is None:
+        return None
+    interface, is_array = found
+    if not is_array:
+        return _describe_element(name, interface, depth)
+    result: dict[str, Any] = {"name": name, "typeName": "UIAElementArray", "kind": "array"}
+    count = int(interface.Length)
+    if count == 0:
+        result["status"] = "Empty"
+    elif depth >= MAX_INSPECTION_DEPTH:
+        result["status"] = "Depth limit reached"
+    else:
+        result["children"] = [
+            _describe_element(str(index), interface.GetElement(index), depth + 1)
+            for index in range(min(count, _MAX_INSPECTION_ITEMS))
+        ]
+        if count > _MAX_INSPECTION_ITEMS:
+            result["status"] = f"Truncated to {_MAX_INSPECTION_ITEMS} items"
+    return result
+
+
 def inspection_property(name: str, value: Any, depth: int = 0) -> dict[str, Any]:
-    """Describe UIA values without invoking object members or arbitrary string conversions."""
+    """Describe UIA values without invoking object members or arbitrary string conversions.
+
+    Scalars, lists and the UIA elements and element arrays that properties such as
+    ``ControllerFor`` hold are described, nested up to ``MAX_INSPECTION_DEPTH`` levels. Any other
+    object is reported as opaque and its members are never read.
+    """
     __tracebackhide__ = True
     result: dict[str, Any] = {"name": name, "typeName": type(value).__name__}
     if value is None or type(value) in (str, int, float, bool):
@@ -37,15 +120,17 @@ def inspection_property(name: str, value: Any, depth: int = 0) -> dict[str, Any]
                 result["status"] = "Truncated to 4096 characters"
     elif type(value) in (list, tuple):
         result["kind"] = "array"
-        if depth >= 2:
+        if depth >= MAX_INSPECTION_DEPTH:
             result["status"] = "Depth limit reached"
         else:
             result["children"] = [
                 inspection_property(str(index), child, depth + 1)
-                for index, child in enumerate(value[:32])
+                for index, child in enumerate(value[:_MAX_INSPECTION_ITEMS])
             ]
-            if len(value) > 32:
-                result["status"] = "Truncated to 32 items"
+            if len(value) > _MAX_INSPECTION_ITEMS:
+                result["status"] = f"Truncated to {_MAX_INSPECTION_ITEMS} items"
+    elif (expanded := _describe_uia_value(name, value, depth)) is not None:
+        return expanded
     else:
         result.update(kind="object", status="Opaque external UIA value; members are not read")
     return result

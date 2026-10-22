@@ -95,3 +95,68 @@ describe("Spy root rows for the selected application", () => {
     expect(render(undefined, window).label.find("app-marker")).toBeUndefined();
   });
 });
+
+describe("the route to a selected row", () => {
+  const rows = () => {
+    const start = script.indexOf("  const renderNodes = (parent, values) => {");
+    const stop = script.indexOf("  const table = (id, values) => {", start);
+    const routeStart = script.indexOf("  // The route from a root window down to a row");
+    const routeStop = script.indexOf("  const choose = (nodeId) => {", routeStart);
+    expect(routeStart).toBeGreaterThan(0);
+    const tree = new FakeNode("tree");
+    const nodes = new Map<string, { root: boolean; parentId?: string; index: number }>();
+    const info = (controlType: string, name: string, extra: Record<string, unknown> = {}) =>
+      ({ controlType, name, automationId: "", className: "C", processId: 1, ...extra });
+    const context = {
+      nodes, appState: undefined, selected: undefined, element: () => tree,
+      document: { createElement: () => new FakeNode() },
+      setIcon: () => undefined, rootIcon: () => undefined, applyMarker: () => undefined,
+      filter: () => undefined, expand: () => undefined, choose: () => undefined, String, Number,
+    };
+    const render = (parent: FakeNode, values: unknown[]) =>
+      runInNewContext(script.slice(start, stop) + "\nrenderNodes(parent, values);", { ...context, parent, values });
+    render(tree, [
+      { nodeId: "w1", hasChildren: true, info: info("Window", "First") },
+      { nodeId: "w2", hasChildren: true, info: info("Window", "App") },
+    ]);
+    const list = new FakeNode("children");
+    (list as unknown as { closest: () => unknown }).closest = () => ({
+      querySelector: () => ({ dataset: { nodeId: "w2" }, getAttribute: () => "1" }),
+    });
+    render(list, [
+      { nodeId: "p0", hasChildren: false, info: info("Pane", "") },
+      { nodeId: "p1", hasChildren: true, info: info("Pane", "Editor", { automationId: "ed" }) },
+    ]);
+    const deeper = new FakeNode("grandchildren");
+    (deeper as unknown as { closest: () => unknown }).closest = () => ({
+      querySelector: () => ({ dataset: { nodeId: "p1" }, getAttribute: () => "2" }),
+    });
+    render(deeper, [{ nodeId: "b0", hasChildren: false, info: info("Button", "Save") }]);
+    const route = (nodeId: string) =>
+      runInNewContext(script.slice(routeStart, routeStop) + "\nselectionPathFor(id);", { ...context, id: nodeId });
+    return { nodes, route };
+  };
+
+  it("records where each row sits: its parent and its position among its siblings", () => {
+    const { nodes } = rows();
+    expect(nodes.get("w2")).toMatchObject({ root: true, parentId: undefined, index: 1 });
+    expect(nodes.get("p1")).toMatchObject({ root: false, parentId: "w2", index: 1 });
+    expect(nodes.get("b0")).toMatchObject({ root: false, parentId: "p1", index: 0 });
+  });
+
+  it("describes the route from the root window by what each object is, not by node id", () => {
+    const { route } = rows();
+    expect(JSON.parse(JSON.stringify(route("b0")))).toEqual([
+      { controlType: "Window", automationId: "", name: "App", className: "C" },
+      { controlType: "Pane", automationId: "ed", name: "Editor", className: "C", index: 1 },
+      { controlType: "Button", automationId: "", name: "Save", className: "C", index: 0 },
+    ]);
+    expect(JSON.parse(JSON.stringify(route("w1")))).toEqual([
+      { controlType: "Window", automationId: "", name: "First", className: "C" },
+    ]); // a root window's position is not part of its identity: windows reorder
+  });
+
+  it("has no route for a row that is not in the tree", () => {
+    expect(rows().route("missing")).toBeUndefined();
+  });
+});

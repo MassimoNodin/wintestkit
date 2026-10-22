@@ -186,9 +186,30 @@ The **Spy** view, below Explorer, explores the live UI Automation tree of the ap
   for each candidate and can take 20 seconds or more in a large application. A spinner shows
   while it runs, during which Spy cannot do anything else. The result is marked unique, or not
   unique with the number of matches. If it fails, the button changes to **Try again**.
-- Inspection values can be expanded as bounded, read-only object or array trees. These are
-  external UI Automation values, not arbitrary .NET members: opaque CLR properties such as
-  WPF `BorderThickness` or brush internals require application-side support and are not reflected.
+- **All properties** is one list, sorted alphabetically by name. A property that holds nested
+  values, such as `RuntimeId`, `BoundingRectangle` or an element list like `ControllerFor`,
+  shows an arrow and a count; click the arrow to open them in place. Nested rows are indented,
+  tinted and marked with an arrow, and hovering a row shows its full path (for example
+  `ControllerFor › 0 › BoundingRectangle`). Nesting can go several levels deep: a list of
+  elements, each element, and the arrays inside it. Opening is remembered only for the
+  selected object. These are external UI Automation values, not arbitrary .NET members: opaque
+  CLR properties such as WPF `BorderThickness` or brush internals require application-side
+  support and are not reflected.
+- To always see a property, click the pin beside it in **All properties**. Pinned properties
+  appear in a **Pinned** group for every object you select, in the order you pinned them; click
+  the pin again, in either list, to remove one. The list is the user setting
+  `wintestkit.spy.shownProperties`: it lives in your VS Code user settings, applies to every
+  project, and is never written to a project or its git repository. At most 64 properties can be
+  pinned.
+- Spy keeps your selection through a reload. After **Refresh objects**, a server restart, or
+  reloading VS Code, it expands the tree down to the object you had selected and selects it
+  again. It finds the object by what it is, not by an id that changes on restart: the type,
+  automation id, name and class of each object on its route from the window, plus its position
+  among its siblings. It will not guess: if several objects fit equally well, or the object has
+  closed or changed, a VS Code notification says it could not find it, nothing is selected, and
+  the selection is forgotten so the message is not repeated. Changing **Show Other Apps** is not
+  a reload and clears the selection as before. The remembered selection is kept per workspace in
+  VS Code's own storage, never in a project or its git repository.
 - The **Preview** section of the properties shows the selected object. By default it shows
   just the element; **In context** switches to its whole window with the object outlined in red.
   Both fit the same fixed-size frame, however large or small the image, and the choice stays
@@ -224,7 +245,7 @@ The guided setup creates the starter files described in
 [Getting started](getting-started.md).
 
 The inspector loads essential properties first. To read the complete property list and
-supported patterns, expand **All properties** and click **Load all properties**. Its loading
+supported patterns, click **Load all properties** in the **All properties** section. Its loading
 state stays inside the inspector, and you can retry if the request fails. Locator generation
 does not block the basic property display.
 

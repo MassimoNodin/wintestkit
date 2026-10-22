@@ -410,8 +410,8 @@ def test_inspection_is_bounded_and_does_not_reflect_objects() -> None:
     assert len(array["children"]) == 32
     assert len(string["value"]) == 4096
     assert inspection_property("bad", float("nan"))["kind"] == "unavailable"
-    nested = inspection_property("nested", [[[1]]])
-    assert "children" not in nested["children"][0]["children"][0]
+    nested = inspection_property("nested", [[[[[[1]]]]]])
+    assert "children" not in nested["children"][0]["children"][0]["children"][0]["children"][0]
 
 
 def test_full_properties_report_unavailable_values(

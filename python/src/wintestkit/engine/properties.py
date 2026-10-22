@@ -9,7 +9,7 @@ configuration (``ClrFullClassName`` can stand for ``ItemStatus``, for example).
 from __future__ import annotations
 
 import re
-from collections.abc import Collection, Mapping
+from collections.abc import Collection, Iterable, Mapping
 from dataclasses import dataclass
 from difflib import get_close_matches
 from typing import Any, Literal, cast
@@ -310,10 +310,21 @@ def matches(condition: Condition, actual: str | bool | int | float) -> bool:
     return actual == expected
 
 
-def inspection_values(element: Any, aliases: Mapping[str, str]) -> dict[str, Any]:
-    """Read useful extra locator properties without enumerating every UIA property."""
+DEFAULT_INSPECTION_PROPERTIES = ("HelpText", "ItemStatus", "ItemType")
+
+
+def inspection_values(
+    element: Any,
+    aliases: Mapping[str, str],
+    base: Iterable[str] = DEFAULT_INSPECTION_PROPERTIES,
+) -> dict[str, Any]:
+    """Read useful extra locator properties without enumerating every UIA property.
+
+    ``base`` are the properties read whatever the aliases are; the editor's Spy passes none, so it
+    reads only what the configured aliases point at.
+    """
     values: dict[str, Any] = {}
-    names = dict.fromkeys(["HelpText", "ItemStatus", "ItemType", *aliases.values()])
+    names = dict.fromkeys([*base, *aliases.values()])
     for name in names:
         try:
             value = element.get_property(SUPPORTED[name].uia_name)

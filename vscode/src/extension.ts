@@ -4,6 +4,7 @@ import { onDidChangeInterpreter, runTerminal } from "./python";
 import { ServerManager, type Project } from "./server/serverManager";
 import { StatusBar } from "./statusBar";
 import { Projects } from "./projects";
+import { ConfigChanges } from "./configChanges";
 import { DiscoveryStore } from "./discovery/store";
 import { CodeLenses } from "./editor/codeLens";
 import { CheckDecorations, CheckResultsStore } from "./editor/decorations";
@@ -146,6 +147,15 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     "**/{pyproject.toml,wintestkit.yaml,wintestkit.local.yaml,wintestkit.local.toml}",
   );
   const configTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  // A watcher event is not an edit: indexers, scanners and sync clients touch files without
+  // changing them, which must not restart the server. Only different content does.
+  const configChanges = new ConfigChanges();
+  const primeConfig = () => {
+    for (const project of projects.all)
+      void configChanges.prime(project.root.fsPath).catch((error) => log.error(String(error)));
+  };
+  primeConfig();
+  context.subscriptions.push(projects.onDidChange(primeConfig));
   const reloadConfig = (uri: vscode.Uri) => {
     const project = projects.projectFor(uri);
     if (!project) return;
@@ -156,13 +166,17 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       key,
       setTimeout(() => {
         configTimers.delete(key);
-        setup.refresh();
-        if (vscode.workspace.isTrusted && enablement.enabled)
-          void servers
-            .restart(project)
-            .catch((error) =>
-              log.error("Configuration reload failed: " + String(error)),
-            );
+        void configChanges
+          .changed(uri.fsPath)
+          .then((changed) => {
+            if (!changed) return;
+            setup.refresh();
+            if (vscode.workspace.isTrusted && enablement.enabled)
+              return servers.restart(project);
+          })
+          .catch((error) =>
+            log.error("Configuration reload failed: " + String(error)),
+          );
       }, 350),
     );
   };
@@ -203,7 +217,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     projectSweep,
     unused,
   );
-  const spy = new SpyView(projects, servers, context.extensionUri, log, setupMonitor);
+  const spy = new SpyView(projects, servers, context.extensionUri, log, setupMonitor, context.workspaceState);
   context.subscriptions.push(spy);
   context.subscriptions.push(
     registerInsertElement(projects, discovery, log),

@@ -8,6 +8,11 @@ import type {
 } from "../protocol/generated";
 import type { TourView } from "../setup/tour";
 import { MAX_PREVIEW_DATA_URL, type PreviewImages } from "./objectPreviews";
+import { parseSelectionPath, type PathSegment } from "./selectionPath";
+
+/** A UI Automation property name, as listed under All properties. */
+export const PROPERTY_NAME = /^[A-Za-z][A-Za-z0-9]{0,63}$/;
+export const MAX_SHOWN_PROPERTIES = 64;
 
 export const SPY_TOUR_ACTIONS = ["back", "next", "close", "disable", "skip", "finish"] as const;
 
@@ -25,16 +30,20 @@ export type SpyRequest =
       enabled: boolean;
     }
   | {
-      type: "expand" | "select" | "highlight" | "loadProperties";
+      type: "expand" | "highlight" | "loadProperties";
       nodeId: string;
     }
+  /** `path` is the route from a root window, so the selection can be found again after a reload. */
+  | { type: "select"; nodeId: string; path?: PathSegment[] }
   | { type: "copy"; text: string }
   | { type: "generateLocator"; nodeId: string }
+  | { type: "pinProperty"; name: string; pinned: boolean }
   | { type: "openPreview"; view: "element" | "window"; dataUrl: string }
   | { type: "openDefinition"; id: string };
 export type SpyResponse =
   | { type: "savedDefinition"; id: string; qualname: string; preview?: PreviewImages; reason?: string }
   | { type: "objectPreview"; nodeId: string; preview?: PreviewImages; reason?: string }
+  | { type: "selectionRestored"; nodeId: string }
   | { type: "enumerationIncomplete"; message: string; nodeId?: string }
   | { type: "rootIcons"; icons: Record<string, string> }
   /** The guided tour is showing: dull the panel, and light Pick element when it is the subject. */
@@ -62,6 +71,8 @@ export type SpyResponse =
       hasProject: boolean;
       showOtherApps: boolean;
       bringToFront: boolean;
+      /** Properties the user pinned to the default list (a user setting). */
+      shownProperties?: string[];
     }
   | { type: "roots"; nodes: NodeInfo[] }
   | { type: "children"; nodeId: string; nodes: NodeInfo[]; expanded?: boolean }
@@ -126,8 +137,14 @@ export function parseSpyRequest(value: unknown): SpyRequest | undefined {
     return {
       type: message.type as "pick" | "stopPick" | "refresh" | "addToPage" | "chooseApp",
     };
+  if (message.type === "select" && typeof message.nodeId === "string" && message.nodeId.length <= 512) {
+    const path = parseSelectionPath(message.path);
+    return path
+      ? { type: "select", nodeId: message.nodeId, path }
+      : { type: "select", nodeId: message.nodeId };
+  }
   if (
-    ["expand", "select", "highlight", "loadProperties", "generateLocator"].includes(
+    ["expand", "highlight", "loadProperties", "generateLocator"].includes(
       String(message.type),
     ) &&
     typeof message.nodeId === "string" &&
@@ -135,7 +152,7 @@ export function parseSpyRequest(value: unknown): SpyRequest | undefined {
   )
     return {
       type: message.type as
-        "expand" | "select" | "highlight" | "loadProperties" | "generateLocator",
+        "expand" | "highlight" | "loadProperties" | "generateLocator",
       nodeId: message.nodeId,
     };
   if (
@@ -144,6 +161,13 @@ export function parseSpyRequest(value: unknown): SpyRequest | undefined {
     message.text.length <= 100000
   )
     return { type: "copy", text: message.text };
+  if (
+    message.type === "pinProperty" &&
+    typeof message.name === "string" &&
+    PROPERTY_NAME.test(message.name) &&
+    typeof message.pinned === "boolean"
+  )
+    return { type: "pinProperty", name: message.name, pinned: message.pinned };
   if (
     message.type === "openPreview" &&
     (message.view === "element" || message.view === "window") &&

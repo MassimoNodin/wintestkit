@@ -964,7 +964,88 @@ body.tour-dim::after {
 #object-preview-image:not([hidden]) { cursor: pointer; }
 #object-preview-image[hidden] { display: none; }
 #object-preview-status { margin: 6px 12px 10px; }
-#inspection-tree { overflow-wrap: anywhere; }
-#inspection-tree details { margin-left: 12px; }
-#inspection-tree summary { cursor: pointer; }
-.inspection-value { padding: 3px 0; white-space: pre-wrap; }
+/* All properties and Pinned: name | value | pin. Nested values open in place, indented. */
+col.property-name-column { width: 46%; }
+col.property-action-column { width: 34px; }
+.property-row th {
+    padding-left: calc(12px + var(--depth, 0) * 14px);
+}
+.property-head {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    min-width: 0;
+}
+.property-name {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    color: var(--vscode-foreground, inherit);
+}
+.property-count {
+    flex-shrink: 0;
+    margin-left: 6px;
+    padding: 0 6px;
+    font-size: 10px;
+    color: var(--muted);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    white-space: nowrap;
+}
+.property-toggle,
+.property-pin {
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    flex-shrink: 0;
+    color: var(--muted);
+    background: transparent;
+    border: 0;
+    border-radius: 3px;
+    vertical-align: middle;
+}
+.property-toggle {
+    margin-right: 2px;
+    color: var(--accent);
+}
+.property-toggle:hover,
+.property-pin:hover {
+    color: var(--vscode-foreground, inherit);
+    background: var(--vscode-toolbar-hoverBackground, rgba(128, 128, 128, 0.2));
+}
+.property-pin[aria-pressed="true"] {
+    color: var(--accent);
+}
+/* A pin shows only on the row under the pointer, or while it or the row has keyboard focus. It
+   stays in the tab order, so keyboard users reach it. */
+.property-row .property-pin {
+    opacity: 0;
+}
+.property-row:hover .property-pin,
+.property-row:focus-within .property-pin {
+    opacity: 1;
+}
+.property-toggle-spacer {
+    display: inline-block;
+    flex-shrink: 0;
+    width: 22px;
+}
+.property-actions {
+    padding: 2px 4px;
+    text-align: center;
+    vertical-align: middle;
+}
+/* A nested value reads as part of its parent: tinted, indented, and marked on its left edge. */
+.property-row.nested {
+    background: color-mix(in srgb, var(--accent) 7%, transparent);
+}
+.property-row.nested th {
+    border-left: 3px solid
+        color-mix(in srgb, var(--accent) calc(100% - var(--depth, 1) * 18%), transparent);
+}
+.nested-marker {
+    margin-right: 4px;
+    color: var(--accent);
+}
+.property-row[hidden] {
+    display: none;
+}

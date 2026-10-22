@@ -16,11 +16,18 @@ import type {
   SpyPickedNotification,
   Suggestion,
 } from "../protocol/generated";
-import { parseSpyRequest, type SpyRequest, type SpyResponse } from "./messages";
+import {
+  MAX_SHOWN_PROPERTIES,
+  PROPERTY_NAME,
+  parseSpyRequest,
+  type SpyRequest,
+  type SpyResponse,
+} from "./messages";
 import type { SetupMonitor } from "../setup/monitor";
 import { readApplicationIcons } from "./appIcons";
 import { livePreviewImages, readObjectPreview, savedPreviewImages } from "./objectPreviews";
 import { PreviewViewer } from "./previewViewer";
+import { bestMatch, describeSegment, parseSelectionPath, segmentOf, type PathSegment } from "./selectionPath";
 import * as path from "node:path";
 
 type SpyConnection = { client?: JsonRpcClient; revision: number };
@@ -39,6 +46,11 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
   private appRunning = false;
   private targetName?: string;
   private appName?: string;
+  /** The selected object's route from its root window, kept so a reload can select it again. */
+  private selectionPath?: PathSegment[];
+  private selectionProject?: string;
+  /** Set for the one refresh that follows a change of scope: that is not a reload of the same view. */
+  private skipRestore = false;
   /** The object the webview shows details for, which a requested locator must belong to. */
   private selectedNodeId?: string;
   private readonly previewViewer = new PreviewViewer();
@@ -80,6 +92,7 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
     private readonly extensionUri: vscode.Uri,
     private readonly log: vscode.LogOutputChannel,
     private readonly setup?: SetupMonitor,
+    private readonly memory?: vscode.Memento,
   ) {
     this.subscriptions = [
       ...(setup ? [setup.onDidChange(() => this.syncTour())] : []),
@@ -105,7 +118,10 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
         if (this.view?.visible) void this.safe(() => this.refreshIfStale());
       }),
       vscode.workspace.onDidChangeConfiguration((event) => {
-        if (event.affectsConfiguration("wintestkit.spy.bringWindowToFront"))
+        if (
+          event.affectsConfiguration("wintestkit.spy.bringWindowToFront") ||
+          event.affectsConfiguration("wintestkit.spy.shownProperties")
+        )
           this.state();
       }),
       vscode.workspace.onDidSaveTextDocument((document) => {
@@ -424,6 +440,7 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
       hasProject: !!this.currentProject(),
       showOtherApps: this.showOtherApps,
       bringToFront: this.bringToFront(),
+      shownProperties: this.shownProperties(),
     });
     void vscode.commands.executeCommand(
       "setContext",
@@ -589,6 +606,7 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
                 client.request<InspectPropertiesResult>("inspect.properties", {
                   nodeId: picked.node.nodeId,
                   includeAncestors: true,
+                  ...this.includeShown(),
                 }),
               );
             },
@@ -596,6 +614,7 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
             "details",
           );
           if (!this.sameReveal(client, treeRevision, selection)) return;
+          let pickedPath: PathSegment[] | undefined;
           const revealed = await this.loading(
             "Revealing picked object",
             properties.ancestors.length + 2,
@@ -608,12 +627,15 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
               treeRevision = ++this.revision;
               this.post({ type: "roots", nodes: roots });
               this.trackNodes(client, roots, true);
-              this.deferIcons(client, roots, treeRevision, selection);
+              this.deferIcons(client, roots, treeRevision);
               const rootIndex = properties.ancestors.findIndex((ancestor) =>
                 roots.some((root) => root.nodeId === ancestor.nodeId),
               );
               const ancestors =
                 rootIndex < 0 ? [] : properties.ancestors.slice(rootIndex);
+              pickedPath = ancestors.length
+                ? [...ancestors.map((ancestor) => segmentOf(ancestor.info)), segmentOf(picked.node.info)]
+                : undefined;
               for (const ancestor of ancestors) {
                 if (!this.sameReveal(client, treeRevision, selection))
                   return false;
@@ -638,6 +660,7 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
             return;
           this.suggestion = picked.suggestion;
           this.selectedNodeId = picked.node.nodeId;
+          if (pickedPath) this.rememberSelection(pickedPath);
           this.post({
             type: "picked",
             node: picked.node,
@@ -705,6 +728,8 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
   private async refreshTree(): Promise<void> {
     const scopeRevision = this.scopeRevision;
     const showOtherApps = this.showOtherApps;
+    const restore = !this.skipRestore;
+    this.skipRestore = false;
     await this.loading("Loading objects", 2, async (phase) => {
       const attempt = await phase("Connecting to automation server", () =>
         this.connect(),
@@ -731,8 +756,73 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
       this.post({ type: "roots", nodes });
       this.loaded = true;
       this.trackNodes(client, nodes, true);
-      this.deferIcons(client, nodes, revision, this.selection);
+      this.deferIcons(client, nodes, revision);
+      if (restore) void this.restoreSelection(client, nodes, revision);
     });
+  }
+  // -- keeping the selection through a reload ------------------------------------------------
+  private static readonly selectionKey = "wintestkit.spy.selection";
+  private rememberSelection(path: PathSegment[] | undefined): void {
+    const root = (this.project ?? this.currentProject())?.root.toString();
+    this.selectionPath = path;
+    this.selectionProject = path ? root : undefined;
+    if (!this.memory || !root) return;
+    const saved = { ...(this.memory.get<Record<string, unknown>>(SpyView.selectionKey) ?? {}) };
+    if (path) saved[root] = path;
+    else delete saved[root];
+    void this.memory.update(SpyView.selectionKey, saved);
+  }
+  private recallSelection(): PathSegment[] | undefined {
+    const root = (this.project ?? this.currentProject())?.root.toString();
+    if (!root) return;
+    if (this.selectionProject === root) return this.selectionPath;
+    const saved = parseSelectionPath(this.memory?.get<Record<string, unknown>>(SpyView.selectionKey)?.[root]);
+    this.selectionPath = saved;
+    this.selectionProject = saved ? root : undefined;
+    return saved;
+  }
+  /**
+   * Selects the object that was selected before the reload or restart, by walking its route
+   * through the fresh tree and opening each level on the way. If it is not there any more, says
+   * so once in a VS Code notification and forgets it.
+   */
+  private async restoreSelection(client: JsonRpcClient, roots: NodeInfo[], revision: number): Promise<void> {
+    const path = this.recallSelection();
+    if (!path?.length) return;
+    const selection = this.selection;
+    const stale = () =>
+      this.disposed || this.client !== client || revision !== this.revision ||
+      selection !== this.selection || this.savedDefinition || this.tutorialActive();
+    try {
+      let candidates = roots;
+      let current: NodeInfo | undefined;
+      for (let depth = 0; depth < path.length; depth++) {
+        if (current) {
+          candidates = await this.enumerate(client, "inspect.children", { nodeId: current.nodeId });
+          if (stale()) return;
+          this.post({ type: "children", nodeId: current.nodeId, nodes: candidates, expanded: true });
+          this.trackNodes(client, candidates);
+        }
+        current = bestMatch(path[depth], candidates);
+        if (!current) {
+          this.selectionNotFound(path);
+          return;
+        }
+      }
+      if (!current || stale()) return;
+      await this.handle({ type: "select", nodeId: current.nodeId });
+      this.post({ type: "selectionRestored", nodeId: current.nodeId });
+    } catch (error) {
+      if (!stale()) this.log.error("Could not restore the selection: " + String(error));
+    }
+  }
+  private selectionNotFound(path: PathSegment[]): void {
+    const target = path[path.length - 1];
+    this.rememberSelection(undefined);
+    void vscode.window.showWarningMessage(
+      "Spy could not find " + describeSegment(target) + " again after reloading, so nothing is " +
+        "selected. It may have changed or closed.",
+    );
   }
   /** Resolve a diagnostic path against a fresh, bounded UIA snapshot before revealing it. */
   private async revealRelocation(path: string): Promise<void> {
@@ -895,9 +985,11 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
       !!value && typeof value === "object" &&
       (value as { sessionId?: unknown }).sessionId === this.pickSession;
   }
-  private deferIcons(client: JsonRpcClient, nodes: NodeInfo[], revision: number, selection: number): void {
+  // Icons belong to the tree, not to what is selected in it: choosing a row (or restoring the
+  // previous selection) while they load must not discard them, so only the tree revision counts.
+  private deferIcons(client: JsonRpcClient, nodes: NodeInfo[], revision: number): void {
     void readApplicationIcons(nodes.map((node) => node.info.processId)).then((icons) => {
-      if (!this.disposed && !this.savedDefinition && this.sameReveal(client, revision, selection))
+      if (!this.disposed && !this.savedDefinition && this.client === client && revision === this.revision)
         this.post({ type: "rootIcons", icons });
     }).catch((error: unknown) => this.log.error(String(error)));
   }
@@ -1054,12 +1146,17 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
     if (message.type === "showOtherApps") {
       if (this.showOtherApps === message.enabled) return;
       this.showOtherApps = message.enabled;
+      this.skipRestore = true;
       this.invalidateScope();
       return this.refresh();
     }
     if (message.type === "refresh") return this.refreshLive();
     if (message.type === "pick") return this.startPick();
     if (message.type === "stopPick") return this.stopPick();
+    if (message.type === "pinProperty") {
+      await this.pinProperty(message.name, message.pinned);
+      return;
+    }
     if (message.type === "generateLocator") {
       await this.generateLocator(message.nodeId);
       return;
@@ -1090,6 +1187,7 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
     if (message.type === "select") {
       this.suggestion = undefined;
       this.selectedNodeId = message.nodeId;
+      if (message.path) this.rememberSelection(message.path);
     }
     const title =
       message.type === "expand"
@@ -1168,6 +1266,7 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
           const properties = await phase("Reading basic properties", () =>
             client.request<InspectPropertiesResult>("inspect.properties", {
               nodeId,
+              ...this.includeShown(),
             }),
           );
           if (
@@ -1289,6 +1388,45 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
   }
   // Whether highlighting an object also raises its application window. Off by
   // default: the outline is drawn above every window anyway.
+  /** The properties the user pinned to the default list: a user setting, never project state. */
+  private shownProperties(): string[] {
+    const stored = vscode.workspace
+      .getConfiguration("wintestkit.spy")
+      .get<unknown>("shownProperties", []);
+    if (!Array.isArray(stored)) return [];
+    return [
+      ...new Set(
+        stored.filter(
+          (name): name is string => typeof name === "string" && PROPERTY_NAME.test(name),
+        ),
+      ),
+    ].slice(0, MAX_SHOWN_PROPERTIES);
+  }
+  /** Asks the server to read the pinned properties along with the basic ones. */
+  private includeShown(): { include?: string[] } {
+    const shown = this.shownProperties();
+    return shown.length ? { include: shown } : {};
+  }
+  private async pinProperty(name: string, pinned: boolean): Promise<void> {
+    const current = this.shownProperties();
+    if (pinned && !current.includes(name) && current.length >= MAX_SHOWN_PROPERTIES) {
+      // The panel has already drawn it pinned: say why it is not, and put it back.
+      this.post({
+        type: "error",
+        message: "At most " + MAX_SHOWN_PROPERTIES + " properties can be pinned. Unpin one first.",
+      });
+      this.state();
+      return;
+    }
+    const next = pinned
+      ? [...new Set([...current, name])].slice(0, MAX_SHOWN_PROPERTIES)
+      : current.filter((item) => item !== name);
+    if (next.length === current.length && next.every((item, index) => item === current[index])) return;
+    await vscode.workspace
+      .getConfiguration("wintestkit.spy")
+      .update("shownProperties", next, vscode.ConfigurationTarget.Global);
+    this.state();
+  }
   private bringToFront(): boolean {
     return vscode.workspace
       .getConfiguration("wintestkit.spy")

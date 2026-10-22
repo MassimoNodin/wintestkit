@@ -265,10 +265,6 @@
                                 </div>
                                 <p id="object-preview-status" class="muted" role="status"></p>
                             </section>
-                            <section id="inspection-section" class="property-group" hidden>
-                                <h3>Inspection</h3>
-                                <div id="inspection-tree" aria-label="Read-only inspection properties"></div>
-                            </section>
                             <p id="properties-empty" class="muted">
                                 Select an object to inspect its properties.
                             </p>
@@ -299,11 +295,28 @@
                                         ></tbody>
                                     </table>
                                 </section>
-                                <details
+                                <section
+                                    id="pinned-group"
+                                    class="property-group"
+                                    aria-label="Pinned properties"
+                                    hidden
+                                >
+                                    <h3>Pinned</h3>
+                                    <table>
+                                        <colgroup>
+                                            <col class="property-name-column" />
+                                            <col />
+                                            <col class="property-action-column" />
+                                        </colgroup>
+                                        <tbody id="pinned-properties"></tbody>
+                                    </table>
+                                </section>
+                                <section
                                     id="all-properties-section"
                                     class="property-group"
+                                    aria-label="All properties"
                                 >
-                                    <summary>All properties</summary>
+                                    <h3>All properties</h3>
                                     <div class="property-loading-actions">
                                         <button
                                             id="load-properties"
@@ -322,9 +335,14 @@
                                         </p>
                                     </div>
                                     <table>
+                                        <colgroup>
+                                            <col class="property-name-column" />
+                                            <col />
+                                            <col class="property-action-column" />
+                                        </colgroup>
                                         <tbody id="all-properties"></tbody>
                                     </table>
-                                </details>
+                                </section>
                             </div>
                         </div>
                     </section>

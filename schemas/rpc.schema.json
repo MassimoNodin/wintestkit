@@ -465,6 +465,12 @@
         "includeAncestors": {
           "type": "boolean",
           "description": "Include ancestors for revealing a picked object; defaults to false."
+        },
+        "include": {
+          "type": "array",
+          "maxItems": 64,
+          "items": { "type": "string", "minLength": 1, "maxLength": 64 },
+          "description": "Extra UI Automation property names to read when full is false, such as properties the user pinned."
         }
       },
       "required": ["nodeId"],

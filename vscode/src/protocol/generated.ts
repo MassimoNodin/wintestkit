@@ -803,6 +803,12 @@ export interface InspectPropertiesParams {
    * Include ancestors for revealing a picked object; defaults to false.
    */
   includeAncestors?: boolean;
+  /**
+   * Extra UI Automation property names to read when full is false, such as properties the user pinned.
+   *
+   * @maxItems 64
+   */
+  include?: string[];
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema

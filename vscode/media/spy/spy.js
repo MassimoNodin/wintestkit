@@ -460,7 +460,7 @@
       element("tree-stage").dataset.busy = "false";
       element("tree-overlay").hidden = true;
       element("details-loading").hidden = true;
-      for (const id of ["property-groups", "definitions-group", "properties-empty", "locator-panel", "details-empty", "inspection-section"])
+      for (const id of ["property-groups", "definitions-group", "properties-empty", "locator-panel", "details-empty"])
         element(id).hidden = true;
       element("selection-summary").hidden = false;
       for (const id of ["highlight", "load-properties", "copy", "add", "generate", "other-apps"])
@@ -790,53 +790,236 @@
       previewMode = mode;
       showPreview(element("object-preview-status").textContent);
     });
-  const renderInspection = (properties) => {
-    const tree = element("inspection-tree");
-    tree.replaceChildren();
-    element("inspection-section").hidden = !Array.isArray(properties) || !properties.length;
-    let remaining = 500;
-    const safeText = (value) => typeof value === "string" ? value.slice(0, 2000) : "";
-    const append = (parent, entries, depth) => {
-      if (!Array.isArray(entries)) return;
-      for (const property of entries) {
-        if (remaining-- <= 0) {
-          parent.append(tutorialNode("p", "muted", "Inspection display limit reached."));
-          return;
-        }
-        if (!property || typeof property !== "object") continue;
-        const label = safeText(property.name) + " (" + safeText(property.typeName) + ")";
-        if (property.kind === "object" || property.kind === "array") {
-          const branch = document.createElement("details");
-          branch.append(tutorialNode("summary", "", label));
-          if (property.status) branch.append(tutorialNode("p", "muted", safeText(property.status)));
-          if (depth >= 6) branch.append(tutorialNode("p", "muted", "Inspection depth limit reached."));
-          else append(branch, property.children, depth + 1);
-          parent.append(branch);
-        } else {
-          const scalar = property.value;
-          const value = scalar === null ? "null" : typeof scalar === "string" ? safeText(scalar)
-            : typeof scalar === "boolean" || (typeof scalar === "number" && Number.isFinite(scalar)) ? String(scalar) : "";
-          parent.append(tutorialNode("div", "inspection-value", label + ": " +
-            (property.kind === "unavailable" ? safeText(property.status) || "Unavailable" : value)));
-        }
+  // -- All properties: one list, sorted by name, in which nested values fold open ------------
+  let currentProperties;
+  let shownProperties = [];
+  const expandedProperties = new Set();
+  let propertiesNodeId;
+  const propertyToggles = new Map();
+  const MAX_PROPERTY_DEPTH = 8;
+  const MAX_PROPERTY_ROWS = 4000;
+  const PINNABLE = /^[A-Za-z][A-Za-z0-9]{0,63}$/;
+  const compareNames = (left, right) =>
+    String(left.name).localeCompare(String(right.name), undefined, { sensitivity: "base", numeric: true });
+  const scalarText = (value) =>
+    value === null || value === undefined || value === ""
+      ? "—"
+      : typeof value === "string"
+        ? value.slice(0, 2000)
+        : typeof value === "number" || typeof value === "boolean"
+          ? String(value)
+          : "—";
+  // Nested entries of an array keep their order; the named parts of an element are sorted.
+  const nestedEntries = (entry) => {
+    if (!Array.isArray(entry.children)) return [];
+    const valid = entry.children.filter((child) => child && typeof child === "object" && typeof child.name === "string");
+    return entry.kind === "array" ? valid : [...valid].sort(compareNames);
+  };
+  const propertySummary = (entry) => {
+    const children = nestedEntries(entry);
+    if (entry.kind === "array" && children.length)
+      return children.every((child) => child.kind === "scalar")
+        ? children.map((child) => scalarText(child.value)).join(", ").slice(0, 200)
+        : children.length + (children.length === 1 ? " item" : " items");
+    if (entry.kind === "object" && children.length) {
+      const parts = Object.fromEntries(children.map((child) => [child.name, child.value]));
+      return (
+        [parts.ControlType, parts.Name ? '"' + parts.Name + '"' : ""].filter(Boolean).join(" ") || "element"
+      );
+    }
+    if (entry.kind === "scalar") return scalarText(entry.value);
+    return typeof entry.status === "string" ? entry.status.slice(0, 500) : "—";
+  };
+  // The described properties plus any flat value the server sent without a description.
+  const propertyEntries = (properties, inspection) => {
+    const byName = new Map();
+    if (Array.isArray(inspection))
+      for (const entry of inspection)
+        if (entry && typeof entry === "object" && typeof entry.name === "string") byName.set(entry.name, entry);
+    if (properties && typeof properties === "object")
+      for (const [name, value] of Object.entries(properties))
+        if (!byName.has(name)) byName.set(name, { name, kind: "scalar", value });
+    return [...byName.values()].sort(compareNames);
+  };
+  const setPinned = (name, pinned) => {
+    shownProperties = pinned
+      ? [...new Set([...shownProperties, name])]
+      : shownProperties.filter((item) => item !== name);
+    renderPinned();
+    renderAllProperties();
+    post("pinProperty", { name, pinned });
+  };
+  const pinButton = (name) => {
+    const pinned = shownProperties.includes(name);
+    const button = document.createElement("button");
+    button.className = "property-pin codicon " + (pinned ? "codicon-pinned" : "codicon-pin");
+    button.setAttribute("aria-pressed", String(pinned));
+    const label = pinned
+      ? "Remove " + name + " from the default list"
+      : "Show " + name + " in the default list";
+    button.setAttribute("aria-label", label);
+    button.title = label;
+    button.addEventListener("click", () => setPinned(name, !pinned));
+    return button;
+  };
+  const propertyRow = (entry, depth, path, visible, children) => {
+    const row = document.createElement("tr");
+    row.className = "property-row" + (depth ? " nested" : "");
+    row.dataset.depth = String(depth);
+    row.dataset.path = path;
+    row.hidden = !visible;
+    row.style.setProperty("--depth", String(depth));
+    const open = expandedProperties.has(path);
+    row.dataset.expanded = children.length ? String(open) : "";
+    const heading = document.createElement("th");
+    heading.scope = "row";
+    heading.title = path.split("/").join(" › ");
+    // One flex row, so the arrow, the name and the count stay together however narrow the column.
+    const head = document.createElement("div");
+    head.className = "property-head";
+    heading.append(head);
+    if (depth) {
+      const marker = document.createElement("span");
+      marker.className = "nested-marker";
+      marker.textContent = "\u21b3";
+      marker.setAttribute("aria-hidden", "true");
+      head.append(marker);
+    }
+    if (children.length) {
+      const toggle = document.createElement("button");
+      toggle.className = "property-toggle codicon " + (open ? "codicon-chevron-down" : "codicon-chevron-right");
+      const action = (open ? "Hide " : "Show ") + children.length + " nested " +
+        (children.length === 1 ? "property" : "properties") + " of " + entry.name;
+      toggle.setAttribute("aria-expanded", String(open));
+      toggle.setAttribute("aria-label", action);
+      toggle.title = action;
+      toggle.addEventListener("click", () => {
+        if (open) expandedProperties.delete(path);
+        else expandedProperties.add(path);
+        renderAllProperties(path);
+      });
+      propertyToggles.set(path, toggle);
+      head.append(toggle);
+    } else if (!depth) {
+      const spacer = document.createElement("span");
+      spacer.className = "property-toggle-spacer";
+      head.append(spacer);
+    }
+    const label = document.createElement("span");
+    label.className = "property-name";
+    label.textContent = entry.name;
+    head.append(label);
+    if (children.length) {
+      const count = document.createElement("span");
+      count.className = "property-count";
+      count.textContent = children.length + " nested";
+      head.append(count);
+    }
+    const value = document.createElement("td");
+    value.textContent = propertySummary(entry);
+    const actions = document.createElement("td");
+    actions.className = "property-actions";
+    if (!depth && PINNABLE.test(entry.name)) actions.append(pinButton(entry.name));
+    row.append(heading, value, actions);
+    return row;
+  };
+  const renderAllProperties = (focusPath) => {
+    const body = element("all-properties");
+    body.replaceChildren();
+    propertyToggles.clear();
+    const entries = currentProperties
+      ? propertyEntries(currentProperties.properties, currentProperties.inspection)
+      : [];
+    let rows = 0;
+    let truncated = false;
+    const walk = (entry, depth, path, visible) => {
+      if (rows++ >= MAX_PROPERTY_ROWS) {
+        truncated = true;
+        return;
       }
+      const children = depth < MAX_PROPERTY_DEPTH ? nestedEntries(entry) : [];
+      body.append(propertyRow(entry, depth, path, visible, children));
+      const open = expandedProperties.has(path);
+      for (const child of children) walk(child, depth + 1, path + "/" + child.name, visible && open);
     };
-    append(tree, properties, 0);
+    for (const entry of entries) walk(entry, 0, entry.name, true);
+    if (truncated) {
+      const note = document.createElement("tr");
+      note.className = "property-row property-limit";
+      const cell = document.createElement("td");
+      cell.colSpan = 3;
+      cell.className = "muted";
+      cell.textContent = "Display limit reached: only the first " + MAX_PROPERTY_ROWS + " rows are shown.";
+      note.append(cell);
+      body.append(note);
+    }
+    propertyToggles.get(focusPath)?.focus?.();
+  };
+  const renderPinned = () => {
+    const body = element("pinned-properties");
+    body.replaceChildren();
+    const values = (currentProperties && currentProperties.properties) || {};
+    for (const name of shownProperties) {
+      const row = document.createElement("tr");
+      row.className = "property-row";
+      row.dataset.name = name;
+      const heading = document.createElement("th");
+      heading.scope = "row";
+      heading.textContent = name;
+      const value = document.createElement("td");
+      value.textContent = scalarText(typeof values[name] === "string" ? values[name] : undefined);
+      const actions = document.createElement("td");
+      actions.className = "property-actions";
+      actions.append(pinButton(name));
+      row.append(heading, value, actions);
+      body.append(row);
+    }
+    element("pinned-group").hidden = shownProperties.length === 0;
+  };
+  const showProperties = (properties) => {
+    currentProperties = properties;
+    renderPinned();
+    renderAllProperties();
+  };
+  const clearProperties = () => {
+    currentProperties = undefined;
+    propertiesNodeId = undefined;
+    expandedProperties.clear();
+    renderPinned();
+    renderAllProperties();
   };
   // Whether the selected object has an on-screen rectangle to outline.
   let highlightable = true;
+  // The route from a root window down to a row, by what each object is (not by node id, which
+  // does not survive a reload), so the host can select the same object again afterwards.
+  const selectionPathFor = (nodeId) => {
+    const path = [];
+    let id = nodeId;
+    for (let depth = 0; id !== undefined && depth < 64; depth++) {
+      const entry = nodes.get(id);
+      if (!entry) return undefined;
+      const info = entry.node.info;
+      path.unshift({
+        controlType: info.controlType || "",
+        automationId: info.automationId || "",
+        name: info.name || "",
+        className: info.className || "",
+        ...(entry.root || typeof entry.index !== "number" ? {} : { index: entry.index }),
+      });
+      id = entry.parentId;
+    }
+    return path.length ? path : undefined;
+  };
   const choose = (nodeId) => {
     if (savedDefinition) return;
     loadingPreview();
-    renderInspection(undefined);
+    clearProperties();
     focusSelected(nodeId);
     suggestion = undefined;
     hasDetails = false;
     selecting = true;
     fullPropertiesLoaded = false;
     fullPropertiesLoading = false;
-    element("all-properties-section").open = false;
-    table("all-properties", {});
     detailsError = "";
     const info = nodes.get(nodeId).node.info;
     element("selection-name").textContent =
@@ -849,7 +1032,7 @@
     highlightable = true;
     renderHighlight();
     renderStatus();
-    post("select", { nodeId });
+    post("select", { nodeId, path: selectionPathFor(nodeId) });
   };
   const expand = (nodeId, open = true) => {
     const entry = nodes.get(nodeId);
@@ -953,6 +1136,8 @@
         text,
         baseTitle: row.title,
         root: parent.id === "tree",
+        parentId: parentRow?.dataset?.nodeId,
+        index,
         loaded: false,
         loading: false,
         open: false,
@@ -1201,7 +1386,7 @@
       selecting = false;
       tasks.clear();
       renderSuggestion(undefined);
-      renderInspection(undefined);
+      clearProperties();
       element("selection-name").textContent = message.qualname;
       element("selection-type").textContent = "Saved definition (offline)";
       renderObjectPreview(message.preview, message.reason);
@@ -1240,6 +1425,14 @@
         element("object-preview").hidden = true;
       }
       appState = message;
+      if (Array.isArray(message.shownProperties)) {
+        const names = message.shownProperties.filter((name) => typeof name === "string" && PINNABLE.test(name));
+        if (JSON.stringify(names) !== JSON.stringify(shownProperties)) {
+          shownProperties = names;
+          renderPinned();
+          renderAllProperties();
+        }
+      }
       if (typeof message.showOtherApps === "boolean")
         showOtherApps = message.showOtherApps;
       if (typeof message.bringToFront === "boolean")
@@ -1258,7 +1451,7 @@
     } else if (message.type === "roots") {
       savedDefinition = false;
       element("object-preview").hidden = true;
-      renderInspection(undefined);
+      clearProperties();
       hint("");
       rootIcons = {};
       coverage.clear();
@@ -1270,8 +1463,7 @@
       selecting = false;
       fullPropertiesLoaded = false;
       fullPropertiesLoading = false;
-      element("all-properties-section").open = false;
-      treeError = "";
+        treeError = "";
       detailsError = "";
       renderNodes(element("tree"), message.nodes);
       for (const id of [
@@ -1334,8 +1526,7 @@
       if (message.nodeId !== selected) return;
       fullPropertiesLoaded = true;
       fullPropertiesLoading = false;
-      table("all-properties", message.properties.properties);
-      renderInspection(message.properties.inspection);
+      showProperties(message.properties);
       const info = message.properties.info;
       table("automation-properties", {
         Framework: info.frameworkId,
@@ -1347,7 +1538,9 @@
       // The tutorial has no live app to capture; otherwise the host sends the preview next.
       if (tutorialView) element("object-preview").hidden = true;
       else loadingPreview();
-      renderInspection(message.properties.inspection);
+      // What was open belongs to the object it was opened on; picking another starts closed.
+      if (message.nodeId !== propertiesNodeId) expandedProperties.clear();
+      propertiesNodeId = message.nodeId;
       hint("");
       focusSelected(message.nodeId);
       hasDetails = true;
@@ -1390,10 +1583,12 @@
           ? info.patterns.join(", ") || "None"
           : "Not loaded",
       });
-      table("all-properties", message.properties.properties);
+      showProperties(message.properties);
       // A locator the user already asked for keeps its spinner while the details arrive.
       if (message.suggestion || !locatorBusy) renderSuggestion(message.suggestion);
       renderStatus();
+    } else if (message.type === "selectionRestored") {
+      nodes.get(message.nodeId)?.row.scrollIntoView?.({ block: "nearest" });
     } else if (message.type === "objectPreview") {
       if (message.nodeId === selected) renderObjectPreview(message.preview, message.reason);
     } else if (message.type === "enumerationIncomplete") {

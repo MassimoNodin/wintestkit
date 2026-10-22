@@ -76,6 +76,11 @@ def test_rpc_results(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, validate: 
             {"nodeId": node["nodeId"], "full": True, "includeAncestors": True},
             "InspectPropertiesResult",
         ),
+        (
+            "inspect.properties",
+            {"nodeId": node["nodeId"], "include": ["Name", "RuntimeId"]},
+            "InspectPropertiesResult",
+        ),
         ("inspect.highlight", {"nodeId": node["nodeId"]}, "InspectHighlightResult"),
         ("inspect.preview", {"nodeId": node["nodeId"]}, "InspectPreviewResult"),
         ("suggest.locator", {"nodeId": node["nodeId"]}, "SuggestLocatorResult"),
