@@ -11,7 +11,7 @@ from wintestkit.cli import main
 
 
 def test_version() -> None:
-    assert re.fullmatch(r"\d+\.\d+\.\d+", wintestkit.__version__)
+    assert re.fullmatch(r"\d+\.\d+\.\d+((a|b|rc)\d+|\.dev\d+)?", wintestkit.__version__)
 
 
 def test_cli_version_flag(capsys: pytest.CaptureFixture[str]) -> None:

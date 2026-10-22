@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from wintestkit import events
 from wintestkit.artifacts import artifacts_dir, relative_to_report, safe_id
 from wintestkit.events import FileSink, TcpSink, encode_event, open_sink
 
@@ -114,6 +115,55 @@ def test_tcp_sink_without_a_server_drops_events(caplog: pytest.LogCaptureFixture
     sink.emit({"event": "a"})  # no exception
     sink.close()
     assert "could not connect" in caplog.text
+
+
+def test_nonreading_receiver_bounds_emit_and_concurrent_close(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(events, "WRITE_TIMEOUT", 0.1)
+    entered = threading.Event()
+
+    def encode(event: dict) -> bytes:
+        entered.set()
+        return b"x" * (8 * 1024 * 1024)
+
+    monkeypatch.setattr(events, "encode_event", encode)
+    with socket.socket() as listener:
+        listener.bind(("127.0.0.1", 0))
+        listener.listen(1)
+        sink = TcpSink("127.0.0.1", listener.getsockname()[1])
+        receiver, _ = listener.accept()
+        with receiver:
+            assert sink._socket is not None
+            sink._socket.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 4096)
+
+            def emit() -> None:
+                sink.emit({"event": "large"})
+
+            writer = threading.Thread(target=emit, daemon=True)
+            writer.start()
+            assert entered.wait(1)
+            closer = threading.Thread(target=sink.close, daemon=True)
+            closer.start()
+            writer.join(2)
+            closer.join(2)
+            assert not writer.is_alive()
+            assert not closer.is_alive()
+            assert sink._socket is None
+            sink.emit({"event": "dropped"})
+            sink.close()
+
+
+def test_socket_setup_failure_closes_connection(monkeypatch: pytest.MonkeyPatch) -> None:
+    from unittest.mock import Mock
+
+    connection = Mock()
+    connection.setsockopt.side_effect = OSError("setup failed")
+    monkeypatch.setattr(socket, "create_connection", lambda *args, **kwargs: connection)
+    sink = TcpSink("127.0.0.1", 12345)
+    connection.settimeout.assert_called_once_with(events.WRITE_TIMEOUT)
+    connection.close.assert_called_once()
+    assert sink._socket is None
 
 
 def test_open_sink_parses_urls(tmp_path: Path) -> None:

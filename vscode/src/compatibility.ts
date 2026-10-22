@@ -2,7 +2,8 @@ import policy from "./compatibility.json";
 
 export const EXTENSION_VERSION = policy.extensionVersion;
 export const PROTOCOL_VERSION = policy.protocolVersion;
-export const PYTHON_SPECIFIER = ">=" + policy.python.minimum + ",<" + policy.python.maximumExclusive;
+export const ALLOW_PRERELEASE = (policy as { channel?: string }).channel === "prerelease";
+export const PYTHON_SPECIFIER = ">=" + policy.python.minimum + (ALLOW_PRERELEASE ? ".dev0" : "") + ",<" + policy.python.maximumExclusive;
 export const PYTHON_REQUIREMENT = "wintestkit" + PYTHON_SPECIFIER;
 
 export interface CompatibilityIssue {
@@ -13,7 +14,7 @@ export interface CompatibilityIssue {
 
 function release(version: unknown): number[] | undefined {
   if (typeof version !== "string") return;
-  const match = /^(\d+)\.(\d+)(?:\.(\d+))?(?:\.post\d+)?(?:\+[a-zA-Z0-9]+(?:[._-][a-zA-Z0-9]+)*)?$/.exec(version);
+  const match = /^(\d+)\.(\d+)(?:\.(\d+))?(?:(?:a|b|rc)\d+|\.dev\d+|\.post\d+)?(?:\+[a-zA-Z0-9]+(?:[._-][a-zA-Z0-9]+)*)?$/.exec(version);
   if (!match) return;
   const parts = [Number(match[1]), Number(match[2]), Number(match[3] ?? 0)];
   return parts.every(Number.isSafeInteger) ? parts : undefined;
@@ -36,10 +37,11 @@ export function packageCompatibility(version: unknown): CompatibilityIssue | und
   const installed = typeof version === "string" && version ? version : "unknown";
   const context = "WinTestKit extension " + EXTENSION_VERSION + " requires " + PYTHON_REQUIREMENT +
     "; installed Python package: " + installed + ". ";
-  if (minimum === undefined || maximum === undefined)
+  if (minimum === undefined || maximum === undefined ||
+      (!ALLOW_PRERELEASE && typeof version === "string" && /^\d+\.\d+(?:\.\d+)?(?:(?:a|b|rc)\d+|\.dev\d+)(?:\+|$)/.test(version)))
     return {
       kind: "unknown",
-      message: context + "The package version is missing, invalid, or not a supported stable release. Install a compatible package or choose another interpreter.",
+      message: context + "The package version is missing, invalid, or a prerelease not enabled by this extension's release channel. Install a compatible package or choose another interpreter.",
       updateExtension: false,
     };
   if (minimum < 0)

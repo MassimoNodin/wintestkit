@@ -36,6 +36,22 @@ function setup(files = new Set<string>(), saved: Record<string, unknown> = {}) {
 }
 
 describe("what a Test Results button passes", () => {
+  it("never prunes active reports, temporarily exceeding retention until completion", async () => {
+    const { history, stored, removed } = setup();
+    const first = history.newName();
+    const firstDir = stored(first);
+    history.start(first, "project", "project", firstDir);
+    const second = history.newName();
+    history.start(second, "project", "project", stored(second));
+    const active = new Set([first, second]);
+    await history.prune(1, active);
+    expect(removed).toEqual([]);
+    expect(history.get(first)).toBeDefined();
+    active.delete(first);
+    await history.prune(1, active);
+    expect(removed).toEqual([firstDir]);
+    expect(history.get(second)).toBeDefined();
+  });
   const info = {
     testRunName: "WinTestKit run A",
     controllerId: "wintestkit",

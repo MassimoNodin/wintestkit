@@ -3,15 +3,16 @@ import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:
 import { tmpdir } from "node:os";
 import * as path from "node:path";
 import * as vscode from "vscode";
+import type { ExtensionApi } from "../../../src/extension";
 
 suite("Clear test results", () => {
   test("native clearing removes retained reports without a live TestRun and still clears other providers", async function () {
     this.timeout(60000);
-    const api = await vscode.extensions.getExtension("wintestkit.wintestkit")!.activate();
-    let project = api.elements.projects.all[0];
+    const api = await vscode.extensions.getExtension<ExtensionApi>("wintestkit.wintestkit")!.activate();
+    let project = api.projects.all[0];
     for (let attempt = 0; !project && attempt < 100; attempt++) {
       await new Promise((resolve) => setTimeout(resolve, 100));
-      project = api.elements.projects.all[0];
+      project = api.projects.all[0];
     }
     assert.ok(project, "workspace project is available");
     for (let attempt = 0; !api.tests.items.size && attempt < 100; attempt++)
@@ -65,8 +66,8 @@ suite("Clear test results", () => {
   });
 
   test("clear snapshots protect active runs, future runs and unrelated workspaces", async () => {
-    const api = await vscode.extensions.getExtension("wintestkit.wintestkit")!.activate();
-    const project = api.elements.projects.all[0];
+    const api = await vscode.extensions.getExtension<ExtensionApi>("wintestkit.wintestkit")!.activate();
+    const project = api.projects.all[0];
     assert.ok(project);
     const root = mkdtempSync(path.join(tmpdir(), "wtk-clear-snapshot-"));
     const add = (key: string) => {
@@ -80,9 +81,10 @@ suite("Clear test results", () => {
     const completed = add(project.root.toString());
     const active = add(project.root.toString());
     const elsewhere = add("file:///another-workspace");
-    api.tests.activeRunNames.add(active.name);
+    const activeRunNames = (api.tests as unknown as { activeRunNames: Set<string> }).activeRunNames;
+    activeRunNames.add(active.name);
     const clear = api.tests.prepareClearResults();
-    api.tests.activeRunNames.delete(active.name);
+    activeRunNames.delete(active.name);
     const future = add(project.root.toString());
     try {
       await clear();

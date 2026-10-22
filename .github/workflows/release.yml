@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       dry_run:
-        description: Validate and build without publishing (publishing requires a version tag)
+        description: Validate without publishing (publishing requires a version tag)
         type: boolean
         default: true
 
@@ -22,7 +22,12 @@ jobs:
     runs-on: windows-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
       publish: ${{ steps.version.outputs.publish }}
+      pypi: ${{ vars.PUBLISH_PYPI == 'true' }}
+      marketplace: ${{ vars.PUBLISH_MARKETPLACE == 'true' }}
+      openvsx: ${{ vars.PUBLISH_OVSX == 'true' }}
+      public-vsix: ${{ vars.PUBLISH_PUBLIC_VSIX == 'true' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -31,7 +36,7 @@ jobs:
         with:
           version: "0.12.5"
           python-version: "3.12"
-      - name: Verify version, source, and release notes
+      - name: Verify Python tag, numeric VSIX versions, channel, and staged notes
         id: version
         env:
           DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
@@ -42,24 +47,25 @@ jobs:
             throw "Publishing requires a version tag; select a tag or enable dry_run."
           }
           if ($env:GITHUB_REF_TYPE -eq "tag") {
-            if ($env:GITHUB_REF_NAME -notmatch '^v\d+\.\d+\.\d+$') { throw "Expected a vX.Y.Z tag" }
+            if (-not $env:GITHUB_REF_NAME.StartsWith('v')) { throw "Expected v followed by a canonical Python version" }
             $version = $env:GITHUB_REF_NAME.Substring(1)
             git merge-base --is-ancestor HEAD "origin/$env:DEFAULT_BRANCH"
-            if ($LASTEXITCODE -ne 0) { throw "Release tags must point to a commit on the default branch" }
+            if ($LASTEXITCODE -ne 0) { throw "Release tags must be on the default branch" }
           } else {
             $version = (Select-String -Path python/src/wintestkit/__init__.py -Pattern '__version__ = "(.+)"').Matches[0].Groups[1].Value
           }
-          uv run --no-project python scripts/bump_version.py --check $version
-          if ($LASTEXITCODE -ne 0) { throw "Tag and file versions differ" }
+          $extensionVersion = (Get-Content vscode/package.json -Raw | ConvertFrom-Json).version
+          uv run --no-project python scripts/bump_version.py --check $version --extension-version $extensionVersion
+          if ($LASTEXITCODE -ne 0) { throw "Tag, versions or channel differ" }
           uv run --no-project python scripts/check_release.py compatibility
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           uv run --no-project python scripts/check_release.py notes $version --output release-notes.md
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $policy = Get-Content vscode/src/compatibility.json -Raw | ConvertFrom-Json
           "version=$version" >> $env:GITHUB_OUTPUT
+          "prerelease=$(($policy.channel -eq 'prerelease').ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
           "publish=$($publish.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
-          if (-not $publish) {
-            "Dry run: versions, changelog, tests, and packages are validated. Publishing credentials and registry authorization are not exercised." >> $env:GITHUB_STEP_SUMMARY
-          }
+          if (-not $publish) { "Dry run: no registry uploads or credential checks; public VSIX artifacts remain opt-in." >> $env:GITHUB_STEP_SUMMARY }
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: release-notes
@@ -70,58 +76,9 @@ jobs:
     needs: version
     uses: ./.github/workflows/ci.yml
 
-  preflight:
-    needs: [version, checks]
-    if: needs.version.outputs.publish == 'true'
-    runs-on: windows-latest
-    environment: release
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884
-        with:
-          version: "0.12.5"
-          python-version: "3.12"
-      - name: Require configuration for every enabled registry
-        env:
-          PUBLISH_PYPI: ${{ vars.PUBLISH_PYPI }}
-          PUBLISH_OVSX: ${{ vars.PUBLISH_OVSX }}
-          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-          OVSX_TOKEN: ${{ secrets.OVSX_TOKEN }}
-        run: uv run --no-project python scripts/check_release.py config
-
-  vsix:
-    needs: [version, checks]
-    runs-on: windows-latest
-    strategy:
-      matrix:
-        target: [win32-x64, win32-arm64]
-    defaults:
-      run:
-        working-directory: vscode
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
-        with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: vscode/package-lock.json
-      - run: npm ci
-      - run: npm run build
-      - name: Package with the locked publishing tool
-        env:
-          TARGET: ${{ matrix.target }}
-          VERSION: ${{ needs.version.outputs.version }}
-        run: npm exec --no -- vsce package --target $env:TARGET -o "dist/wintestkit-$env:TARGET-$env:VERSION.vsix"
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
-        with:
-          name: vsix-${{ matrix.target }}
-          path: vscode/dist/*.vsix
-          if-no-files-found: error
-
   publish-pypi:
-    needs: [version, checks, vsix, preflight]
-    if: needs.version.outputs.publish == 'true'
+    needs: [version, checks]
+    if: needs.version.outputs.publish == 'true' && needs.version.outputs.pypi == 'true'
     runs-on: windows-latest
     environment: release
     permissions:
@@ -135,14 +92,17 @@ jobs:
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884
         with:
           version: "0.12.5"
-      - name: Publish tested distributions
+      - name: Publish tested distributions using only PyPI OIDC
         run: uv publish --trusted-publishing always --check-url https://pypi.org/simple/ (Get-ChildItem artifacts -File).FullName
 
-  publish-marketplace:
-    needs: [version, checks, vsix, preflight, publish-pypi]
-    if: needs.version.outputs.publish == 'true'
+  extension:
+    needs: [version, checks]
     runs-on: windows-latest
     environment: release
+    strategy:
+      fail-fast: false
+      matrix:
+        destination: [marketplace, openvsx, public-vsix]
     permissions:
       contents: read
       id-token: write
@@ -150,29 +110,97 @@ jobs:
       run:
         working-directory: vscode
     steps:
+      - name: Resolve independent opt-in destination
+        id: gate
+        env:
+          DESTINATION: ${{ matrix.destination }}
+          PUBLISH: ${{ needs.version.outputs.publish }}
+          PUBLISH_MARKETPLACE: ${{ needs.version.outputs.marketplace }}
+          PUBLISH_OVSX: ${{ needs.version.outputs.openvsx }}
+          PUBLISH_PUBLIC_VSIX: ${{ needs.version.outputs.public-vsix }}
+        run: |
+          $enabled = switch ($env:DESTINATION) {
+            'marketplace' { $env:PUBLISH -eq 'true' -and $env:PUBLISH_MARKETPLACE -eq 'true' }
+            'openvsx' { $env:PUBLISH -eq 'true' -and $env:PUBLISH_OVSX -eq 'true' }
+            'public-vsix' { $env:PUBLISH_PUBLIC_VSIX -eq 'true' }
+          }
+          "enabled=$($enabled.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+        working-directory: .
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
-        with:
-          pattern: vsix-*
-          path: vscode/artifacts
-          merge-multiple: true
+        if: steps.gate.outputs.enabled == 'true'
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        if: steps.gate.outputs.enabled == 'true'
         with:
           node-version: "22"
           cache: npm
           cache-dependency-path: vscode/package-lock.json
-      - run: npm ci --ignore-scripts
+      - name: Install and build locally; do not transfer private VSIX artifacts
+        if: steps.gate.outputs.enabled == 'true'
+        run: |
+          npm ci
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Check only the enabled registry credentials
+        if: steps.gate.outputs.enabled == 'true' && matrix.destination != 'public-vsix'
+        env:
+          DESTINATION: ${{ matrix.destination }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          OVSX_TOKEN: ${{ secrets.OVSX_TOKEN }}
+        run: |
+          if ($env:DESTINATION -eq 'marketplace') {
+            if (-not $env:AZURE_CLIENT_ID -or -not $env:AZURE_TENANT_ID) { throw "Marketplace requires AZURE_CLIENT_ID and AZURE_TENANT_ID" }
+          } elseif (-not $env:OVSX_TOKEN) { throw "Open VSX requires OVSX_TOKEN" }
+      - name: Package both numeric-version Windows targets with the selected channel
+        if: steps.gate.outputs.enabled == 'true'
+        env:
+          PRERELEASE: ${{ needs.version.outputs.prerelease }}
+        run: |
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          $channel = @()
+          if ($env:PRERELEASE -eq 'true') { $channel = @('--pre-release') }
+          foreach ($target in @('win32-x64', 'win32-arm64')) {
+            npm exec --no -- vsce package --target $target @channel -o "dist/wintestkit-$target-$version.vsix"
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
       - uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906
+        if: steps.gate.outputs.enabled == 'true' && matrix.destination == 'marketplace'
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           allow-no-subscriptions: true
-      - name: Publish built packages without rebuilding
-        run: npm exec --no -- vsce publish --azure-credential --skip-duplicate --packagePath (Get-ChildItem artifacts -Filter *.vsix).FullName
+      - name: Publish Marketplace independently
+        if: steps.gate.outputs.enabled == 'true' && matrix.destination == 'marketplace'
+        env:
+          PRERELEASE: ${{ needs.version.outputs.prerelease }}
+        run: |
+          $channel = @()
+          if ($env:PRERELEASE -eq 'true') { $channel = @('--pre-release') }
+          npm exec --no -- vsce publish --azure-credential --skip-duplicate @channel --packagePath (Get-ChildItem dist -Filter *.vsix).FullName
+      - name: Publish Open VSX independently
+        if: steps.gate.outputs.enabled == 'true' && matrix.destination == 'openvsx'
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_TOKEN }}
+          PRERELEASE: ${{ needs.version.outputs.prerelease }}
+        run: |
+          $channel = @()
+          if ($env:PRERELEASE -eq 'true') { $channel = @('--pre-release') }
+          npm exec --no -- ovsx publish --skip-duplicate @channel --packagePath (Get-ChildItem dist -Filter *.vsix).FullName
+      - name: Upload explicitly public VSIX artifacts only
+        if: steps.gate.outputs.enabled == 'true' && matrix.destination == 'public-vsix'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: public-vsix
+          path: vscode/dist/*.vsix
+          if-no-files-found: error
 
   github-release:
-    needs: [version, publish-pypi, publish-marketplace]
-    if: needs.version.outputs.publish == 'true'
+    needs: [version, checks, publish-pypi, extension]
+    if: >-
+      always() && needs.version.outputs.publish == 'true' &&
+      needs.checks.result == 'success' && needs.extension.result == 'success' &&
+      (needs.publish-pypi.result == 'success' || needs.publish-pypi.result == 'skipped')
     runs-on: windows-latest
     permissions:
       contents: write
@@ -183,49 +211,28 @@ jobs:
           name: python-dist
           path: artifacts
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        if: needs.version.outputs.public-vsix == 'true'
         with:
-          pattern: vsix-*
+          name: public-vsix
           path: artifacts
-          merge-multiple: true
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
           name: release-notes
           path: notes
-      - name: Create or recover the GitHub Release after both registries succeed
+      - name: Create or recover release; VSIX assets are opt-in
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.version.outputs.version }}
+          PRERELEASE: ${{ needs.version.outputs.prerelease }}
         run: |
+          $channel = @()
+          if ($env:PRERELEASE -eq 'true') { $channel = @('--prerelease') }
           gh release view $env:GITHUB_REF_NAME --json tagName
           if ($LASTEXITCODE -eq 0) {
+            gh release edit $env:GITHUB_REF_NAME --prerelease=$env:PRERELEASE --notes-file notes/release-notes.md
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
             gh release upload $env:GITHUB_REF_NAME (Get-ChildItem artifacts -File).FullName --clobber
           } else {
-            gh release create $env:GITHUB_REF_NAME (Get-ChildItem artifacts -File).FullName --verify-tag --title "WinTestKit $env:VERSION" --notes-file notes/release-notes.md
+            gh release create $env:GITHUB_REF_NAME (Get-ChildItem artifacts -File).FullName @channel --verify-tag --title "WinTestKit $env:VERSION" --notes-file notes/release-notes.md
           }
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-  publish-openvsx:
-    needs: [version, github-release]
-    if: needs.version.outputs.publish == 'true' && vars.PUBLISH_OVSX == 'true'
-    runs-on: windows-latest
-    environment: release
-    defaults:
-      run:
-        working-directory: vscode
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
-        with:
-          pattern: vsix-*
-          path: vscode/artifacts
-          merge-multiple: true
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
-        with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: vscode/package-lock.json
-      - run: npm ci --ignore-scripts
-      - name: Publish optional Open VSX packages
-        env:
-          OVSX_PAT: ${{ secrets.OVSX_TOKEN }}
-        run: npm exec --no -- ovsx publish --skip-duplicate --packagePath (Get-ChildItem artifacts -Filter *.vsix).FullName

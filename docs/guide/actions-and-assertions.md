@@ -30,7 +30,14 @@ has all the other rows (`type`, `check`, `expand`, `select`, ...), so existing p
 
 Windows have `close()`, `maximize()`, `minimize()` and `restore()`.
 
-Text typed into a `PasswordBox` is never written to logs, reports or events.
+Built-in typing, key presses and assertions redact recorded arguments and failure
+details for resolved controls reporting UI Automation `IsPassword`, as well as
+`PasswordBox` locators. For sensitive controls that do not identify themselves, use
+`main.token.type(value, secret=True)`, `main.token.press(keys, secret=True)` or
+`expect(main.token, secret=True).to_have_value(value)`. Custom steps accept
+`self.step(name, args, secret=True)`. This does not redact your source code,
+application output, screenshots or replay pixels: do not hard-code credentials,
+and review artifacts before sharing them.
 
 ```python
 # pseudo-code
@@ -48,6 +55,12 @@ def test_typing_and_keys(main: MainPage) -> None:
 the control, doesn't move the mouse and doesn't depend on screen coordinates, so it is the default. Use `mouse` when the application
 reacts to real mouse events (custom controls, drag-sensitive areas) or to reproduce what a user
 does exactly. Set it per call, or for the whole project with `input_mode = "mouse"`:
+
+Global mouse and keyboard fallbacks refuse input when the owning target window
+cannot be activated or no longer owns the foreground. Mouse targets must still
+belong to that window; keyboard targets must own keyboard focus. Do not work in
+other windows while a UI test runs. These checks reduce misdirected input but do
+not make global input atomic against focus changes by Windows or another process.
 
 ```python
 # pseudo-code

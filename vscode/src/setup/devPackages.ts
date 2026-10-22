@@ -1,7 +1,7 @@
 import * as path from "node:path";
 import { stat } from "node:fs/promises";
 import * as vscode from "vscode";
-import { packageCompatibility, PYTHON_REQUIREMENT } from "../compatibility";
+import { ALLOW_PRERELEASE, packageCompatibility, PYTHON_REQUIREMENT } from "../compatibility";
 
 type Selection = { source: "remote" | "local"; wheel?: string };
 
@@ -45,7 +45,7 @@ export class DevPackages {
   async arguments(folder: vscode.Uri): Promise<string[] | undefined> {
     const selection = this.view(folder);
     if (selection.source === "remote")
-      return ["-m", "pip", "install", "--upgrade", "--force-reinstall", PYTHON_REQUIREMENT];
+      return ["-m", "pip", "install", "--upgrade", "--force-reinstall", ...(ALLOW_PRERELEASE ? ["--pre"] : []), PYTHON_REQUIREMENT];
     if (selection.source !== "local" || !selection.wheel) return undefined;
     if (!(await stat(selection.wheel)).isFile()) throw new Error("The selected local wheel no longer exists.");
     this.checkVersion(selection.wheel);

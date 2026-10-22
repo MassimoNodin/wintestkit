@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import type { CheckResultsStore } from "./decorations";
+import { normalizedPath } from "../projects";
 
 export class RelocationActions implements vscode.Disposable {
   private readonly registration: vscode.Disposable;
@@ -17,7 +18,7 @@ export class RelocationActions implements vscode.Disposable {
   ): vscode.CodeAction[] {
     const actions: vscode.CodeAction[] = [];
     for (const entry of this.checks.entries.values()) {
-      if (entry.page.file !== document.uri.fsPath) continue;
+      if (normalizedPath(entry.page.file) !== normalizedPath(document.uri.fsPath)) continue;
       const elementRange = new vscode.Range(
         entry.element.range.start.line,
         entry.element.range.start.character,

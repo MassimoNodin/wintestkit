@@ -4,11 +4,12 @@ const mocks = vi.hoisted(() => ({
   trusted: true,
   localArgs: vi.fn(async () => ["-m", "pip", "install", "--upgrade", "C:/dev/wintestkit-0.1.2-py3-none-any.whl"]),
   execFile: vi.fn(),
+  requirePip: vi.fn(async () => {}),
   check: vi.fn(async (): Promise<{ installed: boolean; version?: string }> => ({ installed: true, version: "0.1.1" })),
   args: vi.fn(async (): Promise<string[] | undefined> => ["-m", "pip", "install", "--upgrade", "--force-reinstall", "wintestkit>=0.1.1,<0.2.0"]),
 }));
 vi.mock("node:child_process", () => ({ execFile: mocks.execFile }));
-vi.mock("../../src/python", () => ({ installArguments: mocks.args, checkWintestkit: mocks.check }));
+vi.mock("../../src/python", () => ({ installArguments: mocks.args, checkWintestkit: mocks.check, requirePip: mocks.requirePip }));
 vi.mock("../../src/setup/devPackages", () => ({
   DevPackages: class {
     view = () => ({ source: "local" });
@@ -71,6 +72,7 @@ describe("installing the package", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.trusted = true;
+    mocks.requirePip.mockResolvedValue(undefined);
     mocks.check.mockResolvedValue({ installed: true, version: "0.1.1" });
     mocks.args.mockResolvedValue(["-m", "pip", "install", "--upgrade", "--force-reinstall", "wintestkit>=0.1.1,<0.2.0"]);
   });
@@ -95,6 +97,7 @@ describe("installing the package", () => {
     expect(installer.error).toBeUndefined();
     expect(mocks.execFile).toHaveBeenCalledOnce();
     expect(mocks.execFile.mock.calls[0][0]).toBe("C:/py/python.exe");
+    expect(mocks.requirePip).toHaveBeenCalledWith("C:/py/python.exe", mocks.execFile.mock.calls[0][1]);
     expect(mocks.execFile.mock.calls[0][1]).toEqual(["-m", "pip", "install", "--upgrade", "--force-reinstall", "wintestkit>=0.1.1,<0.2.0"]);
     expect(changed).toHaveBeenCalledTimes(2);
   });
@@ -133,12 +136,23 @@ describe("installing the package", () => {
     const installer = new PackageInstaller(log);
     await expect(installer.install(folder, "python.exe")).rejects.toThrow("Trust");
     expect(mocks.execFile).not.toHaveBeenCalled();
+    expect(mocks.requirePip).not.toHaveBeenCalled();
   });
   it("does nothing when installation argument selection is cancelled", async () => {
     mocks.args.mockResolvedValue(undefined);
     const installer = new PackageInstaller(log);
     expect(await installer.install(folder, "python.exe")).toBe(false);
     expect(mocks.execFile).not.toHaveBeenCalled();
+    expect(mocks.requirePip).not.toHaveBeenCalled();
     expect(installer.busy).toBe(false);
+  });
+  it("fails without installing or checking packages when the pip probe fails", async () => {
+    mocks.requirePip.mockRejectedValue(new Error("pip unavailable; use uv pip install --python 'python.exe'"));
+    const installer = new PackageInstaller(log);
+    expect(await installer.install(folder, "python.exe")).toBe(false);
+    expect(installer.error).toContain("uv pip install --python");
+    expect(installer.busy).toBe(false);
+    expect(mocks.execFile).not.toHaveBeenCalled();
+    expect(mocks.check).not.toHaveBeenCalled();
   });
 });

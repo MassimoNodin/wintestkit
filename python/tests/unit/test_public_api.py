@@ -95,7 +95,7 @@ def test_importing_the_package_does_not_load_ui_automation() -> None:
 
 
 def test_version() -> None:
-    assert re.fullmatch(r"\d+\.\d+\.\d+", wintestkit.__version__)
+    assert re.fullmatch(r"\d+\.\d+\.\d+((a|b|rc)\d+|\.dev\d+)?", wintestkit.__version__)
 
 
 class _Probe:

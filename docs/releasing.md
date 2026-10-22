@@ -1,190 +1,213 @@
 # Releasing WinTestKit
 
-The Python package and VS Code extension share one version. GitHub Actions publishes the
-wheel and source distribution to PyPI, then the Windows x64 and ARM64 VSIX packages to
-Visual Studio Marketplace. Open VSX is optional and disabled by default.
+## Distribution policy: public Python and public pre-release extension
 
-## One-time account setup
+The intended 0.1 prerelease is a public Python package on PyPI and a public **pre-release**
+VS Code extension on the Visual Studio Marketplace (the pre-release channel opts users in;
+it is not an access control). Open VSX and raw VSIX downloads (Actions artifacts and GitHub
+Release assets) are optional and disabled by default. Everything is opt-in per gate, so a
+private-only setup remains possible by leaving the extension gates unset.
 
-### PyPI
+All four gates must be **repository Actions variables**, with the exact lowercase value
+`true` to enable them. Unset or `false` means disabled:
 
-1. Sign into PyPI, enable two-factor authentication, and save recovery codes.
-2. Confirm you can publish the `wintestkit` project. A missing public project does not
-   guarantee that its name is available.
-3. For the first release, add a **pending trusted publisher** through your account's
-   Publishing settings. For an existing project, use its Publishing settings instead.
-4. Enter these values exactly:
+| Repository variable | 0.1 prerelease setup | Effect when true |
+| --- | --- | --- |
+| `PUBLISH_PYPI` | `true` after trusted publisher setup | Publish Python distributions using PyPI OIDC |
+| `PUBLISH_MARKETPLACE` | `true` after Marketplace setup | Publish both VSIX Windows targets to Marketplace |
+| `PUBLISH_OVSX` | `false` (optional later) | Publish both VSIX Windows targets to Open VSX |
+| `PUBLISH_PUBLIC_VSIX` | unset or `false` | Upload VSIX Actions artifacts and attach VSIX GitHub Release assets |
 
-   | Field | Value |
+These are independent: PyPI never requires Azure or Open VSX credentials, extension
+registries do not depend on PyPI publication, and neither extension registry implicitly
+permits public VSIX artifact uploads. Enabling either extension registry still makes the
+extension public through that registry. Each enabled extension destination packages from
+the checked source in its own job; no private VSIX is passed through Actions artifacts.
+CI always checks/builds/packages the extension, even when it withholds the VSIX artifact.
+Python distributions, test results and release notes remain ordinary CI artifacts.
+A successful tagged release creates a GitHub Release with Python assets, but includes
+VSIX assets only with the public VSIX gate. This gate does not delete historical uploads.
+
+### Verified configuration and required user migration
+
+Read-only inspection on **2026-10-22** confirmed the local remote and GitHub repository:
+`MassimoNodin/wintestkit`, default branch `master`, public repository. The checked-in
+workflow is `.github/workflows/release.yml` and publishing jobs use environment `release`.
+The Python project is `wintestkit`. No candidate version has been selected or bumped.
+
+At inspection, `PUBLISH_PYPI=true` existed only in the **release environment**, while
+`PUBLISH_OVSX=false` was a repository variable. The new job-level PyPI gate cannot read
+an environment-only variable before the job starts. **User action required:** add
+`PUBLISH_PYPI=true` under repository **Settings -> Secrets and variables -> Actions ->
+Variables**, after completing PyPI authorization. Remove the environment-only duplicate
+(or leave it unset) so all gates have one repository-scoped source of truth. Add
+`PUBLISH_MARKETPLACE=true` there only after completing the Marketplace setup below; keep
+`PUBLISH_PUBLIC_VSIX` unset/false and retain `PUBLISH_OVSX=false` unless you opt into them.
+Do not define environment-scoped copies of gate variables, which could disagree with
+job-level repository gates. This change does not modify settings or perform publication.
+
+## Required user account setup: PyPI
+
+1. Sign into PyPI, enable two-factor authentication and save recovery codes.
+2. Confirm ownership/permission for the `wintestkit` project. A public 404 or a successful
+   local build does not prove name availability or publishing authorization.
+3. For a new project, add a **pending trusted publisher** in your account's Publishing
+   settings; for an existing project, add it in that project's Publishing settings.
+4. Enter the exact values matching this repository/workflow:
+
+   | PyPI trusted-publisher field | Exact value |
    | --- | --- |
-   | PyPI project | `wintestkit` |
+   | PyPI project name (pending publisher) | `wintestkit` |
    | GitHub owner | `MassimoNodin` |
-   | Repository | `wintestkit` |
-   | Workflow filename | `release.yml` |
-   | Environment | `release` |
+   | GitHub repository name | `wintestkit` |
+   | Workflow filename (not path or display name) | `release.yml` |
+   | Environment name | `release` |
 
-No PyPI API token is needed. The workflow explicitly requires trusted publishing.
-See [PyPI's trusted-publisher setup](https://docs.pypi.org/trusted-publishers/adding-a-publisher/).
+The environment field is required for this configuration because the publishing job
+uses that exact environment. Its OIDC subject includes `environment:release`. The job
+requests `id-token: write` and invokes `uv publish --trusted-publishing always`. No PyPI
+API token is used, and PyPI publication does not depend on the Marketplace or Open VSX.
+Only the user can confirm external account ownership and trusted-publisher registration;
+local preflight cannot prove authorization without an actual registry operation.
 
-### Visual Studio Marketplace
+Official reference: [PyPI trusted publishers](https://docs.pypi.org/trusted-publishers/adding-a-publisher/).
 
-1. Sign into Marketplace publisher management and create or obtain access to publisher
-   ID `wintestkit`. If unavailable, change `vscode/package.json` before first publication;
-   the public extension identifier is `publisher.name`.
-2. Create a Microsoft Entra publishing identity. The documented managed-identity route
-   uses an Azure user-assigned managed identity and requires access to an Azure subscription.
-3. Add a federated credential to that identity for **GitHub Actions / Environment**, using:
+### GitHub release environment: user action
 
-   | Field | Value |
-   | --- | --- |
-   | Issuer | `https://token.actions.githubusercontent.com` |
-   | Subject | `repo:MassimoNodin/wintestkit:environment:release` |
-   | Audience | `api://AzureADTokenExchange` |
+Keep/create environment `release` and permit version tags (`v*`). Consider protection and
+required reviewers without creating a solo-maintainer approval deadlock. Protect `master`
+and immutable release tags as appropriate. The workflow requires tags reachable from the
+default branch and serializes releases. No repository settings are changed by these scripts.
 
-4. Add the identity as a member of the Marketplace publisher with the **Contributor**
-   role, following Marketplace's identity authorization instructions. For the documented
-   managed-identity route, use its Azure resource ID when authorizing it on the publisher.
-5. Under GitHub repository **Settings -> Environments -> release -> Environment secrets**, add:
-   - `AZURE_CLIENT_ID`: the identity's client ID, not its principal/object ID.
-   - `AZURE_TENANT_ID`: its directory/tenant ID.
+## Version and channel contract
 
-There is no client password, Marketplace PAT, or separate Azure DevOps pipeline in this
-configuration. GitHub OIDC signs into Azure; the locked `vsce` tool uses that credential.
-See the [official Marketplace publishing guide](https://code.visualstudio.com/api/working-with-extensions/publishing-extension).
+Stable releases default to the existing shared `X.Y.Z` Python/extension version. An
+explicit numeric `--extension-version` is also supported for stable releases. Accepted
+formal Python prereleases are canonical `X.Y.ZaN`, `X.Y.ZbN`, `X.Y.ZrcN` and `X.Y.Z.devN`,
+with nonnegative numeric components and no leading zeroes (except zero itself). Combined
+pre/dev, post, local and alternate spellings are not release candidates for these helpers.
+Tags are `v` followed by the **Python** version; changelog sections also use that version.
 
-### GitHub settings
+VSIX versions remain numeric `X.Y.Z`. A formal prerelease requires the maintainer to choose
+an explicit numeric version: `bump_version.py PYTHON_VERSION --extension-version VSIX_VERSION`.
+There is no automatic mapping and this change does not choose a candidate. Manifest,
+lockfile/root package and `compatibility.json.extensionVersion` must agree numerically.
+`compatibility.json.channel` is `"prerelease"` for formal prereleases; stable bumps remove
+it, preserving compatibility with older policies where absence means stable.
 
-The release environment is named `release`. Set its environment variable
-`PUBLISH_PYPI=true`. Restrict deployments to tags matching `v*`. Consider required reviewers
-if another maintainer can approve; do not configure a solo-maintainer approval deadlock.
+**Collision decision required before selecting a candidate:** Marketplace cannot publish
+the same numeric version as both prerelease and stable. Choose unused, monotonically
+increasing numeric VSIX versions and reserve a distinct later version for the next stable
+release. Pass `--extension-version` for stable releases too when necessary to avoid a
+numeric rollback; stable Python and VSIX versions may differ when explicitly chosen. Do not
+reuse `0.1.1` as both a prerelease and stable VSIX. No candidate is selected here.
 
-Keep `PUBLISH_OVSX=false` as a **repository variable** unless publishing to Open VSX is
-intended. To enable it, obtain the namespace and publisher agreement, add `OVSX_TOKEN` to
-the release environment, and set the repository variable to `true`. A repository variable
-is required because the workflow decides whether to start that job before entering its
-environment.
+`vsce package` and registry publication pass `--pre-release` for the prerelease channel;
+GitHub Releases use `--prerelease`. The Python artifact keeps its canonical PEP 440 version.
+The Python release tuple must lie within the policy's stable `minimum` (inclusive) and
+`maximumExclusive` bounds, and the explicit channel must match the released Python version.
+Bumping never widens those bounds. Protocol versions must still agree across policy,
+backend and schema; API compatibility must also be tested, not merely declared.
 
-Protect `master` with the `python` and `extension` GitHub Actions checks, block force pushes
-and deletion, and protect `v*` tags against update/deletion. Repository administrators may
-have an explicit bypass for recovery; use it deliberately. Normal tag creation is permitted.
+Official reference: [VS Code prerelease extensions](https://code.visualstudio.com/api/working-with-extensions/publishing-extension#prerelease-extensions).
 
-The publishing preflight checks that required settings are present, not that an external
-account has granted access. The registries validate identity authorization on upload.
+## Prepare and validate: no publication
 
-## Prepare and validate
+After the user selects candidate versions, run from the repository root. Replace the
+uppercase placeholders; these commands are templates, not a chosen version:
 
-Do not publish directly from an unreviewed working tree. Finish any unrelated work first,
-then choose a new version and run these commands from the repository root:
-
-```powershell
-python scripts/bump_version.py X.Y.Z
-python scripts/bump_version.py --check X.Y.Z
+~~~powershell
+python scripts/bump_version.py PYTHON_VERSION --extension-version VSIX_VERSION
+python scripts/bump_version.py --check PYTHON_VERSION --extension-version VSIX_VERSION
 python scripts/check_release.py compatibility
-```
+python scripts/check_release.py notes PYTHON_VERSION --output release-notes.md
+uv run --directory python pytest tests/unit/test_release.py
+~~~
 
-Move the appropriate `[Unreleased]` entries into a non-empty `## [X.Y.Z] - YYYY-MM-DD`
-section in `vscode/CHANGELOG.md`. Keep `[Unreleased]` for future changes. The release notes
-check runs even during dry runs, so a missing or empty version section fails early.
+For stable releases, `--extension-version` may be omitted and defaults to Python's version.
+A leading `v` is accepted by the bump CLI; release notes require the canonical version.
+Move **all** substantive `[Unreleased]` entries into a nonempty
+`## [PYTHON_VERSION] - YYYY-MM-DD` section. Leaving newer Unreleased work while selecting
+older notes is an error, not a silent fallback. Current Unreleased work intentionally
+remains unstaged until the user selects/dates the candidate; a release dry run will block.
+The checker does not stage files in Git or choose a release date.
 
-```powershell
-uv sync --directory python --locked
-Push-Location python
-uv run ruff check .
-uv run ruff format --check .
-uv run pyright
-uv run pytest -m "not integration"
-Pop-Location
-./scripts/check_wheel.ps1
-Push-Location vscode
+Use the normal full unit/build checks described in `docs/development.md` before releasing.
+A manual Release workflow dispatch defaults to `dry_run=true` and builds/validates without
+registry publication. Public VSIX artifacts are still withheld unless explicitly enabled.
+Dry runs do not validate registry credentials, ownership or external authorization.
+
+### Local VSIX build and installation
+
+From `vscode/`, with the locked dependencies and an already selected version/channel:
+
+~~~powershell
 npm ci
-npm run lint
-npm run typecheck
-npm test
-npm run package
-Pop-Location
-```
+npm run build
+npm exec --no -- vsce package --target win32-x64 -o dist/
+code --install-extension "PATH_TO_LOCALLY_BUILT_VSIX"
+~~~
 
-The wheel check rebuilds `python/dist`, builds a wheel **from the source distribution**,
-checks metadata with Twine, installs only the wheel in a temporary environment, checks
-dependencies and plugin registration, and runs a non-desktop test through the installed CLI.
+For an ARM64 host use `--target win32-arm64`. For a policy with `channel: "prerelease"`,
+add `--pre-release` to `vsce package`. Install only from a trusted local/private source.
+A local build is for acceptance testing before publication; the published pre-release is
+installed from the Marketplace (Extensions view -> WinTestKit -> **Switch to Pre-Release
+Version**).
 
-Install the candidate VSIX into a clean VS Code profile, select a fresh Python environment,
-and complete the real installation and WPF smoke test: setup, launch/attach, Spy, Highlight,
-Check, test execution, and reports. Repeat for upgrades when a previous version exists.
-ARM64-targeted packaging on an x64 runner is not ARM64 runtime testing; verify that platform
-on a real ARM64 machine before claiming it is supported. Review minimum VS Code and Python
-version compatibility as part of acceptance testing.
+After the chosen Python version is actually published, install it in your selected test
+interpreter. Stable: `python -m pip install "wintestkit>=MINIMUM,<MAXIMUM"`. Formal
+prerelease: `python -m pip install --pre "wintestkit==PYTHON_VERSION"`. In a pip-less uv
+environment use `uv pip install --python PATH_TO_PYTHON --prerelease allow "wintestkit==PYTHON_VERSION"`.
+Replace placeholders with the chosen policy/version. An exact pin avoids choosing an
+unrelated prerelease. Until publication, use a locally built wheel instead. The extension's
+prerelease channel authorizes prerelease installation; a stable extension does not silently
+opt into it. Neither a local build nor a successful dry run proves PyPI availability.
 
-Desktop UI tests need an interactive unlocked Windows session; see [the CI guide](guide/ci.md).
-Never expose a privileged self-hosted desktop runner to untrusted public pull requests.
-Hosted CI runs non-desktop Python and extension unit checks; it does not replace the real
-WPF acceptance test or exercise the extension-host integration harness.
+## Publishing is a later, explicit user action
 
-## Dry run and publish
+No helper here pushes, tags or publishes when validating. Once the candidate and notes
+are approved, the user may commit/push and create/push the corresponding immutable version
+tag through their usual process. Tag pushes invoke Release. Manual `dry_run=false` also
+requires selecting a version tag, never a branch. Verify the selected four repository
+gates before triggering either route. Enabled registries publish independently after CI.
 
-1. Review, commit, and push the changes to `master` through your normal review process.
-2. In GitHub Actions, run **Release** on `master` with `dry_run=true`. Alternatively:
+After any actual publication, verify PyPI files and a clean installation using the chosen
+channel. Check only the extension destinations explicitly enabled. Never replace different
+code under a version already accepted by a registry or move an existing release tag.
+Re-run failed jobs for partial publication: `uv publish --check-url` and registry
+`--skip-duplicate` support retries. GitHub asset recovery uses the original tag. Withholding
+future VSIX uploads does not remove previously published registry versions or assets;
+removal would be a separate explicit user action.
 
-   ```powershell
-   gh workflow run release.yml --ref master -f dry_run=true
-   ```
+## Extension accounts
 
-3. Inspect the workflow artifacts: `python-dist`, `vsix-win32-x64`, `vsix-win32-arm64`,
-   and `release-notes`. A dry run validates notes, tests, and packages but deliberately
-   does **not** access publishing secrets or upload to registries.
-4. Tag the validated commit on `master`:
+The Marketplace is required for the public pre-release extension. Open VSX and public
+VSIX downloads are optional. None of them is a prerequisite for PyPI.
 
-   ```powershell
-   git tag -a vX.Y.Z -m "WinTestKit X.Y.Z"
-   git push origin vX.Y.Z
-   ```
+### Visual Studio Marketplace (required for the public pre-release)
 
-Tag pushes publish automatically. Manual dispatch with `dry_run=false` also requires
-selecting a version tag; a branch dispatch fails rather than silently doing nothing.
-Release tags must point to commits reachable from the default branch. Version files,
-the tag, and the changelog section must agree. Release runs are serialized.
+Create the publisher first: sign in at https://marketplace.visualstudio.com/manage with a
+Microsoft account and create publisher ID `wintestkit` (the ID is permanent and must match
+`publisher` in `vscode/package.json`; if it is taken, choose another and change the manifest).
 
-The tagged commit is validated through the reusable CI workflow. Its tested Python
-distributions are reused without rebuilding. Publishing configuration is checked before
-any upload. PyPI must succeed before Marketplace starts, so new editor installations can
-obtain the corresponding Python backend. The GitHub Release is created after both succeed.
+Obtain authorization for publisher `wintestkit` (the manifest publisher, not a claim of
+account ownership). Follow the official Marketplace guide to create/authorize an Entra
+publishing identity, such as a user-assigned managed identity. For its GitHub environment
+federation use issuer `https://token.actions.githubusercontent.com`, subject
+`repo:MassimoNodin/wintestkit:environment:release` and audience `api://AzureADTokenExchange`.
+Authorize that identity on the Marketplace publisher with Contributor access. For the
+managed-identity route use its Azure resource ID when granting publisher membership.
+Add environment secrets `AZURE_CLIENT_ID` and `AZURE_TENANT_ID`, then explicitly enable
+the **repository** variable `PUBLISH_MARKETPLACE=true`. No client password or Marketplace
+PAT is used by the current OIDC workflow. Azure is never a PyPI prerequisite.
 
-Afterward, verify PyPI files, Marketplace targets, GitHub assets, and a clean public
-installation of both packages. The extension identifier is `wintestkit.wintestkit` unless
-you changed the publisher. Do not treat a green workflow alone as acceptance testing.
+### Open VSX (optional)
 
-## Compatibility policy
+Obtain namespace `wintestkit` ownership and accept the publisher agreement, create a
+publisher token, add `OVSX_TOKEN` as a `release` environment secret, then explicitly set
+the **repository** variable `PUBLISH_OVSX=true`. No Azure identity or PyPI enablement is
+required for this independent job. Keep the token out of source and chat.
 
-The extension bundles `vscode/src/compatibility.json`. Version 0.1.1 supports stable Python
-packages `>=0.1.1,<0.2.0` with RPC protocol `1`. Missing, malformed, development and prerelease
-versions are rejected. Post-releases and local builds within the range are supported.
-
-`scripts/bump_version.py` updates the policy's extension version, but deliberately does not
-widen its Python bounds. Review those bounds on every release: the minimum must include any
-newly required backend APIs; the exclusive maximum must exclude breaking backends. CI and
-release dry runs reject bounds that exclude the released Python package, mismatched extension
-versions, and protocol drift. These checks enforce declared compatibility, not semantic API
-compatibility: maintainers must still test supported backends and classify breaking changes.
-
-For breaking wire changes, increment `python/src/wintestkit/protocol.py`, the initialize-result
-constant in `schemas/rpc.schema.json`, and the bundled policy protocol together; regenerate
-TypeScript types with `npm run gen:types` in `vscode`. Update the supported range and add
-regression tests. Old extension builds cannot retroactively acquire these protections, so
-users on earlier versions should update before installing a breaking Python release.
-
-## Recover a partial release
-
-Prefer **Re-run failed jobs** on the original workflow run. Python and Marketplace have
-separate publishing jobs, so a Marketplace failure does not require repeating a successful
-PyPI upload. Re-running all jobs is also supported: `uv publish --check-url` skips files
-already present, and `vsce --skip-duplicate` skips already-published targets. Fix missing
-external permissions or credentials before retrying.
-
-Do not replace a published package with different code under the same version. If code
-must change after any registry has accepted it, release a new version. Do not move the old
-tag. GitHub Release asset upload is recoverable if the final release step was interrupted.
-Open VSX failures can be retried independently after the required registries succeed.
-
-For an optional staging rehearsal, configure a separate TestPyPI trusted publisher and a
-separate staging environment before using `uv publish --publish-url https://test.pypi.org/legacy/`.
-The production workflow never switches registries implicitly and does not use TestPyPI.
+For public downloadable VSIX files, separately opt into repository variable
+`PUBLISH_PUBLIC_VSIX=true`. This requires no registry account but exposes the extension
+through Actions artifacts and GitHub Release assets, including artifact uploads on CI.

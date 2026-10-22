@@ -366,3 +366,44 @@ def test_a_crashed_app_does_not_affect_the_next_tests_fresh_app(
         "launch 2 FakeApp.exe",
         "close launched-2",
     ]
+
+
+@pytest.mark.parametrize("screenshots", ["on-failure", "every-step"])
+def test_no_report_disables_all_automatic_capture(
+    pytester: pytest.Pytester,
+    monkeypatch: pytest.MonkeyPatch,
+    screenshots: str,
+) -> None:
+    from wintestkit import artifacts, object_previews
+    from wintestkit.replay import ReplayRecorder
+
+    def forbidden(*args: Any, **kwargs: Any) -> None:
+        pytest.fail("no-report attempted automatic capture")
+
+    monkeypatch.setattr(artifacts, "capture_failure", forbidden)
+    monkeypatch.setattr(artifacts, "capture_step_screenshot", forbidden)
+    monkeypatch.setattr(object_previews, "_capture_bound", forbidden)
+    monkeypatch.setattr(ReplayRecorder, "start", forbidden)
+    monkeypatch.setattr(runtime, "object_preview_test_context", forbidden)
+    project(
+        pytester,
+        tests="""
+        from wintestkit import runtime
+
+        def test_no_capture_without_app_fixture():
+            assert not runtime.object_previews_active()
+            with runtime.step("probe", "target", "locator"):
+                pass
+            raise AssertionError("intentional test failure")
+    """,
+    )
+    result = pytester.runpytest(
+        "-p",
+        "no:cacheprovider",
+        "--wtk-no-report",
+        f"--wtk-screenshots={screenshots}",
+        "--wtk-replay=on",
+    )
+    result.assert_outcomes(failed=1)
+    result.stdout.fnmatch_lines(["*intentional test failure*"])
+    assert not (pytester.path / "wtk-report").exists()

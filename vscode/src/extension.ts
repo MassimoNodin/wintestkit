@@ -62,7 +62,9 @@ function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-export function activate(context: vscode.ExtensionContext): {
+export interface ExtensionApi {
+  projects: Projects;
+  discovery: DiscoveryStore;
   tests: TestController;
   checks: CheckResultsStore;
   elements: ElementsTree;
@@ -71,7 +73,9 @@ export function activate(context: vscode.ExtensionContext): {
   unused: UnusedDefinitions;
   reports: Reports;
   computeInsertion: typeof computeInsertion;
-} {
+}
+
+export function activate(context: vscode.ExtensionContext): ExtensionApi {
   const log = createLog();
   context.subscriptions.push(log);
   log.info("WinTestKit activated");
@@ -512,7 +516,7 @@ export function activate(context: vscode.ExtensionContext): {
     false,
   );
   void projects.refresh();
-  return { tests, checks, elements, spy, setup, unused, reports, computeInsertion };
+  return { projects, discovery, tests, checks, elements, spy, setup, unused, reports, computeInsertion };
 }
 
 let activeServers: ServerManager | undefined;

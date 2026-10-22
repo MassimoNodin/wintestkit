@@ -267,6 +267,7 @@ GetCursorPos = _declare(user32, "GetCursorPos", _B, ctypes.POINTER(POINT))
 SetCursorPos = _declare(user32, "SetCursorPos", _B, _I, _I)
 GetSystemMetrics = _declare(user32, "GetSystemMetrics", _I, _I)
 GetForegroundWindow = _declare(user32, "GetForegroundWindow", HWND)
+WindowFromPoint = _declare(user32, "WindowFromPoint", HWND, POINT)
 SetForegroundWindow = _declare(user32, "SetForegroundWindow", _B, HWND)
 AllowSetForegroundWindow = _declare(user32, "AllowSetForegroundWindow", _B, _D)
 ShowWindow = _declare(user32, "ShowWindow", _B, HWND, _I)
@@ -619,10 +620,6 @@ def bring_to_foreground(hwnd: int, timeout: float = 0.5) -> bool:
         return True
     AllowSetForegroundWindow(ASFW_ANY)
     SetForegroundWindow(hwnd)
-    if GetForegroundWindow() != hwnd:
-        # Documented workaround for the foreground lock: a synthetic Alt key press.
-        _tap_alt()
-        SetForegroundWindow(hwnd)
     BringWindowToTop(hwnd)
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:

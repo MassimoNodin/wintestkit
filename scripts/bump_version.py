@@ -18,8 +18,28 @@ INIT = ROOT / "python/src/wintestkit/__init__.py"
 PACKAGE = ROOT / "vscode/package.json"
 LOCK = ROOT / "vscode/package-lock.json"
 POLICY = ROOT / "vscode/src/compatibility.json"
-VERSION = re.compile(r"^\d+\.\d+\.\d+$")
+PYTHON_VERSION = re.compile(
+    r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:(a|b|rc)(0|[1-9]\d*)|\.dev(0|[1-9]\d*))?$"
+)
 INIT_VERSION = re.compile(r'^__version__ = "([^"]*)"$', re.MULTILINE)
+
+
+def release_version(version: str) -> tuple[tuple[int, ...], bool]:
+    match = PYTHON_VERSION.fullmatch(version)
+    if not match:
+        raise ValueError("Expected canonical X.Y.Z, X.Y.ZaN, X.Y.ZbN, X.Y.ZrcN or X.Y.Z.devN")
+    return tuple(int(part) for part in match.group(1, 2, 3)), bool(match.group(4) or match.group(6))
+
+
+def expected_versions(version: str, extension_version: str | None = None) -> dict[str, str]:
+    _, prerelease = release_version(version)
+    if prerelease and extension_version is None:
+        raise ValueError("Prereleases require an explicit --extension-version X.Y.Z")
+    numeric = extension_version or version
+    _, numeric_prerelease = release_version(numeric)
+    if numeric_prerelease:
+        raise ValueError("Extension version must be numeric X.Y.Z")
+    return {name: version if name == str(INIT.relative_to(ROOT)) else numeric for name in current()}
 
 
 def current() -> dict[str, str]:
@@ -45,16 +65,24 @@ def _set_json_version(path: Path, version: str, *, lock: bool) -> None:
     path.write_text(text, encoding="utf-8", newline="")
 
 
-def bump(version: str) -> None:
+def bump(version: str, extension_version: str | None = None) -> None:
+    expected = expected_versions(version, extension_version)
+    numeric = expected[str(PACKAGE.relative_to(ROOT))]
+    _, prerelease = release_version(version)
     init = INIT.read_text(encoding="utf-8")
     INIT.write_text(
         INIT_VERSION.sub(f'__version__ = "{version}"', init, count=1), encoding="utf-8", newline=""
     )
-    _set_json_version(PACKAGE, version, lock=False)
-    _set_json_version(LOCK, version, lock=True)
-    policy = POLICY.read_text(encoding="utf-8")
+    _set_json_version(PACKAGE, numeric, lock=False)
+    _set_json_version(LOCK, numeric, lock=True)
+    policy = json.loads(POLICY.read_text(encoding="utf-8"))
+    policy["extensionVersion"] = numeric
+    if prerelease:
+        policy["channel"] = "prerelease"
+    else:
+        policy.pop("channel", None)
     POLICY.write_text(
-        re.sub(r'("extensionVersion":\s*")[^"]*(")', rf"\g<1>{version}\g<2>", policy, count=1),
+        json.dumps(policy, indent=2) + "\n",
         encoding="utf-8",
         newline="",
     )
@@ -62,17 +90,27 @@ def bump(version: str) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("version", help="X.Y.Z (a leading 'v' is ignored)")
+    parser.add_argument("version", help="canonical Python version (a leading 'v' is ignored)")
+    parser.add_argument("--extension-version", help="numeric X.Y.Z; required for prereleases")
     parser.add_argument("--check", action="store_true", help="only verify the versions")
     args = parser.parse_args(argv)
     version = args.version.removeprefix("v")
-    if not VERSION.match(version):
-        parser.error(f"invalid version {args.version!r}; expected X.Y.Z")
+    numeric = args.extension_version
+    try:
+        expected = expected_versions(version, numeric)
+    except ValueError as error:
+        parser.error(str(error))
     if not args.check:
-        bump(version)
-    mismatched = {name: found for name, found in current().items() if found != version}
+        bump(version, numeric)
+    mismatched = {name: found for name, found in current().items() if found != expected[name]}
     for name, found in mismatched.items():
-        print(f"{name}: {found} (expected {version})", file=sys.stderr)
+        print(f"{name}: {found} (expected {expected[name]})", file=sys.stderr)
+    policy = json.loads(POLICY.read_text(encoding="utf-8"))
+    if policy.get("channel", "stable") != (
+        "prerelease" if release_version(version)[1] else "stable"
+    ):
+        print("Compatibility channel does not match the Python release", file=sys.stderr)
+        return 1
     if not mismatched and not args.check:
         print(f"Version set to {version}")
     return 1 if mismatched else 0

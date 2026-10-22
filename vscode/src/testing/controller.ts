@@ -20,6 +20,7 @@ import type { Reports } from "../report";
 import { disposeRunProfiles } from "./profiles";
 import { offerDoctorForRun } from "./environment";
 import { appendRelocationAction } from "./failureActions";
+import { saveExecutionSources } from "./saveSources";
 
 interface ItemData {
   project: Project;
@@ -88,6 +89,7 @@ export class TestController implements vscode.Disposable {
   private readonly debugProfile: vscode.TestRunProfile;
   private readonly recordingProfile: vscode.TestRunProfile;
   private disposed = false;
+  private rebuildPending = false;
   constructor(
     private readonly projects: Projects,
     private readonly discovery: DiscoveryStore,
@@ -133,6 +135,11 @@ export class TestController implements vscode.Disposable {
     return project.root.fsPath + "|" + nodeid;
   }
   private rebuild(): void {
+    if (this.active.size) {
+      this.rebuildPending = true;
+      return;
+    }
+    this.rebuildPending = false;
     const old = new Map(this.items);
     this.items.clear();
     const roots: vscode.TestItem[] = [];
@@ -283,6 +290,7 @@ export class TestController implements vscode.Disposable {
   ): Promise<void> {
     // Each run gets a unique name so a button on one of its test rows can tell VS Code's history
     // which run it belongs to; debug runs write no report and need none.
+    const selected = this.selected(request);
     const name = debug ? undefined : this.reports.history.newName();
     const run = this.controller.createTestRun(request, name);
     if (name) this.activeRunNames.add(name);
@@ -308,7 +316,7 @@ export class TestController implements vscode.Disposable {
       cancellation.cancel();
     try {
       await Promise.all(
-        [...this.selected(request)].map(([project, items]) => {
+        [...selected].map(([project, items]) => {
           items.forEach((item) => run.enqueued(item));
           const key = project.root.toString();
           const previous = this.queues.get(key) ?? Promise.resolve();
@@ -329,6 +337,13 @@ export class TestController implements vscode.Disposable {
       cancellation.dispose();
       run.end();
       if (name) this.activeRunNames.delete(name);
+      if (!this.disposed && !this.active.size && this.rebuildPending) this.rebuild();
+      for (const project of selected.keys()) {
+        const keep = vscode.workspace.getConfiguration("wintestkit", project.root)
+          .get<number>("keepRunReports", DEFAULT_KEEP_RUNS);
+        await this.reports.history.prune(keep, this.activeRunNames)
+          .catch((error) => this.log.warn(String(error)));
+      }
       await this.refreshReportContexts();
     }
   }
@@ -458,7 +473,7 @@ export class TestController implements vscode.Disposable {
     );
     const keep = settings.get<number>("keepRunReports", DEFAULT_KEEP_RUNS);
     void this.reports.history
-      .prune(keep)
+      .prune(keep, this.activeRunNames)
       .catch((error) => this.log.warn(String(error)));
     return dir;
   }
@@ -493,6 +508,14 @@ export class TestController implements vscode.Disposable {
         return;
       }
       const python = await getInterpreter(project.root);
+      if (!(await saveExecutionSources(this.projects, project))) {
+        this.apply(project, run, mapper.finish(null, true));
+        return;
+      }
+      if (token.isCancellationRequested || this.disposed) {
+        this.apply(project, run, mapper.finish(null, true));
+        return;
+      }
       if (!python) throw new Error("Select a Python interpreter first.");
       const url = await listener.listen();
       const settings = vscode.workspace.getConfiguration(

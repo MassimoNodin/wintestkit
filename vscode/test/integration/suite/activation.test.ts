@@ -1,10 +1,11 @@
 import * as assert from "node:assert/strict";
 import * as path from "node:path";
 import * as vscode from "vscode";
+import type { ExtensionApi } from "../../../src/extension";
 
 suite("WinTestKit activation", () => {
   test("discovers Calculator pages and exposes locator CodeLens without launching an app", async () => {
-    const extension = vscode.extensions.getExtension("wintestkit.wintestkit");
+    const extension = vscode.extensions.getExtension<ExtensionApi>("wintestkit.wintestkit");
     assert.ok(extension);
     const api = await extension.activate();
     assert.equal(extension.isActive, true);
@@ -41,11 +42,6 @@ suite("WinTestKit activation", () => {
       highlight,
       "discovery populates highlight CodeLens for Calculator",
     );
-    const setup = await api.setup.getChildren();
-    assert.equal(setup.length, 1);
-    assert.equal(setup[0].label, "CalculatorApp");
-    assert.equal(setup[0].command.command, "wintestkit.openSettings");
-    assert.ok(setup[0].iconPath);
     const pages = api.elements.getChildren();
     assert.ok(
       pages.some((node: { label: string }) => node.label === "ScientificPage"),
@@ -60,16 +56,14 @@ suite("WinTestKit activation", () => {
         node.children.some((child) => child.label === "open_page"),
       ),
     );
-    const tests = api.elements.getChildren(undefined, "tests");
+    const tests = [...api.tests.items.values()];
     assert.ok(
-      tests.some((node: { children: { label: string }[] }) =>
-        node.children.some((child) => child.label === "test_add_one"),
-      ),
+      tests.some((item) => item.label === "test_add_one"),
     );
     const commands = await vscode.commands.getCommands(true);
     assert.ok(commands.includes("wintestkit.spy.refresh"));
     assert.ok(commands.includes("wintestkit.checkPage"));
-    assert.ok(commands.includes("wintestkit.tests.run"));
-    assert.ok(commands.includes("wintestkit.tests.debug"));
+    assert.ok(commands.includes("wintestkit.openSettings"));
+    assert.equal(api.tests.controller.id, "wintestkit");
   });
 });

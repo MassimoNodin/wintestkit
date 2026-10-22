@@ -140,7 +140,11 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     )
     group.addoption("--wtk-slowmo", type=int, metavar="MS", help="pause after every action")
     group.addoption("--wtk-report", metavar="DIR", help="report directory")
-    group.addoption("--wtk-no-report", action="store_true", help="do not write a report")
+    group.addoption(
+        "--wtk-no-report",
+        action="store_true",
+        help="disable reports and automatic screenshots, replay, and object previews",
+    )
     group.addoption(
         "--wtk-no-html", action="store_true", help="write results.json but not the HTML report"
     )
@@ -329,7 +333,11 @@ class _Controller:
             if run.replay.window is None and self.current is not None:
                 self._replay_window(run.replay, _funcarg(self.current, "app"))
             run.replay.request_frame()
-        if self.config.screenshots == "every-step" and self.current is not None:
+        if (
+            self.report_enabled
+            and self.config.screenshots == "every-step"
+            and self.current is not None
+        ):
             app = _funcarg(self.current, "app")
             directory = artifact_files.artifacts_dir(self.config.report_dir, test_id)
             path = artifact_files.capture_step_screenshot(app, directory, record.seq)
@@ -375,6 +383,9 @@ class _Controller:
 
     @pytest.hookimpl(hookwrapper=True)
     def pytest_runtest_call(self, item: pytest.Item) -> Generator[None, Any, None]:
+        if not self.report_enabled:
+            yield
+            return
         with runtime.object_preview_test_context():
             yield
 
@@ -424,7 +435,7 @@ class _Controller:
         baseline = artifact_files.baseline_path(
             self.config.report_dir, repr(self.config.app), item.nodeid
         )
-        if not report.failed or report.when == "teardown" or self.config.screenshots == "off":
+        if not evidence_enabled or not report.failed or report.when == "teardown":
             return
         directory = artifact_files.artifacts_dir(self.config.report_dir, item.nodeid)
         app = _funcarg(item, "app")

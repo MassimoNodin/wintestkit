@@ -209,10 +209,11 @@ export class RunHistory {
   }
 
   /** Keep the newest `keep` runs and discard the rest, so folders cannot pile up. */
-  async prune(keep: number): Promise<void> {
+  async prune(keep: number, active: ReadonlySet<string> = new Set()): Promise<void> {
     const surplus = [...this.entries.values()]
       .sort((a, b) => b.at - a.at)
       .slice(Math.max(1, keep));
-    for (const entry of surplus) await this.discard(entry.name);
+    for (const entry of surplus)
+      if (!active.has(entry.name)) await this.discard(entry.name);
   }
 }

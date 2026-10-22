@@ -36,6 +36,7 @@ vi.mock("vscode", () => ({
   commands: { executeCommand: vi.fn() },
 }));
 import { ServerManager, type Project } from "../../src/server/serverManager";
+import { ALLOW_PRERELEASE, PYTHON_REQUIREMENT } from "../../src/compatibility";
 
 class Child extends EventEmitter {
   stdin = new PassThrough();
@@ -90,10 +91,10 @@ afterEach(async () => {
   vi.useRealTimers();
 });
 describe("server manager", () => {
-  it.each(["0.1.0", "0.2.0", "1.0.0", "0.1.2rc1", "bad", undefined])("blocks incompatible probed package %s without retrying", async (version) => {
+  it.each(["0.1.0", "0.2.0", "1.0.0", ...(ALLOW_PRERELEASE ? [] : ["0.1.2rc1"]), "bad", undefined])("blocks incompatible probed package %s without retrying", async (version) => {
     vi.useFakeTimers();
     mocks.installed.mockResolvedValue({ installed: true, version });
-    await expect(manager.get(project)).rejects.toThrow("requires wintestkit>=0.1.1,<0.2.0");
+    await expect(manager.get(project)).rejects.toThrow("requires " + PYTHON_REQUIREMENT);
     await vi.advanceTimersByTimeAsync(60000);
     await expect(manager.get(project)).rejects.toThrow("Selected interpreter: python.exe");
     expect(mocks.spawn).not.toHaveBeenCalled();

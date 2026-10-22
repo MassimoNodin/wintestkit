@@ -45,7 +45,9 @@ vi.mock("vscode", () => ({
 vi.mock("../../src/settings/files", () => ({
   readConfiguration: vi.fn(async () => ({ launch: "per-test" })),
 }));
+vi.mock("../../src/testing/saveSources", () => ({ saveExecutionSources: vi.fn() }));
 import { FlowRuns, flowKey } from "../../src/editor/flowRuns";
+import { saveExecutionSources } from "../../src/testing/saveSources";
 
 const project = { root: { fsPath: "/project" }, name: "project" } as Project;
 const target = { file: "/project/flows/tour.py", name: "tour" };
@@ -53,6 +55,7 @@ let flows: FlowRuns;
 const run = () => mocks.commands.get("wintestkit.runFlow")!(target);
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(saveExecutionSources).mockResolvedValue(true);
   mocks.commands.clear();
   mocks.error.mockResolvedValue(undefined);
   flows = new FlowRuns(
@@ -73,6 +76,12 @@ beforeEach(() => {
 afterEach(() => flows.dispose());
 
 describe("flow runs", () => {
+  it("does not execute a flow when saving was declined or failed", async () => {
+    vi.mocked(saveExecutionSources).mockResolvedValue(false);
+    await run();
+    expect(mocks.request).not.toHaveBeenCalled();
+    expect(flows.states.has(flowKey(target))).toBe(false);
+  });
   it("runs the flow with a long timeout and records a pass", async () => {
     mocks.request.mockResolvedValue({ status: "passed", durationMs: 12.4 });
     await run();

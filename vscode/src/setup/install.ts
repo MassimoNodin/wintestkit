@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import * as vscode from "vscode";
-import { checkWintestkit, installArguments } from "../python";
+import { checkWintestkit, installArguments, requirePip } from "../python";
 import { CompatibilityError, packageCompatibility, PYTHON_REQUIREMENT } from "../compatibility";
 import { DevPackages } from "./devPackages";
 
@@ -57,6 +57,7 @@ export class PackageInstaller implements vscode.Disposable {
         args = await this.development.arguments(folder);
       else args = await installArguments();
       if (!args) return false;
+      await requirePip(python, args);
       this.log.info(`Installing wintestkit: ${python} ${args.join(" ")}`);
       const output = await new Promise<{ ok: boolean; text: string }>((resolve) => {
         execFile(

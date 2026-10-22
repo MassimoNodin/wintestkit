@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 import * as path from "node:path";
 import { PythonExtension } from "@vscode/python-extension";
 import * as vscode from "vscode";
-import { PYTHON_REQUIREMENT } from "./compatibility";
+import { ALLOW_PRERELEASE, PYTHON_REQUIREMENT } from "./compatibility";
 
 export async function getInterpreter(
   folder: vscode.Uri,
@@ -105,5 +105,20 @@ export async function runTerminal(
 }
 
 export async function installArguments(): Promise<string[]> {
-  return ["-m", "pip", "install", "--upgrade", "--force-reinstall", PYTHON_REQUIREMENT];
+  return ["-m", "pip", "install", "--upgrade", "--force-reinstall", ...(ALLOW_PRERELEASE ? ["--pre"] : []), PYTHON_REQUIREMENT];
+}
+
+export async function requirePip(python: string, args: string[]): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    execFile(python, ["-I", "-m", "pip", "--version"],
+      { timeout: 10000, windowsHide: true }, (error) => {
+        if (!error) return resolve();
+        const quote = (value: string) => "'" + value.replaceAll("'", "''") + "'";
+        const target = args.at(-1) ?? PYTHON_REQUIREMENT;
+        reject(new Error("Could not run pip in the selected interpreter " + python +
+          ". No environment was changed. For a pip-less uv environment, run in PowerShell: uv pip install --python " +
+          quote(python) + " --upgrade " + (args.includes("--pre") ? "--prerelease allow " : "") + quote(target) +
+          ". Otherwise enable pip in that environment or select an interpreter with pip, then retry. Probe: " + error.message));
+      });
+  });
 }

@@ -36,6 +36,9 @@ py -3.12 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 ```
 
+The intended 0.1 distribution is a public Python package and a public pre-release VS Code
+extension. Public PyPI availability is not established by a successful local build;
+until the chosen version is published, install a locally built wheel.
 Install a WinTestKit wheel from a release or your local build, together with pytest.
 Replace the wheel path with the actual file you downloaded or built:
 
@@ -56,8 +59,9 @@ If PowerShell blocks activation, you can use `.\.venv\Scripts\python.exe` and
 
 ### Install the VS Code extension (optional)
 
-1. In VS Code, open **Extensions**, choose **Install from VSIX...** from the menu, and select
-   the WinTestKit `.vsix` file from a release or local build.
+1. In VS Code, open **Extensions**, search for **WinTestKit** and choose **Install**, then
+   **Switch to Pre-Release Version** while WinTestKit is in its 0.1 prerelease. To test a
+   local build instead, choose **Install from VSIX...** and select the `.vsix` file.
 2. Open your `orders-tests` folder.
 3. Run **Python: Select Interpreter** and select `.venv\Scripts\python.exe`.
 4. Make sure the Python package is installed in that interpreter, not just globally.
@@ -65,6 +69,9 @@ If PowerShell blocks activation, you can use `.\.venv\Scripts\python.exe` and
 
 The extension is a UI for the Python backend; installing the VSIX alone does not install
 pytest or prepare your test environment.
+Raw VSIX files are not uploaded publicly by default; the Marketplace is the distribution
+channel. Marketplace prereleases are public channels, not private access controls. See [release setup](docs/releasing.md) for
+the independent publishing switches and version/channel decision.
 
 ## 3. Initialize a test project
 

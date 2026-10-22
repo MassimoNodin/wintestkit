@@ -1,6 +1,7 @@
 import * as path from "node:path";
 import Mocha from "mocha";
 import * as vscode from "vscode";
+import type { ExtensionApi } from "../../../src/extension";
 
 export async function run(): Promise<void> {
   const mocha = new Mocha({ ui: "tdd", color: true, timeout: 60000 });
@@ -8,7 +9,7 @@ export async function run(): Promise<void> {
   for (const name of ["activation", "settings", "unused", "report", "clearResults"])
     if (!only || only === name) mocha.addFile(path.resolve(__dirname, name + ".test.js"));
   // WinTestKit does nothing in a workspace until it is enabled there.
-  await vscode.extensions.getExtension("wintestkit.wintestkit")?.activate();
+  await vscode.extensions.getExtension<ExtensionApi>("wintestkit.wintestkit")?.activate();
   await vscode.commands.executeCommand("wintestkit.enable");
   return new Promise((resolve, reject) => {
     mocha.run((failures) => {
