@@ -96,7 +96,9 @@ def test_mouse_rejects_foreign_child_in_owned_window(
     target: tuple[Any, list[str]], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     control, calls = target
-    monkeypatch.setattr(win32, "window_pid", lambda hwnd: control.process_id if hwnd == 100 else 999)
+    monkeypatch.setattr(
+        win32, "window_pid", lambda hwnd: control.process_id if hwnd == 100 else 999
+    )
     with pytest.raises(ActionError, match="another window"):
         actions.click(control)
     assert calls == []
