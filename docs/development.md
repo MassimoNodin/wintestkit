@@ -138,3 +138,8 @@ from partial publication. PyPI, Marketplace, Open VSX and public VSIX uploads ar
 independent switches; leave a switch off to keep that destination unpublished. Only enabled
 targets require publishing credentials.
 Packaging success does not establish installed-extension, native WPF or ARM64 acceptance.
+
+## Commit messages
+
+Write commits in the format described in [commit messages](commit-messages.md):
+`type(scope): short description`, then a body of one bullet per change.
