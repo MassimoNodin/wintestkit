@@ -1,0 +1,27 @@
+# TEMPORARY, one-time helper. Delete this file after you have the id.
+# Logs in as the Azure managed identity through the `release` environment and prints the
+# Azure DevOps profile id the Visual Studio Marketplace "Members" page asks for.
+name: Get publisher identity id
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  identity:
+    runs-on: ubuntu-latest
+    environment: release
+    steps:
+      - uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          allow-no-subscriptions: true
+      - name: Print the Marketplace member id
+        run: |
+          az rest -u https://app.vssps.visualstudio.com/_apis/profile/profiles/me \
+            --resource 499b84ac-1321-427f-aa17-267ca6975798 \
+            --query id -o tsv
