@@ -29,12 +29,11 @@ def test_sign_in(app):
 ## Features
 
 - **Test Target and YAML configuration.** See the application's icon, name and live status
-  (including start-up progress) above Pages & Flows and use its gear to open a custom settings editor. **This machine** shows
-  only **Application executable** under **Start the application**, with **Browse…**. Other
-  settings are under collapsed **Advanced options** (**Application**, **Test runs**,
-  **Debugging**). Shared defaults live in `wintestkit.yaml`; the executable and other
-  machine-specific values stay in Git-ignored `wintestkit.local.yaml`. Save to reload the
-  backend, or open raw YAML for settings the form does not show.
+  (including start-up progress) above Pages & Flows and use its gear to open a custom settings editor. Every setting is shown
+  at once, grouped as **Application** (including the executable, with **Browse…**), **Test runs**,
+  **Evidence** and **Debugging**; **User Settings** saves each change immediately. Shared defaults live in `wintestkit.yaml`; the executable may be a
+  project-relative path there, while absolute paths and other machine-specific values stay in Git-ignored `wintestkit.local.yaml`. Changes in both files are saved immediately and reload the
+  backend; open raw YAML for settings the form does not show.
 
 - **Highlight and check elements from the editor.** CodeLens actions above every `Element`
   definition flash the matching control on screen or report why it can't be found (no match,

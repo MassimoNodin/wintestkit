@@ -6,10 +6,12 @@ import { ensureLocalIgnores, readConfiguration, readOptional } from "./files";
 import {
   flattenSettings,
   parseSettings,
+  projectRelativePath,
   settingFields,
   settingSections,
   settingsScope,
   updateSetting,
+  type SettingsScope,
 } from "./model";
 
 export const settingsEditorId = "wintestkit.configuration";
@@ -96,7 +98,7 @@ export class ConfigurationEditor implements vscode.CustomTextEditorProvider {
       nonce +
       '\';"><link rel="stylesheet" href="' +
       style +
-      '"></head><body><header><p class="eyebrow">WINTESTKIT</p><h1>Configuration</h1><p id="project"></p><nav aria-label="Configuration file and actions"><button id="local">This machine</button><button id="shared">Shared project</button><button id="source">Open YAML</button><button id="save">Save configuration</button></nav></header><p id="scope"></p><p id="status" role="status" aria-live="polite"></p><main id="fields"></main><script nonce="' +
+      '"></head><body><header><p class="eyebrow">WINTESTKIT</p><h1>Configuration</h1><p id="project"></p></header><nav aria-label="Configuration file and actions"><div class="segmented" role="group" aria-label="Configuration file"><button id="local">User Settings</button><button id="shared">Repository Settings</button></div><button id="source">Open YAML</button></nav><div class="scope-row"><p id="scope"></p><span id="saving" role="status" hidden><span class="spinner" aria-hidden="true"></span>Saving</span></div><p id="status" role="status" aria-live="polite"></p><main id="fields"></main><script nonce="' +
       nonce +
       '" src="' +
       script +
@@ -104,14 +106,38 @@ export class ConfigurationEditor implements vscode.CustomTextEditorProvider {
     let disposed = false;
     let sequence = 0;
     let queue = Promise.resolve();
+    // The settings of one YAML file in this folder. The file being edited is read from its buffer,
+    // the other from disk; a file that is missing or invalid has no settings to show.
+    const settingsOf = async (
+      file: string,
+      fileScope: SettingsScope,
+    ): Promise<Record<string, unknown>> => {
+      try {
+        const text =
+          file === path.basename(document.uri.fsPath)
+            ? document.getText()
+            : await readOptional(vscode.Uri.joinPath(root, file));
+        if (text === undefined) return {};
+        return flattenSettings(
+          parseSettings(text, fileScope).toJS({ maxAliasCount: 50 }) ?? {},
+        );
+      } catch {
+        return {};
+      }
+    };
     const send = async () => {
       const request = ++sequence;
       const version = document.version;
       try {
         const parsed = parseSettings(document.getText(), scope);
+        const name = path.basename(document.uri.fsPath);
+        const repository = await settingsOf("wintestkit.yaml", "shared");
+        const user = await settingsOf("wintestkit.local.yaml", "local");
         const effective = await readConfiguration(root, {
-          [path.basename(document.uri.fsPath)]: document.getText(),
+          [name]: document.getText(),
         });
+        // What every setting would be without this file: the baseline a change is measured from.
+        const inherited = await readConfiguration(root, { [name]: "{}\n" });
         if (disposed || request !== sequence || version !== document.version)
           return;
         await panel.webview.postMessage({
@@ -124,6 +150,9 @@ export class ConfigurationEditor implements vscode.CustomTextEditorProvider {
           sections: settingSections(scope),
           values: flattenSettings(parsed.toJS({ maxAliasCount: 50 }) ?? {}),
           effective,
+          inherited,
+          repository,
+          user,
         });
       } catch (error) {
         if (!disposed && request === sequence)
@@ -147,6 +176,17 @@ export class ConfigurationEditor implements vscode.CustomTextEditorProvider {
       if (!(await vscode.workspace.applyEdit(edit)))
         throw new Error("Configuration changed. Try again.");
     };
+    const save = async () => {
+      parseSettings(document.getText(), scope);
+      if (scope === "local") await ensureLocalIgnores(root);
+      if (!(await document.save()))
+        throw new Error("Configuration was not saved.");
+    };
+    // Both files are saved as they change.
+    const commit = async (key: string, value: unknown, remove: boolean) => {
+      await apply(key, value, remove);
+      await save();
+    };
     const receive = panel.webview.onDidReceiveMessage((message: unknown) => {
       queue = queue
         .then(async () => {
@@ -169,20 +209,21 @@ export class ConfigurationEditor implements vscode.CustomTextEditorProvider {
               document.uri,
               "default",
             );
-          else if (data.type === "save") {
-            parseSettings(document.getText(), scope);
-            if (scope === "local") await ensureLocalIgnores(root);
-            if (!(await document.save()))
-              throw new Error("Configuration was not saved.");
-            await send();
-          } else if (data.type === "browse" && scope === "local") {
+          else if (data.type === "browse") {
             const selection = await vscode.window.showOpenDialog({
               title: "Select application executable",
               filters: { Applications: ["exe"] },
               canSelectMany: false,
+              defaultUri: root,
             });
             if (selection?.[0]) {
-              await apply("app.path", selection[0].fsPath, false);
+              await commit(
+                "app.path",
+                scope === "local"
+                  ? selection[0].fsPath
+                  : projectRelativePath(root.fsPath, selection[0].fsPath),
+                false,
+              );
               await send();
             }
           } else if (
@@ -196,7 +237,7 @@ export class ConfigurationEditor implements vscode.CustomTextEditorProvider {
                 "Settings changed. Review the refreshed form and try again.",
               );
             }
-            await apply(data.key, data.value, data.remove);
+            await commit(data.key, data.value, data.remove);
             await send();
           }
         })

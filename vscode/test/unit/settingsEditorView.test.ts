@@ -32,11 +32,20 @@ class DomNode {
   min = "";
   step = "";
   spellcheck = true;
+  hidden = false;
+  max = "";
+  style = {
+    props: {} as Record<string, string>,
+    setProperty(name: string, value: string) {
+      this.props[name] = value;
+    },
+  };
   parent: DomNode | null = null;
   children: DomNode[] = [];
   attrs: Record<string, string> = {};
   onclick: (() => void) | null = null;
   onchange: (() => void) | null = null;
+  oninput: (() => void) | null = null;
   ontoggle: (() => void) | null = null;
   private idValue = "";
 
@@ -127,9 +136,9 @@ function boot(saved?: SavedState) {
     "local",
     "shared",
     "source",
-    "save",
     "project",
     "scope",
+    "saving",
     "status",
     "fields",
   ]) {
@@ -139,6 +148,7 @@ function boot(saved?: SavedState) {
   }
   const document = {
     createElement: (tag: string) => new DomNode(tag, selection),
+    createElementNS: (_namespace: string, tag: string) => new DomNode(tag, selection),
     getElementById: (id: string) => findNode(root, (node) => node.id === id),
     get activeElement() {
       return selection.current;
@@ -212,6 +222,9 @@ function state(
     sections: settingSections(scope),
     values,
     effective: effective(extra),
+    inherited: effective(),
+    repository: {},
+    user: {},
   };
 }
 
@@ -236,7 +249,6 @@ describe("settings editor script", () => {
     );
     const input = view.must("app.path");
     expect(input.value).toBe("C:\\Apps\\Demo.exe");
-    expect(view.must("app.path-meta").textContent).toContain("Set in this file");
     expect(view.get("app.path-override")).toBeNull();
     input.value = "   ";
     input.onchange?.();
@@ -252,9 +264,6 @@ describe("settings editor script", () => {
     const inherited = view.must("app.path");
     expect(inherited.value).toBe("");
     expect(inherited.placeholder).toBe("C:\\Inherited\\App.exe");
-    expect(view.must("app.path-meta").textContent).toContain(
-      "Inherited: C:\\Inherited\\App.exe",
-    );
     const count = view.posts.length;
     inherited.value = " ";
     inherited.onchange?.();
@@ -316,7 +325,7 @@ describe("settings editor script", () => {
     );
     expect(view.document.activeElement?.id).toBe("app.startup_timeout");
     expect(view.must("app.startup_timeout").disabled).toBe(false);
-    view.must("launch-override").focus();
+    view.must("launch-attach").focus();
     view.emit(
       state("local", 4, {
         "app.path": "C:\\Apps\\Demo.exe",
@@ -324,7 +333,7 @@ describe("settings editor script", () => {
         launch: "attach",
       }),
     );
-    expect(view.document.activeElement?.id).toBe("launch-override");
+    expect(view.document.activeElement?.id).toBe("launch-attach");
     const browse = view.must("app.path-browse");
     expect(browse.getAttribute("aria-label")).toBe(
       "Browse for Application executable",
@@ -338,115 +347,471 @@ describe("settings editor script", () => {
       }),
     );
     expect(view.document.activeElement?.id).toBe("app.path-browse");
-    view.emit(state("shared", 6, { "app.process": "Shared.exe" }));
-    const edit = view.must("local-executable");
-    expect(edit.textContent).toContain("Set the executable");
-    edit.focus();
-    view.emit(state("shared", 7, { "app.process": "Shared.exe" }));
-    expect(view.document.activeElement?.id).toBe("local-executable");
+    view.emit(state("shared", 6, { "app.path": "bin/App.exe" }));
+    expect(view.must("app.path").value).toBe("bin/App.exe");
+    view.must("app.path-browse").focus();
+    view.emit(state("shared", 7, { "app.path": "bin/App.exe" }));
+    expect(view.document.activeElement?.id).toBe("app.path-browse");
     view.document.activeElement?.click();
-    expect(view.posts.at(-1)).toEqual({ type: "scope", scope: "local" });
+    expect(view.posts.at(-1)).toEqual({ type: "browse" });
   });
 
-  it("remembers whether advanced options are open", () => {
-    const closed = boot();
-    closed.emit(state("local", 1, {}));
-    const details = closed.find((node) => node.tagName === "DETAILS");
-    if (!details?.ontoggle) throw new Error("Missing advanced details");
-    expect(details.open).toBe(false);
-    details.open = true;
-    details.ontoggle();
-    expect(closed.saved()).toEqual({ advancedOpen: true });
-    closed.emit(state("local", 2, { timeout: 15 }));
-    expect(closed.find((node) => node.tagName === "DETAILS")?.open).toBe(true);
-
-    const opened = boot({ advancedOpen: true, marker: "keep" });
-    opened.emit(state("local", 1, {}));
-    const restored = opened.find((node) => node.tagName === "DETAILS");
-    if (!restored?.ontoggle) throw new Error("Missing advanced details");
-    expect(restored.open).toBe(true);
-    restored.open = false;
-    restored.ontoggle();
-    expect(opened.saved()).toEqual({ advancedOpen: false, marker: "keep" });
-    opened.emit(state("local", 2, {}));
-    expect(opened.find((node) => node.tagName === "DETAILS")?.open).toBe(false);
-  });
-
-  it("overrides advanced values without dropping inherited or shared scope", () => {
+  it("edits values in place", () => {
     const view = boot();
     view.emit(state("local", 3, { timeout: 15 }));
-    expect(view.must("app.process-meta").textContent).toContain("Not set");
     const count = view.posts.length;
-    const process = view.must("app.process-override");
-    process.checked = true;
+    const process = view.must("app.process");
+    process.value = " ";
     process.onchange?.();
     expect(view.posts).toHaveLength(count);
-    expect(view.document.activeElement?.id).toBe("app.process");
-    view.must("launch-override").checked = true;
-    view.must("launch-override").onchange?.();
+    view.must("launch-attach").click();
     expect(changes(view.posts).at(-1)).toMatchObject({
       key: "launch",
-      value: "per-test",
+      value: "attach",
       remove: false,
       version: 3,
     });
     view.emit({ type: "error", message: "Error: pause" });
-    view.must("slow_mo_ms-override").checked = true;
-    view.must("slow_mo_ms-override").onchange?.();
+    view.must("slow_mo_ms").value = "250";
+    view.must("slow_mo_ms").onchange?.();
     expect(changes(view.posts).at(-1)).toMatchObject({
       key: "slow_mo_ms",
-      value: 0,
-      remove: false,
+      value: 250,
     });
     expect(typeof changes(view.posts).at(-1)?.value).toBe("number");
     view.emit({ type: "error", message: "Error: pause" });
-    view.must("highlight_actions-override").checked = true;
-    view.must("highlight_actions-override").onchange?.();
-    expect(changes(view.posts).at(-1)?.value).toBe(false);
-    view.emit({ type: "error", message: "Error: pause" });
-    view.must("python_paths-override").checked = true;
-    view.must("python_paths-override").onchange?.();
-    expect(changes(view.posts).at(-1)?.value).toEqual(["."]);
+    view.must("highlight_actions").click();
+    expect(changes(view.posts).at(-1)).toMatchObject({
+      key: "highlight_actions",
+      value: true,
+    });
     view.emit({ type: "error", message: "Error: pause" });
     view.must("python_paths").value = "{";
     view.must("python_paths").onchange?.();
     expect(view.must("status").textContent).toContain("SyntaxError");
-    view.must("python_paths-override").checked = false;
-    view.must("python_paths-override").onchange?.();
-    expect(changes(view.posts).at(-1)).toMatchObject({
-      key: "python_paths",
-      remove: true,
-    });
+    view.must("python_paths").value = '["src"]';
+    view.must("python_paths").onchange?.();
+    expect(changes(view.posts).at(-1)?.value).toEqual(["src"]);
     view.emit({ type: "error", message: "Error: pause" });
-    view.must("timeout-override").checked = false;
-    view.must("timeout-override").onchange?.();
-    expect(changes(view.posts).at(-1)).toMatchObject({
-      key: "timeout",
-      remove: true,
-      version: 3,
-    });
     view.emit(state("shared", 4, {}));
-    expect(view.get("app.path")).toBeNull();
-    expect(view.get("app.args")).toBeNull();
+    expect(view.get("app.path")).not.toBeNull();
+    expect(view.get("app.args")).not.toBeNull();
     expect(view.get("app.cwd")).toBeNull();
     expect(view.get("highlight_actions")).toBeNull();
     expect(view.get("slow_mo_ms")).toBeNull();
-    expect(view.get("app.path-browse")).toBeNull();
     expect(view.must("timeout").disabled).toBe(true);
+    expect(view.must("timeout").value).toBe("");
     expect(view.must("app.process").value).toBe("");
     expect(
       view.find(
         (node) => node.tagName === "H3" && node.textContent === "Debugging",
       ),
     ).toBeNull();
-    expect(
-      view.find((node) => node.textContent.includes("wintestkit.local.yaml")),
-    ).not.toBeNull();
+    expect(view.must("scope").textContent).toContain("REPOSITORY SETTINGS");
+    view.emit(state("local", 5, {}));
+    expect(view.must("scope").textContent).toContain("USER SETTINGS");
     view.must("source").click();
     expect(view.posts.at(-1)).toEqual({ type: "source" });
-    view.must("save").click();
-    expect(view.posts.at(-1)).toEqual({ type: "save" });
     view.must("shared").click();
     expect(view.posts.at(-1)).toEqual({ type: "scope", scope: "shared" });
+  });
+
+  it("commits slider values only when released", () => {
+    const view = boot();
+    view.emit(state("local", 6, {}));
+    const slider = view.must("slow_mo_ms-slider");
+    slider.value = "1000";
+    slider.oninput?.();
+    expect(view.must("slow_mo_ms").value).toBe("1000");
+    expect(changes(view.posts)).toHaveLength(0);
+    slider.onchange?.();
+    expect(changes(view.posts).at(-1)).toMatchObject({
+      key: "slow_mo_ms",
+      value: 1000,
+      version: 6,
+    });
+  });
+
+  it("saves both files automatically and has no Save button or changes block", () => {
+    const view = boot();
+    for (const scope of ["shared", "local"] as const) {
+      view.emit({ ...state(scope, 2, { timeout: 15 }, { timeout: 15 }), dirty: false });
+      expect(view.get("save")).toBeNull();
+      expect(view.must("status").hidden).toBe(true);
+      expect(
+        view.find((node) => node.textContent === "Changes in this file"),
+      ).toBeNull();
+    }
+    view.emit({ type: "error", message: "Error: nope" });
+    expect(view.must("status").hidden).toBe(false);
+  });
+
+  it("shows every setting at once, with the executable inside Application", () => {
+    const view = boot();
+    view.emit(state("local", 1, {}));
+    expect(view.find((node) => node.tagName === "DETAILS")).toBeNull();
+    const application = view.find(
+      (node) => node.tagName === "SECTION" && node.attrs["aria-labelledby"] === "group-application",
+    );
+    expect(application?.querySelector("[id='app.path']")).not.toBeNull();
+    expect(application?.querySelector("[id='launch']")).not.toBeNull();
+    for (const field of settingFields)
+      expect(view.get(field.key)).not.toBeNull();
+    const captured = (scope: string) =>
+      view.find(
+        (node) =>
+          node.className === "option selected" && node.attrs["data-mode"] === scope,
+      );
+    expect(captured("window")).not.toBeNull();
+    view.emit(state("local", 3, { replay_scope: "desktop" }));
+    expect(captured("desktop")).not.toBeNull();
+    view.emit(state("shared", 2, {}));
+    const shared = view.find(
+      (node) => node.tagName === "SECTION" && node.attrs["aria-labelledby"] === "group-application",
+    );
+    expect(shared?.querySelector("[id='app.path']")).not.toBeNull();
+    expect(shared?.querySelector("[id='app.cwd']")).toBeNull();
+  });
+
+  it("picks the highlight color from swatches or a custom value and previews it", () => {
+    const view = boot();
+    view.emit(state("local", 7, {}));
+    const outlined = () =>
+      view.find((node) => node.className === "mini-button highlighted")?.style.props;
+    expect(outlined()?.["--highlight"]).toBe("#FF0000");
+    expect(view.must("highlight_color-red").getAttribute("aria-checked")).toBe("true");
+    view.must("highlight_color-blue").click();
+    expect(changes(view.posts).at(-1)).toMatchObject({
+      key: "highlight_color",
+      value: "#1E90FF",
+      remove: false,
+      version: 7,
+    });
+    view.emit({ type: "error", message: "Error: pause" });
+    view.must("highlight_color").value = "#00ff7f";
+    view.must("highlight_color").onchange?.();
+    expect(changes(view.posts).at(-1)).toMatchObject({ value: "#00FF7F" });
+    view.emit(
+      state("local", 8, { highlight_color: "#AA00FF" }, { highlight_color: "#AA00FF" }),
+    );
+    expect(outlined()?.["--highlight"]).toBe("#AA00FF");
+    expect(view.must("highlight_color-purple").getAttribute("aria-checked")).toBe("true");
+    expect(view.must("highlight_color-red").getAttribute("aria-checked")).toBe("false");
+    expect(view.must("highlight_color").value).toBe("#aa00ff");
+    view.emit(state("shared", 9, {}));
+    expect(view.get("highlight_color")).toBeNull();
+  });
+
+  it("covers a setting that uses the repository value with an Override button", () => {
+    const view = boot();
+    const tracked = (values: Record<string, unknown>) => ({
+      ...state("local", 10, values, { timeout: 30, launch: "attach", slow_mo_ms: 0 }),
+      repository: { timeout: 30, launch: "attach" },
+    });
+    view.emit(tracked({}));
+    // Only settings the repository sets get a cover, and none has a tab while using the repository.
+    expect(view.get("slow_mo_ms-override")).toBeNull();
+    expect(view.get("highlight_color-override")).toBeNull();
+    expect(view.get("timeout-repo")).toBeNull();
+    expect(view.must("timeout").disabled).toBe(true);
+    expect(view.must("timeout").value).toBe("30");
+    expect(view.must("timeout-slider").disabled).toBe(true);
+    expect(view.must("launch-attach").disabled).toBe(true);
+    const cover = view.must("timeout-override");
+    expect(cover.className).toBe("cover");
+    expect(cover.title).toContain("using the repository value");
+    expect(cover.getAttribute("aria-label")).toContain("Override Repository Setting");
+    expect(cover.children.map((node) => node.tagName)).toEqual(["SPAN", "SVG"]);
+    expect(cover.children[0].textContent).toBe("Override Repository Setting");
+    expect(view.find((node) => node.className === "controls locked")).not.toBeNull();
+    cover.click();
+    expect(changes(view.posts).at(-1)).toMatchObject({
+      key: "timeout",
+      value: 30,
+      remove: false,
+      version: 10,
+    });
+    view.emit({ type: "error", message: "Error: pause" });
+    // Overriding: editable, no cover, and a grey tab goes back to the repository value.
+    view.emit(tracked({ timeout: 45 }));
+    expect(view.get("timeout-override")).toBeNull();
+    expect(view.must("timeout").disabled).toBe(false);
+    expect(view.must("timeout").value).toBe("45");
+    const tab = view.must("timeout-repo");
+    expect(tab.className).toBe("repo-tab");
+    expect(tab.title).toContain("Overriding the repository value");
+    tab.click();
+    expect(changes(view.posts).at(-1)).toMatchObject({
+      key: "timeout",
+      remove: true,
+      version: 10,
+    });
+  });
+
+  it("pre-fills list values and warns in Repository Settings when a setting is overridden", () => {
+    const view = boot();
+    view.emit({
+      ...state("local", 11, {}),
+      repository: { python_paths: ["src", "lib"] },
+    });
+    view.must("python_paths-override").click();
+    expect(changes(view.posts).at(-1)).toMatchObject({
+      key: "python_paths",
+      value: ["src", "lib"],
+    });
+    view.emit({
+      ...state("shared", 12, { timeout: 30, launch: "attach" }),
+      user: { timeout: 5 },
+    });
+    expect(view.must("timeout-repo").className).toBe("repo-tab remove");
+    const warning = view.must("timeout-warning");
+    expect(warning.className).toBe("warning");
+    expect(
+      view.find((node) => node.textContent.includes("Overridden in your User Settings (5)")),
+    ).not.toBeNull();
+    expect(view.get("launch-warning")).toBeNull();
+    expect(view.get("python_paths-warning")).toBeNull();
+    view.must("timeout-open-user").click();
+    expect(view.posts.at(-1)).toEqual({ type: "scope", scope: "local" });
+  });
+
+  it("enables repository settings one at a time from a blank, covered state", () => {
+    const view = boot();
+    view.emit({ ...state("shared", 20, { launch: "attach" }), user: { timeout: 5 } });
+    // Unset: blank, disabled, covered by an enable button, and no tab.
+    const timeout = view.must("timeout");
+    expect(timeout.value).toBe("");
+    expect(timeout.disabled).toBe(true);
+    expect(view.must("timeout-slider").disabled).toBe(true);
+    expect(view.get("timeout-repo")).toBeNull();
+    expect(view.get("timeout-warning")).toBeNull();
+    const cover = view.must("timeout-enable");
+    expect(cover.className).toBe("cover");
+    expect(cover.getAttribute("aria-label")).toContain("Enable Setting for Repository");
+    expect(
+      view.find((node) => node.parent === cover && node.textContent === "Enable Setting for Repository"),
+    ).not.toBeNull();
+    expect(view.must("input_mode-pattern").getAttribute("aria-checked")).toBe("false");
+    expect(view.must("input_mode-mouse").getAttribute("aria-checked")).toBe("false");
+    expect(view.must("input_mode-mouse").disabled).toBe(true);
+    // Set: no cover, editable, showing its value, with a red tab that removes it.
+    expect(view.get("launch-enable")).toBeNull();
+    expect(view.must("launch-attach").getAttribute("aria-checked")).toBe("true");
+    expect(view.must("launch-attach").disabled).toBe(false);
+    expect(view.must("launch-repo").className).toBe("repo-tab remove");
+    // Enabling a setting that has a default writes that default.
+    cover.click();
+    expect(changes(view.posts).at(-1)).toMatchObject({
+      key: "timeout",
+      value: 10,
+      remove: false,
+      version: 20,
+    });
+    view.emit({ type: "error", message: "Error: pause" });
+    view.must("python_paths-enable").click();
+    expect(changes(view.posts).at(-1)).toMatchObject({ key: "python_paths", value: ["."] });
+    view.emit({ type: "error", message: "Error: pause" });
+    // The red tab removes a set setting from the file.
+    view.must("launch-repo").click();
+    expect(changes(view.posts).at(-1)).toMatchObject({ key: "launch", remove: true, version: 20 });
+  });
+
+  it("waits for a value when a repository setting has no default to write", () => {
+    const view = boot();
+    view.emit(state("shared", 30, {}));
+    const posts = view.posts.length;
+    expect(view.must("app.process").disabled).toBe(true);
+    view.must("app.process-enable").click();
+    expect(view.posts).toHaveLength(posts);
+    expect(view.must("app.process").disabled).toBe(false);
+    expect(view.must("app.process").value).toBe("");
+    expect(view.get("app.process-enable")).toBeNull();
+    expect(view.must("app.process-repo").className).toBe("repo-tab remove");
+    expect(view.document.activeElement?.id).toBe("app.process");
+    // Rows that were not enabled stay covered, and the draft survives a refresh.
+    view.emit(state("shared", 31, {}));
+    expect(view.must("app.process").disabled).toBe(false);
+    expect(view.must("timeout").disabled).toBe(true);
+    view.must("app.process").value = "Orders.exe";
+    view.must("app.process").onchange?.();
+    expect(changes(view.posts).at(-1)).toMatchObject({
+      key: "app.process",
+      value: "Orders.exe",
+      version: 31,
+    });
+    // Removing a draft again does not touch the file and brings the cover back.
+    view.emit(state("shared", 32, {}));
+    view.must("app.path-enable").click();
+    const before = view.posts.length;
+    view.must("app.path-repo").click();
+    expect(view.posts).toHaveLength(before);
+    expect(view.must("app.path").disabled).toBe(true);
+    expect(view.get("app.path-enable")).not.toBeNull();
+    // Drafts do not carry over to the other file.
+    view.must("app.path-enable").click();
+    view.emit(state("local", 33, {}));
+    view.emit(state("shared", 34, {}));
+    expect(view.must("app.path").disabled).toBe(true);
+  });
+
+  it("shows a setting's diagram only while the setting is editable", () => {
+    const view = boot();
+    const diagram = () => view.find((node) => node.className === "compare");
+    // Repository Settings: unset rows are covered, so no diagram until a row is enabled.
+    view.emit(state("shared", 40, {}));
+    expect(diagram()).toBeNull();
+    view.must("input_mode-enable").click();
+    view.emit(state("shared", 41, { input_mode: "mouse" }));
+    expect(diagram()).not.toBeNull();
+    // User Settings: no diagram while the repository value is in use, one once it is overridden.
+    const tracked = (values: Record<string, unknown>) => ({
+      ...state("local", 42, values),
+      repository: { input_mode: "mouse", replay_scope: "desktop" },
+    });
+    view.emit(tracked({}));
+    expect(diagram()).toBeNull();
+    view.emit(tracked({ input_mode: "pattern" }));
+    expect(diagram()).not.toBeNull();
+    expect(view.find((node) => node.className === "tree")).toBeNull();
+  });
+
+  it("draws the Git logo as a single filled path", () => {
+    const view = boot();
+    view.emit({ ...state("shared", 43, { timeout: 30 }) });
+    const tab = view.must("timeout-repo");
+    const svg = tab.children[0];
+    expect(svg.tagName).toBe("SVG");
+    expect(svg.attrs.fill).toBe("currentColor");
+    expect(svg.children).toHaveLength(1);
+    expect(svg.children[0].tagName).toBe("PATH");
+    expect(svg.children[0].attrs.d).toMatch(/^M23\.546 10\.93L13\.067\.452/);
+  });
+
+  it("switches a repository setting off when its value is left empty", () => {
+    const view = boot();
+    // Clearing a set text value removes it from the file.
+    view.emit(state("shared", 50, { "app.process": "Orders.exe", timeout: 30 }));
+    view.must("app.process").value = "  ";
+    view.must("app.process").onchange?.();
+    expect(changes(view.posts).at(-1)).toMatchObject({ key: "app.process", remove: true, version: 50 });
+    view.emit({ type: "error", message: "Error: pause" });
+    // Clearing a number is not an error in Repository Settings: it switches the setting off.
+    view.must("timeout").value = "";
+    view.must("timeout").onchange?.();
+    expect(changes(view.posts).at(-1)).toMatchObject({ key: "timeout", remove: true, version: 50 });
+    view.emit({ type: "error", message: "Error: pause" });
+    // A value typed and then cleared in a freshly enabled row drops back to the cover.
+    view.emit(state("shared", 51, {}));
+    view.must("app.process-enable").click();
+    expect(view.get("app.process-enable")).toBeNull();
+    view.must("app.process").value = "x";
+    view.must("app.process").value = "";
+    view.must("app.process").onchange?.();
+    expect(view.get("app.process-enable")).not.toBeNull();
+    expect(view.must("app.process").disabled).toBe(true);
+    // An enabled row left empty is switched off once focus has moved on.
+    view.must("app.process-enable").click();
+    expect(view.get("app.process-enable")).toBeNull();
+    view.must("app.args-enable").focus();
+    view.emit(state("shared", 52, {}));
+    expect(view.get("app.process-enable")).not.toBeNull();
+    // ...but stays enabled while it is still being edited.
+    view.must("app.process-enable").click();
+    view.emit(state("shared", 53, {}));
+    expect(view.get("app.process-enable")).toBeNull();
+    expect(view.must("app.process").disabled).toBe(false);
+    // Enabling a second row without a default drops the first empty one.
+    view.must("app.path-enable").focus();
+    view.must("app.path-enable").click();
+    expect(view.get("app.process-enable")).not.toBeNull();
+    expect(view.get("app.path-enable")).toBeNull();
+    // User Settings keep the old behaviour: clearing a number is an error, not a removal.
+    view.emit(state("local", 54, { timeout: 15 }));
+    view.must("timeout").value = "";
+    view.must("timeout").onchange?.();
+    expect(view.must("status").textContent).toContain("Enter a number");
+  });
+
+  it("shows a Saving spinner from an edit until the file is saved, not an unsaved banner", () => {
+    const view = boot();
+    view.emit({ ...state("local", 60, { timeout: 15 }), dirty: false });
+    expect(view.must("saving").hidden).toBe(true);
+    view.must("timeout").value = "20";
+    view.must("timeout").onchange?.();
+    expect(view.must("saving").hidden).toBe(false);
+    // The edit lands and the file is dirty for a moment: still just "Saving".
+    view.emit({ ...state("local", 61, { timeout: 20 }), dirty: true });
+    expect(view.must("saving").hidden).toBe(false);
+    expect(view.must("status").hidden).toBe(true);
+    // Saved.
+    view.emit({ ...state("local", 62, { timeout: 20 }), dirty: false });
+    expect(view.must("saving").hidden).toBe(true);
+    expect(view.must("status").hidden).toBe(true);
+    // A failed save ends the spinner and shows the error.
+    view.must("timeout").value = "25";
+    view.must("timeout").onchange?.();
+    expect(view.must("saving").hidden).toBe(false);
+    view.emit({ type: "error", message: "Error: Configuration was not saved." });
+    expect(view.must("saving").hidden).toBe(true);
+    expect(view.must("status").hidden).toBe(false);
+    expect(view.must("status").textContent).toContain("not saved");
+    // Real unsaved edits (nothing of ours in flight) still show the banner.
+    view.emit({ ...state("local", 63, { timeout: 25 }), dirty: true });
+    expect(view.must("status").hidden).toBe(false);
+    expect(view.must("status").textContent).toContain("Unsaved changes");
+  });
+
+  it("has no key and state caption under a setting", () => {
+    const view = boot();
+    for (const scope of ["local", "shared"] as const) {
+      view.emit({ ...state(scope, 70, { timeout: 15 }), repository: { timeout: 30 } });
+      expect(view.get("timeout-meta")).toBeNull();
+      expect(view.find((node) => node.tagName === "SMALL")).toBeNull();
+      expect(view.find((node) => /^app\.path · /.test(node.textContent))).toBeNull();
+    }
+  });
+
+  it("marks only settings that differ from their baseline as modified, in User Settings only", () => {
+    const view = boot();
+    const modified = (key: string) =>
+      view.find(
+        (node) =>
+          node.className.startsWith("setting") &&
+          node.className.includes("modified") &&
+          !!node.querySelector("[id='" + key + "']"),
+      );
+    // timeout differs from its default; the others are saved but equal to their defaults.
+    view.emit(
+      state("local", 80, {
+        timeout: 15,
+        launch: "per-test",
+        input_mode: "pattern",
+        object_previews: true,
+        replay_scope: "window",
+        highlight_color: "#ff0000",
+      }),
+    );
+    expect(modified("timeout")).not.toBeNull();
+    // The row carries the marker (an accent bar drawn by its class); nothing is added after the title.
+    expect(view.must("timeout-label").textContent).toBe("Action / assertion timeout (seconds)");
+    expect(view.get("timeout-reset")).toBeNull();
+    expect(view.find((node) => node.className === "tag" || node.className === "heading")).toBeNull();
+    for (const key of ["launch", "input_mode", "object_previews", "replay_scope", "highlight_color"])
+      expect(modified(key)).toBeNull();
+    // A value equal to the repository value (the baseline there) is not a change either.
+    view.emit({
+      ...state("local", 81, { timeout: 30, launch: "per-test" }),
+      inherited: { ...effective(), timeout: 30, launch: "attach" },
+      repository: { timeout: 30, launch: "attach" },
+    });
+    expect(modified("timeout")).toBeNull();
+    expect(modified("launch")).not.toBeNull();
+    // A setting with no baseline at all is modified once it has a value.
+    view.emit(state("local", 82, { "app.process": "Orders.exe" }));
+    expect(modified("app.process")).not.toBeNull();
+    // Repository Settings never mark anything.
+    view.emit(state("shared", 83, { timeout: 15 }));
+    expect(modified("timeout")).toBeNull();
+    expect(view.find((node) => node.className.includes("overridden"))).toBeNull();
   });
 });
