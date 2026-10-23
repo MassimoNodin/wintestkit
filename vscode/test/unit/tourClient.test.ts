@@ -1019,24 +1019,12 @@ describe("introduction clients", () => {
     });
   });
 
-  it("shows the saved last-test images in explicit offline mode and ignores stale live details", () => {
+  it("ignores removed offline-preview messages and keeps live selection working", () => {
     const page = client("spy");
-    page.send({ type: "savedDefinition", id: "pages/Page.py::Page.button", qualname: "Page.button", preview: {
-      capturedAt: "2026-10-20T12:34:56.000Z", elementDataUrl: "data:image/webp;base64,YWJj",
-      windowDataUrl: "data:image/webp;base64,dW51c2Vk",
-    } });
-    expect(page.element("selection-name").textContent).toBe("Page.button");
-    expect(page.element("object-preview-image").src).toBe("data:image/webp;base64,YWJj");
-    expect(page.element("object-preview-status").textContent).toContain("2026-10-20T12:34:56.000Z");
-    expect(page.element("object-preview-status").textContent).toContain("Not a live capture");
-    expect(page.element("highlight").disabled).toBe(true);
-    expect(page.element("load-properties").disabled).toBe(true);
-    page.send({ type: "selected", nodeId: "old", properties: { info: { name: "stale" }, properties: {} } });
-    expect(page.element("selection-name").textContent).toBe("Page.button");
-    const before = page.posts.length;
-    page.dispatch("click", "highlight");
-    page.dispatch("click", "load-properties");
-    expect(page.posts).toHaveLength(before);
+    page.send({ type: "savedDefinition", id: "pages/Page.py::Page.button", qualname: "Page.button" });
+    expect(page.element("selection-name").textContent).not.toBe("Page.button");
+    page.send({ type: "selected", nodeId: "control", properties: { info: { name: "Live button" }, properties: {} } });
+    expect(page.element("selection-name").textContent).toBe("Live button");
   });
 
   it("keeps partial enumeration warnings visible alongside retained nodes", () => {

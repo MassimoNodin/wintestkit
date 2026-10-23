@@ -11,8 +11,11 @@ const mocks = vi.hoisted(() => ({
   commands: new Map<string, (target?: unknown) => Promise<void>>(),
   executeCommand: vi.fn(),
   request: vi.fn(),
+  discovery: vi.fn(),
   set: vi.fn(),
   feedback: vi.fn(),
+  pageRunning: vi.fn(),
+  scoped: vi.fn(),
   info: vi.fn(),
   warning: vi.fn(),
   error: vi.fn(),
@@ -66,16 +69,19 @@ beforeEach(() => {
   mocks.request.mockReset();
   mocks.info.mockReset();
   mocks.feedback.mockReturnValue(true);
+  mocks.discovery.mockReturnValue(discovery);
   const project = { root: { toString: () => discovery.root }, name: "demo" };
   commands = new HighlightCommands(
     { projectFor: () => project } as unknown as Projects,
-    { get: () => discovery } as unknown as DiscoveryStore,
+    { get: mocks.discovery } as unknown as DiscoveryStore,
     {
       get: async () => ({ client: { request: mocks.request } }),
     } as unknown as ServerManager,
     {
       set: mocks.set,
       setFeedback: mocks.feedback,
+      setPageRunning: mocks.pageRunning,
+      setScopedResults: mocks.scoped,
     } as unknown as CheckResultsStore,
     {
       info: mocks.log,
@@ -219,24 +225,44 @@ describe("editor highlight commands", () => {
     expect(mocks.show).toHaveBeenCalledOnce();
   });
   it("checks a single declaration without flashing", async () => {
-    mocks.request.mockResolvedValue({
-      results: [
-        { qualname: target.qualname, status: "found", durationMs: 1 },
-        { qualname: "Other", status: "not_found", durationMs: 1 },
-      ],
-    });
+    mocks.request.mockResolvedValue({ status: "found", durationMs: 1 });
     await mocks.commands.get("wintestkit.checkElement")?.(target);
-    expect(mocks.request).toHaveBeenCalledWith("page.check", {
-      file: page.file,
-      page: page.qualname,
-    });
+    expect(mocks.request).toHaveBeenCalledExactlyOnceWith("element.check", target);
     expect(mocks.set).toHaveBeenCalledOnce();
     expect(mocks.feedback.mock.calls.map((call) => call[2].status)).toEqual([
       "running",
       "found",
     ]);
     expect(mocks.feedback.mock.calls[1][1]).toBe("check");
-    expect(mocks.status).not.toHaveBeenCalled();
+    expect(mocks.status).toHaveBeenCalledWith("$(check) Check: Found " + target.qualname, 5000);
+    expect(mocks.progress).toHaveBeenCalledOnce();
+    expect(mocks.progressDone).toHaveBeenCalledOnce();
+  });
+  it("checks an explicit CodeLens target even while discovery is unavailable", async () => {
+    mocks.discovery.mockReturnValue(undefined);
+    mocks.request.mockResolvedValue({ status: "found", durationMs: 1 });
+    await mocks.commands.get("wintestkit.checkElement")?.(target);
+    expect(mocks.request).toHaveBeenCalledExactlyOnceWith("element.check", target);
+    expect(mocks.status).toHaveBeenCalledWith("$(check) Check: Found " + target.qualname, 5000);
+    expect(mocks.set).not.toHaveBeenCalled();
+  });
+  it("keeps check progress visible until the server responds", async () => {
+    let finish!: (value: unknown) => void;
+    mocks.request.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+    const operation = mocks.commands.get("wintestkit.checkElement")?.(target);
+    await vi.waitFor(() => expect(mocks.request).toHaveBeenCalledOnce());
+    expect(mocks.progress).toHaveBeenCalledOnce();
+    expect(mocks.progressDone).not.toHaveBeenCalled();
+    finish({ status: "found", durationMs: 1 });
+    await operation;
+    expect(mocks.progressDone).toHaveBeenCalledOnce();
+  });
+  it("shows unsuccessful check results even when inline feedback was invalidated", async () => {
+    mocks.feedback.mockReturnValueOnce(true).mockReturnValueOnce(false);
+    mocks.request.mockResolvedValue({ status: "not_found", durationMs: 1, message: "Element is not on this screen" });
+    await mocks.commands.get("wintestkit.checkElement")?.(target);
+    expect(mocks.warning).toHaveBeenCalledWith("Check " + target.qualname + ": Element is not on this screen");
+    expect(mocks.set).not.toHaveBeenCalled();
   });
   it.each(["highlightElement", "checkElement"])(
     "reports request failures inline for %s",
@@ -297,7 +323,7 @@ describe("editor highlight commands", () => {
       };
       mocks.request
         .mockResolvedValueOnce(result)
-        .mockResolvedValueOnce({ results: [result] });
+        .mockResolvedValueOnce(result);
       await mocks.commands.get("wintestkit.highlightElement")?.(target);
       await mocks.commands.get("wintestkit.checkElement")?.(target);
       expect(mocks.feedback.mock.calls.map((call) => call[2].status)).toEqual([
@@ -324,12 +350,105 @@ describe("editor highlight commands", () => {
     expect(mocks.feedback).toHaveBeenCalledTimes(elements.length * 2);
     expect(mocks.set).toHaveBeenCalledTimes(elements.length);
   });
+  describe("a page that mounts components", () => {
+    const base = page.elements[0];
+    const element = (id: string, qualname: string, name: string) => ({ ...base, id, qualname, name });
+    const mount = (name: string, pageId: string) => ({
+      name, pageId, range: base.range, nameRange: base.nameRange,
+    });
+    const make = (id: string, qualname: string, elements: ReturnType<typeof element>[], children: ReturnType<typeof mount>[] = []) =>
+      ({ ...page, id, qualname, name: qualname, elements, children });
+    const host = make("h.py::Host", "Host", [element("h.py::Host.window", "Host.window", "window")],
+      [mount("box", "c.py::Box"), mount("loop", "h.py::Host")]);
+    const box = make("c.py::Box", "Box", [element("c.py::Box.field", "Box.field", "field")],
+      [mount("inner", "i.py::Inner")]);
+    const inner = make("i.py::Inner", "Inner", [element("i.py::Inner.leaf", "Inner.leaf", "leaf")]);
+    const nested: DiscoveryResult = { ...discovery, pages: [host, box, inner] };
+    it("covers the elements of every mounted component under the name the server reports", async () => {
+      const { pageCheckTargets } = await import("../../src/editor/highlightCommands");
+      const targets = pageCheckTargets({ root: { toString: () => discovery.root } } as never, nested, host);
+      expect(targets.map((item) => [item.resultName, item.located.element.id])).toEqual([
+        ["Host.window", "h.py::Host.window"],
+        ["Host.box.field", "c.py::Box.field"],
+        ["Host.box.inner.leaf", "i.py::Inner.leaf"],
+      ]);
+      expect(targets[2].located.page.id).toBe("i.py::Inner");
+    });
+    it("names rows exactly as the Page Tree does, and separately for each page that mounts the component", async () => {
+      const { pageCheckTargets } = await import("../../src/editor/highlightCommands");
+      const { buildTree } = await import("../../src/views/elementsTreeModel");
+      const other = make("o.py::Other", "Other", [], [mount("box", "c.py::Box")]);
+      const both: DiscoveryResult = { ...discovery, pages: [host, other, box, inner] };
+      const rows = new Set<string>();
+      const collect = (nodes: { id: string; children: unknown[] }[]) =>
+        nodes.forEach((node) => {
+          rows.add(node.id);
+          collect(node.children as { id: string; children: unknown[] }[]);
+        });
+      collect(buildTree([both]));
+      const project = { root: { toString: () => discovery.root } } as never;
+      const hostRows = pageCheckTargets(project, both, host).map((item) => item.nodeId);
+      const otherRows = pageCheckTargets(project, both, other).map((item) => item.nodeId);
+      for (const id of [...hostRows, ...otherRows]) expect(rows.has(id), id).toBe(true);
+      // The same component element has a different row under each page.
+      expect(hostRows.filter((id) => otherRows.includes(id))).toEqual([]);
+    });
+    it("marks component elements with the results of a whole-page check", async () => {
+      mocks.discovery.mockReturnValue(nested);
+      mocks.request.mockResolvedValue({
+        results: [
+          { qualname: "Host.window", status: "found", durationMs: 1 },
+          { qualname: "Host.box.field", status: "not_found", durationMs: 1 },
+          { qualname: "Host.box.inner.leaf", status: "found", durationMs: 1 },
+        ],
+      });
+      await mocks.commands.get("wintestkit.checkPage")?.({ file: page.file, page: "Host" });
+      // The page's own element is filed under the element, as before.
+      expect(
+        mocks.set.mock.calls.map(([entry]) => [entry.element.id, entry.result.status]),
+      ).toEqual([["h.py::Host.window", "found"]]);
+      // A component's results belong to this page's rows only, never to the element itself.
+      const scoped = mocks.scoped.mock.calls.at(-1)?.[0] as Map<string, { status: string; qualname: string }>;
+      const row = (id: string) => discovery.root + "|" + id;
+      const box = row("h.py::Host") + "|" + JSON.stringify(["box", "c.py::Box"]);
+      const inner = box + "|" + JSON.stringify(["inner", "i.py::Inner"]);
+      expect([...scoped].map(([id, result]) => [id, result.status, result.qualname])).toEqual([
+        [box + "|" + row("c.py::Box.field"), "not_found", "Box.field"],
+        [inner + "|" + row("i.py::Inner.leaf"), "found", "Inner.leaf"],
+      ]);
+      // Only the page's own elements show as checking in the editor.
+      expect(mocks.feedback.mock.calls.map(([entry]) => entry.element.id)).toEqual([
+        "h.py::Host.window",
+        "h.py::Host.window",
+      ]);
+    });
+  });
+  it("shows the page as checking until the whole-page check ends, even when it fails", async () => {
+    const run = () =>
+      mocks.commands.get("wintestkit.checkPage")?.({ file: page.file, page: page.qualname });
+    mocks.request.mockResolvedValue({ results: [] });
+    await run();
+    expect(mocks.progress).toHaveBeenCalledOnce();
+    expect(mocks.pageRunning.mock.calls.map((call) => call[2])).toEqual([true, false, false]);
+    mocks.pageRunning.mockClear();
+    mocks.request.mockRejectedValue(new Error("boom"));
+    await run();
+    expect(mocks.pageRunning.mock.calls.map((call) => call[2])).toEqual([true, false]);
+  });
   it("reports missing server results instead of leaving checking stuck", async () => {
     mocks.request.mockResolvedValue({ results: [] });
     await mocks.commands.get("wintestkit.checkElement")?.(target);
     expect(mocks.feedback.mock.calls[1][2]).toMatchObject({
       status: "error",
       message: expect.stringContaining("no check result"),
+    });
+  });
+  it("asks for a package update instead of falling back to page-wide capture on old servers", async () => {
+    mocks.request.mockRejectedValue(new RpcError(-32601, "Method not found"));
+    await mocks.commands.get("wintestkit.checkElement")?.(target);
+    expect(mocks.request).toHaveBeenCalledExactlyOnceWith("element.check", target);
+    expect(mocks.feedback.mock.calls[1][2]).toMatchObject({
+      status: "error", message: expect.stringContaining("newer wintestkit package"),
     });
   });
   it.each(["highlightElement", "checkElement"])(
@@ -340,9 +459,7 @@ describe("editor highlight commands", () => {
         status: "found",
         durationMs: 1,
       };
-      mocks.request.mockResolvedValue(
-        command === "highlightElement" ? result : { results: [result] },
-      );
+      mocks.request.mockResolvedValue(result);
       mocks.feedback.mockReturnValueOnce(true).mockReturnValueOnce(false);
       await mocks.commands.get("wintestkit." + command)?.(target);
       expect(mocks.set).not.toHaveBeenCalled();

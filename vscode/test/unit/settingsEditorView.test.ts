@@ -33,6 +33,10 @@ class DomNode {
   step = "";
   spellcheck = true;
   hidden = false;
+  scrolled = 0;
+  scrollIntoView() {
+    this.scrolled++;
+  }
   max = "";
   style = {
     props: {} as Record<string, string>,
@@ -219,6 +223,7 @@ function state(
     name: "calculator-tests",
     version,
     dirty: true,
+    fields: settingFields,
     sections: settingSections(scope),
     values,
     effective: effective(extra),
@@ -471,6 +476,62 @@ describe("settings editor script", () => {
     );
     expect(shared?.querySelector("[id='app.path']")).not.toBeNull();
     expect(shared?.querySelector("[id='app.cwd']")).toBeNull();
+  });
+
+  describe("sharing captures in the repository", () => {
+    const key = "object_previews_share";
+    it("only offers a button to Repository Settings in User Settings", () => {
+      const view = boot();
+      view.emit(state("local", 90, {}));
+      const button = view.must(key);
+      expect(button.tagName).toBe("BUTTON");
+      expect(button.attrs.role).toBeUndefined();
+      expect(button.textContent).toBe("Open Repository Settings");
+      expect(button.disabled).toBe(false);
+      expect(view.get(key + "-enable")).toBeNull();
+      button.click();
+      expect(view.posts.at(-1)).toEqual({ type: "scope", scope: "shared", focus: key });
+      view.emit({ ...state("local", 91, {}), repository: { [key]: true } });
+      expect(view.find((node) => node.textContent.startsWith("Currently shared"))).not.toBeNull();
+    });
+    it("sends the open button to the setting and scrolls to it on arrival", () => {
+      const view = boot();
+      view.emit(state("local", 97, {}));
+      view.must(key).click();
+      expect(view.posts.at(-1)).toEqual({ type: "scope", scope: "shared", focus: key });
+      view.emit({ ...state("shared", 98, { object_previews: true }), focus: key });
+      const row = view.must(key + "-row") as unknown as { scrolled: number; className: string };
+      expect(row.scrolled).toBe(1);
+      expect(row.className).toContain("revealed");
+      // A later refresh, without a focus, leaves the scroll position alone.
+      view.emit(state("shared", 99, { object_previews: true }));
+      expect((view.must(key + "-row") as unknown as { scrolled: number }).scrolled).toBe(0);
+    });
+    it("stays disabled in User Settings while capturing is off", () => {
+      const view = boot();
+      view.emit(state("local", 92, { object_previews: false }, { object_previews: false }));
+      expect(view.must(key).disabled).toBe(true);
+      expect(view.must(key + "-requires").textContent).toContain("first");
+    });
+    it("stays disabled in Repository Settings until captures are enabled there", () => {
+      const view = boot();
+      view.emit(state("shared", 93, {}));
+      expect(view.must(key).disabled).toBe(true);
+      expect(view.get(key + "-enable")).toBeNull();
+      expect(view.must(key + "-requires").textContent).toBe(
+        "Turn on “Save Check Element captures” first.",
+      );
+      view.emit(state("shared", 94, { object_previews: false }));
+      expect(view.must(key).disabled).toBe(true);
+      view.emit(state("shared", 95, { object_previews: true }));
+      expect(view.get(key + "-requires")).toBeNull();
+      // Captures are on: sharing can now be enabled for the repository like any other setting.
+      expect(view.must(key + "-enable")).not.toBeNull();
+      view.emit(state("shared", 96, { object_previews: true, [key]: true }, { [key]: true }));
+      expect(view.must(key).disabled).toBe(false);
+      view.must(key).click();
+      expect(changes(view.posts).at(-1)).toMatchObject({ key, value: false, remove: false });
+    });
   });
 
   it("picks the highlight color from swatches or a custom value and previews it", () => {
@@ -884,8 +945,9 @@ describe("settings editor script", () => {
       view.emit(state("shared", 87, { "app.path": absolute }));
       const warning = view.must("app.path-machine-warning");
       expect(warning.className).toBe("warning");
-      expect(warning.textContent).toContain("Absolute path");
-      expect(warning.textContent).toContain("override it in User Settings");
+      expect(warning.textContent).toBe(
+        "⚠ Only use an absolute path if the .exe will be installed in the same place on all machines.",
+      );
       expect(view.must("app.path").getAttribute("aria-describedby")).toContain(
         "app.path-machine-warning",
       );

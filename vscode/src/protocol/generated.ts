@@ -178,6 +178,8 @@ export interface ProtocolContracts {
   DiscoverResult?: DiscoverResult;
   DiscoveryError?: DiscoveryError;
   DiscoveryResult?: DiscoveryResult;
+  ElementCheckParams?: ElementCheckParams;
+  ElementCheckResult?: ElementCheckResult;
   ElementEntry?: ElementEntry;
   ElementHighlightParams?: ElementHighlightParams;
   ElementHighlightResult?: ElementHighlightResult;
@@ -602,6 +604,21 @@ export interface DiscoveryResult {
   pages: PageEntry[];
   flows?: FlowEntry[];
   errors: DiscoveryError[];
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "ElementCheckParams".
+ */
+export interface ElementCheckParams {
+  file: string;
+  qualname: string;
+}
+export interface ElementCheckResult {
+  status: "found" | "not_found" | "ambiguous" | "error";
+  element?: ElementInfo;
+  diagnostic?: Diagnostic;
+  message?: string;
+  durationMs: number;
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
@@ -1064,9 +1081,20 @@ export interface DiscoveryResult1 {
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
- * via the `definition` "ElementHighlightResult".
+ * via the `definition` "ElementCheckResult".
  */
 export interface ElementResult1 {
+  status: "found" | "not_found" | "ambiguous" | "error";
+  element?: ElementInfo;
+  diagnostic?: Diagnostic;
+  message?: string;
+  durationMs: number;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "ElementHighlightResult".
+ */
+export interface ElementResult2 {
   status: "found" | "not_found" | "ambiguous" | "error";
   element?: ElementInfo;
   diagnostic?: Diagnostic;

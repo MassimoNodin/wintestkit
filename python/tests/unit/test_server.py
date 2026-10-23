@@ -103,6 +103,101 @@ def test_server_auto_attach_is_always_unowned(
     }
 
 
+def test_element_check_captures_single_member_without_highlight(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from wintestkit import model, object_previews
+
+    server, output, button = make_server(tmp_path, monkeypatch)
+    request(server, output, "initialize", {"root": str(tmp_path)})
+    resolved = []
+    captured = []
+
+    def resolve(bound, timeout):
+        resolved.append(bound.definition.name)
+        return button
+
+    monkeypatch.setattr(model.BoundElement, "resolve", resolve)
+    monkeypatch.setattr(
+        object_previews, "capture_bound", lambda bound, actual: captured.append((bound, actual))
+    )
+    monkeypatch.setattr(server, "_flash", lambda *args: pytest.fail("check must not highlight"))
+    result = request(server, output, "element.check", {"file": "page.py", "qualname": "Main.ok"})[
+        "result"
+    ]
+    assert result["status"] == "found"
+    assert result["element"]["name"] == "OK"
+    assert result["durationMs"] >= 0
+    assert "results" not in result and "uia" not in result
+    assert resolved == ["ok"]
+    assert len(captured) == 1 and captured[0][1] is button
+
+
+@pytest.mark.parametrize(
+    "params",
+    [
+        {},
+        {"file": "page.py"},
+        {"file": "page.py", "qualname": 1},
+        {"file": False, "qualname": "Main.ok"},
+        {"file": "page.py", "qualname": "Main.ok", "durationMs": 0},
+    ],
+)
+def test_element_check_validates_params(tmp_path, monkeypatch, params):
+    server, output, _ = make_server(tmp_path, monkeypatch)
+    request(server, output, "initialize", {"root": str(tmp_path)})
+    assert request(server, output, "element.check", params)["error"]["code"] == -32602
+
+
+def test_element_check_environment_switch_disables_capture(tmp_path, monkeypatch):
+    from wintestkit import object_previews
+
+    monkeypatch.setenv("WTK_OBJECT_PREVIEWS", "false")
+    server, output, _ = make_server(tmp_path, monkeypatch)
+    request(server, output, "initialize", {"root": str(tmp_path)})
+    monkeypatch.setattr(
+        object_previews, "capture_bound", lambda *args: pytest.fail("disabled check capture")
+    )
+    result = request(server, output, "element.check", {"file": "page.py", "qualname": "Main.ok"})[
+        "result"
+    ]
+    assert result["status"] == "found"
+
+
+def test_non_check_rpc_operations_never_capture(tmp_path, monkeypatch):
+    from wintestkit import object_previews
+
+    server, output, _ = make_server(tmp_path, monkeypatch)
+    request(server, output, "initialize", {"root": str(tmp_path)})
+    monkeypatch.setattr(
+        object_previews, "capture_bound", lambda *args: pytest.fail("automatic RPC capture")
+    )
+    for method, params in [
+        ("discover", {}),
+        ("element.highlight", {"file": "page.py", "qualname": "Main.ok"}),
+    ]:
+        assert "result" in request(server, output, method, params)
+    assert "error" in request(
+        server, output, "element.check", {"file": "page.py", "qualname": "Main.missing"}
+    )
+
+
+def test_page_check_captures_every_found_element(tmp_path, monkeypatch):
+    from wintestkit import object_previews
+
+    server, output, _ = make_server(tmp_path, monkeypatch)
+    request(server, output, "initialize", {"root": str(tmp_path)})
+    captured: list[str] = []
+    monkeypatch.setattr(
+        object_previews, "capture_bound", lambda bound, element: captured.append(bound.qualname)
+    )
+    results = request(server, output, "page.check", {"file": "page.py", "page": "Main"})["result"][
+        "results"
+    ]
+    assert results and all(result["status"] == "found" for result in results)
+    assert captured == [result["qualname"] for result in results]
+
+
 def test_methods_and_nodes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     server, output, button = make_server(tmp_path, monkeypatch)
     assert request(server, output, "discover")["error"]["message"] == "not initialized"

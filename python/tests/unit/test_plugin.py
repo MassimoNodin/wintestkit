@@ -384,14 +384,12 @@ def test_no_report_disables_all_automatic_capture(
     monkeypatch.setattr(artifacts, "capture_step_screenshot", forbidden)
     monkeypatch.setattr(object_previews, "_capture_bound", forbidden)
     monkeypatch.setattr(ReplayRecorder, "start", forbidden)
-    monkeypatch.setattr(runtime, "object_preview_test_context", forbidden)
     project(
         pytester,
         tests="""
         from wintestkit import runtime
 
         def test_no_capture_without_app_fixture():
-            assert not runtime.object_previews_active()
             with runtime.step("probe", "target", "locator"):
                 pass
             raise AssertionError("intentional test failure")

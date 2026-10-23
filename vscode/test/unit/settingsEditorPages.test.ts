@@ -18,19 +18,35 @@ vi.mock("vscode", () => {
   };
 });
 
+vi.mock("../../src/settings/files", () => ({
+  ensureLocalIgnores: async () => undefined,
+  readConfiguration: async () => ({}),
+  readOptional: async () => undefined,
+}));
+
 import { ConfigurationEditor } from "../../src/settings/editor";
 
 function panel() {
   const disposers: (() => void)[] = [];
+  const messages: Record<string, unknown>[] = [];
+  const received: { listener?: (message: unknown) => void } = {};
   const fake = {
     disposed: false,
+    messages,
+    received,
     webview: {
       options: {},
       cspSource: "csp",
       html: "",
       asWebviewUri: (uri: unknown) => uri,
-      onDidReceiveMessage: () => ({ dispose() {} }),
-      postMessage: async () => true,
+      onDidReceiveMessage: (listener: (message: unknown) => void) => {
+        received.listener = listener;
+        return { dispose() {} };
+      },
+      postMessage: async (message: Record<string, unknown>) => {
+        messages.push(message);
+        return true;
+      },
     },
     onDidDispose: (listener: () => void) => {
       disposers.push(listener);
@@ -77,6 +93,37 @@ describe("configuration pages", () => {
     await open(provider, "C:/work/app/wintestkit.local.yaml", again);
     expect(repository.disposed).toBe(true);
     expect(again.disposed).toBe(false);
+  });
+
+  it("asks the page it opens to scroll to a setting, once", async () => {
+    const provider = editor();
+    // What open() records when User Settings send you to a repository setting.
+    (provider as unknown as { pendingFocus: unknown }).pendingFocus = {
+      file: "c:/work/app/wintestkit.yaml",
+      key: "object_previews_share",
+    };
+    const repository = panel();
+    await open(provider, "C:/work/app/wintestkit.yaml", repository);
+    const states = async () => {
+      repository.received.listener?.({ type: "ready" });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      return repository.messages.filter((message) => message.type === "state");
+    };
+    expect((await states())[0]).toMatchObject({ focus: "object_previews_share" });
+    expect((await states())[1]?.focus).toBeUndefined();
+  });
+
+  it("does not send another file's pending focus to a page", async () => {
+    const provider = editor();
+    (provider as unknown as { pendingFocus: unknown }).pendingFocus = {
+      file: "c:/work/app/wintestkit.yaml",
+      key: "object_previews_share",
+    };
+    const user = panel();
+    await open(provider, "C:/work/app/wintestkit.local.yaml", user);
+    user.received.listener?.({ type: "ready" });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(user.messages.find((message) => message.type === "state")?.focus).toBeUndefined();
   });
 
   it("leaves the pages of another project alone", async () => {

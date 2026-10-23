@@ -381,14 +381,6 @@ class _Controller:
             self.restore_timeout = current.timeout
             runtime.set_config(dataclasses.replace(current, timeout=float(timeout)))
 
-    @pytest.hookimpl(hookwrapper=True)
-    def pytest_runtest_call(self, item: pytest.Item) -> Generator[None, Any, None]:
-        if not self.report_enabled:
-            yield
-            return
-        with runtime.object_preview_test_context():
-            yield
-
     @staticmethod
     def _replay_window(replay: ReplayRecorder, app: Any) -> None:
         if app is None or replay.scope != "window":

@@ -76,7 +76,6 @@ StepListener = Callable[[StepRecord], None]
 _lock = threading.Lock()
 _config: WtkConfig | None = None
 _scoped_config: ContextVar[WtkConfig | None] = ContextVar("wtk_config", default=None)
-_object_preview_context: ContextVar[bool] = ContextVar("wtk_object_preview_context", default=False)
 _listeners: list[StepListener] = []
 _current_test: str | None = None
 _seq = 0
@@ -110,29 +109,10 @@ def config_scope(cfg: WtkConfig) -> Generator[None]:
     """Use a project's configuration for one CLI/editor operation without leaking it."""
     __tracebackhide__ = True
     token = _scoped_config.set(cfg)
-    preview_token = _object_preview_context.set(False)
     try:
         yield
     finally:
-        _object_preview_context.reset(preview_token)
         _scoped_config.reset(token)
-
-
-@contextmanager
-def object_preview_test_context() -> Generator[None]:
-    """Permit synchronous object previews only inside an explicit test call scope."""
-    __tracebackhide__ = True
-    token = _object_preview_context.set(True)
-    try:
-        yield
-    finally:
-        _object_preview_context.reset(token)
-
-
-def object_previews_active() -> bool:
-    """Editor configuration scopes and ordinary resolution never authorize capture."""
-    __tracebackhide__ = True
-    return _object_preview_context.get() and get_config().object_previews
 
 
 # -- listeners and test lifecycle -----------------------------------------------------------------

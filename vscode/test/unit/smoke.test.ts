@@ -133,6 +133,11 @@ vi.mock("../../src/discovery/store", () => ({
     dispose() {}
   },
 }));
+vi.mock("../../src/editor/elementPreviews", () => ({
+  ElementPreviews: class {
+    dispose() {}
+  },
+}));
 vi.mock("../../src/editor/codeLens", () => ({
   CodeLenses: class {
     dispose() {}

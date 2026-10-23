@@ -52,6 +52,7 @@ export class CodeLenses implements vscode.CodeLensProvider, vscode.Disposable {
       this.checks.feedback,
       (file, name) => this.flows.states.get(flowKey({ file, name })),
       configuration.get<boolean>("codeLens.classOnly", false),
+      (file, qualname) => this.checks.isPageRunning(file, qualname),
     ).map(
       (spec) =>
         new vscode.CodeLens(new vscode.Range(spec.line, 0, spec.line, 0), {

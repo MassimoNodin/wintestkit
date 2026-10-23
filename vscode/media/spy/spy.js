@@ -456,17 +456,6 @@
       "codicon codicon-" + (bringToFront ? "pinned" : "pin");
   };
   const renderStatus = () => {
-    if (savedDefinition) {
-      element("tree-stage").dataset.busy = "false";
-      element("tree-overlay").hidden = true;
-      element("details-loading").hidden = true;
-      for (const id of ["property-groups", "definitions-group", "properties-empty", "locator-panel", "details-empty"])
-        element(id).hidden = true;
-      element("selection-summary").hidden = false;
-      for (const id of ["highlight", "load-properties", "copy", "add", "generate", "other-apps"])
-        element(id).disabled = true;
-      return;
-    }
     renderBringToFront();
     const otherApps = element("other-apps");
     const running = !!(appState && appState.appRunning);
@@ -736,7 +725,6 @@
   let picking = false;
   let selected;
   let suggestion;
-  let savedDefinition = false;
   // The preview shows either the object alone (the default) or its window with the object
   // outlined; the choice stays while the selection changes.
   let previewMode = "element";
@@ -760,16 +748,13 @@
     if (image.src !== source) image.src = source;
     image.alt = context ? "The selected object outlined in red inside its window" : "The selected object";
     element("object-preview-status").textContent =
-      (previewImages.capturedAt
-        ? "Captured by a test at " + previewImages.capturedAt + " (UTC). Not a live capture."
-        : "Live capture.") + (context ? " The object is outlined in red." : "");
+      "Live capture." + (context ? " The object is outlined in red." : "");
   };
   const renderObjectPreview = (preview, reason) => {
     previewImages = preview && webpUrl(preview.elementDataUrl) && webpUrl(preview.windowDataUrl)
       ? {
         elementDataUrl: preview.elementDataUrl,
         windowDataUrl: preview.windowDataUrl,
-        capturedAt: typeof preview.capturedAt === "string" ? preview.capturedAt : undefined,
       }
       : undefined;
     showPreview(reason);
@@ -1022,7 +1007,6 @@
     return path.length ? path : undefined;
   };
   const choose = (nodeId) => {
-    if (savedDefinition) return;
     loadingPreview();
     clearProperties();
     focusSelected(nodeId);
@@ -1268,7 +1252,7 @@
     post("showOtherApps", { enabled: showOtherApps });
   });
   element("generate").addEventListener("click", () => {
-    if (!selected || savedDefinition) return;
+    if (!selected) return;
     locatorState("generating");
     post("generateLocator", { nodeId: selected });
   });
@@ -1279,12 +1263,11 @@
     if (suggestion) post("addToPage");
   });
   element("highlight").addEventListener("click", () => {
-    if (selected && !savedDefinition) post("highlight", { nodeId: selected });
+    if (selected) post("highlight", { nodeId: selected });
   });
   element("load-properties").addEventListener("click", () => {
     if (
       !selected ||
-      savedDefinition ||
       !hasDetails ||
       fullPropertiesLoading ||
       fullPropertiesLoaded
@@ -1386,26 +1369,6 @@
   });
   window.addEventListener("message", (event) => {
     const message = event.data;
-    if (message.type === "savedDefinition") {
-      savedDefinition = true;
-      nodes.clear();
-      coverage.clear();
-      element("tree").replaceChildren();
-      selected = undefined;
-      suggestion = undefined;
-      hasDetails = false;
-      selecting = false;
-      tasks.clear();
-      renderSuggestion(undefined);
-      clearProperties();
-      element("selection-name").textContent = message.qualname;
-      element("selection-type").textContent = "Saved definition (offline)";
-      renderObjectPreview(message.preview, message.reason);
-      element("object-preview-status").textContent += " Use Refresh to return to live Spy.";
-      renderStatus();
-      return;
-    }
-    if (savedDefinition && !["roots", "tour", "state"].includes(message.type)) return;
     if (message.type === "progress") {
       if (!message.done && message.completed === 0 && message.target === "tree")
         element("enumeration-status").hidden = true;
@@ -1431,10 +1394,6 @@
       for (const entry of nodes.values()) rootIcon(entry);
       selectionIcon(selected);
     } else if (message.type === "state") {
-      if (savedDefinition && message.picking) {
-        savedDefinition = false;
-        element("object-preview").hidden = true;
-      }
       appState = message;
       if (Array.isArray(message.shownProperties)) {
         const names = message.shownProperties.filter((name) => typeof name === "string" && PINNABLE.test(name));
@@ -1460,7 +1419,6 @@
       );
       renderStatus();
     } else if (message.type === "roots") {
-      savedDefinition = false;
       element("object-preview").hidden = true;
       clearProperties();
       hint("");

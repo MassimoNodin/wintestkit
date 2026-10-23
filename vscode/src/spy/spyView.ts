@@ -25,7 +25,7 @@ import {
 } from "./messages";
 import type { SetupMonitor } from "../setup/monitor";
 import { readApplicationIcons } from "./appIcons";
-import { livePreviewImages, readObjectPreview, savedPreviewImages } from "./objectPreviews";
+import { livePreviewImages } from "./objectPreviews";
 import { PreviewViewer } from "./previewViewer";
 import { bestMatch, describeSegment, parseSelectionPath, segmentOf, type PathSegment } from "./selectionPath";
 import * as path from "node:path";
@@ -63,8 +63,6 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
   private selection = 0;
   private pickRevision = 0;
   private pickSession?: string;
-  private savedDefinition?: { id: string; qualname: string; projectRoot: string };
-  private savedSnapshot?: SpyResponse;
   private refreshing?: Promise<void>;
   private refreshKey?: string;
   private coveragePending = new Set<string>();
@@ -105,10 +103,7 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
         await this.safe(() => this.startPick());
       }),
       vscode.commands.registerCommand("wintestkit.spy.refresh", () =>
-        this.safe(() => this.refreshLive()),
-      ),
-      vscode.commands.registerCommand("wintestkit.spy.showDefinition", (value: unknown) =>
-        this.safe(() => this.showDefinition(value)),
+        this.safe(() => this.refresh()),
       ),
       vscode.commands.registerCommand(
         "wintestkit.spy.revealRelocation",
@@ -136,7 +131,6 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
           void this.safe(() => this.refresh());
       }),
       servers.onDidChange((project) => {
-        if (this.savedDefinition) return;
         if (project.root.toString() !== this.currentProject()?.root.toString())
           return;
         if (this.client) this.unbind();
@@ -190,7 +184,7 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
       view.onDidChangeVisibility(() => {
         if (view.visible)
           void this.safe(() =>
-            this.savedDefinition ? this.restoreSavedDefinition() : this.tutorialActive() ? this.restoreTutorial() : this.refreshIfStale(),
+            this.tutorialActive() ? this.restoreTutorial() : this.refreshIfStale(),
           );
         else void this.safe(() => this.stopPick());
       }),
@@ -208,7 +202,7 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
   private postTour(): void {
     const focus = this.setup?.focus ?? { dim: false, spyLit: false };
     const tour = this.setup?.tour;
-    const tutorial = !this.savedDefinition && tour?.phase === "extras" ? tour : undefined;
+    const tutorial = tour?.phase === "extras" ? tour : undefined;
     this.post({
       type: "tour",
       dim: focus.dim,
@@ -227,13 +221,9 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
     });
   }
   private tutorialActive(): boolean {
-    return !this.savedDefinition && this.setup?.tour?.phase === "extras";
+    return this.setup?.tour?.phase === "extras";
   }
   private syncTour(): void {
-    if (this.savedDefinition) {
-      this.postTour();
-      return;
-    }
     const extras = this.setup?.tour?.phase === "extras";
     const opening = extras && !this.extrasActive;
     const closing = !extras && this.extrasActive;
@@ -690,7 +680,6 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
     return { client, revision };
   }
   async refresh(): Promise<void> {
-    if (this.savedDefinition) return this.restoreSavedDefinition();
     if (this.tutorialActive()) return this.ensureTutorial();
     const key = this.scopeRevision + ":" + this.currentProject()?.root.toString();
     if (this.refreshing && this.refreshKey === key) return this.refreshing;
@@ -713,17 +702,6 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
       !this.loaded ||
       this.currentProject()?.root.toString() !== this.project?.root.toString();
     return stale ? this.refresh() : Promise.resolve();
-  }
-  private refreshLive(): Promise<void> {
-    this.leaveSavedDefinition();
-    return this.refresh();
-  }
-  private leaveSavedDefinition(): void {
-    if (!this.savedDefinition) return;
-    this.savedDefinition = undefined;
-    this.savedSnapshot = undefined;
-    this.invalidateScope();
-    this.postTour();
   }
   private async refreshTree(): Promise<void> {
     const scopeRevision = this.scopeRevision;
@@ -792,7 +770,7 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
     const selection = this.selection;
     const stale = () =>
       this.disposed || this.client !== client || revision !== this.revision ||
-      selection !== this.selection || this.savedDefinition || this.tutorialActive();
+      selection !== this.selection || this.tutorialActive();
     try {
       let candidates = roots;
       let current: NodeInfo | undefined;
@@ -945,12 +923,7 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
       await this.safe(() => this.refresh());
   }
   private async startPick(): Promise<void> {
-    const saved = !!this.savedDefinition;
-    this.leaveSavedDefinition();
-    if (this.setup?.tour?.phase === "extras") {
-      if (saved) await this.restoreTutorial();
-      return;
-    }
+    if (this.tutorialActive()) return;
     const token = ++this.pickRevision;
     const view = this.view;
     await this.loading("Starting picker", 2, async (phase) => {
@@ -980,7 +953,7 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
     if (this.client) await this.client.request("spy.stop");
   }
   private currentPick(client: JsonRpcClient, value: unknown): boolean {
-    return !this.disposed && !this.savedDefinition && !this.tutorialActive() &&
+    return !this.disposed && !this.tutorialActive() &&
       !!this.view?.visible && this.client === client && !!this.pickSession &&
       !!value && typeof value === "object" &&
       (value as { sessionId?: unknown }).sessionId === this.pickSession;
@@ -989,7 +962,7 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
   // previous selection) while they load must not discard them, so only the tree revision counts.
   private deferIcons(client: JsonRpcClient, nodes: NodeInfo[], revision: number): void {
     void readApplicationIcons(nodes.map((node) => node.info.processId)).then((icons) => {
-      if (!this.disposed && !this.savedDefinition && this.client === client && revision === this.revision)
+      if (!this.disposed && this.client === client && revision === this.revision)
         this.post({ type: "rootIcons", icons });
     }).catch((error: unknown) => this.log.error(String(error)));
   }
@@ -1034,10 +1007,10 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
    */
   private async generateLocator(nodeId: string): Promise<void> {
     const client = this.client;
-    if (!client || nodeId !== this.selectedNodeId || this.savedDefinition || this.tutorialActive()) return;
+    if (!client || nodeId !== this.selectedNodeId || this.tutorialActive()) return;
     const selection = this.selection;
     const current = () =>
-      !this.disposed && !this.savedDefinition && !this.tutorialActive() &&
+      !this.disposed && !this.tutorialActive() &&
       client === this.client && selection === this.selection;
     this.post({ type: "suggestionLoading", nodeId });
     try {
@@ -1050,45 +1023,6 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
       if (!(error instanceof RpcError && error.code === -32006)) this.log.error(String(error));
       this.post({ type: "suggestionUnavailable", nodeId, reason: error instanceof Error ? error.message : String(error) });
     }
-  }
-  private async showDefinition(value: unknown): Promise<void> {
-    if (!value || typeof value !== "object") throw new Error("Invalid saved definition.");
-    const candidate = value as Record<string, unknown>;
-    if (typeof candidate.id !== "string" || typeof candidate.qualname !== "string" || typeof candidate.projectRoot !== "string")
-      throw new Error("Invalid saved definition.");
-    const project = this.projects.all.find((item) => path.resolve(item.root.fsPath) === path.resolve(candidate.projectRoot as string));
-    if (!project) throw new Error("Saved definition is not in a known WinTestKit project.");
-    const definition = { id: candidate.id, qualname: candidate.qualname, projectRoot: project.root.fsPath };
-    if (this.pickSession && this.client)
-      void this.client.request("spy.stop").catch((error: unknown) => this.log.error(String(error)));
-    this.savedDefinition = definition;
-    this.postTour();
-    this.invalidateScope();
-    this.pickRevision++;
-    this.pickSession = undefined;
-    this.picking = false;
-    this.definitionTargets.clear();
-    this.coveragePending.clear();
-    const selection = this.selection;
-    this.savedSnapshot = { type: "savedDefinition", id: definition.id, qualname: definition.qualname, reason: "Loading last-test preview..." };
-    await vscode.commands.executeCommand("wintestkit.spy.focus");
-    if (this.disposed || this.savedDefinition !== definition || selection !== this.selection) return;
-    await this.restoreSavedDefinition();
-    try {
-      const preview = await readObjectPreview(definition.projectRoot, definition.id);
-      if (this.disposed || this.savedDefinition !== definition || selection !== this.selection) return;
-      this.savedSnapshot = { type: "savedDefinition", id: definition.id, qualname: definition.qualname,
-        preview: preview && savedPreviewImages(preview),
-        reason: preview ? undefined : "No saved last-test preview is available for this definition." };
-    } catch (error) {
-      if (this.disposed || this.savedDefinition !== definition || selection !== this.selection) return;
-      this.savedSnapshot = { type: "savedDefinition", id: definition.id, qualname: definition.qualname,
-        reason: "Saved preview unavailable: " + (error instanceof Error ? error.message : String(error)) };
-    }
-    await this.restoreSavedDefinition();
-  }
-  private async restoreSavedDefinition(): Promise<void> {
-    if (!this.disposed && this.savedSnapshot) this.post(this.savedSnapshot);
   }
   private async handle(message: SpyRequest): Promise<void> {
     if (message.type === "tour") {
@@ -1116,7 +1050,6 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
           ));
       }
     }
-    if (this.savedDefinition && !["ready", "refresh", "pick", "stopPick", "copy"].includes(message.type)) return;
     if (this.tutorialActive()) {
       if (message.type === "ready") await this.restoreTutorial();
       return;
@@ -1127,7 +1060,6 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
     }
     if (message.type === "ready") {
       this.postTour();
-      if (this.savedDefinition) return this.restoreSavedDefinition();
       if (typeof message.showOtherApps === "boolean")
         this.showOtherApps = message.showOtherApps;
       this.invalidateScope();
@@ -1150,7 +1082,7 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
       this.invalidateScope();
       return this.refresh();
     }
-    if (message.type === "refresh") return this.refreshLive();
+    if (message.type === "refresh") return this.refresh();
     if (message.type === "pick") return this.startPick();
     if (message.type === "stopPick") return this.stopPick();
     if (message.type === "pinProperty") {
@@ -1165,7 +1097,6 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
       await this.previewViewer.show(message.view, message.dataUrl);
       return;
     }
-    if (this.savedDefinition && message.type !== "copy") return;
     if (message.type === "copy") {
       await vscode.env.clipboard.writeText(message.text);
       return;
@@ -1295,7 +1226,7 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
   /** A live capture of the selected object and its window; nothing is saved. */
   private async loadPreview(client: JsonRpcClient, nodeId: string, selection: number): Promise<void> {
     const current = () =>
-      !this.disposed && !this.savedDefinition && !this.tutorialActive() &&
+      !this.disposed && !this.tutorialActive() &&
       selection === this.selection && client === this.client;
     try {
       const result = livePreviewImages(await client.request("inspect.preview", { nodeId }));
@@ -1468,7 +1399,7 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
     client: JsonRpcClient,
     nodeIds: string[],
   ): Promise<void> {
-    if (!nodeIds.length || this.savedDefinition || this.tutorialActive() || !this.appRunning || !this.markersEnabled()) return;
+    if (!nodeIds.length || this.tutorialActive() || !this.appRunning || !this.markersEnabled()) return;
     const run = this.coverageRun;
     for (const nodeId of nodeIds) this.coveragePending.add(nodeId);
     if (this.coverageWorker?.generation === run) return this.coverageWorker.promise;

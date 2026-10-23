@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { runInNewContext } from "node:vm";
 import * as path from "node:path";
 import type * as vscode from "vscode";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -2283,77 +2284,10 @@ describe("Spy view bridge", () => {
     fixture.provider.dispose();
   });
 
-  it("opens a saved definition without connecting and never sends its ID to runtime inspection", async () => {
-    const connect = vi.fn();
-    const fixture = await create(connect, {
-      tour: tutorialView(), focus: {}, onDidChange: () => ({ dispose() {} }),
-    } as unknown as SetupMonitor);
-    await mocks.commands.get("wintestkit.spy.showDefinition")?.({
-      id: "pages/Login.py::LoginPage.submit", qualname: "LoginPage.submit", projectRoot: "C:/demo",
-    });
-    fixture.receive({ type: "ready" });
-    fixture.receive({ type: "highlight", nodeId: "pages/Login.py::LoginPage.submit" });
-    fixture.receive({ type: "loadProperties", nodeId: "pages/Login.py::LoginPage.submit" });
-    await fixture.provider.refresh();
-    expect(connect).not.toHaveBeenCalled();
-    expect(mocks.request).not.toHaveBeenCalled();
-    expect(mocks.command).toHaveBeenCalledWith("wintestkit.spy.focus");
-    expect(fixture.sent.at(-1)).toMatchObject({ type: "savedDefinition", qualname: "LoginPage.submit" });
-    fixture.provider.dispose();
-  });
-
-  it("rejects saved definitions outside Projects before reading preview files", async () => {
+  it("does not register a saved-definition preview command", async () => {
     const fixture = await create();
-    await mocks.commands.get("wintestkit.spy.showDefinition")?.({ id: "pages/Login.py::LoginPage.submit", qualname: "LoginPage.submit", projectRoot: "C:/outside" });
+    expect(mocks.commands.has("wintestkit.spy.showDefinition")).toBe(false);
     expect(mocks.previews).not.toHaveBeenCalled();
-    expect(fixture.sent.at(-1)).toMatchObject({ type: "error", message: expect.stringContaining("known WinTestKit project") });
-    fixture.provider.dispose();
-  });
-
-  it("returns from a saved preview to live objects through Refresh", async () => {
-    mocks.request.mockImplementation((method: string) => Promise.resolve(
-      method === "inspect.refresh" ? { nodes: [], status: { running: false } } : undefined,
-    ));
-    const fixture = await create();
-    await mocks.commands.get("wintestkit.spy.showDefinition")?.({
-      id: "pages/Page.py::Page.first", qualname: "Page.first", projectRoot: "C:/demo",
-    });
-    expect(mocks.request).not.toHaveBeenCalled();
-    fixture.receive({ type: "refresh" });
-    await vi.waitFor(() => expect(fixture.sent).toContainEqual({ type: "roots", nodes: [] }));
-    expect(mocks.request).toHaveBeenCalledWith("inspect.refresh", { includeOtherApps: true });
-    fixture.provider.dispose();
-  });
-
-  it("restores active tutorial callouts when leaving a saved preview to pick", async () => {
-    tutorialResponses();
-    const fixture = await create(undefined, {
-      tour: tutorialView(), focus: {}, onDidChange: () => ({ dispose() {} }),
-    } as unknown as SetupMonitor);
-    await mocks.commands.get("wintestkit.spy.showDefinition")?.({
-      id: "pages/Page.py::Page.first", qualname: "Page.first", projectRoot: "C:/demo",
-    });
-    const before = fixture.sent.length;
-    fixture.receive({ type: "pick" });
-    await vi.waitFor(() => expect(fixture.sent.slice(before)).toContainEqual(
-      expect.objectContaining({ type: "tour", tutorial: expect.objectContaining({ phase: "extras" }) }),
-    ));
-    expect(mocks.request.mock.calls.some((call) => call[0] === "spy.start")).toBe(false);
-    fixture.provider.dispose();
-  });
-
-  it("does not let an older saved preview overwrite a newer definition selection", async () => {
-    let finishFirst: (value: unknown) => void = () => {};
-    mocks.previews.mockImplementationOnce(() => new Promise((resolve) => { finishFirst = resolve; }));
-    const fixture = await create();
-    const first = mocks.commands.get("wintestkit.spy.showDefinition")?.({ id: "pages/Page.py::Page.first", qualname: "Page.first", projectRoot: "C:/demo" });
-    await vi.waitFor(() => expect(mocks.previews).toHaveBeenCalledOnce());
-    await mocks.commands.get("wintestkit.spy.showDefinition")?.({ id: "pages/Page.py::Page.second", qualname: "Page.second", projectRoot: "C:/demo" });
-    const before = fixture.sent.length;
-    finishFirst({ capturedAt: "old" });
-    await first;
-    expect(fixture.sent.slice(before)).toEqual([]);
-    expect(fixture.sent.at(-1)).toMatchObject({ type: "savedDefinition", id: "pages/Page.py::Page.second" });
     fixture.provider.dispose();
   });
 
@@ -2645,7 +2579,7 @@ describe("Spy view bridge", () => {
 
   describe("opening a preview in the image viewer", () => {
     const url = "data:image/webp;base64,UklGRhoAAABXRUJQVlA4TA0AAAAvAAAAEAcQERGIiP4HAA==";
-    it("hands the chosen image to the viewer, live or saved", async () => {
+    it("hands the chosen live image to the viewer", async () => {
       mocks.showPreview.mockClear();
       const fixture = await create();
       fixture.receive({ type: "openPreview", view: "window", dataUrl: url });
@@ -2677,6 +2611,31 @@ describe("Spy view bridge", () => {
 
   describe("live object preview", () => {
     const webp = "UklGRhoAAABXRUJQVlA4TA0AAAAvAAAAEAcQERGIiP4HAA==";
+    it.each(["element", "context"])("renders the %s preview as a live capture", (mode) => {
+      const script = readFileSync("media/spy/spy.js", "utf8");
+      const start = script.indexOf("  const webpUrl = (value) =>");
+      const stop = script.indexOf("  const loadingPreview = () =>");
+      expect(start).toBeGreaterThan(0);
+      expect(stop).toBeGreaterThan(start);
+      const image = { src: "", hidden: true, alt: "" };
+      const status = { textContent: "" };
+      const context = {
+        previewMode: mode,
+        previewImages: undefined as unknown,
+        preview: {
+          elementDataUrl: "data:image/webp;base64," + webp,
+          windowDataUrl: "data:image/webp;base64,AAAA",
+          capturedAt: "2026-01-01T00:00:00Z",
+        },
+        element: (id: string) => id === "object-preview-image" ? image
+          : id === "object-preview-status" ? status : { setAttribute: vi.fn() },
+      };
+      runInNewContext(script.slice(start, stop) + "\nrenderObjectPreview(preview);", context);
+      expect(image.src).toBe(mode === "context" ? context.preview.windowDataUrl : context.preview.elementDataUrl);
+      expect(image.hidden).toBe(false);
+      expect(status.textContent).toBe("Live capture." + (mode === "context" ? " The object is outlined in red." : ""));
+      expect(context.previewImages).not.toHaveProperty("capturedAt");
+    });
     const select = async (preview: () => Promise<unknown>) => {
       mocks.request.mockImplementation((method: string) =>
         method === "inspect.preview" ? preview() : Promise.resolve(method === "inspect.properties"

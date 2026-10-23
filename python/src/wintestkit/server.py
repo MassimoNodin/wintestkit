@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, BinaryIO, cast
 
 from wintestkit import __version__
-from wintestkit.config import load_config
+from wintestkit.config import load_config, sync_object_previews_ignore
 from wintestkit.errors import AppNotRunningError, ConfigError, EnvironmentNotReadyError, WtkError
 from wintestkit.protocol import PROTOCOL_VERSION
 
@@ -39,6 +39,7 @@ _PARAMS: dict[str, tuple[set[str], set[str]]] = {
     "app.close": (set(), set()),
     "app.processes": (set(), set()),
     "element.highlight": ({"file", "qualname"}, {"durationMs"}),
+    "element.check": ({"file", "qualname"}, set()),
     "page.check": ({"file", "page"}, set()),
     "flow.run": ({"file", "name"}, {"arguments"}),
     "inspect.roots": (set(), {"includeOtherApps", "foregroundForProcessId"}),
@@ -485,6 +486,8 @@ class Server:
                 raise RpcError(-32600, "already initialized")
             cfg = load_config(Path(params["root"]))
             loader = ModuleLoader(cfg)
+            if cfg.found and cfg.object_previews and (cfg.root / "object-previews").is_dir():
+                sync_object_previews_ignore(cfg.root, cfg.object_previews_share)
             settings: dict[str, Any] = {
                 "found": cfg.found,
                 "launch": cfg.launch,
@@ -557,7 +560,7 @@ class Server:
                 raise RpcError(-32602, "flow arguments must be an object")
             flow_arguments = cast("dict[str, Any]", arguments)
             return run_flow(app, self.loader, file, params["name"], flow_arguments).to_dict()
-        if method in ("element.highlight", "page.check"):
+        if method in ("element.highlight", "element.check", "page.check"):
             app = self._app()
             assert app is not None
             file = Path(params["file"])
@@ -566,9 +569,15 @@ class Server:
                 return {
                     "results": [
                         result.to_dict()
-                        for result in check_page(app, self.loader, file, params["page"])
+                        for result in check_page(
+                            app, self.loader, file, params["page"], capture=True
+                        )
                     ]
                 }
+            if method == "element.check":
+                return resolve_target(
+                    app, self.loader, Target(file, params["qualname"]), timeout=0, capture=True
+                ).to_dict()
             result = resolve_target(app, self.loader, Target(file, params["qualname"]), timeout=0)
             if result.uia is not None:
                 rect = self._raise_for_highlight(result.uia)

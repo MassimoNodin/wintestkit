@@ -306,6 +306,22 @@
     "AppCloseResult": {
       "type": "null"
     },
+    "ElementCheckParams": {
+      "type": "object",
+      "properties": {
+        "file": {
+          "type": "string"
+        },
+        "qualname": {
+          "type": "string"
+        }
+      },
+      "required": ["file", "qualname"],
+      "additionalProperties": false
+    },
+    "ElementCheckResult": {
+      "$ref": "rpc.schema.json#/$defs/ElementResult"
+    },
     "ElementHighlightParams": {
       "type": "object",
       "properties": {

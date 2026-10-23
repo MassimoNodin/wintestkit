@@ -54,7 +54,6 @@ describe("Spy tutorial webview", () => {
     const renderStatus = vi.fn();
     const context = {
       tutorialView: undefined as unknown,
-      savedDefinition: false,
       tasks, nodes: new Map([["window", entry]]), selecting: true, fullPropertiesLoading: true,
       treeError: "old error", detailsError: "old error", failureTarget: "tree",
       progress, renderStatus,

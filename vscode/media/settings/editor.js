@@ -187,16 +187,6 @@
     win.append(bar, body);
     return win;
   }
-  function terminal(lines) {
-    const block = element("div", "terminal");
-    for (const parts of lines) {
-      const line = element("div", "line");
-      for (const [kind, text] of parts)
-        line.append(element("span", kind, text));
-      block.append(line);
-    }
-    return block;
-  }
   function inputPreview() {
     const mode = current("input_mode");
     const wrap = element("div", "compare");
@@ -265,25 +255,10 @@
     );
     return wrap;
   }
-  function treePreview() {
-    const dir = String(current("report_dir") ?? "wtk-report").replace(/[\\/]+$/, "");
-    const entries = [["index.html", "string"]];
-    if (current("screenshots") !== "off") entries.push(["screenshots/", "keyword"]);
-    if (current("replay") !== "off") entries.push(["replay/", "keyword"]);
-    const lines = [[["keyword", dir + "/"]]];
-    entries.forEach(([name, kind], index) =>
-      lines.push([
-        ["comment", index === entries.length - 1 ? "└─ " : "├─ "],
-        [kind, name],
-      ]),
-    );
-    return terminal(lines);
-  }
   const previews = {
     input_mode: inputPreview,
     replay_scope: scopePreview,
     highlight_color: highlightPreview,
-    report_dir: treePreview,
   };
 
   // Controls. Each takes the field and a view of its value: what to show, whether this file
@@ -505,7 +480,58 @@
         : change(field, rawOf(field, state.repository[field.key]), false);
     return cover;
   }
+  // Whether the setting a gated one depends on is on. Repository Settings go by what that file says
+  // (a user's own override does not decide for the repository, and a setting the file does not
+  // set is shown off), User Settings by what is in effect on this machine.
+  function requirementMet(field) {
+    if (!field.requires) return true;
+    return state.scope === "shared"
+      ? state.values[field.requires] === true
+      : current(field.requires) === true;
+  }
+  function requirementNote(field) {
+    const needed = state.fields?.find((item) => item.key === field.requires);
+    return "Turn on “" + (needed?.label ?? field.requires) + "” first.";
+  }
+  // A repository-wide decision seen from User Settings: its current value and a way to the place it
+  // is changed.
+  function repositoryDecisionRow(field) {
+    const row = element("div", "setting tracked");
+    const info = element("div", "info");
+    const label = element("label", "", field.label);
+    label.id = field.key + "-label";
+    label.htmlFor = field.key;
+    info.append(label);
+    const description = element("p", "description", field.description.user);
+    description.id = field.key + "-description";
+    info.append(description);
+    const shared = state.repository?.[field.key] === true;
+    const met = requirementMet(field);
+    const standing = element(
+      "p",
+      "description",
+      met
+        ? "Currently " + (shared ? "shared in the repository." : "not shared: kept on each machine and ignored by Git.")
+        : requirementNote(field),
+    );
+    standing.id = field.key + (met ? "-current" : "-requires");
+    info.append(standing);
+    const open = element("button", "action-button", "Open Repository Settings");
+    open.id = field.key;
+    open.disabled = !met;
+    open.setAttribute("aria-describedby", description.id);
+    open.title = met
+      ? "Open wintestkit.yaml settings, where this is decided for everyone."
+      : requirementNote(field);
+    open.onclick = () => post({ type: "scope", scope: "shared", focus: field.key });
+    open.append(gitMark());
+    const controls = element("div", "controls");
+    controls.append(open);
+    row.append(info, controls);
+    return row;
+  }
   function settingRow(field) {
+    if (field.repositoryOnly && state.scope === "local") return repositoryDecisionRow(field);
     const explicit = isExplicit(field.key);
     const inShared = state.scope === "shared";
     const inRepository =
@@ -513,7 +539,8 @@
     const usingRepository = inRepository && !explicit;
     const drafting = inShared && !explicit && draft.has(field.key);
     const unset = inShared && !explicit && !drafting;
-    const locked = usingRepository || unset;
+    const gated = !requirementMet(field);
+    const locked = usingRepository || unset || gated;
     const blank = inShared && !explicit;
     const effective = usingRepository
       ? state.repository[field.key]
@@ -527,6 +554,7 @@
       "div",
       "setting" + (isModified(field) ? " modified" : "") + (inRepository ? " tracked" : ""),
     );
+    row.id = field.key + "-row";
     const info = element("div", "info");
     const label = element("label", "", field.label);
     label.id = field.key + "-label";
@@ -549,11 +577,17 @@
       const machine = element(
         "p",
         "warning",
-        "⚠ Absolute path: other machines and CI must override it in User Settings.",
+        "⚠ Only use an absolute path if the .exe will be installed in the same place on all machines.",
       );
       machine.id = field.key + "-machine-warning";
       ids.push(machine.id);
       info.append(machine);
+    }
+    if (gated) {
+      const note = element("p", "description", requirementNote(field));
+      note.id = field.key + "-requires";
+      ids.push(note.id);
+      info.append(note);
     }
     const overriddenBy = inShared && explicit ? state.user?.[field.key] : undefined;
     if (overriddenBy !== undefined) {
@@ -592,7 +626,7 @@
       };
       controls.append(browse);
     }
-    if (locked) controls.append(coverButton(field, unset));
+    if (locked && !gated) controls.append(coverButton(field, unset));
     row.append(info, controls);
     if (inShared && !unset) row.append(repositoryTab(field, "remove"));
     else if (inRepository && !usingRepository) row.append(repositoryTab(field, "restore"));
@@ -630,6 +664,17 @@
     fields.replaceChildren(...groups());
     if (focused && fields.querySelector("[id='" + focused + "']"))
       document.getElementById(focused).focus();
+  }
+  // Brings a setting into view, as when another page sends you to it, and marks it for a moment.
+  function reveal(key) {
+    const row = document.getElementById(key + "-row");
+    if (!row) return;
+    if (typeof row.scrollIntoView === "function") row.scrollIntoView({ block: "center" });
+    row.className += " revealed";
+    if (typeof setTimeout === "function")
+      setTimeout(() => {
+        row.className = row.className.replace(" revealed", "");
+      }, 2000);
   }
   window.addEventListener("message", (event) => {
     const message = event.data;
@@ -673,6 +718,7 @@
     } else if (!state.dirty) endSaving();
     status.hidden = true;
     render();
+    if (typeof message.focus === "string") reveal(message.focus);
   });
   post({ type: "ready" });
 })();

@@ -41,7 +41,6 @@ export type SpyRequest =
   | { type: "openPreview"; view: "element" | "window"; dataUrl: string }
   | { type: "openDefinition"; id: string };
 export type SpyResponse =
-  | { type: "savedDefinition"; id: string; qualname: string; preview?: PreviewImages; reason?: string }
   | { type: "objectPreview"; nodeId: string; preview?: PreviewImages; reason?: string }
   | { type: "selectionRestored"; nodeId: string }
   | { type: "enumerationIncomplete"; message: string; nodeId?: string }

@@ -98,33 +98,17 @@ describe("inline action feedback", () => {
       check: { status: "found" },
     });
   });
-  it("clears edited declarations and rejects their in-flight completions", () => {
-    const pending = { status: "running" } as const;
-    store.setFeedback(located, "highlight", pending);
-    mocks.edit?.({
-      document: { uri: { fsPath: located.page.file.replaceAll("\\", "/") } },
-      contentChanges: [{ range: located.element.range }],
-    } as unknown as vscode.TextDocumentChangeEvent);
-    expect(store.feedback.size).toBe(0);
-    expect(
-      store.setFeedback(
-        located,
-        "highlight",
-        { status: "found", durationMs: 1 },
-        pending,
-      ),
-    ).toBe(false);
-  });
-  it("retains feedback when edits do not overlap the declaration", () => {
+  it("keeps results when the declaration is edited", () => {
+    store.set({
+      ...located,
+      result: { qualname: located.element.qualname, status: "found", durationMs: 1 },
+    });
     store.setFeedback(located, "check", { status: "found", durationMs: 1 });
-    const line = located.element.range.end.line + 10;
-    mocks.edit?.({
-      document: { uri: { fsPath: located.page.file } },
-      contentChanges: [{ range: { start: { line }, end: { line } } }],
-    } as unknown as vscode.TextDocumentChangeEvent);
+    expect(mocks.edit).toBeUndefined();
     expect(store.feedback.size).toBe(1);
+    expect(store.results.size).toBe(1);
   });
-  it("clears feedback and decorations on project rediscovery", () => {
+  it("keeps results across a rediscovery and moves them to the element's new place", () => {
     const result = {
       qualname: located.element.qualname,
       status: "found",
@@ -132,10 +116,56 @@ describe("inline action feedback", () => {
     } as const;
     store.set({ ...located, result });
     store.setFeedback(located, "check", result);
+    const range = {
+      start: { line: 40, character: 0 },
+      end: { line: 41, character: 0 },
+    };
+    const moved = {
+      ...discovery,
+      pages: [
+        {
+          ...discovery.pages[0],
+          elements: discovery.pages[0].elements.map((element) =>
+            element.id === located.element.id ? { ...element, range } : element,
+          ),
+        },
+      ],
+    };
+    discoveryStore.get = () => moved;
+    mocks.discover?.(project);
+    expect(store.feedback.size).toBe(1);
+    expect(store.results.get(located.element.id)).toEqual(result);
+    expect(store.entries.get(located.element.id)?.element.range).toEqual(range);
+  });
+  it("drops a result whose element no longer exists after a rediscovery", () => {
+    const result = {
+      qualname: located.element.qualname,
+      status: "found",
+      durationMs: 1,
+    } as const;
+    store.set({ ...located, result });
+    store.setFeedback(located, "check", result);
+    discoveryStore.get = () => ({ ...discovery, pages: [] });
     mocks.discover?.(project);
     expect(store.feedback.size).toBe(0);
     expect(store.entries.size).toBe(0);
     expect(store.results.size).toBe(0);
+  });
+  it("clears every result on request", () => {
+    const result = {
+      qualname: located.element.qualname,
+      status: "found",
+      durationMs: 1,
+    } as const;
+    store.set({ ...located, result });
+    store.setFeedback(located, "check", result);
+    const changed = vi.fn();
+    store.onDidChange(changed);
+    store.clear();
+    expect(store.feedback.size).toBe(0);
+    expect(store.entries.size).toBe(0);
+    expect(store.results.size).toBe(0);
+    expect(changed).toHaveBeenCalledOnce();
   });
   it("refreshes CodeLens when action feedback changes", () => {
     const lenses = new CodeLenses(

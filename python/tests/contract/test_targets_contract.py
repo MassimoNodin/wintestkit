@@ -23,6 +23,7 @@ def test_target_result_contracts(validate: Any, status: str) -> None:
         message="resolved",
     )
     validate("rpc.schema.json", "ElementResult", result.to_dict())
+    validate("rpc.schema.json", "ElementCheckResult", result.to_dict())
     checked = CheckResult(
         status,
         result.duration_ms,

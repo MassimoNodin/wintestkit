@@ -179,6 +179,9 @@ function createTree(
   } as unknown as DiscoveryStore;
   const checks = {
     results: new Map(),
+    scopedResults: new Map(),
+    clear: vi.fn(),
+    isPageRunning: vi.fn(() => false),
     onDidChange: subscribe,
   } as unknown as CheckResultsStore;
   const flows = {
@@ -546,6 +549,15 @@ describe("navigation view", () => {
       expect(tools.hidden).toBe(true);
     });
   });
+  it("clears the stored check results from the Page Tree toolbar", () => {
+    const { tree, checks } = createTree(hostFor());
+    resolve(tree);
+    expect(
+      navigationDocument({ cspSource: "x", nonce: "n", iconsHref: "i", section: "pages", treeHtml: "" }),
+    ).toContain('id="results-clear"');
+    mocks.listener?.({ type: "clearResults" });
+    expect(checks.clear).toHaveBeenCalledOnce();
+  });
   it("has no initialization or Getting Started button: the guided setup in Test Target does that", () => {
     const body = renderBody({ nodes: [], expanded: new Set(), welcome: "Set up WinTestKit" });
     expect(body).toContain("Set up WinTestKit");
@@ -588,7 +600,7 @@ describe("navigation view", () => {
       },
     );
   });
-  it("shows a saved element preview while retaining source navigation", async () => {
+  it("opens an element source without switching to Spy", async () => {
     const { tree } = createTree();
     const element: ElementNode = {
       id: "pages/main.py::Main.username",
@@ -607,14 +619,10 @@ describe("navigation view", () => {
       { fsPath: element.file },
       { selection: expect.objectContaining({ startLine: 2, startCharacter: 4 }) },
     );
-    expect(mocks.execute).toHaveBeenCalledWith("wintestkit.spy.showDefinition", {
-      id: element.elementId,
-      qualname: element.qualname,
-      projectRoot: "/project",
-    });
+    expect(mocks.execute).not.toHaveBeenCalled();
     tree.dispose();
   });
-  it("does not request element previews for saved window definitions", async () => {
+  it("opens a window source without switching to Spy", async () => {
     createTree();
     const window: ElementNode = {
       id: "pages/main.py::Main.window",
@@ -629,10 +637,11 @@ describe("navigation view", () => {
       children: [],
     };
     await mocks.commands.get("wintestkit.elements.goTo")!(window);
-    expect(mocks.execute).not.toHaveBeenCalledWith(
-      "wintestkit.spy.showDefinition",
-      expect.anything(),
+    expect(mocks.show).toHaveBeenCalledWith(
+      { fsPath: window.file },
+      { selection: expect.objectContaining({ startLine: 2, startCharacter: 4 }) },
     );
+    expect(mocks.execute).not.toHaveBeenCalled();
   });
   it("colors check status icons with the testing theme tokens", () => {
     const { tree, checks } = createTree();

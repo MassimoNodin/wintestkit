@@ -111,6 +111,17 @@ export function describeLocator(locator: LocatorData): string {
   if (locator.window) result = describeWindow(locator.window) + " >> " + result;
   return result;
 }
+const normalize = (value: string): string => {
+  const resolved =
+    process.platform === "win32"
+      ? path.win32.resolve(value).toLowerCase()
+      : path.resolve(value);
+  return resolved.replaceAll("\\", "/");
+};
+/** Identifies a page for the "Check all elements" progress state. */
+export function pageKey(file: string, qualname: string): string {
+  return normalize(file) + "::" + qualname;
+}
 export function buildLenses(
   discovery: DiscoveryResult,
   file: string,
@@ -118,14 +129,8 @@ export function buildLenses(
   flowStatus: (file: string, name: string) => FlowStatus | undefined = () =>
     undefined,
   classOnly = false,
+  pageRunning: (file: string, qualname: string) => boolean = () => false,
 ): LensSpec[] {
-  const normalize = (value: string): string => {
-    const resolved =
-      process.platform === "win32"
-        ? path.win32.resolve(value).toLowerCase()
-        : path.resolve(value);
-    return resolved.replaceAll("\\", "/");
-  };
   const lenses: LensSpec[] = [];
   const add = (
     line: number,
@@ -145,7 +150,9 @@ export function buildLenses(
     if (normalize(page.file) !== normalize(file)) continue;
     add(
       page.range.start.line,
-      "$(checklist) Check all elements in this class exist",
+      pageRunning(page.file, page.qualname)
+        ? "$(loading~spin) Checking all elements…"
+        : "$(checklist) Check all elements in this class exist",
       "wintestkit.checkPage",
       { file, page: page.qualname },
       "Checks these elements against the app's current screen. Elements on screens that are not open may be reported as not found.",

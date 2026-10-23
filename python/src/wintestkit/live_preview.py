@@ -1,6 +1,6 @@
 """Live preview of an inspected element: its crop and its window with the element outlined.
 
-Unlike the test-time images in ``object_previews`` nothing is saved: the pictures go to the editor
+Unlike the saved check images in ``object_previews`` nothing is saved: the pictures go to the editor
 for the object the user has selected in Spy, who is already looking at that application.
 """
 

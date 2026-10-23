@@ -10,7 +10,7 @@ from typing import Any
 import pytest
 from fakes import FakeElement
 
-from wintestkit import model, targets
+from wintestkit import model, object_previews, targets
 from wintestkit.config import load_config
 from wintestkit.engine.diagnose import Diagnostic
 from wintestkit.errors import AmbiguousElementError, ElementNotFoundError, UIAError
@@ -221,6 +221,93 @@ def test_resolution_errors(error_type: type[Exception], status: str) -> None:
     assert result.status == status
     assert result.duration_ms >= 0
     assert result.message
+
+
+@pytest.mark.parametrize(
+    "qualname,member", [("Main.ok", "ok"), ("Mounted.address.street", "street")]
+)
+def test_explicit_check_resolves_only_requested_member_once(
+    project: tuple[ModuleLoader, Path], monkeypatch: pytest.MonkeyPatch, qualname: str, member: str
+) -> None:
+    loader, file = project
+    file.write_text(
+        SOURCE + "class Address(Page):\n    street = Element(name='Street')\n"
+        "class Mounted(Page):\n    address = Address()\n",
+        encoding="utf-8",
+    )
+    element = FakeElement("Button", "OK")
+    resolved = []
+    captured = []
+
+    def resolve(bound, timeout):
+        resolved.append(bound.definition.name)
+        return element
+
+    monkeypatch.setattr(model.BoundElement, "resolve", resolve)
+    monkeypatch.setattr(
+        object_previews, "capture_bound", lambda bound, actual: captured.append((bound, actual))
+    )
+    result = targets.resolve_target(SimpleNamespace(), loader, Target(file, qualname), capture=True)
+    assert result.status == "found" and result.uia is element
+    assert resolved == [member]
+    assert len(captured) == 1 and captured[0][1] is element
+    assert captured[0][0].definition.name == member
+
+
+def test_explicit_collection_check_resolves_first_without_capture(
+    project: tuple[ModuleLoader, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    loader, file = project
+    element = FakeElement("Button", "OK")
+    resolved = []
+
+    def resolve(bound, timeout):
+        resolved.append(bound.definition.name)
+        return element
+
+    monkeypatch.setattr(model.BoundElement, "resolve", resolve)
+    monkeypatch.setattr(
+        object_previews, "capture_bound", lambda *args: pytest.fail("collection must not capture")
+    )
+    result = targets.resolve_target(
+        SimpleNamespace(), loader, Target(file, "Main.many"), capture=True
+    )
+    assert result.status == "found" and result.uia is element
+    assert resolved == ["many"]
+
+
+def test_normal_resolution_page_checks_and_flows_never_capture(
+    project: tuple[ModuleLoader, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    loader, file = project
+    file.write_text(SOURCE + "def probe(app):\n    Main(app).ok.resolve(0)\n", encoding="utf-8")
+    element = FakeElement("Button", "OK")
+    monkeypatch.setattr(model.BoundElement, "resolve", lambda *args: element)
+    monkeypatch.setattr(model.BoundWindow, "resolve", lambda *args: element)
+    monkeypatch.setattr(
+        object_previews, "capture_bound", lambda *args: pytest.fail("automatic capture")
+    )
+    app = SimpleNamespace()
+    assert targets.resolve_target(app, loader, Target(file, "Main.ok")).status == "found"
+    assert targets.check_page(app, loader, file, "Main")
+    assert targets.run_flow(app, loader, file, "probe").status == "passed"
+
+
+def test_page_check_captures_each_single_element_when_asked(
+    project: tuple[ModuleLoader, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    loader, file = project
+    element = FakeElement("Button", "OK")
+    captured = []
+    monkeypatch.setattr(model.BoundElement, "resolve", lambda *args: element)
+    monkeypatch.setattr(model.BoundWindow, "resolve", lambda *args: element)
+    monkeypatch.setattr(
+        object_previews, "capture_bound", lambda bound, actual: captured.append(bound.qualname)
+    )
+    results = targets.check_page(SimpleNamespace(), loader, file, "Main", capture=True)
+    assert [result.qualname for result in results] == ["Main.window", "Main.ok", "Main.many"]
+    # The collection resolves its first member but is never captured.
+    assert captured == ["Main.window", "Main.ok"]
 
 
 def test_check_rejects_no_pages(project: tuple[ModuleLoader, Path]) -> None:

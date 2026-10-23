@@ -15,6 +15,7 @@ import os
 import sys
 import time
 import traceback
+from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType
@@ -390,7 +391,9 @@ def _bound_for(app: App, page_class: type[Page], attribute: str) -> Any:
     return page_class(app).bound_at(attribute)
 
 
-def resolve_bound(bound: Any, timeout: float, started: float | None = None) -> ElementResult:
+def resolve_bound(
+    bound: Any, timeout: float, started: float | None = None, *, capture: bool = False
+) -> ElementResult:
     """Resolve a bound element or window into an :class:`ElementResult`; never raises Wtk errors."""
     from wintestkit.model import BoundElements
 
@@ -401,9 +404,16 @@ def resolve_bound(bound: Any, timeout: float, started: float | None = None) -> E
 
     try:
         if isinstance(bound, BoundElements):
+            capture = False
             bound = bound.first()
         element = bound.resolve(timeout)
-        return ElementResult("found", elapsed(), element=element.info(), uia=element)
+        result = ElementResult("found", elapsed(), element=element.info(), uia=element)
+        if capture and runtime.get_config().object_previews:
+            with suppress(Exception):
+                from wintestkit.object_previews import capture_bound
+
+                capture_bound(bound, element)
+        return result
     except AmbiguousElementError as exc:
         return ElementResult("ambiguous", elapsed(), diagnostic=exc.diagnostic, message=str(exc))
     except LocatorError as exc:
@@ -413,31 +423,45 @@ def resolve_bound(bound: Any, timeout: float, started: float | None = None) -> E
 
 
 def resolve_target(
-    app: App, loader: ModuleLoader, target: Target, timeout: float = 0.0
+    app: App, loader: ModuleLoader, target: Target, timeout: float = 0.0, *, capture: bool = False
 ) -> ElementResult:
     """Bind the target's page to ``app`` and resolve the element (``timeout`` 0: immediately)."""
     started = time.perf_counter()
     with runtime.config_scope(loader.cfg):
         page_class, attribute = loader.get_element(target)
-        return resolve_bound(_bound_for(app, page_class, attribute), timeout, started)
+        return resolve_bound(
+            _bound_for(app, page_class, attribute), timeout, started, capture=capture
+        )
 
 
 def check_page(
-    app: App, loader: ModuleLoader, file: Path, page_name: str | None = None, timeout: float = 0.0
+    app: App,
+    loader: ModuleLoader,
+    file: Path,
+    page_name: str | None = None,
+    timeout: float = 0.0,
+    *,
+    capture: bool = False,
 ) -> list[CheckResult]:
     """Resolve every element of one page (or every page of ``file``) once, in source order.
 
     A not-found element is always a failure ("broken/moved"); its message says where it went when
-    the relocation search found it. All searches share one time budget.
+    the relocation search found it. All searches share one time budget. With ``capture`` every
+    uniquely found single element saves its preview, as a single-element check does.
     """
     from wintestkit.engine import relocate
 
     with runtime.config_scope(loader.cfg), relocate.shared_budget():
-        return _check_page(app, loader, file, page_name, timeout)
+        return _check_page(app, loader, file, page_name, timeout, capture)
 
 
 def _check_page(
-    app: App, loader: ModuleLoader, file: Path, page_name: str | None, timeout: float
+    app: App,
+    loader: ModuleLoader,
+    file: Path,
+    page_name: str | None,
+    timeout: float,
+    capture: bool = False,
 ) -> list[CheckResult]:
     """Resolve every element of one page (or every page of ``file``) once, in source order."""
     pages = loader.pages_in(file)
@@ -457,7 +481,7 @@ def _check_page(
     for name, page_class in pages.items():
         for attribute in loader.element_names(page_class):
             bound = _bound_for(app, page_class, attribute)
-            outcome = resolve_bound(bound, timeout)
+            outcome = resolve_bound(bound, timeout, capture=capture)
             locator = getattr(bound, "locator", None)
             results.append(
                 CheckResult(

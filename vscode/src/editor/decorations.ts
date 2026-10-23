@@ -2,7 +2,7 @@ import * as vscode from "vscode";
 import type { DiscoveryStore, LocatedElement } from "../discovery/store";
 import type { CheckResult } from "../protocol/generated";
 import { normalizedPath } from "../projects";
-import type { ActionFeedback, ActionStatus, ElementAction } from "./lensModel";
+import { pageKey, type ActionFeedback, type ActionStatus, type ElementAction } from "./lensModel";
 
 /** VS Code clamps a column past the end of a line to the end of that line. */
 const END_OF_LINE = Number.MAX_SAFE_INTEGER;
@@ -14,42 +14,78 @@ export class CheckResultsStore implements vscode.Disposable {
   readonly results = new Map<string, CheckResult>();
   readonly entries = new Map<string, CheckedElement>();
   readonly feedback = new Map<string, ActionFeedback>();
+  /**
+   * Whole-page check results of mounted components' elements, by Page Tree row id. A component's
+   * rows repeat under every page that mounts it, so these belong to the one page that was checked.
+   */
+  readonly scopedResults = new Map<string, CheckResult>();
   private readonly feedbackLocations = new Map<string, LocatedElement>();
+  private readonly runningPages = new Set<string>();
   private readonly changed = new vscode.EventEmitter<void>();
   readonly onDidChange = this.changed.event;
   private readonly subscriptions: vscode.Disposable[];
-  constructor(discovery: DiscoveryStore) {
+  /**
+   * Results outlive file closes, saves and edits. Only a window reload (this store lives in memory)
+   * or `clear()` discards them; a rediscovery just moves each result to where its element now is.
+   */
+  constructor(private readonly discovery: DiscoveryStore) {
     this.subscriptions = [
-      vscode.workspace.onDidChangeTextDocument((event) => {
-        for (const [id, entry] of new Map([
-          ...this.entries,
-          ...this.feedbackLocations,
-        ])) {
-          if (
-            normalizedPath(entry.page.file) !==
-            normalizedPath(event.document.uri.fsPath)
-          )
-            continue;
-          if (
-            event.contentChanges.some(
-              (change) =>
-                change.range.start.line <= entry.element.range.end.line &&
-                change.range.end.line >= entry.element.range.start.line,
-            )
-          )
-            this.remove(id);
-        }
-      }),
-      discovery.onDidChange((project) => {
-        for (const [id, entry] of new Map([
-          ...this.entries,
-          ...this.feedbackLocations,
-        ])) {
-          if (entry.project.root.toString() === project.root.toString())
-            this.remove(id);
-        }
-      }),
+      discovery.onDidChange((project) => this.relocate(project)),
     ];
+  }
+  private relocate(project: LocatedElement["project"]): void {
+    const discovered = this.discovery.get(project);
+    if (!discovered) return;
+    const current = new Map<string, LocatedElement>();
+    for (const page of discovered.pages)
+      for (const element of page.elements)
+        current.set(element.id, { project, page, element });
+    const key = project.root.toString();
+    let changed = false;
+    for (const [id, entry] of this.entries) {
+      if (entry.project.root.toString() !== key) continue;
+      const moved = current.get(id);
+      if (moved) this.entries.set(id, { ...entry, ...moved });
+      else this.drop(id);
+      changed = true;
+    }
+    for (const [id, entry] of this.feedbackLocations) {
+      if (entry.project.root.toString() !== key) continue;
+      const moved = current.get(id);
+      if (moved) this.feedbackLocations.set(id, moved);
+      else this.drop(id);
+      changed = true;
+    }
+    if (changed) this.changed.fire();
+  }
+  private drop(id: string): void {
+    this.feedback.delete(id);
+    this.feedbackLocations.delete(id);
+    this.results.delete(id);
+    this.entries.delete(id);
+  }
+  setScopedResults(results: ReadonlyMap<string, CheckResult>): void {
+    for (const [id, result] of results) this.scopedResults.set(id, result);
+    this.changed.fire();
+  }
+  setPageRunning(file: string, qualname: string, running: boolean): void {
+    const key = pageKey(file, qualname);
+    if (running === this.runningPages.has(key)) return;
+    if (running) this.runningPages.add(key);
+    else this.runningPages.delete(key);
+    this.changed.fire();
+  }
+  isPageRunning(file: string, qualname: string): boolean {
+    return this.runningPages.has(pageKey(file, qualname));
+  }
+  /** Discards every stored result, as the Page Tree's clear button does. */
+  clear(): void {
+    this.results.clear();
+    this.scopedResults.clear();
+    this.entries.clear();
+    this.feedback.clear();
+    this.feedbackLocations.clear();
+    this.changed.fire();
   }
   setFeedback(
     entry: LocatedElement,
@@ -73,10 +109,7 @@ export class CheckResultsStore implements vscode.Disposable {
     this.changed.fire();
   }
   remove(id: string): void {
-    this.feedback.delete(id);
-    this.feedbackLocations.delete(id);
-    this.results.delete(id);
-    this.entries.delete(id);
+    this.drop(id);
     this.changed.fire();
   }
   dispose(): void {

@@ -81,6 +81,15 @@ describe("editor lens model", () => {
       lenses.find((lens) => lens.command === "wintestkit.checkPage")?.title,
     ).toContain("Check all elements in this class exist");
   });
+  it("spins the page lens while all of its elements are being checked", () => {
+    const lens = (running: boolean) =>
+      buildLenses(discovery, page.file, new Map(), undefined, false, () => running).find(
+        (lens) => lens.command === "wintestkit.checkPage",
+      )!;
+    expect(lens(true).title).toBe("$(loading~spin)  Checking all elements…");
+    expect(lens(true).args).toEqual([{ file: page.file, page: page.qualname }]);
+    expect(lens(false).title).toContain("Check all elements in this class exist");
+  });
   it("supports class-only lenses while preserving default element lenses", () => {
     const all = buildLenses(discovery, page.file);
     const compact = buildLenses(discovery, page.file, new Map(), undefined, true);

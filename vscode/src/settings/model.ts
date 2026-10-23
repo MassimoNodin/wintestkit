@@ -21,6 +21,13 @@ export interface SettingField {
   default?: unknown;
   choices?: string[];
   localOnly?: boolean;
+  /**
+   * A decision for the whole repository: it can only be written to wintestkit.yaml, and User Settings
+   * show where it stands with a button to Repository Settings instead of a control.
+   */
+  repositoryOnly?: boolean;
+  /** A boolean setting that stays disabled until this other one is on. */
+  requires?: string;
   minimum?: number;
   maximum?: number;
   group?: SettingGroup;
@@ -42,7 +49,7 @@ export const settingFields: SettingField[] = [
     description: {
       user: "The .exe to start for tests on this machine.",
       repository:
-        "The .exe to start for tests. Use a path relative to the project folder.",
+        "The .exe to start for tests. A path relative to the project folder is recommended.",
     },
     group: "Application",
   },
@@ -144,12 +151,26 @@ export const settingFields: SettingField[] = [
   },
   {
     key: "object_previews",
-    label: "Save last-successful element images",
+    label: "Save Check Element captures",
     kind: "boolean",
     description: same(
-      "Save element and app images; they may show sensitive data.",
+      "Save element and app images when Check exists succeeds. Images may show sensitive data.",
     ),
     default: true,
+    group: "Evidence",
+  },
+  {
+    key: "object_previews_share",
+    label: "Share Check Element captures in the repository",
+    kind: "boolean",
+    description: {
+      user: "Whether saved captures are committed with the project is decided once for the whole repository, in Repository Settings.",
+      repository:
+        "Commit saved captures (the object-previews folder) so everyone sees them. Off keeps them on each machine and ignored by Git. Images may show sensitive data.",
+    },
+    default: false,
+    repositoryOnly: true,
+    requires: "object_previews",
     group: "Evidence",
   },
   {
@@ -370,6 +391,8 @@ export function updateSetting(
   const field = settingFields.find((field) => field.key === key);
   if (!field || (scope === "shared" && field.localOnly))
     throw new Error("Edit this setting in local machine settings.");
+  if (scope === "local" && field.repositoryOnly)
+    throw new Error("Edit this setting in Repository Settings.");
   const document: Document = parseSettings(source);
   if (document.contents === null) document.contents = document.createNode({});
   if (!remove && key.startsWith("app.") && !document.has("app"))
