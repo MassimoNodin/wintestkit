@@ -246,15 +246,15 @@ describe("Test Target tiles", () => {
     expect(ids(model)).toEqual(["interpreter", "app", "mode", "restart", "close"]);
     expect(model.tiles.at(-1)).toMatchObject({ tone: "stop" });
   });
-  it("locks the application tile, without its list icon, while the app is running", () => {
+  it("lets the application be changed while it runs, and says it stays open", () => {
     const running = build(launchable, { running: true, pids: [12] }).tiles[1];
-    expect(running.locked).toBe(true);
-    expect(running.chevron).toBeUndefined();
-    expect(running.trailing).toBeUndefined();
-    expect(running.tooltip).toContain("Close it to choose a different one");
+    expect(running.locked).toBeUndefined();
+    expect(running).toMatchObject({ chevron: true, trailing: "list-selection" });
+    expect(running.tooltip).toContain("stays open");
     const stopped = build(launchable, { running: false }).tiles[1];
     expect(stopped.locked).toBeUndefined();
     expect(stopped).toMatchObject({ chevron: true, trailing: "list-selection" });
+    expect(stopped.tooltip).not.toContain("stays open");
   });
   it("marks the Attach tile and explains it after a test run failed in attach mode", () => {
     const failed = { running: false, attachFailure: { at: 1 } };

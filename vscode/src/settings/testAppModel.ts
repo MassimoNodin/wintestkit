@@ -334,19 +334,14 @@ function buildModel(input: TestAppInput): TestAppModel {
           : undefined,
         icon: input.icon,
         codicon: "window",
-        // The running app is the target, so it cannot be swapped out from under the tests.
-        ...(pids
-          ? {
-              locked: true,
-              tooltip:
-                target +
-                "\nThe application is running. Close it to choose a different one.",
-            }
-          : {
-              chevron: true,
-              trailing: "list-selection",
-              tooltip: target + "\nChoose a different application",
-            }),
+        // Choosing another app while this one runs only changes the target; it stays open.
+        chevron: true,
+        trailing: "list-selection",
+        tooltip:
+          target +
+          (pids
+            ? "\nChoose a different application. This one is running and stays open."
+            : "\nChoose a different application"),
       }
     : {
         id: "app",
