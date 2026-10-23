@@ -14,6 +14,7 @@ import type { Project, ServerManager } from "../server/serverManager";
 import type { StatusBar } from "../statusBar";
 import { executableIcon } from "./appIcon";
 import { readConfiguration, writeLocalSettings } from "./files";
+import { pickRunningApplication } from "./runningApps";
 import {
   buildTestAppModel,
   type InterpreterView,
@@ -519,8 +520,8 @@ export class TestAppView implements vscode.Disposable {
           action: "browse",
         },
         {
-          label: "$(pulse)" + ICON_GAP + "Attach to a running app…",
-          detail: "Pick an application that already has a window",
+          label: "$(pulse)" + ICON_GAP + "Select a running app…",
+          detail: "Attach to an application that already has a window",
           action: "running",
         },
         {
@@ -560,24 +561,19 @@ export class TestAppView implements vscode.Disposable {
       const connection = await this.servers.get(project);
       const { processes } =
         await connection.client.request<AppProcessesResult>("app.processes");
-      const running = await vscode.window.showQuickPick(
-        processes.map((entry) => ({
-          label: entry.name,
-          description:
-            entry.pids.length > 1
-              ? entry.pids.length + " processes"
-              : "PID " + entry.pids[0],
-          detail: entry.windowTitle,
-        })),
-        {
-          placeHolder: "Attach to which running application?",
-          matchOnDetail: true,
-        },
+      const config = await readConfiguration(project.root);
+      // Both settings can name the current application: a process, or an exe that is launched.
+      const current = [config["app.process"], config["app.path"]].flatMap(
+        (value) =>
+          typeof value === "string" && value.trim()
+            ? [path.win32.basename(value.trim())]
+            : [],
       );
+      const running = await pickRunningApplication(processes, current);
       if (running)
         await this.save({
-          "app.process": running.label,
-          "app.path": undefined,
+          "app.process": running.process,
+          "app.path": running.path,
           launch: "attach",
         });
     }

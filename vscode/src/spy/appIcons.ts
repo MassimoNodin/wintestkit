@@ -78,7 +78,8 @@ async function extractApplicationIcons(
   }
 }
 
-export async function readApplicationIcons(
+/** The executable of each process, by pid; a process that cannot be read (elevated) is left out. */
+export async function readApplicationPaths(
   pids: number[],
 ): Promise<Record<string, string>> {
   const ids = [
@@ -104,14 +105,28 @@ export async function readApplicationIcons(
     const output = await runScript(script);
     const paths: unknown = JSON.parse(output.replace(/^\uFEFF/, "").trim());
     if (!paths || typeof paths !== "object" || Array.isArray(paths)) return {};
-    const processes = ids.flatMap((pid) => {
-      const file: unknown = (paths as Record<string, unknown>)[String(pid)];
-      return typeof file === "string" &&
-        path.win32.isAbsolute(file) &&
-        !file.includes("\0")
-        ? [[String(pid), path.win32.normalize(file).toLowerCase()] as const]
-        : [];
-    });
+    return Object.fromEntries(
+      ids.flatMap((pid) => {
+        const file: unknown = (paths as Record<string, unknown>)[String(pid)];
+        return typeof file === "string" &&
+          path.win32.isAbsolute(file) &&
+          !file.includes("\0")
+          ? [[String(pid), path.win32.normalize(file)]]
+          : [];
+      }),
+    );
+  } catch {
+    return {};
+  }
+}
+
+export async function readApplicationIcons(
+  pids: number[],
+): Promise<Record<string, string>> {
+  try {
+    const processes = Object.entries(await readApplicationPaths(pids)).map(
+      ([pid, file]) => [pid, file.toLowerCase()] as const,
+    );
     const missing = [...new Set(processes.map(([, file]) => file))].filter(
       (file) => !applicationIcons.has(file),
     );
