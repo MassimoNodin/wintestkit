@@ -898,7 +898,7 @@ describe("settings editor script", () => {
     }
   });
 
-  it("marks only settings that differ from their baseline as modified, in User Settings only", () => {
+  it("marks only settings that differ from their baseline as modified in User Settings", () => {
     const view = boot();
     const modified = (key: string) =>
       view.find(
@@ -936,9 +936,38 @@ describe("settings editor script", () => {
     // A setting with no baseline at all is modified once it has a value.
     view.emit(state("local", 82, { "app.process": "Orders.exe" }));
     expect(modified("app.process")).not.toBeNull();
-    // Repository Settings never mark anything.
-    view.emit(state("shared", 83, { timeout: 15 }));
-    expect(modified("timeout")).toBeNull();
     expect(view.find((node) => node.className.includes("overridden"))).toBeNull();
+  });
+
+  it("marks settings in Repository Settings that differ from their default, whatever User Settings override", () => {
+    const view = boot();
+    const modified = (key: string) =>
+      view.find(
+        (node) =>
+          node.className.startsWith("setting") &&
+          node.className.includes("modified") &&
+          !!node.querySelector("[id='" + key + "']"),
+      );
+    // timeout (default 10) and app.process (no default) are modified; the rest equal their default.
+    view.emit(
+      state("shared", 83, {
+        timeout: 15,
+        launch: "per-test",
+        input_mode: "pattern",
+        "app.process": "Orders.exe",
+      }),
+    );
+    expect(modified("timeout")).not.toBeNull();
+    expect(modified("app.process")).not.toBeNull();
+    expect(modified("launch")).toBeNull();
+    expect(modified("input_mode")).toBeNull();
+    // A setting that is not in the file is not modified, and a user override changes nothing here.
+    expect(modified("replay_scope")).toBeNull();
+    view.emit({
+      ...state("shared", 84, { timeout: 10 }),
+      user: { timeout: 99 },
+      inherited: { ...effective(), timeout: 99 },
+    });
+    expect(modified("timeout")).toBeNull();
   });
 });
