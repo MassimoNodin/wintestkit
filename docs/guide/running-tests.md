@@ -71,11 +71,13 @@ app:
   args: ["--no-splash"]
   cwd: C:/Program Files/Contoso
 highlight_actions: false
+highlight_color: "#FF0000"   # outline colour, quoted because # starts a YAML comment
 slow_mo_ms: 0
 ```
 
-Shared YAML rejects application paths. Legacy paths remain supported; move them from
-`pyproject.toml` to local YAML to keep them machine-specific. Keep secrets out of shared
+Shared YAML accepts `app.path` only as a path relative to the project directory (for example
+`bin/Debug/Orders.exe`) and rejects drive, UNC and rooted paths; keep absolute paths in local YAML.
+Legacy paths remain supported; move machine-specific ones from `pyproject.toml` to local YAML. Keep secrets out of shared
 configuration; advanced `app.env` settings accept string values in local YAML.
 Relative paths resolve from the project directory. Environment variables include
 `WTK_APP_PATH`, `WTK_LAUNCH`, `WTK_TIMEOUT`, `WTK_INPUT_MODE`, `WTK_SCREENSHOTS`, `WTK_REPLAY`,

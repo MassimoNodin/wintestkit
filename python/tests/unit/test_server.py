@@ -357,7 +357,7 @@ def test_highlight_raises_window_before_reading_bounds(
         button.rect = restored_rect
         return activated
 
-    def flash(rect: Rect, duration: int, *, block: bool) -> None:
+    def flash(rect: Rect, duration: int, *, color: int, block: bool) -> None:
         assert rect == restored_rect
         assert duration == 800
         assert not block
@@ -419,7 +419,9 @@ def test_inspect_highlight_outlines_without_raising_the_window_unless_asked(
     monkeypatch.setattr(
         actions, "raise_without_activating", lambda element: raised.append("raised") or True
     )
-    monkeypatch.setattr(overlay, "flash", lambda rect, duration, *, block: outlined.append(rect))
+    monkeypatch.setattr(
+        overlay, "flash", lambda rect, duration, *, color, block: outlined.append(rect)
+    )
     request(server, output, "inspect.highlight", {"nodeId": node["nodeId"]})
     assert raised == []  # off by default: the outline alone marks the element
     assert outlined == [button.rect]

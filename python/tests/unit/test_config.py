@@ -69,6 +69,7 @@ def test_defaults_without_pyproject(tmp_path: Path) -> None:
     assert config.screenshots == "on-failure"
     assert config.report_dir == tmp_path.resolve() / "wtk-report"
     assert config.highlight_actions is False
+    assert config.highlight_color == "#FF0000"
     assert config.slow_mo_ms == 0
     assert config.python_paths == (tmp_path.resolve(),)
     assert (config.replay, config.replay_fps, config.replay_scope) == ("off", 15.0, "window")
@@ -257,6 +258,9 @@ def test_the_removed_per_session_launch_mode_means_a_fresh_app_per_test(tmp_path
         ("slow_mo_ms = -1", "slow_mo_ms", "non-negative integer"),
         ("slow_mo_ms = 1.5", "slow_mo_ms", "non-negative integer"),
         ('highlight_actions = "yes"', "highlight_actions", "true or false"),
+        ('highlight_color = "red"', "highlight_color", "colour like '#FF0000'"),
+        ('highlight_color = "#FFF"', "highlight_color", "colour like '#FF0000'"),
+        ("highlight_color = 16711680", "highlight_color", "colour like '#FF0000'"),
         ("python_paths = [1]", "python_paths", "list of strings"),
         ('report_dir = ""', "report_dir", "non-empty string"),
     ],

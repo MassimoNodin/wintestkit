@@ -22,6 +22,14 @@ log = logging.getLogger("wintestkit.overlay")
 RED = 0x000000FF  # COLORREF is 0x00BBGGRR
 _MAGENTA = 0x00FF00FF  # colour key: painted magenta pixels are fully transparent
 
+
+def parse_color(text: str) -> int:
+    """Convert ``#RRGGBB`` to a COLORREF; magenta is nudged because it is the transparent key."""
+    value = int(text.lstrip("#"), 16)
+    color = ((value & 0xFF) << 16) | (value & 0xFF00) | (value >> 16)
+    return color + 0x100 if color == _MAGENTA else color
+
+
 _WM_SHOW = win32.WM_APP + 1
 _WM_HIDE = win32.WM_APP + 2
 _WM_CLOSE = win32.WM_APP + 3

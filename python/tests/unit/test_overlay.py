@@ -45,3 +45,16 @@ def test_highlight_does_not_expand_target_bounds(
     ]
     assert invalidations == [123]
     assert done.is_set()
+
+
+@pytest.mark.parametrize(
+    ("text", "colorref"),
+    [
+        ("#FF0000", 0x0000FF),
+        ("#00ff7f", 0x7FFF00),
+        ("#1E90FF", 0xFF901E),
+        ("#FF00FF", 0xFF01FF),  # magenta is the transparent colour key, so it is nudged
+    ],
+)
+def test_parse_color_builds_a_colorref(text: str, colorref: int) -> None:
+    assert overlay.parse_color(text) == colorref

@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import math
 import os
+import re
 import tomllib
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Any, Literal, cast
 
 import yaml
@@ -53,6 +54,7 @@ _TOP_LEVEL_KEYS = {
     "screenshots",
     "report_dir",
     "highlight_actions",
+    "highlight_color",
     "slow_mo_ms",
     "python_paths",
     "property_aliases",
@@ -124,6 +126,7 @@ class WtkConfig:
     replay_max_frames: int = 3000
     replay_max_bytes: int = 104857600
     object_previews: bool = True
+    highlight_color: str = "#FF0000"
 
 
 # -- project discovery ----------------------------------------------------------------------------
@@ -211,6 +214,12 @@ def _boolean(key: str, value: Any) -> bool:
     if not isinstance(value, bool):
         raise _fail(key, f"expected true or false, got {value!r}")
     return value
+
+
+def _hex_color(key: str, value: Any) -> str:
+    if not isinstance(value, str) or re.fullmatch(r"#[0-9A-Fa-f]{6}", value) is None:
+        raise _fail(key, f"expected a colour like '#FF0000' (quote it in YAML), got {value!r}")
+    return value.upper()
 
 
 def _string(key: str, value: Any) -> str:
@@ -368,6 +377,12 @@ def _read_yaml(path: Path) -> dict[str, Any]:
     return cast("dict[str, Any]", value)
 
 
+def _is_machine_path(value: str) -> bool:
+    """True for drive, UNC and rooted paths, which only make sense on one machine."""
+    pure = PureWindowsPath(value)
+    return bool(pure.drive or pure.root)
+
+
 def _resolve_path(root: Path, value: str) -> Path:
     path = Path(value)
     return path if path.is_absolute() else (root / path).resolve()
@@ -405,9 +420,12 @@ def load_config(start: Path | None = None, overrides: Mapping[str, Any] | None =
         table = _wtk_table(data) or {}
         _layer(values, _flatten(table))
         shared = _flatten(_read_yaml(root / "wintestkit.yaml"))
-        if "app.path" in shared:
+        shared_path = shared.get("app.path")
+        if isinstance(shared_path, str) and _is_machine_path(shared_path):
             raise ConfigError(
-                "Store app.path in ignored wintestkit.local.yaml, not wintestkit.yaml"
+                "Use a path relative to the project folder for app.path in wintestkit.yaml; "
+                "absolute paths belong in ignored wintestkit.local.yaml",
+                key="app.path",
             )
         _layer(values, shared)
         local_toml = _read_pyproject(root / "wintestkit.local.toml") or {}
@@ -442,6 +460,7 @@ def load_config(start: Path | None = None, overrides: Mapping[str, Any] | None =
             root, _string("report_dir", values.get("report_dir", "wtk-report"))
         ),
         highlight_actions=_boolean("highlight_actions", values.get("highlight_actions", False)),
+        highlight_color=_hex_color("highlight_color", values.get("highlight_color", "#FF0000")),
         object_previews=_boolean("object_previews", values.get("object_previews", True)),
         slow_mo_ms=_non_negative_int("slow_mo_ms", values.get("slow_mo_ms", 0)),
         python_paths=tuple(_resolve_path(root, p) for p in python_paths),

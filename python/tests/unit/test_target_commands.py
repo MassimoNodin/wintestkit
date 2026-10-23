@@ -66,7 +66,7 @@ def test_highlight_json_and_overlay_options(
         == 0
     )
     assert seen == [0.5]
-    assert record["flashes"] == [((record["info"].rect, 25), {"block": True})]
+    assert record["flashes"] == [((record["info"].rect, 25), {"color": overlay.RED, "block": True})]
     assert json.loads(capsys.readouterr().out)["element"]["name"] == "OK"
     assert not record["closed"]
 
@@ -90,7 +90,7 @@ def test_highlight_raises_window_before_reading_bounds(
         lambda *args: ElementResult("found", 1.0, element=live.info(), uia=live),
     )
     assert invoke(record, "highlight", "main.py::Main.ok", "--duration", "10") == 0
-    assert record["flashes"] == [((restored, 10), {"block": True})]
+    assert record["flashes"] == [((restored, 10), {"color": overlay.RED, "block": True})]
 
 
 @pytest.mark.parametrize("status", ["not_found", "ambiguous", "error"])
