@@ -71,7 +71,12 @@ def run(args: argparse.Namespace) -> int:
             else:
                 rect = result.element.rect if result.element is not None else None
             if rect is not None and not rect.is_empty():
-                overlay.flash(rect, args.duration, block=True)
+                overlay.flash(
+                    rect,
+                    args.duration,
+                    color=overlay.parse_color(cfg.highlight_color),
+                    block=True,
+                )
         if args.json:
             common.print_json(result.to_dict())
         else:

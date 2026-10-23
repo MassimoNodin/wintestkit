@@ -54,7 +54,6 @@ def test_configuration_precedence(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
         "timeout: -1",
         "timeout: .inf",
         "unexpected: true",
-        "app:\n  path: App.exe",
         "!!python/object:os.system {}",
     ],
 )
@@ -69,3 +68,43 @@ def test_bad_local_file_does_not_silently_fall_back(tmp_path: Path) -> None:
     (tmp_path / "wintestkit.local.yaml").write_text("timeout: wrong", encoding="utf-8")
     with pytest.raises(ConfigError):
         load_config(tmp_path)
+
+
+def test_shared_yaml_accepts_relative_app_path_and_args(tmp_path: Path) -> None:
+    (tmp_path / "wintestkit.yaml").write_text(
+        "app:\n  path: bin/Debug/App.exe\n  args: ['--test-mode']\n", encoding="utf-8"
+    )
+    config = load_config(tmp_path)
+    assert config.app is not None
+    assert config.app.path == tmp_path.resolve() / "bin" / "Debug" / "App.exe"
+    assert config.app.args == ("--test-mode",)
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["C:/Apps/App.exe", r"C:\Apps\App.exe", r"\\host\share\App.exe", "/App.exe"],
+)
+def test_shared_yaml_rejects_machine_specific_app_path(tmp_path: Path, value: str) -> None:
+    (tmp_path / "wintestkit.yaml").write_text(f"app:\n  path: '{value}'\n", encoding="utf-8")
+    with pytest.raises(ConfigError, match="relative to the project folder") as error:
+        load_config(tmp_path)
+    assert error.value.key == "app.path"
+
+
+def test_local_yaml_overrides_a_shared_relative_app_path(tmp_path: Path) -> None:
+    (tmp_path / "wintestkit.yaml").write_text("app:\n  path: bin/App.exe\n", encoding="utf-8")
+    (tmp_path / "wintestkit.local.yaml").write_text(
+        "app:\n  path: 'C:/Apps/Mine.exe'\n", encoding="utf-8"
+    )
+    config = load_config(tmp_path)
+    assert config.app is not None
+    assert config.app.path == Path("C:/Apps/Mine.exe")
+
+
+def test_highlight_color_is_normalised_and_an_unquoted_hash_is_explained(tmp_path: Path) -> None:
+    (tmp_path / "wintestkit.yaml").write_text("highlight_color: '#00ff7f'\n", encoding="utf-8")
+    assert load_config(tmp_path).highlight_color == "#00FF7F"
+    (tmp_path / "wintestkit.yaml").write_text("highlight_color: #00ff7f\n", encoding="utf-8")
+    with pytest.raises(ConfigError, match="quote it in YAML") as error:
+        load_config(tmp_path)
+    assert error.value.key == "highlight_color"

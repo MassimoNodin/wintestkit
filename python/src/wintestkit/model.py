@@ -672,7 +672,12 @@ class _BoundBase:
         rect = element.rect
         if rect is None:
             raise ActionError(f"{self._description()} has no on-screen rectangle to highlight")
-        overlay.flash(rect, duration_ms, block=True)
+        overlay.flash(
+            rect,
+            duration_ms,
+            color=overlay.parse_color(runtime.get_config().highlight_color),
+            block=True,
+        )
 
 
 class BoundWindow(_BoundBase):
@@ -899,7 +904,12 @@ class BoundControl(_BoundBase):
         if runtime.get_config().highlight_actions:
             rect = element.rect
             if rect is not None:
-                overlay.flash(rect, 400, block=True)
+                overlay.flash(
+                    rect,
+                    400,
+                    color=overlay.parse_color(runtime.get_config().highlight_color),
+                    block=True,
+                )
 
     def step(
         self, action: str, args: Mapping[str, Any] | None = None, *, secret: bool = False

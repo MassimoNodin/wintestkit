@@ -279,13 +279,15 @@ class Server:
         raise_without_activating(element)
         return element.rect
 
-    @staticmethod
-    def _flash(rect: Rect | None, params: dict[str, Any]) -> None:
-        """Outline ``rect`` for a moment."""
+    def _flash(self, rect: Rect | None, params: dict[str, Any]) -> None:
+        """Outline ``rect`` for a moment in the configured highlight colour."""
         from wintestkit.engine import overlay
 
         if rect is not None:
-            overlay.flash(rect, int(params.get("durationMs", 1500)), block=False)
+            color = overlay.parse_color(
+                self.cfg.highlight_color if self.cfg is not None else "#FF0000"
+            )
+            overlay.flash(rect, int(params.get("durationMs", 1500)), color=color, block=False)
 
     def _app(self, required: bool = True) -> App | None:
         from wintestkit.app import App

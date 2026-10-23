@@ -66,7 +66,7 @@ def test_bound_highlight_reads_bounds_after_raise(monkeypatch: pytest.MonkeyPatc
         calls.append("foreground")
         return True
 
-    def flash(rect: Rect, duration: int, *, block: bool) -> None:
+    def flash(rect: Rect, duration: int, *, color: int, block: bool) -> None:
         assert rect == restored
         assert duration == 250
         assert block
