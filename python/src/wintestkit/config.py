@@ -8,7 +8,7 @@ import re
 import tomllib
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
-from pathlib import Path, PureWindowsPath
+from pathlib import Path
 from typing import Any, Literal, cast
 
 import yaml
@@ -377,12 +377,6 @@ def _read_yaml(path: Path) -> dict[str, Any]:
     return cast("dict[str, Any]", value)
 
 
-def _is_machine_path(value: str) -> bool:
-    """True for drive, UNC and rooted paths, which only make sense on one machine."""
-    pure = PureWindowsPath(value)
-    return bool(pure.drive or pure.root)
-
-
 def _resolve_path(root: Path, value: str) -> Path:
     path = Path(value)
     return path if path.is_absolute() else (root / path).resolve()
@@ -420,13 +414,6 @@ def load_config(start: Path | None = None, overrides: Mapping[str, Any] | None =
         table = _wtk_table(data) or {}
         _layer(values, _flatten(table))
         shared = _flatten(_read_yaml(root / "wintestkit.yaml"))
-        shared_path = shared.get("app.path")
-        if isinstance(shared_path, str) and _is_machine_path(shared_path):
-            raise ConfigError(
-                "Use a path relative to the project folder for app.path in wintestkit.yaml; "
-                "absolute paths belong in ignored wintestkit.local.yaml",
-                key="app.path",
-            )
         _layer(values, shared)
         local_toml = _read_pyproject(root / "wintestkit.local.toml") or {}
         _layer(values, _flatten(_wtk_table(local_toml) or {}))

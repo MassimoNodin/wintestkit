@@ -89,9 +89,7 @@ export async function readConfiguration(
     if (source === undefined) continue;
     if (name.endsWith(".yaml")) {
       const document = parseSettings(
-        source,
-        name.includes(".local.") ? "local" : "shared",
-      );
+        source);
       Object.assign(
         merged,
         flattenSettings(document.toJS({ maxAliasCount: 50 }) ?? {}),

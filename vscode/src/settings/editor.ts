@@ -6,7 +6,7 @@ import { ensureLocalIgnores, readConfiguration, readOptional } from "./files";
 import {
   flattenSettings,
   parseSettings,
-  projectRelativePath,
+  repositoryPath,
   settingFields,
   settingSections,
   settingsScope,
@@ -124,10 +124,7 @@ export class ConfigurationEditor implements vscode.CustomTextEditorProvider {
     let historyPending: ReturnType<typeof setTimeout> | undefined;
     // The settings of one YAML file in this folder. The file being edited is read from its buffer,
     // the other from disk; a file that is missing or invalid has no settings to show.
-    const settingsOf = async (
-      file: string,
-      fileScope: SettingsScope,
-    ): Promise<Record<string, unknown>> => {
+    const settingsOf = async (file: string): Promise<Record<string, unknown>> => {
       try {
         const text =
           file === path.basename(document.uri.fsPath)
@@ -135,7 +132,7 @@ export class ConfigurationEditor implements vscode.CustomTextEditorProvider {
             : await readOptional(vscode.Uri.joinPath(root, file));
         if (text === undefined) return {};
         return flattenSettings(
-          parseSettings(text, fileScope).toJS({ maxAliasCount: 50 }) ?? {},
+          parseSettings(text).toJS({ maxAliasCount: 50 }) ?? {},
         );
       } catch {
         return {};
@@ -145,10 +142,10 @@ export class ConfigurationEditor implements vscode.CustomTextEditorProvider {
       const request = ++sequence;
       const version = document.version;
       try {
-        const parsed = parseSettings(document.getText(), scope);
+        const parsed = parseSettings(document.getText());
         const name = path.basename(document.uri.fsPath);
-        const repository = await settingsOf("wintestkit.yaml", "shared");
-        const user = await settingsOf("wintestkit.local.yaml", "local");
+        const repository = await settingsOf("wintestkit.yaml");
+        const user = await settingsOf("wintestkit.local.yaml");
         const effective = await readConfiguration(root, {
           [name]: document.getText(),
         });
@@ -194,7 +191,7 @@ export class ConfigurationEditor implements vscode.CustomTextEditorProvider {
         throw new Error("Configuration changed. Try again.");
     };
     const save = async () => {
-      parseSettings(document.getText(), scope);
+      parseSettings(document.getText());
       if (scope === "local") await ensureLocalIgnores(root);
       if (!(await document.save()))
         throw new Error("Configuration was not saved.");
@@ -242,7 +239,7 @@ export class ConfigurationEditor implements vscode.CustomTextEditorProvider {
                 "app.path",
                 scope === "local"
                   ? selection[0].fsPath
-                  : projectRelativePath(root.fsPath, selection[0].fsPath),
+                  : repositoryPath(root.fsPath, selection[0].fsPath),
                 false,
               );
               await panel.webview.postMessage({

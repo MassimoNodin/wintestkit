@@ -40,9 +40,9 @@ export const settingFields: SettingField[] = [
       repository: "bin/Debug/Orders.exe",
     },
     description: {
-      user: "The .exe WinTestKit starts for tests on this machine. Use an absolute path; it takes precedence over the repository's executable.",
+      user: "The .exe to start for tests on this machine.",
       repository:
-        "The .exe WinTestKit starts for tests, shared with everyone who uses this repository. Use a path relative to the project folder; set an absolute path in User Settings instead.",
+        "The .exe to start for tests. Use a path relative to the project folder.",
     },
     group: "Application",
   },
@@ -52,9 +52,8 @@ export const settingFields: SettingField[] = [
     kind: "string",
     placeholder: same("Orders.exe"),
     description: {
-      user: "Finds or attaches to an application that is already running on this machine. Takes precedence over the repository's process name.",
-      repository:
-        "Finds or attaches to an application that is already running, for everyone who uses this repository. Use the exe name, for example Orders.exe.",
+      user: "Process to find or attach to on this machine.",
+      repository: "Process to find or attach to, for example Orders.exe.",
     },
     group: "Application",
   },
@@ -63,9 +62,8 @@ export const settingFields: SettingField[] = [
     label: "Application arguments (JSON array)",
     kind: "list",
     description: {
-      user: `Command-line arguments for the application on this machine, for example ["--demo"]. They replace the repository's arguments.`,
-      repository:
-        'Command-line arguments the application starts with for everyone who uses this repository, for example ["--demo"].',
+      user: 'Arguments for this machine, for example ["--demo"].',
+      repository: 'Arguments for everyone, for example ["--demo"].',
     },
     default: [],
     group: "Application",
@@ -75,9 +73,7 @@ export const settingFields: SettingField[] = [
     label: "Working directory",
     kind: "string",
     placeholder: same("C:\\Program Files\\Contoso"),
-    description: same(
-      "Folder the application starts in on this machine. Only available in User Settings, because folders differ between machines.",
-    ),
+    description: same("Folder the application starts in."),
     localOnly: true,
     group: "Application",
   },
@@ -85,11 +81,9 @@ export const settingFields: SettingField[] = [
     key: "launch",
     label: "Application lifecycle",
     kind: "select",
-    description: {
-      user: "Start a fresh app for every test, or attach to one that is already running, on this machine. Overrides the repository's choice.",
-      repository:
-        "Start a fresh app for every test, or attach to a running app, as the default for everyone who uses this repository.",
-    },
+    description: same(
+      "Start a fresh app for every test, or attach to a running one.",
+    ),
     default: "per-test",
     choices: ["per-test", "attach"],
     group: "Application",
@@ -99,9 +93,8 @@ export const settingFields: SettingField[] = [
     label: "Startup timeout (seconds)",
     kind: "number",
     description: {
-      user: "How long to wait for the application's window to appear after it starts. Raise it if this machine is slow.",
-      repository:
-        "How long to wait for the application's window to appear after it starts, for everyone who uses this repository.",
+      user: "Seconds to wait for the window. Raise it on a slow machine.",
+      repository: "Seconds to wait for the application's window to appear.",
     },
     default: 30,
     minimum: 0.001,
@@ -112,9 +105,8 @@ export const settingFields: SettingField[] = [
     label: "Close timeout (seconds)",
     kind: "number",
     description: {
-      user: "How long to wait for the application to close before it is stopped. Raise it if this machine is slow.",
-      repository:
-        "How long to wait for the application to close before it is stopped, for everyone who uses this repository.",
+      user: "Seconds to wait for the app to close. Raise it on a slow machine.",
+      repository: "Seconds to wait for the app to close before it is stopped.",
     },
     default: 10,
     minimum: 0.001,
@@ -125,9 +117,8 @@ export const settingFields: SettingField[] = [
     label: "Action / assertion timeout (seconds)",
     kind: "number",
     description: {
-      user: "How long an action or assertion waits for its element before it fails. Raise it if this machine is slow.",
-      repository:
-        "How long an action or assertion waits for its element before it fails, for everyone who uses this repository.",
+      user: "Seconds an action or assertion waits. Raise it on a slow machine.",
+      repository: "Seconds an action or assertion waits before it fails.",
     },
     default: 10,
     minimum: 0.001,
@@ -137,7 +128,7 @@ export const settingFields: SettingField[] = [
     key: "input_mode",
     label: "Input mode",
     kind: "select",
-    description: same("Use UI Automation patterns or simulated mouse input."),
+    description: same("UI Automation patterns or simulated mouse input."),
     default: "pattern",
     choices: ["pattern", "mouse"],
     group: "Test runs",
@@ -146,9 +137,7 @@ export const settingFields: SettingField[] = [
     key: "screenshots",
     label: "Screenshot policy",
     kind: "select",
-    description: same(
-      "When screenshots are saved: never, only when a test fails, or after every step.",
-    ),
+    description: same("Never, on failure, or after every step."),
     default: "on-failure",
     choices: ["off", "on-failure", "every-step"],
     group: "Evidence",
@@ -158,7 +147,7 @@ export const settingFields: SettingField[] = [
     label: "Save last-successful element images",
     kind: "boolean",
     description: same(
-      "Save an element crop and a red-outlined app image with the project. Both may contain sensitive information.",
+      "Save element and app images; they may show sensitive data.",
     ),
     default: true,
     group: "Evidence",
@@ -167,7 +156,7 @@ export const settingFields: SettingField[] = [
     key: "replay",
     label: "Test replay recording",
     kind: "select",
-    description: same("Capture screenshots for playback in the HTML report."),
+    description: same("Record screenshots for playback in the report."),
     default: "off",
     choices: ["off", "on", "retain-on-failure"],
     group: "Evidence",
@@ -176,9 +165,7 @@ export const settingFields: SettingField[] = [
     key: "replay_fps",
     label: "Replay capture rate (FPS)",
     kind: "number",
-    description: same(
-      "Frames captured per second while a replay is recorded. Higher is smoother but makes larger reports.",
-    ),
+    description: same("Frames per second recorded for replays."),
     default: 15,
     minimum: 0,
     maximum: 30,
@@ -188,9 +175,7 @@ export const settingFields: SettingField[] = [
     key: "replay_scope",
     label: "Replay capture scope",
     kind: "select",
-    description: same(
-      "Record only the application window, or the whole desktop.",
-    ),
+    description: same("Record the app window or the whole desktop."),
     default: "window",
     choices: ["window", "desktop"],
     group: "Evidence",
@@ -199,9 +184,7 @@ export const settingFields: SettingField[] = [
     key: "report_dir",
     label: "Report directory",
     kind: "string",
-    description: same(
-      "Folder the HTML report, screenshots and replay frames are written to.",
-    ),
+    description: same("Folder for the HTML report and its images."),
     default: "wtk-report",
     group: "Test runs",
   },
@@ -209,9 +192,7 @@ export const settingFields: SettingField[] = [
     key: "python_paths",
     label: "Python import paths (JSON array)",
     kind: "list",
-    description: same(
-      'Folders added to Python\'s import path so tests can import your own modules, for example ["."].',
-    ),
+    description: same("Folders added to Python's import path."),
     default: ["."],
     group: "Test runs",
   },
@@ -219,9 +200,7 @@ export const settingFields: SettingField[] = [
     key: "highlight_actions",
     label: "Flash elements during test runs",
     kind: "boolean",
-    description: same(
-      "Flash each element just before a test acts on it. Spy's Highlight is separate and only outlines an element you select.",
-    ),
+    description: same("Flash each element before a test acts on it."),
     default: false,
     localOnly: true,
     group: "Debugging",
@@ -230,9 +209,7 @@ export const settingFields: SettingField[] = [
     key: "highlight_color",
     label: "Highlight color",
     kind: "color",
-    description: same(
-      "The outline color used whenever WinTestKit highlights an element: flashes during test runs, Spy and the highlight commands.",
-    ),
+    description: same("Outline color for flashes, highlights and Spy."),
     default: "#FF0000",
     localOnly: true,
     group: "Debugging",
@@ -241,7 +218,7 @@ export const settingFields: SettingField[] = [
     key: "slow_mo_ms",
     label: "Slow motion (milliseconds)",
     kind: "number",
-    description: same("Pause after each action so runs are easier to follow."),
+    description: same("Pause after each action to follow runs easily."),
     default: 0,
     minimum: 0,
     localOnly: true,
@@ -276,13 +253,13 @@ export function settingsScope(filename: string): SettingsScope {
   return filename.endsWith("wintestkit.local.yaml") ? "local" : "shared";
 }
 
-export function parseSettings(source: string, scope: SettingsScope) {
+export function parseSettings(source: string) {
   const document = parseDocument(source, { version: "1.1", uniqueKeys: true });
   if (document.errors.length) throw new Error(document.errors[0].message);
   if (document.contents !== null && !isMap(document.contents))
     throw new Error("Configuration must be a YAML mapping.");
   const value: unknown = document.toJS({ maxAliasCount: 50 }) ?? {};
-  validateSettings(value, scope);
+  validateSettings(value);
   return document;
 }
 
@@ -304,13 +281,15 @@ export function flattenSettings(
   return flat;
 }
 
-/** The path as stored in the repository file: relative to the project folder, with forward slashes. */
-export function projectRelativePath(root: string, file: string): string {
+/**
+ * The path as stored in the repository file: relative to the project folder, with forward slashes,
+ * when the file is inside it. A file elsewhere is stored as the absolute path, which the page warns
+ * about because it only works where the file is in the same place.
+ */
+export function repositoryPath(root: string, file: string): string {
   const relative = path.relative(root, file);
   if (!relative || relative.startsWith("..") || path.isAbsolute(relative))
-    throw new Error(
-      "Choose an executable inside the project folder, or set an absolute path in User Settings.",
-    );
+    return file;
   return relative.split(path.sep).join("/");
 }
 
@@ -321,7 +300,6 @@ export function isMachinePath(value: string): boolean {
 
 export function validateSettings(
   value: unknown,
-  scope: SettingsScope,
 ): asserts value is Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value))
     throw new Error("Configuration must be a mapping.");
@@ -345,15 +323,6 @@ export function validateSettings(
     }
     const field = settingFields.find((field) => field.key === key);
     if (!field) throw new Error("Unknown setting: " + key);
-    if (
-      key === "app.path" &&
-      scope === "shared" &&
-      typeof entry === "string" &&
-      isMachinePath(entry)
-    )
-      throw new Error(
-        "Use a path relative to the project folder in Repository Settings; absolute paths belong in User Settings.",
-      );
     if (field.kind === "boolean" && typeof entry !== "boolean")
       throw new Error(key + " must be true or false.");
     if (
@@ -401,7 +370,7 @@ export function updateSetting(
   const field = settingFields.find((field) => field.key === key);
   if (!field || (scope === "shared" && field.localOnly))
     throw new Error("Edit this setting in local machine settings.");
-  const document: Document = parseSettings(source, scope);
+  const document: Document = parseSettings(source);
   if (document.contents === null) document.contents = document.createNode({});
   if (!remove && key.startsWith("app.") && !document.has("app"))
     document.set("app", document.createNode({}));
@@ -412,6 +381,6 @@ export function updateSetting(
     (document.get("app", true) as { items: unknown[] }).items.length === 0
   )
     document.delete("app");
-  validateSettings(document.toJS({ maxAliasCount: 50 }), scope);
+  validateSettings(document.toJS({ maxAliasCount: 50 }));
   return document.toString();
 }

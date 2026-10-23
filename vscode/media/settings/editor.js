@@ -168,6 +168,10 @@
       field.kind === "color" ? String(value).toUpperCase() : display(value);
     return same(state.values[field.key]) !== same(base);
   }
+  // Drive, UNC and rooted paths only make sense where the file is in the same place.
+  function isMachinePath(value) {
+    return /^(?:[a-zA-Z]:|[\\/])/.test(String(value).trim());
+  }
   function isExplicit(key) {
     return Object.hasOwn(state.values, key);
   }
@@ -536,6 +540,21 @@
       ids.push(description.id);
       info.append(description);
     }
+    if (
+      field.key === "app.path" &&
+      inShared &&
+      explicit &&
+      isMachinePath(state.values[field.key])
+    ) {
+      const machine = element(
+        "p",
+        "warning",
+        "⚠ Absolute path: other machines and CI must override it in User Settings.",
+      );
+      machine.id = field.key + "-machine-warning";
+      ids.push(machine.id);
+      info.append(machine);
+    }
     const overriddenBy = inShared && explicit ? state.user?.[field.key] : undefined;
     if (overriddenBy !== undefined) {
       const warning = element("p", "warning");
@@ -546,7 +565,7 @@
           "",
           "⚠ Overridden in your User Settings (" +
             display(overriddenBy) +
-            "), so this value is not used on this machine. Teammates and CI still use it. ",
+            "). ",
         ),
       );
       const open = element("button", "link", "Open User Settings");

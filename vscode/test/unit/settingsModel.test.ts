@@ -3,7 +3,8 @@ import { describe, expect, it } from "vitest";
 import {
   flattenSettings,
   parseSettings,
-  projectRelativePath,
+  isMachinePath,
+  repositoryPath,
   settingFields,
   settingSections,
   settingsScope,
@@ -17,34 +18,38 @@ describe("YAML configuration editing", () => {
     const edited = updateSetting(source, "shared", "timeout", 25, false);
     expect(edited).toContain("# My settings");
     expect(edited).toContain("# Keep this note");
-    expect(parseSettings(edited, "shared").toJS()).toEqual({
+    expect(parseSettings(edited).toJS()).toEqual({
       timeout: 25,
       app: { process: "App.exe" },
     });
   });
   it("allows a project-relative executable and arguments in the repository file", () => {
     const source = updateSetting("{}", "shared", "app.path", "bin/Debug/App.exe", false);
-    expect(parseSettings(source, "shared").toJS()).toEqual({
+    expect(parseSettings(source).toJS()).toEqual({
       app: { path: "bin/Debug/App.exe" },
     });
     const withArgs = updateSetting(source, "shared", "app.args", ["--test-mode"], false);
-    expect(parseSettings(withArgs, "shared").toJS()).toEqual({
+    expect(parseSettings(withArgs).toJS()).toEqual({
       app: { path: "bin/Debug/App.exe", args: ["--test-mode"] },
     });
-    for (const absolute of ["C:/App.exe", "C:\\Apps\\App.exe", "\\\\host\\share\\App.exe", "/App.exe"])
-      expect(() =>
-        updateSetting("{}", "shared", "app.path", absolute, false),
-      ).toThrow(/relative to the project folder/);
   });
-  it("stores a browsed executable relative to the project, and only inside it", () => {
+  it("allows an absolute executable in the repository file, which the page warns about", () => {
+    for (const absolute of ["C:/App.exe", "C:\\Apps\\App.exe", "\\\\host\\share\\App.exe", "/App.exe"]) {
+      expect(isMachinePath(absolute)).toBe(true);
+      const source = updateSetting("{}", "shared", "app.path", absolute, false);
+      expect(parseSettings(source).toJS()).toEqual({ app: { path: absolute } });
+    }
+    expect(isMachinePath("bin/Debug/App.exe")).toBe(false);
+  });
+  it("stores a browsed executable relative to the project when it is inside it", () => {
     const root = path.resolve("project");
-    expect(projectRelativePath(root, path.join(root, "bin", "Debug", "App.exe"))).toBe(
+    expect(repositoryPath(root, path.join(root, "bin", "Debug", "App.exe"))).toBe(
       "bin/Debug/App.exe",
     );
-    expect(() => projectRelativePath(root, path.resolve("elsewhere", "App.exe"))).toThrow(
-      /inside the project folder/,
-    );
-    expect(() => projectRelativePath(root, root)).toThrow(/inside the project folder/);
+    // Outside the project there is no relative path, so the absolute path is stored.
+    const elsewhere = path.resolve("elsewhere", "App.exe");
+    expect(repositoryPath(root, elsewhere)).toBe(elsewhere);
+    expect(repositoryPath(root, root)).toBe(root);
   });
   it("keeps absolute executable paths and personal controls in User Settings", () => {
     expect(() =>
@@ -58,13 +63,11 @@ describe("YAML configuration editing", () => {
       false,
     );
     expect(
-      flattenSettings(parseSettings(source, "local").toJS())["app.path"],
+      flattenSettings(parseSettings(source).toJS())["app.path"],
     ).toBe("C:\\Apps\\App.exe");
     expect(
       parseSettings(
-        updateSetting(source, "local", "app.path", null, true),
-        "local",
-      ).toJS(),
+        updateSetting(source, "local", "app.path", null, true)).toJS(),
     ).toEqual({});
   });
   it.each([
@@ -75,10 +78,9 @@ describe("YAML configuration editing", () => {
     "app: nope",
     "app: !!omap []",
     "app:\n  env: !!omap []",
-    "app:\n  path: C:/App.exe",
     "foo: true",
   ])("rejects invalid shared YAML: %s", (source) => {
-    expect(() => parseSettings(source, "shared")).toThrow();
+    expect(() => parseSettings(source)).toThrow();
   });
   it.each([
     ["timeout", 0],
@@ -92,7 +94,7 @@ describe("YAML configuration editing", () => {
     const source = key.startsWith("app.") ? "app:\n  env: {}\n" : "{}";
     if (key === "app.env")
       expect(() =>
-        parseSettings("app:\n  env:\n    TOKEN: 123", "local"),
+        parseSettings("app:\n  env:\n    TOKEN: 123"),
       ).toThrow();
     else
       expect(() =>
@@ -101,14 +103,12 @@ describe("YAML configuration editing", () => {
   });
   it("edits an empty YAML document as an ordinary mapping", () => {
     const source = updateSetting("", "local", "app.path", "C:/App.exe", false);
-    expect(parseSettings(source, "local").toJS()).toEqual({
+    expect(parseSettings(source).toJS()).toEqual({
       app: { path: "C:/App.exe" },
     });
     expect(
       parseSettings(
-        updateSetting("", "shared", "timeout", 15, false),
-        "shared",
-      ).toJS(),
+        updateSetting("", "shared", "timeout", 15, false)).toJS(),
     ).toEqual({ timeout: 15 });
   });
   it("lists every local setting, starting with the executable path under Application", () => {
@@ -147,7 +147,7 @@ describe("YAML configuration editing", () => {
   it("allows portable object previews to be disabled in shared or local settings", () => {
     for (const scope of ["shared", "local"] as const) {
       const source = updateSetting("{}", scope, "object_previews", false, false);
-      expect(parseSettings(source, scope).toJS()).toEqual({ object_previews: false });
+      expect(parseSettings(source).toJS()).toEqual({ object_previews: false });
       expect(() =>
         updateSetting(source, scope, "object_previews", "false", false),
       ).toThrow(/true or false/);
@@ -180,7 +180,7 @@ describe("YAML configuration editing", () => {
   });
   it("stores the highlight color as a quoted #RRGGBB value in User Settings only", () => {
     const source = updateSetting("{}", "local", "highlight_color", "#1E90FF", false);
-    expect(parseSettings(source, "local").toJS()).toEqual({ highlight_color: "#1E90FF" });
+    expect(parseSettings(source).toJS()).toEqual({ highlight_color: "#1E90FF" });
     expect(source).toMatch(/highlight_color: ["']#1E90FF["']/);
     for (const bad of ["red", "#FFF", "1E90FF", "#GG0000", 16711680])
       expect(() => updateSetting("{}", "local", "highlight_color", bad, false)).toThrow(
