@@ -783,6 +783,17 @@
     const source = previewImages && (previewMode === "context" ? previewImages.windowDataUrl : previewImages.elementDataUrl);
     if (source) post("openPreview", { view: previewMode === "context" ? "window" : "element", dataUrl: source });
   };
+  // The frame fits every capture inside one rectangle. A capture smaller than the frame is
+  // enlarged to fill it; do that without smoothing, so its pixels stay sharp instead of blurring.
+  // A large one is only ever reduced, which the browser smooths well.
+  element("object-preview-image").addEventListener("load", () => {
+    const image = element("object-preview-image");
+    const frame = element("object-preview-frame");
+    image.className =
+      image.naturalWidth < frame.clientWidth && image.naturalHeight < frame.clientHeight
+        ? "magnified"
+        : "";
+  });
   element("preview-open").addEventListener("click", openPreview);
   element("object-preview-image").addEventListener("click", openPreview);
   for (const [id, mode] of [["preview-element", "element"], ["preview-context", "context"]])

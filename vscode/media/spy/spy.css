@@ -961,6 +961,7 @@ body.tour-dim::after {
     height: 100%;
     object-fit: contain;
 }
+#object-preview-image.magnified { image-rendering: pixelated; }
 #object-preview-image:not([hidden]) { cursor: pointer; }
 #object-preview-image[hidden] { display: none; }
 #object-preview-status { margin: 6px 12px 10px; }

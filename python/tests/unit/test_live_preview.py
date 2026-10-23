@@ -68,9 +68,31 @@ def test_preview_clips_an_element_that_extends_past_its_window(window_frame: lis
     assert (result["element"]["width"], result["element"]["height"]) == (10, 10)
 
 
-def test_large_captures_are_scaled_down_with_the_outline_kept(
+def test_captures_keep_their_real_size_so_text_stays_sharp(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    # A full-screen window on a 3440x1440 monitor used to be shrunk to 1600 px, which blurred it.
+    big = Rect(0, 0, 3440, 1408)
+    pixels = bytes([200, 200, 200]) * (big.width * big.height)
+    monkeypatch.setattr(screenshot, "capture_window_frame", lambda hwnd, pid=None: (big, pixels))
+    monkeypatch.setattr(win32, "root_window", lambda hwnd: hwnd)
+    child = Node(Rect(1000, 400, 800, 200), parent=Node(big, hwnd=3))
+    result = live_preview.capture_live_preview(child)  # type: ignore[arg-type]
+    assert (result["window"]["width"], result["window"]["height"]) == (3440, 1408)
+    assert (result["element"]["width"], result["element"]["height"]) == (800, 200)
+    context = decode(result["window"])
+    outline = round(max(big.width, big.height) / live_preview._OUTLINE_STEP)
+    assert outline > live_preview._OUTLINE_WIDTH
+    # The outline grows with the window, so it is still a visible box in a scaled-down panel.
+    assert context.getpixel((1000 + outline - 1, 500))[0] > 200
+    assert context.getpixel((1000 + outline - 1, 500))[1] < 80
+    assert context.getpixel((1000 + outline + 2, 500)) == pytest.approx((200, 200, 200), abs=4)
+
+
+def test_captures_past_the_edge_limit_are_scaled_down_with_the_outline_kept(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(live_preview, "MAX_EDGE", 1600)
     big = Rect(0, 0, 3200, 800)
     pixels = bytes([200, 200, 200]) * (big.width * big.height)
     monkeypatch.setattr(screenshot, "capture_window_frame", lambda hwnd, pid=None: (big, pixels))
