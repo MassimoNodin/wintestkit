@@ -2,12 +2,22 @@ import * as path from "node:path";
 import { parseDocument, isMap, type Document } from "yaml";
 
 export type SettingsScope = "shared" | "local";
-export type SettingGroup = "Application" | "Test runs" | "Evidence" | "Debugging";
+export type SettingGroup =
+  "Application" | "Test runs" | "Evidence" | "Debugging";
+/** What a setting does, worded for each file it can be edited in. */
+export interface SettingDescription {
+  /** User Settings: wintestkit.local.yaml, this machine only, ignored by Git. */
+  user: string;
+  /** Repository Settings: wintestkit.yaml, committed and shared with everyone. */
+  repository: string;
+}
 export interface SettingField {
   key: string;
   label: string;
   kind: "string" | "number" | "boolean" | "list" | "select" | "color";
-  description?: string;
+  description: SettingDescription;
+  /** An example shown in an empty text box, worded for the file: paths differ between them. */
+  placeholder?: SettingDescription;
   default?: unknown;
   choices?: string[];
   localOnly?: boolean;
@@ -15,27 +25,48 @@ export interface SettingField {
   maximum?: number;
   group?: SettingGroup;
 }
+/** A setting that means the same in both files. */
+const same = (text: string): SettingDescription => ({
+  user: text,
+  repository: text,
+});
 export const settingFields: SettingField[] = [
   {
     key: "app.path",
     label: "Application executable",
     kind: "string",
-    description:
-      "The .exe WinTestKit starts for tests. Repository Settings take a path relative to the project folder; use User Settings for an absolute path.",
+    placeholder: {
+      user: "C:\\Program Files\\Contoso\\Orders.exe",
+      repository: "bin/Debug/Orders.exe",
+    },
+    description: {
+      user: "The .exe WinTestKit starts for tests on this machine. Use an absolute path; it takes precedence over the repository's executable.",
+      repository:
+        "The .exe WinTestKit starts for tests, shared with everyone who uses this repository. Use a path relative to the project folder; set an absolute path in User Settings instead.",
+    },
     group: "Application",
   },
   {
     key: "app.process",
     label: "Process name",
     kind: "string",
-    description: "Finds or attaches to an application that is already running.",
+    placeholder: same("Orders.exe"),
+    description: {
+      user: "Finds or attaches to an application that is already running on this machine. Takes precedence over the repository's process name.",
+      repository:
+        "Finds or attaches to an application that is already running, for everyone who uses this repository. Use the exe name, for example Orders.exe.",
+    },
     group: "Application",
   },
   {
     key: "app.args",
     label: "Application arguments (JSON array)",
     kind: "list",
-    description: 'Command-line arguments, for example ["--demo"].',
+    description: {
+      user: `Command-line arguments for the application on this machine, for example ["--demo"]. They replace the repository's arguments.`,
+      repository:
+        'Command-line arguments the application starts with for everyone who uses this repository, for example ["--demo"].',
+    },
     default: [],
     group: "Application",
   },
@@ -43,7 +74,10 @@ export const settingFields: SettingField[] = [
     key: "app.cwd",
     label: "Working directory",
     kind: "string",
-    description: "Folder the application starts in.",
+    placeholder: same("C:\\Program Files\\Contoso"),
+    description: same(
+      "Folder the application starts in on this machine. Only available in User Settings, because folders differ between machines.",
+    ),
     localOnly: true,
     group: "Application",
   },
@@ -51,8 +85,11 @@ export const settingFields: SettingField[] = [
     key: "launch",
     label: "Application lifecycle",
     kind: "select",
-    description:
-      "Start a fresh app for every test, or attach to a running app.",
+    description: {
+      user: "Start a fresh app for every test, or attach to one that is already running, on this machine. Overrides the repository's choice.",
+      repository:
+        "Start a fresh app for every test, or attach to a running app, as the default for everyone who uses this repository.",
+    },
     default: "per-test",
     choices: ["per-test", "attach"],
     group: "Application",
@@ -61,6 +98,11 @@ export const settingFields: SettingField[] = [
     key: "app.startup_timeout",
     label: "Startup timeout (seconds)",
     kind: "number",
+    description: {
+      user: "How long to wait for the application's window to appear after it starts. Raise it if this machine is slow.",
+      repository:
+        "How long to wait for the application's window to appear after it starts, for everyone who uses this repository.",
+    },
     default: 30,
     minimum: 0.001,
     group: "Application",
@@ -69,6 +111,11 @@ export const settingFields: SettingField[] = [
     key: "app.close_timeout",
     label: "Close timeout (seconds)",
     kind: "number",
+    description: {
+      user: "How long to wait for the application to close before it is stopped. Raise it if this machine is slow.",
+      repository:
+        "How long to wait for the application to close before it is stopped, for everyone who uses this repository.",
+    },
     default: 10,
     minimum: 0.001,
     group: "Application",
@@ -77,6 +124,11 @@ export const settingFields: SettingField[] = [
     key: "timeout",
     label: "Action / assertion timeout (seconds)",
     kind: "number",
+    description: {
+      user: "How long an action or assertion waits for its element before it fails. Raise it if this machine is slow.",
+      repository:
+        "How long an action or assertion waits for its element before it fails, for everyone who uses this repository.",
+    },
     default: 10,
     minimum: 0.001,
     group: "Test runs",
@@ -85,7 +137,7 @@ export const settingFields: SettingField[] = [
     key: "input_mode",
     label: "Input mode",
     kind: "select",
-    description: "Use UI Automation patterns or simulated mouse input.",
+    description: same("Use UI Automation patterns or simulated mouse input."),
     default: "pattern",
     choices: ["pattern", "mouse"],
     group: "Test runs",
@@ -94,6 +146,9 @@ export const settingFields: SettingField[] = [
     key: "screenshots",
     label: "Screenshot policy",
     kind: "select",
+    description: same(
+      "When screenshots are saved: never, only when a test fails, or after every step.",
+    ),
     default: "on-failure",
     choices: ["off", "on-failure", "every-step"],
     group: "Evidence",
@@ -102,8 +157,9 @@ export const settingFields: SettingField[] = [
     key: "object_previews",
     label: "Save last-successful element images",
     kind: "boolean",
-    description:
+    description: same(
       "Save an element crop and a red-outlined app image with the project. Both may contain sensitive information.",
+    ),
     default: true,
     group: "Evidence",
   },
@@ -111,7 +167,7 @@ export const settingFields: SettingField[] = [
     key: "replay",
     label: "Test replay recording",
     kind: "select",
-    description: "Capture screenshots for playback in the HTML report.",
+    description: same("Capture screenshots for playback in the HTML report."),
     default: "off",
     choices: ["off", "on", "retain-on-failure"],
     group: "Evidence",
@@ -120,6 +176,9 @@ export const settingFields: SettingField[] = [
     key: "replay_fps",
     label: "Replay capture rate (FPS)",
     kind: "number",
+    description: same(
+      "Frames captured per second while a replay is recorded. Higher is smoother but makes larger reports.",
+    ),
     default: 15,
     minimum: 0,
     maximum: 30,
@@ -129,6 +188,9 @@ export const settingFields: SettingField[] = [
     key: "replay_scope",
     label: "Replay capture scope",
     kind: "select",
+    description: same(
+      "Record only the application window, or the whole desktop.",
+    ),
     default: "window",
     choices: ["window", "desktop"],
     group: "Evidence",
@@ -137,6 +199,9 @@ export const settingFields: SettingField[] = [
     key: "report_dir",
     label: "Report directory",
     kind: "string",
+    description: same(
+      "Folder the HTML report, screenshots and replay frames are written to.",
+    ),
     default: "wtk-report",
     group: "Test runs",
   },
@@ -144,6 +209,9 @@ export const settingFields: SettingField[] = [
     key: "python_paths",
     label: "Python import paths (JSON array)",
     kind: "list",
+    description: same(
+      'Folders added to Python\'s import path so tests can import your own modules, for example ["."].',
+    ),
     default: ["."],
     group: "Test runs",
   },
@@ -151,8 +219,9 @@ export const settingFields: SettingField[] = [
     key: "highlight_actions",
     label: "Flash elements during test runs",
     kind: "boolean",
-    description:
+    description: same(
       "Flash each element just before a test acts on it. Spy's Highlight is separate and only outlines an element you select.",
+    ),
     default: false,
     localOnly: true,
     group: "Debugging",
@@ -161,8 +230,9 @@ export const settingFields: SettingField[] = [
     key: "highlight_color",
     label: "Highlight color",
     kind: "color",
-    description:
+    description: same(
       "The outline color used whenever WinTestKit highlights an element: flashes during test runs, Spy and the highlight commands.",
+    ),
     default: "#FF0000",
     localOnly: true,
     group: "Debugging",
@@ -171,7 +241,7 @@ export const settingFields: SettingField[] = [
     key: "slow_mo_ms",
     label: "Slow motion (milliseconds)",
     kind: "number",
-    description: "Pause after each action so runs are easier to follow.",
+    description: same("Pause after each action so runs are easier to follow."),
     default: 0,
     minimum: 0,
     localOnly: true,
@@ -188,7 +258,12 @@ export function settingSections(scope: SettingsScope): SettingSection[] {
   const editable = settingFields.filter(
     (field) => scope === "local" || !field.localOnly,
   );
-  const groups: SettingGroup[] = ["Application", "Test runs", "Evidence", "Debugging"];
+  const groups: SettingGroup[] = [
+    "Application",
+    "Test runs",
+    "Evidence",
+    "Debugging",
+  ];
   return groups
     .map((group) => ({
       group,
