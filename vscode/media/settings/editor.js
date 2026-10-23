@@ -156,11 +156,13 @@
   function display(value) {
     return typeof value === "object" ? JSON.stringify(value) : String(value);
   }
-  // A setting counts as modified in User Settings when its value differs from what it would be
-  // without the user file (the default, or the repository value); a value equal to that is not a change.
+  // A setting counts as modified when its value differs from what it would be without this file:
+  // in User Settings the default or the repository value, in Repository Settings the default (what
+  // the file's setting is a change from, whatever a user overrides on their machine). A value equal
+  // to that is not a change.
   function isModified(field) {
-    if (state.scope !== "local" || !isExplicit(field.key)) return false;
-    const base = state.inherited?.[field.key];
+    if (!isExplicit(field.key)) return false;
+    const base = state.scope === "local" ? state.inherited?.[field.key] : field.default;
     if (base === undefined) return true;
     const same = (value) =>
       field.kind === "color" ? String(value).toUpperCase() : display(value);
