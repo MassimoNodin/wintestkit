@@ -246,7 +246,12 @@ def _capture_bound(bound: BoundControl, element: UIAElement) -> None:
     definition = bound.definition
     if not isinstance(definition, Element) or isinstance(definition, Elements):
         return
-    if definition.owner is None or definition.name is None or definition.source is None:
+    if (
+        definition.ad_hoc
+        or definition.owner is None
+        or definition.name is None
+        or definition.source is None
+    ):
         return
     config = runtime.get_config()
     relative = Path(definition.source[0]).resolve().relative_to(config.root.resolve()).as_posix()

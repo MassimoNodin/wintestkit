@@ -25,7 +25,9 @@ from typing import (
     Generic,
     Literal,
     Self,
+    TypedDict,
     TypeVar,
+    Unpack,
     cast,
     get_args,
     get_origin,
@@ -78,6 +80,8 @@ if TYPE_CHECKING:
     # A defaulted type variable (PEP 696): a bare ``Element(...)`` means ``Element[BoundElement]``.
     from typing_extensions import TypeVar as _DefaultedTypeVar
 
+    from wintestkit import controls as _controls
+
     B = _DefaultedTypeVar("B", bound="BoundControl", covariant=True, default="BoundElement")
 else:
     B = TypeVar("B", bound="BoundControl", covariant=True)
@@ -98,6 +102,49 @@ def _caller_source() -> tuple[str, int] | None:
     if frame is None:
         return None
     return (frame.f_code.co_filename, frame.f_lineno)
+
+
+class ChildOptions(TypedDict, total=False):
+    """Options of ``parent.Element(...)`` and the typed child methods (``parent.Button(...)``).
+
+    There is no ``within``, ``depth`` or ``window``: a child is always searched among the direct
+    children of its parent, in the parent's window.
+    """
+
+    automation_id: Matcher
+    name: Matcher
+    control_type: str
+    class_name: Matcher
+    index: int
+    timeout: float
+    validate: bool
+    where: Mapping[str, WhereValue]
+
+
+class ChildGroupOptions(TypedDict, total=False):
+    """Options of ``parent.Elements(...)``: like ``ChildOptions`` without ``index``/``validate``."""
+
+    automation_id: Matcher
+    name: Matcher
+    control_type: str
+    class_name: Matcher
+    timeout: float
+    where: Mapping[str, WhereValue]
+
+
+_CHILD_FORBIDDEN = ("within", "depth", "window")
+
+
+def _child_options(kind: str, options: Mapping[str, Any]) -> dict[str, Any]:
+    """The options of a child declaration, refusing the ones a child cannot take."""
+    __tracebackhide__ = True
+    clash = [key for key in _CHILD_FORBIDDEN if key in options]
+    if clash:
+        raise TypeError(
+            f"{kind}() on an element searches its direct children in its window: "
+            f"drop {', '.join(key + '=' for key in clash)}"
+        )
+    return dict(options)
 
 
 # -- definitions ----------------------------------------------------------------------------------
@@ -501,6 +548,7 @@ def _explain_relocation(bound: BoundControl, exc: LocatorError) -> None:
     page, definition = bound.page, bound.definition
     if (
         exc.diagnostic.relocations
+        or definition.ad_hoc
         or bound.locator.item is not None
         or not isinstance(page, PageObject)
         or not _relocatable(exc)
@@ -963,6 +1011,81 @@ class BoundControl(_BoundBase):
         __tracebackhide__ = True
         return self._derive(self.locator.with_index(i))
 
+    # -- children: ``page.panel.Button(name="OK")`` searches the direct children of ``panel`` -----
+
+    def _bind_child(self, kind: str, options: Mapping[str, Any]) -> Any:
+        """A direct child of this element, bound on the fly (nothing is searched yet)."""
+        __tracebackhide__ = True
+        parent = self.locator
+        if parent.item is not None:
+            raise ActionError(
+                f"{self.qualname} is a grid row or cell: it cannot be searched for children"
+            )
+        definition: _AnyElement = self.definition._declare_child(kind, options)
+        definition.owner = self.definition.owner
+        definition.name = f"{self.definition.name}.{kind}"
+        definition.ad_hoc = True
+        locator = dataclasses.replace(
+            definition._own, within=dataclasses.replace(parent, window=None), window=parent.window
+        )
+        if isinstance(definition, Elements):
+            return BoundElements(self.page, definition, locator)
+        return type(definition)._bound(self.page, definition, locator)
+
+    def Element(self, **options: Unpack[ChildOptions]) -> BoundElement:
+        """A control that is a direct child of this element."""
+        __tracebackhide__ = True
+        return cast("BoundElement", self._bind_child("Element", options))
+
+    def Elements(self, **options: Unpack[ChildGroupOptions]) -> BoundElements:
+        """All the direct children of this element that match."""
+        __tracebackhide__ = True
+        return cast("BoundElements", self._bind_child("Elements", options))
+
+    def Button(self, **options: Unpack[ChildOptions]) -> _controls.BoundButton:
+        __tracebackhide__ = True
+        return cast("_controls.BoundButton", self._bind_child("Button", options))
+
+    def CheckBox(self, **options: Unpack[ChildOptions]) -> _controls.BoundCheckBox:
+        __tracebackhide__ = True
+        return cast("_controls.BoundCheckBox", self._bind_child("CheckBox", options))
+
+    def ComboBox(self, **options: Unpack[ChildOptions]) -> _controls.BoundComboBox:
+        __tracebackhide__ = True
+        return cast("_controls.BoundComboBox", self._bind_child("ComboBox", options))
+
+    def DataGrid(self, **options: Unpack[ChildOptions]) -> _controls.BoundDataGrid:
+        __tracebackhide__ = True
+        return cast("_controls.BoundDataGrid", self._bind_child("DataGrid", options))
+
+    def ListBox(self, **options: Unpack[ChildOptions]) -> _controls.BoundListBox:
+        __tracebackhide__ = True
+        return cast("_controls.BoundListBox", self._bind_child("ListBox", options))
+
+    def ListItem(self, **options: Unpack[ChildOptions]) -> _controls.BoundListItem:
+        __tracebackhide__ = True
+        return cast("_controls.BoundListItem", self._bind_child("ListItem", options))
+
+    def RadioButton(self, **options: Unpack[ChildOptions]) -> _controls.BoundRadioButton:
+        __tracebackhide__ = True
+        return cast("_controls.BoundRadioButton", self._bind_child("RadioButton", options))
+
+    def TabControl(self, **options: Unpack[ChildOptions]) -> _controls.BoundTabControl:
+        __tracebackhide__ = True
+        return cast("_controls.BoundTabControl", self._bind_child("TabControl", options))
+
+    def Text(self, **options: Unpack[ChildOptions]) -> _controls.BoundText:
+        __tracebackhide__ = True
+        return cast("_controls.BoundText", self._bind_child("Text", options))
+
+    def TextBox(self, **options: Unpack[ChildOptions]) -> _controls.BoundTextBox:
+        __tracebackhide__ = True
+        return cast("_controls.BoundTextBox", self._bind_child("TextBox", options))
+
+    def TreeView(self, **options: Unpack[ChildOptions]) -> _controls.BoundTreeView:
+        __tracebackhide__ = True
+        return cast("_controls.BoundTreeView", self._bind_child("TreeView", options))
+
 
 # Each mixin below holds the actions of one family of controls. ``BoundElement`` combines them all;
 # the typed controls in ``wintestkit.controls`` pick only what applies.
@@ -1362,6 +1485,8 @@ class Element(Generic[B]):  # noqa: UP046  (a type-parameter default needs Pytho
         self.name: str | None = None
         self.owner: type | None = None
         self.source = _caller_source()
+        #: Created on the fly by ``bound.Button(...)``: not a declared member of any page.
+        self.ad_hoc = False
 
     def __set_name__(self, owner: type, name: str) -> None:
         __tracebackhide__ = True
@@ -1374,6 +1499,69 @@ class Element(Generic[B]):  # noqa: UP046  (a type-parameter default needs Pytho
         if self.owner is None or self.name is None:
             return "<anonymous>"
         return f"{self.owner.__qualname__}.{self.name}"
+
+    # -- children: ``panel.Button(name="OK")`` is ``Button(name="OK", within=panel, depth=1)`` ----
+
+    def _declare_child(self, kind: str, options: Mapping[str, Any]) -> Any:
+        __tracebackhide__ = True
+        from wintestkit import controls
+
+        factory = {"Element": Element, "Elements": Elements}.get(kind) or getattr(controls, kind)
+        return factory(**_child_options(kind, options), within=self, depth=1)
+
+    def Element(self, **options: Unpack[ChildOptions]) -> _PlainElement:
+        """A control that is a direct child of this element."""
+        __tracebackhide__ = True
+        return cast("_PlainElement", self._declare_child("Element", options))
+
+    def Elements(self, **options: Unpack[ChildGroupOptions]) -> _ElementGroup:
+        """All the direct children of this element that match."""
+        __tracebackhide__ = True
+        return cast("_ElementGroup", self._declare_child("Elements", options))
+
+    def Button(self, **options: Unpack[ChildOptions]) -> _controls.Button:
+        __tracebackhide__ = True
+        return cast("_controls.Button", self._declare_child("Button", options))
+
+    def CheckBox(self, **options: Unpack[ChildOptions]) -> _controls.CheckBox:
+        __tracebackhide__ = True
+        return cast("_controls.CheckBox", self._declare_child("CheckBox", options))
+
+    def ComboBox(self, **options: Unpack[ChildOptions]) -> _controls.ComboBox:
+        __tracebackhide__ = True
+        return cast("_controls.ComboBox", self._declare_child("ComboBox", options))
+
+    def DataGrid(self, **options: Unpack[ChildOptions]) -> _controls.DataGrid:
+        __tracebackhide__ = True
+        return cast("_controls.DataGrid", self._declare_child("DataGrid", options))
+
+    def ListBox(self, **options: Unpack[ChildOptions]) -> _controls.ListBox:
+        __tracebackhide__ = True
+        return cast("_controls.ListBox", self._declare_child("ListBox", options))
+
+    def ListItem(self, **options: Unpack[ChildOptions]) -> _controls.ListItem:
+        __tracebackhide__ = True
+        return cast("_controls.ListItem", self._declare_child("ListItem", options))
+
+    def RadioButton(self, **options: Unpack[ChildOptions]) -> _controls.RadioButton:
+        __tracebackhide__ = True
+        return cast("_controls.RadioButton", self._declare_child("RadioButton", options))
+
+    def TabControl(self, **options: Unpack[ChildOptions]) -> _controls.TabControl:
+        __tracebackhide__ = True
+        return cast("_controls.TabControl", self._declare_child("TabControl", options))
+
+    def Text(self, **options: Unpack[ChildOptions]) -> _controls.Text:
+        __tracebackhide__ = True
+        return cast("_controls.Text", self._declare_child("Text", options))
+
+    def TextBox(self, **options: Unpack[ChildOptions]) -> _controls.TextBox:
+        __tracebackhide__ = True
+        return cast("_controls.TextBox", self._declare_child("TextBox", options))
+
+    def TreeView(self, **options: Unpack[ChildOptions]) -> _controls.TreeView:
+        __tracebackhide__ = True
+        return cast("_controls.TreeView", self._declare_child("TreeView", options))
 
     def locator(self, *, include_window: bool = True) -> Locator:
         """The locator for this element, including its ``within`` chain and window override."""
@@ -1441,3 +1629,5 @@ class Elements(Element[BoundElement]):
 
 
 _AnyElement = Element[BoundControl]
+_PlainElement = Element[BoundElement]
+_ElementGroup = Elements
