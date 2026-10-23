@@ -20,6 +20,9 @@ class Node {
   offsetWidth = 0;
   offsetHeight = 0;
   clientWidth = 900;
+  clientHeight = 220;
+  naturalWidth = 0;
+  naturalHeight = 0;
   rect?: { top: number; bottom: number; left: number; right: number };
   style: Record<string, unknown> & { values: Map<string, string>; setProperty: (name: string, value: string) => void } = {
     values: new Map<string, string>(),
@@ -945,6 +948,29 @@ describe("introduction clients", () => {
       expect(page.element("object-preview-status").textContent).toContain("outlined in red");
       click(page, "preview-element");
       expect(page.element("object-preview-image").src).toBe(element);
+    });
+
+    it("enlarges a small capture without smoothing and leaves a large one to the browser", () => {
+      const page = client("spy");
+      select(page);
+      page.send({ type: "objectPreview", nodeId: "control", preview: { elementDataUrl: element, windowDataUrl: context } });
+      const image = page.element("object-preview-image");
+      const loaded = () => image.listeners.load();
+      // A 40x20 crop in a 900x220 frame is magnified: nearest-neighbour keeps it crisp.
+      image.naturalWidth = 40;
+      image.naturalHeight = 20;
+      loaded();
+      expect(image.className).toBe("magnified");
+      // A whole 3440x1408 window is reduced: default smoothing, no pixelated rendering.
+      image.naturalWidth = 3440;
+      image.naturalHeight = 1408;
+      loaded();
+      expect(image.className).toBe("");
+      // Wide but short counts as small only when both sides fit inside the frame.
+      image.naturalWidth = 800;
+      image.naturalHeight = 400;
+      loaded();
+      expect(image.className).toBe("");
     });
 
     it("keeps the chosen view when another object is selected", () => {

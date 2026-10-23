@@ -220,7 +220,8 @@ The **Spy** view, below Explorer, explores the live UI Automation tree of the ap
   when the object has no on-screen rectangle or its window is minimized or cannot be rendered,
   and the section says why. Opening an image saves it to a private temporary folder, deletes it
   when its editor tab closes and removes the rest when VS Code shuts down; the viewer shows the
-  capture at the size sent (at most 1600 px on its longest edge). Live previews need `wintestkit` 0.1.1 or newer in the project's
+  capture at the size sent: the real size of the window or element, and only a capture over 7680 px
+  on its longest edge is scaled down. Live previews need `wintestkit` 0.1.1 or newer in the project's
   environment. Unlike the images saved by tests, a live preview is not screened for sensitive
   controls, so it can show whatever the window shows.
 - Selecting a saved single element in **Pages & Flows** shows the same section from the images

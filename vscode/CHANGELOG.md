@@ -7,6 +7,14 @@ Unreleased changes must be moved to a dated candidate section before a release c
 
 ## [Unreleased]
 
+- Fix Spy's live preview being blurry. Captures were shrunk to 1600 px on their longest edge, so a
+  full-screen window on a 3440x1440 monitor lost more than half its resolution and its text turned
+  to mush, in the panel and when zoomed in the image viewer. They are now sent at their real size
+  (lossless WebP of a UI is small: about 150 KB for a full 3440x1408 window, roughly 0.17 s slower
+  to capture); only a capture past 7680 px, or one too busy to fit 12 MiB, is scaled down. The red
+  outline now grows with the window so it stays visible when the panel shrinks the picture, and a
+  small element crop that the panel enlarges is drawn with sharp pixels instead of a smoothed blur.
+  Needs the `wintestkit` package from this version.
 - Rename the **Highlight actions** setting to **Flash elements during test runs** in the Configuration
   page, so it is not confused with Spy's Highlight. Only the label and description change: the
   `highlight_actions` key, the `--wtk-highlight` option and existing configuration files are unchanged.

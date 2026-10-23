@@ -15,9 +15,15 @@ from PIL import Image, ImageDraw
 from wintestkit.uia import screenshot, win32
 from wintestkit.uia.element import UIAElement
 
-# Longest edge sent to the editor; larger captures are scaled down to keep messages small.
-MAX_EDGE = 1600
+# Longest edge sent to the editor. Captures are sent at their real size: scaling a window down
+# turns small text to mush, and lossless WebP of a UI is small anyway (about 150 KB for a whole
+# 3440x1440 screen). Only a capture past this edge (the editor accepts 16384) is scaled down.
+MAX_EDGE = 7680
+# The editor refuses images over 16 MiB; a busier capture is scaled down until it fits.
+MAX_BYTES = 12 * 1024 * 1024
 _OUTLINE_WIDTH = 2
+_OUTLINE_STEP = 500  # one more pixel of outline per this many pixels of window
+_MIN_EDGE = 256  # never shrink below this just to fit the byte limit
 
 
 class PreviewUnavailable(Exception):
@@ -37,10 +43,18 @@ def _top_level_window(element: UIAElement) -> int:
     raise PreviewUnavailable("The object does not belong to a window that can be captured.")
 
 
-def _encode(image: Image.Image) -> dict[str, Any]:
+def _webp(image: Image.Image) -> bytes:
     with BytesIO() as output:
         image.save(output, format="WEBP", lossless=True, method=1)
-        data = output.getvalue()
+        return output.getvalue()
+
+
+def _encode(image: Image.Image) -> dict[str, Any]:
+    data = _webp(image)
+    while len(data) > MAX_BYTES and max(image.size) > _MIN_EDGE:
+        smaller = (max(1, round(image.width * 0.7)), max(1, round(image.height * 0.7)))
+        image = image.resize(smaller, Image.Resampling.LANCZOS)  # pyright: ignore[reportUnknownMemberType]
+        data = _webp(image)
     return {
         "data": base64.b64encode(data).decode("ascii"),
         "width": image.width,
@@ -97,6 +111,11 @@ def _capture(element: UIAElement) -> dict[str, Any]:
             crop, _ = _fit(crop)
             element_image = _encode(crop)
         outlined, scale = _fit(window)  # the crop is already taken, so drawing on it is safe
+        # Keep the outline visible however large the window is, without covering a small element.
+        width = min(
+            max(_OUTLINE_WIDTH, round(max(outlined.size) / _OUTLINE_STEP)),
+            max(_OUTLINE_WIDTH, min(visible.width, visible.height) // 6),
+        )
         ImageDraw.Draw(outlined).rectangle(
             (
                 round(left * scale),
@@ -105,7 +124,7 @@ def _capture(element: UIAElement) -> dict[str, Any]:
                 max(round(top * scale), round((top + visible.height) * scale) - 1),
             ),
             outline="red",
-            width=_OUTLINE_WIDTH,
+            width=width,
         )
         window_image = _encode(outlined)
     return {"element": element_image, "window": window_image}
