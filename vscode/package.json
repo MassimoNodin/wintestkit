@@ -3,7 +3,7 @@
   "publisher": "wintestkit",
   "displayName": "WinTestKit",
   "description": "UI test automation for Windows WPF apps — highlight elements, run tests, inspect UI.",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "license": "MIT",
   "repository": {
     "type": "git",

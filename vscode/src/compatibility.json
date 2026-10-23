@@ -1,5 +1,5 @@
 {
-  "extensionVersion": "0.1.1",
+  "extensionVersion": "0.1.2",
   "python": {
     "minimum": "0.1.1",
     "maximumExclusive": "0.2.0"

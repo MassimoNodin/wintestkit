@@ -7,6 +7,11 @@ Unreleased changes must be moved to a dated candidate section before a release c
 
 ## [Unreleased]
 
+## [0.1.1rc2] - 2026-10-23
+
+Second prerelease. Install the extension's pre-release channel together with
+`pip install --pre "wintestkit==0.1.1rc2"`.
+
 - Fix **Check all elements in this class** not marking the elements of mounted components (such as a
   page's `navigation` or `number_pad`) in the Page Tree. The check ran and reported its totals, but
   only the page's own elements were updated. Component rows under the page that was checked now get
@@ -36,7 +41,7 @@ Unreleased changes must be moved to a dated candidate section before a release c
 - Capture saved element images only when a single element's **Check exists** CodeLens succeeds,
   rather than during tests. Hover over its name in Python to see the crop, capture time and links
   to the full image or outlined app window. References work when Python can resolve the declaration.
-  Whole-page checks and Highlight do not capture. Remove saved/offline Spy mode; selecting a page
+  Highlight does not capture. Remove saved/offline Spy mode; selecting a page
   element opens its source without replacing live Spy. Older automatic captures need an explicit
   check before they appear in hovers. Needs the Python package from this version.
 - Fix Spy's live preview being blurry. Captures were shrunk to 1600 px on their longest edge, so a
@@ -74,7 +79,7 @@ Unreleased changes must be moved to a dated candidate section before a release c
   value) and shows a grey git tab on the card edge that returns to the repository value.
   Settings without a repository value have neither, and **Repository Settings** warns on a
   setting your User Settings override. Small
-  illustrations (shown only while a setting is editable) show what Input mode (UI Automation versus mouse), the Replay capture scope (window versus whole screen) and the Report directory do. Every
+  illustrations (shown only while a setting is editable) show what Input mode (UI Automation versus mouse), the Replay capture scope (window versus whole screen) do. Every
   change in **User Settings** (the machine-local file, formerly "This machine") and **Repository
   Settings** (formerly "Shared project") is saved immediately, so there is no Save button. In
   Repository Settings every setting starts off (blank and greyed out);
