@@ -872,10 +872,31 @@ describe("settings editor script", () => {
     );
     view.emit(state("shared", 84, {}));
     expect(view.must("app.path-description").textContent).toContain("relative to the project folder");
-    expect(view.must("timeout-description").textContent).toContain("everyone");
+    expect(view.must("timeout-description").textContent).toContain("before it fails");
     expect(view.must("input_mode-description").textContent).toBe(
       settingFields.find((field) => field.key === "input_mode")?.description.repository,
     );
+  });
+
+  it("warns about an absolute executable in Repository Settings only", () => {
+    const view = boot();
+    for (const absolute of ["C:\\Apps\\App.exe", "C:/Apps/App.exe", "\\\\host\\share\\App.exe", "/App.exe"]) {
+      view.emit(state("shared", 87, { "app.path": absolute }));
+      const warning = view.must("app.path-machine-warning");
+      expect(warning.className).toBe("warning");
+      expect(warning.textContent).toContain("Absolute path");
+      expect(warning.textContent).toContain("override it in User Settings");
+      expect(view.must("app.path").getAttribute("aria-describedby")).toContain(
+        "app.path-machine-warning",
+      );
+    }
+    // A relative path, a setting that is not in the file, and User Settings get no warning.
+    view.emit(state("shared", 88, { "app.path": "bin/Debug/App.exe" }));
+    expect(view.get("app.path-machine-warning")).toBeNull();
+    view.emit(state("shared", 89, {}));
+    expect(view.get("app.path-machine-warning")).toBeNull();
+    view.emit(state("local", 90, { "app.path": "C:\\Apps\\App.exe" }));
+    expect(view.get("app.path-machine-warning")).toBeNull();
   });
 
   it("suggests an absolute path in User Settings and a relative one in Repository Settings", () => {

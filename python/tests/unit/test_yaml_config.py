@@ -80,15 +80,14 @@ def test_shared_yaml_accepts_relative_app_path_and_args(tmp_path: Path) -> None:
     assert config.app.args == ("--test-mode",)
 
 
-@pytest.mark.parametrize(
-    "value",
-    ["C:/Apps/App.exe", r"C:\Apps\App.exe", r"\\host\share\App.exe", "/App.exe"],
-)
-def test_shared_yaml_rejects_machine_specific_app_path(tmp_path: Path, value: str) -> None:
+@pytest.mark.parametrize("value", ["C:/Apps/App.exe", r"C:\Apps\App.exe", r"\\host\share\App.exe"])
+def test_shared_yaml_accepts_an_absolute_app_path(tmp_path: Path, value: str) -> None:
+    # Discouraged (it only works where the file is in the same place) and warned about by the
+    # editor, but it is the user's choice, so it is not an error.
     (tmp_path / "wintestkit.yaml").write_text(f"app:\n  path: '{value}'\n", encoding="utf-8")
-    with pytest.raises(ConfigError, match="relative to the project folder") as error:
-        load_config(tmp_path)
-    assert error.value.key == "app.path"
+    config = load_config(tmp_path)
+    assert config.app is not None
+    assert config.app.path == Path(value)
 
 
 def test_local_yaml_overrides_a_shared_relative_app_path(tmp_path: Path) -> None:

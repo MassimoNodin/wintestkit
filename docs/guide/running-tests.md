@@ -75,8 +75,10 @@ highlight_color: "#FF0000"   # outline colour, quoted because # starts a YAML co
 slow_mo_ms: 0
 ```
 
-Shared YAML accepts `app.path` only as a path relative to the project directory (for example
-`bin/Debug/Orders.exe`) and rejects drive, UNC and rooted paths; keep absolute paths in local YAML.
+Prefer a path relative to the project directory (for example `bin/Debug/Orders.exe`) for `app.path`
+in shared YAML. An absolute path there is accepted, but it only works on machines that have the file
+in exactly that place, so teammates and CI fail to start the application unless they override it in
+local YAML; the VS Code Configuration page warns about it. Keep machine-specific paths in local YAML.
 Legacy paths remain supported; move machine-specific ones from `pyproject.toml` to local YAML. Keep secrets out of shared
 configuration; advanced `app.env` settings accept string values in local YAML.
 Relative paths resolve from the project directory. Environment variables include

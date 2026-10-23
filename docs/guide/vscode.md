@@ -324,10 +324,12 @@ or the Test Target menu) returns the sidebar to the Enable button. The choice is
 The custom YAML editor offers **User Settings** (the ignored `wintestkit.local.yaml`) and **Repository
 Settings** (the committed `wintestkit.yaml`) tabs. Every setting is shown at once, grouped as
 **Application** (starting with **Application executable** and its **Browse…** button; clearing it
-removes the override), **Test runs**, **Evidence**, and **Debugging**. Repository Settings accept
-the executable only as a path relative to the project folder (**Browse…** stores it that way and
-refuses a file outside the project) and share the application arguments; absolute paths, the
-working directory and the personal debugging aids (Flash elements during test runs, Slow motion) are
+removes the override), **Test runs**, **Evidence**, and **Debugging**. Repository Settings take
+the executable as a path relative to the project folder (**Browse…** stores it that way) and share
+the application arguments. An absolute executable path is accepted too, for example when
+**Browse…** picks a file outside the project, but the setting then shows a warning: it only works on
+machines that have the file in the same place, so teammates and CI need to override it in User
+Settings. The working directory and the personal debugging aids (Flash elements during test runs, Slow motion) are
 User Settings only. Changing a value overrides it in this file. In **User Settings**, a setting whose value differs from
 its default (or from the repository value) has a short accent bar on its left edge, inset from the top and bottom. A value that merely equals
 the default is not marked.
