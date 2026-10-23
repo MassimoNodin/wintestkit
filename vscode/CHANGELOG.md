@@ -60,6 +60,7 @@ Unreleased changes must be moved to a dated candidate section before a release c
   for every selected object. The list is the user setting `wintestkit.spy.shownProperties`, so it
   is never saved in a project or its git repository. Needs the `include` parameter of
   `inspect.properties` (the `wintestkit` package from this version).
+- Search only the direct children of an element with `panel.Element(...)`, `panel.Button(...)` and the other typed elements, or `panel.Elements(...)` for a group. On a declaration it is `within=panel, depth=1` and shows nested under `panel` in the Page Tree; on a bound element (`self.panel.Button(...)`) it looks the child up on the fly. Needs the `wintestkit` package from this version.
 - Generate Spy's suggested locator only when asked, with a **Generate suggested locator** button (its tooltip, and the progress text, warn that large applications can take 20 seconds or
   more) and a spinner while it runs. It no
   longer holds up the rest of the selected object's details (definitions, preview) on selection.

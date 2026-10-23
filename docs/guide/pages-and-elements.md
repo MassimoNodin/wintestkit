@@ -60,8 +60,8 @@ An element is found by its UI Automation properties (a plain `Element` offers ev
 | `control_type` | `ControlType`: `Button`, `Edit`, `CheckBox`, `ComboBox`, `List`, `DataGrid`, … |
 | `class_name` | `ClassName`: the WPF type, e.g. `TextBox`, `PasswordBox` |
 | `index` | the n-th match (0-based) when several elements match |
-| `depth` | maximum search depth below the container |
-| `within` | another `Element` to search inside instead of the whole window |
+| `depth` | maximum search depth below the container (`1`: direct children only) |
+| `within` | another `Element` to search inside instead of the whole window; see also [Direct children](#direct-children) |
 | `window` | a `Window` overriding the page's window for this element |
 | `timeout` | default auto-wait for this element, in seconds |
 | `validate` | typed elements only: `False` skips the check that the match fits the type (default `True`) |
@@ -97,6 +97,52 @@ AutomationIds: find a uniquely named container, then the control inside it.
 ```
 
 `within` chains can be as deep as needed; each link must itself be unique.
+
+## Direct children
+
+`within=` searches **every descendant** of the container. To search only its **direct children**,
+call the element you want to search in: `panel.Element(...)`, `panel.Button(...)`,
+`panel.TextBox(...)` and the other typed elements, or `panel.Elements(...)` for a group.
+
+```python
+# pseudo-code
+class CheckoutPage(Page):
+    window = Window(title="Checkout")
+
+    panel = Element(control_type="Group", name="Shipping")
+
+    ok = panel.Button(name="OK")                         # a direct child of panel
+    street = panel.TextBox(automation_id="Street")
+    rows = panel.Elements(control_type="ListItem")       # every direct child that matches
+    zip_code = panel.Element(name="Address").TextBox(name="Zip")  # children of a child
+```
+
+`panel.Button(name="OK")` is the same as `Button(name="OK", within=panel, depth=1)`, so the result is
+a normal declaration: it shows in the Page Tree under `panel`, works with `expect`, CodeLens and
+`wtk check`, and takes the same options except `within`, `depth` and `window` (a child is always
+in its parent's window). A component's `root` can have children too: `street = root.TextBox(...)`.
+
+On a **bound** element the same calls look the child up on the fly, which is handy inside an
+intent method:
+
+```python
+# pseudo-code
+class CheckoutPage(Page):
+    panel = Element(control_type="Group", name="Shipping")
+
+    def confirm(self) -> None:
+        self.panel.Button(name="OK").click()            # searched in panel's direct children
+```
+
+Nothing is searched until the child is used, and errors show the parent first
+(`CheckoutPage.panel.Button`). Children created this way are not declared members of the page, so
+the Page Tree, `wtk unused`, saved-object images and the found-in-another-window diagnostic do not
+cover them; declare the child on the page when you want those. A grid row or cell
+(`grid.row(2)`) cannot be searched for children.
+
+"Direct child" means a direct child in the **UI Automation tree**, which is not always the XAML
+tree: WPF layout containers are often not exposed. Check with `wtk inspect` before relying on it.
+Custom element types have no child method; use `MyType(..., within=panel, depth=1)`.
 
 ## `Elements`
 

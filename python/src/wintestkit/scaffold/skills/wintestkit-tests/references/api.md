@@ -27,6 +27,12 @@ not expose private .NET properties. Do not duplicate a property via a keyword an
 Strings match exactly; a compiled regex
 matches with `re.search`. `window = Window()` with no arguments means the application's main window.
 
+Direct children only: `ok = panel.Button(name="OK")`, `rows = panel.Elements(control_type="ListItem")`,
+`zip_code = panel.Element(name="Address").TextBox(name="Zip")`; any typed element works. It is
+`within=panel, depth=1` (no `within`, `depth` or `window` option) and is a normal declaration. A bound
+element does the same on the fly (`self.panel.Button(name="OK").click()`), but that child is not a
+declared member of the page. A component root can have children too: `street = root.TextBox(...)`.
+
 Component mounts: `address = AddressBox()`, `AddressBox(root=Element(class_name="AddressBox",
 within=shipping_panel))`, `AddressBox(window=Window(title="Invoice"))`. `AddressBox(app)` also works
 on its own. A page may also declare a `root`: its own elements are then searched inside it, but

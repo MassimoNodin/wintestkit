@@ -83,6 +83,8 @@ self-healing). Choose, in this order:
 2. `name` plus `control_type`: the visible label; changes with language and wording.
 3. `class_name`: the short WPF type (`TextBox`, `PasswordBox`).
 4. The **component root** (or, for a lone element, `within=` on a uniquely identifiable container).
+   When only the direct children of a container should match, use `panel.Button(...)` /
+   `panel.Element(...)` (see the API cheat sheet) instead of `within=` with `depth=1`.
 5. `index=`: last resort; breaks when controls are added or reordered.
 
 `name`, `class_name`, `automation_id` accept a string (exact) or a compiled regex (`re.search`).

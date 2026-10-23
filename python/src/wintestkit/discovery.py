@@ -868,12 +868,19 @@ def _build(
         if data:
             built.locator["window"] = data
         return built
+    receiver = _child_receiver(call, cls, index)
+    if receiver is not None:  # ``panel.Button(...)``: a direct child of ``panel``
+        _resolve_child_parent(receiver, built, cls, index, visiting, own_name)
+        built.locator["depth"] = 1
     for keyword in call.keywords:
         arg = keyword.arg
         if arg is None:  # **kwargs
             built.dynamic = True
             continue
         if arg in ("timeout", "validate"):
+            continue
+        if receiver is not None and arg in ("within", "depth", "window"):
+            built.dynamic = True  # the runtime rejects these on a child; do not guess
             continue
         if arg == "within":
             _resolve_within(keyword.value, built, cls, index, visiting, own_name)
@@ -894,6 +901,45 @@ def _build(
         else:
             built.dynamic = True  # unknown keyword: cannot be sure the locator is complete
     return built
+
+
+def _child_receiver(call: ast.Call, cls: _ClassInfo, index: _Index) -> ast.expr | None:
+    """``panel`` in ``panel.Button(...)``; ``None`` for plain ``Button(...)`` or ``wt.Button(...)``.
+
+    The receiver is a child parent when it names an element of the class (or its bases), or is
+    itself an element call (``panel.Element(...).TextBox(...)``, ``Element(...).Button(...)``).
+    A module-qualified call such as ``wintestkit.Button(...)`` is not a child call.
+    """
+    func = call.func
+    if not isinstance(func, ast.Attribute):
+        return None
+    receiver = func.value
+    if isinstance(receiver, ast.Name):
+        found = index.find_element(cls, receiver.id)
+        return receiver if found is not None and found[1] == "element" else None
+    if isinstance(receiver, ast.Call) and _call_kind(receiver) == "element":
+        return receiver
+    return None
+
+
+def _resolve_child_parent(
+    receiver: ast.expr,
+    built: _Built,
+    cls: _ClassInfo,
+    index: _Index,
+    visiting: frozenset[tuple[int, str]],
+    own_name: str | None,
+) -> None:
+    if isinstance(receiver, ast.Name):
+        _resolve_within(receiver, built, cls, index, visiting, own_name)
+        return
+    assert isinstance(receiver, ast.Call)
+    inner = _build(receiver, "element", cls, index, visiting, own_name)
+    built.dynamic = built.dynamic or inner.dynamic
+    built.within_name = inner.within_name
+    inner_locator = {k: v for k, v in inner.locator.items() if k != "window"}
+    if inner_locator:
+        built.locator["within"] = inner_locator
 
 
 def _resolve_within(
