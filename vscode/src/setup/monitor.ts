@@ -219,6 +219,10 @@ export class SetupMonitor implements vscode.Disposable {
       this.changed.fire();
       return;
     }
+    // The projects are found a moment after start-up. Checking before then would see "no project",
+    // and a project that was set up before would flash as needing attention; projects.onDidChange
+    // schedules the check once they are known.
+    if (!this.projects.loaded) return;
     try {
       const project = this.project();
       this.appRunning = !!project && !!this.status.applicationState(project)?.running;

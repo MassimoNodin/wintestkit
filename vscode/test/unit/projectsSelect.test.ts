@@ -73,6 +73,36 @@ describe("selecting the project views fall back to", () => {
     ]);
     expect(changed).toHaveBeenCalledOnce();
   });
+  it("is not loaded until the projects have been found, and again while it looks", async () => {
+    found.workspaceRoot = "C:/work/";
+    found.files = [{ fsPath: "C:/work/alpha/wintestkit.yaml" }];
+    const projects = new Projects({ debug: vi.fn(), error: vi.fn() } as never);
+    expect(projects.loaded).toBe(false);
+    const loadedWhenAnnounced: boolean[] = [];
+    projects.onDidChange(() => loadedWhenAnnounced.push(projects.loaded));
+    const refreshing = projects.refresh();
+    expect(projects.loaded).toBe(false);
+    await refreshing;
+    expect(projects.loaded).toBe(true);
+    expect(loadedWhenAnnounced).toEqual([true]);
+    const again = projects.refresh();
+    expect(projects.loaded).toBe(false);
+    await again;
+    expect(projects.loaded).toBe(true);
+  });
+  it("is loaded once a failed search has been reported", async () => {
+    const error = vi.fn();
+    const projects = new Projects({ debug: vi.fn(), error } as never);
+    const changed = vi.fn();
+    projects.onDidChange(changed);
+    found.findFiles.mockImplementationOnce(() => {
+      throw new Error("boom");
+    });
+    await projects.refresh();
+    expect(error).toHaveBeenCalled();
+    expect(projects.loaded).toBe(true);
+    expect(changed).toHaveBeenCalled();
+  });
   it("has no projects until WinTestKit is enabled for the workspace, then finds them", async () => {
     found.workspaceRoot = "C:/work/";
     found.files = [{ fsPath: "C:/work/alpha/wintestkit.yaml" }];

@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   warning: vi.fn(async (): Promise<string | undefined> => undefined),
   running: false,
   hasProject: true,
+  projectsLoaded: true,
   interpreterListeners: [] as (() => void)[],
 }));
 
@@ -62,6 +63,9 @@ const make = (options: { enabled?: boolean; memento?: Record<string, unknown> } 
     update: vi.fn(async (key: string, value: unknown) => void values.set(key, value)),
   };
   const projects = {
+    get loaded() {
+      return mocks.projectsLoaded;
+    },
     get all() {
       return mocks.hasProject ? [project] : [];
     },
@@ -101,9 +105,31 @@ describe("setup monitor", () => {
     mocks.warning.mockResolvedValue(undefined);
     mocks.running = false;
     mocks.hasProject = true;
+    mocks.projectsLoaded = true;
     mocks.interpreterListeners.length = 0;
   });
   afterEach(() => vi.useRealTimers());
+
+  it("waits for the projects to be found, so a set-up project does not flash as missing", async () => {
+    // On a reload the project list is still empty for a moment; the project step passed before.
+    mocks.projectsLoaded = false;
+    mocks.hasProject = false;
+    const { monitor } = make({
+      memento: { "wintestkit.setup.passed": ["interpreter", "package", "project"] },
+    });
+    await settle();
+    expect(monitor.health).toBeUndefined();
+    expect(monitor.tour).toBeUndefined();
+    expect(monitor.blocker).toBeUndefined();
+    expect(mocks.warning).not.toHaveBeenCalled();
+    expect(contexts("wintestkit.setupBlocked")).not.toContain(true);
+    mocks.hasProject = true;
+    mocks.projectsLoaded = true;
+    await monitor.check();
+    expect(monitor.health?.project.state).toBe("ok");
+    expect(monitor.tour?.step).not.toBe("project");
+    monitor.dispose();
+  });
 
   it("starts the first introduction even in an already configured workspace", async () => {
     const { monitor, values } = make();

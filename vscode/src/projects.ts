@@ -37,6 +37,7 @@ export class Projects implements vscode.Disposable {
   private projects: Project[] = [];
   private preferredRoot?: string;
   private revision = 0;
+  private loadedProjects = false;
   private disposed = false;
   private readonly changed = new vscode.EventEmitter<readonly Project[]>();
   readonly onDidChange = this.changed.event;
@@ -59,6 +60,13 @@ export class Projects implements vscode.Disposable {
       vscode.workspace.onDidChangeWorkspaceFolders(refresh),
       ...(enablement ? [enablement.onDidChange(refresh)] : []),
     ];
+  }
+  /**
+   * Whether the list is current. It starts empty and is filled in a moment later, and is stale
+   * again while a refresh runs, so "no project" means nothing until this is true.
+   */
+  get loaded(): boolean {
+    return this.loadedProjects;
   }
   /** No projects at all until WinTestKit is enabled for the workspace, so nothing else starts. */
   get all(): readonly Project[] {
@@ -91,8 +99,11 @@ export class Projects implements vscode.Disposable {
   }
   async refresh(): Promise<void> {
     const revision = ++this.revision;
+    this.loadedProjects = false;
     if (this.enablement && !this.enablement.enabled) {
       await vscode.commands.executeCommand("setContext", "wintestkit.hasProject", false);
+      if (revision !== this.revision) return;
+      this.loadedProjects = true;
       this.changed.fire(this.all);
       return;
     }
@@ -146,9 +157,14 @@ export class Projects implements vscode.Disposable {
         "wintestkit.hasProject",
         projects.length > 0,
       );
+      this.loadedProjects = true;
       this.changed.fire(this.projects);
     } catch (error) {
       this.log.error(`Project discovery failed: ${String(error)}`);
+      if (revision === this.revision) {
+        this.loadedProjects = true;
+        this.changed.fire(this.projects);
+      }
     }
   }
   dispose(): void {
