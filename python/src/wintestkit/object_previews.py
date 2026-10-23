@@ -1,4 +1,4 @@
-"""Best-effort, test-call-only paired previews of declared single elements."""
+"""Best-effort paired previews of intentionally checked declared single elements."""
 
 from __future__ import annotations
 
@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING, cast
 from PIL import Image, ImageDraw
 
 from wintestkit import runtime
+from wintestkit.config import sync_object_previews_ignore
 from wintestkit.uia import screenshot, win32
 from wintestkit.uia.element import Rect, UIAElement
 from wintestkit.uia.webp import encode_webp
@@ -28,7 +29,7 @@ from wintestkit.uia.webp import encode_webp
 if TYPE_CHECKING:
     from wintestkit.model import BoundControl
 
-_GRACE_SECONDS = 3600
+_GRACE_SECONDS = 60  # leftover staging from a crashed capture, and images from before pruning
 _SCAN_NODES = 512
 _SCAN_DEPTH = 64
 _SCAN_SECONDS = 0.5
@@ -57,11 +58,21 @@ def _native_path(path: Path) -> str:
 def _owning_window(element: UIAElement, bounds: Rect) -> tuple[int, UIAElement] | None:
     current: UIAElement | None = element
     process_id = element.process_id
+    hosted_root = 0
     for _depth in range(64):
         if current is None:
             return None
         current = current.as_live()
-        if current.process_id != process_id or current.is_offscreen:
+        hwnd = current.native_window_handle
+        if current.is_offscreen:
+            return None
+        if current.process_id != process_id and not (
+            hwnd
+            and hwnd == hosted_root
+            and current.class_name == "ApplicationFrameWindow"
+            and win32.window_class_name(hwnd) == "ApplicationFrameWindow"
+            and hwnd in win32.top_level_windows({process_id})
+        ):
             return None
         if current.get_property("IsPassword"):
             return None
@@ -70,9 +81,13 @@ def _owning_window(element: UIAElement, bounds: Rect) -> tuple[int, UIAElement] 
         parent_bounds = current.rect
         if parent_bounds is None or not _contains(parent_bounds, bounds):
             return None
-        hwnd = current.native_window_handle
-        if hwnd and win32.root_window(hwnd) == hwnd:
-            return (hwnd, current) if win32.window_pid(hwnd) == process_id else None
+        if hwnd:
+            if win32.window_pid(hwnd) != current.process_id:
+                return None
+            root = win32.root_window(hwnd)
+            if root == hwnd:
+                return hwnd, current
+            hosted_root = root
         current = current.parent()
     return None
 
@@ -95,9 +110,7 @@ def _safe_content(root: UIAElement, bounds: Rect) -> bool:
         element = element.as_live()
         if not element.is_offscreen:
             rect = element.rect
-            if rect is None:
-                return False
-            if screenshot.clip(rect, bounds) is not None:
+            if rect is None or screenshot.clip(rect, bounds) is not None:
                 password = element.get_property("IsPassword")
                 if type(password) not in (bool, int) or password:
                     return False
@@ -215,26 +228,37 @@ def _cleanup(directory: Path, keep: set[str]) -> None:
                 candidate.unlink()
 
 
-def _retain_previous(directory: Path) -> None:
+def _previous_images(directory: Path) -> list[str]:
+    """The image names the current manifest points at, before a new capture replaces them."""
     try:
         manifest = directory / "manifest.json"
         with _pinned(manifest):
             previous = json.loads(manifest.read_text(encoding="utf-8"))
     except (FileNotFoundError, ValueError):
-        return
+        return []
     if not isinstance(previous, dict):
-        return
-    for key in ("crop", "window"):
-        name = cast("dict[str, object]", previous).get(key)
-        if isinstance(name, str) and re.fullmatch(r"[0-9a-f]{32}\.(?:element|window)\.webp", name):
+        return []
+    names = (cast("dict[str, object]", previous).get(key) for key in ("crop", "window"))
+    return [
+        name
+        for name in names
+        if isinstance(name, str) and re.fullmatch(r"[0-9a-f]{32}\.(?:element|window)\.webp", name)
+    ]
+
+
+def _discard(directory: Path, names: list[str]) -> None:
+    """Delete superseded images now; one a reader still holds open is left for ``_cleanup``."""
+    for name in names:
+        with contextlib.suppress(OSError):
             with _pinned(directory / name):
-                os.utime(directory / name, None)
+                pass
+            (directory / name).unlink()
 
 
 def capture_bound(bound: BoundControl, element: UIAElement) -> None:
-    """Capture synchronously before action; failures must never affect a test."""
+    """Save an explicitly checked element; failures must never affect its result."""
     try:
-        if runtime.object_previews_active():
+        if runtime.get_config().object_previews:
             _capture_bound(bound, element)
     except Exception:
         log.debug("Could not save object preview", exc_info=True)
@@ -273,13 +297,14 @@ def _capture_bound(bound: BoundControl, element: UIAElement) -> None:
     hwnd, window = owner
     if not _safe_content(window, window.rect or bounds):
         return
+    sync_object_previews_ignore(config.root, config.object_previews_share)
     with (
         _output_directory(config.root, _digest(definition_id)) as directory,
         _publication_lock(directory) as acquired,
     ):
         if not acquired:
             return
-        frame = screenshot.capture_window_frame(hwnd, element.process_id)
+        frame = screenshot.capture_window_frame(hwnd, window.process_id)
         if frame is None:
             return
         window_bounds, pixels = frame
@@ -310,7 +335,7 @@ def _capture_bound(bound: BoundControl, element: UIAElement) -> None:
                 )
                 window_bytes = encode_webp(outlined.width, outlined.height, outlined.tobytes())
         manifest = {
-            "schemaVersion": 1,
+            "schemaVersion": 2,
             "definitionId": definition_id,
             "captureId": capture_id,
             "capturedAt": captured_at,
@@ -340,9 +365,13 @@ def _capture_bound(bound: BoundControl, element: UIAElement) -> None:
                         output.flush()
                         if path != temporary:
                             files.enter_context(_pinned(path))
-                _retain_previous(directory)
+                superseded = _previous_images(directory)
                 _replace_manifest(temporary, directory / "manifest.json")
                 published = True
+                _discard(
+                    directory,
+                    [name for name in superseded if name not in (crop_path.name, window_path.name)],
+                )
         finally:
             for path in (temporary,) if published else owned:
                 with contextlib.suppress(OSError):

@@ -66,10 +66,33 @@ Highlight and Check show progress and their latest result directly in the CodeLe
 **Checking…**, then **Highlighted** / **Check: Found**, **Not found**, **multiple matches**, or **Failed**.
 Hover over a result for details; click it again to retry the same action. Highlight and Check keep
 separate results, and Check All Elements updates each element's Check result. Results describe the
-last attempt, not live app state; editing the declaration or refreshing discovery clears them.
+last attempt, not live app state. They stay when you close, save or edit a file and follow their
+element if it moves; they are only cleared by reloading the window or the **Clear results** button
+in the Page Tree toolbar. **Check all elements in this class** shows a spinner (**Checking all
+elements…**) in its CodeLens and on the page's row in the Page Tree while it runs.
 
 If the application isn't running, **Highlight** offers to launch it. Turn the CodeLens off with
 `wintestkit.codeLens.enabled`.
+
+## Element capture hovers
+
+Click an element's **Check exists** CodeLens, or **Check all elements in this class**, to save
+a capture of every single element that is uniquely found and safe to capture. Tests, flows and
+**Highlight** do not save these images.
+
+Hover over the element's name in its Python declaration to see its saved crop and the UTC
+capture time. **Open full image** opens the crop in VS Code's image viewer; **Show app context**
+opens its owning window with the element outlined. Python references also show the capture
+when the Python language provider can resolve them to a single element declaration.
+Viewing a capture does not contact the application or take another screenshot.
+
+Run **Check exists** again to update an image after the UI or locator changes. A missing
+capture shows instructions instead of an image. Legacy automatic test captures are not
+displayed; check the element once to replace them. Captures are separate from reports and
+remain available with the application closed. See
+[Check Element captures](running-tests.md#check-element-captures) for storage and privacy controls.
+Selecting an element in **Pages & Flows** opens its source; it does not switch Spy into a
+saved/offline mode. Spy remains a live inspector.
 
 ## Test Explorer
 
@@ -211,7 +234,7 @@ The **Spy** view, below Explorer, explores the live UI Automation tree of the ap
   a reload and clears the selection as before. The remembered selection is kept per workspace in
   VS Code's own storage, never in a project or its git repository.
 - The **Preview** section of the properties shows the selected object. By default it shows
-  just the element; **In context** switches to its whole window with the object outlined in red.
+  just the element; **In App context** switches to its whole window with the object outlined in red.
   Both fit the same fixed-size frame, however large or small the image, and the choice stays
   while you select other objects. It is a live capture taken when you select the object; the
   window is rendered without being brought forward. Click the image, or the button beside the
@@ -222,15 +245,8 @@ The **Spy** view, below Explorer, explores the live UI Automation tree of the ap
   when its editor tab closes and removes the rest when VS Code shuts down; the viewer shows the
   capture at the size sent: the real size of the window or element, and only a capture over 7680 px
   on its longest edge is scaled down. Live previews need `wintestkit` 0.1.1 or newer in the project's
-  environment. Unlike the images saved by tests, a live preview is not screened for sensitive
+  environment. Unlike saved Check Element captures, a live preview is not screened for sensitive
   controls, so it can show whatever the window shows.
-- Selecting a saved single element in **Pages & Flows** shows the same section from the images
-  its last test saved: the element crop and the outlined window, with the same toggle. The
-  timestamp identifies a saved test lookup, not a live screenshot. This works without the
-  application or automation server running. Use Spy's **Refresh objects** button to return to
-  live inspection (or the active tutorial). See
-  [Last-successful element images](running-tests.md#last-successful-element-images) for
-  storage, portability, and privacy controls.
 - Refresh keeps direct-child loading lazy and coalesces overlapping requests. If a control
   disappears during enumeration, surviving objects remain visible with an incomplete-result
   warning; refresh again when the application has settled.

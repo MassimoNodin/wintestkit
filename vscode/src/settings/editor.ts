@@ -30,7 +30,10 @@ export class ConfigurationEditor implements vscode.CustomTextEditorProvider {
     private readonly extensionUri: vscode.Uri,
   ) {}
 
-  async open(root?: vscode.Uri, local = true): Promise<void> {
+  // A setting to scroll to when the page being opened for this folder and file appears.
+  private pendingFocus?: { file: string; key: string };
+
+  async open(root?: vscode.Uri, local = true, focus?: string): Promise<void> {
     if (!vscode.workspace.isTrusted)
       throw new Error(
         "Trust the workspace before editing WinTestKit configuration.",
@@ -59,6 +62,9 @@ export class ConfigurationEditor implements vscode.CustomTextEditorProvider {
         )?.root;
     }
     if (!root) return;
+    this.pendingFocus = focus && settingFields.some((field) => field.key === focus)
+      ? { file: path.join(root.fsPath, local ? "wintestkit.local.yaml" : "wintestkit.yaml").toLowerCase(), key: focus }
+      : undefined;
     await ensureLocalIgnores(root);
     const uri = vscode.Uri.joinPath(
       root,
@@ -87,6 +93,11 @@ export class ConfigurationEditor implements vscode.CustomTextEditorProvider {
     const root = vscode.Uri.file(path.dirname(document.uri.fsPath));
     const scope = settingsScope(document.uri.fsPath);
     const page = { folder: root.fsPath.toLowerCase(), scope, panel };
+    let focus =
+      this.pendingFocus?.file === document.uri.fsPath.toLowerCase()
+        ? this.pendingFocus.key
+        : undefined;
+    if (focus) this.pendingFocus = undefined;
     for (const other of [...this.pages])
       if (other.folder === page.folder && other.scope !== scope)
         other.panel.dispose();
@@ -167,7 +178,10 @@ export class ConfigurationEditor implements vscode.CustomTextEditorProvider {
           inherited,
           repository,
           user,
+          ...(focus ? { focus } : {}),
         });
+        // Only a state that was shown scrolls the page; one superseded above leaves it for the next.
+        focus = undefined;
       } catch (error) {
         if (!disposed && request === sequence)
           await panel.webview.postMessage({
@@ -219,7 +233,11 @@ export class ConfigurationEditor implements vscode.CustomTextEditorProvider {
             data.type === "scope" &&
             (data.scope === "local" || data.scope === "shared")
           )
-            await this.open(root, data.scope === "local");
+            await this.open(
+              root,
+              data.scope === "local",
+              typeof data.focus === "string" ? data.focus : undefined,
+            );
           else if (data.type === "source")
             await vscode.commands.executeCommand(
               "vscode.openWith",

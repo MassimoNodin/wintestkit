@@ -232,14 +232,16 @@ sharing them. `--no-report` disables recording. Copy the whole report directory,
 `artifacts/`, when moving or sharing a recording; `wtk report` can regenerate the player from
 saved results but cannot create frames for an older run.
 
-## Last-successful element images
+## Check Element captures
 
-During a test's call phase, a successful unique lookup of a declared single `Element` can
-save two images: a clean element crop and its owning application window with the element
-outlined in red. The images describe the successful lookup, not whether the whole test passed.
-Discovery, Spy inspection, setup, teardown, and editor checks do not update them.
+Click a declared single element's **Check exists** CodeLens in VS Code to save two images
+after a successful unique lookup: a clean element crop and its owning application window
+with the element outlined in red. Only that element is checked and captured. Test runs, flows,
+discovery, Spy inspection, **Highlight**, and whole-page checks do not update these images.
+Hover over the element name in Python to view the saved crop and capture time, with links to
+open the full crop or app context. Viewing an image never takes another capture.
 
-Capture is best-effort and never changes the test result. Password or sensitive targets,
+Capture is best-effort and never changes the check result. Password or sensitive targets,
 unavailable windows, and untrustworthy or partially visible bounds are skipped. Capture uses
 the owning window rather than a desktop screenshot, without bringing it forward. It may be
 unavailable for applications whose windows cannot be captured reliably.
@@ -252,7 +254,8 @@ image belonging to the declared grid.
 The latest published pair and its manifest live under `object-previews/` in the project root,
 keyed by the declaring page member. This is separate from `wtk-report/`: clearing reports
 does not remove saved-object images. Copy this directory with the page source when moving or
-sharing the project. Old image revisions may remain temporarily to protect active readers.
+sharing the project. A new capture deletes the pair it replaces; one an open reader still holds
+is removed the next time that element is captured.
 
 Images can contain sensitive application data, including other controls in the window image.
 Review them before committing or sharing the project. Disable future capture in shared
@@ -264,6 +267,28 @@ object_previews: false
 
 The environment override is `WTK_OBJECT_PREVIEWS=false`. Disabling capture does not delete
 existing images; remove `object-previews/` separately if they must not be retained.
+
+Whether the images are committed is one decision for the whole repository, so it lives only in
+the shared `wintestkit.yaml` (a machine's own file cannot change it) and stays off until
+`object_previews` is on:
+
+```yaml
+object_previews: true
+object_previews_share: true   # default false
+```
+
+With `object_previews_share` off, WinTestKit adds `object-previews/` to `.gitignore` the first time
+it saves a capture, so images stay on each machine. Turning it on removes that exact line (a rule
+you wrote differently, such as `/object-previews/`, is left alone and must be removed by hand).
+Images Git already tracks stay tracked when sharing is turned off; run
+`git rm -r --cached object-previews` to stop tracking them. In VS Code, **Share Check Element
+captures in the repository** is in Repository Settings under Evidence and is disabled until
+**Save Check Element captures** is enabled there; User Settings only show its state and a button
+to Repository Settings.
+
+A failed check or skipped capture keeps the previous pair. Treat it as a saved reference,
+not proof of the current UI. Run **Check exists** again after changing a locator or screen.
+Older automatic test captures are ignored by the hover until an explicit check replaces them.
 
 ## UI tree diff evidence
 

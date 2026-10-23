@@ -1,5 +1,6 @@
-"""Paired preview safety, publication, test-call gating, and coordinate regressions."""
+"""Paired preview safety, publication, intentional checks, and coordinate regressions."""
 
+import contextlib
 import hashlib
 import json
 import os
@@ -14,10 +15,11 @@ from unittest.mock import Mock
 import pytest
 from PIL import Image
 
-from wintestkit import model, object_previews, runtime
+from wintestkit import model, object_previews, runtime, targets
 from wintestkit.config import load_config
+from wintestkit.engine.diagnose import Diagnostic
 from wintestkit.engine.locator import ItemSelector
-from wintestkit.errors import AmbiguousElementError, ElementTypeError
+from wintestkit.errors import AmbiguousElementError, ElementNotFoundError, ElementTypeError
 from wintestkit.model import BoundControl, BoundElement, Element, Elements
 from wintestkit.pytest_plugin import _Controller
 from wintestkit.uia import screenshot, win32
@@ -66,6 +68,7 @@ def preview(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         parent=lambda: window,
     )
     element.as_live = lambda: element
+    element.info = lambda: SimpleNamespace()
     element.iter_children = lambda: iter(())
     window.as_live = lambda: window
     window.iter_children = lambda: iter((element,))
@@ -102,8 +105,7 @@ def preview(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 
 
 def capture(preview):
-    with runtime.object_preview_test_context():
-        assert preview.bound.resolve_once() is preview.element
+    assert targets.resolve_bound(preview.bound, 0, capture=True).uia is preview.element
     manifest = preview.directory / "manifest.json"
     return json.loads(manifest.read_text(encoding="utf-8")) if manifest.exists() else None
 
@@ -111,7 +113,7 @@ def capture(preview):
 def test_pair_contract_clean_crop_and_declaring_identity(preview, monkeypatch):
     monkeypatch.setattr(model, "_qualified_name", lambda page, definition: "Home.address.submit")
     manifest = capture(preview)
-    assert manifest["schemaVersion"] == 1
+    assert manifest["schemaVersion"] == 2
     assert manifest["definitionId"] == preview.definition_id
     assert manifest["context"] == "Home.address.submit"
     assert len(manifest["locatorFingerprint"]) == 64
@@ -136,101 +138,97 @@ def test_pair_contract_clean_crop_and_declaring_identity(preview, monkeypatch):
     assert not list(preview.directory.glob("*.png"))
 
 
-def test_only_explicit_call_context_captures(preview):
-    runtime.begin_test("setup is not the call phase")
-    preview.bound.resolve_once()
-    object_previews.capture_bound(preview.bound, preview.element)
-    assert preview.calls == []
-    with runtime.object_preview_test_context():
-        with runtime.config_scope(runtime.get_config()):
-            preview.bound.resolve_once()
-        worker = threading.Thread(target=preview.bound.resolve_once)
-        worker.start()
-        worker.join()
-        assert preview.calls == []
+@pytest.mark.parametrize("test_active", [False, True])
+def test_resolution_and_test_actions_never_capture(preview, monkeypatch, test_active):
+    capture_mock = Mock()
+    monkeypatch.setattr(object_previews, "capture_bound", capture_mock)
+    if test_active:
+        runtime.begin_test("ordinary test")
+    with runtime.config_scope(runtime.get_config()):
         preview.bound.resolve_once()
-    preview.bound.resolve_once()
-    assert len(preview.calls) == 1
-
-
-def test_pytest_call_wrapper_restores_context_on_failure(preview):
-    hook = _Controller.pytest_runtest_call(SimpleNamespace(report_enabled=True), SimpleNamespace())
-    assert not runtime.object_previews_active()
-    next(hook)
-    assert runtime.object_previews_active()
-    with pytest.raises(RuntimeError, match="test failed"):
-        hook.throw(RuntimeError("test failed"))
-    assert not runtime.object_previews_active()
-
-
-def test_no_report_never_enters_preview_context_or_captures(preview, monkeypatch):
-    monkeypatch.setattr(
-        runtime,
-        "object_preview_test_context",
-        lambda: pytest.fail("no-report must not authorize preview capture"),
-    )
-    monkeypatch.setattr(
-        object_previews,
-        "_capture_bound",
-        lambda *args: pytest.fail("no-report must not capture object previews"),
-    )
-    assert runtime.get_config().object_previews
-    hook = _Controller.pytest_runtest_call(SimpleNamespace(report_enabled=False), SimpleNamespace())
-    next(hook)
-    assert not runtime.object_previews_active()
-    preview.bound.resolve_once()
-    object_previews.capture_bound(preview.bound, preview.element)
-    with pytest.raises(StopIteration):
-        next(hook)
+    worker = threading.Thread(target=preview.bound.resolve_once)
+    worker.start()
+    worker.join()
+    preview.bound.perform(0, lambda element: None)
+    capture_mock.assert_not_called()
     assert preview.calls == []
 
 
-def test_setting_disables_capture_even_in_call_context(preview):
+@pytest.mark.parametrize("valid_host", [True, False])
+def test_hosted_app_capture_requires_verified_frame(preview, monkeypatch, valid_host):
+    host = SimpleNamespace(**vars(preview.window))
+    host.process_id = 456
+    host.native_window_handle = 84
+    host.class_name = "ApplicationFrameWindow"
+    host.as_live = lambda: host
+    host.iter_children = lambda: iter((preview.window,))
+    preview.window.parent = lambda: host
+    monkeypatch.setattr(win32, "root_window", lambda hwnd: 84)
+    monkeypatch.setattr(win32, "window_pid", lambda hwnd: 456 if hwnd == 84 else 123)
+    monkeypatch.setattr(win32, "window_class_name", lambda hwnd: "ApplicationFrameWindow")
+    monkeypatch.setattr(win32, "top_level_windows", lambda pids: [84] if valid_host else [])
+    manifest = capture(preview)
+    if valid_host:
+        assert manifest is not None
+        assert preview.calls[0][:2] == (84, 456)
+    else:
+        assert manifest is None
+        assert preview.calls == []
+
+
+@pytest.mark.parametrize("sensitive", [False, True])
+def test_unbounded_container_is_scanned_with_its_children(preview, sensitive):
+    container = SimpleNamespace(**vars(preview.element))
+    container.rect = None
+    container.automation_id = "AccessToken" if sensitive else "Container"
+    container.as_live = lambda: container
+    container.iter_children = lambda: iter((preview.element,))
+    preview.window.iter_children = lambda: iter((container,))
+    assert (capture(preview) is not None) is not sensitive
+
+
+def test_pytest_has_no_capture_call_wrapper():
+    assert not hasattr(_Controller, "pytest_runtest_call")
+
+
+def test_setting_disables_explicit_capture(preview, monkeypatch):
     runtime.set_config(replace(runtime.get_config(), object_previews=False))
+    capture_mock = Mock()
+    monkeypatch.setattr(object_previews, "capture_bound", capture_mock)
     assert capture(preview) is None
+    capture_mock.assert_not_called()
     assert preview.calls == []
 
 
-def test_capture_precedes_action_and_overlay(preview, monkeypatch):
-    order = []
-    monkeypatch.setattr(
-        object_previews, "capture_bound", lambda bound, element: order.append("capture")
-    )
-    monkeypatch.setattr(
-        BoundControl, "_maybe_highlight", lambda bound, element: order.append("overlay")
-    )
-    with runtime.object_preview_test_context():
-        preview.bound.perform(0, lambda element: order.append("action"))
-    assert order == ["capture", "overlay", "action"]
-
-
-@pytest.mark.parametrize("failure", [AmbiguousElementError, ElementTypeError])
+@pytest.mark.parametrize("failure", [AmbiguousElementError, ElementNotFoundError, ElementTypeError])
 def test_resolution_and_validation_failures_do_not_capture(preview, monkeypatch, failure):
     def fail(*args):
-        if failure is AmbiguousElementError:
-            raise failure(SimpleNamespace(message="not a validated unique element"))
+        if failure is not ElementTypeError:
+            raise failure(
+                Diagnostic("not_found", "not a validated unique element", "Button", "Demo", 0)
+            )
         raise failure("not a validated unique element")
 
-    if failure is AmbiguousElementError:
+    if failure is not ElementTypeError:
         monkeypatch.setattr(model, "resolve", fail)
     else:
         monkeypatch.setattr(BoundControl, "check_type", fail)
-    with runtime.object_preview_test_context(), pytest.raises(failure):
-        preview.bound.resolve_once()
+    result = targets.resolve_bound(preview.bound, 0, capture=True)
+    assert result.status in ("ambiguous", "not_found", "error")
     assert preview.calls == []
 
 
 def test_collection_item_does_not_capture(preview):
     bound = BoundElement(SimpleNamespace(), Declaring.rows)
-    with runtime.object_preview_test_context():
-        assert bound.resolve_once() is preview.element
+    assert targets.resolve_bound(bound, 0, capture=True).status == "found"
     assert preview.calls == []
 
 
-def test_preview_hook_failure_never_fails_resolution(preview, monkeypatch):
-    monkeypatch.setattr(object_previews, "capture_bound", Mock(side_effect=OSError("disk full")))
-    with runtime.object_preview_test_context():
-        assert preview.bound.resolve_once() is preview.element
+def test_preview_failure_never_fails_check(preview, monkeypatch):
+    capture_mock = Mock(side_effect=OSError("disk full"))
+    monkeypatch.setattr(object_previews, "capture_bound", capture_mock)
+    assert targets.resolve_bound(preview.bound, 0, capture=True).status == "found"
+    capture_mock.assert_called_once_with(preview.bound, preview.element)
 
 
 @pytest.mark.parametrize("reason", ["anonymous", "external-source", "password-locator"])
@@ -329,8 +327,8 @@ def test_pair_is_complete_before_atomic_manifest_replacement(preview, monkeypatc
     second = capture(preview)
     assert observed == [first["captureId"], second["captureId"]]
     assert first["captureId"] != second["captureId"]
-    assert (preview.directory / first["crop"]).exists()
-    assert (preview.directory / first["window"]).exists()
+    assert not (preview.directory / first["crop"]).exists()
+    assert not (preview.directory / first["window"]).exists()
 
 
 def test_busy_definition_skips_without_capturing(preview):
@@ -341,15 +339,36 @@ def test_busy_definition_skips_without_capturing(preview):
     assert preview.calls == []
 
 
-def test_old_current_pair_gets_reader_grace_when_superseded(preview):
+def test_new_capture_replaces_the_previous_pair_instead_of_piling_up(preview):
     first = capture(preview)
-    old = time.time() - object_previews._GRACE_SECONDS - 100
-    for name in (first["crop"], first["window"]):
-        os.utime(preview.directory / name, (old, old))
     second = capture(preview)
-    assert second["captureId"] != first["captureId"]
-    for name in (first["crop"], first["window"]):
-        assert (preview.directory / name).stat().st_mtime > old + 100
+    third = capture(preview)
+    assert len({first["captureId"], second["captureId"], third["captureId"]}) == 3
+    images = sorted(path.name for path in preview.directory.glob("*.webp"))
+    assert images == sorted([third["crop"], third["window"]])
+
+
+def test_superseded_image_held_open_by_a_reader_is_removed_later(preview, monkeypatch):
+    first = capture(preview)
+    real = object_previews._pinned
+    held = preview.directory / first["crop"]
+
+    @contextlib.contextmanager
+    def pinned(path, *, directory=False):
+        if path == held:
+            raise PermissionError("in use")
+        with real(path, directory=directory) as handle:
+            yield handle
+
+    monkeypatch.setattr(object_previews, "_pinned", pinned)
+    second = capture(preview)
+    monkeypatch.undo()
+    assert held.exists()
+    assert not (preview.directory / first["window"]).exists()
+    old = time.time() - object_previews._GRACE_SECONDS - 1
+    os.utime(held, (old, old))
+    object_previews._cleanup(preview.directory, {second["crop"], second["window"]})
+    assert not held.exists()
 
 
 def test_cleanup_retains_recent_staging_and_current_revision(preview):
@@ -450,8 +469,7 @@ def test_hardlinked_output_files_are_not_modified(preview, filename):
     external = preview.root.parent / (preview.root.name + "-external.txt")
     external.write_text("private", encoding="utf-8")
     (preview.directory / filename).hardlink_to(external)
-    with runtime.object_preview_test_context():
-        assert preview.bound.resolve_once() is preview.element
+    assert targets.resolve_bound(preview.bound, 0, capture=True).uia is preview.element
     assert external.read_text(encoding="utf-8") == "private"
     assert not list(preview.directory.glob("*.webp"))
 

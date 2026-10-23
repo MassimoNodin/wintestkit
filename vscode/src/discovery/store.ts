@@ -125,6 +125,28 @@ export class DiscoveryStore implements vscode.Disposable {
       if (element) return { project, page, element };
     }
   }
+  elementNameAt(uri: vscode.Uri, position: vscode.Position): LocatedElement | undefined {
+    const project = this.projects.projectFor(uri);
+    if (!project) return;
+    for (const page of this.get(project)?.pages ?? []) {
+      if (normalizedPath(page.file) !== normalizedPath(uri.fsPath)) continue;
+      const element = page.elements.find((item) => {
+        const { start, end } = item.nameRange;
+        return position.line === start.line && position.line === end.line &&
+          position.character >= start.character && position.character < end.character;
+      });
+      if (element) return { project, page, element };
+    }
+  }
+  elementByName(uri: vscode.Uri, qualname: string): LocatedElement | undefined {
+    const project = this.projects.projectFor(uri);
+    if (!project) return;
+    for (const page of this.get(project)?.pages ?? []) {
+      if (normalizedPath(page.file) !== normalizedPath(uri.fsPath)) continue;
+      const element = page.elements.find((item) => item.qualname === qualname);
+      if (element) return { project, page, element };
+    }
+  }
   pageById(id: string, project?: Project): PageEntry | undefined {
     return this.selected(project)
       .flatMap((result) => result.pages)

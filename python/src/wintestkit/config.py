@@ -47,6 +47,32 @@ def ensure_local_ignores(root: Path) -> None:
         path.write_text(ignore + separator + "\n".join(missing) + "\n", encoding="utf-8")
 
 
+OBJECT_PREVIEWS_IGNORE = "object-previews/"
+_OBJECT_PREVIEWS_IGNORE_FORMS = {OBJECT_PREVIEWS_IGNORE, "/" + OBJECT_PREVIEWS_IGNORE}
+
+
+def sync_object_previews_ignore(root: Path, share: bool) -> None:
+    """Keep ``object-previews/`` out of Git unless the repository chose to share the captures.
+
+    Only the exact line this adds is ever removed, so a rule the user wrote differently stays.
+    Failing to edit ``.gitignore`` never matters to the caller.
+    """
+    path = root / ".gitignore"
+    try:
+        text = path.read_text(encoding="utf-8") if path.exists() else ""
+        lines = text.splitlines()
+        if share:
+            if OBJECT_PREVIEWS_IGNORE not in lines:
+                return
+            kept = [line for line in lines if line != OBJECT_PREVIEWS_IGNORE]
+            path.write_text("".join(line + "\n" for line in kept), encoding="utf-8")
+        elif not _OBJECT_PREVIEWS_IGNORE_FORMS.intersection(lines):
+            separator = "\n" if text and not text.endswith("\n") else ""
+            path.write_text(text + separator + OBJECT_PREVIEWS_IGNORE + "\n", encoding="utf-8")
+    except OSError:
+        return
+
+
 _TOP_LEVEL_KEYS = {
     "launch",
     "timeout",
@@ -64,6 +90,7 @@ _TOP_LEVEL_KEYS = {
     "replay_max_frames",
     "replay_max_bytes",
     "object_previews",
+    "object_previews_share",
 }
 _APP_KEYS = {"path", "args", "cwd", "env", "process", "startup_timeout", "close_timeout"}
 
@@ -126,6 +153,7 @@ class WtkConfig:
     replay_max_frames: int = 3000
     replay_max_bytes: int = 104857600
     object_previews: bool = True
+    object_previews_share: bool = False
     highlight_color: str = "#FF0000"
 
 
@@ -409,12 +437,16 @@ def load_config(start: Path | None = None, overrides: Mapping[str, Any] | None =
     root = root or start_dir
 
     values: dict[str, Any] = {}
+    repository: dict[
+        str, Any
+    ] = {}  # what everyone gets: the layers a repository-wide setting reads
     if found:
         data = _read_pyproject(root / "pyproject.toml") or {}
         table = _wtk_table(data) or {}
         _layer(values, _flatten(table))
         shared = _flatten(_read_yaml(root / "wintestkit.yaml"))
         _layer(values, shared)
+        repository = {**_flatten(table), **shared}
         local_toml = _read_pyproject(root / "wintestkit.local.toml") or {}
         _layer(values, _flatten(_wtk_table(local_toml) or {}))
         _layer(values, _flatten(_read_yaml(root / "wintestkit.local.yaml")))
@@ -423,6 +455,8 @@ def load_config(start: Path | None = None, overrides: Mapping[str, Any] | None =
         _check_override_keys(overrides)
         _layer(values, {k: v for k, v in overrides.items() if v is not None})
 
+    if overrides and overrides.get("object_previews_share") is not None:
+        repository["object_previews_share"] = overrides["object_previews_share"]
     launch = _enum("launch", _launch_value(values.get("launch", "per-test")), LAUNCH_MODES)
     app = _build_app(root, values)
     if launch == "attach" and (app is None or (app.process is None and app.path is None)):
@@ -449,6 +483,10 @@ def load_config(start: Path | None = None, overrides: Mapping[str, Any] | None =
         highlight_actions=_boolean("highlight_actions", values.get("highlight_actions", False)),
         highlight_color=_hex_color("highlight_color", values.get("highlight_color", "#FF0000")),
         object_previews=_boolean("object_previews", values.get("object_previews", True)),
+        # Repository-wide: a machine's own file or environment cannot decide it for everyone.
+        object_previews_share=_boolean(
+            "object_previews_share", repository.get("object_previews_share", False)
+        ),
         slow_mo_ms=_non_negative_int("slow_mo_ms", values.get("slow_mo_ms", 0)),
         python_paths=tuple(_resolve_path(root, p) for p in python_paths),
         property_aliases=_property_aliases(values.get("property_aliases", {})),

@@ -7,6 +7,7 @@ import { Projects } from "./projects";
 import { ConfigChanges } from "./configChanges";
 import { DiscoveryStore } from "./discovery/store";
 import { CodeLenses } from "./editor/codeLens";
+import { ElementPreviews } from "./editor/elementPreviews";
 import { CheckDecorations, CheckResultsStore } from "./editor/decorations";
 import { HighlightCommands } from "./editor/highlightCommands";
 import { FlowRuns } from "./editor/flowRuns";
@@ -236,6 +237,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     checks,
     new CheckDecorations(checks),
     new HighlightCommands(projects, discovery, servers, checks, log),
+    new ElementPreviews(discovery, log, () => enablement.enabled),
     new RelocationActions(checks),
   );
   context.subscriptions.push(servers, status, projects, discovery);

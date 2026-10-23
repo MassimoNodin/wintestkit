@@ -7,6 +7,38 @@ Unreleased changes must be moved to a dated candidate section before a release c
 
 ## [Unreleased]
 
+- Fix **Check all elements in this class** not marking the elements of mounted components (such as a
+  page's `navigation` or `number_pad`) in the Page Tree. The check ran and reported its totals, but
+  only the page's own elements were updated. Component rows under the page that was checked now get
+  their ticks and crosses, and only those: the same component under another page is not touched,
+  since it may be in a different state there. Checking a component element on its own still marks it
+  wherever it appears.
+- Add **Share Check Element captures in the repository** (`object_previews_share`, default off).
+  It is a repository-wide choice, so it exists only in Repository Settings and is disabled until
+  **Save Check Element captures** is on; User Settings show its state with a button to Repository
+  Settings. While off, `object-previews/` is added to `.gitignore` so captures stay on each machine;
+  turning it on removes that line. Needs the Python package from this version.
+- Fix saved element captures piling up in `object-previews/`. A new capture now deletes the images
+  it replaces instead of keeping them for an hour, so each element keeps one pair; older leftovers
+  are pruned the next time that element is checked. Needs the Python package from this version.
+- **Check all elements in this class** now saves a capture for every uniquely found single element,
+  not only for single-element checks, and shows a spinner (a **Checking all elements…** CodeLens, the
+  page's row in the Page Tree and a progress notification) while it runs. Needs the Python package
+  from this version.
+- Keep Check exists and Highlight results (CodeLens status, inline markers, tree icons) when you
+  close or leave a file, save or edit it, or the project is rediscovered. Results now follow their
+  element to its new line and are only dropped if the element no longer exists. They are cleared on a
+  window reload or with the new **Clear results** button in the Page Tree toolbar.
+- Fix saved Check exists captures for hosted Windows apps such as Calculator, and scan
+  non-rendered UI containers without discarding otherwise safe window captures.
+- Keep single-element checks responsive during discovery refreshes, show progress and explicit
+  outcomes, and log check requests/results instead of silently skipping stale CodeLens targets.
+- Capture saved element images only when a single element's **Check exists** CodeLens succeeds,
+  rather than during tests. Hover over its name in Python to see the crop, capture time and links
+  to the full image or outlined app window. References work when Python can resolve the declaration.
+  Whole-page checks and Highlight do not capture. Remove saved/offline Spy mode; selecting a page
+  element opens its source without replacing live Spy. Older automatic captures need an explicit
+  check before they appear in hovers. Needs the Python package from this version.
 - Fix Spy's live preview being blurry. Captures were shrunk to 1600 px on their longest edge, so a
   full-screen window on a 3440x1440 monitor lost more than half its resolution and its text turned
   to mush, in the panel and when zoomed in the image viewer. They are now sent at their real size

@@ -212,6 +212,20 @@ h3 {
     border-radius: 0 3px 3px 0;
     background: var(--accent);
 }
+/* A setting another page sent you to: marked for a moment so it is easy to find. */
+.setting.revealed {
+    animation: reveal 2s ease-out;
+}
+@keyframes reveal {
+    from {
+        background: color-mix(in srgb, var(--accent) 22%, transparent);
+        box-shadow: inset 0 0 0 1px var(--accent);
+    }
+    to {
+        background: transparent;
+        box-shadow: inset 0 0 0 1px transparent;
+    }
+}
 .card > .setting:last-child {
     border-bottom: none;
 }
@@ -239,10 +253,8 @@ h3 {
     opacity: 0.55;
     pointer-events: none;
 }
-.cover {
-    position: absolute;
-    inset: -4px -6px;
-    z-index: 2;
+.cover,
+.action-button {
     display: flex;
     align-items: center;
     justify-content: center;
@@ -252,12 +264,27 @@ h3 {
     background: color-mix(in srgb, var(--vscode-editor-background) 45%, transparent);
     color: var(--vscode-foreground);
     font-weight: 600;
+}
+.cover {
+    position: absolute;
+    inset: -4px -6px;
+    z-index: 2;
     -webkit-backdrop-filter: blur(5px);
     backdrop-filter: blur(5px);
 }
-.cover:hover {
+.action-button {
+    display: inline-flex;
+    padding: 6px 14px;
+}
+.cover:hover,
+.action-button:hover:not(:disabled) {
     background: color-mix(in srgb, var(--vscode-editor-background) 25%, transparent);
     border-color: var(--accent);
+}
+.action-button:disabled,
+.action-button:disabled:hover {
+    background: color-mix(in srgb, var(--vscode-editor-background) 45%, transparent);
+    opacity: 0.55;
 }
 input:disabled,
 button:disabled {
@@ -341,6 +368,16 @@ input[type="text"] {
     text-align: right;
     font-family: var(--mono);
     font-size: 12px;
+}
+/* No spinner arrows: the slider and typing set the value. */
+input[type="number"] {
+    -moz-appearance: textfield;
+    appearance: textfield;
+}
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
 }
 .number.inherited input[type="number"] {
     color: var(--muted);
@@ -432,33 +469,6 @@ nav .segmented {
     color: var(--muted);
     font-size: 11px;
     line-height: 1.5;
-}
-.terminal {
-    padding: 10px 12px;
-    border-radius: 6px;
-    background: var(--vscode-textCodeBlock-background, var(--well));
-    font-family: var(--mono);
-    font-size: 12px;
-    line-height: 1.7;
-    overflow-x: auto;
-    white-space: pre;
-}
-.preview .terminal {
-    padding: 0;
-    background: none;
-}
-.terminal .prompt,
-.terminal .comment {
-    color: var(--muted);
-}
-.terminal .comment {
-    font-style: italic;
-}
-.terminal .string {
-    color: var(--vscode-debugTokenExpression-string, var(--vscode-textLink-foreground));
-}
-.terminal .keyword {
-    color: var(--vscode-symbolIcon-keywordForeground, var(--vscode-textLink-foreground));
 }
 .mini-window {
     border: 1px solid var(--line);

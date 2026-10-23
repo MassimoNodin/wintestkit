@@ -137,7 +137,7 @@ describe("YAML configuration editing", () => {
   it("groups evidence controls separately and bounds replay FPS like the backend", () => {
     const evidence = settingSections("shared").find((group) => group.group === "Evidence");
     expect(evidence?.fields.map((field) => field.key)).toEqual([
-      "screenshots", "object_previews", "replay", "replay_fps", "replay_scope",
+      "screenshots", "object_previews", "object_previews_share", "replay", "replay_fps", "replay_scope",
     ]);
     expect(settingFields.find((field) => field.key === "replay_fps")).toMatchObject({ minimum: 0, maximum: 30 });
     for (const fps of [0, -1, 30.01])
@@ -157,6 +157,21 @@ describe("YAML configuration editing", () => {
       default: true,
       group: "Evidence",
     });
+  });
+  it("keeps the repository-wide share decision out of local files and behind captures", () => {
+    const share = settingFields.find((field) => field.key === "object_previews_share");
+    expect(share).toMatchObject({
+      kind: "boolean", default: false, repositoryOnly: true, requires: "object_previews",
+    });
+    expect(updateSetting("{}", "shared", "object_previews_share", true, false)).toContain("true");
+    expect(() => updateSetting("{}", "local", "object_previews_share", true, false)).toThrow(
+      /Repository Settings/,
+    );
+    // It is shown in both pages (User Settings as a pointer), never in a local-only list.
+    for (const scope of ["shared", "local"] as const)
+      expect(
+        settingSections(scope).flatMap((group) => group.fields.map((field) => field.key)),
+      ).toContain("object_previews_share");
   });
   it("keeps machine-only options out of shared sections", () => {
     const shared = settingSections("shared");

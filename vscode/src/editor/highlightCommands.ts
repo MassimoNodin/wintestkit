@@ -1,8 +1,11 @@
 import * as vscode from "vscode";
 import type { Projects } from "../projects";
 import { normalizedPath } from "../projects";
-import type { DiscoveryStore } from "../discovery/store";
+import type { DiscoveryStore, LocatedElement } from "../discovery/store";
 import type {
+  CheckResult,
+  DiscoveryResult,
+  ElementCheckResult,
   ElementHighlightResult,
   PageCheckResult,
 } from "../protocol/generated";
@@ -21,6 +24,57 @@ export interface ElementTarget {
 export interface PageTarget {
   file: string;
   page: string;
+}
+/** An element a whole-page check reports on, under the name the server gives its result. */
+interface CheckedTarget {
+  resultName: string;
+  located: LocatedElement;
+  /** Page Tree row of this element under the page that was checked. */
+  nodeId: string;
+  /** Declared by the checked page itself, not by a component it mounts. */
+  own: boolean;
+}
+/**
+ * Every element a page check covers: the page's own, and those of the components it mounts (at any
+ * depth), which the server reports as `Page.member.element` but discovery lists under the
+ * component's own page. The row ids follow the Page Tree's, where a mounted component's rows are
+ * prefixed with the mount that holds them.
+ */
+export function pageCheckTargets(
+  project: LocatedElement["project"],
+  discovery: DiscoveryResult,
+  host: DiscoveryResult["pages"][number],
+): CheckedTarget[] {
+  const pages = new Map(discovery.pages.map((page) => [page.id, page]));
+  const targets: CheckedTarget[] = [];
+  const walk = (
+    page: typeof host,
+    prefix: string,
+    instance: string | undefined,
+    lineage: ReadonlySet<string>,
+  ) => {
+    for (const element of page.elements) {
+      const row = discovery.root + "|" + element.id;
+      targets.push({
+        resultName: prefix + "." + element.name,
+        located: { project, page, element },
+        nodeId: instance === undefined ? row : instance + "|" + row,
+        own: instance === undefined,
+      });
+    }
+    for (const child of page.children ?? []) {
+      const mounted = pages.get(child.pageId);
+      if (mounted && !lineage.has(child.pageId))
+        walk(
+          mounted,
+          prefix + "." + child.name,
+          (instance ?? discovery.root + "|" + host.id) + "|" + JSON.stringify([child.name, child.pageId]),
+          new Set([...lineage, child.pageId]),
+        );
+    }
+  };
+  walk(host, host.qualname, undefined, new Set([host.id]));
+  return targets;
 }
 class AppNotRunningError extends Error {
   constructor(readonly project: Project) {
@@ -192,9 +246,9 @@ export class HighlightCommands implements vscode.Disposable {
   }
   private async checkElement(input?: ElementTarget): Promise<void> {
     const target = this.target(input);
-    if (!target) return;
+    if (!target) throw new Error("Select an element declaration to check.");
     const project = this.projects.projectFor(vscode.Uri.file(target.file));
-    if (!project) return;
+    if (!project) throw new Error("No WinTestKit project was found for this element. Refresh project discovery and try again.");
     const page = this.discovery
       .get(project)
       ?.pages.find(
@@ -202,11 +256,46 @@ export class HighlightCommands implements vscode.Disposable {
           normalizedPath(page.file) === normalizedPath(target.file) &&
           page.elements.some((element) => element.qualname === target.qualname),
       );
-    if (page)
-      await this.checkPage(
-        { file: page.file, page: page.qualname },
-        target.qualname,
+    const element = page?.elements.find((item) => item.qualname === target.qualname);
+    const located = page && element ? { project, page, element } : undefined;
+    const pendingStatus: ActionStatus = { status: "running" };
+    if (located) this.checks.setFeedback(located, "check", pendingStatus);
+    this.log.info("Checking element " + target.qualname + " in " + target.file);
+    try {
+      const checked = await vscode.window.withProgress(
+        {
+          location: vscode.ProgressLocation.Notification,
+          title: "Checking " + target.qualname,
+        },
+        () => this.request<ElementCheckResult>(project, "element.check", { ...target }),
       );
+      if (!checked || !["found", "not_found", "ambiguous", "error"].includes(checked.status))
+        throw new Error("The server returned no check result for this element.");
+      const result = { ...checked, qualname: target.qualname };
+      if (located && this.checks.setFeedback(located, "check", result, pendingStatus))
+        this.checks.set({ ...located, result });
+      this.log.info("Check " + target.qualname + ": " + checked.status);
+      if (checked.status === "found") {
+        vscode.window.setStatusBarMessage("$(check) Check: Found " + target.qualname, 5000);
+      } else {
+        await vscode.window.showWarningMessage(
+          "Check " + target.qualname + ": " + (checked.diagnostic?.message ?? checked.message ?? checked.status),
+        );
+      }
+    } catch (error) {
+      const result = {
+        qualname: target.qualname,
+        status: "error" as const,
+        message: error instanceof RpcError && error.code === -32601
+          ? "Check Element captures need a newer wintestkit package in the project's Python environment."
+          : error instanceof Error ? error.message : String(error),
+        durationMs: 0,
+      };
+      if (located && this.checks.setFeedback(located, "check", result, pendingStatus))
+        this.checks.set({ ...located, result });
+      if (error instanceof RpcError && error.code === -32601) throw new Error(result.message);
+      throw error;
+    }
   }
   private async checkPage(input?: PageTarget, filter?: string): Promise<void> {
     let target = input;
@@ -237,38 +326,48 @@ export class HighlightCommands implements vscode.Disposable {
           page.qualname === target.page,
       );
     if (!page) return;
-    const elements = filter
-      ? page.elements.filter((element) => element.qualname === filter)
-      : page.elements;
+    const discovered = this.discovery.get(project);
+    if (!discovered) return;
+    const targets = pageCheckTargets(project, discovered, page).filter(
+      (item) => !filter || item.resultName === filter,
+    );
     const pendingStatus: ActionStatus = { status: "running" };
-    for (const element of elements)
-      this.checks.setFeedback(
-        { project, page, element },
-        "check",
-        pendingStatus,
-      );
+    // A component's elements are shared by every page that mounts it, so only the page's own are
+    // shown as checking in the editor.
+    for (const { located, own } of targets)
+      if (own) this.checks.setFeedback(located, "check", pendingStatus);
+    this.checks.setPageRunning(page.file, page.qualname, true);
+    this.log.info("Checking all elements in " + page.qualname + " (" + targets.length + ")");
     try {
-      const result = await this.request<PageCheckResult>(
-        project,
-        "page.check",
+      const result = await vscode.window.withProgress(
         {
-          file: target.file,
-          page: target.page,
+          location: vscode.ProgressLocation.Notification,
+          title: "Checking all elements in " + page.qualname,
         },
+        () =>
+          this.request<PageCheckResult>(project, "page.check", {
+            file: target.file,
+            page: target.page,
+          }),
       );
-      for (const element of elements) {
+      const scoped = new Map<string, CheckResult>();
+      for (const { resultName, located, nodeId, own } of targets) {
         const checked = result.results.find(
-          (checked) => checked.qualname === element.qualname,
+          (checked) => checked.qualname === resultName,
         ) ?? {
-          qualname: element.qualname,
+          qualname: resultName,
           status: "error" as const,
           message: "The server returned no check result for this element.",
           durationMs: 0,
         };
-        const located = { project, page, element };
-        if (this.checks.setFeedback(located, "check", checked, pendingStatus))
+        // A mounted component's result belongs to this page's rows alone: filing it under the
+        // element would also mark the same component under every other page that mounts it.
+        if (!own) scoped.set(nodeId, { ...checked, qualname: located.element.qualname });
+        else if (this.checks.setFeedback(located, "check", checked, pendingStatus))
           this.checks.set({ ...located, result: checked });
       }
+      this.checks.setScopedResults(scoped);
+      this.checks.setPageRunning(page.file, page.qualname, false);
       if (!filter) {
         const summary = summarizeChecks(result.results);
         vscode.window.setStatusBarMessage(
@@ -292,9 +391,10 @@ export class HighlightCommands implements vscode.Disposable {
               { title: "Check failures", placeHolder: "Select an element to open its definition" },
             );
             if (selected) {
-              const definition = page.elements.find((element) => element.qualname === selected.item.qualname);
-              if (definition) {
-                const document = await vscode.workspace.openTextDocument(target.file);
+              const failed = targets.find((item) => item.resultName === selected.item.qualname)?.located;
+              const definition = failed?.element;
+              if (failed && definition) {
+                const document = await vscode.workspace.openTextDocument(failed.page.file);
                 const editor = await vscode.window.showTextDocument(document);
                 const position = new vscode.Position(definition.range.start.line, definition.range.start.character);
                 editor.selection = new vscode.Selection(position, position);
@@ -305,18 +405,22 @@ export class HighlightCommands implements vscode.Disposable {
         }
       }
     } catch (error) {
-      for (const element of elements) {
+      const scoped = new Map<string, CheckResult>();
+      for (const { located, nodeId, own } of targets) {
         const result = {
-          qualname: element.qualname,
+          qualname: located.element.qualname,
           status: "error" as const,
           message: error instanceof Error ? error.message : String(error),
           durationMs: 0,
         };
-        const located = { project, page, element };
-        if (this.checks.setFeedback(located, "check", result, pendingStatus))
+        if (!own) scoped.set(nodeId, result);
+        else if (this.checks.setFeedback(located, "check", result, pendingStatus))
           this.checks.set({ ...located, result });
       }
+      this.checks.setScopedResults(scoped);
       throw error;
+    } finally {
+      this.checks.setPageRunning(page.file, page.qualname, false);
     }
   }
   dispose(): void {

@@ -18,7 +18,7 @@ export function escapeAttribute(value: string): string {
   return escapeText(value).replaceAll('"', "&quot;").replaceAll("'", "&#39;");
 }
 
-/** What the Page Tree toolbar shows for the on-demand unused-definition scan. */
+/** What the Page Tree toolbar shows for the on-demand unused-definition scan (it also holds the clear-results button). */
 export interface UnusedToolsState {
   scanning: boolean;
   scanned: boolean;
@@ -318,6 +318,7 @@ const unusedScan = document.getElementById("unused-scan");
 const unusedToggle = document.getElementById("unused-toggle");
 unusedScan?.addEventListener("click", () => vscodeApi.postMessage({ type: "unusedScan" }));
 unusedToggle?.addEventListener("click", () => vscodeApi.postMessage({ type: "unusedToggle" }));
+document.getElementById("results-clear")?.addEventListener("click", () => vscodeApi.postMessage({ type: "clearResults" }));
 function paintUnused(state) {
   if (!unusedTools || !unusedScan || !unusedToggle) return;
   unusedTools.hidden = !state;
@@ -457,7 +458,7 @@ export function navigationMarkup(options: {
   }).join("");
   return (
     `<div id="segments" role="tablist" aria-label="Page Tree and Flows">${tabs}</div>\n` +
-    `<div id="unused-tools" role="toolbar" aria-label="Unused definitions" hidden><button id="unused-scan" type="button" class="tool"><span class="codicon codicon-search" aria-hidden="true"></span><span class="tool-label">Find unused definitions</span></button><button id="unused-toggle" type="button" class="tool" aria-pressed="false" disabled><span class="codicon codicon-eye" aria-hidden="true"></span><span class="tool-label">Show unused</span><span id="unused-count" class="badge" hidden></span></button></div>\n` +
+    `<div id="unused-tools" role="toolbar" aria-label="Unused definitions" hidden><button id="unused-scan" type="button" class="tool"><span class="codicon codicon-search" aria-hidden="true"></span><span class="tool-label">Find unused definitions</span></button><button id="unused-toggle" type="button" class="tool" aria-pressed="false" disabled><span class="codicon codicon-eye" aria-hidden="true"></span><span class="tool-label">Show unused</span><span id="unused-count" class="badge" hidden></span></button><button id="results-clear" type="button" class="tool" title="Forget the saved Check exists and Highlight results shown in the editor and tree. They are otherwise kept until the window reloads."><span class="codicon codicon-clear-all" aria-hidden="true"></span><span class="tool-label">Clear results</span></button></div>\n` +
     `<div id="tree" role="tree" aria-label="${SECTION_LABEL[options.section]}" tabindex="0">${options.treeHtml}</div>`
   );
 }

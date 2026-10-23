@@ -24,8 +24,6 @@ export interface ObjectPreview {
 export interface PreviewImages {
   elementDataUrl: string;
   windowDataUrl: string;
-  /** Present for images saved by a test; a live capture has none. */
-  capturedAt?: string;
 }
 
 export function definitionPreviewKey(definitionId: string): string {
@@ -120,7 +118,21 @@ export function validatePreviewWebp(bytes: Buffer, width?: number, height?: numb
   if (!frame || offset !== bytes.length) throw new Error("Saved preview has no complete WebP frame.");
 }
 
+/**
+ * A new capture deletes the images the old manifest named, so a read that straddles one finds them
+ * gone; the manifest it then re-reads names the new pair.
+ */
 export async function readObjectPreview(projectRoot: string, definitionId: string): Promise<ObjectPreview | undefined> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await readObjectPreviewOnce(projectRoot, definitionId);
+    } catch (error) {
+      if (attempt >= 2 || (error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+  }
+}
+
+async function readObjectPreviewOnce(projectRoot: string, definitionId: string): Promise<ObjectPreview | undefined> {
   const key = definitionPreviewKey(definitionId);
   const root = await realpath(projectRoot);
   let manifestPath: string;
@@ -131,8 +143,9 @@ export async function readObjectPreview(projectRoot: string, definitionId: strin
     throw error;
   }
   const manifest = JSON.parse((await boundedRead(root, manifestPath, manifestLimit)).toString("utf8")) as Record<string, unknown>;
+  if (manifest?.schemaVersion === 1) return;
   if (!manifest || typeof manifest !== "object" || Array.isArray(manifest) ||
-    manifest.schemaVersion !== 1 || manifest.definitionId !== definitionId ||
+    manifest.schemaVersion !== 2 || manifest.definitionId !== definitionId ||
     typeof manifest.captureId !== "string" || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(manifest.captureId) ||
     typeof manifest.capturedAt !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|\+00:00)$/.test(manifest.capturedAt) ||
     !Number.isFinite(Date.parse(manifest.capturedAt)) ||
@@ -157,10 +170,6 @@ export async function readObjectPreview(projectRoot: string, definitionId: strin
     cropDataUrl: "data:image/webp;base64," + crop.toString("base64"),
     windowDataUrl: "data:image/webp;base64," + window.toString("base64"),
   };
-}
-
-export function savedPreviewImages(preview: ObjectPreview): PreviewImages {
-  return { elementDataUrl: preview.cropDataUrl, windowDataUrl: preview.windowDataUrl, capturedAt: preview.capturedAt };
 }
 
 /** Validates a live capture from the automation server before it reaches the webview. */

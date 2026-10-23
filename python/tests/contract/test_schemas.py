@@ -156,6 +156,11 @@ def definition_examples() -> dict[str, dict[str, Any]]:
         "AppLaunchResult": {"pids": [1234]},
         "AppCloseParams": {},
         "AppCloseResult": None,
+        "ElementCheckParams": {
+            "file": "C:/wtk/pages/main.py",
+            "qualname": "MainPage.sign_in",
+        },
+        "ElementCheckResult": element_result,
         "ElementHighlightParams": {
             "file": "C:/wtk/pages/main.py",
             "qualname": "MainPage.sign_in",

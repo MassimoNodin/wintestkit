@@ -449,7 +449,7 @@ export function flowPresentation(
 
 export function toNavNodes(
   nodes: readonly ElementNode[],
-  statusFor: (elementId: string | undefined) => CheckResult["status"] | undefined,
+  statusFor: (node: ElementNode) => CheckResult["status"] | undefined,
   flowStateFor: (
     node: ElementNode,
   ) => "running" | "passed" | "failed" | undefined = () => undefined,
@@ -458,7 +458,7 @@ export function toNavNodes(
     const flowState = flowStateFor(node);
     const presentation = flowState
       ? flowPresentation(flowState)
-      : checkPresentation(statusFor(node.elementId));
+      : checkPresentation(statusFor(node));
     return {
       id: node.id,
       label: node.label,

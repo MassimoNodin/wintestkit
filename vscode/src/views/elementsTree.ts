@@ -4,7 +4,7 @@ import type { Project } from "../server/serverManager";
 import type { DiscoveryStore } from "../discovery/store";
 import type { CheckResultsStore } from "../editor/decorations";
 import { flowKey, type FlowRuns } from "../editor/flowRuns";
-import type { DiscoveryResult } from "../protocol/generated";
+import type { CheckResult, DiscoveryResult } from "../protocol/generated";
 import { buildTree, type ElementNode } from "./elementsTreeModel";
 import { renderBody } from "./navigationDocument";
 import {
@@ -111,9 +111,7 @@ export class ElementsTree implements vscode.Disposable {
     item.description = node.description;
     item.tooltip = node.tooltip ?? node.description;
     item.contextValue = nodeContext(node);
-    const presentation = checkPresentation(
-      node.elementId ? this.checks.results.get(node.elementId)?.status : undefined,
-    );
+    const presentation = checkPresentation(this.statusOf(node));
     item.iconPath = new vscode.ThemeIcon(
       presentation?.icon ?? node.icon,
       presentation ? new vscode.ThemeColor(presentation.color) : undefined,
@@ -131,6 +129,16 @@ export class ElementsTree implements vscode.Disposable {
     this.view = undefined;
     this.viewSubscriptions.forEach((subscription) => subscription.dispose());
     this.subscriptions.forEach((subscription) => subscription.dispose());
+  }
+  /**
+   * A component's elements appear once per page that mounts it. A whole-page check marks only the
+   * rows under the page it ran on; any other row shows the result of a check of the element itself.
+   */
+  private statusOf(node: ElementNode): CheckResult["status"] | undefined {
+    return (
+      this.checks.scopedResults.get(node.id)?.status ??
+      (node.elementId ? this.checks.results.get(node.elementId)?.status : undefined)
+    );
   }
   private discoveries(): DiscoveryResult[] {
     return this.projects.all
@@ -158,6 +166,10 @@ export class ElementsTree implements vscode.Disposable {
       if (!this.unused?.hasResults) return;
       this.showUnused = !this.showUnused;
       this.publish();
+      return;
+    }
+    if (value && typeof value === "object" && (value as { type?: unknown }).type === "clearResults") {
+      this.checks.clear();
       return;
     }
     const message = parseNavigationMessage(value);
@@ -237,15 +249,6 @@ export class ElementsTree implements vscode.Disposable {
       selection: range,
     });
     editor.revealRange(range, vscode.TextEditorRevealType.InCenterIfOutsideViewport);
-    if (node.elementId && node.qualname && node.kind !== "window") {
-      const project = this.projects.projectFor(vscode.Uri.file(node.file));
-      if (project)
-        await vscode.commands.executeCommand("wintestkit.spy.showDefinition", {
-          id: node.elementId,
-          qualname: node.qualname,
-          projectRoot: project.root.fsPath,
-        });
-    }
   }
   private persist(): void {
     if (!this.host) return;
@@ -278,9 +281,15 @@ export class ElementsTree implements vscode.Disposable {
     if (unusedState) source = annotateUnused(source, this.unusedLookup(), unusedState.filtering);
     const nodes = toNavNodes(
       source,
-      (elementId) =>
-        elementId ? this.checks.results.get(elementId)?.status : undefined,
+      (node) => this.statusOf(node),
       (node) => {
+        if (
+          node.kind === "page" &&
+          node.file &&
+          node.page &&
+          this.checks.isPageRunning(node.file, node.page)
+        )
+          return "running";
         if (node.kind !== "flow" || !node.runnable || !node.file) return;
         const status = this.flows.states.get(
           flowKey({ file: node.file, name: node.label }),
