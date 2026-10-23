@@ -303,7 +303,7 @@ describe("settings editor script", () => {
     });
     view.emit(state("local", 9, { timeout: 21 }, { timeout: 21 }));
     expect(view.must("status").className).toBe("");
-    expect(view.must("status").textContent).toContain("Unsaved changes");
+    expect(view.must("status").hidden).toBe(true);
   });
 
   it("restores focus for dotted fields, browse, and the shared executable link", () => {
@@ -755,10 +755,137 @@ describe("settings editor script", () => {
     expect(view.must("saving").hidden).toBe(true);
     expect(view.must("status").hidden).toBe(false);
     expect(view.must("status").textContent).toContain("not saved");
-    // Real unsaved edits (nothing of ours in flight) still show the banner.
-    view.emit({ ...state("local", 63, { timeout: 25 }), dirty: true });
-    expect(view.must("status").hidden).toBe(false);
-    expect(view.must("status").textContent).toContain("Unsaved changes");
+    // An undo or redo is saved by the extension: the spinner is up from the moment it happens,
+    // even before the file reports as dirty, and there is never an unsaved banner.
+    view.emit({ ...state("local", 63, { timeout: 15 }), dirty: false, saving: true });
+    expect(view.must("saving").hidden).toBe(false);
+    expect(view.must("status").hidden).toBe(true);
+    view.emit({ ...state("local", 64, { timeout: 15 }), dirty: true, saving: true });
+    expect(view.must("saving").hidden).toBe(false);
+    expect(view.must("status").hidden).toBe(true);
+    view.emit({ ...state("local", 65, { timeout: 15 }), dirty: false });
+    expect(view.must("saving").hidden).toBe(true);
+    expect(view.must("status").hidden).toBe(true);
+  });
+
+  it("floats an error above the setting it is about, with a dismiss button", () => {
+    const view = boot();
+    view.emit(state("local", 80, { timeout: 15 }));
+    const target = view.must("app.path") as unknown as {
+      getBoundingClientRect: () => object;
+    };
+    target.getBoundingClientRect = () => ({ top: 300, bottom: 330, left: 500, right: 900 });
+    view.must("app.path").value = "C:\\Elsewhere\\App.exe";
+    view.must("app.path").onchange?.();
+    view.emit({ type: "error", message: "Error: Choose an executable inside the project folder." });
+    const status = view.must("status");
+    expect(status.hidden).toBe(false);
+    expect(status.className).toBe("error anchored");
+    expect(status.style.props).toMatchObject({ top: "288px", left: "900px" });
+    const dismiss = view.must("dismiss");
+    expect(dismiss.getAttribute("aria-label")).toBe("Dismiss error");
+    dismiss.onclick?.();
+    expect(status.hidden).toBe(true);
+  });
+
+  it("puts an error below a setting too close to the top of the page", () => {
+    const view = boot();
+    view.emit(state("local", 81, { timeout: 15 }));
+    const target = view.must("timeout") as unknown as {
+      getBoundingClientRect: () => object;
+    };
+    target.getBoundingClientRect = () => ({ top: 20, bottom: 50, left: 500, right: 900 });
+    view.must("timeout").value = "abc";
+    view.must("timeout").onchange?.();
+    expect(view.must("status").className).toBe("error anchored below");
+    expect(view.must("status").style.props.top).toBe("62px");
+  });
+
+  it("keeps a text box red, with what was typed, until a change to it is saved", () => {
+    const view = boot();
+    view.emit({ ...state("local", 90, {}), effective: {} });
+    view.must("app.path").value = "C:\\bad.exe";
+    view.must("app.path").onchange?.();
+    view.emit({ type: "error", message: "Error: nope", key: "app.path" });
+    expect(view.must("app.path").className).toBe("invalid");
+    expect(view.must("app.path").getAttribute("aria-invalid")).toBe("true");
+    // Other changes redraw the page: the box stays red and keeps the text that was not saved.
+    view.emit({ ...state("local", 91, { timeout: 20 }), effective: {} });
+    expect(view.must("app.path").className).toBe("invalid");
+    expect(view.must("app.path").value).toBe("C:\\bad.exe");
+    expect(view.must("timeout").className).not.toBe("invalid");
+    // A failed retry leaves it red.
+    view.must("app.path").value = "C:\\still-bad.exe";
+    view.must("app.path").onchange?.();
+    view.emit({ type: "error", message: "Error: nope", key: "app.path" });
+    expect(view.must("app.path").className).toBe("invalid");
+    // A change that is saved clears it.
+    view.must("app.path").value = "C:\\good.exe";
+    view.must("app.path").onchange?.();
+    view.emit({ type: "committed", key: "app.path" });
+    view.emit({ ...state("local", 92, { "app.path": "C:\\good.exe" }), effective: {} });
+    expect(view.must("app.path").className).toBe("");
+    expect(view.must("app.path").value).toBe("C:\\good.exe");
+  });
+
+  it("marks a number that fails the page's own check, and ends when the box is emptied or saved", () => {
+    const view = boot();
+    view.emit(state("local", 93, { timeout: 15 }));
+    view.must("timeout").value = "";
+    view.must("timeout").onchange?.();
+    expect(view.must("status").textContent).toContain("Enter a number");
+    expect(view.must("timeout").className).toBe("invalid");
+    // The Browse… failure case: an empty box that was never saved goes back to normal when emptied.
+    view.emit({ ...state("local", 94, {}), effective: {} });
+    view.emit({ type: "error", message: "Error: nope", key: "app.path" });
+    expect(view.must("app.path").className).toBe("invalid");
+    view.must("app.path").value = "";
+    view.must("app.path").onchange?.();
+    expect(view.must("app.path").className).toBe("");
+    view.emit({ ...state("local", 95, {}), effective: {} });
+    expect(view.must("app.path").className).toBe("");
+  });
+
+  it("forgets red boxes when switching between User and Repository Settings", () => {
+    const view = boot();
+    view.emit({ ...state("local", 96, {}), effective: {} });
+    view.emit({ type: "error", message: "Error: nope", key: "app.path" });
+    view.emit({ ...state("shared", 97, {}), effective: {} });
+    expect(view.must("app.path").className).not.toBe("invalid");
+  });
+
+  it("floats an error about no setting at the top right", () => {
+    const view = boot();
+    view.emit(state("local", 82, { timeout: 15 }));
+    view.emit({ type: "error", message: "Error: Open YAML to correct the file." });
+    expect(view.must("status").className).toBe("error");
+    expect(view.must("status").style.props).toMatchObject({ top: "", left: "" });
+  });
+
+  it("describes each setting for the file it is in", () => {
+    const view = boot();
+    view.emit(state("local", 83, {}));
+    expect(view.must("app.path-description").textContent).toContain("on this machine");
+    expect(view.must("timeout-description").textContent).toContain("slow");
+    expect(view.must("input_mode-description").textContent).toBe(
+      settingFields.find((field) => field.key === "input_mode")?.description.user,
+    );
+    view.emit(state("shared", 84, {}));
+    expect(view.must("app.path-description").textContent).toContain("relative to the project folder");
+    expect(view.must("timeout-description").textContent).toContain("everyone");
+    expect(view.must("input_mode-description").textContent).toBe(
+      settingFields.find((field) => field.key === "input_mode")?.description.repository,
+    );
+  });
+
+  it("suggests an absolute path in User Settings and a relative one in Repository Settings", () => {
+    const view = boot();
+    view.emit({ ...state("local", 85, {}), effective: {} });
+    expect(view.must("app.path").placeholder).toBe("C:\\Program Files\\Contoso\\Orders.exe");
+    expect(view.must("app.process").placeholder).toBe("Orders.exe");
+    view.emit({ ...state("shared", 86, {}), effective: {} });
+    expect(view.must("app.path").placeholder).toBe("bin/Debug/Orders.exe");
+    expect(view.must("app.process").placeholder).toBe("Orders.exe");
   });
 
   it("has no key and state caption under a setting", () => {

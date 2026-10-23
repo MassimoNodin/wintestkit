@@ -125,6 +125,15 @@ describe("YAML configuration editing", () => {
       .map((field) => field.key);
     expect(keys.sort()).toEqual(settingFields.map((field) => field.key).sort());
   });
+  it("describes every setting for both User and Repository Settings", () => {
+    for (const field of settingFields) {
+      expect(field.description.user.trim(), field.key).not.toBe("");
+      expect(field.description.repository.trim(), field.key).not.toBe("");
+    }
+    // Where the file matters, the text says which one it is for.
+    const path = settingFields.find((field) => field.key === "app.path")?.description;
+    expect(path?.user).not.toBe(path?.repository);
+  });
   it("groups evidence controls separately and bounds replay FPS like the backend", () => {
     const evidence = settingSections("shared").find((group) => group.group === "Evidence");
     expect(evidence?.fields.map((field) => field.key)).toEqual([

@@ -31,6 +31,68 @@
   function post(message) {
     vscode.postMessage(message);
   }
+  // Errors float above the setting they are about, with a button to dismiss them; one that is
+  // about no setting in particular floats at the top right.
+  let errorKey;
+  // The setting last edited, which is what an error from the extension is about, and what was
+  // typed into it.
+  let lastKey;
+  let lastValue;
+  // Text boxes whose value was not saved, with what was typed: they stay red, and keep that
+  // text, until a change to the setting is saved.
+  const invalid = new Map();
+  function markInvalid(input, key) {
+    input.className = "invalid";
+    input.setAttribute("aria-invalid", "true");
+    input.value = invalid.get(key);
+  }
+  const dismiss = document.createElement("button");
+  dismiss.id = "dismiss";
+  dismiss.className = "dismiss";
+  dismiss.textContent = "✕";
+  dismiss.title = "Dismiss";
+  dismiss.setAttribute("aria-label", "Dismiss error");
+  dismiss.onclick = () => {
+    status.hidden = true;
+  };
+  function placeError() {
+    const target = errorKey ? document.getElementById(errorKey) : undefined;
+    status.className = "error";
+    if (!target || typeof target.getBoundingClientRect !== "function") {
+      status.style.setProperty("top", "");
+      status.style.setProperty("left", "");
+      return;
+    }
+    const box = target.getBoundingClientRect();
+    const scrollX = window.scrollX || 0;
+    const scrollY = window.scrollY || 0;
+    const height = status.offsetHeight || 0;
+    const width = status.offsetWidth || 0;
+    // Above the control, unless that would run under the sticky header.
+    const above = box.top - height - 12 >= 64;
+    status.className = "error anchored" + (above ? "" : " below");
+    status.style.setProperty(
+      "top",
+      (above ? box.top + scrollY - height - 12 : box.bottom + scrollY + 12) + "px",
+    );
+    status.style.setProperty("left", Math.max(12, box.right + scrollX - width) + "px");
+  }
+  function showError(message, key) {
+    errorKey = key;
+    const box = key ? document.getElementById(key) : undefined;
+    if (box && box.tagName === "INPUT" && !box.disabled) {
+      invalid.set(key, key === lastKey && lastValue !== undefined ? lastValue : box.value);
+      markInvalid(box, key);
+    }
+    status.textContent = message;
+    status.append(dismiss);
+    status.hidden = false;
+    placeError();
+  }
+  if (typeof window.addEventListener === "function")
+    window.addEventListener("resize", () => {
+      if (!status.hidden) placeError();
+    });
   document.getElementById("local").onclick = () =>
     post({ type: "scope", scope: "local" });
   document.getElementById("shared").onclick = () =>
@@ -58,6 +120,8 @@
   }
   function change(field, raw, remove) {
     if (busy) return;
+    lastKey = field.key;
+    lastValue = raw;
     try {
       let value = raw;
       if (!remove && field.kind === "number") {
@@ -68,6 +132,8 @@
       if (!remove && field.kind === "boolean") value = raw === "true";
       if (!remove && field.kind === "list") value = JSON.parse(raw);
       busy = true;
+      lastKey = field.key;
+      lastValue = raw;
       status.hidden = true;
       startSaving();
       post({
@@ -78,8 +144,7 @@
         remove,
       });
     } catch (error) {
-      status.textContent = String(error);
-      status.hidden = false;
+      showError(String(error), field.key);
     }
   }
   function element(tag, className, text) {
@@ -226,12 +291,20 @@
     input.value = view.explicit || view.locked ? display(view.value) : "";
     if (!view.explicit && !view.locked && view.value !== "")
       input.placeholder = display(view.value);
-    else if (field.key === "app.path" && !input.value)
-      input.placeholder = "C:\\Path\\To\\Application.exe";
+    else if (!input.value && field.placeholder)
+      input.placeholder =
+        field.placeholder[state.scope === "local" ? "user" : "repository"];
+    if (invalid.has(field.key) && !view.locked) markInvalid(input, field.key);
     input.onchange = () => {
       const remove = !input.value.trim();
       if (remove && state.scope === "shared") return toggleRepository(field, true);
-      if (remove && !view.explicit) return;
+      if (remove && !view.explicit) {
+        // Nothing to save: an emptied box that was not saved is simply back to unset.
+        invalid.delete(field.key);
+        input.className = "";
+        input.setAttribute("aria-invalid", "false");
+        return;
+      }
       change(field, input.value, remove);
     };
     return [input, input];
@@ -247,6 +320,7 @@
     input.step = field.key === "slow_mo_ms" ? "1" : "any";
     input.value = String(view.value);
     input.disabled = view.locked;
+    if (invalid.has(field.key) && !view.locked) markInvalid(input, field.key);
     let range;
     if (config) {
       range = document.createElement("input");
@@ -375,6 +449,7 @@
   function toggleRepository(field, on) {
     if (on) {
       draft.delete(field.key);
+      invalid.delete(field.key);
       if (isExplicit(field.key)) change(field, "", true);
       else render();
     } else if (field.default !== undefined) {
@@ -452,8 +527,9 @@
     label.htmlFor = field.key;
     info.append(label);
     const ids = [];
-    if (field.description) {
-      const description = element("p", "description", field.description);
+    const text = field.description?.[state.scope === "local" ? "user" : "repository"];
+    if (text) {
+      const description = element("p", "description", text);
       description.id = field.key + "-description";
       ids.push(description.id);
       info.append(description);
@@ -488,7 +564,11 @@
       browse.id = field.key + "-browse";
       browse.disabled = locked;
       browse.setAttribute("aria-label", "Browse for " + field.label);
-      browse.onclick = () => post({ type: "browse" });
+      browse.onclick = () => {
+        lastKey = field.key;
+        lastValue = undefined;
+        post({ type: "browse" });
+      };
       controls.append(browse);
     }
     if (locked) controls.append(coverButton(field, unset));
@@ -534,22 +614,26 @@
     const message = event.data;
     busy = false;
     if (message.type === "error") {
-      status.textContent = message.message;
-      status.className = "error";
-      status.hidden = false;
+      if (typeof message.key === "string") lastKey = message.key;
+      showError(message.message, lastKey);
       endSaving();
+      return;
+    }
+    if (message.type === "committed") {
+      invalid.delete(message.key);
       return;
     }
     if (message.type !== "state") return;
     state = message;
-    if (draftScope !== state.scope) draft.clear();
+    if (draftScope !== state.scope) {
+      draft.clear();
+      invalid.clear();
+    }
     draftScope = state.scope;
     for (const key of [...draft]) if (isExplicit(key)) draft.delete(key);
     dropEmptyDrafts();
     status.className = "";
-    status.textContent = state.dirty
-      ? "Unsaved changes — save the file to apply them to WinTestKit."
-      : "Changes are saved automatically and apply to new runs and backend connections.";
+    status.textContent = "";
     document.getElementById("project").textContent = state.name;
     document.getElementById("scope").textContent =
       state.scope === "local"
@@ -561,9 +645,12 @@
     document
       .getElementById("shared")
       .setAttribute("aria-pressed", String(state.scope === "shared"));
-    // Between our edit and the save the file is briefly dirty; that is "Saving", not unsaved work.
-    if (!state.dirty) endSaving();
-    status.hidden = !state.dirty || savingActive;
+    // Every change is saved by the extension, so there is no unsaved banner: the file being dirty
+    // between an edit (or an undo or redo) and its save is just "Saving".
+    if (state.saving) {
+      if (!savingActive) startSaving();
+    } else if (!state.dirty) endSaving();
+    status.hidden = true;
     render();
   });
   post({ type: "ready" });

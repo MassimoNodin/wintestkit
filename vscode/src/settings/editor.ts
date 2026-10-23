@@ -17,6 +17,14 @@ import {
 export const settingsEditorId = "wintestkit.configuration";
 
 export class ConfigurationEditor implements vscode.CustomTextEditorProvider {
+  // The pages that are open. User and Repository Settings read each other's file, so only one of
+  // them is kept open per project: a page that is left open would show a stale copy of the other.
+  private readonly pages = new Set<{
+    folder: string;
+    scope: SettingsScope;
+    panel: vscode.WebviewPanel;
+  }>();
+
   constructor(
     private readonly projects: Projects,
     private readonly extensionUri: vscode.Uri,
@@ -78,6 +86,12 @@ export class ConfigurationEditor implements vscode.CustomTextEditorProvider {
   ): Promise<void> {
     const root = vscode.Uri.file(path.dirname(document.uri.fsPath));
     const scope = settingsScope(document.uri.fsPath);
+    const page = { folder: root.fsPath.toLowerCase(), scope, panel };
+    for (const other of [...this.pages])
+      if (other.folder === page.folder && other.scope !== scope)
+        other.panel.dispose();
+    this.pages.add(page);
+    panel.onDidDispose(() => this.pages.delete(page));
     const nonce = randomBytes(16).toString("hex");
     panel.webview.options = {
       enableScripts: true,
@@ -106,6 +120,8 @@ export class ConfigurationEditor implements vscode.CustomTextEditorProvider {
     let disposed = false;
     let sequence = 0;
     let queue = Promise.resolve();
+    // Set from an undo or redo until its save has been made, which the form shows as "Saving".
+    let historyPending: ReturnType<typeof setTimeout> | undefined;
     // The settings of one YAML file in this folder. The file being edited is read from its buffer,
     // the other from disk; a file that is missing or invalid has no settings to show.
     const settingsOf = async (
@@ -146,6 +162,7 @@ export class ConfigurationEditor implements vscode.CustomTextEditorProvider {
           name: path.basename(root.fsPath),
           version,
           dirty: document.isDirty,
+          saving: historyPending !== undefined,
           fields: settingFields,
           sections: settingSections(scope),
           values: flattenSettings(parsed.toJS({ maxAliasCount: 50 }) ?? {}),
@@ -187,9 +204,12 @@ export class ConfigurationEditor implements vscode.CustomTextEditorProvider {
       await apply(key, value, remove);
       await save();
     };
+    // The setting a change is for, so an error can say which text box it belongs to.
+    let pendingKey: string | undefined;
     const receive = panel.webview.onDidReceiveMessage((message: unknown) => {
       queue = queue
         .then(async () => {
+          pendingKey = undefined;
           if (!message || typeof message !== "object") return;
           const data = message as Record<string, unknown>;
           if (data.type === "ready") {
@@ -217,6 +237,7 @@ export class ConfigurationEditor implements vscode.CustomTextEditorProvider {
               defaultUri: root,
             });
             if (selection?.[0]) {
+              pendingKey = "app.path";
               await commit(
                 "app.path",
                 scope === "local"
@@ -224,6 +245,10 @@ export class ConfigurationEditor implements vscode.CustomTextEditorProvider {
                   : projectRelativePath(root.fsPath, selection[0].fsPath),
                 false,
               );
+              await panel.webview.postMessage({
+                type: "committed",
+                key: "app.path",
+              });
               await send();
             }
           } else if (
@@ -237,7 +262,12 @@ export class ConfigurationEditor implements vscode.CustomTextEditorProvider {
                 "Settings changed. Review the refreshed form and try again.",
               );
             }
+            pendingKey = data.key;
             await commit(data.key, data.value, data.remove);
+            await panel.webview.postMessage({
+              type: "committed",
+              key: data.key,
+            });
             await send();
           }
         })
@@ -245,12 +275,54 @@ export class ConfigurationEditor implements vscode.CustomTextEditorProvider {
           void panel.webview.postMessage({
             type: "error",
             message: String(error),
+            key: pendingKey,
           });
         });
     });
+    // Undo and redo rewrite the buffer without going through commit, which would leave the file
+    // unsaved; save them as well so the form and the file never disagree. A buffer that no longer
+    // parses stays unsaved and the form reports the error.
+    // VS Code can still report the document as clean in the change event for the first edit after a
+    // save, and announces the dirty state in a following event, so the step stays pending until
+    // the document is dirty (or a moment has passed, when the undo returned it to the saved state).
+    // The form shows "Saving" for as long as a step is pending.
+    const saveHistoryStep = () => {
+      queue = queue.then(async () => {
+        if (disposed || historyPending === undefined || !document.isDirty) {
+          await send();
+          return;
+        }
+        clearTimeout(historyPending);
+        historyPending = undefined;
+        let failure: unknown;
+        try {
+          if (vscode.workspace.isTrusted) await save();
+        } catch (error) {
+          failure = error;
+        }
+        await send();
+        // After the refresh: the state message would otherwise replace the error.
+        if (failure !== undefined)
+          void panel.webview.postMessage({
+            type: "error",
+            message: String(failure),
+          });
+      });
+    };
     const changed = vscode.workspace.onDidChangeTextDocument((event) => {
-      if (event.document.uri.toString() === document.uri.toString())
-        void send();
+      if (event.document.uri.toString() !== document.uri.toString()) return;
+      if (
+        event.reason === vscode.TextDocumentChangeReason.Undo ||
+        event.reason === vscode.TextDocumentChangeReason.Redo
+      ) {
+        if (historyPending !== undefined) clearTimeout(historyPending);
+        historyPending = setTimeout(() => {
+          historyPending = undefined;
+          void send();
+        }, 500);
+      }
+      if (historyPending !== undefined) saveHistoryStep();
+      else void send();
     });
     const saved = vscode.workspace.onDidSaveTextDocument(() => {
       void send();
@@ -258,6 +330,7 @@ export class ConfigurationEditor implements vscode.CustomTextEditorProvider {
     panel.onDidDispose(() => {
       disposed = true;
       sequence++;
+      if (historyPending !== undefined) clearTimeout(historyPending);
       receive.dispose();
       changed.dispose();
       saved.dispose();

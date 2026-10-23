@@ -110,15 +110,64 @@ button:hover {
     color: var(--muted);
     line-height: 1.6;
 }
+/* An error floats over the page, taken out of the flow so it never moves anything. It sits above
+   the setting it is about (the script sets top and left); with no setting it is at the top right. */
 #status {
-    padding: 10px 12px;
-    background: var(--vscode-textBlockQuote-background);
-    border-left: 3px solid var(--accent);
-    border-radius: 0 6px 6px 0;
-}
-#status.error {
+    position: fixed;
+    top: 72px;
+    right: 28px;
+    z-index: 20;
+    box-sizing: border-box;
+    width: max-content;
+    max-width: min(420px, calc(100vw - 56px));
+    margin: 0;
+    padding: 10px 36px 10px 12px;
+    border: 1px solid var(--vscode-errorForeground);
+    border-radius: 8px;
+    background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+    box-shadow: 0 4px 16px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.4));
     color: var(--vscode-errorForeground);
-    border-color: var(--vscode-errorForeground);
+    line-height: 1.5;
+}
+#status[hidden] {
+    display: none;
+}
+#status.anchored {
+    position: absolute;
+    right: auto;
+}
+/* The pointer towards the setting: down when the error is above it, up when it is below. */
+#status.anchored::after {
+    content: "";
+    position: absolute;
+    right: 24px;
+    bottom: -6px;
+    width: 10px;
+    height: 10px;
+    border: solid var(--vscode-errorForeground);
+    border-width: 0 1px 1px 0;
+    background: inherit;
+    transform: rotate(45deg);
+}
+#status.anchored.below::after {
+    top: -6px;
+    bottom: auto;
+    border-width: 1px 0 0 1px;
+}
+.dismiss {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--vscode-errorForeground);
+    line-height: 1;
+}
+.dismiss:hover {
+    background: var(--vscode-toolbar-hoverBackground, rgba(255, 255, 255, 0.1));
 }
 h2 {
     margin: 28px 0 4px;
@@ -643,4 +692,13 @@ input[type="color"] {
 }
 [hidden] {
     display: none !important;
+}
+
+/* A text box whose value was not saved stays red until a change to it is saved. */
+input.invalid,
+input.invalid:focus {
+    border-color: var(--vscode-inputValidation-errorBorder, var(--vscode-errorForeground));
+    background: var(--vscode-inputValidation-errorBackground, rgba(255, 0, 0, 0.12));
+    outline: 1px solid var(--vscode-inputValidation-errorBorder, var(--vscode-errorForeground));
+    outline-offset: -1px;
 }
