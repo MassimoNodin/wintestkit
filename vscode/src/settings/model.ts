@@ -1,3 +1,4 @@
+import * as path from "node:path";
 import { parseDocument, isMap, type Document } from "yaml";
 
 export type SettingsScope = "shared" | "local";
@@ -5,7 +6,7 @@ export type SettingGroup = "Application" | "Test runs" | "Evidence" | "Debugging
 export interface SettingField {
   key: string;
   label: string;
-  kind: "string" | "number" | "boolean" | "list" | "select";
+  kind: "string" | "number" | "boolean" | "list" | "select" | "color";
   description?: string;
   default?: unknown;
   choices?: string[];
@@ -20,8 +21,8 @@ export const settingFields: SettingField[] = [
     label: "Application executable",
     kind: "string",
     description:
-      "The .exe WinTestKit starts for tests. Stored only on this machine.",
-    localOnly: true,
+      "The .exe WinTestKit starts for tests. Repository Settings take a path relative to the project folder; use User Settings for an absolute path.",
+    group: "Application",
   },
   {
     key: "app.process",
@@ -36,7 +37,6 @@ export const settingFields: SettingField[] = [
     kind: "list",
     description: 'Command-line arguments, for example ["--demo"].',
     default: [],
-    localOnly: true,
     group: "Application",
   },
   {
@@ -149,10 +149,21 @@ export const settingFields: SettingField[] = [
   },
   {
     key: "highlight_actions",
-    label: "Highlight actions",
+    label: "Flash elements during test runs",
     kind: "boolean",
-    description: "Flash each element before WinTestKit acts on it.",
+    description:
+      "Flash each element just before a test acts on it. Spy's Highlight is separate and only outlines an element you select.",
     default: false,
+    localOnly: true,
+    group: "Debugging",
+  },
+  {
+    key: "highlight_color",
+    label: "Highlight color",
+    kind: "color",
+    description:
+      "The outline color used whenever WinTestKit highlights an element: flashes during test runs, Spy and the highlight commands.",
+    default: "#FF0000",
     localOnly: true,
     group: "Debugging",
   },
@@ -168,25 +179,22 @@ export const settingFields: SettingField[] = [
   },
 ];
 
-export interface SettingSections {
-  essentials: SettingField[];
-  advanced: { group: SettingGroup; fields: SettingField[] }[];
+export interface SettingSection {
+  group: SettingGroup;
+  fields: SettingField[];
 }
 
-export function settingSections(scope: SettingsScope): SettingSections {
+export function settingSections(scope: SettingsScope): SettingSection[] {
   const editable = settingFields.filter(
     (field) => scope === "local" || !field.localOnly,
   );
   const groups: SettingGroup[] = ["Application", "Test runs", "Evidence", "Debugging"];
-  return {
-    essentials: editable.filter((field) => !field.group),
-    advanced: groups
-      .map((group) => ({
-        group,
-        fields: editable.filter((field) => field.group === group),
-      }))
-      .filter((section) => section.fields.length),
-  };
+  return groups
+    .map((group) => ({
+      group,
+      fields: editable.filter((field) => field.group === group),
+    }))
+    .filter((section) => section.fields.length);
 }
 
 export function settingsScope(filename: string): SettingsScope {
@@ -221,6 +229,21 @@ export function flattenSettings(
   return flat;
 }
 
+/** The path as stored in the repository file: relative to the project folder, with forward slashes. */
+export function projectRelativePath(root: string, file: string): string {
+  const relative = path.relative(root, file);
+  if (!relative || relative.startsWith("..") || path.isAbsolute(relative))
+    throw new Error(
+      "Choose an executable inside the project folder, or set an absolute path in User Settings.",
+    );
+  return relative.split(path.sep).join("/");
+}
+
+/** Drive, UNC and rooted paths only make sense on one machine. */
+export function isMachinePath(value: string): boolean {
+  return /^(?:[a-zA-Z]:|[\\/])/.test(value);
+}
+
 export function validateSettings(
   value: unknown,
   scope: SettingsScope,
@@ -247,9 +270,14 @@ export function validateSettings(
     }
     const field = settingFields.find((field) => field.key === key);
     if (!field) throw new Error("Unknown setting: " + key);
-    if (key === "app.path" && scope === "shared")
+    if (
+      key === "app.path" &&
+      scope === "shared" &&
+      typeof entry === "string" &&
+      isMachinePath(entry)
+    )
       throw new Error(
-        "Application paths belong in ignored wintestkit.local.yaml.",
+        "Use a path relative to the project folder in Repository Settings; absolute paths belong in User Settings.",
       );
     if (field.kind === "boolean" && typeof entry !== "boolean")
       throw new Error(key + " must be true or false.");
@@ -275,6 +303,11 @@ export function validateSettings(
       throw new Error(key + " must be a non-empty string.");
     if (field.kind === "select" && !field.choices?.includes(entry as string))
       throw new Error("Invalid " + key);
+    if (
+      field.kind === "color" &&
+      (typeof entry !== "string" || !/^#[0-9a-fA-F]{6}$/.test(entry))
+    )
+      throw new Error(key + " must be a #RRGGBB colour.");
     if (
       field.kind === "list" &&
       (!Array.isArray(entry) || entry.some((item) => typeof item !== "string"))

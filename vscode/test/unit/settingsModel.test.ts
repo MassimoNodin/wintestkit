@@ -1,7 +1,9 @@
+import * as path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   flattenSettings,
   parseSettings,
+  projectRelativePath,
   settingFields,
   settingSections,
   settingsScope,
@@ -20,10 +22,31 @@ describe("YAML configuration editing", () => {
       app: { process: "App.exe" },
     });
   });
-  it("keeps executable paths and personal controls local", () => {
-    expect(() =>
-      updateSetting("{}", "shared", "app.path", "C:/App.exe", false),
-    ).toThrow(/local/);
+  it("allows a project-relative executable and arguments in the repository file", () => {
+    const source = updateSetting("{}", "shared", "app.path", "bin/Debug/App.exe", false);
+    expect(parseSettings(source, "shared").toJS()).toEqual({
+      app: { path: "bin/Debug/App.exe" },
+    });
+    const withArgs = updateSetting(source, "shared", "app.args", ["--test-mode"], false);
+    expect(parseSettings(withArgs, "shared").toJS()).toEqual({
+      app: { path: "bin/Debug/App.exe", args: ["--test-mode"] },
+    });
+    for (const absolute of ["C:/App.exe", "C:\\Apps\\App.exe", "\\\\host\\share\\App.exe", "/App.exe"])
+      expect(() =>
+        updateSetting("{}", "shared", "app.path", absolute, false),
+      ).toThrow(/relative to the project folder/);
+  });
+  it("stores a browsed executable relative to the project, and only inside it", () => {
+    const root = path.resolve("project");
+    expect(projectRelativePath(root, path.join(root, "bin", "Debug", "App.exe"))).toBe(
+      "bin/Debug/App.exe",
+    );
+    expect(() => projectRelativePath(root, path.resolve("elsewhere", "App.exe"))).toThrow(
+      /inside the project folder/,
+    );
+    expect(() => projectRelativePath(root, root)).toThrow(/inside the project folder/);
+  });
+  it("keeps absolute executable paths and personal controls in User Settings", () => {
     expect(() =>
       updateSetting("{}", "shared", "slow_mo_ms", 100, false),
     ).toThrow(/local/);
@@ -52,7 +75,7 @@ describe("YAML configuration editing", () => {
     "app: nope",
     "app: !!omap []",
     "app:\n  env: !!omap []",
-    "app:\n  path: App.exe",
+    "app:\n  path: C:/App.exe",
     "foo: true",
   ])("rejects invalid shared YAML: %s", (source) => {
     expect(() => parseSettings(source, "shared")).toThrow();
@@ -88,23 +111,22 @@ describe("YAML configuration editing", () => {
       ).toJS(),
     ).toEqual({ timeout: 15 });
   });
-  it("shows only the executable path as a local app-start essential", () => {
+  it("lists every local setting, starting with the executable path under Application", () => {
     const local = settingSections("local");
-    expect(local.essentials.map((field) => field.key)).toEqual(["app.path"]);
-    expect(local.advanced.map((section) => section.group)).toEqual([
+    expect(local[0].fields[0].key).toBe("app.path");
+    expect(local.map((section) => section.group)).toEqual([
       "Application",
       "Test runs",
       "Evidence",
       "Debugging",
     ]);
-    const keys = [
-      ...local.essentials,
-      ...local.advanced.flatMap((section) => section.fields),
-    ].map((field) => field.key);
+    const keys = local
+      .flatMap((section) => section.fields)
+      .map((field) => field.key);
     expect(keys.sort()).toEqual(settingFields.map((field) => field.key).sort());
   });
   it("groups evidence controls separately and bounds replay FPS like the backend", () => {
-    const evidence = settingSections("shared").advanced.find((group) => group.group === "Evidence");
+    const evidence = settingSections("shared").find((group) => group.group === "Evidence");
     expect(evidence?.fields.map((field) => field.key)).toEqual([
       "screenshots", "object_previews", "replay", "replay_fps", "replay_scope",
     ]);
@@ -129,20 +151,39 @@ describe("YAML configuration editing", () => {
   });
   it("keeps machine-only options out of shared sections", () => {
     const shared = settingSections("shared");
-    expect(shared.essentials).toEqual([]);
-    const keys = shared.advanced.flatMap((section) =>
+    const keys = shared.flatMap((section) =>
       section.fields.map((field) => field.key),
     );
     expect(keys).toContain("timeout");
     expect(keys).toContain("app.process");
+    expect(keys).toContain("app.path");
+    expect(keys).toContain("app.args");
+    expect(keys).not.toContain("app.cwd");
     for (const field of settingFields.filter((field) => field.localOnly))
       expect(keys).not.toContain(field.key);
-    expect(shared.advanced.map((section) => section.group)).not.toContain(
+    expect(shared.map((section) => section.group)).not.toContain(
       "Debugging",
     );
   });
   it("distinguishes shared and ignored local files", () => {
     expect(settingsScope("/project/wintestkit.local.yaml")).toBe("local");
     expect(settingsScope("/project/wintestkit.yaml")).toBe("shared");
+  });
+  it("stores the highlight color as a quoted #RRGGBB value in User Settings only", () => {
+    const source = updateSetting("{}", "local", "highlight_color", "#1E90FF", false);
+    expect(parseSettings(source, "local").toJS()).toEqual({ highlight_color: "#1E90FF" });
+    expect(source).toMatch(/highlight_color: ["']#1E90FF["']/);
+    for (const bad of ["red", "#FFF", "1E90FF", "#GG0000", 16711680])
+      expect(() => updateSetting("{}", "local", "highlight_color", bad, false)).toThrow(
+        /#RRGGBB/,
+      );
+    expect(() => updateSetting("{}", "shared", "highlight_color", "#1E90FF", false)).toThrow(
+      /local/,
+    );
+    expect(settingFields.find((field) => field.key === "highlight_color")).toMatchObject({
+      kind: "color",
+      default: "#FF0000",
+      group: "Debugging",
+    });
   });
 });

@@ -320,16 +320,34 @@ demand.
 **Disable for this workspace** (the red button in the callout, **WinTestKit: Disable for This Workspace**,
 or the Test Target menu) returns the sidebar to the Enable button. The choice is remembered per workspace.
 
-The custom YAML editor offers **This machine** and **Shared project** tabs. On **This
-machine**, **Start the application** shows only **Application executable**, with **Browse…**;
-clearing it removes the override. On **Shared project**, that section explains the executable
-lives in the ignored local file. Everything else (process name, arguments, working directory,
-lifecycle, timeouts, input mode, screenshots, reports, import paths and debugging aids)
-sits under the collapsed **Advanced options** section, grouped as **Application**, **Test runs**,
-**Evidence**, and **Debugging**, where override checkboxes control inheritance. Evidence includes
+The custom YAML editor offers **User Settings** (the ignored `wintestkit.local.yaml`) and **Repository
+Settings** (the committed `wintestkit.yaml`) tabs. Every setting is shown at once, grouped as
+**Application** (starting with **Application executable** and its **Browse…** button; clearing it
+removes the override), **Test runs**, **Evidence**, and **Debugging**. Repository Settings accept
+the executable only as a path relative to the project folder (**Browse…** stores it that way and
+refuses a file outside the project) and share the application arguments; absolute paths, the
+working directory and the personal debugging aids (Flash elements during test runs, Slow motion) are
+User Settings only. Changing a value overrides it in this file. In **User Settings**, a setting whose value differs from
+its default (or from the repository value) has a short accent bar on its left edge, inset from the top and bottom. A value that merely equals
+the default is not marked.
+In
+**User Settings**, a setting that `wintestkit.yaml` also sets is greyed out under a blurred
+**Override Repository Setting** button while the repository value is in use (hover it for details). Click the
+button to override the value on this machine: the control becomes editable and starts from the
+repository value, and a grey git tab appears on the edge of the card. Click that tab to drop your
+override and use the repository value again. Settings the repository does not set have neither.
+In **Repository Settings**, every setting starts off: blank, greyed out and covered by a blurred **Enable Setting for Repository** button, with no default
+shown. Click it to turn the setting on; that writes its default to `wintestkit.yaml` (or, for the
+executable and process name, waits for you to enter a value) and makes it editable. A red git tab
+then appears on the edge of the card; click it to remove the setting from the file. Leaving a value empty does the same: clearing a
+repository value (or an enabled setting you never filled in) switches the setting off again, so
+the file never holds an empty value. A setting that
+your User Settings override shows a warning with a link to them, because it is not used on your
+machine. Small illustrations preview Input mode, the replay capture scope and the report folder; they
+appear only while the setting is editable, not under a blurred button. Evidence includes
 the screenshot policy, replay recording mode (`replay`), replay FPS (greater than 0 and no more than 30), and capture
-scope (**window** or **desktop**). Save with the toolbar or
-Ctrl+S; **Open YAML** switches to raw text for settings not shown in the form. Comments and
+scope (**window** or **desktop**). Changes in both files are saved
+immediately. **Open YAML** switches to raw text for settings not shown in the form. Comments and
 other settings are preserved. Saving reloads the backend and refreshes the Test Target section. Invalid
 settings show actionable errors.
 

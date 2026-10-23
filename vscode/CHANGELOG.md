@@ -7,6 +7,44 @@ Unreleased changes must be moved to a dated candidate section before a release c
 
 ## [Unreleased]
 
+- Rename the **Highlight actions** setting to **Flash elements during test runs** in the Configuration
+  page, so it is not confused with Spy's Highlight. Only the label and description change: the
+  `highlight_actions` key, the `--wtk-highlight` option and existing configuration files are unchanged.
+- Add a `highlight_color` setting (`#RRGGBB`, default `#FF0000`) for the outline drawn around an
+  element by Flash elements during test runs (`highlight_actions`), Spy, `element.highlight()`, `wtk highlight` and the editor's highlight
+  commands. In the Configuration page (User Settings, Debugging) it is a row of swatches plus a
+  custom colour picker, with a small diagram of a highlighted button. Quote the value in YAML,
+  because an unquoted `#` starts a comment. Needs the `wintestkit` package from this version.
+- Allow the committed `wintestkit.yaml` to set `app.path` as a path relative to the project folder and to
+  share `app.args`, so a repository can point at its own build output (`bin/Debug/App.exe`) and
+  launch flags. Absolute, drive and UNC paths are still rejected there, with a message pointing to
+  `wintestkit.local.yaml`, and a local value still overrides the shared one. In the Configuration page
+  **Browse…** now also works in Repository Settings and stores the path relative to the project
+  (refusing files outside it). Needs the `wintestkit` package from this version.
+- Redesign the Configuration page: the collapsed **Advanced options** section is gone, so every
+  setting is visible at once, with the application executable now the first row of **Application**.
+  Settings sit in rounded cards with the control beside the label,
+  numbers get a slider next to the exact value, options become a segmented control and booleans a
+  switch. Controls are always editable, so changing a value overrides it in place (replacing the per-row
+  override checkbox and the Reset button). In **User Settings** a setting whose value differs from what it would be without your file (its
+  default, or the repository value) has a short accent bar on its left edge, inset from the top and bottom. A
+  value that merely equals the default is not treated as modified, and Repository Settings mark nothing. A setting that the repository's
+  `wintestkit.yaml` also sets is greyed out under a blurred **Override Repository Setting** button while the
+  repository value is in use; clicking it makes the control editable (starting from the repository
+  value) and shows a grey git tab on the card edge that returns to the repository value.
+  Settings without a repository value have neither, and **Repository Settings** warns on a
+  setting your User Settings override. Small
+  illustrations (shown only while a setting is editable) show what Input mode (UI Automation versus mouse), the Replay capture scope (window versus whole screen) and the Report directory do. Every
+  change in **User Settings** (the machine-local file, formerly "This machine") and **Repository
+  Settings** (formerly "Shared project") is saved immediately, so there is no Save button. In
+  Repository Settings every setting starts off (blank and greyed out);
+  a blurred **Enable Setting for Repository** button turns each one on separately, writing its
+  default to `wintestkit.yaml` or waiting for a value when it has none, and a red git tab on the
+  card edge removes it from the file again; clearing a value, or leaving an enabled setting empty,
+  switches it off too. While a change is being written a small "Saving" spinner shows at the right of the
+  file line (for at least half a second, so it does not flicker), instead of briefly flashing an
+  "unsaved changes" banner. The scope switch
+  and Open YAML stay in a sticky bar.
 - List the desktop's windows for Spy's "show other apps" scope with `EnumWindows` instead of UI
   Automation's desktop root. UI Automation visits every hidden window of every process, so one slow
   provider on the machine made each refresh take around six seconds, queued status checks behind
