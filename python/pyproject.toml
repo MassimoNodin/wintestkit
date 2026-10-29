@@ -17,6 +17,9 @@ classifiers = [
     "Framework :: Pytest",
 ]
 
+[project.optional-dependencies]
+inspector = ["wintestkit-inspector==0.1.1rc2"]
+
 [project.urls]
 Homepage = "https://github.com/MassimoNodin/wintestkit"
 Documentation = "https://github.com/MassimoNodin/wintestkit/tree/master/docs/guide"

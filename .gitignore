@@ -18,3 +18,8 @@ wtk-results/
 .vscode-test/
 vscode/media/codicons/
 vscode/media/report/
+inspector-payload/src/wintestkit_inspector/payload/
+inspector-payload/dist/
+wpf-inspector/artifacts/
+wpf-inspector/**/bin/
+wpf-inspector/**/obj/
