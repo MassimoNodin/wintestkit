@@ -1,3 +1,4 @@
+import { ManagedInspector } from "./managedSession";
 import { randomBytes } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import * as vscode from "vscode";
@@ -61,6 +62,7 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
   private revision = 0;
   private scopeRevision = 0;
   private selection = 0;
+  private managedInspector?: ManagedInspector;
   private pickRevision = 0;
   private pickSession?: string;
   private refreshing?: Promise<void>;
@@ -512,6 +514,8 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
   }
   private unbind(invalidatePick = true): void {
     const client = this.client;
+    this.managedInspector?.invalidate();
+    this.managedInspector = undefined;
     this.notifications.forEach((subscription) => subscription.dispose());
     this.notifications = [];
     this.client = undefined;
@@ -568,6 +572,7 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
       ? path.win32.basename(appProcess).replace(/\.exe$/i, "")
       : undefined;
     this.client = client;
+    this.managedInspector = new ManagedInspector(client, connection.initialized);
     this.notifications = [
       client.onNotification("spy.hover", (value) => {
         if (!this.currentPick(client, value)) return;
@@ -585,6 +590,7 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
           if (!this.currentPick(client, value)) return;
           const picked = value as Omit<SpyPickedNotification, "suggestion"> & { suggestion?: Suggestion };
           const selection = ++this.selection;
+          void this.managedInspector?.select(picked.node.nodeId);
           let treeRevision = this.revision;
           const pickedScope = this.showOtherApps;
           const properties = await this.loading(
@@ -1137,10 +1143,12 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
         );
         const selection =
           message.type === "select" ? ++this.selection : this.selection;
+        if (message.type === "select" && nodeId) void this.managedInspector?.select(nodeId);
         const attempt = await connection;
         if (!attempt.client) return;
         const client = attempt.client;
         if (!nodeId) return;
+        if (message.type === "select") void this.managedInspector?.select(nodeId);
         if (
           (message.type === "select" || message.type === "loadProperties") &&
           selection !== this.selection
