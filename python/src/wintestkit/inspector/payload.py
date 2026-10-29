@@ -7,10 +7,11 @@ import json
 import platform
 import re
 import stat
+from collections.abc import Mapping
 from dataclasses import dataclass
 from importlib import resources
 from pathlib import Path, PurePosixPath, PureWindowsPath
-from typing import Any, Literal, Mapping
+from typing import Any, Literal, cast
 
 from wintestkit import __version__
 from wintestkit.errors import InspectorUnavailableError
@@ -21,9 +22,9 @@ def _mismatch(message: str) -> InspectorUnavailableError:
 
 
 def _object(value: Any, keys: set[str]) -> dict[str, Any]:
-    if not isinstance(value, dict) or set(value) != keys:
+    if not isinstance(value, dict) or set(cast(dict[str, Any], value)) != keys:
         raise _mismatch("Invalid inspector manifest fields")
-    return value
+    return cast(dict[str, Any], value)
 
 
 def _pairs(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
@@ -39,9 +40,12 @@ def _path(root: Path, value: Any) -> Path:
     if not isinstance(value, str) or not value or "\\" in value:
         raise _mismatch("Invalid inspector payload path")
     posix = PurePosixPath(value)
-    if posix.is_absolute() or PureWindowsPath(value).is_absolute() or any(
-        part in (".", "..") for part in value.split("/")
-    ) or ":" in value:
+    if (
+        posix.is_absolute()
+        or PureWindowsPath(value).is_absolute()
+        or any(part in (".", "..") for part in value.split("/"))
+        or ":" in value
+    ):
         raise _mismatch("Invalid inspector payload path")
     candidate = root
     for part in posix.parts:
@@ -76,7 +80,7 @@ class Payload:
             digest = hashlib.sha256()
             try:
                 with path.open("rb") as stream:
-                    for chunk in iter(lambda: stream.read  (1024 * 1024), b""):
+                    for chunk in iter(lambda: stream.read(1024 * 1024), b""):
                         digest.update(chunk)
             except OSError as error:
                 raise _mismatch(f"Cannot read inspector payload file: {path}") from error
@@ -93,27 +97,55 @@ def load_payload() -> Payload:
         ) from error
     try:
         manifest_path = _path(root, "manifest.json")
-        manifest = _object(json.loads(manifest_path.read_text(encoding="utf-8"), object_pairs_hook=_pairs), {
-            "schemaVersion", "inspectorVersion", "protocolMajor", "protocolMinor", "sourceCommit",
-            "upstreamCommit", "signed", "cells", "launchers", "agents", "files", "notices",
-        })
+        manifest = _object(
+            json.loads(manifest_path.read_text(encoding="utf-8"), object_pairs_hook=_pairs),
+            {
+                "schemaVersion",
+                "inspectorVersion",
+                "protocolMajor",
+                "protocolMinor",
+                "sourceCommit",
+                "upstreamCommit",
+                "signed",
+                "cells",
+                "launchers",
+                "agents",
+                "files",
+                "notices",
+            },
+        )
         if manifest["inspectorVersion"] != __version__:
-            raise _mismatch(f"Inspector version mismatch; reinstall wintestkit[inspector]=={__version__}")
-        if (type(manifest["schemaVersion"]) is not int or manifest["schemaVersion"] != 1
-            or type(manifest["protocolMajor"]) is not int or manifest["protocolMajor"] != 1
-            or type(manifest["protocolMinor"]) is not int or manifest["protocolMinor"] != 0
+            raise _mismatch(
+                f"Inspector version mismatch; reinstall wintestkit[inspector]=={__version__}"
+            )
+        if (
+            type(manifest["schemaVersion"]) is not int
+            or manifest["schemaVersion"] != 1
+            or type(manifest["protocolMajor"]) is not int
+            or manifest["protocolMajor"] != 1
+            or type(manifest["protocolMinor"]) is not int
+            or manifest["protocolMinor"] != 0
             or type(manifest["signed"]) is not bool
-            or not all(isinstance(manifest[k], str) and manifest[k] for k in ("sourceCommit", "upstreamCommit"))):
+            or not all(
+                isinstance(manifest[k], str) and manifest[k]
+                for k in ("sourceCommit", "upstreamCommit")
+            )
+        ):
             raise _mismatch("Invalid inspector manifest metadata")
         launchers = _object(manifest["launchers"], {"x86", "x64"})
         agents = _object(manifest["agents"], {"net48", "net8", "net10"})
         cells = manifest["cells"]
-        if not isinstance(cells, list) or len(cells) != 6:
+        if not isinstance(cells, list) or len(cast(list[Any], cells)) != 6:
             raise _mismatch("Invalid inspector cells")
-        seen = set()
+        cells = cast(list[Any], cells)
+        seen: set[tuple[str, str]] = set()
         for cell in cells:
             cell = _object(cell, {"runtime", "architecture", "verified"})
-            if cell["runtime"] not in agents or cell["architecture"] not in launchers or type(cell["verified"]) is not bool:
+            if (
+                cell["runtime"] not in agents
+                or cell["architecture"] not in launchers
+                or type(cell["verified"]) is not bool
+            ):
                 raise _mismatch("Invalid inspector cell")
             seen.add((cell["runtime"], cell["architecture"]))
         if len(seen) != 6:
@@ -122,11 +154,17 @@ def load_payload() -> Payload:
         notices = manifest["notices"]
         if not isinstance(files, list) or not files or not isinstance(notices, list) or not notices:
             raise _mismatch("Invalid inspector files or notices")
-        paths = set()
+        files = cast(list[Any], files)
+        notices = cast(list[Any], notices)
+        paths: set[str] = set()
         for entry in files:
             entry = _object(entry, {"path", "sha256"})
             _path(root, entry["path"])
-            if entry["path"] in paths or not isinstance(entry["sha256"], str) or not re.fullmatch(r"[0-9a-f]{64}", entry["sha256"]):
+            if (
+                entry["path"] in paths
+                or not isinstance(entry["sha256"], str)
+                or not re.fullmatch(r"[0-9a-f]{64}", entry["sha256"])
+            ):
                 raise _mismatch("Invalid inspector file digest")
             paths.add(entry["path"])
         for value in [*launchers.values(), *agents.values(), *notices]:
@@ -141,7 +179,13 @@ def load_payload() -> Payload:
 
 
 def payload_status() -> dict[str, object]:
-    status: dict[str, object] = {"installed": False, "version": None, "matches": False, "signed": False, "controller_architecture": platform.machine()}
+    status: dict[str, object] = {
+        "installed": False,
+        "version": None,
+        "matches": False,
+        "signed": False,
+        "controller_architecture": platform.machine(),
+    }
     try:
         payload = load_payload()
         status.update(installed=True, version=payload.inspector_version, signed=payload.signed)

@@ -933,6 +933,11 @@ dependencies = [
     { name = "pyyaml" },
 ]
 
+[package.optional-dependencies]
+inspector = [
+    { name = "wintestkit-inspector" },
+]
+
 [package.dev-dependencies]
 dev = [
     { name = "jsonschema" },
@@ -949,7 +954,9 @@ requires-dist = [
     { name = "pillow", specifier = ">=12.0.0" },
     { name = "pytest", specifier = ">=8.3" },
     { name = "pyyaml", specifier = ">=6.0.2" },
+    { name = "wintestkit-inspector", marker = "extra == 'inspector'", directory = "../inspector-payload" },
 ]
+provides-extras = ["inspector"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -960,3 +967,7 @@ dev = [
     { name = "twine", specifier = ">=7,<8" },
     { name = "types-pyyaml", specifier = ">=6.0.12.20260906" },
 ]
+
+[[package]]
+name = "wintestkit-inspector"
+source = { directory = "../inspector-payload" }
