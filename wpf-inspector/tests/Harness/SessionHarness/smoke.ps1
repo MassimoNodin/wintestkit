@@ -12,7 +12,7 @@ try {
     try { $random.GetBytes($tokenBytes) } finally { $random.Dispose() }
     $token = [Convert]::ToBase64String($tokenBytes)
     $version = [System.Diagnostics.FileVersionInfo]::GetVersionInfo((Join-Path $PSScriptRoot 'bin\Release\net10.0-windows\WinTestKit.Inspector.Agent.dll')).ProductVersion
-    $settings = @{ schemaVersion = 1; protocolMajor = 1; protocolMinor = 0; sessionId = $session; process = $identity; pipeName = "WinTestKit.Inspector.$($process.Id).$session"; token = $token; clientSid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value; expiresUtc = [DateTime]::UtcNow.AddSeconds(30).ToString('O'); requestTimeoutMs = 1000; idleTimeoutMs = 10000; agentVersion = $version }
+    $settings = @{ schemaVersion = 1; protocolMajor = 2; protocolMinor = 0; sessionId = $session; process = $identity; pipeName = "WinTestKit.Inspector.$($process.Id).$session"; token = $token; clientSid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value; expiresUtc = [DateTime]::UtcNow.AddSeconds(30).ToString('O'); requestTimeoutMs = 1000; idleTimeoutMs = 10000; agentVersion = $version; redactNames = @(); writeAllowlist = @{ properties = @(); methods = @() } }
     $temporary = $path + '.tmp'
     [IO.File]::WriteAllText($temporary, ($settings | ConvertTo-Json -Depth 10 -Compress), (New-Object Text.UTF8Encoding $false))
     Move-Item -LiteralPath $temporary -Destination $path
@@ -27,7 +27,7 @@ try {
         if ($response.Length -ne $size) { throw 'Incomplete frame' }
         return ([Text.Encoding]::UTF8.GetString($response) | ConvertFrom-Json)
     }
-    $hello = Exchange @{ id = 1; method = 'session.hello'; params = @{ protocolMajor = 1; protocolMinor = 0; sessionId = $session; token = $token; process = $identity } }
+    $hello = Exchange @{ id = 1; method = 'session.hello'; params = @{ protocolMajor = 2; protocolMinor = 0; sessionId = $session; token = $token; process = $identity } }
     if ($hello.id -ne 1 -or $hello.error) { throw 'Hello failed' }
     $close = Exchange @{ id = 2; method = 'session.close'; params = @{} }
     if ($close.id -ne 2 -or -not $close.result.closed) { throw 'Close failed' }

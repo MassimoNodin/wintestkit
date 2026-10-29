@@ -24,7 +24,7 @@ public class SessionTests
     {
         using var process = Process.GetCurrentProcess();
         var session = Guid.NewGuid().ToString();
-        return new BootstrapSettings { ProtocolMajor = 1, ProtocolMinor = 0, SessionId = session,
+        return new BootstrapSettings { ProtocolMajor = 2, ProtocolMinor = 0, SessionId = session,
             Process = new ProcessIdentity { Pid = process.Id, CreationTimeUtc = process.StartTime.ToUniversalTime().ToString("O") },
             PipeName = "WinTestKit.Inspector." + process.Id + "." + session, Token = Convert.ToBase64String(new byte[32]),
             ClientSid = WindowsIdentity.GetCurrent().User!.Value, ExpiresUtc = DateTime.UtcNow.AddMinutes(1).ToString("O"),
@@ -177,11 +177,11 @@ public class SessionTests
         var serving = server.RunAsync(timeout.Token);
         using var client = new NamedPipeClientStream(".", settings.PipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
         await client.ConnectAsync(timeout.Token);
-        var hello = new HelloParams { ProtocolMajor = 1, ProtocolMinor = 0, SessionId = settings.SessionId, Token = settings.Token, Process = settings.Process };
+        var hello = new HelloParams { ProtocolMajor = 2, ProtocolMinor = 0, SessionId = settings.SessionId, Token = settings.Token, Process = settings.Process };
         if (mode == "token") hello.Token = Convert.ToBase64String(new byte[32] { 1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0 });
         if (mode == "session") hello.SessionId = Guid.NewGuid().ToString();
         var args = hello.ToJson();
-        if (mode == "major") { args = new JsonObjectNode(); args.Add("protocolMajor", JsonNumberNode.From(2)); args.Add("protocolMinor", JsonNumberNode.From(0)); args.Add("sessionId", new JsonStringNode(hello.SessionId)); args.Add("token", new JsonStringNode(hello.Token)); args.Add("process", hello.Process.ToJson()); }
+        if (mode == "major") { args = new JsonObjectNode(); args.Add("protocolMajor", JsonNumberNode.From(1)); args.Add("protocolMinor", JsonNumberNode.From(0)); args.Add("sessionId", new JsonStringNode(hello.SessionId)); args.Add("token", new JsonStringNode(hello.Token)); args.Add("process", hello.Process.ToJson()); }
         var request = new RequestEnvelope { Id = 1, Method = mode == "first" ? PipeMethods.Close : PipeMethods.Hello, Params = args };
         try { await FrameCodec.WriteFrameAsync(client, StrictJson.Serialize(request.ToJson()), timeout.Token); } catch (IOException) when (mode == "sid") { }
         if (mode == "success" || mode == "realSid")
@@ -206,7 +206,7 @@ public class SessionTests
         var serving = server.RunAsync(timeout.Token);
         using var client = new NamedPipeClientStream(".", settings.PipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
         await client.ConnectAsync(timeout.Token);
-        var hello = new HelloParams { ProtocolMajor = 1, ProtocolMinor = 0, SessionId = settings.SessionId, Token = settings.Token, Process = settings.Process };
+        var hello = new HelloParams { ProtocolMajor = 2, ProtocolMinor = 0, SessionId = settings.SessionId, Token = settings.Token, Process = settings.Process };
         await FrameCodec.WriteFrameAsync(client, StrictJson.Serialize(new RequestEnvelope { Id = 1, Method = PipeMethods.Hello, Params = hello.ToJson() }.ToJson()), timeout.Token);
         var bytes = (await FrameCodec.ReadFrameAsync(client, timeout.Token))!;
         var response = HelloResult.FromJson(ResponseEnvelope.FromJson(StrictJson.Parse(bytes, 0, bytes.Length)).Result!);
@@ -270,7 +270,7 @@ public class SessionTests
         var serving = server.RunAsync(timeout.Token);
         using var client = new NamedPipeClientStream(".", settings.PipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
         await client.ConnectAsync(timeout.Token);
-        await Send(client, new RequestEnvelope { Id = 1, Method = PipeMethods.Hello, Params = new HelloParams { ProtocolMajor = 1, ProtocolMinor = 0, SessionId = settings.SessionId, Token = settings.Token, Process = settings.Process }.ToJson() }, timeout.Token);
+        await Send(client, new RequestEnvelope { Id = 1, Method = PipeMethods.Hello, Params = new HelloParams { ProtocolMajor = 2, ProtocolMinor = 0, SessionId = settings.SessionId, Token = settings.Token, Process = settings.Process }.ToJson() }, timeout.Token);
         Assert.NotNull(await FrameCodec.ReadFrameAsync(client, timeout.Token));
         var unknown = new JsonObjectNode(); unknown.Add("id", JsonNumberNode.From(2)); unknown.Add("method", new JsonStringNode("unknown")); unknown.Add("params", new JsonObjectNode());
         await FrameCodec.WriteFrameAsync(client, StrictJson.Serialize(unknown), timeout.Token);
@@ -293,7 +293,7 @@ public class SessionTests
         var serving = server.RunAsync(timeout.Token);
         using var client = new NamedPipeClientStream(".", settings.PipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
         await client.ConnectAsync(timeout.Token);
-        await Send(client, new RequestEnvelope { Id = 1, Method = PipeMethods.Hello, Params = new HelloParams { ProtocolMajor = 1, ProtocolMinor = 0, SessionId = settings.SessionId, Token = settings.Token, Process = settings.Process }.ToJson() }, timeout.Token);
+        await Send(client, new RequestEnvelope { Id = 1, Method = PipeMethods.Hello, Params = new HelloParams { ProtocolMajor = 2, ProtocolMinor = 0, SessionId = settings.SessionId, Token = settings.Token, Process = settings.Process }.ToJson() }, timeout.Token);
         Assert.NotNull(await FrameCodec.ReadFrameAsync(client, timeout.Token));
         await Send(client, new RequestEnvelope { Id = 2, Method = PipeMethods.Roots, Params = new RootsParams { SessionId = settings.SessionId }.ToJson() }, timeout.Token);
         var roots = await FrameCodec.ReadFrameAsync(client, timeout.Token);
@@ -326,7 +326,7 @@ public class SessionTests
         var serving = server.RunAsync(timeout.Token);
         using var client = new NamedPipeClientStream(".", settings.PipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
         await client.ConnectAsync(timeout.Token);
-        await Send(client, new RequestEnvelope { Id = 1, Method = PipeMethods.Hello, Params = new HelloParams { ProtocolMajor = 1, ProtocolMinor = 0, SessionId = settings.SessionId, Token = settings.Token, Process = settings.Process }.ToJson() }, timeout.Token);
+        await Send(client, new RequestEnvelope { Id = 1, Method = PipeMethods.Hello, Params = new HelloParams { ProtocolMajor = 2, ProtocolMinor = 0, SessionId = settings.SessionId, Token = settings.Token, Process = settings.Process }.ToJson() }, timeout.Token);
         Assert.NotNull(await FrameCodec.ReadFrameAsync(client, timeout.Token));
         for (int id = 2; id <= 201; id++) await Send(client, new RequestEnvelope { Id = id, Method = PipeMethods.Roots, Params = new RootsParams { SessionId = settings.SessionId }.ToJson() }, timeout.Token);
         var ids = new HashSet<long>();
