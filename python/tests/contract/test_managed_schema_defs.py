@@ -86,7 +86,7 @@ MEMBER = {
 }
 BOOTSTRAP = {
     "schemaVersion": 1,
-    "protocolMajor": 1,
+    "protocolMajor": 2,
     "protocolMinor": 0,
     "sessionId": "f1a08a59-e47a-4aec-9afc-7d83a642ec07",
     "process": PROCESS,
@@ -98,6 +98,7 @@ BOOTSTRAP = {
     "idleTimeoutMs": 300000,
     "agentVersion": "1",
     "redactNames": [],
+    "writeAllowlist": {"properties": [], "methods": []},
 }
 
 

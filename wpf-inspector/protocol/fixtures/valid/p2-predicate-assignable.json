@@ -1,0 +1,7 @@
+{
+  "schema": "Predicate",
+  "instance": {
+    "kind": "assignableTo",
+    "fullName": "Example.Control"
+  }
+}

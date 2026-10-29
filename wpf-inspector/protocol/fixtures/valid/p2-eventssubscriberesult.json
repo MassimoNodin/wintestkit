@@ -1,0 +1,6 @@
+{
+  "schema": "EventsSubscribeResult",
+  "instance": {
+    "subscriptionId": "s"
+  }
+}

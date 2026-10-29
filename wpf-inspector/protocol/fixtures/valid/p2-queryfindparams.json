@@ -1,0 +1,26 @@
+{
+  "schema": "QueryFindParams",
+  "instance": {
+    "locator": {
+      "scope": {
+        "kind": "allRoots"
+      },
+      "tree": "combined",
+      "predicates": [
+        {
+          "kind": "equals",
+          "path": [
+            {
+              "kind": "uia",
+              "name": "name"
+            }
+          ],
+          "value": "hello"
+        }
+      ],
+      "depth": 256,
+      "limit": 100
+    },
+    "timeoutMs": 1000
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "schema": "Predicate",
+  "instance": {
+    "kind": "equals",
+    "path": [
+      {
+        "kind": "uia",
+        "name": "name"
+      }
+    ],
+    "value": false
+  }
+}

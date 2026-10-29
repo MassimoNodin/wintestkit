@@ -1,0 +1,11 @@
+{
+  "schema": "EventsNotification",
+  "instance": {
+    "method": "events.event",
+    "params": {
+      "subscriptionId": "s",
+      "sequence": 0,
+      "kind": "overflow"
+    }
+  }
+}

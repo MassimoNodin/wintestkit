@@ -1,0 +1,7 @@
+{
+  "schema": "AllowEntry",
+  "instance": {
+    "typeFullName": "Example.T",
+    "memberKey": "Refresh(System.Boolean)"
+  }
+}

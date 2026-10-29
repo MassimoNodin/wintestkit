@@ -1,0 +1,11 @@
+{
+  "schema": "HitTestParams",
+  "instance": {
+    "nativeWindowHandle": 123,
+    "point": {
+      "x": 1,
+      "y": 2
+    },
+    "timeoutMs": 1000
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "schema": "Predicate",
+  "instance": {
+    "kind": "regex",
+    "path": [
+      {
+        "kind": "uia",
+        "name": "name"
+      }
+    ],
+    "pattern": "x",
+    "flags": [
+      "dotAll"
+    ]
+  }
+}

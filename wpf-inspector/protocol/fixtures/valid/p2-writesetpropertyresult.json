@@ -1,0 +1,12 @@
+{
+  "schema": "WriteSetPropertyResult",
+  "instance": {
+    "audit": {
+      "operation": "setProperty",
+      "typeFullName": "Example.T",
+      "memberKey": "Title",
+      "outcome": "performed",
+      "timestampUtc": "2026-01-01T00:00:00Z"
+    }
+  }
+}

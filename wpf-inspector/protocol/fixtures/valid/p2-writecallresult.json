@@ -1,0 +1,12 @@
+{
+  "schema": "WriteCallResult",
+  "instance": {
+    "audit": {
+      "operation": "call",
+      "typeFullName": "Example.T",
+      "memberKey": "Refresh(System.Boolean)",
+      "outcome": "performed",
+      "timestampUtc": "2026-01-01T00:00:00Z"
+    }
+  }
+}

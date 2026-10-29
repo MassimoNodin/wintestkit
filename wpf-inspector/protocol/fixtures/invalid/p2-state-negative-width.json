@@ -1,0 +1,36 @@
+{
+  "schema": "ElementState",
+  "instance": {
+    "handle": {
+      "sessionId": "s",
+      "objectId": "o",
+      "generation": 1,
+      "type": {
+        "name": "T",
+        "fullName": "Example.T",
+        "assemblyName": "A",
+        "assemblyQualifiedName": "Example.T, A",
+        "baseTypes": []
+      },
+      "dispatcherId": "d"
+    },
+    "windowHandle": null,
+    "bounds": {
+      "x": 0,
+      "y": 0,
+      "width": -1,
+      "height": 1
+    },
+    "dpi": {
+      "x": 96,
+      "y": 96
+    },
+    "visible": true,
+    "clipped": false,
+    "offscreen": false,
+    "enabled": true,
+    "focused": false,
+    "isKeyboardFocusable": true,
+    "parts": []
+  }
+}

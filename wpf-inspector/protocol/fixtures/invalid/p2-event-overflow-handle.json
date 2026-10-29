@@ -1,0 +1,24 @@
+{
+  "schema": "EventsNotification",
+  "instance": {
+    "method": "events.event",
+    "params": {
+      "subscriptionId": "s",
+      "sequence": 1,
+      "kind": "overflow",
+      "handle": {
+        "sessionId": "s",
+        "objectId": "o",
+        "generation": 1,
+        "type": {
+          "name": "T",
+          "fullName": "Example.T",
+          "assemblyName": "A",
+          "assemblyQualifiedName": "Example.T, A",
+          "baseTypes": []
+        },
+        "dispatcherId": "d"
+      }
+    }
+  }
+}

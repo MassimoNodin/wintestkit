@@ -23,7 +23,7 @@ SCHEMA = Path(__file__).resolve().parents[3] / "wpf-inspector/protocol/inspector
         (
             "HelloParams",
             {
-                "protocolMajor": 2,
+                "protocolMajor": 1,
                 "protocolMinor": 0,
                 "sessionId": "s",
                 "token": "t",

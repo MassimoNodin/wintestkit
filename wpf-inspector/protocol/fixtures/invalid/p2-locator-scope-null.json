@@ -1,0 +1,21 @@
+{
+  "schema": "Locator",
+  "instance": {
+    "scope": null,
+    "tree": "combined",
+    "predicates": [
+      {
+        "kind": "equals",
+        "path": [
+          {
+            "kind": "uia",
+            "name": "name"
+          }
+        ],
+        "value": "hello"
+      }
+    ],
+    "depth": 256,
+    "limit": 100
+  }
+}
