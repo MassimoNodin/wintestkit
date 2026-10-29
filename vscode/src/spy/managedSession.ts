@@ -2,7 +2,7 @@ import * as vscode from "vscode";
 import type { InitializeResult, InspectManagedIdentifyResult, InspectManagedAttachResult, InspectManagedResolveResult, InspectManagedMembersParams, InspectManagedMembersResult, InspectManagedReadParams, InspectManagedReadResult, InspectManagedChildrenParams, InspectManagedChildrenResult, InspectManagedBindingsParams, InspectManagedBindingsResult, InspectManagedReleaseResult } from "../protocol/generated";
 import type { JsonRpcClient } from "../server/jsonrpc";
 
-export type ManagedState = "not enabled" | "not installed" | "unsupported target" | "blocked by policy" | "restart required" | "attach failed" | "mapping unavailable" | "detached (idle)" | "ready";
+export type ManagedState = "not enabled" | "not installed" | "unsupported target" | "blocked by policy" | "restart required" | "attach failed" | "mapping unavailable" | "detached (idle)" | "ready" | "not attached to this process";
 export const MANAGED_INSTALL_HINT = 'pip install "wintestkit[inspector]" or uv pip install "wintestkit[inspector]"';
 const confirmed = new Set<string>();
 export function managedErrorState(error: unknown): ManagedState {
@@ -27,6 +27,8 @@ export class ManagedInspector {
   private nodeId?: string;
   private sequence = 0;
   private handles = new Set<string>();
+  private releasing: Promise<void> = Promise.resolve();
+  get sessionInfo(): InspectManagedAttachResult | undefined { return this.session; }
   constructor(private readonly client: JsonRpcClient, initialized: InitializeResult) {
     this.visible = initialized.capabilities?.managedInspector === true;
   }
@@ -41,11 +43,12 @@ export class ManagedInspector {
     for (const child of Object.values(record)) this.remember(child);
   }
   async select(nodeId?: string): Promise<void> {
-    if (nodeId === this.nodeId) return;
+    if (nodeId === this.nodeId) return this.releasing;
     this.sequence++;
     this.nodeId = nodeId;
     const ids = [...this.handles]; this.handles.clear();
-    if (ids.length && this.session) await this.releaseIds(this.session.sessionId, ids);
+    if (ids.length && this.session) this.releasing = this.releaseIds(this.session.sessionId, ids);
+    await this.releasing;
   }
   private async releaseIds(sessionId: string, ids: string[]): Promise<void> {
     for (let i = 0; i < ids.length; i += 256) {
@@ -69,6 +72,7 @@ export class ManagedInspector {
       const session = await this.client.request<InspectManagedAttachResult>("inspect.managed.attach", { process: facts.process });
       if (!this.current(seq, node, oldSession)) { await this.client.request("inspect.managed.detach", { sessionId: session.sessionId }).catch(() => {}); return; }
       this.session = session; this.state = session.state === "ready" ? "ready" : "attach failed";
+      if (oldSession && oldSession !== session.sessionId) await this.client.request("inspect.managed.detach", { sessionId: oldSession }).catch(() => {});
       return session;
     } catch (error) { if (this.current(seq, node, oldSession)) this.state = managedErrorState(error); return; }
   }
@@ -92,6 +96,14 @@ export class ManagedInspector {
   }
   async resolve(nodeId: string): Promise<InspectManagedResolveResult | undefined> {
     if (nodeId !== this.nodeId) return;
+    const session = this.session, sequence = this.sequence;
+    if (!session) return;
+    try {
+      const facts = await this.client.request<InspectManagedIdentifyResult>("inspect.managed.identify", { nodeId });
+      if (!this.current(sequence, nodeId, session.sessionId)) return;
+      if (facts.process.pid !== session.process.pid || facts.process.creationTimeUtc !== session.process.creationTimeUtc) { this.state = "not attached to this process"; return; }
+      this.state = "ready";
+    } catch (error) { if (this.current(sequence, nodeId, session.sessionId)) this.state = managedErrorState(error); return; }
     const result = await this.call<InspectManagedResolveResult>("resolve", { nodeId });
     if (result && result.status !== "exact") this.state = "mapping unavailable";
     return result;

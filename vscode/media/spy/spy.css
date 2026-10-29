@@ -1050,3 +1050,9 @@ col.property-action-column { width: 34px; }
 .property-row[hidden] {
     display: none;
 }
+
+.managed-actions, .managed-search, #managed-explanation, #managed-read-visible { margin: 8px 12px; }
+.managed-row { padding: 8px 12px; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
+.managed-row button { margin: 4px 4px 0 0; }
+.managed-children { margin-left: 16px; border-left: 1px solid var(--border); }
+#managed-groups p { padding: 8px 12px; overflow-wrap: anywhere; }

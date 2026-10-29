@@ -36,13 +36,16 @@ describe("managed Spy host", () => {
   });
   it("releases selection handles and discards a late response", async () => {
     const { inspector, request } = setup(); mock.trusted = true; mock.warning.mockResolvedValue("Attach"); await inspector.select("n"); await inspector.attach();
-    request.mockImplementationOnce(async () => ({ status: "exact", object: { objectId: "o", generation: 1 } })); await inspector.resolve("n");
+    request.mockImplementationOnce(async () => facts).mockImplementationOnce(async () => ({ status: "exact", object: { objectId: "o", generation: 1 } })); await inspector.resolve("n");
     await inspector.select("next"); expect(request).toHaveBeenCalledWith("inspect.managed.release", { sessionId: "s", objectIds: ["o"] });
     let finish!: (value: unknown) => void; request.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
-    const pending = inspector.resolve("next"); await inspector.select("third"); finish({ status: "notFound" }); expect(await pending).toBeUndefined();
+    const pending = inspector.resolve("next"); await inspector.select("third"); finish(facts); expect(await pending).toBeUndefined();
   });
   it("rejects malformed managed messages", () => {
     expect(parseSpyRequest({ type: "managedAttach" })).toEqual({ type: "managedAttach" });
     for (const value of [{ type: "managedAttach", pid: 1 }, { type: "managedRead" }, { type: "managedRead", memberKey: 1 }, { type: "managedReadVisible", memberKeys: Array(33).fill("x") }, { type: "managedCopy", kind: "bad" }, { type: "managedDetach", sessionId: "x" }]) expect(parseSpyRequest(value)).toBeUndefined();
+  });
+  it("checks the selected process identity before resolving", async () => {
+    const { inspector, request } = setup(); mock.trusted = true; mock.warning.mockResolvedValue("Attach"); await inspector.select("one"); await inspector.attach(); await inspector.select("two"); request.mockImplementationOnce(async () => ({ ...facts, process: { ...facts.process, creationTimeUtc: "reused" } })); expect(await inspector.resolve("two")).toBeUndefined(); expect(inspector.state).toBe("not attached to this process"); expect(request.mock.calls.filter((call) => call[0] === "inspect.managed.attach")).toHaveLength(1); expect(request.mock.calls.filter((call) => call[0] === "inspect.managed.resolve")).toHaveLength(0);
   });
 });

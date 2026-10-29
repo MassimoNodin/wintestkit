@@ -5,6 +5,78 @@
     if (tutorialView && type !== "tour" && type !== "ready") return;
     vscode.postMessage({ type, ...values });
   };
+  // Managed inspection is kept separate from the UI Automation property view.
+  let managedSnapshot;
+  let managedSequence = -1;
+  const managedMessages = {
+    "not enabled": "Enable the inspector in repository settings, then attach.",
+    "not installed": "Install the inspector in the selected Python environment:",
+    "unsupported target": "Select a supported WPF target and try again.",
+    "blocked by policy": "Trust the workspace or ask your administrator about the blocking policy.",
+    "restart required": "Restart the target application to load the matching inspector version.",
+    "attach failed": "Check the target and try attaching again.",
+    "mapping unavailable": "Select a control with an exact managed mapping and refresh.",
+    "detached (idle)": "The session is detached. Attach again to inspect.",
+    "ready": "Attached. Values are read only when requested. Name-based redaction cannot identify every secret.",
+    "not attached to this process": "The selected node belongs to another process. Attach to inspect it.",
+  };
+  const managedNode = (tag, text) => { const node = document.createElement(tag); node.textContent = text; return node; };
+  const managedButton = (label, action) => { const button = managedNode("button", label); button.className = "secondary"; button.addEventListener("click", action); return button; };
+  function renderManaged() {
+    const data = managedSnapshot; if (!data) return;
+    element("managed-panel").hidden = !data.visible;
+    element("managed-state").textContent = data.state;
+    element("managed-explanation").textContent = (managedMessages[data.state] || "") + (data.state === "not installed" ? " " + data.install : "");
+    element("managed-install-copy").hidden = data.state !== "not installed";
+    const root = element("managed-groups"); root.replaceChildren();
+    if (!data.object) return;
+    const query = element("managed-search").value.toLowerCase();
+    const groups = [["Managed type", ["typeMetadata"]], ["CLR properties", ["clrProperty"]], ["CLR fields", ["clrField"]], ["Dependency/attached properties", ["dependencyProperty", "attachedProperty"]], ["Bindings", []]];
+    const ancestors = new Map();
+    root.tabIndex = -1; ancestors.set(data.object.objectId, root);
+    const renderRow = (row, container, scope) => {
+      const m = row.member, v = row.value;
+      if (query && ![m.name, m.declaringType, m.declaredType].some((x) => String(x).toLowerCase().includes(query))) return;
+      const box = managedNode("div", ""); box.className = "managed-row";
+      const check = document.createElement("input"); check.type = "checkbox"; check.className = "managed-check"; check.dataset.key = m.memberKey; check.dataset.scope = scope || ""; check.disabled = !m.pathSegment || !m.readable || m.visibility !== "public"; box.append(check);
+      if (v?.object) ancestors.set(v.object.objectId, box);
+      box.append(managedNode("strong", m.name));
+      box.append(managedNode("div", `Declared: ${m.declaredType}; runtime: ${v?.runtimeType || "—"}; declaring: ${m.declaringType}; category: ${m.category}; visibility: ${m.visibility}; ${m.readable ? "readable" : "unreadable"}${m.reason ? ` (${m.reason})` : ""}`));
+      if (m.compatibilityAlias || m.memberKey === "type:FullName") box.append(managedNode("div", `${m.compatibilityAlias || "ClrFullClassName"} is a compatibility alias of type:FullName`));
+      if (m.dependency) box.append(managedNode("div", `Owner: ${m.dependency.ownerType}; ${m.dependency.hasLocalValue ? "local value" : "effective value"}`));
+      let label = v?.status || "not read";
+      if (v?.status === "redacted") label += ` (rule: ${v.redactionRule || "unknown"})`;
+      if (v?.scalar !== undefined && v.status !== "redacted") label += `: ${String(v.scalar)}`;
+      if (v?.status === "truncated") label += ` (truncated at ${v.truncatedAt})`;
+      if (v?.dependencySource) label += `; source: ${v.dependencySource.baseValueSource}; expression: ${v.dependencySource.isExpression}; animated: ${v.dependencySource.isAnimated}; coerced: ${v.dependencySource.isCoerced}; current: ${v.dependencySource.isCurrent}`;
+      box.append(managedNode("div", label));
+      if (v?.status === "cycle" && v.cycleTo) { const link = managedButton("Go to ancestor", () => { const target = ancestors.get(v.cycleTo.objectId); target?.scrollIntoView(); target?.focus(); }); box.append(link); }
+      const address = { memberKey: m.memberKey, ...(scope ? { scope } : {}) };
+      if (m.readable && m.visibility === "public" && m.pathSegment) { box.append(managedButton("Read", () => post("managedRead", address))); if (!v || v.kind === "object" || v.kind === "array") box.append(managedButton("Expand", () => post("managedExpand", address))); }
+      if (m.readable && m.visibility === "public" && v?.status === "ok" && v.scalar !== undefined && !["object", "array", "unavailable"].includes(v.kind)) box.append(managedButton("Copy value", () => post("managedCopy", { kind: "value", ...address })));
+      box.append(managedButton("Copy canonical path", () => post("managedCopy", { kind: "path", ...address })));
+      const locator = managedButton("Copy locator", () => {}); locator.disabled = true; locator.title = "Needs uniqueness check — not available yet"; box.append(locator);
+      box.tabIndex = -1;
+      container.append(box); if (row.children) { const children = managedNode("div", ""); children.className = "managed-children"; row.children.forEach((child) => renderRow(child, children, row.id)); if (row.page && !row.page.complete) { children.append(managedNode("p", "Partial list")); if (row.page.nextToken) children.append(managedButton("Load more", () => post("managedLoadMore", { group: row.id }))); } container.append(children); }
+    };
+    for (const [title, categories] of groups) {
+      const group = document.createElement("details"); group.open = title === "Managed type"; group.append(managedNode("summary", title));
+      if (title === "Managed type") { const type = data.object.type; group.append(managedNode("p", `Full name: ${type.fullName}; assembly: ${type.assemblyName}; base types: ${type.baseTypes.join(", ")}`)); }
+      if (title === "Bindings") for (const binding of data.bindings || []) group.append(managedNode("div", `${binding.memberKey}: ${binding.kind}; ${binding.status}; ${binding.path || ""}`));
+      else data.rows.filter((row) => categories.includes(row.member.category)).forEach((row) => renderRow(row, group));
+      if (data.page && !data.page.complete) { group.append(managedNode("p", "Partial list")); if (data.page.nextToken) group.append(managedButton("Load more", () => post("managedLoadMore", { group: title }))); }
+      root.append(group);
+    }
+  }
+  element("managed-attach").addEventListener("click", () => post("managedAttach"));
+  element("managed-detach").addEventListener("click", () => post("managedDetach"));
+  element("managed-refresh").addEventListener("click", () => post("managedRefresh"));
+  element("managed-export").addEventListener("click", () => post("managedCopy", { kind: "export" }));
+  element("managed-install-copy").addEventListener("click", () => post("copy", { text: 'pip install "wintestkit[inspector]"' }));
+  element("managed-search").addEventListener("input", renderManaged);
+  element("managed-read-visible").addEventListener("click", () => { const checks = [...document.querySelectorAll(".managed-check:checked")].filter((check) => !check.disabled && check.closest("details")?.open).slice(0, 32); if (checks.length) post("managedReadVisible", { memberKeys: checks.map((check) => check.dataset.key), scopes: checks.map((check) => check.dataset.scope) }); });
+  window["addEventListener"]("message", (event) => { const data = event.data; if (data?.type !== "managedPanel" || data.sequence < managedSequence) return; managedSequence = data.sequence; managedSnapshot = data; renderManaged(); });
+
   let tutorialView;
   let tutorialTarget;
   let tutorialSpotlights = [];
