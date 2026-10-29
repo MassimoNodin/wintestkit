@@ -344,6 +344,14 @@
                                     </table>
                                 </section>
                             </div>
+                            <section id="managed-panel" class="property-group" hidden aria-label="Managed inspection">
+                                <h3>Managed inspection <span id="managed-state"></span></h3>
+                                <p id="managed-explanation" class="muted"></p>
+                                <div class="actions managed-actions"><button id="managed-attach">Attach</button><button id="managed-detach" class="secondary">Detach</button><button id="managed-refresh" class="secondary">Refresh metadata</button><button id="managed-install-copy" class="secondary" hidden>Copy install command</button></div>
+                                <label class="managed-search">Search loaded rows only <input id="managed-search" type="search" /></label>
+                                <button id="managed-read-visible" class="secondary">Read visible</button><button id="managed-export" class="secondary">Export metadata</button>
+                                <div id="managed-groups"></div>
+                            </section>
                         </div>
                     </section>
                 </div>

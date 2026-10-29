@@ -1,3 +1,4 @@
+import { ManagedPanel } from "./managedPanel";
 import { ManagedInspector } from "./managedSession";
 import { randomBytes } from "node:crypto";
 import { readFile } from "node:fs/promises";
@@ -63,6 +64,7 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
   private scopeRevision = 0;
   private selection = 0;
   private managedInspector?: ManagedInspector;
+  private managedPanel?: ManagedPanel;
   private pickRevision = 0;
   private pickSession?: string;
   private refreshing?: Promise<void>;
@@ -514,6 +516,8 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
   }
   private unbind(invalidatePick = true): void {
     const client = this.client;
+    this.managedPanel?.dispose();
+    this.managedPanel = undefined;
     this.managedInspector?.invalidate();
     this.managedInspector = undefined;
     this.notifications.forEach((subscription) => subscription.dispose());
@@ -573,6 +577,8 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
       : undefined;
     this.client = client;
     this.managedInspector = new ManagedInspector(client, connection.initialized);
+    this.managedPanel = new ManagedPanel(this.managedInspector, (message) => { if (this.managedInspector?.visible && !this.tutorialActive()) void this.view?.webview.postMessage(message); });
+    this.managedPanel.select(this.selectedNodeId);
     this.notifications = [
       client.onNotification("spy.hover", (value) => {
         if (!this.currentPick(client, value)) return;
@@ -656,6 +662,7 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
             return;
           this.suggestion = picked.suggestion;
           this.selectedNodeId = picked.node.nodeId;
+          this.managedPanel?.select(picked.node.nodeId);
           if (pickedPath) this.rememberSelection(pickedPath);
           this.post({
             type: "picked",
@@ -1031,6 +1038,7 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
     }
   }
   private async handle(message: SpyRequest): Promise<void> {
+    if (message.type.startsWith("managed")) { await this.managedPanel?.handle(message as import("./messages").ManagedRequest); return; }
     if (message.type === "tour") {
       const setup = this.setup;
       if (setup?.tour?.phase !== "extras") return;
@@ -1124,6 +1132,7 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
     if (message.type === "select") {
       this.suggestion = undefined;
       this.selectedNodeId = message.nodeId;
+      this.managedPanel?.select(message.nodeId);
       if (message.path) this.rememberSelection(message.path);
     }
     const title =
