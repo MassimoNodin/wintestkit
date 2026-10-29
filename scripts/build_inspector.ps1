@@ -2,13 +2,31 @@ param(
     [ValidateSet('Debug', 'Release')][string]$Configuration = 'Release',
     [switch]$LockedRestore,
     [switch]$Sign,
-    [string]$DotnetRoot
+    [string]$DotnetRoot,
+    [string]$MSBuildPath
 )
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
 . (Join-Path $PSScriptRoot 'resolve_dotnet.ps1')
 $dotnet = Resolve-InspectorDotnet -DotnetRoot $DotnetRoot -InspectorRoot (Join-Path $root 'wpf-inspector')
-$msbuild = 'C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe'
+if ($PSBoundParameters.ContainsKey('MSBuildPath')) {
+    $msbuild = $MSBuildPath
+} elseif ($env:WTK_MSBUILD) {
+    $msbuild = $env:WTK_MSBUILD
+} else {
+    $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
+    $msbuild = $null
+    if (Test-Path -LiteralPath $vswhere -PathType Leaf) {
+        $msbuild = & $vswhere -latest -products '*' -requires Microsoft.Component.MSBuild Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -find 'MSBuild\**\Bin\MSBuild.exe' | Select-Object -First 1
+    }
+    if (-not $msbuild) {
+        throw 'MSBuild with Visual C++ x86/x64 tools was not found. Install the Visual Studio Desktop development with C++ workload (including MSBuild and Microsoft.VisualStudio.Component.VC.Tools.x86.x64), or specify -MSBuildPath or WTK_MSBUILD.'
+    }
+}
+if (-not $msbuild -or -not (Test-Path -LiteralPath $msbuild -PathType Leaf)) {
+    throw "MSBuild executable not found: '$msbuild'. Check -MSBuildPath or WTK_MSBUILD."
+}
+Write-Host "Using MSBuild: $msbuild"
 if ($Sign -and -not $env:WTK_SIGN_CERT_THUMBPRINT) { throw '-Sign requires WTK_SIGN_CERT_THUMBPRINT.' }
 # Verify the complete pinned inventory before compiling or copying any upstream code.
 $vendor = Join-Path $root 'wpf-inspector/third_party/snoop'
@@ -48,7 +66,7 @@ try {
     foreach ($arch in @('Win32', 'x64')) {
         $out = Join-Path $root "wpf-inspector/artifacts/launcher/$Configuration/$arch/"
         $obj = Join-Path $root "wpf-inspector/artifacts/launcher/obj/$Configuration/$arch/"
-        & $msbuild (Join-Path $root 'wpf-inspector/third_party/snoop/Snoop.GenericInjector/Snoop.GenericInjector.vcxproj') /t:Build "/p:Configuration=$Configuration" "/p:Platform=$arch" /p:RootBuild=False /p:PlatformToolset=v143 /p:VCToolsVersion=14.40.33807 "/p:OutDir=$out" "/p:IntDir=$obj" /v:minimal
+        & $msbuild (Join-Path $root 'wpf-inspector/third_party/snoop/Snoop.GenericInjector/Snoop.GenericInjector.vcxproj') /t:Build "/p:Configuration=$Configuration" "/p:Platform=$arch" /p:RootBuild=False /p:WindowsTargetPlatformVersion=10.0 "/p:OutDir=$out" "/p:IntDir=$obj" /v:minimal
         if ($LASTEXITCODE -ne 0) { Write-Warning "Native build failed: $arch"; $failed = $true }
     }
     if ($failed) { throw 'Protocol, Agent, or native injector build failed; launcher build was not started.' }
