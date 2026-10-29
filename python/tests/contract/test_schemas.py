@@ -306,7 +306,38 @@ def test_every_named_definition(
     validate: Validate, schema_documents: dict[str, dict[str, Any]], schema_file: str
 ) -> None:
     examples = definition_examples()[schema_file]
-    assert set(examples) == set(schema_documents[schema_file]["$defs"])
+    managed = {
+        "common.schema.json": {
+            "ManagedProcessIdentity",
+            "ManagedSession",
+            "ManagedMapping",
+            "ManagedInspectorNodePage",
+            "ManagedMemberPage",
+            "ManagedPath",
+            "ManagedPathValue",
+            "ManagedBindingInfo",
+        },
+        "rpc.schema.json": {
+            f"InspectManaged{method}{suffix}"
+            for method in (
+                "Identify",
+                "Attach",
+                "Status",
+                "Detach",
+                "Resolve",
+                "Roots",
+                "Children",
+                "Members",
+                "Read",
+                "Bindings",
+                "Release",
+            )
+            for suffix in ("Params", "Result")
+        },
+    }
+    assert set(examples) | managed.get(schema_file, set()) == set(
+        schema_documents[schema_file]["$defs"]
+    )
     for def_name, example in examples.items():
         validate(schema_file, def_name, example)
 

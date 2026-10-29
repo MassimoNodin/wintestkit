@@ -25,6 +25,143 @@ export type AppProcessesParams = Record<string, never>;
 export type AppStatusParams = Record<string, never>;
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "Key".
+ */
+export type Key = string;
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "AttributeLiteral".
+ */
+export type AttributeLiteral = AttributeLiteral1;
+/**
+ * Recursive binding trees have maximum depth 8 and 32 total entries.
+ *
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "BindingInfo".
+ */
+export type BindingInfo = BindingInfo1;
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "Identifier".
+ */
+export type Identifier = string;
+/**
+ * @minItems 1
+ * @maxItems 1024
+ *
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "RuntimeId".
+ */
+export type RuntimeId = [number, ...number[]];
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "CandidateResult".
+ */
+export type CandidateResult = CandidateResult1;
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "Mapping".
+ */
+export type Mapping = Mapping1;
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "TypeName".
+ */
+export type TypeName = string;
+/**
+ * A type segment must be alone. Serialized paths must not exceed 1024 UTF-8 bytes.
+ *
+ * @minItems 1
+ * @maxItems 8
+ *
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "Path".
+ */
+export type Path = Path1;
+export type Path1 =
+  | [PathSegment]
+  | [PathSegment, PathSegment]
+  | [PathSegment, PathSegment, PathSegment]
+  | [PathSegment, PathSegment, PathSegment, PathSegment]
+  | [PathSegment, PathSegment, PathSegment, PathSegment, PathSegment]
+  | [
+      PathSegment,
+      PathSegment,
+      PathSegment,
+      PathSegment,
+      PathSegment,
+      PathSegment
+    ]
+  | [
+      PathSegment,
+      PathSegment,
+      PathSegment,
+      PathSegment,
+      PathSegment,
+      PathSegment,
+      PathSegment
+    ]
+  | [
+      PathSegment,
+      PathSegment,
+      PathSegment,
+      PathSegment,
+      PathSegment,
+      PathSegment,
+      PathSegment,
+      PathSegment
+    ];
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "PathSegment".
+ */
+export type PathSegment =
+  | {
+      kind: "property";
+      name: Key;
+      declaringType?: Key;
+      memberKey?: Key;
+    }
+  | {
+      kind: "field";
+      name: Key;
+      declaringType?: Key;
+      memberKey?: Key;
+    }
+  | {
+      kind: "dependency";
+      ownerType: Key;
+      ownerAssembly: Key;
+      name: Key;
+    }
+  | {
+      kind: "type";
+      name:
+        | "Name"
+        | "FullName"
+        | "AssemblyName"
+        | "AssemblyQualifiedName"
+        | "BaseTypes";
+    };
+/**
+ * For truncated values truncatedAt is greater than the Unicode scalar length of scalar; dependencySource is present only for dependency reads.
+ *
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "Value".
+ */
+export type Value = Value1;
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "ScalarString".
+ */
+export type ScalarString = string;
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "CloseParams".
+ */
+export type CloseParams = Record<string, never>;
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
  * via the `definition` "Matcher".
  */
 export type Matcher =
@@ -49,6 +186,20 @@ export type ItemSelectorData =
       column: number | string;
     };
 /**
+ * @maxItems 200
+ *
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "Features".
+ */
+export type Features = (
+  | "typeMetadata"
+  | "clrMembers"
+  | "dependencyProperties"
+  | "bindings"
+  | "exactUiaMapping"
+  | "batchReads"
+)[];
+/**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
  * via the `definition` "InspectChildrenResult".
  */
@@ -59,10 +210,198 @@ export type InspectChildrenResult = NodeInfo[];
  */
 export type InspectHighlightResult = null;
 /**
+ * Recursive binding trees have maximum depth 8 and 32 total entries.
+ */
+export type ManagedBindingInfo = {
+  memberKey: Key;
+  kind: "none" | "binding" | "multiBinding" | "priorityBinding";
+  status: string;
+  mode: string;
+  updateSourceTrigger: string;
+  path?: string;
+  elementName?: string;
+  relativeSource?: RelativeSource;
+  sourceType?: Key;
+  converterType?: Key;
+  /**
+   * @maxItems 32
+   */
+  children?: BindingInfo[];
+  /**
+   * @maxItems 32
+   */
+  validationErrors?: Key[];
+};
+/**
+ * nextToken is present iff further items exist; incomplete pages may instead indicate partial failure.
+ */
+export type InspectManagedChildrenResult = {
+  /**
+   * @maxItems 200
+   */
+  items: ManagedNode[];
+  complete: boolean;
+  snapshotId: Identifier;
+  /**
+   * @maxItems 200
+   */
+  diagnostics: ManagedDiagnostic[];
+  nextToken?: Identifier;
+};
+/**
+ * nextToken is present iff further items exist; incomplete pages may instead indicate partial failure.
+ */
+export type InspectManagedMembersResult = {
+  /**
+   * @maxItems 200
+   */
+  items: Member[];
+  complete: boolean;
+  snapshotId: Identifier;
+  /**
+   * @maxItems 200
+   */
+  diagnostics: ManagedDiagnostic[];
+  nextToken?: Identifier;
+};
+/**
+ * A type segment must be alone. Serialized paths must not exceed 1024 UTF-8 bytes.
+ *
+ * @minItems 1
+ * @maxItems 8
+ */
+export type ManagedPath =
+  | [PathSegment]
+  | [PathSegment, PathSegment]
+  | [PathSegment, PathSegment, PathSegment]
+  | [PathSegment, PathSegment, PathSegment, PathSegment]
+  | [PathSegment, PathSegment, PathSegment, PathSegment, PathSegment]
+  | [
+      PathSegment,
+      PathSegment,
+      PathSegment,
+      PathSegment,
+      PathSegment,
+      PathSegment
+    ]
+  | [
+      PathSegment,
+      PathSegment,
+      PathSegment,
+      PathSegment,
+      PathSegment,
+      PathSegment,
+      PathSegment
+    ]
+  | [
+      PathSegment,
+      PathSegment,
+      PathSegment,
+      PathSegment,
+      PathSegment,
+      PathSegment,
+      PathSegment,
+      PathSegment
+    ];
+export type InspectManagedResolveResult = {
+  status:
+    | "exact"
+    | "notFound"
+    | "ambiguous"
+    | "unsupportedPeer"
+    | "stale"
+    | "limitExceeded";
+  process: ProcessIdentity;
+  runtimeId: RuntimeId;
+  object?: ObjectRef;
+};
+/**
+ * nextToken is present iff further items exist; incomplete pages may instead indicate partial failure.
+ */
+export type InspectManagedRootsResult = {
+  /**
+   * @maxItems 200
+   */
+  items: ManagedNode[];
+  complete: boolean;
+  snapshotId: Identifier;
+  /**
+   * @maxItems 200
+   */
+  diagnostics: ManagedDiagnostic[];
+  nextToken?: Identifier;
+};
+/**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
  * via the `definition` "InspectRootsResult".
  */
 export type InspectRootsResult = NodeInfo[];
+/**
+ * nextToken is present iff further items exist; incomplete pages may instead indicate partial failure.
+ */
+export type ManagedInspectorNodePage = {
+  /**
+   * @maxItems 200
+   */
+  items: ManagedNode[];
+  complete: boolean;
+  snapshotId: Identifier;
+  /**
+   * @maxItems 200
+   */
+  diagnostics: ManagedDiagnostic[];
+  nextToken?: Identifier;
+};
+export type ManagedMapping = {
+  status:
+    | "exact"
+    | "notFound"
+    | "ambiguous"
+    | "unsupportedPeer"
+    | "stale"
+    | "limitExceeded";
+  process: ProcessIdentity;
+  runtimeId: RuntimeId;
+  object?: ObjectRef;
+};
+/**
+ * nextToken is present iff further items exist; incomplete pages may instead indicate partial failure.
+ */
+export type ManagedMemberPage = {
+  /**
+   * @maxItems 200
+   */
+  items: Member[];
+  complete: boolean;
+  snapshotId: Identifier;
+  /**
+   * @maxItems 200
+   */
+  diagnostics: ManagedDiagnostic[];
+  nextToken?: Identifier;
+};
+/**
+ * nextToken is present iff further items exist; incomplete pages may instead indicate partial failure.
+ *
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "ManagedNodePage".
+ */
+export type ManagedNodePage = ManagedNodePage1;
+/**
+ * nextToken is present iff further items exist; incomplete pages may instead indicate partial failure.
+ *
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "MemberPage".
+ */
+export type MemberPage = MemberPage1;
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "ResponseEnvelope".
+ */
+export type ResponseEnvelope = ResponseEnvelope1 & ResponseEnvelope2;
+export type ResponseEnvelope1 = {
+  [k: string]: unknown;
+};
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
  * via the `definition` "TestOutcome".
@@ -155,6 +494,101 @@ export type SpyStopParams = Record<string, never>;
  * via the `definition` "SpyStopResult".
  */
 export type SpyStopResult = null;
+/**
+ * Recursive binding trees have maximum depth 8 and 32 total entries.
+ *
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "ManagedBindingInfo".
+ */
+export type BindingInfo2 = ManagedBindingInfo1;
+/**
+ * nextToken is present iff further items exist; incomplete pages may instead indicate partial failure.
+ *
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "ManagedInspectorNodePage".
+ */
+export type ManagedNodePage2 = ManagedInspectorNodePage1;
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "ManagedMapping".
+ */
+export type Mapping2 = ManagedMapping1;
+/**
+ * nextToken is present iff further items exist; incomplete pages may instead indicate partial failure.
+ *
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "ManagedMemberPage".
+ */
+export type MemberPage2 = ManagedMemberPage1;
+/**
+ * A type segment must be alone. Serialized paths must not exceed 1024 UTF-8 bytes.
+ *
+ * @minItems 1
+ * @maxItems 8
+ *
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "ManagedPath".
+ */
+export type Path2 = ManagedPath1;
+export type ManagedPath1 =
+  | [PathSegment]
+  | [PathSegment, PathSegment]
+  | [PathSegment, PathSegment, PathSegment]
+  | [PathSegment, PathSegment, PathSegment, PathSegment]
+  | [PathSegment, PathSegment, PathSegment, PathSegment, PathSegment]
+  | [
+      PathSegment,
+      PathSegment,
+      PathSegment,
+      PathSegment,
+      PathSegment,
+      PathSegment
+    ]
+  | [
+      PathSegment,
+      PathSegment,
+      PathSegment,
+      PathSegment,
+      PathSegment,
+      PathSegment,
+      PathSegment
+    ]
+  | [
+      PathSegment,
+      PathSegment,
+      PathSegment,
+      PathSegment,
+      PathSegment,
+      PathSegment,
+      PathSegment,
+      PathSegment
+    ];
+/**
+ * nextToken is present iff further items exist; incomplete pages may instead indicate partial failure.
+ *
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "InspectManagedChildrenResult".
+ */
+export type ManagedInspectorNodePage2 = InspectManagedChildrenResult1;
+/**
+ * nextToken is present iff further items exist; incomplete pages may instead indicate partial failure.
+ *
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "InspectManagedMembersResult".
+ */
+export type ManagedMemberPage2 = InspectManagedMembersResult1;
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "InspectManagedResolveResult".
+ */
+export type ManagedMapping2 = InspectManagedResolveResult1;
+/**
+ * nextToken is present iff further items exist; incomplete pages may instead indicate partial failure.
+ *
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "InspectManagedRootsResult".
+ */
+export type ManagedInspectorNodePage3 = InspectManagedRootsResult1;
 
 export interface ProtocolContracts {
   AppCloseParams?: AppCloseParams;
@@ -166,13 +600,28 @@ export interface ProtocolContracts {
   AppStartingNotification?: AppStartingNotification;
   AppStatusParams?: AppStatusParams;
   AppStatusResult?: AppStatusResult;
+  AttributeInfo?: AttributeInfo;
+  AttributeLiteral?: AttributeLiteral;
+  BindingInfo?: BindingInfo;
+  BindingsParams?: BindingsParams;
+  BindingsResult?: BindingsResult;
+  BootstrapSettings?: BootstrapSettings;
+  CancelParams?: CancelParams;
+  CancelResult?: CancelResult;
   Candidate?: Candidate;
+  CandidateRequest?: CandidateRequest;
+  CandidateResult?: CandidateResult;
   CheckResult?: CheckResult;
   ChildPageEntry?: ChildPageEntry;
+  ChildrenParams?: ChildrenParams;
+  CloseParams?: CloseParams;
+  CloseResult?: CloseResult;
   CollectError?: CollectError;
   CollectedTest?: CollectedTest;
   DefinitionError?: DefinitionError;
   DefinitionMatch?: DefinitionMatch;
+  DependencyMetadata?: DependencyMetadata;
+  DependencySource?: DependencySource;
   Diagnostic?: Diagnostic;
   DiscoverParams?: DiscoverParams;
   DiscoverResult?: DiscoverResult;
@@ -186,9 +635,13 @@ export interface ProtocolContracts {
   ElementInfo?: ElementInfo;
   ElementResult?: ElementResult;
   ErrorInfo?: ErrorInfo;
+  Features?: Features;
   FlowEntry?: FlowEntry;
   FlowRunParams?: FlowRunParams;
   FlowRunResult?: FlowRunResult;
+  HelloParams?: HelloParams;
+  HelloResult?: HelloResult;
+  Identifier?: Identifier;
   InitializeParams?: InitializeParams;
   InitializeResult?: InitializeResult;
   InspectChildrenParams?: InspectChildrenParams;
@@ -199,6 +652,28 @@ export interface ProtocolContracts {
   InspectDefinitionsResult?: InspectDefinitionsResult;
   InspectHighlightParams?: InspectHighlightParams;
   InspectHighlightResult?: InspectHighlightResult;
+  InspectManagedAttachParams?: InspectManagedAttachParams;
+  InspectManagedAttachResult?: InspectManagedAttachResult;
+  InspectManagedBindingsParams?: InspectManagedBindingsParams;
+  InspectManagedBindingsResult?: InspectManagedBindingsResult;
+  InspectManagedChildrenParams?: InspectManagedChildrenParams;
+  InspectManagedChildrenResult?: InspectManagedChildrenResult;
+  InspectManagedDetachParams?: InspectManagedDetachParams;
+  InspectManagedDetachResult?: InspectManagedDetachResult;
+  InspectManagedIdentifyParams?: InspectManagedIdentifyParams;
+  InspectManagedIdentifyResult?: InspectManagedIdentifyResult;
+  InspectManagedMembersParams?: InspectManagedMembersParams;
+  InspectManagedMembersResult?: InspectManagedMembersResult;
+  InspectManagedReadParams?: InspectManagedReadParams;
+  InspectManagedReadResult?: InspectManagedReadResult;
+  InspectManagedReleaseParams?: InspectManagedReleaseParams;
+  InspectManagedReleaseResult?: InspectManagedReleaseResult;
+  InspectManagedResolveParams?: InspectManagedResolveParams;
+  InspectManagedResolveResult?: InspectManagedResolveResult;
+  InspectManagedRootsParams?: InspectManagedRootsParams;
+  InspectManagedRootsResult?: InspectManagedRootsResult;
+  InspectManagedStatusParams?: InspectManagedStatusParams;
+  InspectManagedStatusResult?: InspectManagedStatusResult;
   InspectPartialErrorData?: InspectPartialErrorData;
   InspectPreviewParams?: InspectPreviewParams;
   InspectPreviewResult?: InspectPreviewResult;
@@ -210,24 +685,60 @@ export interface ProtocolContracts {
   InspectRootsResult?: InspectRootsResult;
   InspectionProperty?: InspectionProperty;
   ItemSelectorData?: ItemSelectorData;
+  Key?: Key;
   LocatorData?: LocatorData;
   LogNotification?: LogNotification;
+  ManagedBindingInfo?: ManagedBindingInfo;
+  ManagedDiagnostic?: ManagedDiagnostic;
+  ManagedErrorInfo?: ManagedErrorInfo;
+  ManagedInspectorNodePage?: ManagedInspectorNodePage;
+  ManagedMapping?: ManagedMapping;
+  ManagedMemberPage?: ManagedMemberPage;
+  ManagedNode?: ManagedNode;
+  ManagedNodePage?: ManagedNodePage;
+  ManagedPath?: ManagedPath;
+  ManagedPathValue?: ManagedPathValue;
+  ManagedProcessIdentity?: ManagedProcessIdentity;
+  ManagedSession?: ManagedSession;
+  Mapping?: Mapping;
   Matcher?: Matcher;
+  Member?: Member;
+  MemberPage?: MemberPage;
+  MembersParams?: MembersParams;
   Mismatch?: Mismatch;
   NodeCoverage?: NodeCoverage;
   NodeInfo?: NodeInfo;
+  ObjectRef?: ObjectRef;
   PageCheckParams?: PageCheckParams;
   PageCheckResult?: PageCheckResult;
   PageEntry?: PageEntry;
+  Path?: Path;
+  PathSegment?: PathSegment;
+  PathValue?: PathValue;
   Position?: Position;
   PreviewImage?: PreviewImage;
+  ProcessIdentity?: ProcessIdentity;
   Range?: Range;
+  ReadBatchParams?: ReadBatchParams;
+  ReadBatchResult?: ReadBatchResult;
+  ReadParams?: ReadParams;
+  ReadResult?: ReadResult;
   Rect?: Rect;
+  RelativeSource?: RelativeSource;
+  ReleaseParams?: ReleaseParams;
+  ReleaseResult?: ReleaseResult;
   Relocation?: Relocation;
   Replay?: Replay;
+  RequestEnvelope?: RequestEnvelope;
+  ResolveParams?: ResolveParams;
+  ResponseEnvelope?: ResponseEnvelope;
   Results?: Results;
+  RootsParams?: RootsParams;
   RunEvent?: RunEvent;
   RunningProcess?: RunningProcess;
+  RuntimeId?: RuntimeId;
+  ScalarString?: ScalarString;
+  Session?: Session;
   ShutdownParams?: ShutdownParams;
   ShutdownResult?: ShutdownResult;
   SpyCancelledNotification?: SpyCancelledNotification;
@@ -245,6 +756,9 @@ export interface ProtocolContracts {
   TestEntry?: TestEntry;
   TestOutcome?: TestOutcome;
   TestResult?: TestResult;
+  TypeInfo?: TypeInfo;
+  TypeName?: TypeName;
+  Value?: Value;
   WindowLocatorData?: WindowLocatorData;
 }
 /**
@@ -292,6 +806,124 @@ export interface AppStatusResult {
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "AttributeInfo".
+ */
+export interface AttributeInfo {
+  typeName: Key;
+  /**
+   * @maxItems 32
+   */
+  constructorArguments: AttributeLiteral[];
+  namedArguments: {
+    [k: string]: AttributeLiteral;
+  };
+}
+export interface AttributeLiteral1 {
+  kind:
+    | "string"
+    | "enum"
+    | "type"
+    | "boolean"
+    | "integer"
+    | "number"
+    | "null"
+    | "array";
+  value: unknown;
+}
+export interface BindingInfo1 {
+  memberKey: Key;
+  kind: "none" | "binding" | "multiBinding" | "priorityBinding";
+  status: string;
+  mode: string;
+  updateSourceTrigger: string;
+  path?: string;
+  elementName?: string;
+  relativeSource?: RelativeSource;
+  sourceType?: Key;
+  converterType?: Key;
+  /**
+   * @maxItems 32
+   */
+  children?: BindingInfo[];
+  /**
+   * @maxItems 32
+   */
+  validationErrors?: Key[];
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "RelativeSource".
+ */
+export interface RelativeSource {
+  mode: "FindAncestor" | "PreviousData" | "TemplatedParent" | "Self";
+  ancestorType?: Key;
+  ancestorLevel?: number;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "BindingsParams".
+ */
+export interface BindingsParams {
+  sessionId: Identifier;
+  objectId: Identifier;
+  generation: number;
+  /**
+   * @maxItems 32
+   */
+  memberKeys: Key[];
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "BindingsResult".
+ */
+export interface BindingsResult {
+  /**
+   * @maxItems 32
+   */
+  bindings: BindingInfo[];
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "BootstrapSettings".
+ */
+export interface BootstrapSettings {
+  schemaVersion: 1;
+  protocolMajor: number;
+  protocolMinor: number;
+  sessionId: string;
+  process: ProcessIdentity;
+  pipeName: Key;
+  token: string;
+  clientSid: Identifier;
+  expiresUtc: string;
+  requestTimeoutMs: number;
+  idleTimeoutMs: number;
+  agentVersion: Identifier;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "ProcessIdentity".
+ */
+export interface ProcessIdentity {
+  pid: number;
+  creationTimeUtc: string;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "CancelParams".
+ */
+export interface CancelParams {
+  requestId: number;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "CancelResult".
+ */
+export interface CancelResult {
+  accepted: boolean;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
  * via the `definition` "Candidate".
  */
 export interface Candidate {
@@ -335,6 +967,129 @@ export interface Mismatch {
   property: string;
   expected: string;
   actual: string;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "CandidateRequest".
+ */
+export interface CandidateRequest {
+  runtimeId: RuntimeId;
+  nativeWindowHandle?: number;
+}
+export interface CandidateResult1 {
+  runtimeId: RuntimeId;
+  mapping: Mapping;
+  /**
+   * @maxItems 32
+   */
+  values: PathValue[];
+}
+export interface Mapping1 {
+  status:
+    | "exact"
+    | "notFound"
+    | "ambiguous"
+    | "unsupportedPeer"
+    | "stale"
+    | "limitExceeded";
+  process: ProcessIdentity;
+  runtimeId: RuntimeId;
+  object?: ObjectRef;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "ObjectRef".
+ */
+export interface ObjectRef {
+  sessionId: Identifier;
+  objectId: Identifier;
+  generation: number;
+  type: TypeInfo;
+  dispatcherId: Identifier;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "TypeInfo".
+ */
+export interface TypeInfo {
+  name: TypeName;
+  fullName: TypeName;
+  assemblyName: TypeName;
+  assemblyQualifiedName: TypeName;
+  /**
+   * @maxItems 1024
+   */
+  baseTypes: TypeName[];
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "PathValue".
+ */
+export interface PathValue {
+  path: Path;
+  value: Value;
+}
+export interface Value1 {
+  status:
+    | "ok"
+    | "notRead"
+    | "notReadable"
+    | "nullIntermediate"
+    | "exception"
+    | "stale"
+    | "redacted"
+    | "truncated"
+    | "cycle"
+    | "timeout"
+    | "unsupported";
+  kind:
+    | "null"
+    | "string"
+    | "boolean"
+    | "integer"
+    | "number"
+    | "enum"
+    | "object"
+    | "array"
+    | "type"
+    | "unavailable";
+  declaredType: TypeName;
+  runtimeType: TypeName;
+  scalar?: null | boolean | number | ScalarString;
+  object?: ObjectRef;
+  message?: string;
+  truncatedAt?: number;
+  cycleTo?: ObjectRef;
+  numericValue?: string;
+  typeInfo?: TypeInfo;
+  arrayRank?: number;
+  arrayLength?: number;
+  failedSegment?: number;
+  redactionRule?: Key;
+  dependencySource?: DependencySource;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "DependencySource".
+ */
+export interface DependencySource {
+  baseValueSource:
+    | "Unknown"
+    | "Default"
+    | "Inherited"
+    | "DefaultStyle"
+    | "DefaultStyleTrigger"
+    | "Style"
+    | "TemplateTrigger"
+    | "StyleTrigger"
+    | "ImplicitStyleReference"
+    | "ParentTemplate"
+    | "ParentTemplateTrigger"
+    | "Local";
+  isExpression: boolean;
+  isAnimated: boolean;
+  isCoerced: boolean;
+  isCurrent: boolean;
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
@@ -427,6 +1182,25 @@ export interface Position {
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "ChildrenParams".
+ */
+export interface ChildrenParams {
+  sessionId: Identifier;
+  objectId: Identifier;
+  generation: number;
+  tree: "visual" | "logical";
+  pageSize?: number;
+  pageToken?: Identifier;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "CloseResult".
+ */
+export interface CloseResult {
+  closed: true;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
  * via the `definition` "CollectError".
  */
 export interface CollectError {
@@ -468,6 +1242,35 @@ export interface DefinitionMatch {
   range?: Range;
   pages: string[];
   pageCount: number;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "DependencyMetadata".
+ */
+export interface DependencyMetadata {
+  ownerType: Key;
+  ownerAssembly: Key;
+  propertyType: Key;
+  readOnly: boolean;
+  isAttached: "true" | "false" | "unknown";
+  hasLocalValue: boolean;
+  /**
+   * @maxItems 32
+   */
+  metadataFlags: (
+    | "None"
+    | "AffectsMeasure"
+    | "AffectsArrange"
+    | "AffectsParentMeasure"
+    | "AffectsParentArrange"
+    | "AffectsRender"
+    | "Inherits"
+    | "OverridesInheritanceBehavior"
+    | "NotDataBindable"
+    | "BindsTwoWayByDefault"
+    | "Journal"
+    | "SubPropertiesDoNotAffectRender"
+  )[];
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
@@ -675,6 +1478,29 @@ export interface FlowRunResult {
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "HelloParams".
+ */
+export interface HelloParams {
+  protocolMajor: 1;
+  protocolMinor: number;
+  sessionId: Identifier;
+  token: Identifier;
+  process: ProcessIdentity;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "HelloResult".
+ */
+export interface HelloResult {
+  agentVersion: Identifier;
+  tfm: "net48" | "net8.0-windows" | "net10.0-windows";
+  architecture: "x86" | "x64";
+  runtimeVersion: Identifier;
+  features: Features;
+  process: ProcessIdentity;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
  * via the `definition` "InitializeParams".
  */
 export interface InitializeParams {
@@ -688,6 +1514,9 @@ export interface InitializeResult {
   protocolVersion: 1;
   wintestkitVersion: string;
   python: string;
+  capabilities?: {
+    managedInspector: boolean;
+  };
   config: {
     found: boolean;
     app?: {
@@ -768,6 +1597,265 @@ export interface InspectHighlightParams {
   nodeId: string;
   durationMs?: number;
   bringToFront?: boolean;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "InspectManagedAttachParams".
+ */
+export interface InspectManagedAttachParams {
+  process: ManagedProcessIdentity;
+}
+export interface ManagedProcessIdentity {
+  pid: number;
+  creationTimeUtc: string;
+}
+export interface InspectManagedAttachResult {
+  sessionId: Identifier;
+  process: ProcessIdentity;
+  state:
+    | "detached"
+    | "probing"
+    | "attaching"
+    | "ready"
+    | "detaching"
+    | "faulted"
+    | "exited";
+  protocolMajor: number;
+  protocolMinor: number;
+  features: Features;
+  runtimeVersion?: Identifier;
+  architecture?: Identifier;
+  agentVersion?: Identifier;
+  error?: string;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "InspectManagedBindingsParams".
+ */
+export interface InspectManagedBindingsParams {
+  sessionId: string;
+  objectId: string;
+  generation: number;
+  /**
+   * @minItems 1
+   * @maxItems 32
+   */
+  memberKeys: [string, ...string[]];
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "InspectManagedBindingsResult".
+ */
+export interface InspectManagedBindingsResult {
+  /**
+   * @maxItems 32
+   */
+  bindings: ManagedBindingInfo[];
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "InspectManagedChildrenParams".
+ */
+export interface InspectManagedChildrenParams {
+  sessionId: string;
+  objectId: string;
+  generation: number;
+  tree: "visual" | "logical";
+  pageSize?: number;
+  pageToken?: string;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "ManagedNode".
+ */
+export interface ManagedNode {
+  object: ObjectRef;
+  label: string;
+  hasVisualChildren: boolean;
+  hasLogicalChildren: boolean;
+  runtimeId?: RuntimeId;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "ManagedDiagnostic".
+ */
+export interface ManagedDiagnostic {
+  code: Identifier;
+  message: string;
+  category?: Identifier;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "InspectManagedDetachParams".
+ */
+export interface InspectManagedDetachParams {
+  sessionId: string;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "InspectManagedDetachResult".
+ */
+export interface InspectManagedDetachResult {
+  detached: true;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "InspectManagedIdentifyParams".
+ */
+export interface InspectManagedIdentifyParams {
+  nodeId: string;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "InspectManagedIdentifyResult".
+ */
+export interface InspectManagedIdentifyResult {
+  process: ManagedProcessIdentity;
+  executable: string;
+  runtime: "net48" | "net8" | "net10" | null;
+  architecture: "x86" | "x64" | "arm64" | "unknown";
+  wpfLoaded: boolean;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "InspectManagedMembersParams".
+ */
+export interface InspectManagedMembersParams {
+  sessionId: string;
+  objectId: string;
+  generation: number;
+  pageSize?: number;
+  pageToken?: string;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "Member".
+ */
+export interface Member {
+  memberKey: Key;
+  name: Key;
+  category:
+    | "typeMetadata"
+    | "clrProperty"
+    | "clrField"
+    | "dependencyProperty"
+    | "attachedProperty";
+  declaringType: TypeName;
+  declaredType: TypeName;
+  visibility:
+    | "public"
+    | "protected"
+    | "internal"
+    | "private"
+    | "protectedInternal"
+    | "privateProtected";
+  readable: boolean;
+  /**
+   * @maxItems 32
+   */
+  attributes: AttributeInfo[];
+  pathSegment?: PathSegment;
+  dependency?: DependencyMetadata;
+  reason?:
+    | "nonPublic"
+    | "writeOnly"
+    | "indexer"
+    | "static"
+    | "unsupportedType"
+    | "ambiguous";
+  wrapperKey?: Key;
+  compatibilityAlias?: Identifier;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "InspectManagedReadParams".
+ */
+export interface InspectManagedReadParams {
+  sessionId: string;
+  objectId: string;
+  generation: number;
+  /**
+   * @minItems 1
+   * @maxItems 32
+   */
+  paths: [ManagedPath, ...ManagedPath[]];
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "InspectManagedReadResult".
+ */
+export interface InspectManagedReadResult {
+  /**
+   * @maxItems 32
+   */
+  values: ManagedPathValue[];
+  readId: string;
+}
+export interface ManagedPathValue {
+  path: Path;
+  value: Value;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "InspectManagedReleaseParams".
+ */
+export interface InspectManagedReleaseParams {
+  sessionId: string;
+  /**
+   * @minItems 1
+   * @maxItems 256
+   */
+  objectIds: [string, ...string[]];
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "InspectManagedReleaseResult".
+ */
+export interface InspectManagedReleaseResult {
+  releasedCount: number;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "InspectManagedResolveParams".
+ */
+export interface InspectManagedResolveParams {
+  sessionId: string;
+  nodeId: string;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "InspectManagedRootsParams".
+ */
+export interface InspectManagedRootsParams {
+  sessionId: string;
+  pageSize?: number;
+  pageToken?: string;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "InspectManagedStatusParams".
+ */
+export interface InspectManagedStatusParams {
+  process: ManagedProcessIdentity;
+}
+export interface InspectManagedStatusResult {
+  sessionId: Identifier;
+  process: ProcessIdentity;
+  state:
+    | "detached"
+    | "probing"
+    | "attaching"
+    | "ready"
+    | "detaching"
+    | "faulted"
+    | "exited";
+  protocolMajor: number;
+  protocolMinor: number;
+  features: Features;
+  runtimeVersion?: Identifier;
+  architecture?: Identifier;
+  agentVersion?: Identifier;
+  error?: string;
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
@@ -881,6 +1969,97 @@ export interface LogNotification {
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "ManagedErrorInfo".
+ */
+export interface ManagedErrorInfo {
+  code:
+    | "invalidParams"
+    | "unsupportedProtocol"
+    | "unsupportedTarget"
+    | "accessDenied"
+    | "authenticationFailed"
+    | "payloadMissing"
+    | "payloadMismatch"
+    | "alreadyAttached"
+    | "notAttached"
+    | "attachFailed"
+    | "blockedByPolicy"
+    | "agentVersionMismatch"
+    | "processExited"
+    | "processReused"
+    | "sessionStale"
+    | "objectStale"
+    | "mappingFailed"
+    | "memberAmbiguous"
+    | "memberNotFound"
+    | "dispatcherUnavailable"
+    | "timeout"
+    | "busy"
+    | "limitExceeded"
+    | "invalidPageToken"
+    | "cancelled"
+    | "internalError";
+  message: string;
+  details?: {};
+}
+export interface ManagedNodePage1 {
+  /**
+   * @maxItems 200
+   */
+  items: ManagedNode[];
+  complete: boolean;
+  snapshotId: Identifier;
+  /**
+   * @maxItems 200
+   */
+  diagnostics: ManagedDiagnostic[];
+  nextToken?: Identifier;
+}
+export interface ManagedSession {
+  sessionId: Identifier;
+  process: ProcessIdentity;
+  state:
+    | "detached"
+    | "probing"
+    | "attaching"
+    | "ready"
+    | "detaching"
+    | "faulted"
+    | "exited";
+  protocolMajor: number;
+  protocolMinor: number;
+  features: Features;
+  runtimeVersion?: Identifier;
+  architecture?: Identifier;
+  agentVersion?: Identifier;
+  error?: string;
+}
+export interface MemberPage1 {
+  /**
+   * @maxItems 200
+   */
+  items: Member[];
+  complete: boolean;
+  snapshotId: Identifier;
+  /**
+   * @maxItems 200
+   */
+  diagnostics: ManagedDiagnostic[];
+  nextToken?: Identifier;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "MembersParams".
+ */
+export interface MembersParams {
+  sessionId: Identifier;
+  objectId: Identifier;
+  generation: number;
+  pageSize?: number;
+  pageToken?: Identifier;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
  * via the `definition` "PageCheckParams".
  */
 export interface PageCheckParams {
@@ -896,6 +2075,76 @@ export interface PageCheckResult {
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "ReadBatchParams".
+ */
+export interface ReadBatchParams {
+  /**
+   * @minItems 1
+   * @maxItems 32
+   */
+  candidates: [CandidateRequest, ...CandidateRequest[]];
+  /**
+   * @minItems 1
+   * @maxItems 32
+   */
+  paths: [Path, ...Path[]];
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "ReadBatchResult".
+ */
+export interface ReadBatchResult {
+  /**
+   * @minItems 1
+   * @maxItems 32
+   */
+  candidates: [CandidateResult, ...CandidateResult[]];
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "ReadParams".
+ */
+export interface ReadParams {
+  sessionId: Identifier;
+  objectId: Identifier;
+  generation: number;
+  /**
+   * @minItems 1
+   * @maxItems 32
+   */
+  paths: [Path, ...Path[]];
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "ReadResult".
+ */
+export interface ReadResult {
+  /**
+   * @maxItems 32
+   */
+  values: PathValue[];
+  readId: Identifier;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "ReleaseParams".
+ */
+export interface ReleaseParams {
+  sessionId: Identifier;
+  /**
+   * @maxItems 256
+   */
+  objectIds: Identifier[];
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "ReleaseResult".
+ */
+export interface ReleaseResult {
+  releasedCount: number;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
  * via the `definition` "Replay".
  */
 export interface Replay {
@@ -907,6 +2156,39 @@ export interface Replay {
   }[];
   truncated: boolean;
   error?: string;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "RequestEnvelope".
+ */
+export interface RequestEnvelope {
+  id: number;
+  method:
+    | "session.hello"
+    | "session.close"
+    | "request.cancel"
+    | "element.resolve"
+    | "element.readBatch"
+    | "roots"
+    | "children"
+    | "members"
+    | "read"
+    | "bindings"
+    | "release";
+  params: {};
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "ResolveParams".
+ */
+export interface ResolveParams {
+  runtimeId: RuntimeId;
+  nativeWindowHandle?: number;
+}
+export interface ResponseEnvelope2 {
+  id: number;
+  result?: unknown;
+  error?: ManagedErrorInfo;
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
@@ -993,6 +2275,38 @@ export interface StepEvent {
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "RootsParams".
+ */
+export interface RootsParams {
+  sessionId: Identifier;
+  pageSize?: number;
+  pageToken?: Identifier;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "Session".
+ */
+export interface Session {
+  sessionId: Identifier;
+  process: ProcessIdentity;
+  state:
+    | "detached"
+    | "probing"
+    | "attaching"
+    | "ready"
+    | "detaching"
+    | "faulted"
+    | "exited";
+  protocolMajor: number;
+  protocolMinor: number;
+  features: Features;
+  runtimeVersion?: Identifier;
+  architecture?: Identifier;
+  agentVersion?: Identifier;
+  error?: string;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
  * via the `definition` "SpyCancelledNotification".
  */
 export interface SpyCancelledNotification {
@@ -1067,6 +2381,103 @@ export interface SuggestLocatorResult {
     locator: WindowLocatorData;
   };
 }
+export interface ManagedBindingInfo1 {
+  memberKey: Key;
+  kind: "none" | "binding" | "multiBinding" | "priorityBinding";
+  status: string;
+  mode: string;
+  updateSourceTrigger: string;
+  path?: string;
+  elementName?: string;
+  relativeSource?: RelativeSource;
+  sourceType?: Key;
+  converterType?: Key;
+  /**
+   * @maxItems 32
+   */
+  children?: BindingInfo[];
+  /**
+   * @maxItems 32
+   */
+  validationErrors?: Key[];
+}
+export interface ManagedInspectorNodePage1 {
+  /**
+   * @maxItems 200
+   */
+  items: ManagedNode[];
+  complete: boolean;
+  snapshotId: Identifier;
+  /**
+   * @maxItems 200
+   */
+  diagnostics: ManagedDiagnostic[];
+  nextToken?: Identifier;
+}
+export interface ManagedMapping1 {
+  status:
+    | "exact"
+    | "notFound"
+    | "ambiguous"
+    | "unsupportedPeer"
+    | "stale"
+    | "limitExceeded";
+  process: ProcessIdentity;
+  runtimeId: RuntimeId;
+  object?: ObjectRef;
+}
+export interface ManagedMemberPage1 {
+  /**
+   * @maxItems 200
+   */
+  items: Member[];
+  complete: boolean;
+  snapshotId: Identifier;
+  /**
+   * @maxItems 200
+   */
+  diagnostics: ManagedDiagnostic[];
+  nextToken?: Identifier;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "ManagedPathValue".
+ */
+export interface PathValue1 {
+  path: Path;
+  value: Value;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "ManagedProcessIdentity".
+ */
+export interface ProcessIdentity1 {
+  pid: number;
+  creationTimeUtc: string;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "ManagedSession".
+ */
+export interface Session1 {
+  sessionId: Identifier;
+  process: ProcessIdentity;
+  state:
+    | "detached"
+    | "probing"
+    | "attaching"
+    | "ready"
+    | "detaching"
+    | "faulted"
+    | "exited";
+  protocolMajor: number;
+  protocolMinor: number;
+  features: Features;
+  runtimeVersion?: Identifier;
+  architecture?: Identifier;
+  agentVersion?: Identifier;
+  error?: string;
+}
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
  * via the `definition` "DiscoverResult".
@@ -1100,6 +2511,103 @@ export interface ElementResult2 {
   diagnostic?: Diagnostic;
   message?: string;
   durationMs: number;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "InspectManagedAttachResult".
+ */
+export interface ManagedSession1 {
+  sessionId: Identifier;
+  process: ProcessIdentity;
+  state:
+    | "detached"
+    | "probing"
+    | "attaching"
+    | "ready"
+    | "detaching"
+    | "faulted"
+    | "exited";
+  protocolMajor: number;
+  protocolMinor: number;
+  features: Features;
+  runtimeVersion?: Identifier;
+  architecture?: Identifier;
+  agentVersion?: Identifier;
+  error?: string;
+}
+export interface InspectManagedChildrenResult1 {
+  /**
+   * @maxItems 200
+   */
+  items: ManagedNode[];
+  complete: boolean;
+  snapshotId: Identifier;
+  /**
+   * @maxItems 200
+   */
+  diagnostics: ManagedDiagnostic[];
+  nextToken?: Identifier;
+}
+export interface InspectManagedMembersResult1 {
+  /**
+   * @maxItems 200
+   */
+  items: Member[];
+  complete: boolean;
+  snapshotId: Identifier;
+  /**
+   * @maxItems 200
+   */
+  diagnostics: ManagedDiagnostic[];
+  nextToken?: Identifier;
+}
+export interface InspectManagedResolveResult1 {
+  status:
+    | "exact"
+    | "notFound"
+    | "ambiguous"
+    | "unsupportedPeer"
+    | "stale"
+    | "limitExceeded";
+  process: ProcessIdentity;
+  runtimeId: RuntimeId;
+  object?: ObjectRef;
+}
+export interface InspectManagedRootsResult1 {
+  /**
+   * @maxItems 200
+   */
+  items: ManagedNode[];
+  complete: boolean;
+  snapshotId: Identifier;
+  /**
+   * @maxItems 200
+   */
+  diagnostics: ManagedDiagnostic[];
+  nextToken?: Identifier;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "InspectManagedStatusResult".
+ */
+export interface ManagedSession2 {
+  sessionId: Identifier;
+  process: ProcessIdentity;
+  state:
+    | "detached"
+    | "probing"
+    | "attaching"
+    | "ready"
+    | "detaching"
+    | "faulted"
+    | "exited";
+  protocolMajor: number;
+  protocolMinor: number;
+  features: Features;
+  runtimeVersion?: Identifier;
+  architecture?: Identifier;
+  agentVersion?: Identifier;
+  error?: string;
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema

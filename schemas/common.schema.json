@@ -2,6 +2,14 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://wintestkit.dev/schemas/common.schema.json",
   "$defs": {
+    "ManagedProcessIdentity": {"$ref": "../wpf-inspector/protocol/inspector.schema.json#/$defs/ProcessIdentity"},
+    "ManagedSession": {"$ref": "../wpf-inspector/protocol/inspector.schema.json#/$defs/Session"},
+    "ManagedMapping": {"$ref": "../wpf-inspector/protocol/inspector.schema.json#/$defs/Mapping"},
+    "ManagedInspectorNodePage": {"$ref": "../wpf-inspector/protocol/inspector.schema.json#/$defs/ManagedNodePage"},
+    "ManagedMemberPage": {"$ref": "../wpf-inspector/protocol/inspector.schema.json#/$defs/MemberPage"},
+    "ManagedPath": {"$ref": "../wpf-inspector/protocol/inspector.schema.json#/$defs/Path"},
+    "ManagedPathValue": {"$ref": "../wpf-inspector/protocol/inspector.schema.json#/$defs/PathValue"},
+    "ManagedBindingInfo": {"$ref": "../wpf-inspector/protocol/inspector.schema.json#/$defs/BindingInfo"},
     "InspectionProperty": {
       "type": "object",
       "properties": {

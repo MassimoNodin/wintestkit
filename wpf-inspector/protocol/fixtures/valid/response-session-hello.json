@@ -1,0 +1,1 @@
+{"schema":"ResponseEnvelope","instance":{"id":1,"result":{"agentVersion":"1","tfm":"net48","architecture":"x64","runtimeVersion":"4","features":[],"process":{"pid":42,"creationTimeUtc":"2026-01-01T00:00:00Z"}}}}

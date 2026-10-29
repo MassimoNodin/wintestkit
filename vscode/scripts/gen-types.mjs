@@ -9,32 +9,51 @@ const definitions = {};
 const files = (await readdir(schemasDirectory))
   .filter((file) => file.endsWith(".schema.json"))
   .sort();
+const repositoryNames = new Set();
+for (const file of files) {
+  const schema = JSON.parse(
+    (await readFile(resolve(schemasDirectory, file), "utf8")).replace(/^\uFEFF/, ""),
+  );
+  for (const name of Object.keys(schema.$defs)) repositoryNames.add(name);
+}
 
-function localizeReferences(value) {
-  if (Array.isArray(value)) return value.map(localizeReferences);
+function inspectorName(name) {
+  return repositoryNames.has(name) ? `Managed${name}` : name;
+}
+
+function localizeReferences(value, inspector = false) {
+  if (Array.isArray(value)) return value.map((entry) => localizeReferences(entry, inspector));
   if (value === null || typeof value !== "object") return value;
   return Object.fromEntries(
     Object.entries(value).map(([key, entry]) => {
-      if (key !== "$ref") return [key, localizeReferences(entry)];
-      const match = /^(?:[a-z]+\.schema\.json)?#\/\$defs\/([A-Za-z]+)$/.exec(
+      if (key !== "$ref") return [key, localizeReferences(entry, inspector)];
+      const match = /^(?:(?:[a-z]+\.schema\.json|\.\.\/wpf-inspector\/protocol\/inspector\.schema\.json))?#\/\$defs\/([A-Za-z]+)$/.exec(
         entry,
       );
       if (!match) throw new Error(`Unsupported reference: ${entry}`);
-      return [key, `#/$defs/${match[1]}`];
+      const managed = entry.startsWith("../wpf-inspector/") || (inspector && entry.startsWith("#"));
+      return [key, `#/$defs/${managed ? inspectorName(match[1]) : match[1]}`];
     }),
   );
 }
 
-for (const file of files) {
+const schemaFiles = [
+  ...files.map((file) => resolve(schemasDirectory, file)),
+  resolve(projectRoot, "wpf-inspector/protocol/inspector.schema.json"),
+];
+
+for (const file of schemaFiles) {
+  const inspector = file.endsWith("inspector.schema.json");
   const schema = JSON.parse(
-    await readFile(resolve(schemasDirectory, file), "utf8"),
+    (await readFile(file, "utf8")).replace(/^\uFEFF/, ""),
   );
   for (const name of Object.keys(schema.$defs).sort()) {
-    if (Object.hasOwn(definitions, name))
-      throw new Error(`Duplicate contract definition: ${name}`);
+    const emittedName = inspector ? inspectorName(name) : name;
+    if (Object.hasOwn(definitions, emittedName))
+      throw new Error(`Duplicate contract definition: ${emittedName}`);
     const definition = {
-      ...localizeReferences(schema.$defs[name]),
-      title: name,
+      ...localizeReferences(schema.$defs[name], inspector),
+      title: emittedName,
     };
     if (
       definition.type === "object" &&
@@ -42,7 +61,7 @@ for (const file of files) {
       Object.keys(definition.properties ?? {}).length === 0
     )
       definition.tsType = "Record<string, never>";
-    definitions[name] = definition;
+    definitions[emittedName] = definition;
   }
 }
 
@@ -75,5 +94,5 @@ const output = resolve(projectRoot, "vscode/src/protocol/generated.ts");
 await mkdir(dirname(output), { recursive: true });
 await writeFile(output, code.replace(/\r\n/g, "\n"), "utf8");
 console.log(
-  `Generated ${names.length} contracts from ${files.length} schemas.`,
+  `Generated ${names.length} contracts from ${schemaFiles.length} schemas.`,
 );

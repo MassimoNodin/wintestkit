@@ -2,6 +2,28 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://wintestkit.dev/schemas/rpc.schema.json",
   "$defs": {
+    "InspectManagedIdentifyParams": {"type":"object","properties":{"nodeId":{"type":"string","minLength":1}},"required":["nodeId"],"additionalProperties":false},
+    "InspectManagedIdentifyResult": {"type":"object","properties":{"process":{"$ref":"common.schema.json#/$defs/ManagedProcessIdentity"},"executable":{"type":"string"},"runtime":{"enum":["net48","net8","net10",null]},"architecture":{"enum":["x86","x64","arm64","unknown"]},"wpfLoaded":{"type":"boolean"}},"required":["process","executable","runtime","architecture","wpfLoaded"],"additionalProperties":false},
+    "InspectManagedAttachParams": {"type":"object","properties":{"process":{"$ref":"common.schema.json#/$defs/ManagedProcessIdentity"}},"required":["process"],"additionalProperties":false},
+    "InspectManagedAttachResult": {"$ref":"common.schema.json#/$defs/ManagedSession"},
+    "InspectManagedStatusParams": {"type":"object","properties":{"process":{"$ref":"common.schema.json#/$defs/ManagedProcessIdentity"}},"required":["process"],"additionalProperties":false},
+    "InspectManagedStatusResult": {"$ref":"common.schema.json#/$defs/ManagedSession"},
+    "InspectManagedDetachParams": {"type":"object","properties":{"sessionId":{"type":"string","minLength":1,"maxLength":128}},"required":["sessionId"],"additionalProperties":false},
+    "InspectManagedDetachResult": {"type":"object","properties":{"detached":{"const":true}},"required":["detached"],"additionalProperties":false},
+    "InspectManagedResolveParams": {"type":"object","properties":{"sessionId":{"type":"string","minLength":1,"maxLength":128},"nodeId":{"type":"string","minLength":1}},"required":["sessionId","nodeId"],"additionalProperties":false},
+    "InspectManagedResolveResult": {"$ref":"common.schema.json#/$defs/ManagedMapping"},
+    "InspectManagedRootsParams": {"type":"object","properties":{"sessionId":{"type":"string","minLength":1,"maxLength":128},"pageSize":{"type":"integer","minimum":1,"maximum":200},"pageToken":{"type":"string","minLength":1,"maxLength":128}},"required":["sessionId"],"additionalProperties":false},
+    "InspectManagedRootsResult": {"$ref":"common.schema.json#/$defs/ManagedInspectorNodePage"},
+    "InspectManagedChildrenParams": {"type":"object","properties":{"sessionId":{"type":"string","minLength":1,"maxLength":128},"objectId":{"type":"string","minLength":1,"maxLength":128},"generation":{"type":"integer","minimum":1},"tree":{"enum":["visual","logical"]},"pageSize":{"type":"integer","minimum":1,"maximum":200},"pageToken":{"type":"string","minLength":1,"maxLength":128}},"required":["sessionId","objectId","generation","tree"],"additionalProperties":false},
+    "InspectManagedChildrenResult": {"$ref":"common.schema.json#/$defs/ManagedInspectorNodePage"},
+    "InspectManagedMembersParams": {"type":"object","properties":{"sessionId":{"type":"string","minLength":1,"maxLength":128},"objectId":{"type":"string","minLength":1,"maxLength":128},"generation":{"type":"integer","minimum":1},"pageSize":{"type":"integer","minimum":1,"maximum":200},"pageToken":{"type":"string","minLength":1,"maxLength":128}},"required":["sessionId","objectId","generation"],"additionalProperties":false},
+    "InspectManagedMembersResult": {"$ref":"common.schema.json#/$defs/ManagedMemberPage"},
+    "InspectManagedReadParams": {"type":"object","properties":{"sessionId":{"type":"string","minLength":1,"maxLength":128},"objectId":{"type":"string","minLength":1,"maxLength":128},"generation":{"type":"integer","minimum":1},"paths":{"type":"array","minItems":1,"maxItems":32,"items":{"$ref":"common.schema.json#/$defs/ManagedPath"}}},"required":["sessionId","objectId","generation","paths"],"additionalProperties":false},
+    "InspectManagedReadResult": {"type":"object","properties":{"values":{"type":"array","maxItems":32,"items":{"$ref":"common.schema.json#/$defs/ManagedPathValue"}},"readId":{"type":"string","minLength":1,"maxLength":128}},"required":["values","readId"],"additionalProperties":false},
+    "InspectManagedBindingsParams": {"type":"object","properties":{"sessionId":{"type":"string","minLength":1,"maxLength":128},"objectId":{"type":"string","minLength":1,"maxLength":128},"generation":{"type":"integer","minimum":1},"memberKeys":{"type":"array","minItems":1,"maxItems":32,"items":{"type":"string","minLength":1,"maxLength":1024}}},"required":["sessionId","objectId","generation","memberKeys"],"additionalProperties":false},
+    "InspectManagedBindingsResult": {"type":"object","properties":{"bindings":{"type":"array","maxItems":32,"items":{"$ref":"common.schema.json#/$defs/ManagedBindingInfo"}}},"required":["bindings"],"additionalProperties":false},
+    "InspectManagedReleaseParams": {"type":"object","properties":{"sessionId":{"type":"string","minLength":1,"maxLength":128},"objectIds":{"type":"array","minItems":1,"maxItems":256,"items":{"type":"string","minLength":1,"maxLength":128}}},"required":["sessionId","objectIds"],"additionalProperties":false},
+    "InspectManagedReleaseResult": {"type":"object","properties":{"releasedCount":{"type":"integer","minimum":0,"maximum":256}},"required":["releasedCount"],"additionalProperties":false},
     "ElementResult": {
       "type": "object",
       "properties": {
@@ -157,6 +179,12 @@
         },
         "python": {
           "type": "string"
+        },
+        "capabilities": {
+          "type": "object",
+          "properties": {"managedInspector": {"type": "boolean"}},
+          "required": ["managedInspector"],
+          "additionalProperties": false
         },
         "config": {
           "type": "object",
