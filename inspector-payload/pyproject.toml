@@ -1,0 +1,19 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "wintestkit-inspector"
+dynamic = ["version"]
+description = "Optional Windows WPF inspector payload for WinTestKit"
+readme = "README.md"
+requires-python = ">=3.12"
+
+[tool.hatch.version]
+path = "src/wintestkit_inspector/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/wintestkit_inspector"]
+
+[tool.hatch.build.hooks.custom]
+path = "hatch_build.py"
