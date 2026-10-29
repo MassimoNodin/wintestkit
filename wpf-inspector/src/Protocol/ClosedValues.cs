@@ -1,5 +1,7 @@
 namespace WinTestKit.Inspector.Protocol
 {
+    public static class EventKind { public const string WindowOpened = "windowOpened", WindowClosed = "windowClosed", TreeChanged = "treeChanged", Overflow = "overflow"; }
+    public static class ActionOutcome { public const string Performed = "performed", NoChange = "noChange"; }
     public static class ValueStatus { public const string Ok = "ok", NotRead = "notRead", NotReadable = "notReadable", NullIntermediate = "nullIntermediate", Exception = "exception", Stale = "stale", Redacted = "redacted", Truncated = "truncated", Cycle = "cycle", Timeout = "timeout", Unsupported = "unsupported"; }
     public static class ValueKind { public const string Null = "null", String = "string", Boolean = "boolean", Integer = "integer", Number = "number", Enum = "enum", Object = "object", Array = "array", Type = "type", Unavailable = "unavailable"; }
     public static class MemberCategory { public const string TypeMetadata = "typeMetadata", ClrProperty = "clrProperty", ClrField = "clrField", DependencyProperty = "dependencyProperty", AttachedProperty = "attachedProperty"; }
