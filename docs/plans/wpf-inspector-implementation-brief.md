@@ -572,3 +572,23 @@ The first real run hit the fixture control pipe's between-connection gap after d
 the test now uses the same bounded readiness retry as S7. This does not establish independent
 post-detach UIA interaction, the six-cell matrix, security/stress or release gates. No
 compatibility manifest cell was promoted to verified. S9 Spy UX is the next slice.
+
+### Independent verification and gap closure (2026-10-29)
+
+A fresh verification of `f0944c9` found that the mapping tests no longer compiled after the
+S7 `redactNames` factory change (the earlier "82 per TFM" figure was stale), `master` could not
+resolve `python/uv.lock`, S11/S9 were checkpoints and S12 was absent, and every CI run on
+`master` had failed. Closed in order: S4a snapshot reclaim and mapping tests (`1cc41a7`); S11
+packaging, release lockstep, CI job and relock with a development path source (`df48db0`);
+closed empty generated types (`41b50ca`); S9 settings, host session and managed Spy panel
+(`30ac560`, `28215fa`); S12 guide and skill (`acae8bf`); portable SDK/MSBuild resolution,
+formatting and the wheel output path (`01ee16c`, `96516c5`, `8cb6746`).
+
+At `8cb6746` all three GitHub CI jobs pass (`python`, `extension`, `inspector-build`; one
+`python` rerun cleared a known replay-frame timing flake). Locally: Protocol 233; Session 47
+with the dedicated-account skip; Mapping 84 and Members 74 on each of net10.0-windows and net48;
+Python 1,976 passed; VS Code 1,078 passed; five `WTK_INSPECTOR_REAL=1` owned-fixture tests.
+Still open, unchanged: the six-cell matrix (no x86 .NET 10 runtime here), 100-cycle stress,
+second-account security cases, signed artifacts and third-party inventory approval. No
+manifest cell is marked verified. Copy locator stays disabled until a server-side uniqueness
+check exists.
