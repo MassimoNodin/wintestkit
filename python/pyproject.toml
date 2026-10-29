@@ -40,6 +40,11 @@ build-backend = "hatchling.build"
 [tool.hatch.version]
 path = "src/wintestkit/__init__.py"
 
+[tool.uv.sources]
+# Development only: resolves the optional payload from this checkout. Published
+# metadata keeps the exact wintestkit-inspector version pin.
+wintestkit-inspector = { path = "../inspector-payload" }
+
 [dependency-groups]
 dev = [
     "ruff>=0.7",

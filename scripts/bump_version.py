@@ -15,6 +15,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 INIT = ROOT / "python/src/wintestkit/__init__.py"
+INSPECTOR_INIT = ROOT / "inspector-payload/src/wintestkit_inspector/__init__.py"
+PYPROJECT = ROOT / "python/pyproject.toml"
+EXTRA_VERSION = re.compile(r'wintestkit-inspector==([^"\]]+)')
 PACKAGE = ROOT / "vscode/package.json"
 LOCK = ROOT / "vscode/package-lock.json"
 POLICY = ROOT / "vscode/src/compatibility.json"
@@ -39,14 +42,24 @@ def expected_versions(version: str, extension_version: str | None = None) -> dic
     _, numeric_prerelease = release_version(numeric)
     if numeric_prerelease:
         raise ValueError("Extension version must be numeric X.Y.Z")
-    return {name: version if name == str(INIT.relative_to(ROOT)) else numeric for name in current()}
+    return {
+        name: version
+        if name
+        in {
+            str(INIT.relative_to(ROOT)),
+            str(INSPECTOR_INIT.relative_to(ROOT)),
+            str(PYPROJECT.relative_to(ROOT)),
+        }
+        else numeric
+        for name in current()
+    }
 
 
 def current() -> dict[str, str]:
     """The version recorded in each file."""
     match = INIT_VERSION.search(INIT.read_text(encoding="utf-8"))
     lock = json.loads(LOCK.read_text(encoding="utf-8"))
-    return {
+    versions = {
         str(INIT.relative_to(ROOT)): match.group(1) if match else "<missing>",
         str(PACKAGE.relative_to(ROOT)): json.loads(PACKAGE.read_text(encoding="utf-8"))["version"],
         str(LOCK.relative_to(ROOT)): lock["version"],
@@ -55,6 +68,11 @@ def current() -> dict[str, str]:
             "extensionVersion"
         ],
     }
+    for path, pattern in ((INSPECTOR_INIT, INIT_VERSION), (PYPROJECT, EXTRA_VERSION)):
+        if path.exists():
+            found = pattern.search(path.read_text(encoding="utf-8"))
+            versions[str(path.relative_to(ROOT))] = found.group(1) if found else "<missing>"
+    return versions
 
 
 def _set_json_version(path: Path, version: str, *, lock: bool) -> None:
@@ -73,6 +91,20 @@ def bump(version: str, extension_version: str | None = None) -> None:
     INIT.write_text(
         INIT_VERSION.sub(f'__version__ = "{version}"', init, count=1), encoding="utf-8", newline=""
     )
+    if INSPECTOR_INIT.exists():
+        inspector = INSPECTOR_INIT.read_text(encoding="utf-8")
+        INSPECTOR_INIT.write_text(
+            INIT_VERSION.sub(f'__version__ = "{version}"', inspector, count=1),
+            encoding="utf-8",
+            newline="",
+        )
+    if PYPROJECT.exists():
+        project = PYPROJECT.read_text(encoding="utf-8")
+        PYPROJECT.write_text(
+            EXTRA_VERSION.sub(f"wintestkit-inspector=={version}", project, count=1),
+            encoding="utf-8",
+            newline="",
+        )
     _set_json_version(PACKAGE, numeric, lock=False)
     _set_json_version(LOCK, numeric, lock=True)
     policy = json.loads(POLICY.read_text(encoding="utf-8"))

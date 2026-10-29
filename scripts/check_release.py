@@ -7,7 +7,11 @@ import json
 import os
 import re
 import runpy
+import subprocess
 import sys
+import tempfile
+import tomllib
+import zipfile
 from collections.abc import Mapping
 from pathlib import Path
 
@@ -56,6 +60,50 @@ def check_compatibility() -> None:
     )
 
 
+def check_inspector() -> None:
+    versions = {name.replace("\\", "/"): value for name, value in VERSIONS["current"]().items()}
+    names = (
+        "python/src/wintestkit/__init__.py",
+        "inspector-payload/src/wintestkit_inspector/__init__.py",
+        "python/pyproject.toml",
+    )
+    if len({versions[name] for name in names}) != 1 or "<missing>" in (
+        versions[name] for name in names
+    ):
+        raise ValueError("Core, inspector and extra pin versions must match")
+    project = tomllib.loads((ROOT / "python/pyproject.toml").read_text(encoding="utf-8"))
+    wheel = (
+        project.get("tool", {})
+        .get("hatch", {})
+        .get("build", {})
+        .get("targets", {})
+        .get("wheel", {})
+    )
+    if (
+        wheel.get("pure-python", True) is not True
+        or wheel.get("tag", "py3-none-any") != "py3-none-any"
+    ):
+        raise ValueError("Core wheel must be py3-none-any")
+    with tempfile.TemporaryDirectory(prefix="wtk-release-wheel-") as directory:
+        result = subprocess.run(
+            ["uv", "build", "--directory", str(ROOT / "python"), "--wheel", "--out-dir", directory],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode:
+            raise ValueError(f"Core wheel build failed: {result.stderr.strip()}")
+        wheels = list(Path(directory).glob("*.whl"))
+        if len(wheels) != 1 or not wheels[0].name.endswith("-py3-none-any.whl"):
+            raise ValueError("Core wheel must have the py3-none-any tag")
+        with zipfile.ZipFile(wheels[0]) as archive:
+            if any(
+                name.lower().endswith((".dll", ".exe", ".pyd", ".so"))
+                for name in archive.namelist()
+            ):
+                raise ValueError("Core wheel contains binaries")
+
+
 def release_notes(changelog: str, version: str) -> str:
     VERSIONS["release_version"](version)
     unreleased = re.search(
@@ -98,8 +146,16 @@ def main() -> int:
     notes.add_argument("--output", type=Path, required=True)
     commands.add_parser("config")
     commands.add_parser("compatibility")
+    commands.add_parser("inspector")
     args = parser.parse_args()
-    if args.command == "compatibility":
+    if args.command == "inspector":
+        try:
+            check_inspector()
+        except (ValueError, KeyError, TypeError) as error:
+            print(f"Inspector release policy is invalid: {error}", file=sys.stderr)
+            return 1
+        print("Inspector versions and core wheel configuration are consistent.")
+    elif args.command == "compatibility":
         try:
             check_compatibility()
         except (ValueError, KeyError, TypeError) as error:

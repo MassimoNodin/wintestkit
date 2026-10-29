@@ -211,3 +211,20 @@ required for this independent job. Keep the token out of source and chat.
 For public downloadable VSIX files, separately opt into repository variable
 `PUBLISH_PUBLIC_VSIX=true`. This requires no registry account but exposes the extension
 through Actions artifacts and GitHub Release assets, including artifact uploads on CI.
+
+
+## Optional inspector distribution
+
+The core `wintestkit` wheel is platform-independent; `wintestkit-inspector` is a separate
+Windows x64 payload wheel. Their versions and the core `inspector` extra pin move in lockstep
+via `scripts/bump_version.py`. Run `python scripts/check_release.py inspector` and the core
+wheel check before release. Build the payload with `./scripts/build_inspector.ps1 -Configuration
+Release -LockedRestore`, then run `./scripts/check_inspector.ps1 -Suite Package -RequireSigned`
+and build the inspector wheel with `uv build --directory inspector-payload --wheel`.
+
+Set `WTK_SIGN_CERT_THUMBPRINT` to the release signing certificate thumbprint for the build;
+Authenticode signatures are required for release executables and DLLs. The owner must approve
+the third-party inventory before publication. Complete the compatibility and release gates
+before publishing. Publish the inspector wheel first, then the matching core distribution,
+so the pinned extra can resolve. The existing release workflow does not publish the inspector
+wheel; arrange its publication separately before publishing core.
