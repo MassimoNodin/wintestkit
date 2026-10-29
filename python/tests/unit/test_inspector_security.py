@@ -28,7 +28,8 @@ def test_real_private_bootstrap_is_one_use_and_cleaned(monkeypatch: pytest.Monke
     settings = bootstrap.create_bootstrap(IDENTITY, sid, "1")
     try:
         document = json.loads(settings.path.read_text(encoding="utf-8"))
-        assert set(document) == {"schemaVersion", "protocolMajor", "protocolMinor", "sessionId", "process", "pipeName", "token", "clientSid", "expiresUtc", "requestTimeoutMs", "idleTimeoutMs", "agentVersion"}
+        assert set(document) == {"schemaVersion", "protocolMajor", "protocolMinor", "sessionId", "process", "pipeName", "token", "clientSid", "expiresUtc", "requestTimeoutMs", "idleTimeoutMs", "agentVersion", "redactNames"}
+        assert document["redactNames"] == []
         assert len(base64.b64decode(document["token"], validate=True)) == 32
         assert document["clientSid"] == sid and document["process"] == IDENTITY.to_json()
         assert document["requestTimeoutMs"] == 2000 and document["idleTimeoutMs"] == 300000

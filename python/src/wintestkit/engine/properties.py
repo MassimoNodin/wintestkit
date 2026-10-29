@@ -3,7 +3,7 @@
 A ``where`` mapping names UI Automation properties such as ``HelpText`` and ``ItemStatus``
 and the value each must have. Keys that are not UIA properties are looked up in the configured
 ``property_aliases`` when the locator is resolved, so declarations stay importable without a
-configuration (``ClrFullClassName`` can stand for ``ItemStatus``, for example).
+configuration. An explicit managed alias can target the real runtime type instead.
 """
 
 from __future__ import annotations
@@ -247,7 +247,9 @@ def _unknown(key: str, owner: str, aliases: Mapping[str, str]) -> InvalidLocator
     return InvalidLocatorError(message)
 
 
-def resolve_where(where: Where, owner: str, taken: Collection[str] = ()) -> tuple[Condition | ManagedCondition, ...]:
+def resolve_where(
+    where: Where, owner: str, taken: Collection[str] = ()
+) -> tuple[Condition | ManagedCondition, ...]:
     """Resolve aliases and check types; ``taken`` are the properties the locator already sets.
 
     ``owner`` is the locator description used in error messages. Reads the active configuration
@@ -274,7 +276,9 @@ def resolve_where(where: Where, owner: str, taken: Collection[str] = ()) -> tupl
             if _value_problem(None, value) is not None:
                 raise InvalidLocatorError(f"where[{key!r}] expects a scalar or compiled regex")
             if target in seen:
-                raise InvalidLocatorError(f"{owner} sets {target} twice (via {seen[target]!r} and {key!r})")
+                raise InvalidLocatorError(
+                    f"{owner} sets {target} twice (via {seen[target]!r} and {key!r})"
+                )
             seen[target] = key
             resolved.append(ManagedCondition(target, path, value, key if key != target else None))
             continue

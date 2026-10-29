@@ -75,6 +75,9 @@
     "text": "Explicit managed scalar paths work in `where`, without becoming native UIA conditions.",
     "stage": 8,
     "tests": [
+      "python/tests/unit/test_managed_locator.py",
+      "python/tests/unit/test_managed_locator_real.py",
+      "python/tests/contract/test_managed_locator_contract.py",
       "python/tests/unit/test_inspector_paths.py",
       "Category=Integration"
     ],
@@ -96,6 +99,8 @@
     "text": "Suites migrated from TestComplete can match `ClrFullClassName` against the real runtime type through an explicit, opt-in alias (section 10), instead of a UIA `ItemStatus` guess.",
     "stage": 8,
     "tests": [
+      "python/tests/unit/test_name_mapping_managed.py",
+      "python/tests/unit/test_managed_locator.py",
       "python/tests/unit/test_inspector_paths.py",
       "Category=Integration"
     ],

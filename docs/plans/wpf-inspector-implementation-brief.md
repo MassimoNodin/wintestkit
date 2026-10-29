@@ -543,3 +543,32 @@ Ruff. Signature, security, stress, matrix, independent-UIA and release gates rem
 No manifest cell was promoted to verified.
 Repeated single-page tree requests also exhausted the agent's 16 retained snapshots before
 their 30-second expiry; S4a needs to assess reclaiming snapshots with no continuation token.
+
+### S8 managed locator verification (2026-10-29)
+
+Managed constraints now post-filter UIA candidates in process-specific batches of at most
+32 candidates and 32 distinct paths, retaining document order and applying index/within
+semantics after filtering. Window locators support the same tagged conditions. One outer
+deadline covers UIA searches, attachment, within links and polling retries; observed batch
+cost rejects unaffordable scans with the candidate count. The 1,000-candidate ceiling is
+enforced before attachment. Stale mappings/values are skipped for the current poll; mapping,
+redaction, unsupported scalar and partial-response failures remain explicit. Scalar equality
+distinguishes bool from numbers, decodes exact wire integers/decimals and supports enum names
+or integer values. The importer flag has golden output coverage, including unchanged default
+output. One stale S6 bootstrap security-test expectation was updated for S7's redactNames field.
+
+Validation: `uv run --frozen --directory python pytest tests/unit tests/contract -q` passed
+1,963 tests with six explicit skips; the subsequently added
+`tests/contract/test_managed_locator_contract.py` passed separately (one test). Focused S8,
+resolver/property/wait/traceback checks passed 178 tests. Ruff passes the changed source/tests;
+`uv run --frozen --directory python pyright src/wintestkit/engine` reports zero errors.
+With `WTK_INSPECTOR_REAL=1`, the owned .NET 10 x64 locator test and Windows security tests
+passed 16 tests. Actual on-demand attachment matched runtime type through the configured
+ClrFullClassName alias, public field, nested DataContext regex and DP value in one query.
+Password matching raised redacted without a getter call. Fixture hashes stayed unchanged,
+the post-detach control pipe remained usable, and the harness terminated only its fixture.
+
+The first real run hit the fixture control pipe's between-connection gap after detach;
+the test now uses the same bounded readiness retry as S7. This does not establish independent
+post-detach UIA interaction, the six-cell matrix, security/stress or release gates. No
+compatibility manifest cell was promoted to verified. S9 Spy UX is the next slice.

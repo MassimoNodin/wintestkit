@@ -6,6 +6,7 @@ import time
 from collections.abc import Callable
 from typing import Literal
 
+from wintestkit.engine.managed import query_budget
 from wintestkit.errors import LocatorError, UIAError, WaitTimeoutError
 from wintestkit.uia.element import UIAElement
 
@@ -40,7 +41,8 @@ def wait_until[T](
     last_error: BaseException | None = None
     while True:
         try:
-            result = fn()
+            with query_budget(start + timeout):
+                result = fn()
         except retry_on as exc:
             last_error = exc
         else:

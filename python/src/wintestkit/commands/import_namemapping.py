@@ -17,8 +17,11 @@ def add_parser(subparsers: Any) -> None:
     parser.add_argument("xml", metavar="XML", help="TestComplete NameMapping export")
     parser.add_argument("output", metavar="PY", help="new Python page skeleton")
     parser.add_argument("--force", action="store_true", help="overwrite the output file")
-    parser.add_argument("--managed-class-names", action="store_true",
-                        help="match runtime class names using the WPF inspector (requires inspector)")
+    parser.add_argument(
+        "--managed-class-names",
+        action="store_true",
+        help="match runtime class names using the WPF inspector (requires inspector)",
+    )
     parser.set_defaults(handler=run)
 
 
