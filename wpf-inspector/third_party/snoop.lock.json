@@ -1,0 +1,144 @@
+{
+  "repository": "https://github.com/snoopwpf/snoopwpf",
+  "commit": "2bf48f60c2bb1753001f6be9122395def9070fa9",
+  "archiveUrl": "https://codeload.github.com/snoopwpf/snoopwpf/zip/2bf48f60c2bb1753001f6be9122395def9070fa9",
+  "archiveSha256": "9688b7d5e9f945a5bc93e96bd45bfc66bec6c4d4910d85c7da1c1e127078192c",
+  "files": [
+    {
+      "path": ".build/Directory.build.props",
+      "sha256": "c8b3a56e15594561cb3d7ac3aae410d6f0d0668f47b21d38d78706a8927ee1f5"
+    },
+    {
+      "path": ".build/Directory.build.targets",
+      "sha256": "cc5ecd1fee45f836b03631b12eba90a75ea859f168a42dfe709bb1b836d018fd"
+    },
+    {
+      "path": "Directory.build.props",
+      "sha256": "f2dfdf2bbe23ce00f2467e4c9555315b1c4bac27553d51a878da5f6ebe04c8cd"
+    },
+    {
+      "path": "Directory.build.targets",
+      "sha256": "68f7ef8d481114e8550ff8f766a5343da31ead62cdaebfb839230a3eab89491a"
+    },
+    {
+      "path": "License.txt",
+      "sha256": "2b91a668e3970cdb14ac554dface84a49148d8a28124155094437cdb1e353c1b"
+    },
+    {
+      "path": "README.md",
+      "sha256": "ccc38d7b5a8fbc44ce2915c5b23f979b01aa6a8d47eb4561de38d66d157a2981"
+    },
+    {
+      "path": "Shared/app.manifest",
+      "sha256": "90b7a8a2de3c78d3c0b4e772efe20579c92494d9f4448080cb7c0e5c69fc19e8"
+    },
+    {
+      "path": "Shared/InjectorData.cs",
+      "sha256": "983048d7d22ab9505ad881a6ca7bb7e979477b00f06200f05ac30d5c1377493f"
+    },
+    {
+      "path": "Snoop.GenericInjector/Directory.build.props",
+      "sha256": "0a0d6bd53f524c766181a7f5f6085b90d1e1aa24c086ff40f1422d48f07a3d2b"
+    },
+    {
+      "path": "Snoop.GenericInjector/Directory.build.targets",
+      "sha256": "0a0d6bd53f524c766181a7f5f6085b90d1e1aa24c086ff40f1422d48f07a3d2b"
+    },
+    {
+      "path": "Snoop.GenericInjector/dllmain.cpp",
+      "sha256": "69311502bff6ee5f7e032a378fed6a311a53a838e780dfae6f1659ea03c35aff"
+    },
+    {
+      "path": "Snoop.GenericInjector/Executor.cpp",
+      "sha256": "aded0079a7ca4a21b35a93a5771b6a2d6628219dc3403f83ae6a23f2a9b144f2"
+    },
+    {
+      "path": "Snoop.GenericInjector/framework.h",
+      "sha256": "9e890ede69f5c2c4ac97721ac76e5d3a36244f33e9ed9fbc5eedc82553d625f6"
+    },
+    {
+      "path": "Snoop.GenericInjector/FrameworkExecutor.h",
+      "sha256": "aa31dc999e9e00d118e1b71a1e320fc9edf312ba3cd8cd3b13093396dae9d427"
+    },
+    {
+      "path": "Snoop.GenericInjector/LogHelper.cpp",
+      "sha256": "b324e494781d46f3b45a154484866fc22ee967679c78a5d56fa763b9b62991e2"
+    },
+    {
+      "path": "Snoop.GenericInjector/LogHelper.h",
+      "sha256": "29512a2787cd5e4ed9d438f1cd3fc42da1bb5ac28fa661f2621aef756c1bc627"
+    },
+    {
+      "path": "Snoop.GenericInjector/NetExecutor.cpp",
+      "sha256": "87b8de5fc7391adc4b7e60e5f1e02fdbb828dd484ff248a416626325560f92ba"
+    },
+    {
+      "path": "Snoop.GenericInjector/NetExecutor.h",
+      "sha256": "e64e739cc752928f9149d688531acaabf494d7c503f6c90b73aaa3f2745f205b"
+    },
+    {
+      "path": "Snoop.GenericInjector/NetFrameworkExecutor.cpp",
+      "sha256": "cf2b45f3a3c929110bfc23a61c89bb6ff6422fa4aa44990f2e34e98257b3572a"
+    },
+    {
+      "path": "Snoop.GenericInjector/NetFrameworkExecutor.h",
+      "sha256": "e093a54d5253881339b4d40d15a0df60eac40a3758a9c9530a89b8fbb7f267c0"
+    },
+    {
+      "path": "Snoop.GenericInjector/pch.cpp",
+      "sha256": "b20ad711fa06e3ef62f8e3c626e13b3bdc69cff08c60c8b358f38b09e16c99ef"
+    },
+    {
+      "path": "Snoop.GenericInjector/pch.h",
+      "sha256": "2729396b5d89a6a76a9993e58f77499f2ddfa7c82cef7ffe5d5c6d8c73186e3b"
+    },
+    {
+      "path": "Snoop.GenericInjector/resource.h",
+      "sha256": "21040f3328de209fdb7310caf3df8fa1adbbee6c6b3b338a09ca35360a459d78"
+    },
+    {
+      "path": "Snoop.GenericInjector/Snoop.GenericInjector.vcxproj",
+      "sha256": "3df33d67248c5fbc794f96075ca55e847c37429fea816096cb922ca8e6e44425"
+    },
+    {
+      "path": "Snoop.GenericInjector/Snoop.GenericInjector.vcxproj.filters",
+      "sha256": "fb18170c2c9ae0e6007a463d6b31dc2631b3f14ffc7e059faf2aa133f5c6a575"
+    },
+    {
+      "path": "Snoop.GenericInjector/version.h",
+      "sha256": "4653e0567c8bc6563ee1bb4b91e3c6adc4ca219458603168e8b56c161d578a7e"
+    },
+    {
+      "path": "Snoop.GenericInjector/version.rc",
+      "sha256": "3d21923e9f77e854d999df205d4ea7b8254abee8b0ea6515de0aaad4e4b240fa"
+    },
+    {
+      "path": "Snoop.InjectorLauncher/Directory.build.props",
+      "sha256": "1e1c66de894426493b8fa445bea2bbace3a44e88bfcb9244a63cfd386e13fafa"
+    },
+    {
+      "path": "Snoop.InjectorLauncher/Injector.cs",
+      "sha256": "a5a2f2377ff68f3513de58df6eb4464daac828bee0f5eff22dc0def4085484c0"
+    },
+    {
+      "path": "Snoop.InjectorLauncher/InjectorLauncherCommandLineOptions.cs",
+      "sha256": "b97d664104e8e37174a14392b2242cb63a467aeaf052030c84fb7c9996326755"
+    },
+    {
+      "path": "Snoop.InjectorLauncher/ProcessWrapper.cs",
+      "sha256": "66adabd06d1601d5874b44cb9c2d02dccfce615a92e93f5bc869fbf0f021819d"
+    },
+    {
+      "path": "Snoop.InjectorLauncher/Program.cs",
+      "sha256": "2928c8944bc1870e06260519a4336906f6d64a66bdbbcb729dbda2dadbc37a5d"
+    },
+    {
+      "path": "Snoop.InjectorLauncher/Properties/AssemblyInfo.cs",
+      "sha256": "e680647924b8f23f1196d5c79d61eba649518296ee6010b04a791f9e88cba459"
+    },
+    {
+      "path": "Snoop.InjectorLauncher/Snoop.InjectorLauncher.csproj",
+      "sha256": "8344c1d5b2b53defd7017cc6271b59670f0ae4bd8fcd15409528267ef19dbe53"
+    }
+  ]
+}
