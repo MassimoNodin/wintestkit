@@ -1,0 +1,11 @@
+<Project>
+  <PropertyGroup>
+    <Nullable>enable</Nullable><LangVersion>latest</LangVersion><TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <Deterministic>true</Deterministic><RestorePackagesWithLockFile>true</RestorePackagesWithLockFile><EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <InspectorVersion Condition="'$(InspectorVersion)' == ''">$([System.Text.RegularExpressions.Regex]::Match($([System.IO.File]::ReadAllText('$(MSBuildThisFileDirectory)../python/src/wintestkit/__init__.py')), '__version__\s*=\s*[&quot;'']([^&quot;'']+)').Groups[1].Value)</InspectorVersion>
+    <AssemblyVersion>$([System.Text.RegularExpressions.Regex]::Match('$(InspectorVersion)', '^\d+\.\d+\.\d+').Value).0</AssemblyVersion>
+    <AssemblyInformationalVersion>$(InspectorVersion)</AssemblyInformationalVersion>
+    <InformationalVersion>$(InspectorVersion)</InformationalVersion>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+  </PropertyGroup>
+</Project>
