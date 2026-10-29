@@ -39,7 +39,7 @@ def _attribute(element: ET.Element, *names: str) -> str | None:
     )
 
 
-def convert(xml_path: Path) -> str:
+def convert(xml_path: Path, *, managed_class_names: bool = False) -> str:
     """Parse a bounded NameMapping export and return reviewable Python declarations."""
     with xml_path.open("rb") as stream:
         data = stream.read(MAX_XML_BYTES + 1)
@@ -62,6 +62,8 @@ def convert(xml_path: Path) -> str:
         "",
         "class ImportedPage(Page):",
     ]
+    if managed_class_names:
+        lines[2] = "Managed class names require the WPF inspector."
     used: set[str] = set()
     count = 0
     # TestComplete stores each mapped object under an Item/Node with its own Properties
@@ -104,7 +106,8 @@ def convert(xml_path: Path) -> str:
         if control_name:
             args.append(f"automation_id={control_name!r}")
         if class_name:
-            args.append(f"where={{'ClrFullClassName': {class_name!r}}}")
+            key = "type:FullName" if managed_class_names else "ClrFullClassName"
+            args.append(f"where={{{key!r}: {class_name!r}}}")
         lines.append(f"    {alias} = Element({', '.join(args)})")
         count += 1
     if not count:

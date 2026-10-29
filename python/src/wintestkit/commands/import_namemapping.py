@@ -17,6 +17,8 @@ def add_parser(subparsers: Any) -> None:
     parser.add_argument("xml", metavar="XML", help="TestComplete NameMapping export")
     parser.add_argument("output", metavar="PY", help="new Python page skeleton")
     parser.add_argument("--force", action="store_true", help="overwrite the output file")
+    parser.add_argument("--managed-class-names", action="store_true",
+                        help="match runtime class names using the WPF inspector (requires inspector)")
     parser.set_defaults(handler=run)
 
 
@@ -25,7 +27,7 @@ def run(args: argparse.Namespace) -> int:
     if target.exists() and not args.force:
         raise common.CommandError(f"{target} exists; pass --force to overwrite", common.EXIT_USAGE)
     try:
-        text = convert(source)
+        text = convert(source, managed_class_names=args.managed_class_names)
     except (OSError, ValueError) as exc:
         raise common.CommandError(str(exc), common.EXIT_USAGE) from exc
     target.parent.mkdir(parents=True, exist_ok=True)
