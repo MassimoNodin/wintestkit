@@ -55,7 +55,7 @@ namespace WinTestKit.Inspector.Protocol
         internal static JsonArrayNode RuntimeId(IEnumerable<int> id) { var a = new JsonArrayNode(); foreach (int i in id) a.Add(JsonNumberNode.From(i)); return a; }
         internal static IReadOnlyList<int> RuntimeId(JsonNode node) { var result = new List<int>(); foreach (var n in DtoHelpers.Array(node, 1024).Items) result.Add((int)DtoHelpers.Integer(n, int.MinValue, int.MaxValue)); if (result.Count == 0) throw DtoHelpers.Invalid("Empty runtime ID"); return result; }
         internal static JsonArrayNode Path(IEnumerable<PathSegment> path) { var a = new JsonArrayNode(); foreach (var s in path) a.Add(s.ToJson()); return a; }
-        internal static IReadOnlyList<PathSegment> Path(JsonNode node) { var result = new List<PathSegment>(); foreach (var n in DtoHelpers.Array(node, ProtocolLimits.MaxPathSegments).Items) result.Add(PathSegment.FromJson(n)); if (result.Count == 0 || (result.Count > 1 && result.Exists(x => x.Kind == SegmentKind.Type)) || StrictJson.Serialize(node).Length > ProtocolLimits.MaxPathBytes) throw DtoHelpers.Invalid("Invalid path"); return result; }
+        internal static IReadOnlyList<PathSegment> Path(JsonNode node) { var result = new List<PathSegment>(); foreach (var n in DtoHelpers.Array(node, ProtocolLimits.MaxPathSegments).Items) result.Add(PathSegment.FromJson(n)); if (result.Count == 0 || (result.Count > 1 && result.Exists(x => (x.Kind == SegmentKind.Type || x.Kind == "uia"))) || StrictJson.Serialize(node).Length > ProtocolLimits.MaxPathBytes) throw DtoHelpers.Invalid("Invalid path"); return result; }
     }
     public sealed class PageDto<T>
     {
