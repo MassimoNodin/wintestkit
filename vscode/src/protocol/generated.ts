@@ -899,6 +899,10 @@ export interface BootstrapSettings {
   requestTimeoutMs: number;
   idleTimeoutMs: number;
   agentVersion: Identifier;
+  /**
+   * @maxItems 32
+   */
+  redactNames: string[];
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
@@ -2000,7 +2004,7 @@ export interface ManagedErrorInfo {
     | "cancelled"
     | "internalError";
   message: string;
-  details?: {};
+  details?: Record<string, never>;
 }
 export interface ManagedNodePage1 {
   /**
@@ -2175,7 +2179,7 @@ export interface RequestEnvelope {
     | "read"
     | "bindings"
     | "release";
-  params: {};
+  params: Record<string, never>;
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema

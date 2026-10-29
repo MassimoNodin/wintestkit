@@ -24,7 +24,7 @@ function inspectorName(name) {
 function localizeReferences(value, inspector = false) {
   if (Array.isArray(value)) return value.map((entry) => localizeReferences(entry, inspector));
   if (value === null || typeof value !== "object") return value;
-  return Object.fromEntries(
+  const localized = Object.fromEntries(
     Object.entries(value).map(([key, entry]) => {
       if (key !== "$ref") return [key, localizeReferences(entry, inspector)];
       const match = /^(?:(?:[a-z]+\.schema\.json|\.\.\/wpf-inspector\/protocol\/inspector\.schema\.json))?#\/\$defs\/([A-Za-z]+)$/.exec(
@@ -35,6 +35,13 @@ function localizeReferences(value, inspector = false) {
       return [key, `#/$defs/${managed ? inspectorName(match[1]) : match[1]}`];
     }),
   );
+  if (
+    localized.type === "object" &&
+    (localized.additionalProperties === false || localized.additionalProperties === undefined) &&
+    Object.keys(localized.properties ?? {}).length === 0
+  )
+    localized.tsType = "Record<string, never>";
+  return localized;
 }
 
 const schemaFiles = [
@@ -55,12 +62,6 @@ for (const file of schemaFiles) {
       ...localizeReferences(schema.$defs[name], inspector),
       title: emittedName,
     };
-    if (
-      definition.type === "object" &&
-      definition.additionalProperties === false &&
-      Object.keys(definition.properties ?? {}).length === 0
-    )
-      definition.tsType = "Record<string, never>";
     definitions[emittedName] = definition;
   }
 }
