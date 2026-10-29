@@ -1,0 +1,189 @@
+--- a/Snoop.InjectorLauncher/Directory.build.props
++++ b/Snoop.InjectorLauncher/Directory.build.props
+@@ -1,9 +1,8 @@
+-﻿<Project>
+-  <!-- Import parent Directory.build.props -->
+-  <Import Project="../Directory.Build.props" />
+-
++<Project>
+   <PropertyGroup>
+-    <PlatformTarget Condition="'$(PlatformTarget)' == '' or '$(PlatformTarget)' == 'AnyCPU'">x86</PlatformTarget>
++    <!-- Do not import the unvendored Snoop build system or the repository's central packages. -->
++    <ImportDirectoryBuildTargets>false</ImportDirectoryBuildTargets>
++    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+     <BaseIntermediateOutputPath>obj/$(PlatformTarget)/</BaseIntermediateOutputPath>
+   </PropertyGroup>
+-</Project>
+\ No newline at end of file
++</Project>
+--- a/Snoop.InjectorLauncher/Snoop.InjectorLauncher.csproj
++++ b/Snoop.InjectorLauncher/Snoop.InjectorLauncher.csproj
+@@ -1,62 +1,29 @@
+-﻿<Project Sdk="Microsoft.NET.Sdk">
++<Project Sdk="Microsoft.NET.Sdk">
+   <PropertyGroup>
+-    <OutputType>exe</OutputType>
+-    <TargetFramework Condition="'$(TargetFramework)' == ''">$(MinTargetFramework)</TargetFramework>
++    <OutputType>Exe</OutputType>
++    <TargetFramework>net48</TargetFramework>
++    <RuntimeIdentifiers>win-x86;win-x64</RuntimeIdentifiers>
+     <PlatformTarget Condition="'$(PlatformTarget)' == '' or '$(PlatformTarget)' == 'AnyCPU'">x86</PlatformTarget>
+-    <ApplicationIcon>..\Artwork\Snoop.ico</ApplicationIcon>
++    <AssemblyName>Snoop.InjectorLauncher.$(PlatformTarget)</AssemblyName>
+     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+-
+-    <RollForward>Major</RollForward> <!-- can be removed as soon as we build with net6.0 -->
+-
+-    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+-
+-    <ApplicationIcon>..\Artwork\Snoop.ico</ApplicationIcon>
+     <ApplicationManifest>../Shared/app.manifest</ApplicationManifest>
++    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
++    <LangVersion>10</LangVersion>
++    <Nullable>enable</Nullable>
++    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
++    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
++    <AutomaticallyUseReferenceAssemblyPackages>false</AutomaticallyUseReferenceAssemblyPackages>
+   </PropertyGroup>
+-
+-  <PropertyGroup>
+-    <RootBuild Condition="'$(RootBuild)' == ''">True</RootBuild>
+-    <AssemblyName>$(AssemblyName).$(PlatformTarget)</AssemblyName>
+-    <TargetName>$(AssemblyName)</TargetName>
+-  </PropertyGroup>
+-
+-  <PropertyGroup>
+-    <DefaultItemExcludes>$(DefaultItemExcludes);obj/**/*</DefaultItemExcludes>
+-  </PropertyGroup>
+-  
+   <ItemGroup>
+-    <ApplicationManifest Include="../Shared/app.manifest" />
+-
+-    <Compile Include="..\Shared\InjectorData.cs" Link="InjectorData.cs" />
+-    <Compile Include="..\Snoop.Core\Data\TransientSettingsData.cs" Link="Data\TransientSettingsData.cs" />
+-    <Compile Include="..\Snoop.Core\EnvironmentEx.cs">
+-      <Link>EnvironmentEx.cs</Link>
+-    </Compile>
+-    <Compile Include="..\Snoop.Core\Infrastructure\ConsoleHelper.cs" Link="ConsoleHelper.cs" />
+-    <Compile Include="..\Snoop.Core\Infrastructure\NativeMethods.Memory.cs" Link="NativeMethods.Memory.cs" />
+-    <Compile Include="..\Snoop.Core\Infrastructure\NativeMethods.Process.cs" Link="NativeMethods.Process.cs" />
+-    <Compile Include="..\Snoop.Core\Infrastructure\LogHelper.cs" Link="LogHelper.cs" />
+-    <Compile Include="..\Snoop.Core\SettingsHelper.cs">
+-      <Link>SettingsHelper.cs</Link>
+-    </Compile>
++    <Compile Include="Injector.cs" />
++    <Compile Include="InjectorLauncherCommandLineOptions.cs" />
++    <Compile Include="ProcessWrapper.cs" />
++    <Compile Include="Program.cs" />
++    <Compile Include="Properties/AssemblyInfo.cs" />
++    <Compile Include="LauncherSupport.cs" />
++    <Compile Include="../Shared/InjectorData.cs" Link="InjectorData.cs" />
+   </ItemGroup>
+-
+   <ItemGroup>
+-    <PackageReference Include="CommandLineParser" />
++    <PackageReference Include="CommandLineParser" Version="[2.9.1]" />
+   </ItemGroup>
+-   
+-  <Target Name="CompileOtherArches" AfterTargets="Build" Condition="'$(RootBuild)' == 'True'">
+-    <!--
+-    Need to force re-evaluate after Restore, such that obj\x64\Snoop.InjectorLauncher.csproj.nuget.g.targets gets imported after it's created by Restore.
+-    If we reuse the previous evaluation used by Restore, it won't be imported there as it didn't exist yet.
+-    Setting a dummy property forces a new evaluation as it can't reuse the previous eval with a different set of properties.
+-    -->
+-    <Message Text="Building injector launcher for x64..." Importance="High" />
+-    <MSBuild Projects="$(MSBuildProjectFile)" Targets="Restore" Properties="RootBuild=False;Configuration=$(Configuration);PlatformTarget=x64" />
+-    <MSBuild Projects="$(MSBuildProjectFile)" Targets="Build" Properties="RootBuild=False;Configuration=$(Configuration);PlatformTarget=x64;DummyPropertyToForceReevaluateAfterRestore=true" />
+-
+-    <Message Text="Building injector launcher for ARM64..." Importance="High" />
+-    <MSBuild Projects="$(MSBuildProjectFile)" Targets="Restore" Properties="RootBuild=False;Configuration=$(Configuration);PlatformTarget=ARM64;TargetFramework=$(MinCoreTargetFramework)" />
+-    <MSBuild Projects="$(MSBuildProjectFile)" Targets="Build" Properties="RootBuild=False;Configuration=$(Configuration);PlatformTarget=ARM64;TargetFramework=$(MinCoreTargetFramework);DummyPropertyToForceReevaluateAfterRestore=true" />
+-  </Target>
+-</Project>
+\ No newline at end of file
++</Project>
+--- a/Snoop.InjectorLauncher/InjectorLauncherCommandLineOptions.cs
++++ b/Snoop.InjectorLauncher/InjectorLauncherCommandLineOptions.cs
+@@ -1,9 +1,7 @@
+ ﻿namespace Snoop.InjectorLauncher;
+ 
+ using CommandLine;
+-using JetBrains.Annotations;
+ 
+-[PublicAPI]
+ public class InjectorLauncherCommandLineOptions
+ {
+     [Option('t', "targetPID", Required = true, HelpText = "The target process id.")]
+@@ -21,7 +19,7 @@
+     [Option('m', "methodName", Required = true)]
+     public string MethodName { get; set; } = string.Empty;
+ 
+-    [Option('s', "settingsFile")]
++    [Option('s', "settingsFile", Required = true)]
+     public string? SettingsFile { get; set; }
+ 
+     [Option('v', "verbose", HelpText = "Set output to verbose messages.")]
+--- a/Snoop.InjectorLauncher/Injector.cs
++++ b/Snoop.InjectorLauncher/Injector.cs
+@@ -5,7 +5,6 @@
+ using System.IO;
+ using System.Reflection;
+ using System.Runtime.InteropServices;
+-using JetBrains.Annotations;
+ using Snoop.Infrastructure;
+ 
+ /// <summary>
+@@ -41,7 +40,6 @@
+         }
+     }
+ 
+-    [PublicAPI]
+     public static void InjectIntoProcess(IntPtr windowHandle, InjectorData injectorData)
+     {
+         var processFromHandle = ProcessWrapper.FromWindowHandle(windowHandle);
+@@ -54,7 +52,6 @@
+         InjectIntoProcess(processFromHandle, injectorData);
+     }
+ 
+-    [PublicAPI]
+     public static void InjectIntoProcess(ProcessWrapper processWrapper, InjectorData injectorData)
+     {
+         InjectSnoop(processWrapper, injectorData);
+--- a/Snoop.InjectorLauncher/Program.cs
++++ b/Snoop.InjectorLauncher/Program.cs
+@@ -10,7 +10,6 @@
+ using System.IO;
+ using System.Reflection;
+ using CommandLine;
+-using Snoop.Data;
+ using Snoop.Infrastructure;
+ 
+ public static class Program
+@@ -25,6 +24,12 @@
+ 
+     private static int Run(InjectorLauncherCommandLineOptions commandLineOptions)
+     {
++        if (string.IsNullOrWhiteSpace(commandLineOptions.SettingsFile) || !File.Exists(commandLineOptions.SettingsFile))
++        {
++            Injector.LogMessage("A settings file must be supplied and must exist.");
++            return 1;
++        }
++
+         if (commandLineOptions.Debug)
+         {
+             Debugger.Launch();
+@@ -79,13 +84,7 @@
+                 }
+             }
+ 
+-            var settingsFile = string.IsNullOrEmpty(commandLineOptions.SettingsFile) == false
+-                ? commandLineOptions.SettingsFile
+-                : new TransientSettingsData
+-                {
+-                    StartTarget = SnoopStartTarget.SnoopUI,
+-                    TargetWindowHandle = processWrapper.WindowHandle.ToInt64()
+-                }.WriteToFile();
++            var settingsFile = commandLineOptions.SettingsFile!;
+ 
+             var injectorData = new InjectorData
+             {
