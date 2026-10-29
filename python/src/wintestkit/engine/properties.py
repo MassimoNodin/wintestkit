@@ -12,7 +12,10 @@ import re
 from collections.abc import Collection, Iterable, Mapping
 from dataclasses import dataclass
 from difflib import get_close_matches
-from typing import Any, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
+
+if TYPE_CHECKING:
+    from wintestkit.engine.managed import ManagedCondition
 
 from wintestkit import runtime
 from wintestkit.errors import InvalidLocatorError
@@ -208,6 +211,12 @@ def normalize_where(where: Mapping[str, WhereValue] | None, taken: Mapping[str, 
         if key in taken:
             raise TypeError(f"{key} is set by both {taken[key]}= and where=; use only one of them")
         spec = SUPPORTED.get(key)
+        if key.startswith(("type:", "clr:", "field:", "dp:")):
+            from wintestkit.inspector.paths import parse_managed_key
+
+            parse_managed_key(key)
+            if _value_problem(None, value) is not None:
+                raise InvalidLocatorError(f"where[{key!r}] expects a scalar or compiled regex")
         problem = _value_problem(spec.kind if spec else None, value)
         if problem is not None:
             raise TypeError(f"where[{key!r}] {problem}")
@@ -238,7 +247,7 @@ def _unknown(key: str, owner: str, aliases: Mapping[str, str]) -> InvalidLocator
     return InvalidLocatorError(message)
 
 
-def resolve_where(where: Where, owner: str, taken: Collection[str] = ()) -> tuple[Condition, ...]:
+def resolve_where(where: Where, owner: str, taken: Collection[str] = ()) -> tuple[Condition | ManagedCondition, ...]:
     """Resolve aliases and check types; ``taken`` are the properties the locator already sets.
 
     ``owner`` is the locator description used in error messages. Reads the active configuration
@@ -249,9 +258,26 @@ def resolve_where(where: Where, owner: str, taken: Collection[str] = ()) -> tupl
         return ()
     aliases: Mapping[str, str] | None = None
     seen: dict[str, str] = {name: name for name in taken}
-    resolved: list[Condition] = []
+    resolved: list[Condition | ManagedCondition] = []
     for key, value in where:
         spec = SUPPORTED.get(key)
+        target = key
+        if spec is None and not key.startswith(("type:", "clr:", "field:", "dp:")):
+            if aliases is None:
+                aliases = runtime.get_config().property_aliases
+            target = aliases.get(key, key)
+        if target.startswith(("type:", "clr:", "field:", "dp:")):
+            from wintestkit.engine.managed import ManagedCondition
+            from wintestkit.inspector.paths import parse_managed_key
+
+            path = parse_managed_key(target)
+            if _value_problem(None, value) is not None:
+                raise InvalidLocatorError(f"where[{key!r}] expects a scalar or compiled regex")
+            if target in seen:
+                raise InvalidLocatorError(f"{owner} sets {target} twice (via {seen[target]!r} and {key!r})")
+            seen[target] = key
+            resolved.append(ManagedCondition(target, path, value, key if key != target else None))
+            continue
         if spec is None:
             if aliases is None:
                 aliases = runtime.get_config().property_aliases
