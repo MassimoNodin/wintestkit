@@ -31,6 +31,6 @@ namespace WinTestKit.Inspector.Protocol
         internal static void Add(JsonObjectNode obj, string key, string? value) { if (value != null) obj.Add(key, new JsonStringNode(value)); }
         internal static void Add(JsonObjectNode obj, string key, long? value) { if (value.HasValue) obj.Add(key, JsonNumberNode.From(value.Value)); }
         internal static void OneOf(string value, params string[] valid) { foreach (var item in valid) if (item == value) return; throw Invalid("Unknown enum value"); }
-        internal static List<string> FeatureList(JsonNode node) { var values = Strings(node); foreach (var value in values) OneOf(value, Features.TypeMetadata, Features.ClrMembers, Features.DependencyProperties, Features.Bindings, Features.ExactUiaMapping, Features.BatchReads); return values; }
+        internal static List<string> FeatureList(JsonNode node) { var values = Strings(node); foreach (var value in values) OneOf(value, Features.TypeMetadata, Features.ClrMembers, Features.DependencyProperties, Features.Bindings, Features.ExactUiaMapping, Features.BatchReads, Features.Query, Features.Geometry, Features.Actions, Features.VirtualItems, Features.Writes, Features.HitTest, Features.Waits, Features.Events); return values; }
     }
 }

@@ -17,6 +17,22 @@ public class RequestDispatcherTests
     private static readonly IReadOnlyList<IReadOnlyList<PathSegment>> Paths = new[] { new[] { new PathSegment { Kind = SegmentKind.Type, Name = "Name" } } };
     private static Task<ResponseEnvelope> Dispatch(RequestDispatcher dispatcher, string method, JsonObjectNode parameters) => dispatcher.HandleAsync(new RequestEnvelope { Id = 42, Method = method, Params = parameters }, CancellationToken.None);
 
+    [Theory]
+    [InlineData(PipeMethods.QueryFind)][InlineData(PipeMethods.QueryFindAll)][InlineData(PipeMethods.StateGet)]
+    [InlineData(PipeMethods.ActFocus)][InlineData(PipeMethods.ActBringIntoView)][InlineData(PipeMethods.ActInvoke)]
+    [InlineData(PipeMethods.ActToggle)][InlineData(PipeMethods.ActExpand)][InlineData(PipeMethods.ActCollapse)]
+    [InlineData(PipeMethods.ActSelect)][InlineData(PipeMethods.ActScrollIntoView)][InlineData(PipeMethods.ActSetValue)]
+    [InlineData(PipeMethods.ActSetRange)][InlineData(PipeMethods.ActScroll)][InlineData(PipeMethods.ActRealizeItem)]
+    [InlineData(PipeMethods.WaitUntil)][InlineData(PipeMethods.HitTest)][InlineData(PipeMethods.WriteSetProperty)]
+    [InlineData(PipeMethods.WriteCall)][InlineData(PipeMethods.EventsSubscribe)][InlineData(PipeMethods.EventsUnsubscribe)]
+    public async Task Protocol2MethodsAreRecognizedButUnavailable(string method)
+    {
+        var request = new RequestEnvelope { Id = 42, Method = method, Params = new JsonObjectNode() };
+        request = RequestEnvelope.FromJson(request.ToJson());
+        var response = await new RequestDispatcher(Session, new RecordingService()).HandleAsync(request, CancellationToken.None);
+        Assert.Equal(ErrorCodes.UnsupportedTarget, response.Error!.Code);
+    }
+
     [Fact]
     public async Task RoutesAllMethodsAndConvertsArguments()
     {

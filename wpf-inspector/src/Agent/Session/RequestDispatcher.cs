@@ -89,6 +89,28 @@ namespace WinTestKit.Inspector.Agent.Session
                 case PipeMethods.Close:
                     CloseParams.FromJson(request.Params);
                     return new CloseResult { Closed = true }.ToJson();
+                case PipeMethods.QueryFind:
+                case PipeMethods.QueryFindAll:
+                case PipeMethods.StateGet:
+                case PipeMethods.ActFocus:
+                case PipeMethods.ActBringIntoView:
+                case PipeMethods.ActInvoke:
+                case PipeMethods.ActToggle:
+                case PipeMethods.ActExpand:
+                case PipeMethods.ActCollapse:
+                case PipeMethods.ActSelect:
+                case PipeMethods.ActScrollIntoView:
+                case PipeMethods.ActSetValue:
+                case PipeMethods.ActSetRange:
+                case PipeMethods.ActScroll:
+                case PipeMethods.ActRealizeItem:
+                case PipeMethods.WaitUntil:
+                case PipeMethods.HitTest:
+                case PipeMethods.WriteSetProperty:
+                case PipeMethods.WriteCall:
+                case PipeMethods.EventsSubscribe:
+                case PipeMethods.EventsUnsubscribe:
+                    throw new ProtocolException(ErrorCodes.UnsupportedTarget, "Feature not available.");
                 default:
                     throw new ProtocolException(ErrorCodes.InvalidParams, "Unknown method.");
             }

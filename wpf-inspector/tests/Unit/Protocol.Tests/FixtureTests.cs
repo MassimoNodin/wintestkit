@@ -22,8 +22,61 @@ public sealed class FixtureTheoryDiscoverer : IXunitTestCaseDiscoverer
 [Trait("Category", "Unit")]
 public class FixtureTests
 {
+    // Slice P0c-2 removes this list when the protocol 2 readers are implemented.
+    private static readonly HashSet<string> PendingProtocol2Readers = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "ActBringIntoViewParams",
+        "ActBringIntoViewResult",
+        "ActCollapseParams",
+        "ActCollapseResult",
+        "ActExpandParams",
+        "ActExpandResult",
+        "ActFocusParams",
+        "ActFocusResult",
+        "ActInvokeParams",
+        "ActInvokeResult",
+        "ActRealizeItemParams",
+        "ActRealizeItemResult",
+        "ActScrollIntoViewParams",
+        "ActScrollIntoViewResult",
+        "ActScrollParams",
+        "ActScrollResult",
+        "ActSelectParams",
+        "ActSelectResult",
+        "ActSetRangeParams",
+        "ActSetRangeResult",
+        "ActSetValueParams",
+        "ActSetValueResult",
+        "ActToggleParams",
+        "ActToggleResult",
+        "ElementState",
+        "EventsNotification",
+        "EventsSubscribeParams",
+        "EventsSubscribeResult",
+        "EventsUnsubscribeParams",
+        "EventsUnsubscribeResult",
+        "HitTestParams",
+        "HitTestResult",
+        "Locator",
+        "Predicate",
+        "QueryFindAllParams",
+        "QueryFindAllResult",
+        "QueryFindParams",
+        "QueryFindResult",
+        "Scope",
+        "StateGetParams",
+        "StateGetResult",
+        "WaitUntilParams",
+        "WaitUntilResult",
+        "WriteAudit",
+        "WriteCallParams",
+        "WriteCallResult",
+        "WriteSetPropertyParams",
+        "WriteSetPropertyResult",
+    };
     private static readonly IReadOnlyDictionary<string, Func<JsonNode, object>> Readers = new Dictionary<string, Func<JsonNode, object>>(StringComparer.Ordinal)
     {
+        ["AllowEntry"] = n => AllowEntry.FromJson(n),
         ["ResolveParams"] = n => ResolveParams.FromJson(n),
         ["CandidateRequest"] = n => CandidateRequestDto.FromJson(n),
         ["ReadBatchParams"] = n => ReadBatchParams.FromJson(n),
@@ -54,7 +107,7 @@ public class FixtureTests
         DirectoryInfo? dir = new DirectoryInfo(AppContext.BaseDirectory);
         while (dir != null && !File.Exists(Path.Combine(dir.FullName, "WinTestKit.Inspector.sln"))) dir = dir.Parent;
         if (dir == null) yield break;
-        foreach (string kind in new[] { "valid", "invalid" }) { string folder = Path.Combine(dir.FullName, "protocol", "fixtures", kind); if (!Directory.Exists(folder)) continue; foreach (string file in Directory.EnumerateFiles(folder, "*.json").OrderBy(x => x, StringComparer.Ordinal)) yield return new object[] { file, kind == "valid" }; }
+        foreach (string kind in new[] { "valid", "invalid" }) { string folder = Path.Combine(dir.FullName, "protocol", "fixtures", kind); if (!Directory.Exists(folder)) continue; foreach (string file in Directory.EnumerateFiles(folder, "*.json").OrderBy(x => x, StringComparer.Ordinal)) { if (Path.GetFileName(file).StartsWith("p2-", StringComparison.Ordinal)) { byte[] bytes = File.ReadAllBytes(file); var outer = (JsonObjectNode)StrictJson.Parse(bytes, 0, bytes.Length); string schema = ((JsonStringNode)outer.Get("schema")).Value; if (PendingProtocol2Readers.Contains(schema)) continue; } yield return new object[] { file, kind == "valid" }; } }
     }
     [FixtureTheory]
     [MemberData(nameof(Fixtures))]

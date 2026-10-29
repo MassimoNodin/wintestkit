@@ -23,7 +23,7 @@ namespace WinTestKit.Inspector.Agent.Session
 
         public SessionHost(BootstrapSettings settings, IInspectionServiceFactory factory, IClientIdentityVerifier? verifier = null)
         {
-            this.settings = settings; this.factory = factory; this.verifier = verifier ?? new ClientIdentityVerifier();
+            this.settings = BootstrapSettings.FromJson(settings.ToJson()); this.factory = factory; this.verifier = verifier ?? new ClientIdentityVerifier();
         }
 
         public void Run()
