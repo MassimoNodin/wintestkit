@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType><TargetFrameworks>net48;net8.0-windows;net10.0-windows</TargetFrameworks>
+    <UseWPF>true</UseWPF><AssemblyName>WinTestKit.Fixture</AssemblyName><RootNamespace>WinTestKit.Fixture</RootNamespace>
+    <SelfContained>false</SelfContained><PublishTrimmed>false</PublishTrimmed><PublishSingleFile>false</PublishSingleFile>
+    <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects><GenerateBindingRedirectsOutputType>true</GenerateBindingRedirectsOutputType>
+  </PropertyGroup>
+  <ItemGroup><PackageReference Include="Newtonsoft.Json" /></ItemGroup>
+  <ItemGroup Condition="'$(TargetFramework)' == 'net48'">
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" PrivateAssets="all" />
+    <PackageReference Include="System.Text.Json" /><PackageReference Include="System.Memory" />
+  </ItemGroup>
+</Project>
