@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFrameworks>net10.0-windows;net48</TargetFrameworks>
+    <UseWPF>true</UseWPF>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" PrivateAssets="all" />
+    <ProjectReference Include="../../../src/Protocol/Protocol.csproj" />
+    <Compile Include="../../../src/Agent/Contracts/**/*.cs" LinkBase="Contracts" />
+    <Compile Include="../../../src/Agent/Mapping/**/*.cs" LinkBase="Mapping" />
+    <Reference Include="UIAutomationClient" Condition="'$(TargetFramework)' == 'net48'" />
+    <Reference Include="UIAutomationTypes" Condition="'$(TargetFramework)' == 'net48'" />
+    <Compile Include="../../../src/Agent/Inspection/DispatcherExecutor.cs" LinkBase="Inspection" />
+    <Compile Include="../../../src/Agent/Inspection/ObjectRegistry.cs" LinkBase="Inspection" />
+    <Compile Include="../../../src/Agent/Inspection/PageSnapshotStore.cs" LinkBase="Inspection" />
+    <Compile Include="../../../src/Agent/Inspection/WpfInspectionService*.cs" LinkBase="Inspection" />
+    <Compile Include="../../../src/Agent/Inspection/Members/**/*.cs" LinkBase="Inspection/Members" />
+  </ItemGroup>
+</Project>
