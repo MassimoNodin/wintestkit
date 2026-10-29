@@ -411,7 +411,7 @@ describe("settings editor script", () => {
       view.find(
         (node) => node.tagName === "H3" && node.textContent === "Debugging",
       ),
-    ).toBeNull();
+    ).not.toBeNull();
     expect(view.must("scope").textContent).toContain("REPOSITORY SETTINGS");
     view.emit(state("local", 5, {}));
     expect(view.must("scope").textContent).toContain("USER SETTINGS");
@@ -1020,6 +1020,15 @@ describe("settings editor script", () => {
     view.emit(state("local", 82, { "app.process": "Orders.exe" }));
     expect(modified("app.process")).not.toBeNull();
     expect(view.find((node) => node.className.includes("overridden"))).toBeNull();
+  });
+
+  it("marks inspector settings modified against their defaults", () => {
+    const view = boot();
+    view.emit(state("shared", 82, { "inspector.enabled": true, "inspector.attach": "manual", "inspector.attach_timeout": 5, "inspector.request_timeout": 1, "inspector.redact_names": ["secret"] }));
+    for (const key of ["inspector.enabled", "inspector.attach_timeout", "inspector.request_timeout", "inspector.redact_names"]) {
+      expect(view.find((node) => node.className.includes("modified") && !!node.querySelector("[id='" + key + "']"))).not.toBeNull();
+    }
+    expect(view.find((node) => node.className.includes("modified") && !!node.querySelector("[id='inspector.attach']"))).toBeNull();
   });
 
   it("marks settings in Repository Settings that differ from their default, whatever User Settings override", () => {

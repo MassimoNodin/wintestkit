@@ -16,7 +16,15 @@ export const MAX_SHOWN_PROPERTIES = 64;
 
 export const SPY_TOUR_ACTIONS = ["back", "next", "close", "disable", "skip", "finish"] as const;
 
+export type ManagedRequest =
+  | { type: "managedAttach" | "managedDetach" | "managedRefresh" }
+  | { type: "managedRead" | "managedExpand"; memberKey: string }
+  | { type: "managedLoadMore"; group: string }
+  | { type: "managedReadVisible"; memberKeys: string[] }
+  | { type: "managedCopy"; kind: "value" | "path" | "locator" | "export"; memberKey?: string };
+
 export type SpyRequest =
+  | ManagedRequest
   | { type: "tour"; action: (typeof SPY_TOUR_ACTIONS)[number] }
   | {
       type: "pick" | "stopPick" | "refresh" | "addToPage" | "chooseApp";
@@ -118,6 +126,7 @@ export type SpyResponse =
 export function parseSpyRequest(value: unknown): SpyRequest | undefined {
   if (!value || typeof value !== "object") return;
   const message = value as Record<string, unknown>;
+  if (typeof message.type === "string" && message.type.startsWith("managed")) return parseManagedRequest(message);
   if (message.type === "tour")
     return SPY_TOUR_ACTIONS.includes(message.action as (typeof SPY_TOUR_ACTIONS)[number])
       ? { type: "tour", action: message.action as (typeof SPY_TOUR_ACTIONS)[number] }
@@ -181,4 +190,16 @@ export function parseSpyRequest(value: unknown): SpyRequest | undefined {
     message.id.length <= 2048
   )
     return { type: "openDefinition", id: message.id };
+}
+
+/** Managed messages have a closed shape; identities always come from the host. */
+export function parseManagedRequest(message: Record<string, unknown>): ManagedRequest | undefined {
+  const keys = Object.keys(message);
+  const exact = (...allowed: string[]) => keys.length === allowed.length && keys.every((key) => allowed.includes(key));
+  const key = (value: unknown): value is string => typeof value === "string" && value.length > 0 && value.length <= 1024;
+  if ((message.type === "managedAttach" || message.type === "managedDetach" || message.type === "managedRefresh") && exact("type")) return { type: message.type };
+  if ((message.type === "managedRead" || message.type === "managedExpand") && exact("type", "memberKey") && key(message.memberKey)) return { type: message.type, memberKey: message.memberKey };
+  if (message.type === "managedLoadMore" && exact("type", "group") && key(message.group)) return { type: message.type, group: message.group };
+  if (message.type === "managedReadVisible" && exact("type", "memberKeys") && Array.isArray(message.memberKeys) && message.memberKeys.length > 0 && message.memberKeys.length <= 32 && message.memberKeys.every(key)) return { type: message.type, memberKeys: message.memberKeys };
+  if (message.type === "managedCopy" && (exact("type", "kind") || (exact("type", "kind", "memberKey") && key(message.memberKey))) && (message.kind === "value" || message.kind === "path" || message.kind === "locator" || message.kind === "export")) return { type: message.type, kind: message.kind, ...(typeof message.memberKey === "string" ? { memberKey: message.memberKey } : {}) };
 }

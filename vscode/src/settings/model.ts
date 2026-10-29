@@ -383,9 +383,9 @@ export function validateSettings(
       throw new Error(key + " must be a #RRGGBB colour.");
     if (
       field.kind === "list" &&
-      (!Array.isArray(entry) || entry.some((item) => typeof item !== "string" || (key === "inspector.redact_names" && !item.length)))
+      (!Array.isArray(entry) || (key === "inspector.redact_names" && entry.length > 32) || entry.some((item) => typeof item !== "string" || (key === "inspector.redact_names" && (!item.length || item.length > 128))))
     )
-      throw new Error(key + " must be a JSON array of strings.");
+      throw new Error(key === "inspector.redact_names" ? "inspector.redact_names must be an array of at most 32 non-empty strings, each at most 128 characters." : key + " must be a JSON array of strings.");
   }
 }
 

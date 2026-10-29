@@ -185,9 +185,8 @@ describe("YAML configuration editing", () => {
     expect(keys).not.toContain("app.cwd");
     for (const field of settingFields.filter((field) => field.localOnly))
       expect(keys).not.toContain(field.key);
-    expect(shared.map((section) => section.group)).not.toContain(
-      "Debugging",
-    );
+    expect(shared.map((section) => section.group)).toContain("Debugging");
+    expect(keys).toContain("inspector.enabled");
   });
   it("distinguishes shared and ignored local files", () => {
     expect(settingsScope("/project/wintestkit.local.yaml")).toBe("local");
