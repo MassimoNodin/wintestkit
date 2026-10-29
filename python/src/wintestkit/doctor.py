@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import ctypes
 import os
+import struct
 import sys
 from ctypes import wintypes
 from dataclasses import dataclass
@@ -356,6 +357,60 @@ def _check_comtypes_cache() -> Check:
     return Check("comtypes_cache", title, "ok", directory)
 
 
+def _check_inspector(cfg: WtkConfig | None) -> Check:
+    """Report payload and controller facts without attaching to a target."""
+    try:
+        from wintestkit.errors import InspectorUnavailableError
+        from wintestkit.inspector.payload import load_payload, payload_status
+
+        status = payload_status()
+        if not status.get("installed"):
+            try:
+                load_payload()
+            except InspectorUnavailableError as error:
+                if error.code == "payloadMismatch":
+                    status["installed"] = True
+                    status["error"] = error.code
+    except Exception as exc:
+        status = {"installed": False, "error": str(exc)}
+    enabled = cfg is not None and cfg.inspector.enabled
+    mode = cfg.inspector.attach if cfg is not None else "manual"
+    detail = (
+        f"installed={status.get('installed', False)}, version={status.get('version')}, "
+        f"version and hashes match={status.get('matches')}, "
+        f"signed (manifest)={status.get('signed')} (signature not checked), "
+        f"controller architecture={status.get('controller_architecture')} "
+        f"({struct.calcsize('P') * 8}-bit Python), enabled={enabled}, mode={mode}"
+    )
+    if status.get("error"):
+        detail += f", reason={status['error']}"
+    architecture = str(status.get("controller_architecture")).lower()
+    supported = struct.calcsize("P") == 8 and architecture in {"amd64", "x86_64"}
+    if supported:
+        try:
+            from wintestkit.inspector.probe import controller_supported
+
+            supported = controller_supported()
+        except Exception:
+            supported = False
+    healthy = bool(
+        status.get("installed") and status.get("matches") and status.get("signed") and supported
+    )
+    hint = None
+    if not status.get("installed"):
+        hint = 'Install the matching payload with pip install "wintestkit[inspector]".'
+    elif not status.get("matches"):
+        hint = "Reinstall the matching inspector payload; its version or files failed validation."
+    elif not supported:
+        hint = "Use native 64-bit x64 Python for managed inspection."
+    elif not status.get("signed"):
+        hint = "The installed inspector payload is unsigned."
+    if cfg is not None and cfg.inspector.redact_names:
+        healthy = False
+        hint = "Extra redaction names require agent protocol support before managed attachment."
+    return Check("inspector", "Managed inspector", "ok" if healthy else "warn", detail, hint)
+
+
 def run_checks(
     cfg: WtkConfig | None,
     *,
@@ -377,6 +432,7 @@ def run_checks(
         ("app_running", lambda: _check_app_running(cfg)),
         ("elevation", lambda: _check_elevation(cfg)),
         ("comtypes_cache", _check_comtypes_cache),
+        ("inspector", lambda: _check_inspector(cfg)),
     ]
     for check_id, runner in runners:
         if quick and check_id not in QUICK_CHECKS:

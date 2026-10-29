@@ -61,6 +61,7 @@ def test_all_checks_ok_on_a_healthy_machine(tmp_path: Path) -> None:
         "app_running",
         "elevation",
         "comtypes_cache",
+        "inspector",
     ]
     assert not has_failures(list(checks.values()))
 
