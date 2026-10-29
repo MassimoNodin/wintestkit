@@ -1,0 +1,1 @@
+{"schema":"Value","instance":{"status":"ok","kind":"array","declaredType":"T","runtimeType":"T","object":{"sessionId":"s","objectId":"o","generation":1,"type":{"name":"Button","fullName":"Button","assemblyName":"App","assemblyQualifiedName":"Button, App","baseTypes":[]},"dispatcherId":"d"},"arrayRank":1,"arrayLength":3}}

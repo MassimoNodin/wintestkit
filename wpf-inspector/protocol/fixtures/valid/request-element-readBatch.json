@@ -1,0 +1,1 @@
+{"schema":"RequestEnvelope","instance":{"id":1,"method":"element.readBatch","params":{"candidates":[{"runtimeId":[1]}],"paths":[[{"kind":"property","name":"Text"}]]}}}

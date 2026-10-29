@@ -1,0 +1,250 @@
+[
+  {
+    "id": "R1",
+    "text": "UI Automation (UIA) inspection and actions remain unchanged when the inspector is disabled.",
+    "stage": 8,
+    "tests": [
+      "python/tests/contract/test_schemas.py",
+      "Category=Integration"
+    ],
+    "status": "pending"
+  },
+  {
+    "id": "R2",
+    "text": "Explicit attachment to a selected PID reports actual runtime/architecture capabilities.",
+    "stage": 3,
+    "tests": [
+      "Category=Integration",
+      "Category=Matrix"
+    ],
+    "status": "pending"
+  },
+  {
+    "id": "R3",
+    "text": "UIA selection maps to the exact managed object or returns an explicit mapping failure.",
+    "stage": 4,
+    "tests": [
+      "wpf-inspector/tests/Unit/Agent.Mapping.Tests/PrimitiveTests.cs",
+      "Category=Integration"
+    ],
+    "status": "pending"
+  },
+  {
+    "id": "R4",
+    "text": "Member discovery is separate from getter evaluation; nested values load lazily.",
+    "stage": 5,
+    "tests": [
+      "wpf-inspector/tests/Unit/Agent.Members.Tests/ReflectionCatalogTests.cs",
+      "wpf-inspector/tests/Unit/Agent.Members.Tests/ReadTests.cs",
+      "Category=Integration"
+    ],
+    "status": "pending"
+  },
+  {
+    "id": "R5",
+    "text": "Null, exception, stale, redacted, truncated, and unavailable remain distinguishable.",
+    "stage": 6,
+    "tests": [
+      "wpf-inspector/tests/Unit/Protocol.Tests/FixtureTests.cs",
+      "wpf-inspector/tests/Unit/Agent.Members.Tests/ReadTests.cs",
+      "Category=Integration"
+    ],
+    "status": "pending"
+  },
+  {
+    "id": "R6",
+    "text": "Spy separates UIA, managed type, CLR members, dependency properties, and bindings.",
+    "stage": 9,
+    "tests": [
+      "Category=Integration"
+    ],
+    "status": "pending"
+  },
+  {
+    "id": "R7",
+    "text": "CLI, pytest, and Spy share one Python client and structured contracts.",
+    "stage": 7,
+    "tests": [
+      "python/tests/contract/test_managed_rpc.py",
+      "Category=Integration"
+    ],
+    "status": "pending"
+  },
+  {
+    "id": "R8",
+    "text": "Explicit managed scalar paths work in `where`, without becoming native UIA conditions.",
+    "stage": 8,
+    "tests": [
+      "python/tests/unit/test_inspector_paths.py",
+      "Category=Integration"
+    ],
+    "status": "pending"
+  },
+  {
+    "id": "R9",
+    "text": "Versioned artifacts, local protocol, compatibility tests, and operational docs ship together.",
+    "stage": 10,
+    "tests": [
+      "python/tests/contract/test_managed_fixtures.py",
+      "Category=Matrix",
+      "Category=Integration"
+    ],
+    "status": "pending"
+  },
+  {
+    "id": "R10",
+    "text": "Suites migrated from TestComplete can match `ClrFullClassName` against the real runtime type through an explicit, opt-in alias (section 10), instead of a UIA `ItemStatus` guess.",
+    "stage": 8,
+    "tests": [
+      "python/tests/unit/test_inspector_paths.py",
+      "Category=Integration"
+    ],
+    "status": "pending"
+  },
+  {
+    "id": "R11",
+    "text": "The core `wintestkit` package stays installable and UIA-only everywhere it installs today; the inspector is an optional, platform-specific add-on (section 11).",
+    "stage": 10,
+    "tests": [
+      "Category=Integration"
+    ],
+    "status": "pending"
+  },
+  {
+    "id": "G0",
+    "text": "positive/negative schema tests cover all closed enums, unknown fields, null versus absent, page continuation/completeness, malformed paths, and handshake mismatch. Existing contracts pass unchanged. Regenerated TypeScript has no unexplained manual differences. No public feature is advertised yet. Commit of a contract alone does not assert a working inspector.",
+    "stage": 0,
+    "tests": [
+      "wpf-inspector/tests/Unit/Protocol.Tests/MethodDtoTests.cs",
+      "wpf-inspector/tests/Unit/Protocol.Tests/FixtureTests.cs",
+      "python/tests/contract/test_managed_fixtures.py",
+      "python/tests/contract/test_managed_schema_defs.py",
+      "Category=Integration"
+    ],
+    "status": "pending"
+  },
+  {
+    "id": "G1",
+    "text": "all six executables build/start, show an interactive WPF window, and pass an independent UIA smoke test. Pure object-reader unit fixtures exercise counters without attachment. The fixture binary hash is recorded before inspection to prove subsequent tests require no rebuild.",
+    "stage": 1,
+    "tests": [
+      "wpf-inspector/tests/Unit/Agent.Members.Tests/ReadTests.cs",
+      "Category=Matrix"
+    ],
+    "status": "pending"
+  },
+  {
+    "id": "G2",
+    "text": "split header/body reads, zero/oversized lengths, invalid UTF-8/JSON, duplicate keys, depth overflow, EOF, request-ID mismatch, stale token, wrong SID/identity, malformed bootstrap, reparse point, expired bootstrap, wrong major, concurrent attach, full queue, idle close, and cancellation all have deterministic tests. Denied connections expose no target values. Wrong-user/session tests may use a dedicated Windows test account; skipped tests are recorded as unverified and block claims of passing that security gate.",
+    "stage": 2,
+    "tests": [
+      "wpf-inspector/tests/Unit/Protocol.Tests/CoreTests.cs",
+      "python/tests/unit/test_inspector_transport.py",
+      "Category=Security",
+      "Category=Integration"
+    ],
+    "status": "pending"
+  },
+  {
+    "id": "G3",
+    "text": "attach to an already running .NET 10 x64 fixture without startup flags or app-side files; authenticated hello confirms exact creation time/runtime; detach leaves the window interactive. Test duplicate backend attach, load failure, missing/tampered payload, spaces/Unicode in paths, target exit during handshake, identity reuse through a fake process probe, denied integrity, no WPF loaded, a target window HWND owned by another process, agent version mismatch on re-attach (`agentVersionMismatch`), and a launcher blocked by a test AppLocker/WDAC rule or a simulated block (`blockedByPolicy`). Repeat attach/detach 100 times without accumulating listeners or handles. Retain independent evidence that the target executable/configuration hash stayed unchanged. If upstream runtime hosting fails, stop here and amend the attach design; do not proceed with an app-modifying SDK workaround.",
+    "stage": 3,
+    "tests": [
+      "Category=Integration",
+      "Category=Security",
+      "Category=Stress"
+    ],
+    "status": "pending"
+  },
+  {
+    "id": "G4",
+    "text": "round-trip at least 20 distinct UIA selections to correct managed objects; distinguish identically named/sized siblings, nested HWNDs, popup roots, custom controls, top-level windows whose runtime ID is HWND-based (section 7), and windows on two Dispatchers. Recycled rows, closed windows, collected objects, and stale generations cannot return previous objects. Unowned peers fail explicitly. Missing/changed internal runtime-ID method is tested with an adapter fake. No coordinate/name fallback is present. Hitting scan limits is distinguished from a complete notFound. UIA-only inspection survives every failure.",
+    "stage": 4,
+    "tests": [
+      "wpf-inspector/tests/Unit/Agent.Mapping.Tests/PrimitiveTests.cs",
+      "Category=Integration"
+    ],
+    "status": "pending"
+  },
+  {
+    "id": "G5",
+    "text": "compare complete expected member sets for three unrelated fixture types, including inherited/hidden/overridden members, nonpublic declarations, dynamic descriptors, indexers, and default/local/attached DPs. Invocation counters prove ordinary getters and attribute constructors were not called. Assert no unrelated static type initializers run. Verify duplicate DP/wrapper handling, category/source metadata, deterministic ordering, failed descriptor partial diagnostics, and token expiry. Type.FullName drives the compatibility row without a target-name-specific getter; DataContext is not in a special read table.",
+    "stage": 5,
+    "tests": [
+      "wpf-inspector/tests/Unit/Agent.Members.Tests/ReflectionCatalogTests.cs",
+      "Category=Integration"
+    ],
+    "status": "pending"
+  },
+  {
+    "id": "G6",
+    "text": "read at least 10 unrelated properties and fields, not only motivating examples. Assert correct null/nullIntermediate, enum, decimal, safe/large integer, date, array-shape, string Unicode truncation, cycles, shared references, and throwing getters. Every sensitive getter counter remains zero. A getter is called once per segment/request. Binding tests prove no converter/UpdateSource/UpdateTarget invocation. Read changing DataContext twice and observe the new value without stale-cache reuse. Run slow/hanging-getter tests in dedicated owned fixture processes. The test client returns at its deadline, marks only the affected Dispatcher unresponsive, sends no later values, and does not enqueue replacement work. Another Dispatcher stays inspectable. The fixture may be killed by its harness after evidence capture; do not describe this as target-safe cancellation. Detach/selection release removes strong leases; tests force fixture GC to prove normal inspected objects become collectible once all fixture-owned references are also removed.",
+    "stage": 6,
+    "tests": [
+      "wpf-inspector/tests/Unit/Agent.Members.Tests/ReadTests.cs",
+      "Category=Integration",
+      "Category=Stress"
+    ],
+    "status": "pending"
+  },
+  {
+    "id": "G7",
+    "text": "fake-client server tests exercise every method/error; strict schemas validate every real response. Disabled defaults produce no probe, attach, or target code. Manual/on-demand modes and configuration precedence (shared, local, CLI; no environment layer) are covered in YAML/TOML tests, including additive-only `redact_names`. The pytest report header and run summary show attach mode and attached identities. `wtk doctor` reports payload presence, version, signature state, and controller architecture. Standalone CLI ownership attaches and detaches in finally, including exceptions and Ctrl+C. Unsupported/missing payload gives a nonzero exit and actionable message; UIA-only CLI still works. Backend shutdown clears all sessions, pending requests, and bootstrap files without terminating targets.",
+    "stage": 7,
+    "tests": [
+      "python/tests/contract/test_managed_rpc.py",
+      "Category=Integration"
+    ],
+    "status": "pending"
+  },
+  {
+    "id": "G8",
+    "text": "UIA-only query tests prove zero inspector calls and unchanged native conditions. Mixed where constraints narrow first by UIA, then match nested view-model strings, public fields, DP values, runtime type, bools/numbers/enums, and regexes. Reject bool/int confusion, malformed escapes, unsupported keys, object equality, redacted values, partial results, and ambiguity. Validate 1,000-candidate success versus 1,001-candidate failure without silent truncation. Across batches preserve UIA order and index semantics. Unknown aliases retain existing errors. Managed alias targets (`ClrFullClassName: \"type:FullName\"`) resolve to ManagedCondition, reject chaining, and fail clearly when the inspector is disabled; UIA aliases behave exactly as before. `wtk import-namemapping --managed-class-names` output is golden-tested, and output without the flag is byte-identical to today. One batch performs one tree traversal (section 7), and an unaffordable candidate count fails early with the count in the message. Slow attachment consumes the original locator deadline; no repeated injection on polling. Locator serialization round-trips exactly through Python/schema/generated TypeScript.",
+    "stage": 8,
+    "tests": [
+      "python/tests/unit/test_inspector_paths.py",
+      "Category=Integration"
+    ],
+    "status": "pending"
+  },
+  {
+    "id": "G9",
+    "text": "extension unit tests cover trust/confirmation, PID changes, disabled/unsupported/missing payload states, lazy reads, pagination, object expansion, cycle links, hidden declarations, binding metadata, redaction (including the matched-rule label), copy/export, the install command shown for `not installed`, `blocked by policy`/`restart required`/`detached (idle)` states, Repository Settings `inspector` keys, and strict message validation. Element captures saved on check contain no managed data even while attached. Simulate out-of-order responses and verify old session/selection data is discarded. No getters run merely by opening All properties or selecting another node. Manual end-to-end acceptance uses unchanged fixture controls with both motivating values and at least 10 other unrelated members. Capture screenshots of basic UIA, attached metadata, nested values, and a mapping failure for reviewer inspection.",
+    "stage": 9,
+    "tests": [
+      "Category=Integration"
+    ],
+    "status": "pending"
+  },
+  {
+    "id": "G10",
+    "text": "the core wheel is still `py3-none-any`, contains no binaries, builds from its sdist without .NET, and passes the unchanged `check_wheel.ps1`. Unpack the inspector wheel and verify every hash, signature, architecture, dependency, protocol version, and notice. Install `wintestkit[inspector]` in a clean x64 Python environment on Windows without the SDK; launch unchanged fixture, attach/read/detach using CLI and extension-selected Python. Tampering one DLL fails before launch. No current-directory DLL hijack and no dependency-version conflict with the target fixture. No Snoop inspector UI/scripting is exposed. Source distribution can rebuild payload with the documented toolchain and locked restore. Release checks reject missing payload or version drift between the two distributions. Installing a mismatched payload version fails with `payloadMismatch` before launch. Owner approval of third-party inventory is a publication gate.",
+    "stage": 10,
+    "tests": [
+      "Category=Integration",
+      "Category=Security"
+    ],
+    "status": "pending"
+  },
+  {
+    "id": "G11",
+    "text": "publish a machine-readable `compatibility-results.json` with OS build, runtime and WPF file versions, architecture, source/payload hashes, test names, counts, and failures. Any failed cell blocks the full planned release; do not silently delete it from requirements. A narrowed release requires explicit owner amendment. Cross-bitness controller tests use x64 Python with the x86 loader, not an accidentally x64 fixture. Unsupported targets must fail before loading.",
+    "stage": 11,
+    "tests": [
+      "Category=Matrix"
+    ],
+    "status": "pending"
+  },
+  {
+    "id": "G12",
+    "text": "run commands in section 13, review requirement traceability, inspect screenshots, and verify old UIA-only workflows on an unrelated non-WPF application. No claim that the two sample properties alone constitute complete implementation. All errors/limitations in the docs match actual statuses. Only an explicit user request authorizes commit/push of implementation work.",
+    "stage": 12,
+    "tests": [
+      "Category=Integration",
+      "Category=Matrix",
+      "Category=Stress",
+      "Category=Security"
+    ],
+    "status": "pending"
+  }
+]

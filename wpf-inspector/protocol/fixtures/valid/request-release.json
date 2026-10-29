@@ -1,0 +1,1 @@
+{"schema":"RequestEnvelope","instance":{"id":1,"method":"release","params":{"sessionId":"s","objectIds":["o"]}}}
