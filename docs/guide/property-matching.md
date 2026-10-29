@@ -1,5 +1,13 @@
 # Match UI Automation properties
 
+## Managed inspection (preview)
+
+**Preview:** The optional, unreleased [managed inspector](managed-inspection.md) adds qualified
+`type:`, `clr:`, `field:` and `dp:` keys to `where`. Prefer UIA properties; use only paths
+observed in Spy, and never put secrets in `where`. Managed reads execute target code and may hang.
+The inspector must be enabled and attachment authorized. UIA narrows candidates before managed
+filtering; broad searches are capped at 1,000 candidates.
+
 Use `where={...}` on `Element`, typed elements, `Elements` and `Window`. Every entry must
 match, alongside the usual `name=`, `automation_id=`, `class_name=` and scoping options.
 Strings are exact; compiled regular expressions use `re.search`. Boolean and numeric properties
@@ -25,7 +33,8 @@ Do not specify the same property through both a keyword and `where`, or through 
 
 ## TestComplete property names
 
-Aliases rename an existing UIA property; they do not make private .NET properties readable.
+Aliases can rename a UIA property or, in the managed inspection preview, a qualified managed key;
+they do not make private .NET properties readable.
 Put shared aliases in `wintestkit.yaml`:
 
 ```yaml

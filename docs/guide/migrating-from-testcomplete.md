@@ -32,7 +32,7 @@ pytest instead of a proprietary IDE and project format.
 - **Strict matching.** A mapped object in TestComplete may silently resolve to the first of several
   matches. WinTestKit fails when a locator matches more than one element, so ambiguous mappings
   surface at the line that is wrong. Expect to add `within=` scopes while migrating.
-- **UI Automation only.** There is no image-based or OCR recognition. Controls a screen reader can't
+- **UI Automation discovery.** There is no image-based or OCR recognition. Controls a screen reader can't
   see can't be tested; for WPF that is rare.
 - **No recorder.** Use the Spy to build pages and write tests in Python; the editor
   completes element names from your pages.
@@ -47,9 +47,18 @@ Existing output is preserved; pass `--force` to replace it explicitly.
 
 `WPFControlName` becomes `automation_id` (verify that it is exposed as UIA AutomationId in Spy).
 `ClrFullClassName` is retained as `where={"ClrFullClassName": ...}`. Configure
-`property_aliases: {ClrFullClassName: ItemStatus}` in `wintestkit.yaml` only if the application
-exposes that .NET class name through UIA ItemStatus. The importer cannot read CLR properties by
-itself. Review and validate every generated locator against the live app before using it.
+the managed alias described below when the inspector is enabled, or use
+`property_aliases: {ClrFullClassName: ItemStatus}` only if the application exposes the full
+name through UIA ItemStatus. The importer does not read CLR properties by itself. Review and
+validate every generated locator against the live app before using it.
+
+## Managed class names (preview)
+
+**Preview:** When the unreleased [managed inspector](managed-inspection.md) is available and
+enabled, prefer `wtk import-namemapping NameMapping.xml pages/imported.py --managed-class-names`
+to generate qualified managed class-name keys. Alternatively configure
+`property_aliases: {ClrFullClassName: 'type:FullName'}` in `wintestkit.yaml`. Both require
+authorized attachment. Confirm values in Spy; use the ItemStatus alias above as a fallback.
 
 Input is limited to 10 MiB. DTD/entity declarations and malformed XML are rejected. This parser
 does not execute XML or resolve external entities. It reads properties only from each mapped

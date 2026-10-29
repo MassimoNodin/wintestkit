@@ -1,5 +1,11 @@
 # Locators for WPF
 
+## Managed inspection (preview)
+
+**Preview:** Prefer UIA locators. The optional, unreleased [managed inspector](managed-inspection.md)
+can filter on qualified managed keys observed in Spy when enabled and authorized; reads execute
+application code. Narrow UIA candidates first and never include secrets in `where`.
+
 For additional UIA properties and TestComplete aliases, see [property matching](property-matching.md).
 
 ## Strict matching

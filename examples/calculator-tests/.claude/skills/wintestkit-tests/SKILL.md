@@ -91,6 +91,9 @@ self-healing). Choose, in this order:
 Confirm every locator in the Spy (`wtk spy`, Ctrl+Click) or with `wtk inspect` (see below); never
 guess from the TestComplete mapping alone.
 
+**Managed inspection (preview):** Prefer UIA; use qualified managed keys only when enabled and
+authorized, and only for paths seen in Spy. Never put secrets in `where`. Reads can hang; timeouts cannot stop getters.
+
 ### Mapping from TestComplete properties
 
 | TestComplete | WinTestKit |

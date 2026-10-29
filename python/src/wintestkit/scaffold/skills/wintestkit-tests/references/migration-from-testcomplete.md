@@ -29,6 +29,12 @@ scripts or keyword tests. Output: pages, components, flows, tests.
 
 ## ClrFullClassName
 
+**Preview:** If the repository enables the inspector and attachment is authorized, prefer
+`wtk import-namemapping NameMapping.xml pages/imported.py --managed-class-names`, or configure
+`property_aliases: {ClrFullClassName: 'type:FullName'}`. Verify the key and value in Spy;
+never invent managed paths or put secrets in `where`. Prefer UIA when sufficient. The
+following ItemStatus approach is the fallback when managed inspection is unavailable.
+
 Do not translate a full .NET name directly to `class_name=`: UIA `ClassName` is commonly only a
 short name. Preserve namespace identity by exposing the full name in an existing UIA property
 (for example `ItemStatus` in a test build), then configure:
@@ -39,7 +45,7 @@ property_aliases:
 ```
 
 Declare `Element(where={"ClrFullClassName": "Acme.Views.AddressBox"})`, or use a compiled regex
-for a pattern. Aliases only rename UIA properties; they cannot read arbitrary .NET properties.
+for a pattern. This fallback alias renames a UIA property; it does not read .NET properties.
 Verify the value in Spy or `wtk inspect` before migrating. If the application cannot expose it,
 use a verified short `class_name` and scope to a distinct component/container; never silently drop
 the namespace or add an index to hide ambiguity.
