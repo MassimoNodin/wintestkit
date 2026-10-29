@@ -38,6 +38,11 @@ const same = (text: string): SettingDescription => ({
   repository: text,
 });
 export const settingFields: SettingField[] = [
+  { key: "inspector.enabled", label: "Enable managed inspector", kind: "boolean", description: same("Allow managed inspection of WPF applications."), default: false, group: "Debugging" },
+  { key: "inspector.attach", label: "Managed inspector attachment", kind: "select", description: same("Manual attachment or attachment on demand."), default: "manual", choices: ["manual", "on-demand"], group: "Debugging" },
+  { key: "inspector.attach_timeout", label: "Inspector attach timeout (seconds)", kind: "number", description: same("Maximum time to wait for attachment, up to 10 seconds."), default: 10, minimum: 0, maximum: 10, group: "Debugging" },
+  { key: "inspector.request_timeout", label: "Inspector request timeout (seconds)", kind: "number", description: same("Maximum time to wait for a request, up to 2 seconds."), default: 2, minimum: 0, maximum: 2, group: "Debugging" },
+  { key: "inspector.redact_names", label: "Additional redacted names (JSON array)", kind: "list", description: same("Additional sensitive name substrings to redact."), default: [], group: "Debugging" },
   {
     key: "app.path",
     label: "Application executable",
@@ -290,13 +295,13 @@ export function flattenSettings(
   const flat: Record<string, unknown> = {};
   for (const [key, entry] of Object.entries(value)) {
     if (
-      key === "app" &&
+      (key === "app" || key === "inspector") &&
       entry &&
       typeof entry === "object" &&
       !Array.isArray(entry)
     )
       for (const [name, setting] of Object.entries(entry))
-        flat["app." + name] = setting;
+        flat[key + "." + name] = setting;
     else flat[key] = entry;
   }
   return flat;
@@ -330,6 +335,8 @@ export function validateSettings(
     (!config.app || Object.getPrototypeOf(config.app) !== Object.prototype)
   )
     throw new Error("app must be a mapping.");
+  if (config.inspector !== undefined && (!config.inspector || Object.getPrototypeOf(config.inspector) !== Object.prototype))
+    throw new Error("inspector must be a mapping.");
   const flat = flattenSettings(config);
   for (const [key, entry] of Object.entries(flat)) {
     if (key === "app.env") {
@@ -352,6 +359,7 @@ export function validateSettings(
         !Number.isFinite(entry) ||
         entry < (field.minimum ?? 0) ||
         (key === "replay_fps" && entry <= 0) ||
+        ((key === "inspector.attach_timeout" || key === "inspector.request_timeout") && entry <= 0) ||
         (field.maximum !== undefined && entry > field.maximum) ||
         (key === "slow_mo_ms" && !Number.isInteger(entry)))
     )
@@ -375,7 +383,7 @@ export function validateSettings(
       throw new Error(key + " must be a #RRGGBB colour.");
     if (
       field.kind === "list" &&
-      (!Array.isArray(entry) || entry.some((item) => typeof item !== "string"))
+      (!Array.isArray(entry) || entry.some((item) => typeof item !== "string" || (key === "inspector.redact_names" && !item.length)))
     )
       throw new Error(key + " must be a JSON array of strings.");
   }
@@ -395,8 +403,9 @@ export function updateSetting(
     throw new Error("Edit this setting in Repository Settings.");
   const document: Document = parseSettings(source);
   if (document.contents === null) document.contents = document.createNode({});
-  if (!remove && key.startsWith("app.") && !document.has("app"))
-    document.set("app", document.createNode({}));
+  const parent = key.split(".")[0];
+  if (!remove && key.includes(".") && !document.has(parent))
+    document.set(parent, document.createNode({}));
   if (remove) document.deleteIn(key.split("."));
   else document.setIn(key.split("."), value);
   if (
@@ -404,6 +413,8 @@ export function updateSetting(
     (document.get("app", true) as { items: unknown[] }).items.length === 0
   )
     document.delete("app");
+  if (isMap(document.get("inspector", true)) && (document.get("inspector", true) as { items: unknown[] }).items.length === 0)
+    document.delete("inspector");
   validateSettings(document.toJS({ maxAliasCount: 50 }));
   return document.toString();
 }
