@@ -11,6 +11,7 @@ import platform
 import queue
 import sys
 import threading
+import time
 from collections import OrderedDict
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, BinaryIO, cast
@@ -25,6 +26,7 @@ if TYPE_CHECKING:
     from wintestkit.config import WtkConfig
     from wintestkit.coverage import Coverage
     from wintestkit.engine.spy import SpySession
+    from wintestkit.inspector.client import InspectorClient
     from wintestkit.targets import ModuleLoader
     from wintestkit.uia.element import ElementInfo, Rect, UIAElement
 
@@ -44,6 +46,20 @@ _PARAMS: dict[str, tuple[set[str], set[str]]] = {
     "flow.run": ({"file", "name"}, {"arguments"}),
     "inspect.roots": (set(), {"includeOtherApps", "foregroundForProcessId"}),
     "inspect.refresh": (set(), {"includeOtherApps", "foregroundForProcessId"}),
+    "inspect.managed.identify": ({"nodeId"}, set()),
+    "inspect.managed.attach": ({"process"}, set()),
+    "inspect.managed.status": ({"process"}, set()),
+    "inspect.managed.detach": ({"sessionId"}, set()),
+    "inspect.managed.resolve": ({"sessionId", "nodeId"}, set()),
+    "inspect.managed.roots": ({"sessionId"}, {"pageSize", "pageToken"}),
+    "inspect.managed.children": (
+        {"sessionId", "objectId", "generation", "tree"},
+        {"pageSize", "pageToken"},
+    ),
+    "inspect.managed.members": ({"sessionId", "objectId", "generation"}, {"pageSize", "pageToken"}),
+    "inspect.managed.read": ({"sessionId", "objectId", "generation", "paths"}, set()),
+    "inspect.managed.bindings": ({"sessionId", "objectId", "generation", "memberKeys"}, set()),
+    "inspect.managed.release": ({"sessionId", "objectIds"}, set()),
     "inspect.children": ({"nodeId"}, set()),
     "inspect.properties": ({"nodeId"}, {"full", "includeAncestors", "include"}),
     "inspect.highlight": ({"nodeId"}, {"durationMs", "bringToFront"}),
@@ -133,6 +149,9 @@ class Server:
         self._spy_lock = threading.RLock()
         self._stopping = threading.Event()
         self._spy_epoch = 0
+        self._managed_lock = threading.RLock()
+        self._managed_clients: dict[str, InspectorClient] = {}
+        self._managed_objects: dict[str, dict[str, int]] = {}
 
     def _write(self, message: dict[str, Any]) -> None:
         encoded = (json.dumps(message, ensure_ascii=False, allow_nan=False) + "\n").encode("utf-8")
@@ -159,6 +178,9 @@ class Server:
         params = cast("dict[str, Any]", params)
         if not required <= params.keys() or params.keys() - required - optional:
             raise RpcError(-32602, "invalid params")
+        if method.startswith("inspect.managed."):
+            self._managed_params(params)
+            return params
         for key, value in params.items():
             if key == "durationMs":
                 if (
@@ -214,6 +236,48 @@ class Server:
                 raise RpcError(-32602, f"{key} must be a nonempty string")
         return params
 
+    @staticmethod
+    def _managed_params(params: dict[str, Any]) -> None:
+        from wintestkit.inspector.models import (
+            ProcessIdentity,
+            identifier_value,
+            integer_value,
+            key_value,
+            parse_path,
+        )
+
+        try:
+            for key, value in params.items():
+                if key == "process":
+                    ProcessIdentity.from_json(value)
+                elif key in {"sessionId", "objectId", "pageToken"}:
+                    identifier_value(value)
+                elif key == "nodeId":
+                    if not isinstance(value, str) or not value:
+                        raise ValueError("invalid node ID")
+                elif key == "generation":
+                    integer_value(value, 1)
+                elif key == "pageSize":
+                    integer_value(value, 1, 200)
+                elif key == "tree":
+                    if value not in ("visual", "logical"):
+                        raise ValueError("invalid tree")
+                elif key in {"paths", "memberKeys", "objectIds"}:
+                    maximum = 256 if key == "objectIds" else 32
+                    if not isinstance(value, list) or not (
+                        1 <= len(cast("list[Any]", value)) <= maximum
+                    ):
+                        raise ValueError("invalid managed array")
+                    for item in cast("list[Any]", value):
+                        if key == "paths":
+                            parse_path(item)
+                        elif key == "memberKeys":
+                            key_value(item)
+                        else:
+                            identifier_value(item)
+        except (ValueError, TypeError, OverflowError, UnicodeError) as exc:
+            raise RpcError(-32602, "invalid managed parameters") from exc
+
     def handle(self, request: Any) -> None:
         if not isinstance(request, dict):
             self._error(None, -32600, "invalid request")
@@ -233,8 +297,8 @@ class Server:
             return
         request_id = request.get("id")
         notification = "id" not in request
+        method = request["method"]
         try:
-            method = request["method"]
             if self.cfg is None and method not in ("initialize", "shutdown"):
                 raise RpcError(-32600, "not initialized")
             params = self._params(method, request.get("params", {}))
@@ -247,6 +311,7 @@ class Server:
             if isinstance(exc, RpcError):
                 self._error(request_id, exc.code, exc.message, exc.data)
             elif isinstance(exc, WtkError):
+                from wintestkit.errors import InspectorError
                 from wintestkit.targets import TargetError
 
                 code = (
@@ -260,10 +325,17 @@ class Server:
                     if isinstance(exc, EnvironmentNotReadyError)
                     else -32603
                 )
-                self._error(request_id, code, str(exc), exc.to_dict())
+                data = exc.to_dict()
+                if isinstance(exc, InspectorError):
+                    data["code"] = exc.code
+                self._error(request_id, code, str(exc), data)
             else:
-                log.exception("RPC request failed")
-                self._error(request_id, -32603, "internal error", {"message": str(exc)})
+                if method.startswith("inspect.managed."):
+                    log.error("Managed RPC request failed (%s)", type(exc).__name__)
+                    self._error(request_id, -32603, "internal error")
+                else:
+                    log.exception("RPC request failed")
+                    self._error(request_id, -32603, "internal error", {"message": str(exc)})
 
     @staticmethod
     def _raise_for_highlight(element: UIAElement) -> Rect | None:
@@ -410,6 +482,173 @@ class Server:
             raise RpcError(-32005, "unknown node id")
         return node.as_live()
 
+    def _remember_managed(self, session_id: str, value: Any) -> None:
+        """Remember only handles actually returned by this authenticated session."""
+        if isinstance(value, list):
+            for item in cast("list[Any]", value):
+                self._remember_managed(session_id, item)
+        elif isinstance(value, dict):
+            item = cast("dict[str, Any]", value)
+            if {"sessionId", "objectId", "generation", "type", "dispatcherId"} <= item.keys():
+                if item["sessionId"] != session_id:
+                    from wintestkit.errors import InspectorUnavailableError
+
+                    raise InspectorUnavailableError(
+                        "Inspector returned an object from another session", code="sessionStale"
+                    )
+                with self._managed_lock:
+                    self._managed_objects.setdefault(session_id, {})[item["objectId"]] = item[
+                        "generation"
+                    ]
+            for child in item.values():
+                self._remember_managed(session_id, child)
+
+    def _managed_client(self, session_id: str) -> InspectorClient:
+        from wintestkit import runtime
+        from wintestkit.errors import InspectorUnavailableError
+
+        with self._managed_lock:
+            client = self._managed_clients.get(session_id)
+        if client is None or runtime.inspector_sessions().get(client.session.process) is not client:
+            with self._managed_lock:
+                self._managed_clients.pop(session_id, None)
+                self._managed_objects.pop(session_id, None)
+            raise InspectorUnavailableError(
+                "Inspector session is no longer attached", code="sessionStale"
+            )
+        return client
+
+    def _release_managed_objects(self) -> None:
+        """Invalidate server-held leases on refresh without detaching the session."""
+        assert self.cfg is not None
+        with self._managed_lock:
+            objects, self._managed_objects = self._managed_objects, {}
+            clients = dict(self._managed_clients)
+        for session_id, handles in objects.items():
+            client = clients.get(session_id)
+            if client is None:
+                continue
+            ids = list(handles)
+            for offset in range(0, len(ids), 256):
+                with contextlib.suppress(WtkError):
+                    client.release(
+                        ids[offset : offset + 256],
+                        deadline=time.monotonic() + self.cfg.inspector.request_timeout,
+                    )
+
+    def _dispatch_managed(self, method: str, params: dict[str, Any]) -> Any:
+        from wintestkit import runtime
+        from wintestkit.errors import InspectorUnavailableError
+        from wintestkit.inspector.models import ProcessIdentity, parse_path
+        from wintestkit.inspector.probe import current_identity, identify
+
+        assert self.cfg is not None
+        with runtime.config_scope(self.cfg):
+            if method == "inspect.managed.detach":
+                session_id = params["sessionId"]
+                with self._managed_lock:
+                    client = self._managed_clients.pop(session_id, None)
+                    self._managed_objects.pop(session_id, None)
+                if client is not None:
+                    client.close()
+                return {"detached": True}
+            runtime.require_managed(values=method != "inspect.managed.identify")
+            if method == "inspect.managed.identify":
+                facts = identify(self._node(params["nodeId"]).process_id)
+                return {
+                    "process": facts.identity.to_json(),
+                    "executable": facts.executable,
+                    "runtime": facts.runtime,
+                    "architecture": facts.architecture,
+                    "wpfLoaded": facts.wpf_loaded,
+                }
+            if method in {"inspect.managed.attach", "inspect.managed.status"}:
+                identity = ProcessIdentity.from_json(params["process"])
+                registry = runtime.inspector_sessions()
+                if method == "inspect.managed.attach":
+                    client = runtime.attach_managed(
+                        identity, deadline=time.monotonic() + self.cfg.inspector.attach_timeout
+                    )
+                    session = client.session
+                else:
+                    session = registry.status(identity)
+                    client = registry.get(identity) if session.state == "ready" else None
+                if client is not None:
+                    with self._managed_lock:
+                        self._managed_clients[client.session.session_id] = client
+                return session.to_json()
+            session_id = params["sessionId"]
+            client = self._managed_client(session_id)
+            deadline = time.monotonic() + self.cfg.inspector.request_timeout
+            if method == "inspect.managed.resolve":
+                node = self._node(params["nodeId"])
+                if current_identity(node.process_id) != client.session.process:
+                    raise InspectorUnavailableError(
+                        "Selected element belongs to another process identity", code="processReused"
+                    )
+                runtime_id, hwnd = runtime.managed_element_identity(node)
+                result = client.resolve(runtime_id, hwnd, deadline=deadline).to_json()
+            elif method == "inspect.managed.roots":
+                result = client.roots(
+                    page_size=params.get("pageSize"),
+                    page_token=params.get("pageToken"),
+                    deadline=deadline,
+                ).to_json()
+            else:
+                object_id = cast("str", params.get("objectId", ""))
+                with self._managed_lock:
+                    handles = self._managed_objects.get(session_id, {})
+                    if object_id and handles.get(object_id) != params["generation"]:
+                        raise InspectorUnavailableError(
+                            "Object is not held by this session", code="objectStale"
+                        )
+                    if method == "inspect.managed.release" and any(
+                        item not in handles for item in params["objectIds"]
+                    ):
+                        raise InspectorUnavailableError(
+                            "Object is not held by this session", code="objectStale"
+                        )
+                if method == "inspect.managed.children":
+                    result = client.children(
+                        object_id,
+                        params["generation"],
+                        params["tree"],
+                        page_size=params.get("pageSize"),
+                        page_token=params.get("pageToken"),
+                        deadline=deadline,
+                    ).to_json()
+                elif method == "inspect.managed.members":
+                    result = client.members(
+                        object_id,
+                        params["generation"],
+                        page_size=params.get("pageSize"),
+                        page_token=params.get("pageToken"),
+                        deadline=deadline,
+                    ).to_json()
+                elif method == "inspect.managed.read":
+                    values, read_id = client.read(
+                        object_id,
+                        params["generation"],
+                        [parse_path(path) for path in params["paths"]],
+                        deadline=deadline,
+                    )
+                    result = {"values": [value.to_json() for value in values], "readId": read_id}
+                elif method == "inspect.managed.bindings":
+                    bindings = client.bindings(
+                        object_id, params["generation"], params["memberKeys"], deadline=deadline
+                    )
+                    result = {"bindings": [binding.to_json() for binding in bindings]}
+                elif method == "inspect.managed.release":
+                    released = client.release(params["objectIds"], deadline=deadline)
+                    with self._managed_lock:
+                        for item in params["objectIds"]:
+                            self._managed_objects.get(session_id, {}).pop(item, None)
+                    result = {"releasedCount": released}
+                else:
+                    raise RpcError(-32601, "method not found")
+            self._remember_managed(session_id, result)
+            return result
+
     def stop_spy(self, expected_epoch: int | None = None) -> None:
         with self._spy_lock:
             if expected_epoch is not None and expected_epoch != self._spy_epoch:
@@ -478,6 +717,12 @@ class Server:
         from wintestkit.targets import ModuleLoader, Target, check_page, resolve_target
 
         if method == "shutdown":
+            from wintestkit import runtime
+
+            runtime.reset()
+            with self._managed_lock:
+                self._managed_clients.clear()
+                self._managed_objects.clear()
             self.stop_spy()
             self._stopping.set()
             return None
@@ -500,14 +745,25 @@ class Server:
                     "process": cfg.app.process_name,
                 }
             self.cfg, self.loader = cfg, loader
+            managed_available = False
+            try:
+                from wintestkit.inspector.payload import load_payload
+
+                load_payload().verify()
+                managed_available = True
+            except Exception:
+                pass
             return {
                 "protocolVersion": PROTOCOL_VERSION,
                 "wintestkitVersion": __version__,
                 "python": platform.python_version(),
                 "config": settings,
+                "capabilities": {"managedInspector": managed_available},
             }
         if self.cfg is None or self.loader is None:
             raise RpcError(-32600, "not initialized")
+        if method.startswith("inspect.managed."):
+            return self._dispatch_managed(method, params)
         if method == "spy.stop":
             self.stop_spy()
             return None
@@ -597,6 +853,8 @@ class Server:
                 }
             return self._coverage().covered_nodes(app, infos)
         if method in ("inspect.roots", "inspect.refresh"):
+            if method == "inspect.refresh":
+                self._release_managed_objects()
             if self.coverage is not None:
                 self.coverage.invalidate()
             app = self._app(False)
@@ -778,6 +1036,8 @@ class Server:
                     if name in PROPERTY_IDS and name not in properties:
                         read_property(name)
             for alias, target in self.cfg.property_aliases.items():
+                if target not in SUPPORTED:
+                    continue  # managed aliases never trigger reads in the UIA properties view
                 property_name = SUPPORTED[target].uia_name if full else target
                 if property_name in properties:
                     properties[alias] = properties[property_name]
@@ -844,6 +1104,9 @@ class Server:
             self.stop_spy()
             worker.join(timeout=5 if self._stopping.is_set() else None)
         finally:
+            from wintestkit import runtime
+
+            runtime.close_inspector_sessions()
             self._stopping.set()
             self.stop_spy()
             requests.put(finished)

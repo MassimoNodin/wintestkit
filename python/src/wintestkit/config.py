@@ -93,6 +93,7 @@ _TOP_LEVEL_KEYS = {
     "object_previews_share",
 }
 _APP_KEYS = {"path", "args", "cwd", "env", "process", "startup_timeout", "close_timeout"}
+_INSPECTOR_KEYS = {"enabled", "attach", "attach_timeout", "request_timeout", "redact_names"}
 
 _ENV_VARS = {
     "WTK_APP_PATH": "app.path",
@@ -132,6 +133,15 @@ class AppConfig:
 
 
 @dataclass(frozen=True)
+class InspectorConfig:
+    enabled: bool = False
+    attach: Literal["manual", "on-demand"] = "manual"
+    attach_timeout: float = 10.0
+    request_timeout: float = 2.0
+    redact_names: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class WtkConfig:
     """Resolved WinTestKit configuration."""
 
@@ -155,6 +165,7 @@ class WtkConfig:
     object_previews: bool = True
     object_previews_share: bool = False
     highlight_color: str = "#FF0000"
+    inspector: InspectorConfig = field(default_factory=InspectorConfig)
 
 
 # -- project discovery ----------------------------------------------------------------------------
@@ -285,7 +296,16 @@ def _property_aliases(value: Any) -> dict[str, str]:
             raise _fail(key, f"expected alias: UIA property name pairs, got {alias!r}: {target!r}")
         if alias in SUPPORTED or alias in PROPERTY_IDS:
             raise _fail(key, f"{alias!r} is a UIA property name and cannot be used as an alias")
-        if target not in SUPPORTED:
+        if target in value:
+            raise _fail(key, f"{alias!r} chains to another alias {target!r}")
+        if target.startswith(("type:", "clr:", "field:", "dp:")):
+            from wintestkit.inspector.paths import parse_managed_key
+
+            try:
+                parse_managed_key(target)
+            except Exception as exc:
+                raise _fail(key, f"invalid managed alias {alias!r}: {exc}") from exc
+        elif target not in SUPPORTED:
             raise _fail(
                 key,
                 f"{alias!r} maps to unsupported property {target!r}; "
@@ -299,7 +319,13 @@ def _layer(values: dict[str, Any], layer: Mapping[str, Any]) -> None:
     """Apply one configuration layer; ``property_aliases`` merge instead of replacing."""
     previous = values.get("property_aliases")
     added = layer.get("property_aliases")
+    old_redact = values.get("inspector.redact_names")
+    new_redact = layer.get("inspector.redact_names")
     values.update(layer)
+    if old_redact is not None and new_redact is not None:
+        old_names = _string_list("inspector.redact_names", old_redact)
+        new_names = _string_list("inspector.redact_names", new_redact)
+        values["inspector.redact_names"] = list(dict.fromkeys((*old_names, *new_names)))
     if isinstance(previous, Mapping) and isinstance(added, Mapping):
         values["property_aliases"] = {
             **cast("Mapping[str, Any]", previous),
@@ -310,13 +336,13 @@ def _layer(values: dict[str, Any], layer: Mapping[str, Any]) -> None:
 def _flatten(table: Mapping[str, Any]) -> dict[str, Any]:
     flat: dict[str, Any] = {}
     for key, value in table.items():
-        if key == "app":
+        if key in {"app", "inspector"}:
             if not isinstance(value, Mapping):
-                raise _fail("app", f"expected a table, got {value!r}")
+                raise _fail(key, f"expected a table, got {value!r}")
             for app_key, app_value in cast("Mapping[str, Any]", value).items():
-                if app_key not in _APP_KEYS:
-                    raise _fail(f"app.{app_key}", "unknown key")
-                flat[f"app.{app_key}"] = app_value
+                if app_key not in (_APP_KEYS if key == "app" else _INSPECTOR_KEYS):
+                    raise _fail(f"{key}.{app_key}", "unknown key")
+                flat[f"{key}.{app_key}"] = app_value
         elif key in _TOP_LEVEL_KEYS:
             flat[key] = value
         else:
@@ -329,6 +355,8 @@ def _check_override_keys(overrides: Mapping[str, Any]) -> None:
         if key in _TOP_LEVEL_KEYS:
             continue
         if key.startswith("app.") and key[4:] in _APP_KEYS:
+            continue
+        if key.startswith("inspector.") and key[10:] in _INSPECTOR_KEYS:
             continue
         raise ConfigError(f"unknown key tool.wintestkit.{key}", key=key)
 
@@ -427,6 +455,33 @@ def _build_app(root: Path, values: Mapping[str, Any]) -> AppConfig | None:
     return AppConfig(**converted)
 
 
+def _build_inspector(values: Mapping[str, Any]) -> InspectorConfig:
+    def timeout(name: str, default: float) -> float:
+        key = f"inspector.{name}"
+        result = _number(key, values.get(key, default), positive=True)
+        if result > default:
+            raise _fail(key, f"must be at most {default}")
+        return result
+
+    names = _string_list("inspector.redact_names", values.get("inspector.redact_names", []))
+    if any(not name for name in names):
+        raise _fail("inspector.redact_names", "names must be non-empty")
+    return InspectorConfig(
+        enabled=_boolean("inspector.enabled", values.get("inspector.enabled", False)),
+        attach=cast(
+            "Literal['manual', 'on-demand']",
+            _enum(
+                "inspector.attach",
+                values.get("inspector.attach", "manual"),
+                ("manual", "on-demand"),
+            ),
+        ),
+        attach_timeout=timeout("attach_timeout", 10.0),
+        request_timeout=timeout("request_timeout", 2.0),
+        redact_names=tuple(dict.fromkeys(names)),
+    )
+
+
 def load_config(start: Path | None = None, overrides: Mapping[str, Any] | None = None) -> WtkConfig:
     """Load defaults < pyproject < shared YAML < local TOML < local YAML < env < overrides."""
     start_dir = (start or Path.cwd()).resolve()
@@ -468,6 +523,7 @@ def load_config(start: Path | None = None, overrides: Mapping[str, Any] | None =
         root=root,
         found=found,
         app=app,
+        inspector=_build_inspector(values),
         launch=cast("LaunchMode", launch),
         timeout=_number("timeout", values.get("timeout", 10.0), positive=True),
         input_mode=cast(

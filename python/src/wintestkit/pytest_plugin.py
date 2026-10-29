@@ -234,6 +234,7 @@ class _Controller:
         self.pytest_config = config
         self.config: WtkConfig = _load(config)
         runtime.set_config(self.config)
+        runtime.clear_inspector_history()
         self.sink: EventSink | None = None
         events_url = config.getoption("wtk_events", None)
         if events_url:
@@ -254,6 +255,7 @@ class _Controller:
         self.remove_listener = runtime.add_step_listener(self._on_step)
 
     def close(self) -> None:
+        runtime.close_inspector_sessions()
         self.remove_listener()
         for run in self.runs.values():
             if run.replay is not None:
@@ -263,6 +265,11 @@ class _Controller:
             self.sink = None
 
     # -- events ---------------------------------------------------------------------------------
+
+    def pytest_report_header(self) -> str | None:
+        if self.config.inspector.enabled:
+            return f"WinTestKit managed inspector: {self.config.inspector.attach}"
+        return None
 
     def _emit(self, event: dict[str, Any]) -> None:
         event = {**event, "time": time.time()}
@@ -535,6 +542,16 @@ class _Controller:
             self.report_path = str(event["reportPath"])
 
     def pytest_terminal_summary(self, terminalreporter: Any) -> None:
+        if self.config.inspector.enabled:
+            identities = runtime.inspector_attached_processes()
+            terminalreporter.write_line(
+                "WinTestKit inspector attached: "
+                + (
+                    ", ".join(f"PID {item.pid} ({item.creation_time_utc})" for item in identities)
+                    if identities
+                    else "none"
+                )
+            )
         if self.report_path:
             label = "Report" if self.write_html else "Results"
             path = (
