@@ -5,7 +5,7 @@ Build the staged payload and verifier from the repository root:
 ```powershell
 ./scripts/build_inspector.ps1 -LockedRestore
 ./scripts/check_inspector.ps1 -Suite Package
-$env:DOTNET_ROOT = 'C:\Users\massi\AppData\Local\wintestkit-dev\dotnet'
+$env:DOTNET_ROOT = Split-Path (Get-Command dotnet.exe).Source -Parent
 $env:DOTNET_MULTILEVEL_LOOKUP = '0'
 $harness = 'wpf-inspector/tests/Harness/OwnedAttach/bin/Release/net10.0-windows/OwnedAttach.dll'
 & "$env:DOTNET_ROOT/dotnet.exe" $harness attach (Get-Location).Path net10 x64 --adverse

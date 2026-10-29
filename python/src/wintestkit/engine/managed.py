@@ -1,4 +1,4 @@
-﻿"""Managed locator conditions and scalar matching."""
+"""Managed locator conditions and scalar matching."""
 
 from __future__ import annotations
 

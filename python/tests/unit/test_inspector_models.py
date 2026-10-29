@@ -50,12 +50,18 @@ PARSERS: dict[str, Callable[[Any], Any]] = {
     "Session": Session.from_json,
     "Value": Value.from_json,
 }
-FIXTURES = [path for directory in (ROOT / "valid", ROOT / "invalid") for path in sorted(directory.glob("*.json"))
-            if json.loads(path.read_text(encoding="utf-8"))["schema"] in PARSERS]
+FIXTURES = [
+    path
+    for directory in (ROOT / "valid", ROOT / "invalid")
+    for path in sorted(directory.glob("*.json"))
+    if json.loads(path.read_text(encoding="utf-8"))["schema"] in PARSERS
+]
 
 
 def test_every_golden_fixture_has_a_python_reader() -> None:
-    assert len(FIXTURES) == sum(len(list((ROOT / directory).glob("*.json"))) for directory in ("valid", "invalid"))
+    assert len(FIXTURES) == sum(
+        len(list((ROOT / directory).glob("*.json"))) for directory in ("valid", "invalid")
+    )
 
 
 @pytest.mark.parametrize("rules", [None, "account", [""], ["x" * 129], ["x"] * 33, [1], ["\ud800"]])
@@ -88,15 +94,35 @@ def test_golden_dto(fixture: Path) -> None:
 
 
 def test_null_and_missing_are_distinct() -> None:
-    null = Value.from_json({"status": "ok", "kind": "null", "declaredType": "", "runtimeType": "", "scalar": None})
-    unread = Value.from_json({"status": "notRead", "kind": "unavailable", "declaredType": "", "runtimeType": ""})
+    null = Value.from_json(
+        {"status": "ok", "kind": "null", "declaredType": "", "runtimeType": "", "scalar": None}
+    )
+    unread = Value.from_json(
+        {"status": "notRead", "kind": "unavailable", "declaredType": "", "runtimeType": ""}
+    )
     assert null.scalar is None and null.to_json()["scalar"] is None
     assert unread.scalar is MISSING and "scalar" not in unread.to_json()
 
 
 def test_exact_numeric_conversions() -> None:
-    large = Value.from_json({"status": "ok", "kind": "integer", "declaredType": "", "runtimeType": "", "scalar": "9007199254740993"})
-    decimal = Value.from_json({"status": "ok", "kind": "number", "declaredType": "", "runtimeType": "", "scalar": "1.00000000000000001"})
+    large = Value.from_json(
+        {
+            "status": "ok",
+            "kind": "integer",
+            "declaredType": "",
+            "runtimeType": "",
+            "scalar": "9007199254740993",
+        }
+    )
+    decimal = Value.from_json(
+        {
+            "status": "ok",
+            "kind": "number",
+            "declaredType": "",
+            "runtimeType": "",
+            "scalar": "1.00000000000000001",
+        }
+    )
     assert large.as_python() == 9007199254740993
     assert decimal.as_python() == Decimal("1.00000000000000001")
 
@@ -107,8 +133,15 @@ def test_enormous_numeric_values_are_rejected(kind: str) -> None:
         if kind == "attribute":
             AttributeLiteral.from_json({"kind": "number", "value": 10**400})
         else:
-            Value.from_json({"status": "ok", "kind": "number", "declaredType": "",
-                             "runtimeType": "", "scalar": 10**400})
+            Value.from_json(
+                {
+                    "status": "ok",
+                    "kind": "number",
+                    "declaredType": "",
+                    "runtimeType": "",
+                    "scalar": 10**400,
+                }
+            )
 
 
 def test_creation_time_compares_at_full_windows_precision() -> None:

@@ -239,9 +239,19 @@ class _FixedFileInfo(ctypes.Structure):
     _fields_ = [
         (name, wintypes.DWORD)
         for name in (
-            "signature", "structure_version", "file_version_ms", "file_version_ls",
-            "product_version_ms", "product_version_ls", "flags_mask", "flags", "os",
-            "file_type", "file_subtype", "date_ms", "date_ls",
+            "signature",
+            "structure_version",
+            "file_version_ms",
+            "file_version_ls",
+            "product_version_ms",
+            "product_version_ls",
+            "flags_mask",
+            "flags",
+            "os",
+            "file_type",
+            "file_subtype",
+            "date_ms",
+            "date_ls",
         )
     ]
 
@@ -251,11 +261,16 @@ def _framework_version(path: PureWindowsPath) -> tuple[int, int]:
     version.GetFileVersionInfoSizeW.argtypes = [wintypes.LPCWSTR, ctypes.c_void_p]
     version.GetFileVersionInfoSizeW.restype = wintypes.DWORD
     version.GetFileVersionInfoW.argtypes = [
-        wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD, ctypes.c_void_p
+        wintypes.LPCWSTR,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        ctypes.c_void_p,
     ]
     version.GetFileVersionInfoW.restype = wintypes.BOOL
     version.VerQueryValueW.argtypes = [
-        ctypes.c_void_p, wintypes.LPCWSTR, ctypes.POINTER(ctypes.c_void_p),
+        ctypes.c_void_p,
+        wintypes.LPCWSTR,
+        ctypes.POINTER(ctypes.c_void_p),
         ctypes.POINTER(wintypes.UINT),
     ]
     version.VerQueryValueW.restype = wintypes.BOOL

@@ -92,7 +92,9 @@ def test_managed_rpc(method: str, registry: Registry[Any]) -> None:
         ("Attach", "process", {"pid": 1}),
     ],
 )
-def test_invalid_managed_params(method: str, field: str, value: Any, registry: Registry[Any]) -> None:
+def test_invalid_managed_params(
+    method: str, field: str, value: Any, registry: Registry[Any]
+) -> None:
     uri = "https://wintestkit.dev/schemas/rpc.schema.json"
     validator = Draft202012Validator(
         {"$ref": f"{uri}#/$defs/InspectManaged{method}Params"}, registry=registry

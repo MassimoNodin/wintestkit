@@ -27,17 +27,25 @@ pytestmark = pytest.mark.skipif(
 def test_owned_fixture_managed_locator(tmp_path, monkeypatch):
     runtime.reset()
     monkeypatch.syspath_prepend(str(PAYLOAD))
-    cfg = load_config(tmp_path, {
-        "inspector.enabled": True, "inspector.attach": "on-demand",
-        "property_aliases": {"ClrFullClassName": "type:FullName"},
-    })
+    cfg = load_config(
+        tmp_path,
+        {
+            "inspector.enabled": True,
+            "inspector.attach": "on-demand",
+            "property_aliases": {"ClrFullClassName": "type:FullName"},
+        },
+    )
     before = _hashes()
     environment = os.environ.copy()
     environment["DOTNET_ROOT_X64"] = DOTNET
     environment["DOTNET_MULTILEVEL_LOOKUP"] = "0"
     target = subprocess.Popen(
-        [str(FIXTURE / "WinTestKit.Fixture.exe")], cwd=FIXTURE, env=environment,
-        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        [str(FIXTURE / "WinTestKit.Fixture.exe")],
+        cwd=FIXTURE,
+        env=environment,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
     )
     try:
         until = time.monotonic() + 15
@@ -54,18 +62,26 @@ def test_owned_fixture_managed_locator(tmp_path, monkeypatch):
             time.sleep(0.1)
         scope = Scope(App.attach(pid=target.pid))
         with runtime.config_scope(cfg):
-            locator = Locator(automation_id="FixtureControl", where=(
-                ("ClrFullClassName", "WinTestKit.Fixture.FixtureControl"),
-                ("field:PublicField", "public field"),
-                ("clr:DataContext.Customer.Address.City", re.compile("^Sydney$")),
-                ("dp:WinTestKit.Fixture|WinTestKit.Fixture.FixtureControl::DefaultValue", "default"),
-            ))
+            locator = Locator(
+                automation_id="FixtureControl",
+                where=(
+                    ("ClrFullClassName", "WinTestKit.Fixture.FixtureControl"),
+                    ("field:PublicField", "public field"),
+                    ("clr:DataContext.Customer.Address.City", re.compile("^Sydney$")),
+                    (
+                        "dp:WinTestKit.Fixture|WinTestKit.Fixture.FixtureControl::DefaultValue",
+                        "default",
+                    ),
+                ),
+            )
             selected = resolve(scope, locator)
             assert selected.automation_id == "FixtureControl"
             assert runtime.inspector_sessions().status(facts.identity).state == "ready"
             password_before = _control(target.pid).get("Password", 0)
             with pytest.raises(InspectorReadError, match="redacted"):
-                resolve(scope, Locator(automation_id="FixtureControl", where=(("clr:Password", "x"),)))
+                resolve(
+                    scope, Locator(automation_id="FixtureControl", where=(("clr:Password", "x"),))
+                )
             assert _control(target.pid).get("Password", 0) == password_before
             runtime.close_inspector_sessions()
         assert target.poll() is None

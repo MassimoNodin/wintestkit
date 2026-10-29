@@ -30,7 +30,10 @@ def test_duplicate_keys() -> None:
         read_frame(MemoryTransport(struct.pack("<I", len(data)) + data), 1.0)
 
 
-@pytest.mark.parametrize("data", [b"", b"\xff", b'{"x":NaN}', b'{"x":1e999}', b'{"x":"\\ud800"}', b"[" * 33 + b"0" + b"]" * 33])
+@pytest.mark.parametrize(
+    "data",
+    [b"", b"\xff", b'{"x":NaN}', b'{"x":1e999}', b'{"x":"\\ud800"}', b"[" * 33 + b"0" + b"]" * 33],
+)
 def test_invalid_json_or_depth(data: bytes) -> None:
     with pytest.raises((ValueError, UnicodeError)):
         read_frame(MemoryTransport(struct.pack("<I", len(data)) + data), 1.0)

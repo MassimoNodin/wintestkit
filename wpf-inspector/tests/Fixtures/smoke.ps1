@@ -1,10 +1,15 @@
+param([string]$DotnetRoot)
+$ErrorActionPreference = 'Stop'
+$repo = Split-Path (Split-Path (Split-Path $PSScriptRoot -Parent) -Parent) -Parent
+. (Join-Path $repo 'scripts/resolve_dotnet.ps1')
+$dotnet = Resolve-InspectorDotnet -DotnetRoot $DotnetRoot -InspectorRoot (Join-Path $repo 'wpf-inspector')
 Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
-$env:DOTNET_ROOT_X64 = 'C:\Users\massi\AppData\Local\wintestkit-dev\dotnet'
+$env:DOTNET_ROOT_X64 = Split-Path $dotnet -Parent
 $root = Join-Path $PSScriptRoot 'WpfFixture/bin/cells'
 $failed = $false
 foreach ($cell in @('net48-x86','net48-x64','net8.0-windows-x86','net8.0-windows-x64','net10.0-windows-x86','net10.0-windows-x64')) {
-  if ($cell -eq 'net8.0-windows-x64') { $env:DOTNET_ROOT_X64 = 'C:\Program Files\dotnet' } else { $env:DOTNET_ROOT_X64 = 'C:\Users\massi\AppData\Local\wintestkit-dev\dotnet' }
+  if ($cell -like '*-x64') { $env:DOTNET_ROOT_X64 = Split-Path $dotnet -Parent }
   $exe = Join-Path $root "$cell/WinTestKit.Fixture.exe"
   $p = Start-Process -FilePath $exe -PassThru
   try {

@@ -72,8 +72,14 @@ class ScriptedTransport:
 
 
 def hello(**changes: Any) -> dict[str, Any]:
-    result: dict[str, Any] = {"agentVersion": "1", "tfm": "net10.0-windows", "architecture": "x64",
-                              "runtimeVersion": "10.0.11", "features": sorted(FEATURES), "process": IDENTITY.to_json()}
+    result: dict[str, Any] = {
+        "agentVersion": "1",
+        "tfm": "net10.0-windows",
+        "architecture": "x64",
+        "runtimeVersion": "10.0.11",
+        "features": sorted(FEATURES),
+        "process": IDENTITY.to_json(),
+    }
     result.update(changes)
     return result
 
@@ -86,18 +92,28 @@ def page() -> dict[str, object]:
     return {"items": [], "complete": True, "snapshotId": "snapshot", "diagnostics": []}
 
 
-@pytest.mark.parametrize(("changes", "code"), [
-    ({"agentVersion": "old"}, "agentVersionMismatch"),
-    ({"architecture": "x86"}, "unsupportedTarget"),
-    ({"tfm": "net8.0-windows"}, "unsupportedTarget"),
-    ({"runtimeVersion": "8.0.1"}, "unsupportedTarget"),
-    ({"process": {"pid": 42, "creationTimeUtc": "2026-10-29T00:00:00.1234568Z"}}, "processReused"),
-    ({"extra": True}, "authenticationFailed"),
-])
-def test_hello_rejects_mismatch_without_leaking_token(changes: dict[str, object], code: str) -> None:
+@pytest.mark.parametrize(
+    ("changes", "code"),
+    [
+        ({"agentVersion": "old"}, "agentVersionMismatch"),
+        ({"architecture": "x86"}, "unsupportedTarget"),
+        ({"tfm": "net8.0-windows"}, "unsupportedTarget"),
+        ({"runtimeVersion": "8.0.1"}, "unsupportedTarget"),
+        (
+            {"process": {"pid": 42, "creationTimeUtc": "2026-10-29T00:00:00.1234568Z"}},
+            "processReused",
+        ),
+        ({"extra": True}, "authenticationFailed"),
+    ],
+)
+def test_hello_rejects_mismatch_without_leaking_token(
+    changes: dict[str, object], code: str
+) -> None:
     transport = ScriptedTransport(lambda request: {"id": request["id"], "result": hello(**changes)})
     with pytest.raises(InspectorUnavailableError) as error:
-        InspectorClient.authenticate(transport, FACTS, "session", TOKEN, "1", deadline=time.monotonic() + 1)
+        InspectorClient.authenticate(
+            transport, FACTS, "session", TOKEN, "1", deadline=time.monotonic() + 1
+        )
     assert error.value.code == code and TOKEN not in str(error.value)
     assert transport.closed
 
@@ -105,9 +121,15 @@ def test_hello_rejects_mismatch_without_leaking_token(changes: dict[str, object]
 def test_hello_requires_correct_id_and_checks_features_per_operation() -> None:
     transport = ScriptedTransport(lambda request: {"id": 9, "result": hello()})
     with pytest.raises(InspectorUnavailableError, match="hello"):
-        InspectorClient.authenticate(transport, FACTS, "session", TOKEN, "1", deadline=time.monotonic() + 1)
-    transport = ScriptedTransport(lambda request: {"id": request["id"], "result": hello(features=[])})
-    client = InspectorClient.authenticate(transport, FACTS, "session", TOKEN, "1", deadline=time.monotonic() + 1)
+        InspectorClient.authenticate(
+            transport, FACTS, "session", TOKEN, "1", deadline=time.monotonic() + 1
+        )
+    transport = ScriptedTransport(
+        lambda request: {"id": request["id"], "result": hello(features=[])}
+    )
+    client = InspectorClient.authenticate(
+        transport, FACTS, "session", TOKEN, "1", deadline=time.monotonic() + 1
+    )
     try:
         with pytest.raises(InspectorUnavailableError) as error:
             client.resolve((1,), None, deadline=time.monotonic() + 1)
@@ -119,6 +141,7 @@ def test_hello_requires_correct_id_and_checks_features_per_operation() -> None:
 
 def test_timeout_cancels_and_discards_late_response() -> None:
     cancel = threading.Event()
+
     def handle(request: dict[str, Any]) -> object | None:
         if request["method"] == "request.cancel":
             cancel.set()
@@ -128,6 +151,7 @@ def test_timeout_cancels_and_discards_late_response() -> None:
         if request["method"] == "session.close":
             return {"id": request["id"], "result": {"closed": True}}
         return None
+
     transport = ScriptedTransport(handle)
     client = InspectorClient(transport, session(), request_timeout=0.1)
     try:
@@ -138,7 +162,10 @@ def test_timeout_cancels_and_discards_late_response() -> None:
         transport.feed({"id": 2, "result": page()})
         assert client.roots(deadline=time.monotonic() + 1).complete
         requests = transport.requests
-        assert any(item["method"] == "request.cancel" and item["params"] == {"requestId": 2} for item in requests)
+        assert any(
+            item["method"] == "request.cancel" and item["params"] == {"requestId": 2}
+            for item in requests
+        )
         assert [item["id"] for item in requests] == sorted(item["id"] for item in requests)
     finally:
         client.close()
@@ -146,17 +173,21 @@ def test_timeout_cancels_and_discards_late_response() -> None:
 
 def test_concurrent_out_of_order_responses_are_matched() -> None:
     two = threading.Event()
+
     def handle(request: dict[str, Any]) -> object | None:
         if request["method"] == "session.close":
             return {"id": request["id"], "result": {"closed": True}}
         if len(transport.requests) == 2:
             two.set()
         return None
+
     transport = ScriptedTransport(handle)
     client = InspectorClient(transport, session())
     try:
         with ThreadPoolExecutor(max_workers=2) as executor:
-            futures = [executor.submit(client.roots, deadline=time.monotonic() + 1) for _ in range(2)]
+            futures = [
+                executor.submit(client.roots, deadline=time.monotonic() + 1) for _ in range(2)
+            ]
             assert two.wait(1)
             ids = [request["id"] for request in transport.requests]
             for request_id in reversed(ids):
@@ -172,7 +203,9 @@ def test_unexpected_id_and_unknown_fields_fault_session() -> None:
     with pytest.raises(InspectorUnavailableError) as error:
         client.roots(deadline=time.monotonic() + 1)
     assert error.value.code == "sessionStale" and transport.closed
-    transport = ScriptedTransport(lambda request: {"id": request["id"], "result": {**page(), "unknown": 1}})
+    transport = ScriptedTransport(
+        lambda request: {"id": request["id"], "result": {**page(), "unknown": 1}}
+    )
     client = InspectorClient(transport, session())
     with pytest.raises(InspectorUnavailableError):
         client.roots(deadline=time.monotonic() + 1)
@@ -185,8 +218,9 @@ def test_batch_checks_path_features_before_sending() -> None:
     client = InspectorClient(transport, limited)
     try:
         with pytest.raises(InspectorUnavailableError) as error:
-            client.read_batch([((1,), None)], [parse_managed_key("clr:Name")],
-                              deadline=time.monotonic() + 1)
+            client.read_batch(
+                [((1,), None)], [parse_managed_key("clr:Name")], deadline=time.monotonic() + 1
+            )
         assert error.value.code == "unsupportedTarget" and not transport.requests
     finally:
         client.close()
@@ -200,6 +234,7 @@ def test_unexpected_hello_failure_closes_transport(monkeypatch: pytest.MonkeyPat
 
     monkeypatch.setattr(HelloResult, "from_json", fail)
     with pytest.raises(RuntimeError):
-        InspectorClient.authenticate(transport, FACTS, "session", TOKEN, "1",
-                                     deadline=time.monotonic() + 1)
+        InspectorClient.authenticate(
+            transport, FACTS, "session", TOKEN, "1", deadline=time.monotonic() + 1
+        )
     assert transport.closed

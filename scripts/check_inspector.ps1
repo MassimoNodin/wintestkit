@@ -4,13 +4,15 @@ param(
     [ValidateSet('x86','x64')][string]$Architecture,
     [ValidateRange(1, 2147483647)][int]$Iterations = 100,
     [string]$PayloadRoot,
-    [switch]$RequireSigned
+    [switch]$RequireSigned,
+    [string]$DotnetRoot
 )
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
-$env:DOTNET_ROOT = 'C:\Users\massi\AppData\Local\wintestkit-dev\dotnet'
-$env:DOTNET_MULTILEVEL_LOOKUP = '0'
-$dotnet = Join-Path $env:DOTNET_ROOT 'dotnet.exe'
+. (Join-Path $PSScriptRoot 'resolve_dotnet.ps1')
+$dotnet = Resolve-InspectorDotnet -DotnetRoot $DotnetRoot -InspectorRoot (Join-Path $root 'wpf-inspector')
+Push-Location (Join-Path $root 'wpf-inspector')
+try {
 if ($Suite -eq 'Package') {
     if (-not $PayloadRoot) { $PayloadRoot = Join-Path $root 'inspector-payload/src/wintestkit_inspector/payload' }
     $PayloadRoot = [IO.Path]::GetFullPath($PayloadRoot)
@@ -84,3 +86,4 @@ foreach ($trx in $trxs) {
 }
 if ($total -eq 0) { throw "No tests found for required category $Suite." }
 Write-Host "$Suite`: $total tests passed."
+} finally { Pop-Location }

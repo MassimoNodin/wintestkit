@@ -61,7 +61,9 @@ class Reader:
         from wintestkit.uia import element
 
         monkeypatch.setattr(
-            element, "from_handle", lambda hwnd: next(n for n in nodes if n.native_window_handle == hwnd)
+            element,
+            "from_handle",
+            lambda hwnd: next(n for n in nodes if n.native_window_handle == hwnd),
         )
 
     def client(self, pid, *, deadline, target_hwnd):
@@ -73,13 +75,19 @@ class Reader:
         results = []
         for rid, _ in candidates:
             status = self.statuses.get(rid, "exact")
-            values = tuple(
-                PathValue(path.segments, self.values.get((rid, path.canonical), scalar()))
-                for path in paths
-            ) if status == "exact" else ()
-            results.append(CandidateResult(
-                rid, Mapping(status, ProcessIdentity(1, "2026-01-01T00:00:00Z"), rid), values
-            ))
+            values = (
+                tuple(
+                    PathValue(path.segments, self.values.get((rid, path.canonical), scalar()))
+                    for path in paths
+                )
+                if status == "exact"
+                else ()
+            )
+            results.append(
+                CandidateResult(
+                    rid, Mapping(status, ProcessIdentity(1, "2026-01-01T00:00:00Z"), rid), values
+                )
+            )
         self.after_read()
         return self.mutate(results)
 
@@ -94,36 +102,50 @@ def rid(node):
     return tuple(int(part) for part in node.runtime_id.split("."))
 
 
-@pytest.mark.parametrize(("value", "expected", "matches"), [
-    (scalar("boolean", True), True, True),
-    (scalar("boolean", True), 1, False),
-    (scalar("integer", 1), True, False),
-    (scalar("integer", "9007199254740993"), 9007199254740993, True),
-    (scalar("integer", 1), "1", False),
-    (scalar("string", "1"), 1, False),
-    (scalar("number", "1.5"), 1.5, True),
-    (scalar("number", "0.1"), 0.1, False),
-    (scalar("number", "2.0"), 2, True),
-    (scalar("number", 2.5), 2.5, True),
-    (scalar("string", "prefix-MATCH"), re.compile("match$", re.I), True),
-    (scalar("integer", 1), re.compile("1"), False),
-    (scalar("enum", "Active", numeric_value="2"), "Active", True),
-    (scalar("enum", "Active", numeric_value="2"), 2, True),
-    (scalar("enum", "Active", numeric_value="2"), 2.0, False),
-    (scalar("enum", "Active", numeric_value="2"), True, False),
-    (scalar("enum", "Active", numeric_value="2"), re.compile("ctiv"), True),
-    (scalar("null", None), "", False),
-    (unavailable("nullIntermediate"), "", False),
-])
+@pytest.mark.parametrize(
+    ("value", "expected", "matches"),
+    [
+        (scalar("boolean", True), True, True),
+        (scalar("boolean", True), 1, False),
+        (scalar("integer", 1), True, False),
+        (scalar("integer", "9007199254740993"), 9007199254740993, True),
+        (scalar("integer", 1), "1", False),
+        (scalar("string", "1"), 1, False),
+        (scalar("number", "1.5"), 1.5, True),
+        (scalar("number", "0.1"), 0.1, False),
+        (scalar("number", "2.0"), 2, True),
+        (scalar("number", 2.5), 2.5, True),
+        (scalar("string", "prefix-MATCH"), re.compile("match$", re.I), True),
+        (scalar("integer", 1), re.compile("1"), False),
+        (scalar("enum", "Active", numeric_value="2"), "Active", True),
+        (scalar("enum", "Active", numeric_value="2"), 2, True),
+        (scalar("enum", "Active", numeric_value="2"), 2.0, False),
+        (scalar("enum", "Active", numeric_value="2"), True, False),
+        (scalar("enum", "Active", numeric_value="2"), re.compile("ctiv"), True),
+        (scalar("null", None), "", False),
+        (unavailable("nullIntermediate"), "", False),
+    ],
+)
 def test_type_aware_scalars(value, expected, matches):
     assert matches_value(condition(expected), value) is matches
 
 
-@pytest.mark.parametrize("value", [
-    unavailable(status) for status in (
-        "redacted", "truncated", "exception", "timeout", "notReadable", "unsupported", "cycle"
-    )
-] + [Value("ok", kind, "", "") for kind in ("object", "array", "type")])
+@pytest.mark.parametrize(
+    "value",
+    [
+        unavailable(status)
+        for status in (
+            "redacted",
+            "truncated",
+            "exception",
+            "timeout",
+            "notReadable",
+            "unsupported",
+            "cycle",
+        )
+    ]
+    + [Value("ok", kind, "", "") for kind in ("object", "array", "type")],
+)
 def test_unusable_values_are_explicit_errors(value):
     with pytest.raises(InspectorReadError):
         matches_value(condition("match"), value)
@@ -143,11 +165,17 @@ def test_native_narrowing_regex_depth_and_distinct_paths(monkeypatch):
     nodes[1].name = "different"
     native = []
     monkeypatch.setattr(query, "make_condition", lambda **props: native.append(props) or props)
-    locator = Locator(name=re.compile("^same$"), depth=1, where=(
-        ("HelpText", "chosen"), ("clr:DataContext.Customer.Name", "match"),
-        ("field:Public.Nested", re.compile("atch")),
-        ("dp:Asm|Demo.Owner::Property/Name", "match"), ("type:FullName", "match"),
-    ))
+    locator = Locator(
+        name=re.compile("^same$"),
+        depth=1,
+        where=(
+            ("HelpText", "chosen"),
+            ("clr:DataContext.Customer.Name", "match"),
+            ("field:Public.Nested", re.compile("atch")),
+            ("dp:Asm|Demo.Owner::Property/Name", "match"),
+            ("type:FullName", "match"),
+        ),
+    )
     assert query.query_all(root, locator) == [nodes[0]]
     assert native == [{"help_text": "chosen"}]
     assert len(reader.calls) == 1
@@ -158,7 +186,9 @@ def test_native_narrowing_regex_depth_and_distinct_paths(monkeypatch):
 def test_batches_preserve_order_and_never_truncate(monkeypatch, count):
     root, nodes, reader = tree(monkeypatch, count)
     assert query.query_all(root, Locator(where=(("clr:Value", "match"),))) == nodes
-    assert [len(c[0]) for c in reader.calls] == [32] * (count // 32) + ([count % 32] if count % 32 else [])
+    assert [len(c[0]) for c in reader.calls] == [32] * (count // 32) + (
+        [count % 32] if count % 32 else []
+    )
     assert len(reader.attaches) == 1
 
 
@@ -219,12 +249,15 @@ def test_stale_candidate_is_skipped_and_next_query_reads_fresh(monkeypatch, stal
     assert len(reader.calls) == 2
 
 
-@pytest.mark.parametrize("mutation", [
-    lambda rows: [],
-    lambda rows: [replace(rows[0], runtime_id=(99,))],
-    lambda rows: [replace(rows[0], values=())],
-    lambda rows: [replace(rows[0], values=(*rows[0].values, *rows[0].values))],
-])
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        lambda rows: [],
+        lambda rows: [replace(rows[0], runtime_id=(99,))],
+        lambda rows: [replace(rows[0], values=())],
+        lambda rows: [replace(rows[0], values=(*rows[0].values, *rows[0].values))],
+    ],
+)
 def test_partial_or_mismatched_results_are_errors(monkeypatch, mutation):
     root, _, reader = tree(monkeypatch, 1)
     reader.mutate = mutation
@@ -241,8 +274,10 @@ def test_window_and_within_managed_filters(monkeypatch):
     wl = WindowLocator(where=(("type:FullName", "match"),))
     assert resolve_window(app, wl) is window
     locator = Locator(
-        control_type="Button", where=(("clr:Value", "match"),),
-        within=Locator(control_type="Group", where=(("clr:Value", "match"),)), window=wl,
+        control_type="Button",
+        where=(("clr:Value", "match"),),
+        within=Locator(control_type="Group", where=(("clr:Value", "match"),)),
+        window=wl,
     )
     assert resolve(Scope(app), locator) is button
     assert resolve_all(Scope(app), locator) == [button]
@@ -298,11 +333,13 @@ def test_expired_deadline_never_attaches(monkeypatch):
 
 
 def test_managed_aliases_are_explicit_and_uia_aliases_unchanged(tmp_path):
-    cfg = load_config(tmp_path, {"property_aliases": {
-        "ClrFullClassName": "type:FullName", "Hint": "HelpText"
-    }})
+    cfg = load_config(
+        tmp_path, {"property_aliases": {"ClrFullClassName": "type:FullName", "Hint": "HelpText"}}
+    )
     with runtime.config_scope(cfg):
-        managed, uia = resolve_where((("ClrFullClassName", "Demo.Control"), ("Hint", "help")), "owner")
+        managed, uia = resolve_where(
+            (("ClrFullClassName", "Demo.Control"), ("Hint", "help")), "owner"
+        )
         assert isinstance(managed, ManagedCondition)
         assert managed.key == "type:FullName" and managed.alias == "ClrFullClassName"
         assert uia.spec.uia_name == "HelpText"
@@ -318,14 +355,28 @@ def test_disabled_managed_alias_fails_without_probing(monkeypatch, tmp_path):
     from wintestkit.inspector import probe
 
     monkeypatch.setattr(probe, "current_identity", lambda pid: pytest.fail("disabled probe"))
-    with runtime.config_scope(cfg), pytest.raises(InspectorUnavailableError, match=r"inspector\.enabled"):
+    with (
+        runtime.config_scope(cfg),
+        pytest.raises(InspectorUnavailableError, match=r"inspector\.enabled"),
+    ):
         query.query_all(root, Locator(where=(("ClrFullClassName", "Demo.Control"),)))
 
 
-@pytest.mark.parametrize("key", [
-    "clr:", "clr:A..B", r"clr:A\q", "clr:A[0]", "clr:A()", "field:*", "field:0",
-    "dp:Asm|Owner::P/", "dp:Asm|Owner::P/Q//R", "type:Missing",
-])
+@pytest.mark.parametrize(
+    "key",
+    [
+        "clr:",
+        "clr:A..B",
+        r"clr:A\q",
+        "clr:A[0]",
+        "clr:A()",
+        "field:*",
+        "field:0",
+        "dp:Asm|Owner::P/",
+        "dp:Asm|Owner::P/Q//R",
+        "type:Missing",
+    ],
+)
 def test_invalid_paths_fail_at_declaration(key):
     with pytest.raises(InvalidLocatorError):
         Locator(where=((key, "value"),))
@@ -338,9 +389,13 @@ def test_object_and_null_literals_are_rejected(value):
 
 
 def test_locator_serialization_preserves_namespaces_and_escapes():
-    locator = Locator(where=(
-        (r"clr:DataContext.A\.B", re.compile("value$", re.I)),
-        (r"dp:Asm|Demo.Owner::P/A\/B", 42), ("field:Value", True),
-    ), window=WindowLocator(where=(("type:FullName", "Demo.Window"),)))
+    locator = Locator(
+        where=(
+            (r"clr:DataContext.A\.B", re.compile("value$", re.I)),
+            (r"dp:Asm|Demo.Owner::P/A\/B", 42),
+            ("field:Value", True),
+        ),
+        window=WindowLocator(where=(("type:FullName", "Demo.Window"),)),
+    )
     assert Locator.from_dict(locator.to_dict()) == locator
     assert Locator.from_dict(locator.to_dict()).to_dict() == locator.to_dict()

@@ -53,14 +53,26 @@ def test_close_prevents_io_starting_after_cancellation(monkeypatch: pytest.Monke
 @pytest.mark.skipif(os.name != "nt", reason="Windows named pipes")
 def test_overlapped_timeout_is_cancelled_and_pipe_remains_usable() -> None:
     kernel = ctypes.WinDLL("kernel32", use_last_error=True)
-    kernel.CreateNamedPipeW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD,
-                                       wintypes.DWORD, wintypes.DWORD, wintypes.DWORD,
-                                       wintypes.DWORD, ctypes.c_void_p]
+    kernel.CreateNamedPipeW.argtypes = [
+        wintypes.LPCWSTR,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        ctypes.c_void_p,
+    ]
     kernel.CreateNamedPipeW.restype = wintypes.HANDLE
     kernel.ConnectNamedPipe.argtypes = [wintypes.HANDLE, ctypes.c_void_p]
     kernel.ConnectNamedPipe.restype = wintypes.BOOL
-    kernel.WriteFile.argtypes = [wintypes.HANDLE, ctypes.c_void_p, wintypes.DWORD,
-                                 ctypes.POINTER(wintypes.DWORD), ctypes.c_void_p]
+    kernel.WriteFile.argtypes = [
+        wintypes.HANDLE,
+        ctypes.c_void_p,
+        wintypes.DWORD,
+        ctypes.POINTER(wintypes.DWORD),
+        ctypes.c_void_p,
+    ]
     kernel.WriteFile.restype = wintypes.BOOL
     kernel.CloseHandle.argtypes = [wintypes.HANDLE]
     kernel.CloseHandle.restype = wintypes.BOOL
@@ -69,9 +81,11 @@ def test_overlapped_timeout_is_cancelled_and_pipe_remains_usable() -> None:
     server = kernel.CreateNamedPipeW("\\\\.\\pipe\\" + name, 3, 8, 1, 4096, 4096, 0, None)
     assert server != ctypes.c_void_p(-1).value
     connected = threading.Event()
+
     def accept() -> None:
         if kernel.ConnectNamedPipe(server, None) or ctypes.get_last_error() == 535:
             connected.set()
+
     thread = threading.Thread(target=accept, daemon=True)
     thread.start()
     client = None
