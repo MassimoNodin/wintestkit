@@ -26,6 +26,14 @@ def test_sign_in(app):
     expect(main.status).to_have_text("Welcome, admin")
 ```
 
+## Managed inspection (preview)
+
+**Preview:** Unreleased managed WPF inspection is optional and not zero-impact. Install
+`wintestkit[inspector]` in the selected Python environment and enable the inspector in project
+configuration. In a trusted workspace, select an element in Spy and confirm attachment before
+reading managed members. Getters execute application code and can hang the target; timeouts do
+not stop them. Restart the target to unload the agent. Compatibility and release gates remain open.
+
 ## Features
 
 - **Test Target and YAML configuration.** See the application's icon, name and live status

@@ -12,6 +12,7 @@ application under test.
 | [Pages and elements](pages-and-elements.md) | `Page`, `Window`, `Element`, `Elements`, `within`, organizing pages |
 | [Locators for WPF](locators-for-wpf.md) | Strict matching, diagnostics, locator strategies, lists, grids, dialogs |
 | [Property matching](property-matching.md) | Custom UIA properties, `where={...}`, property aliases |
+| [Managed inspection](managed-inspection.md) | Preview: opt-in WPF managed metadata and locators |
 | [Actions and assertions](actions-and-assertions.md) | Every action, auto-waiting, `expect`, timeouts |
 | [Running tests](running-tests.md) | `wtk run`, launch modes, fixtures, reports, JUnit, exit codes |
 | [VS Code](vscode.md) | CodeLens, Test Explorer, debugging, Explorer (Pages, Flows, Tests), Spy |

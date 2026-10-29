@@ -130,6 +130,25 @@ not build an example app or run desktop suites.
 Shared [JSON schemas](../schemas/README.md) define the Python/editor contracts. Run
 `npm run gen:types` in `vscode/` after changing schemas and commit the generated types.
 
+## WPF inspector (preview)
+
+**Preview:** The inspector is unreleased. `wpf-inspector/src/Protocol` contains the codec,
+`src/Agent` the in-process service, `src/Launcher` the loader, `protocol` schemas and fixtures,
+`tests` unit/integration tests and owned WPF fixtures, and `third_party` pinned Snoop sources.
+`inspector-payload` stages the distributable payload. Use the SDK pinned by
+`wpf-inspector/global.json` (10.0.400, latest patch roll-forward). Native loader builds need
+the .NET Framework 4.8 Developer Pack as well as the Windows build toolchain.
+
+From the repository root, run `scripts/build_inspector.ps1` and
+`scripts/check_inspector.ps1 -Suite Unit` (also `Security`, `Integration`, `Matrix`, `Stress`,
+or `Package` as appropriate). Matrix and live integration require suitable runtimes,
+architectures and an interactive desktop; packaging alone does not verify them. The owned
+fixture supplies controlled WPF targets and a test-only control pipe. Set
+`WTK_INSPECTOR_REAL=1` for the Python live inspector tests on a suitable Windows desktop.
+CI/non-desktop checks are not a substitute for these live gates. See the
+[verification notes](plans/wpf-inspector-implementation-brief.md#s8-managed-locator-verification-2026-10-29)
+and [release guide](releasing.md) before claiming compatibility or publishing.
+
 ## Releasing
 
 Follow the [release guide](releasing.md) for PyPI trusted-publisher setup, independent

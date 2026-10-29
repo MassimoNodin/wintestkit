@@ -7,6 +7,10 @@ Unreleased changes must be moved to a dated candidate section before a release c
 
 ## [Unreleased]
 
+- **Preview (unreleased):** Add opt-in managed WPF inspection to Spy, including explicit
+  attach confirmation and lazy managed member reads. Instrumentation executes target code;
+  compatibility and release gates remain open.
+
 ## [0.1.1rc2] - 2026-10-23
 
 Second prerelease. Install the extension's pre-release channel together with

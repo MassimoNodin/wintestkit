@@ -1,5 +1,11 @@
 # VS Code
 
+## Managed inspection (preview)
+
+**Preview:** The unreleased Spy managed panel requires an enabled inspector, a trusted workspace
+and explicit attachment confirmation. Reads can execute target code. See [managed inspection](managed-inspection.md)
+for installation, states and risks.
+
 The **WinTestKit** extension (`wintestkit.wintestkit`) adds editor actions, Test Explorer
 integration, an **Explorer** for the Page Tree and Flows, and a **Spy** below it. It needs the
 [Python extension](https://marketplace.visualstudio.com/items?itemName=ms-python.python) and the

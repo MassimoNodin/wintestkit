@@ -1,5 +1,10 @@
 # Troubleshooting
 
+## Managed inspection (preview)
+
+**Preview:** For unreleased managed inspection, see the [state and error guide](managed-inspection.md#troubleshooting).
+Run `wtk doctor`, and ask your security administrator about policy blocks rather than disabling protection.
+
 ## Start with `wtk doctor`
 
 ```powershell

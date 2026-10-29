@@ -23,7 +23,10 @@ Element options: `automation_id`, `name`, `control_type`, `class_name`, `index`,
 `where={"HelpText": "Save", "ItemStatus": re.compile(r"AddressBox$")}`. Entries AND together;
 boolean/numeric properties require boolean/numeric values. `property_aliases` in `wintestkit.yaml`
 maps alternate names to real UIA properties (for example `ClrFullClassName: ItemStatus`); it does
-not expose private .NET properties. Do not duplicate a property via a keyword and `where`.
+not expose private .NET properties. **Preview:** An enabled, authorized inspector also supports
+qualified managed keys such as `type:FullName`, `clr:`, `field:` and `dp:` in `where`, and
+aliases to those keys. Prefer UIA, use only paths observed in Spy, and never put secrets in
+`where`. Managed reads execute application code. Do not duplicate a property via a keyword and `where`.
 Strings match exactly; a compiled regex
 matches with `re.search`. `window = Window()` with no arguments means the application's main window.
 
