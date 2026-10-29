@@ -1,0 +1,17 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFrameworks>net10.0-windows;net48</TargetFrameworks>
+    <UseWPF>true</UseWPF>
+    <IsTestProject>true</IsTestProject>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" PrivateAssets="all" />
+    <ProjectReference Include="../../../src/Protocol/Protocol.csproj" />
+    <Compile Include="../../../src/Agent/Contracts/**/*.cs" LinkBase="Contracts" />
+    <Compile Include="../../../src/Agent/Inspection/Members/**/*.cs" LinkBase="Members" />
+  </ItemGroup>
+</Project>
