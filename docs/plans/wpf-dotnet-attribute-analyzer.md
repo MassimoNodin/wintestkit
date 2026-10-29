@@ -636,7 +636,9 @@ Sensitive-name matching is ordinal case-insensitive substring matching for `pass
 `passwd`, `pwd`, `secret`, `token`, `credential`, `connectionstring`, `apikey`, and
 `privatekey`, plus any names added by `inspector.redact_names` (section 10). Configuration
 can only add names, never remove built-in ones. Apply it to any member in the full path, plus
-UIA IsPassword when available. A sensitive member returns redacted before invoking its getter;
+UIA IsPassword when available. Extra rules are limited to 32 nonempty names of at most
+128 Unicode characters each; malformed Unicode is rejected. The additive total across
+configuration layers obeys the same limit. A policy change replaces existing sessions. A sensitive member returns redacted before invoking its getter;
 do not create an object handle for its value. PasswordBox.Password and SecurePassword are
 denied by declaring-type/member identity as well. Never offer reveal in V1. Over-redaction is
 accepted (for example `CancellationToken` is redacted); Spy labels the matched rule so users

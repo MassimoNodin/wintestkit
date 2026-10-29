@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Windows;
+using System.Windows.Automation.Peers;
 using System.Windows.Controls;
 using System.Windows.Media.Animation;
 using WinTestKit.Inspector.Protocol;
@@ -14,6 +15,7 @@ namespace WinTestKit.Inspector.Agent.Members.Tests
     {
         public sealed class Probe : Decorator
         {
+            protected override AutomationPeer OnCreateAutomationPeer() => new FrameworkElementAutomationPeer(this);
             public static readonly DependencyProperty AmountProperty = DependencyProperty.Register(nameof(Amount), typeof(double), typeof(Probe), new FrameworkPropertyMetadata(7.0, FrameworkPropertyMetadataOptions.Inherits, null, CoerceAmount));
             public static readonly DependencyProperty PayloadProperty = DependencyProperty.Register(nameof(Payload), typeof(object), typeof(Probe));
             public int GetterCalls;
@@ -150,12 +152,17 @@ namespace WinTestKit.Inspector.Agent.Members.Tests
             public string Name { get; set; } = "";
         }
 
+        private sealed class SafeBorder : Border
+        {
+            protected override AutomationPeer OnCreateAutomationPeer() => new FrameworkElementAutomationPeer(this);
+        }
+
         [Fact]
         public void DataContextChangesAreVisibleOnEveryReadAndSourcesDoNotLeak()
         {
             Sta(() =>
             {
-                var target = new Border { DataContext = new Model { Name = "first" } };
+                var target = new SafeBorder { DataContext = new Model { Name = "first" } };
                 var reader = new Reader(target);
                 Assert.Equal("first", ValueTests.Text(reader.Read(Property("DataContext"), Property("Name"))));
                 target.DataContext = new Model { Name = "second" };

@@ -323,9 +323,10 @@ def _layer(values: dict[str, Any], layer: Mapping[str, Any]) -> None:
     new_redact = layer.get("inspector.redact_names")
     values.update(layer)
     if old_redact is not None and new_redact is not None:
-        old_names = _string_list("inspector.redact_names", old_redact)
-        new_names = _string_list("inspector.redact_names", new_redact)
+        old_names = _redact_names(old_redact)
+        new_names = _redact_names(new_redact)
         values["inspector.redact_names"] = list(dict.fromkeys((*old_names, *new_names)))
+        _redact_names(values["inspector.redact_names"])
     if isinstance(previous, Mapping) and isinstance(added, Mapping):
         values["property_aliases"] = {
             **cast("Mapping[str, Any]", previous),
@@ -455,6 +456,18 @@ def _build_app(root: Path, values: Mapping[str, Any]) -> AppConfig | None:
     return AppConfig(**converted)
 
 
+def _redact_names(value: object) -> tuple[str, ...]:
+    from wintestkit.inspector.redaction import validate_redact_names
+
+    try:
+        return validate_redact_names(value)
+    except ValueError as error:
+        raise _fail(
+            "inspector.redact_names",
+            "expected at most 32 non-empty names of at most 128 characters",
+        ) from error
+
+
 def _build_inspector(values: Mapping[str, Any]) -> InspectorConfig:
     def timeout(name: str, default: float) -> float:
         key = f"inspector.{name}"
@@ -463,9 +476,7 @@ def _build_inspector(values: Mapping[str, Any]) -> InspectorConfig:
             raise _fail(key, f"must be at most {default}")
         return result
 
-    names = _string_list("inspector.redact_names", values.get("inspector.redact_names", []))
-    if any(not name for name in names):
-        raise _fail("inspector.redact_names", "names must be non-empty")
+    names = _redact_names(values.get("inspector.redact_names", []))
     return InspectorConfig(
         enabled=_boolean("inspector.enabled", values.get("inspector.enabled", False)),
         attach=cast(

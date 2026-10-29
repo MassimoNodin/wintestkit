@@ -24,7 +24,7 @@ sealed class FakeFactory : IInspectionServiceFactory
 {
     private readonly ProcessIdentity process;
     public FakeFactory(ProcessIdentity process) { this.process = process; }
-    public IInspectionService Create(string sessionId) => new FakeService(process);
+    public IInspectionService Create(string sessionId, IReadOnlyList<string> redactNames) => new FakeService(process);
 }
 
 sealed class FakeService : IInspectionService

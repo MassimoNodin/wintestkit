@@ -87,6 +87,7 @@ _current_test: str | None = None
 _seq = 0
 _inspector_registry: SessionRegistry | None = None
 _inspector_request_timeout: float | None = None
+_inspector_redact_names: tuple[str, ...] | None = None
 _inspector_failures: dict[ProcessIdentity, Exception] = {}
 _inspector_attempted: set[ProcessIdentity] = set()
 _inspector_attached: set[ProcessIdentity] = set()
@@ -98,17 +99,31 @@ _inspector_lock = threading.RLock()
 def inspector_sessions() -> SessionRegistry:
     """Return the lazily constructed process-wide inspector registry."""
     __tracebackhide__ = True
-    global _inspector_registry, _inspector_request_timeout, _inspector_epoch
-    timeout = get_config().inspector.request_timeout
+    global \
+        _inspector_registry, \
+        _inspector_request_timeout, \
+        _inspector_redact_names, \
+        _inspector_epoch
+    config = get_config().inspector
+    timeout, names = config.request_timeout, config.redact_names
     old = None
     with _inspector_lock:
-        if _inspector_registry is None or _inspector_request_timeout != timeout:
+        if (
+            _inspector_registry is None
+            or _inspector_request_timeout != timeout
+            or _inspector_redact_names != names
+        ):
             from wintestkit.inspector.sessions import SessionRegistry
 
             old = _inspector_registry
-            _inspector_registry = SessionRegistry(request_timeout=timeout)
+            policy_changed = _inspector_redact_names != names
+            _inspector_registry = SessionRegistry(request_timeout=timeout, redact_names=names)
             _inspector_request_timeout = timeout
+            _inspector_redact_names = names
             _inspector_epoch += 1
+            if policy_changed:
+                _inspector_failures.clear()
+                _inspector_attempted.clear()
         registry = _inspector_registry
     if old is not None:
         old.close_all()
@@ -116,7 +131,7 @@ def inspector_sessions() -> SessionRegistry:
 
 
 def require_managed(*, values: bool = True) -> None:
-    """Check authorization and fail closed until extra redaction reaches the agent."""
+    """Check authorization before managed inspection."""
     __tracebackhide__ = True
     from wintestkit.errors import InspectorUnavailableError
 
@@ -124,12 +139,6 @@ def require_managed(*, values: bool = True) -> None:
     if not config.enabled:
         raise InspectorUnavailableError(
             "Set inspector.enabled to true to use managed inspection", code="notAttached"
-        )
-    if values and config.redact_names:
-        raise InspectorUnavailableError(
-            "Configured inspector.redact_names cannot be enforced by this agent; "
-            "managed attachment is unavailable until agent redaction support is integrated",
-            code="unsupportedTarget",
         )
 
 
@@ -166,7 +175,10 @@ def _attach_managed(
                 _inspector_attempted.discard(identity)
         client = registry.get(identity)
         if client is not None:
-            return client
+            with _inspector_lock:
+                if epoch != _inspector_epoch or registry is not _inspector_registry:
+                    raise InspectorUnavailableError("Inspector runtime was reset", code="cancelled")
+                return client
         with _inspector_lock:
             if not explicit and identity in _inspector_failures:
                 raise _inspector_failures[identity]
@@ -212,7 +224,10 @@ def managed_client_for(pid: int, *, deadline: float, target_hwnd: int | None) ->
     registry = inspector_sessions()
     client = registry.get(identity)
     if client is not None:
-        return client
+        with _inspector_lock:
+            if registry is not _inspector_registry:
+                raise InspectorUnavailableError("Inspector runtime was reset", code="cancelled")
+            return client
     if config.attach == "manual":
         raise InspectorUnavailableError(
             "Attach the inspector to this process before using managed locators",
@@ -258,10 +273,15 @@ def clear_inspector_history() -> None:
 def close_inspector_sessions() -> None:
     """Cancel pending attaches and close sessions without touching target processes."""
     __tracebackhide__ = True
-    global _inspector_registry, _inspector_request_timeout, _inspector_epoch
+    global \
+        _inspector_registry, \
+        _inspector_request_timeout, \
+        _inspector_redact_names, \
+        _inspector_epoch
     with _inspector_lock:
         registry, _inspector_registry = _inspector_registry, None
         _inspector_request_timeout = None
+        _inspector_redact_names = None
         _inspector_epoch += 1
         _inspector_failures.clear()
         _inspector_attempted.clear()

@@ -95,23 +95,45 @@ def test_defaults_and_disabled_mode_never_probe_or_create_registry(
         runtime.managed_client_for(42, deadline=time.monotonic() + 1, target_hwnd=None)
 
 
-def test_extra_redaction_is_fail_closed_before_any_probe(
+def test_redaction_policy_change_replaces_registry(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    cfg = load_config(tmp_path, {"inspector.enabled": True, "inspector.redact_names": ["private"]})
-    monkeypatch.setattr(probe, "current_identity", _unexpected_probe)
-    with (
-        runtime.config_scope(cfg),
-        pytest.raises(InspectorUnavailableError, match="cannot be enforced"),
-    ):
-        runtime.managed_client_for(42, deadline=time.monotonic() + 1, target_hwnd=None)
+    monkeypatch.setattr(sessions, "SessionRegistry", FakeRegistry)
+    cfg = load_config(tmp_path, {"inspector.enabled": True})
+    with runtime.config_scope(cfg):
+        original = runtime.inspector_sessions()
+    cfg = replace(cfg, inspector=replace(cfg.inspector, redact_names=("account",)))
+    with runtime.config_scope(cfg):
+        runtime.require_managed()
+        replacement = runtime.inspector_sessions()
+        assert replacement is not original
+        assert replacement.redact_names == ("account",)
+        assert original.closed
+        assert runtime.inspector_sessions() is replacement
+
+
+@pytest.mark.parametrize("rules", ["private", [""], ["x" * 129], ["x"] * 33, [1], ["\ud800"]])
+def test_invalid_redaction_config_does_not_echo_rules(tmp_path: Path, rules: object) -> None:
+    with pytest.raises(ConfigError) as error:
+        load_config(tmp_path, {"inspector.redact_names": rules})
+    assert "private" not in str(error.value)
+
+
+def test_additive_redaction_total_is_bounded(tmp_path: Path) -> None:
+    (tmp_path / "wintestkit.yaml").write_text(
+        "inspector:\n  redact_names: [" + ", ".join(f"rule{index}" for index in range(32)) + "]\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ConfigError):
+        load_config(tmp_path, {"inspector.redact_names": ["one-more"]})
 
 
 class FakeRegistry:
     instances: ClassVar[list["FakeRegistry"]] = []
 
-    def __init__(self, *, request_timeout: float) -> None:
+    def __init__(self, *, request_timeout: float, redact_names: tuple[str, ...] = ()) -> None:
         self.timeout = request_timeout
+        self.redact_names = redact_names
         self.attempts = 0
         self.fail = True
         self.client: Any = None

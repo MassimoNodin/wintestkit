@@ -113,19 +113,6 @@ def test_owned_fixture_server_and_cli(
         identity = _call(server, output, "identify", node)["process"]
         assert identity == facts.identity.to_json()
         server.cfg = load_config(tmp_path, {"inspector.redact_names": ["account"]})
-        output.seek(0)
-        output.truncate()
-        server.handle(
-            {
-                "jsonrpc": "2.0",
-                "id": 1,
-                "method": "inspect.managed.attach",
-                "params": {"process": identity},
-            }
-        )
-        assert json.loads(output.getvalue())["error"]["data"]["code"] == "unsupportedTarget"
-        assert not agent_active(target.pid)
-        server.cfg = load_config(tmp_path)
         session = _call(server, output, "attach", {"process": identity})
         session_id = session["sessionId"]
         assert _call(server, output, "status", {"process": identity})["state"] == "ready"
@@ -205,6 +192,36 @@ def test_owned_fixture_server_and_cli(
         )["values"][0]["value"]
         assert redacted["status"] == "redacted" and "scalar" not in redacted
         assert _fixture_counters(target.pid).get("Password", 0) == before_password
+        before_guarded = _fixture_counters(target.pid).get("Guarded.VisibleValue", 0)
+        guarded = _call(
+            server,
+            output,
+            "read",
+            {
+                **fixture_params,
+                "paths": [
+                    [
+                        {"kind": "property", "name": "Guarded"},
+                        {"kind": "property", "name": "VisibleValue"},
+                    ]
+                ],
+            },
+        )["values"][0]["value"]
+        assert guarded["status"] == "redacted" and guarded["redactionRule"] == "identity"
+        assert _fixture_counters(target.pid).get("Guarded.VisibleValue", 0) == before_guarded
+        before_account = _fixture_counters(target.pid).get("AccountNumber", 0)
+        account = _call(
+            server,
+            output,
+            "read",
+            {
+                **fixture_params,
+                "paths": [[{"kind": "property", "name": "AccountNumber"}]],
+            },
+        )["values"][0]["value"]
+        assert account["status"] == "redacted" and account["redactionRule"] == "account"
+        assert "scalar" not in account
+        assert _fixture_counters(target.pid).get("AccountNumber", 0) == before_account
         read = _call(
             server,
             output,

@@ -118,12 +118,19 @@ def _disconnected_session(session: Session) -> Session:
 
 class SessionRegistry:
     def __init__(
-        self, payload_loader: Callable[[], Payload] = _load_payload, *, request_timeout: float = 2.0
+        self,
+        payload_loader: Callable[[], Payload] = _load_payload,
+        *,
+        request_timeout: float = 2.0,
+        redact_names: tuple[str, ...] = (),
     ) -> None:
         if not 0 < request_timeout <= 2:
             raise ValueError("Request timeout must be between zero and two seconds")
         self._payload_loader = payload_loader
         self._request_timeout = request_timeout
+        from wintestkit.inspector.redaction import validate_redact_names
+
+        self._redact_names = validate_redact_names(redact_names)
         self._lock = threading.RLock()
         self._entries: dict[ProcessIdentity, _Entry] = {}
 
@@ -216,6 +223,7 @@ class SessionRegistry:
             facts.user_sid,
             payload.inspector_version,
             request_timeout_ms=max(1, int(self._request_timeout * 1000)),
+            redact_names=self._redact_names,
         )
         process = None
         client = None

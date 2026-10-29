@@ -13,6 +13,7 @@ from decimal import Decimal
 from typing import Any, Literal, cast
 
 from wintestkit.inspector.paths import PathSegment
+from wintestkit.inspector.redaction import validate_redact_names
 
 
 class _Missing:
@@ -919,13 +920,14 @@ class BootstrapSettings(WireModel):
     request_timeout_ms: int
     idle_timeout_ms: int
     agent_version: str
+    redact_names: tuple[str, ...] = field(repr=False)
 
     @classmethod
     def from_json(cls, value: object) -> BootstrapSettings:
         data = _obj(
             value,
             "schemaVersion protocolMajor protocolMinor sessionId process pipeName token "
-            "clientSid expiresUtc requestTimeoutMs idleTimeoutMs agentVersion",
+            "clientSid expiresUtc requestTimeoutMs idleTimeoutMs agentVersion redactNames",
         )
         session_id = _identifier(data["sessionId"])
         try:
@@ -935,12 +937,15 @@ class BootstrapSettings(WireModel):
         token = _identifier(data["token"])
         if not re.fullmatch(r"[A-Za-z0-9+/]{43}=", token):
             raise ValueError("Invalid bootstrap token")
+        if not isinstance(data["redactNames"], list):
+            raise ValueError("Invalid redaction names")
         return cls(_int(data["schemaVersion"], 1, 1), _int(data["protocolMajor"], 0, 2_147_483_647),
                    _int(data["protocolMinor"], 0, 2_147_483_647), session_id,
                    ProcessIdentity.from_json(data["process"]), _key(data["pipeName"]), token,
                    _identifier(data["clientSid"]), _timestamp(data["expiresUtc"]),
                    _int(data["requestTimeoutMs"], 1, 2000), _int(data["idleTimeoutMs"], 1, 300000),
-                   _identifier(data["agentVersion"]))
+                   _identifier(data["agentVersion"]),
+                   validate_redact_names(cast("list[object]", data["redactNames"])))
 
 
 @dataclass(frozen=True)

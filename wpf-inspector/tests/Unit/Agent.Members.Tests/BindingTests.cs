@@ -21,6 +21,11 @@ namespace WinTestKit.Inspector.Agent.Members.Tests
    public object[] ConvertBack(object value, Type[] types, object parameter, CultureInfo culture) { Back++; return new[] { value }; }
   }
   private sealed class Source { public string Name { get; set; } = "hello"; public string Password { get; set; } = "secret"; }
+  private sealed class AccountConverter : IValueConverter
+  {
+   public object Convert(object value, Type type, object parameter, CultureInfo culture) => value;
+   public object ConvertBack(object value, Type type, object parameter, CultureInfo culture) => value;
+  }
   private static BindingInfoDto Read(DependencyObject target, DependencyProperty property)
   {
    var inspector = new ObjectInspector();
@@ -38,6 +43,20 @@ namespace WinTestKit.Inspector.Agent.Members.Tests
     Assert.Equal(typeof(Source).FullName, info.SourceType); Assert.Equal(typeof(Counter).FullName, info.ConverterType);
     Assert.Equal(forward, converter.Forward); Assert.Equal(back, converter.Back); Assert.Equal("hello", source.Name);
     BindingOperations.ClearBinding(target, TextBox.TextProperty); Assert.Equal("none", Read(target, TextBox.TextProperty).Kind);
+   });
+  }
+  [Fact] public void AdditionalRulesSuppressBindingStringsAndSensitiveTargets()
+  {
+   Sta(() => {
+    var target = new TextBox();
+    BindingOperations.SetBinding(target, TextBox.TextProperty, new Binding("AccountNumber") { ElementName = "AccountSource", Converter = new AccountConverter() });
+    var inspector = new ObjectInspector(new[] { "account" });
+    string key = inspector.GetMembers(target, new System.Collections.Generic.List<Diagnostic>()).Single(x => x.PathSegment?.Kind == "dependency" && x.PathSegment.Name == "Text" && x.PathSegment.OwnerType == typeof(TextBox).FullName).MemberKey;
+    var value = Assert.Single(inspector.GetBindings(target, new[] { key }));
+    Assert.Null(value.Path); Assert.Null(value.ElementName); Assert.Null(value.SourceType); Assert.Null(value.ConverterType);
+    var targetPolicy = new ObjectInspector(new[] { "text" });
+    var error = Assert.Throws<ProtocolException>(() => targetPolicy.GetBindings(target, new[] { key }));
+    Assert.Equal(ErrorCodes.AccessDenied, error.Code); Assert.DoesNotContain("text", error.Message, StringComparison.OrdinalIgnoreCase);
    });
   }
   private sealed class ErrorContent { public override string ToString() => throw new InvalidOperationException(); }

@@ -21,7 +21,8 @@ class CliRegistry:
     failure: BaseException | None = None
     fail_operation = "attach"
 
-    def __init__(self, *, request_timeout: float) -> None:
+    def __init__(self, *, request_timeout: float, redact_names: tuple[str, ...] = ()) -> None:
+        self.redact_names = redact_names
         self.timeout = request_timeout
         self.client = FakeClient()
         self.closed = False
@@ -172,12 +173,11 @@ def test_read_requires_opt_in_and_uia_only_never_probes(
     assert not CliRegistry.instances
 
 
-def test_extra_redaction_blocks_cli_before_attachment(
+def test_extra_redaction_reaches_cli_registry(
     cli_project: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     (cli_project / "wintestkit.local.yaml").write_text(
         "inspector:\n  redact_names: [account]\n", encoding="utf-8"
     )
-    assert main(["--root", str(cli_project), "inspect", "--managed"]) != 0
-    assert "cannot be enforced" in capsys.readouterr().err
-    assert not CliRegistry.instances
+    assert main(["--root", str(cli_project), "inspect", "--managed"]) == 0
+    assert CliRegistry.instances[-1].redact_names == ("account",)
