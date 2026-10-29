@@ -24,16 +24,23 @@ def test_concurrent_attaches_share_one_attempt(monkeypatch: pytest.MonkeyPatch) 
     calls: list[int] = []
     transport = ScriptedTransport(lambda request: {"id": request["id"], "result": {"closed": True}})
     client = InspectorClient(transport, session())
+
     def attach(*args: Any) -> InspectorClient:
         calls.append(1)
         started.set()
         assert release.wait(2)
         return client
+
     monkeypatch.setattr(registry, "_attach_owned", attach)
     monkeypatch.setattr(probe, "current_identity", lambda pid: IDENTITY)
     try:
         with ThreadPoolExecutor(max_workers=6) as executor:
-            futures = [executor.submit(registry.attach, IDENTITY, target_hwnd=None, deadline=time.monotonic() + 3) for _ in range(6)]
+            futures = [
+                executor.submit(
+                    registry.attach, IDENTITY, target_hwnd=None, deadline=time.monotonic() + 3
+                )
+                for _ in range(6)
+            ]
             assert started.wait(1)
             time.sleep(0.05)
             release.set()
@@ -51,14 +58,18 @@ def test_waiting_caller_deadline_does_not_cancel_owner(monkeypatch: pytest.Monke
     started, release = threading.Event(), threading.Event()
     transport = ScriptedTransport(lambda request: {"id": request["id"], "result": {"closed": True}})
     client = InspectorClient(transport, session())
+
     def attach(*args: Any) -> InspectorClient:
         started.set()
         assert release.wait(2)
         return client
+
     monkeypatch.setattr(registry, "_attach_owned", attach)
     try:
         with ThreadPoolExecutor(max_workers=1) as executor:
-            owner = executor.submit(registry.attach, IDENTITY, target_hwnd=None, deadline=time.monotonic() + 3)
+            owner = executor.submit(
+                registry.attach, IDENTITY, target_hwnd=None, deadline=time.monotonic() + 3
+            )
             assert started.wait(1)
             with pytest.raises(InspectorUnavailableError) as error:
                 registry.attach(IDENTITY, target_hwnd=None, deadline=time.monotonic() + 0.05)
@@ -73,14 +84,18 @@ def test_waiting_caller_deadline_does_not_cancel_owner(monkeypatch: pytest.Monke
 def test_close_all_cancels_inflight_attach(monkeypatch: pytest.MonkeyPatch) -> None:
     registry = sessions.SessionRegistry()
     started = threading.Event()
+
     def attach(identity: Any, hwnd: Any, deadline: float, entry: Any) -> InspectorClient:
         started.set()
         assert entry.cancel.wait(2)
         sessions._remaining(deadline, entry.cancel)
         raise AssertionError("unreachable")
+
     monkeypatch.setattr(registry, "_attach_owned", attach)
     with ThreadPoolExecutor(max_workers=1) as executor:
-        future = executor.submit(registry.attach, IDENTITY, target_hwnd=None, deadline=time.monotonic() + 3)
+        future = executor.submit(
+            registry.attach, IDENTITY, target_hwnd=None, deadline=time.monotonic() + 3
+        )
         assert started.wait(1)
         registry.close_all()
         with pytest.raises(InspectorUnavailableError) as error:
@@ -102,9 +117,13 @@ def test_existing_session_revalidates_process_identity(monkeypatch: pytest.Monke
         raise InspectorUnavailableError("Target process exited", code="processExited")
 
     monkeypatch.setattr(registry, "_attach_owned", attach)
-    monkeypatch.setattr(probe, "current_identity", lambda pid: (_ for _ in ()).throw(
-        InspectorUnavailableError("Target process exited", code="processExited")
-    ))
+    monkeypatch.setattr(
+        probe,
+        "current_identity",
+        lambda pid: (_ for _ in ()).throw(
+            InspectorUnavailableError("Target process exited", code="processExited")
+        ),
+    )
     try:
         assert registry.attach(IDENTITY, target_hwnd=None, deadline=time.monotonic() + 1) is client
         with pytest.raises(InspectorUnavailableError) as error:
@@ -136,7 +155,10 @@ def test_attach_cleanup_failure_closes_authenticated_client(
         agent_for=lambda runtime: tmp_path / "agent.dll",
     )
     settings = SimpleNamespace(
-        path=tmp_path / "consumed.json", session_id="session", pipe_name="pipe", token="token",
+        path=tmp_path / "consumed.json",
+        session_id="session",
+        pipe_name="pipe",
+        token="token",
         cleanup=lambda: finish("bootstrap"),
     )
     monkeypatch.setattr(probe, "identify", lambda pid: FACTS)

@@ -123,7 +123,9 @@ def test_owned_net10_x64_attach_read_detach(monkeypatch: pytest.MonkeyPatch) -> 
         while agent_active(target.pid) and time.monotonic() < until:
             time.sleep(0.05)
         assert not agent_active(target.pid)
-        reattached = registry.attach(facts.identity, target_hwnd=None, deadline=time.monotonic() + 10)
+        reattached = registry.attach(
+            facts.identity, target_hwnd=None, deadline=time.monotonic() + 10
+        )
         assert reattached.session.session_id != first_session_id
         assert reattached.roots(deadline=time.monotonic() + 2).items
         registry.detach(reattached.session.session_id)
@@ -157,9 +159,14 @@ def test_owned_net10_x64_rejects_hello_mismatch(
     environment = os.environ.copy()
     environment["DOTNET_ROOT_X64"] = DOTNET
     environment["DOTNET_MULTILEVEL_LOOKUP"] = "0"
-    target = subprocess.Popen([str(FIXTURE / "WinTestKit.Fixture.exe")], cwd=FIXTURE,
-                              env=environment, stdin=subprocess.DEVNULL,
-                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    target = subprocess.Popen(
+        [str(FIXTURE / "WinTestKit.Fixture.exe")],
+        cwd=FIXTURE,
+        env=environment,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
     settings = None
     process = None
     try:
@@ -177,13 +184,19 @@ def test_owned_net10_x64_rejects_hello_mismatch(
             time.sleep(0.1)
         payload = load_payload()
         payload.verify()
-        settings = bootstrap.create_bootstrap(facts.identity, facts.user_sid, payload.inspector_version)
-        process = launcher.launch(payload.launcher_for("x64"), payload.agent_for("net10"), facts.identity, settings.path)
+        settings = bootstrap.create_bootstrap(
+            facts.identity, facts.user_sid, payload.inspector_version
+        )
+        process = launcher.launch(
+            payload.launcher_for("x64"), payload.agent_for("net10"), facts.identity, settings.path
+        )
         deadline = time.monotonic() + 10
         connection = WindowsPipe.connect(settings.pipe_name, facts.identity, deadline)
         with pytest.raises(InspectorUnavailableError) as error:
             InspectorClient.authenticate(
-                connection, facts, settings.session_id,
+                connection,
+                facts,
+                settings.session_id,
                 "A" * 43 + "=" if mismatch == "token" else settings.token,
                 "0.0.0" if mismatch == "version" else payload.inspector_version,
                 deadline=deadline,

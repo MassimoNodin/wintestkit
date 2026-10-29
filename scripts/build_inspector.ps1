@@ -1,13 +1,13 @@
 param(
     [ValidateSet('Debug', 'Release')][string]$Configuration = 'Release',
     [switch]$LockedRestore,
-    [switch]$Sign
+    [switch]$Sign,
+    [string]$DotnetRoot
 )
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
-$env:DOTNET_ROOT = 'C:\Users\massi\AppData\Local\wintestkit-dev\dotnet'
-$env:DOTNET_MULTILEVEL_LOOKUP = '0'
-$dotnet = Join-Path $env:DOTNET_ROOT 'dotnet.exe'
+. (Join-Path $PSScriptRoot 'resolve_dotnet.ps1')
+$dotnet = Resolve-InspectorDotnet -DotnetRoot $DotnetRoot -InspectorRoot (Join-Path $root 'wpf-inspector')
 $msbuild = 'C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe'
 if ($Sign -and -not $env:WTK_SIGN_CERT_THUMBPRINT) { throw '-Sign requires WTK_SIGN_CERT_THUMBPRINT.' }
 # Verify the complete pinned inventory before compiling or copying any upstream code.
@@ -33,10 +33,11 @@ foreach ($header in @('metahost.h', 'mscoree.h')) {
 Write-Host "Verified $($lock.files.Count) pinned Snoop files; CLR hosting headers: $sdkInclude"
 $env:CL = "/I`"$sdkInclude`" $env:CL"
 
-Push-Location $root
+Push-Location (Join-Path $root 'wpf-inspector')
 try {
     $failed = $false
     foreach ($project in @('wpf-inspector/src/Protocol/Protocol.csproj', 'wpf-inspector/src/Agent/Agent.csproj', 'wpf-inspector/src/Launcher/BundledAgent.csproj')) {
+        $project = Join-Path $root $project
         $restoreArgs = @('restore', $project)
         if ($LockedRestore) { $restoreArgs += '--locked-mode' }
         & $dotnet @restoreArgs
@@ -47,7 +48,7 @@ try {
     foreach ($arch in @('Win32', 'x64')) {
         $out = Join-Path $root "wpf-inspector/artifacts/launcher/$Configuration/$arch/"
         $obj = Join-Path $root "wpf-inspector/artifacts/launcher/obj/$Configuration/$arch/"
-        & $msbuild 'wpf-inspector/third_party/snoop/Snoop.GenericInjector/Snoop.GenericInjector.vcxproj' /t:Build "/p:Configuration=$Configuration" "/p:Platform=$arch" /p:RootBuild=False /p:PlatformToolset=v143 /p:VCToolsVersion=14.40.33807 "/p:OutDir=$out" "/p:IntDir=$obj" /v:minimal
+        & $msbuild (Join-Path $root 'wpf-inspector/third_party/snoop/Snoop.GenericInjector/Snoop.GenericInjector.vcxproj') /t:Build "/p:Configuration=$Configuration" "/p:Platform=$arch" /p:RootBuild=False /p:PlatformToolset=v143 /p:VCToolsVersion=14.40.33807 "/p:OutDir=$out" "/p:IntDir=$obj" /v:minimal
         if ($LASTEXITCODE -ne 0) { Write-Warning "Native build failed: $arch"; $failed = $true }
     }
     if ($failed) { throw 'Protocol, Agent, or native injector build failed; launcher build was not started.' }

@@ -12,8 +12,6 @@ using Microsoft.Win32.SafeHandles;
 
 internal static class OwnedFixture
 {
-    private const string DotnetRoot = @"C:\Users\massi\AppData\Local\wintestkit-dev\dotnet";
-
     internal static async Task Run(string repo, string runtime, string arch, string[] options)
     {
         PackageVerifier.Require(new[] { "net48", "net8", "net10" }.Contains(runtime) && new[] { "x86", "x64" }.Contains(arch), "Invalid cell");
@@ -43,7 +41,10 @@ internal static class OwnedFixture
         string hashReport = Path.Combine(reportDir, "fixture-" + Guid.NewGuid().ToString("N") + ".json");
         File.WriteAllText(hashReport, JsonSerializer.Serialize(before));
         var start = new ProcessStartInfo(fixture) { UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true, WorkingDirectory = fixtureDir };
-        start.Environment["DOTNET_ROOT_X64"] = runtime == "net8" ? @"C:\Program Files\dotnet" : DotnetRoot;
+        string? dotnetRoot = Environment.GetEnvironmentVariable("DOTNET_ROOT") ??
+            Environment.GetEnvironmentVariable("PATH")?.Split(Path.PathSeparator)
+                .FirstOrDefault(path => File.Exists(Path.Combine(path, "dotnet.exe")));
+        if (dotnetRoot is not null) start.Environment["DOTNET_ROOT_X64"] = dotnetRoot;
         start.Environment["DOTNET_ROOT_X86"] = @"C:\Program Files (x86)\dotnet";
         using Process target = Process.Start(start) ?? throw new InvalidOperationException("Fixture did not start");
         _ = target.StandardOutput.ReadToEndAsync();

@@ -9,7 +9,8 @@ def test_managed_flag_and_default_output_are_golden(tmp_path):
     source.write_text(
         '<Root><Item><Properties><Property Name="WPFControlName" Value="Address" />'
         '<Property Name="ClrFullClassName" Value="Acme.AddressBox" />'
-        '</Properties></Item></Root>', encoding="utf-8"
+        "</Properties></Item></Root>",
+        encoding="utf-8",
     )
     expected = '''"""Generated from TestComplete NameMapping; review locators before use.
 

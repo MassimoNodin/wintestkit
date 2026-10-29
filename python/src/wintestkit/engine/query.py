@@ -190,8 +190,7 @@ def _check_budget(
     available = deadline - time.monotonic()
     if available <= 0 or (completed and elapsed / completed * remaining > available):
         raise InspectorLimitError(
-            f"Cannot evaluate {count} UIA candidates within the deadline; "
-            "use a tighter UIA scope",
+            f"Cannot evaluate {count} UIA candidates within the deadline; use a tighter UIA scope",
             code="limitExceeded",
         )
 

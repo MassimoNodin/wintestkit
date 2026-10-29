@@ -828,8 +828,10 @@ class BindingInfo(WireModel):
             )
             if kind == "none" and any((status, mode, trigger)):
                 raise ValueError("Invalid empty binding")
+
             def text(entry: object) -> str:
                 return _str(entry, 1024, empty=True)
+
             return cls(
                 _key(data["memberKey"]),
                 kind,
@@ -901,9 +903,13 @@ class HelloParams(WireModel):
     @classmethod
     def from_json(cls, value: object) -> HelloParams:
         data = _obj(value, "protocolMajor protocolMinor sessionId token process")
-        return cls(_int(data["protocolMajor"], 1, 1), _int(data["protocolMinor"]),
-                   _identifier(data["sessionId"]), _identifier(data["token"]),
-                   ProcessIdentity.from_json(data["process"]))
+        return cls(
+            _int(data["protocolMajor"], 1, 1),
+            _int(data["protocolMinor"]),
+            _identifier(data["sessionId"]),
+            _identifier(data["token"]),
+            ProcessIdentity.from_json(data["process"]),
+        )
 
 
 @dataclass(frozen=True)
@@ -939,13 +945,21 @@ class BootstrapSettings(WireModel):
             raise ValueError("Invalid bootstrap token")
         if not isinstance(data["redactNames"], list):
             raise ValueError("Invalid redaction names")
-        return cls(_int(data["schemaVersion"], 1, 1), _int(data["protocolMajor"], 0, 2_147_483_647),
-                   _int(data["protocolMinor"], 0, 2_147_483_647), session_id,
-                   ProcessIdentity.from_json(data["process"]), _key(data["pipeName"]), token,
-                   _identifier(data["clientSid"]), _timestamp(data["expiresUtc"]),
-                   _int(data["requestTimeoutMs"], 1, 2000), _int(data["idleTimeoutMs"], 1, 300000),
-                   _identifier(data["agentVersion"]),
-                   validate_redact_names(cast("list[object]", data["redactNames"])))
+        return cls(
+            _int(data["schemaVersion"], 1, 1),
+            _int(data["protocolMajor"], 0, 2_147_483_647),
+            _int(data["protocolMinor"], 0, 2_147_483_647),
+            session_id,
+            ProcessIdentity.from_json(data["process"]),
+            _key(data["pipeName"]),
+            token,
+            _identifier(data["clientSid"]),
+            _timestamp(data["expiresUtc"]),
+            _int(data["requestTimeoutMs"], 1, 2000),
+            _int(data["idleTimeoutMs"], 1, 300000),
+            _identifier(data["agentVersion"]),
+            validate_redact_names(cast("list[object]", data["redactNames"])),
+        )
 
 
 @dataclass(frozen=True)
@@ -960,8 +974,17 @@ class RequestEnvelope:
         method = _choice(
             data["method"],
             {
-                "session.hello", "session.close", "request.cancel", "element.resolve",
-                "element.readBatch", "roots", "children", "members", "read", "bindings", "release",
+                "session.hello",
+                "session.close",
+                "request.cancel",
+                "element.resolve",
+                "element.readBatch",
+                "roots",
+                "children",
+                "members",
+                "read",
+                "bindings",
+                "release",
             },
         )
         if not isinstance(data["params"], dict):

@@ -96,6 +96,7 @@ put secrets in locator `where` clauses, logs, or test data merely because redact
 Use qualified keys observed in Spy, for example:
 
 ```python
+# pseudo-code
 Element(automation_id='Order', where={'type:FullName': 'Example.OrderView'})
 Element(automation_id='Order', where={'clr:DataContext.Status': 'Ready'})
 Element(automation_id='Order', where={'field:State': 'Ready'})
