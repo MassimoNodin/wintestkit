@@ -19,9 +19,10 @@ from wintestkit.engine.diagnose import (
     quote,
 )
 from wintestkit.engine.locator import ItemSelector, Locator, WindowLocator, match_value
+from wintestkit.engine.managed import query_budget
+from wintestkit.engine.properties import Condition, read, resolve_where
 from wintestkit.engine.properties import matches as matches_property
-from wintestkit.engine.properties import read, resolve_where
-from wintestkit.engine.query import query_all
+from wintestkit.engine.query import filter_managed, query_all
 from wintestkit.errors import (
     AmbiguousElementError,
     ElementNotFoundError,
@@ -42,12 +43,15 @@ class Scope:
     window: WindowLocator | None = None
 
 
+@query_budget()
 def resolve_window(app: App, wl: WindowLocator | None) -> UIAElement:
     """Find the top-level window described by ``wl`` (``None``/empty → the main window)."""
     __tracebackhide__ = True
     if wl is None or wl.is_empty():
         return app.main_window()
     constraints = resolve_where(wl.where, wl.describe(), wl.taken())
+    uia = [c for c in constraints if isinstance(c, Condition)]
+    managed = [c for c in constraints if not isinstance(c, Condition)]
     source = app
     if wl.process is not None and wl.process.lower() != app.process_name.lower():
         source = App.attach(process=wl.process)
@@ -68,8 +72,10 @@ def resolve_window(app: App, wl: WindowLocator | None) -> UIAElement:
         if (wl.title is None or match_value(wl.title, w.name))
         and (wl.class_name is None or match_value(wl.class_name, w.class_name))
         and (wl.automation_id is None or match_value(wl.automation_id, w.automation_id))
-        and all(matches_property(c, read(w, c.spec)) for c in constraints)
+        and all(matches_property(c, read(w, c.spec)) for c in uia)
     ]
+    if managed and matches:
+        matches = filter_managed(matches, managed, None)
     if wl.index is not None:
         if wl.index < len(matches):
             return matches[wl.index]
@@ -145,12 +151,14 @@ def _walk(scope: Scope, locator: Locator, final_all: bool) -> list[UIAElement]:
     raise AssertionError("a locator chain always has at least one link")  # pragma: no cover
 
 
+@query_budget()
 def resolve(scope: Scope, locator: Locator) -> UIAElement:
     """Resolve ``locator`` to exactly one live element, or raise a ``LocatorError``."""
     __tracebackhide__ = True
     return _walk(scope, locator, final_all=False)[0]
 
 
+@query_budget()
 def resolve_all(scope: Scope, locator: Locator) -> list[UIAElement]:
     """All matches of the locator's final link (``index`` and ``item`` ignored); may be empty."""
     __tracebackhide__ = True
