@@ -124,7 +124,7 @@ jobs:
         run: ./scripts/check_inspector.ps1 -Suite Package
       - name: Build inspector wheel
         run: |
-          uv build --directory inspector-payload --wheel --out-dir inspector-payload/dist
+          uv build --directory inspector-payload --wheel --out-dir dist
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $wheels = @(Get-ChildItem inspector-payload/dist/*.whl)
           if ($wheels.Count -ne 1 -or $wheels[0].Name -notmatch '-py3-none-win_amd64\.whl$') { throw 'Unexpected inspector wheel tag' }
