@@ -97,12 +97,27 @@ BOOTSTRAP = {
     "requestTimeoutMs": 2000,
     "idleTimeoutMs": 300000,
     "agentVersion": "1",
+    "redactNames": [],
 }
 
 
 def test_schema_and_definition_names() -> None:
     Draft202012Validator.check_schema(DOCUMENT)
     assert set(NAMES) <= DOCUMENT["$defs"].keys()
+
+
+@pytest.mark.parametrize("rules", [None, "account", [""], ["x" * 129], ["x"] * 33, [1], ["\ud800"]])
+def test_bootstrap_rejects_invalid_redaction_rules(rules: object) -> None:
+    validator = Draft202012Validator({"$ref": f"{DOCUMENT['$id']}#/$defs/BootstrapSettings"}, registry=REGISTRY)
+    assert not validator.is_valid({**BOOTSTRAP, "redactNames": rules})
+
+
+def test_bootstrap_requires_bounded_unicode_redaction_rules() -> None:
+    validator = Draft202012Validator({"$ref": f"{DOCUMENT['$id']}#/$defs/BootstrapSettings"}, registry=REGISTRY)
+    missing = dict(BOOTSTRAP)
+    del missing["redactNames"]
+    assert not validator.is_valid(missing)
+    assert validator.is_valid({**BOOTSTRAP, "redactNames": ["😀" * 128]})
 
 
 @pytest.mark.parametrize(

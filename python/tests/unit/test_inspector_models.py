@@ -58,6 +58,24 @@ def test_every_golden_fixture_has_a_python_reader() -> None:
     assert len(FIXTURES) == sum(len(list((ROOT / directory).glob("*.json"))) for directory in ("valid", "invalid"))
 
 
+@pytest.mark.parametrize("rules", [None, "account", [""], ["x" * 129], ["x"] * 33, [1], ["\ud800"]])
+def test_bootstrap_redaction_rules_are_strict(rules: object) -> None:
+    fixture = json.loads((ROOT / "valid/bootstrap.json").read_text(encoding="utf-8"))["instance"]
+    with pytest.raises(ValueError, match="redaction"):
+        BootstrapSettings.from_json({**fixture, "redactNames": rules})
+    del fixture["redactNames"]
+    with pytest.raises(ValueError):
+        BootstrapSettings.from_json(fixture)
+
+
+def test_bootstrap_redaction_rules_round_trip_without_repr_leaks() -> None:
+    fixture = json.loads((ROOT / "valid/bootstrap.json").read_text(encoding="utf-8"))["instance"]
+    fixture["redactNames"] = ["😀" * 128]
+    settings = BootstrapSettings.from_json(fixture)
+    assert settings.to_json()["redactNames"] == fixture["redactNames"]
+    assert fixture["redactNames"][0] not in repr(settings)
+
+
 @pytest.mark.parametrize("fixture", FIXTURES, ids=lambda path: f"{path.parent.name}/{path.name}")
 def test_golden_dto(fixture: Path) -> None:
     document = json.loads(fixture.read_text(encoding="utf-8"))

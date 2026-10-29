@@ -35,7 +35,8 @@ namespace WinTestKit.Inspector.Agent.Inspection.Members
             if (expression?.ValidationError != null)
             {
                 var error = expression.ValidationError;
-                result.ValidationErrors.Add((error.Exception ?? error.ErrorContent)?.GetType().FullName ?? error.GetType().FullName!);
+                string? errorType = (error.Exception ?? error.ErrorContent)?.GetType().FullName ?? error.GetType().FullName;
+                if (errorType != null && redaction.Match(errorType) == null) result.ValidationErrors.Add(errorType);
             }
             return result;
         }
@@ -49,21 +50,22 @@ namespace WinTestKit.Inspector.Agent.Inspection.Members
                 result.Mode = single.Mode.ToString();
                 result.Trigger = single.UpdateSourceTrigger.ToString();
                 string? path = single.Path?.Path;
-                if (path != null && redaction.Match(path) == null) result.Path = path;
-                result.ElementName = single.ElementName;
+                bool sensitive = path != null && redaction.Match(path) != null;
+                if (!sensitive) result.Path = path;
+                if (!sensitive) result.ElementName = Safe(single.ElementName, redaction);
                 if (single.RelativeSource != null)
                 {
                     result.RelativeMode = single.RelativeSource.Mode.ToString();
-                    result.AncestorType = single.RelativeSource.AncestorType?.FullName;
+                    if (!sensitive) result.AncestorType = Safe(single.RelativeSource.AncestorType?.FullName, redaction);
                     if (single.RelativeSource.Mode == RelativeSourceMode.FindAncestor) result.AncestorLevel = single.RelativeSource.AncestorLevel;
                 }
-                if (path == null || redaction.Match(path) == null) result.SourceType = single.Source?.GetType().FullName;
-                result.ConverterType = single.Converter?.GetType().FullName;
+                if (!sensitive) result.SourceType = Safe(single.Source?.GetType().FullName, redaction);
+                if (!sensitive) result.ConverterType = Safe(single.Converter?.GetType().FullName, redaction);
             }
             else if (binding is MultiBinding multi)
             {
                 result.Kind = "multiBinding"; result.Mode = multi.Mode.ToString(); result.Trigger = multi.UpdateSourceTrigger.ToString();
-                result.ConverterType = multi.Converter?.GetType().FullName;
+                result.ConverterType = Safe(multi.Converter?.GetType().FullName, redaction);
                 if (depth + 1 < 8) foreach (BindingBase child in multi.Bindings) { if (count >= 32) break; result.Children.Add(ReadCore(child, redaction, depth + 1, ref count)); }
             }
             else if (binding is PriorityBinding priority)
@@ -73,5 +75,7 @@ namespace WinTestKit.Inspector.Agent.Inspection.Members
             }
             return result;
         }
+        private static string? Safe(string? value, RedactionPolicy redaction) =>
+            value != null && redaction.Match(value) == null ? value : null;
     }
 }

@@ -28,4 +28,28 @@ public class DtoTests
         new object[] { "ProcessIdentity", (Func<JsonNode, object>)(n => ProcessIdentity.FromJson(n)) }, new object[] { "TypeInfo", (Func<JsonNode, object>)(n => TypeInfoDto.FromJson(n)) }, new object[] { "ObjectRef", (Func<JsonNode, object>)(n => ObjectRef.FromJson(n)) }, new object[] { "PathSegment", (Func<JsonNode, object>)(n => PathSegment.FromJson(n)) }, new object[] { "Value", (Func<JsonNode, object>)(n => ValueDto.FromJson(n)) }, new object[] { "Mapping", (Func<JsonNode, object>)(n => MappingDto.FromJson(n)) }, new object[] { "Diagnostic", (Func<JsonNode, object>)(n => Diagnostic.FromJson(n)) }, new object[] { "ManagedNode", (Func<JsonNode, object>)(n => ManagedNodeDto.FromJson(n)) }, new object[] { "PathValue", (Func<JsonNode, object>)(n => WinTestKit.Inspector.Protocol.PathValue.FromJson(n)) }, new object[] { "ReadResult", (Func<JsonNode, object>)(n => ReadResult.FromJson(n)) }, new object[] { "CandidateResult", (Func<JsonNode, object>)(n => CandidateResult.FromJson(n)) }, new object[] { "ReadBatchResult", (Func<JsonNode, object>)(n => ReadBatchResult.FromJson(n)) }, new object[] { "Attribute", (Func<JsonNode, object>)(n => AttributeInfo.FromJson(n)) }, new object[] { "Member", (Func<JsonNode, object>)(n => WinTestKit.Inspector.Protocol.MemberInfo.FromJson(n)) }, new object[] { "Page", (Func<JsonNode, object>)(n => PageDto<ManagedNodeDto>.FromJson(n, ManagedNodeDto.FromJson)) }, new object[] { "Binding", (Func<JsonNode, object>)(n => BindingInfoDto.FromJson(n)) }, new object[] { "Session", (Func<JsonNode, object>)(n => SessionInfo.FromJson(n)) }, new object[] { "HelloParams", (Func<JsonNode, object>)(n => HelloParams.FromJson(n)) }, new object[] { "HelloResult", (Func<JsonNode, object>)(n => HelloResult.FromJson(n)) }, new object[] { "Request", (Func<JsonNode, object>)(n => RequestEnvelope.FromJson(n)) }, new object[] { "Error", (Func<JsonNode, object>)(n => ErrorInfo.FromJson(n)) }, new object[] { "Response", (Func<JsonNode, object>)(n => ResponseEnvelope.FromJson(n)) }, new object[] { "Bootstrap", (Func<JsonNode, object>)(n => BootstrapSettings.FromJson(n)) }
     };
     [Theory][MemberData(nameof(Readers))] public void RejectsMissingRequiredFields(string name, Func<JsonNode, object> reader) { Assert.NotEmpty(name); Assert.Throws<ProtocolException>(() => reader(new JsonObjectNode())); }
+
+    [Fact] public void BootstrapRedactionRulesAreRequiredBoundedAndNonDisclosing()
+    {
+        var settings = new BootstrapSettings { ProtocolMajor = 1, SessionId = "21cf791c-4f3c-4ea4-a7e2-c79a0a7fbc9c", Process = Process(), PipeName = "pipe", Token = Convert.ToBase64String(new byte[32]), ClientSid = "sid", ExpiresUtc = "2026-10-27T00:00:00Z", RequestTimeoutMs = 1000, IdleTimeoutMs = 1000, AgentVersion = "1" };
+        JsonObjectNode valid = settings.ToJson();
+        JsonObjectNode Replace(JsonNode? value)
+        {
+            var result = new JsonObjectNode();
+            foreach (var pair in valid.Members) if (pair.Key != "redactNames") result.Add(pair.Key, pair.Value);
+            if (value != null) result.Add("redactNames", value);
+            return result;
+        }
+        var oversized = new JsonArrayNode(); for (int index = 0; index < 33; index++) oversized.Add(new JsonStringNode("rule"));
+        var empty = new JsonArrayNode(); empty.Add(new JsonStringNode(""));
+        var longName = new JsonArrayNode(); longName.Add(new JsonStringNode(new string('x', 129)));
+        var invalidUnicode = new JsonArrayNode(); invalidUnicode.Add(new JsonStringNode("\ud800"));
+        foreach (JsonNode? rules in new JsonNode?[] { null, JsonNullNode.Instance, new JsonStringNode("private"), oversized, empty, longName, invalidUnicode })
+        {
+            var error = Assert.Throws<ProtocolException>(() => BootstrapSettings.FromJson(Replace(rules)));
+            Assert.DoesNotContain("private", error.Message);
+        }
+        var unicode = new JsonArrayNode(); unicode.Add(new JsonStringNode(string.Concat(System.Linq.Enumerable.Repeat("😀", 128))));
+        Assert.Single(BootstrapSettings.FromJson(Replace(unicode)).RedactNames);
+    }
 }

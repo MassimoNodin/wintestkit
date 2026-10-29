@@ -233,9 +233,16 @@ def create_bootstrap(
     *,
     request_timeout_ms: int = 2000,
     idle_timeout_ms: int = 300000,
+    redact_names: tuple[str, ...] = (),
 ) -> Bootstrap:
     if not 1 <= request_timeout_ms <= 2000 or not 1 <= idle_timeout_ms <= 300000:
         raise InspectorUnavailableError("Invalid bootstrap timeout", code="invalidParams")
+    from wintestkit.inspector.redaction import validate_redact_names
+
+    try:
+        rules = validate_redact_names(redact_names)
+    except ValueError as error:
+        raise InspectorUnavailableError("Invalid redaction policy", code="invalidParams") from error
     kernel, _ = _api()
     local = _local_app_data()
     _no_reparse(local, local)
@@ -284,6 +291,7 @@ def create_bootstrap(
             "requestTimeoutMs": request_timeout_ms,
             "idleTimeoutMs": idle_timeout_ms,
             "agentVersion": agent_version,
+            "redactNames": list(rules),
         }
         payload = json.dumps(settings, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
         if len(payload) > 16384:

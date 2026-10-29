@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading;
 using WinTestKit.Inspector.Agent.Contracts;
@@ -39,7 +40,7 @@ namespace WinTestKit.Inspector.Agent.Session
                     lock (gate)
                     {
                         if (disposed != 0) return;
-                        service = factory.Create(settings.SessionId);
+                        service = factory.Create(settings.SessionId, new List<string>(settings.RedactNames).AsReadOnly());
                         scheduler = new RequestScheduler(settings.RequestTimeoutMs);
                         pipe = new PipeServer(settings, new RequestDispatcher(settings.SessionId, service, scheduler), verifier, factory.GetType().FullName == "WinTestKit.Inspector.Agent.Inspection.WpfInspectionServiceFactory", ResetIdle, (service as IExactMappingCapability)?.ExactMappingAvailable == true);
                         timer = new Timer(_ => { cancellation.Cancel(); pipe?.Dispose(); }, null, Math.Min(ProtocolLimits.IdleSessionMs, settings.IdleTimeoutMs), Timeout.Infinite);

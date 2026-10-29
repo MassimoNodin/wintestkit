@@ -117,6 +117,7 @@ namespace WinTestKit.Inspector.Agent.Inspection.Members
                 string? rule = redaction.Match(segment.Name);
                 if (rule != null) return new ValueDto { Status = "redacted", Kind = "unavailable", RedactionRule = rule };
             }
+            if (RedactionPolicy.IsProtectedIdentity(root)) return new ValueDto { Status = "redacted", Kind = "unavailable", RedactionRule = "identity" };
             if (path[0].Kind == "type")
             {
                 TypeInfoDto t = DescribeType(root.GetType());
@@ -130,6 +131,7 @@ namespace WinTestKit.Inspector.Agent.Inspection.Members
             for (int i = 0; i < path.Count; i++)
             {
                 ct.ThrowIfCancellationRequested();
+                if (RedactionPolicy.IsProtectedIdentity(current!)) return new ValueDto { Status = "redacted", Kind = "unavailable", RedactionRule = "identity" };
                 dependencySource = null;
                 PathSegment segment = path[i];
                 var diagnostics = new List<Diagnostic>();
@@ -186,6 +188,8 @@ namespace WinTestKit.Inspector.Agent.Inspection.Members
         public IReadOnlyList<BindingInfoDto> GetBindings(object target, IReadOnlyList<string> memberKeys)
         {
             var result = new List<BindingInfoDto>();
+            if (memberKeys.Count != 0 && RedactionPolicy.IsProtectedIdentity(target))
+                throw new ProtocolException(ErrorCodes.AccessDenied, "Binding metadata is unavailable under the redaction policy");
             if (!(target is DependencyObject dep))
             {
                 if (memberKeys.Count != 0) throw new ProtocolException(ErrorCodes.MemberNotFound, "Dependency property was not found");
@@ -196,6 +200,8 @@ namespace WinTestKit.Inspector.Agent.Inspection.Members
             {
                 DependencyEntry? entry = entries.FirstOrDefault(x => x.Key == key);
                 if (entry == null) throw new ProtocolException(ErrorCodes.MemberNotFound, "Dependency property was not found");
+                if (redaction.Match(entry.Property.Name) != null)
+                    throw new ProtocolException(ErrorCodes.AccessDenied, "Binding metadata is unavailable under the redaction policy");
                 result.Add(ToBinding(key, BindingMetadataReader.Read(dep, entry.Property, redaction)));
             }
             return result;

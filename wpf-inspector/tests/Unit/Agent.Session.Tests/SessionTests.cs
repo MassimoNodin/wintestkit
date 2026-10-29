@@ -242,7 +242,7 @@ public class SessionTests
     private sealed class FakeFactory : IInspectionServiceFactory
     {
         public FakeService Service { get; } = new();
-        public IInspectionService Create(string sessionId) => Service;
+        public IInspectionService Create(string sessionId, IReadOnlyList<string> redactNames) => Service;
     }
 
     private sealed class FakeService : IInspectionService

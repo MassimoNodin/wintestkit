@@ -525,9 +525,21 @@ request, built-in password redaction without a getter call, and a separate stand
 attach/read/detach. The broader Python run passed 1863,
 skipped 5, and failed only the existing S8 `engine/query.py` traceback-hiding check.
 
-Stage 7 remains partial: the bootstrap/agent factory does not transmit configured extra
-redaction names, so S7 refuses managed attachment when they are configured. Agent/protocol
-integration and real configured-name redaction evidence are required; signature, security, stress, matrix,
-independent-UIA and release gates remain open. No manifest cell was promoted to verified.
+The S7 redaction follow-up now transmits additive names through a strict bootstrap field
+into an immutable per-session agent policy. Configuration and both protocol readers reject
+more than 32 rules, empty rules, rules longer than 128 Unicode characters, and malformed
+Unicode. Registry replacement prevents reuse after a policy change. Password peers and
+missing/failing peer checks block value getters; nested reads retain this protection.
+Sensitive binding paths and metadata are filtered before export.
+
+Validation (2026-10-29): 555 focused Python unit/contract tests passed; the owned .NET 10
+x64 server/CLI integration passed with configured `account` redaction and unchanged getter
+counters, built-in password redaction, and nested password-peer redaction. Protocol tests
+passed 233; session tests passed 47 with the different-account test still skipped. Both
+member-test targets passed 74 initially; a later net48 run exposed an intermittent existing
+exact catalog inventory mismatch. Repository-wide pyright still reports 26 errors outside
+this follow-up (managed locator and payload groundwork). The changed Python files pass
+Ruff. Signature, security, stress, matrix, independent-UIA and release gates remain open.
+No manifest cell was promoted to verified.
 Repeated single-page tree requests also exhausted the agent's 16 retained snapshots before
 their 30-second expiry; S4a needs to assess reclaiming snapshots with no continuation token.

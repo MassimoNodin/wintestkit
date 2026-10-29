@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.ComponentModel;
@@ -85,6 +85,9 @@ public sealed class FixtureControl : MiddleControl, ICustomTypeDescriptor
     public Action Delegate { get { Counts.Hit(nameof(Delegate)); return () => { }; } }
     public object? NullValue { get { Counts.Hit(nameof(NullValue)); return null; } }
     public string Password { get { Counts.Hit(nameof(Password)); return "fixture password"; } }
+    public string AccountNumber { get { Counts.Hit(nameof(AccountNumber)); return "fixture account"; } }
+    public GuardedControl? Guarded { get { Counts.Hit(nameof(Guarded)); return guarded; } set => guarded = value; }
+    private GuardedControl? guarded;
     public string ApiKey { get { Counts.Hit(nameof(ApiKey)); return "fixture key"; } }
     public string ConnectionString { get { Counts.Hit(nameof(ConnectionString)); return "fixture connection"; } }
     public string CancellationToken { get { Counts.Hit(nameof(CancellationToken)); return "fixture token"; } }
@@ -151,6 +154,16 @@ public sealed class MultiConverter : IMultiValueConverter
     public object[] ConvertBack(object value, Type[] targetTypes, object parameter, CultureInfo culture) { Counts.Hit("converter.MultiConvertBack"); return targetTypes.Select(_ => Binding.DoNothing).ToArray(); }
 }
 public sealed class PeerControl : Button { protected override AutomationPeer OnCreateAutomationPeer() => new FixturePeer(this); }
+public sealed class GuardedControl : Button
+{
+    public string VisibleValue { get { Counts.Hit("Guarded.VisibleValue"); return "guarded value"; } }
+    protected override AutomationPeer OnCreateAutomationPeer() => new GuardedPeer(this);
+}
+public sealed class GuardedPeer : ButtonAutomationPeer
+{
+    public GuardedPeer(Button owner) : base(owner) { }
+    protected override bool IsPasswordCore() => true;
+}
 public sealed class FixturePeer : ButtonAutomationPeer
 {
     public FixturePeer(Button owner) : base(owner) { }
@@ -182,6 +195,13 @@ public sealed class MainWindow : Window
         AttachedOwner.SetMarker(fixture, "attached");
         fixture.BeginAnimation(OpacityProperty, new DoubleAnimation(0.5, 1, new Duration(TimeSpan.FromHours(1))));
         panel.Children.Add(fixture);
+        var guarded = Id(new GuardedControl(), "GuardedControl");
+        guarded.SetBinding(ContentControl.ContentProperty, new Binding("VisibleValue") { Source = guarded });
+        fixture.Guarded = guarded;
+        panel.Children.Add(guarded);
+        var account = Id(new TextBox(), "AccountBinding");
+        account.SetBinding(TextBox.TextProperty, new Binding("AccountNumber") { Source = fixture, Mode = BindingMode.OneWay });
+        panel.Children.Add(account);
         panel.Children.Add(Id(dynamicTree, "DynamicTree"));
         panel.Children.Add(Id(new InventoryControl(), "InventoryControl"));
         panel.Children.Add(Id(new StatusControl(), "StatusControl"));

@@ -33,6 +33,6 @@ namespace WinTestKit.Inspector.Agent.Contracts
 
     public interface IInspectionServiceFactory
     {
-        IInspectionService Create(string sessionId);
+        IInspectionService Create(string sessionId, IReadOnlyList<string> redactNames);
     }
 }
