@@ -304,7 +304,7 @@ namespace WinTestKit.Inspector.Agent.Mapping.Tests
         public async Task FactoryCreatesRealInspectorAndSupportsRootsAndButtonMembers()
         {
             using (var window = new MappingWindow())
-            using (IInspectionService service = new WpfInspectionServiceFactory().Create("factory"))
+            using (IInspectionService service = new WpfInspectionServiceFactory().Create("factory", Array.Empty<string>()))
             {
                 Assert.NotEmpty((await service.RootsAsync(null, null, None)).Items);
                 int[] runtimeId = await window.PeerId(window.Buttons[0]);
@@ -339,22 +339,65 @@ namespace WinTestKit.Inspector.Agent.Mapping.Tests
         }
 
         [Fact]
-        public async Task EmptyChildrenAreCompleteAndSnapshotStoreRemainsBounded()
+        public async Task SinglePagesDoNotConsumeSnapshotSlots()
         {
-            DateTime now = DateTime.UtcNow;
             using (var window = new MappingWindow(0))
-            using (var service = new WpfInspectionService("bounded", new FakeInspector(), new PageSnapshotStore(() => now)))
+            using (var service = new WpfInspectionService("bounded", new FakeInspector()))
             {
                 ObjectRef panel = await PanelHandle(service, window);
                 var empty = await service.ChildrenAsync(panel.ObjectId, panel.Generation, TreeKind.Logical, null, null, None);
                 Assert.Empty(empty.Items);
                 Assert.True(empty.Complete);
                 Assert.Null(empty.NextToken);
-                for (int index = 2; index < ProtocolLimits.MaxSnapshots; index++)
-                    await service.MembersAsync(panel.ObjectId, panel.Generation, null, null, None);
-                await Error(ErrorCodes.LimitExceeded, () => service.MembersAsync(panel.ObjectId, panel.Generation, null, null, None));
-                now = now.AddMilliseconds(ProtocolLimits.PageTokenTtlMs);
-                Assert.True((await service.MembersAsync(panel.ObjectId, panel.Generation, null, null, None)).Complete);
+                for (int index = 0; index < 100; index++)
+                {
+                    Assert.Null((await service.RootsAsync(null, null, None)).NextToken);
+                    Assert.Null((await service.MembersAsync(panel.ObjectId, panel.Generation, null, null, None)).NextToken);
+                    Assert.Null((await service.ChildrenAsync(panel.ObjectId, panel.Generation, TreeKind.Logical, null, null, None)).NextToken);
+                }
+            }
+        }
+
+        [Fact]
+        public async Task FinalPageReleasesSlotAndInvalidatesTokenWhileOpenSnapshotsRemainBounded()
+        {
+            using (var window = new MappingWindow())
+            using (var service = new WpfInspectionService("slots", new FakeInspector()))
+            {
+                ObjectRef root = await WindowHandle(service, window);
+                var tokens = new List<string>();
+                for (int index = 0; index < ProtocolLimits.MaxSnapshots; index++)
+                    tokens.Add((await service.MembersAsync(root.ObjectId, root.Generation, 1, null, None)).NextToken!);
+                await Error(ErrorCodes.LimitExceeded, () => service.MembersAsync(root.ObjectId, root.Generation, 1, null, None));
+                var final = await service.MembersAsync(root.ObjectId, root.Generation, 2, tokens[0], None);
+                Assert.Equal(2, final.Items.Count);
+                Assert.Null(final.NextToken);
+                await Error(ErrorCodes.InvalidPageToken, () => service.MembersAsync(root.ObjectId, root.Generation, 2, tokens[0], None));
+                Assert.NotNull((await service.MembersAsync(root.ObjectId, root.Generation, 1, null, None)).NextToken);
+                await Error(ErrorCodes.LimitExceeded, () => service.MembersAsync(root.ObjectId, root.Generation, 1, null, None));
+            }
+        }
+
+        private sealed class ConfiguredRedactionModel
+        {
+            internal int GetterCalls;
+            public string CustomerMarker { get { GetterCalls++; return "value"; } }
+        }
+
+        [Fact]
+        public async Task FactoryPassesConfiguredRedactNamesToInspector()
+        {
+            var model = new ConfiguredRedactionModel();
+            using (var window = new MappingWindow())
+            using (IInspectionService service = new WpfInspectionServiceFactory().Create("redaction", new[] { "CustomerMarker" }))
+            {
+                await window.Thread.Dispatcher.InvokeAsync(() => window.Window.DataContext = model).Task;
+                ObjectRef root = await WindowHandle(service, window);
+                var path = new[] { (IReadOnlyList<PathSegment>)new[] {
+                    new PathSegment { Kind = SegmentKind.Property, Name = "DataContext" },
+                    new PathSegment { Kind = SegmentKind.Property, Name = "CustomerMarker" } } };
+                Assert.Equal(ValueStatus.Redacted, Assert.Single((await service.ReadAsync(root.ObjectId, root.Generation, path, None)).Values).Value.Status);
+                Assert.Equal(0, model.GetterCalls);
             }
         }
 

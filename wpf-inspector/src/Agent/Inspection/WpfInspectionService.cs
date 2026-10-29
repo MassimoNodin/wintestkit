@@ -221,6 +221,8 @@ namespace WinTestKit.Inspector.Agent.Inspection
         {
             ct.ThrowIfCancellationRequested();
             var snapshot = new Snapshot<T> { Items = items.ToArray(), Diagnostics = diagnostics };
+            if (items.Count <= size)
+                return Slice(snapshot, Guid.NewGuid().ToString("N"), 0, size);
             string id = snapshots.Create(objectId, generation, operation, tree, new[] { snapshot },
                 Comparer<Snapshot<T>>.Create((first, second) => 0));
             return Slice(snapshot, id, 0, size);
@@ -234,8 +236,11 @@ namespace WinTestKit.Inspector.Agent.Inspection
             Snapshot<T> snapshot = snapshots.Get<Snapshot<T>>(id, objectId, generation, operation, tree)[0];
             lock (snapshot)
             {
+                snapshots.Get<Snapshot<T>>(id, objectId, generation, operation, tree);
                 if (!snapshot.Offsets.TryGetValue(token.Substring(separator + 1), out int offset)) throw InvalidPage();
-                return Slice(snapshot, id, offset, size);
+                PageDto<T> page = Slice(snapshot, id, offset, size);
+                if (page.NextToken == null) snapshots.Remove(id);
+                return page;
             }
         }
 
