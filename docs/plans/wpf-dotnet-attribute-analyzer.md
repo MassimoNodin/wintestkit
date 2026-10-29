@@ -1,7 +1,7 @@
 # WPF/.NET attribute analyzer: implementation specification
 
 Status: implementation in progress; release gates are not yet satisfied. Planning date: 2026-10-27.
-Revision: 2 (see section 15 for changes from revision 1).
+Revision: 3 (see section 15). Protocol 2.0 is specified in [wpf-protocol-2.md](wpf-protocol-2.md).
 Scope: authorized Windows desktop test infrastructure.
 
 Implementation evidence and remaining integration gates are recorded in
@@ -50,6 +50,8 @@ Required outcomes:
     the inspector is an optional, platform-specific add-on (section 11).
 
 ### Meaning of all attributes
+
+**Revision 3 amendment (D2, D6):** The V1 exclusions below are superseded for protocol 2.0: explicit, bounded item-data searches may enumerate items and realize only the single match; allowlisted writes and public instance calls are opt-in and audited. Arbitrary execution remains forbidden. WPF handles can be action targets without UIA association. See [protocol 2.0](wpf-protocol-2.md).
 
 List every member discovered in the specified categories, including unreadable declarations;
 do not promise arbitrary private state or an infinite graph. V1 reads public instance CLR
@@ -261,6 +263,8 @@ Only the integration harness may terminate its own fixture processes.
 
 ## 5. Local transport, authorization, scheduling, and limits
 
+**Revision 3 amendment:** WPF query regex executes in the agent with a bounded match timeout; the Python-only rule below applies to the UIA backend. Automatic attachment for WPF processes follows D4, subject to the trusted-workspace and process confirmation safeguards. D5 forbids silent UIA fallback on agent failure.
+
 Attachment is opt-in. Spy must show executable path, PID, runtime, architecture, and an
 in-process execution warning before attaching. Require a trusted workspace. A picker or
 UIA selection alone never authorizes attachment to another application. pytest/CLI require
@@ -329,6 +333,8 @@ Mark other Dispatchers independently. A hung getter can hang the target UI; pres
 before the first value read. Never claim that timeouts sandbox application code.
 
 ## 6. Exact protocol and DTO contract
+
+**Revision 3 amendment:** The following is the retained protocol 1.0 contract. Protocol 2.0 adds `query.find`, `query.findAll`, `state.get`, `act.<verb>`, `wait.until`, `hitTest`, `write.setProperty`, `write.call`, `events.subscribe`, and `events.unsubscribe`, as defined in [wpf-protocol-2.md](wpf-protocol-2.md). The V1 prohibition of invoke and write below is superseded for peer actions (D1) and opt-in allowlisted, audited writes/calls (D2); arbitrary evaluation and execution remain forbidden.
 
 There are two boundaries: internal pipe protocol version `1.0`, and additive public WinTestKit
 RPC methods. Store pipe schemas in `wpf-inspector/protocol/inspector.schema.json`; reference
@@ -450,6 +456,8 @@ are bound to object/generation/operation/tree. At most 16 snapshots per session;
 snapshots when full. Invalid/expired tokens return `invalidPageToken`, never restart silently.
 
 ## 7. Managed identity and UIA association
+
+**Revision 3 amendment:** UIA association is optional for WPF-native discovery and actions; a valid WPF ObjectRef is an action target. The exact mapping rules below remain applicable when mapping UIA elements.
 
 Object handles are session UUID plus monotonic object counter plus generation; never memory
 addresses or object GetHashCode values. Use reference identity for the registry. Keep weak
@@ -650,6 +658,8 @@ completeness. Logs record method, timing, status, counts, and IDs only, never va
 
 ## 10. Python integration, configuration, and locator semantics
 
+**Revision 3 amendment:** The post-filter pipeline and 1,000-candidate cap below apply to the UIA backend only. WPF locators push managed and UIA-equivalent predicates into the agent query. D7 makes `backend: auto` the default at the phase 3 parity gate; `backend: uia` remains an explicit opt-out. D5 forbids fallback for WPF agent failures. Mouse input is the default; peer patterns are available via `pattern` mode (D1). For WPF mouse input, Python uses `ElementState.windowHandle` from `state.get` to verify foreground window ownership before injection; a null or invalid handle or failed check prevents injection.
+
 Add frozen InspectorConfig to WtkConfig, with equivalent YAML `inspector:` (in
 `wintestkit.yaml` and `wintestkit.local.yaml`) and legacy TOML `[tool.wintestkit.inspector]`
 nested mappings. It follows the existing layering: shared file, then local override file,
@@ -771,6 +781,8 @@ Unavailable/redacted/truncated/object values are not copyable as locator literal
 ## 11. Spy UX, packaging, and operational behavior
 
 ### Spy
+
+**Revision 3 amendment:** For WPF windows the WPF tree and agent hit-test picker are primary; `hitTest` takes the cursor point and native HWND, verifies target-process ownership, and maps the HWND via `HwndSource.FromHwnd` on its Dispatcher; a non-WPF or foreign HWND fails `mappingFailed`, while no hit returns `notFound`; UIA is secondary and remains primary for non-WPF windows. On a blocked WPF agent show the blocked state and fix, not a UIA substitute (D5).
 
 Keep the current UIA basic/all-properties view intact. Add a separate Managed inspection
 section with state badge, Attach, Detach, and Refresh metadata buttons. Attach uses the selected
@@ -1189,6 +1201,9 @@ compatibility run. If any source/dependency pin becomes unavailable or unsuitabl
 stage and request a versioned amendment rather than silently choosing a substitute.
 
 ## 15. Revision history
+
+Revision 3 (2026-10-29) adopts decisions D1–D7 and supersedes the identified V1 rules in sections 1, 5, 6, 7, 10 and 11; see the [WPF-tree-driven migration plan](wpf-tree-driven-automation.md) and [protocol 2.0 contract](wpf-protocol-2.md). The V1 text remains as historical and UIA-backend context.
+
 
 Revision 2 (2026-10-27) corrected these defects in revision 1:
 
