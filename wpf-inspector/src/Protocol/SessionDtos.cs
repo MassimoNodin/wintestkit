@@ -1,0 +1,57 @@
+using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.Text.RegularExpressions;
+
+namespace WinTestKit.Inspector.Protocol
+{
+    public sealed class SessionInfo
+    {
+        public string SessionId { get; set; } = ""; public ProcessIdentity Process { get; set; } = new ProcessIdentity(); public string State { get; set; } = ""; public int ProtocolMajor { get; set; } public int ProtocolMinor { get; set; } public IReadOnlyList<string> Features { get; set; } = new List<string>(); public string? RuntimeVersion { get; set; } public string? Architecture { get; set; } public string? AgentVersion { get; set; } public string? Error { get; set; }
+        public JsonObjectNode ToJson() { var o = new JsonObjectNode(); DtoHelpers.Add(o, "sessionId", SessionId); o.Add("process", Process.ToJson()); DtoHelpers.Add(o, "state", State); o.Add("protocolMajor", JsonNumberNode.From(ProtocolMajor)); o.Add("protocolMinor", JsonNumberNode.From(ProtocolMinor)); o.Add("features", DtoHelpers.Strings(Features)); DtoHelpers.Add(o, "runtimeVersion", RuntimeVersion); DtoHelpers.Add(o, "architecture", Architecture); DtoHelpers.Add(o, "agentVersion", AgentVersion); DtoHelpers.Add(o, "error", Error); FromJson(o); return o; }
+        public static SessionInfo FromJson(JsonNode node) { var o = DtoHelpers.Object(node, "sessionId", "process", "state", "protocolMajor", "protocolMinor", "features", "runtimeVersion", "architecture", "agentVersion", "error"); var x = new SessionInfo { SessionId = DtoHelpers.Required(o, "sessionId"), Process = ProcessIdentity.FromJson(o.Get("process")), State = DtoHelpers.Required(o, "state"), ProtocolMajor = (int)DtoHelpers.Integer(o.Get("protocolMajor"), 0, int.MaxValue), ProtocolMinor = (int)DtoHelpers.Integer(o.Get("protocolMinor"), 0, int.MaxValue), Features = DtoHelpers.FeatureList(o.Get("features")), RuntimeVersion = DtoHelpers.Optional(o, "runtimeVersion"), Architecture = DtoHelpers.Optional(o, "architecture"), AgentVersion = DtoHelpers.Optional(o, "agentVersion"), Error = DtoHelpers.Optional(o, "error", 1024) }; DtoHelpers.OneOf(x.State, SessionState.Detached, SessionState.Probing, SessionState.Attaching, SessionState.Ready, SessionState.Detaching, SessionState.Faulted, SessionState.Exited); return x; }
+    }
+    public sealed class HelloParams
+    {
+        public int ProtocolMajor { get; set; } public int ProtocolMinor { get; set; } public string SessionId { get; set; } = ""; public string Token { get; set; } = ""; public ProcessIdentity Process { get; set; } = new ProcessIdentity();
+        public JsonObjectNode ToJson() { var o = new JsonObjectNode(); o.Add("protocolMajor", JsonNumberNode.From(ProtocolMajor)); o.Add("protocolMinor", JsonNumberNode.From(ProtocolMinor)); DtoHelpers.Add(o, "sessionId", SessionId); DtoHelpers.Add(o, "token", Token); o.Add("process", Process.ToJson()); FromJson(o); return o; }
+        public static HelloParams FromJson(JsonNode node) { var o = DtoHelpers.Object(node, "protocolMajor", "protocolMinor", "sessionId", "token", "process"); return new HelloParams { ProtocolMajor = (int)DtoHelpers.Integer(o.Get("protocolMajor"), ProtocolInfo.Major, ProtocolInfo.Major), ProtocolMinor = (int)DtoHelpers.Integer(o.Get("protocolMinor"), 0, int.MaxValue), SessionId = DtoHelpers.Required(o, "sessionId"), Token = DtoHelpers.Required(o, "token"), Process = ProcessIdentity.FromJson(o.Get("process")) }; }
+    }
+    public sealed class HelloResult
+    {
+        public string AgentVersion { get; set; } = ""; public string Tfm { get; set; } = ""; public string Architecture { get; set; } = ""; public string RuntimeVersion { get; set; } = ""; public IReadOnlyList<string> Features { get; set; } = new List<string>(); public ProcessIdentity Process { get; set; } = new ProcessIdentity();
+        public JsonObjectNode ToJson() { var o = new JsonObjectNode(); DtoHelpers.Add(o, "agentVersion", AgentVersion); DtoHelpers.Add(o, "tfm", Tfm); DtoHelpers.Add(o, "architecture", Architecture); DtoHelpers.Add(o, "runtimeVersion", RuntimeVersion); o.Add("features", DtoHelpers.Strings(Features)); o.Add("process", Process.ToJson()); FromJson(o); return o; }
+        public static HelloResult FromJson(JsonNode node) { var o = DtoHelpers.Object(node, "agentVersion", "tfm", "architecture", "runtimeVersion", "features", "process"); var x = new HelloResult { AgentVersion = DtoHelpers.Required(o, "agentVersion"), Tfm = DtoHelpers.Required(o, "tfm"), Architecture = DtoHelpers.Required(o, "architecture"), RuntimeVersion = DtoHelpers.Required(o, "runtimeVersion"), Features = DtoHelpers.FeatureList(o.Get("features")), Process = ProcessIdentity.FromJson(o.Get("process")) }; DtoHelpers.OneOf(x.Tfm, "net48", "net8.0-windows", "net10.0-windows"); DtoHelpers.OneOf(x.Architecture, "x86", "x64"); return x; }
+    }
+    public sealed class RequestEnvelope
+    {
+        public long Id { get; set; } public string Method { get; set; } = ""; public JsonObjectNode Params { get; set; } = new JsonObjectNode();
+        public JsonObjectNode ToJson() { var o = new JsonObjectNode(); o.Add("id", JsonNumberNode.From(Id)); DtoHelpers.Add(o, "method", Method); o.Add("params", Params); FromJson(o); return o; }
+        public static RequestEnvelope FromJson(JsonNode node) { var o = DtoHelpers.Object(node, "id", "method", "params"); var x = new RequestEnvelope { Id = DtoHelpers.Integer(o.Get("id"), 1), Method = DtoHelpers.Required(o, "method"), Params = o.Get("params") as JsonObjectNode ?? throw DtoHelpers.Invalid("Expected params object") }; DtoHelpers.OneOf(x.Method, PipeMethods.Hello, PipeMethods.Close, PipeMethods.Cancel, PipeMethods.Resolve, PipeMethods.ReadBatch, PipeMethods.Roots, PipeMethods.Children, PipeMethods.Members, PipeMethods.Read, PipeMethods.Bindings, PipeMethods.Release); return x; }
+    }
+    public sealed class ErrorInfo
+    {
+        public string Code { get; set; } = ""; public string Message { get; set; } = ""; public JsonObjectNode? Details { get; set; }
+        public JsonObjectNode ToJson() { var o = new JsonObjectNode(); DtoHelpers.Add(o, "code", Code); DtoHelpers.Add(o, "message", Message); if (Details != null) o.Add("details", Details); FromJson(o); return o; }
+        public static ErrorInfo FromJson(JsonNode node) { var o = DtoHelpers.Object(node, "code", "message", "details"); JsonObjectNode? details = null; if (o.TryGet("details", out var d)) details = d as JsonObjectNode ?? throw DtoHelpers.Invalid("Expected details object"); var x = new ErrorInfo { Code = DtoHelpers.Required(o, "code"), Message = DtoHelpers.Required(o, "message", 1024, true), Details = details }; DtoHelpers.OneOf(x.Code, ErrorCodes.InvalidParams, ErrorCodes.UnsupportedProtocol, ErrorCodes.UnsupportedTarget, ErrorCodes.AccessDenied, ErrorCodes.AuthenticationFailed, ErrorCodes.PayloadMissing, ErrorCodes.PayloadMismatch, ErrorCodes.AlreadyAttached, ErrorCodes.NotAttached, ErrorCodes.AttachFailed, ErrorCodes.BlockedByPolicy, ErrorCodes.AgentVersionMismatch, ErrorCodes.ProcessExited, ErrorCodes.ProcessReused, ErrorCodes.SessionStale, ErrorCodes.ObjectStale, ErrorCodes.MappingFailed, ErrorCodes.MemberAmbiguous, ErrorCodes.MemberNotFound, ErrorCodes.DispatcherUnavailable, ErrorCodes.Timeout, ErrorCodes.Busy, ErrorCodes.LimitExceeded, ErrorCodes.InvalidPageToken, ErrorCodes.Cancelled, ErrorCodes.InternalError); return x; }
+    }
+    public sealed class ResponseEnvelope
+    {
+        public long Id { get; set; } public JsonNode? Result { get; set; } public ErrorInfo? Error { get; set; }
+        public JsonObjectNode ToJson() { var o = new JsonObjectNode(); o.Add("id", JsonNumberNode.From(Id)); if (Result != null) o.Add("result", Result); if (Error != null) o.Add("error", Error.ToJson()); FromJson(o); return o; }
+        public static ResponseEnvelope FromJson(JsonNode node) { var o = DtoHelpers.Object(node, "id", "result", "error"); bool hasResult = o.TryGet("result", out var result); bool hasError = o.TryGet("error", out var error); if (hasResult == hasError) throw DtoHelpers.Invalid("Response requires exactly one result or error"); return new ResponseEnvelope { Id = DtoHelpers.Integer(o.Get("id"), 1), Result = hasResult ? result : null, Error = hasError ? ErrorInfo.FromJson(error) : null }; }
+    }
+    public sealed class BootstrapSettings
+    {
+        public int SchemaVersion { get; set; } = 1; public int ProtocolMajor { get; set; } public int ProtocolMinor { get; set; } public string SessionId { get; set; } = ""; public ProcessIdentity Process { get; set; } = new ProcessIdentity(); public string PipeName { get; set; } = ""; public string Token { get; set; } = ""; public string ClientSid { get; set; } = ""; public string ExpiresUtc { get; set; } = ""; public int RequestTimeoutMs { get; set; } public int IdleTimeoutMs { get; set; } public string AgentVersion { get; set; } = "";
+        public JsonObjectNode ToJson() { var o = new JsonObjectNode(); o.Add("schemaVersion", JsonNumberNode.From(SchemaVersion)); o.Add("protocolMajor", JsonNumberNode.From(ProtocolMajor)); o.Add("protocolMinor", JsonNumberNode.From(ProtocolMinor)); DtoHelpers.Add(o, "sessionId", SessionId); o.Add("process", Process.ToJson()); DtoHelpers.Add(o, "pipeName", PipeName); DtoHelpers.Add(o, "token", Token); DtoHelpers.Add(o, "clientSid", ClientSid); DtoHelpers.Add(o, "expiresUtc", ExpiresUtc); o.Add("requestTimeoutMs", JsonNumberNode.From(RequestTimeoutMs)); o.Add("idleTimeoutMs", JsonNumberNode.From(IdleTimeoutMs)); DtoHelpers.Add(o, "agentVersion", AgentVersion); FromJson(o); return o; }
+        public static BootstrapSettings FromJson(JsonNode node)
+        {
+            var o = DtoHelpers.Object(node, "schemaVersion", "protocolMajor", "protocolMinor", "sessionId", "process", "pipeName", "token", "clientSid", "expiresUtc", "requestTimeoutMs", "idleTimeoutMs", "agentVersion");
+            var x = new BootstrapSettings { SchemaVersion = (int)DtoHelpers.Integer(o.Get("schemaVersion"), 1, 1), ProtocolMajor = (int)DtoHelpers.Integer(o.Get("protocolMajor"), 0, int.MaxValue), ProtocolMinor = (int)DtoHelpers.Integer(o.Get("protocolMinor"), 0, int.MaxValue), SessionId = DtoHelpers.Required(o, "sessionId"), Process = ProcessIdentity.FromJson(o.Get("process")), PipeName = DtoHelpers.Required(o, "pipeName", 1024), Token = DtoHelpers.Required(o, "token"), ClientSid = DtoHelpers.Required(o, "clientSid"), ExpiresUtc = DtoHelpers.Required(o, "expiresUtc"), RequestTimeoutMs = (int)DtoHelpers.Integer(o.Get("requestTimeoutMs"), 1, ProtocolLimits.RequestTimeoutMs), IdleTimeoutMs = (int)DtoHelpers.Integer(o.Get("idleTimeoutMs"), 1, ProtocolLimits.IdleSessionMs), AgentVersion = DtoHelpers.Required(o, "agentVersion") };
+            if (!Guid.TryParse(x.SessionId, out _) || !Regex.IsMatch(x.ExpiresUtc, @"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$") || !DateTimeOffset.TryParse(x.ExpiresUtc, CultureInfo.InvariantCulture, DateTimeStyles.None, out _)) throw DtoHelpers.Invalid("Invalid bootstrap identity or expiry");
+            try { if (Convert.FromBase64String(x.Token).Length != 32) throw DtoHelpers.Invalid("Invalid token"); } catch (FormatException) { throw DtoHelpers.Invalid("Invalid token"); }
+            return x;
+        }
+    }
+}
