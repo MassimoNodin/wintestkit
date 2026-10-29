@@ -1,0 +1,9 @@
+{
+  "schema": "EventsSubscribeParams",
+  "instance": {
+    "kinds": [
+      "treeChanged"
+    ],
+    "unexpected": true
+  }
+}

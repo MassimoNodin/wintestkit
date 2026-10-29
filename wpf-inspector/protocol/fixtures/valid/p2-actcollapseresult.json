@@ -1,0 +1,19 @@
+{
+  "schema": "ActCollapseResult",
+  "instance": {
+    "outcome": "performed",
+    "handle": {
+      "sessionId": "s",
+      "objectId": "o",
+      "generation": 1,
+      "type": {
+        "name": "T",
+        "fullName": "Example.T",
+        "assemblyName": "A",
+        "assemblyQualifiedName": "Example.T, A",
+        "baseTypes": []
+      },
+      "dispatcherId": "d"
+    }
+  }
+}

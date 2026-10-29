@@ -14,7 +14,7 @@ SESSION: dict[str, Any] = {
     "sessionId": "s",
     "process": PROCESS,
     "state": "ready",
-    "protocolMajor": 1,
+    "protocolMajor": 2,
     "protocolMinor": 0,
     "features": [],
 }

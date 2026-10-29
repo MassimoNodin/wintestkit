@@ -1,0 +1,18 @@
+{
+  "schema": "Predicate",
+  "instance": {
+    "kind": "regex",
+    "path": [
+      {
+        "kind": "uia",
+        "name": "name"
+      }
+    ],
+    "pattern": "^(?:Hello|world)$",
+    "flags": [
+      "ignoreCase",
+      "multiline",
+      "singleline"
+    ]
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "schema": "EventsUnsubscribeParams",
+  "instance": {
+    "subscriptionId": "s"
+  }
+}

@@ -1,0 +1,343 @@
+{
+  "schema": "Locator",
+  "instance": {
+    "scope": {
+      "kind": "allRoots"
+    },
+    "tree": "combined",
+    "predicates": [
+      {
+        "kind": "equals",
+        "path": [
+          {
+            "kind": "uia",
+            "name": "name"
+          }
+        ],
+        "value": "hello"
+      },
+      {
+        "kind": "equals",
+        "path": [
+          {
+            "kind": "uia",
+            "name": "name"
+          }
+        ],
+        "value": "hello"
+      },
+      {
+        "kind": "equals",
+        "path": [
+          {
+            "kind": "uia",
+            "name": "name"
+          }
+        ],
+        "value": "hello"
+      },
+      {
+        "kind": "equals",
+        "path": [
+          {
+            "kind": "uia",
+            "name": "name"
+          }
+        ],
+        "value": "hello"
+      },
+      {
+        "kind": "equals",
+        "path": [
+          {
+            "kind": "uia",
+            "name": "name"
+          }
+        ],
+        "value": "hello"
+      },
+      {
+        "kind": "equals",
+        "path": [
+          {
+            "kind": "uia",
+            "name": "name"
+          }
+        ],
+        "value": "hello"
+      },
+      {
+        "kind": "equals",
+        "path": [
+          {
+            "kind": "uia",
+            "name": "name"
+          }
+        ],
+        "value": "hello"
+      },
+      {
+        "kind": "equals",
+        "path": [
+          {
+            "kind": "uia",
+            "name": "name"
+          }
+        ],
+        "value": "hello"
+      },
+      {
+        "kind": "equals",
+        "path": [
+          {
+            "kind": "uia",
+            "name": "name"
+          }
+        ],
+        "value": "hello"
+      },
+      {
+        "kind": "equals",
+        "path": [
+          {
+            "kind": "uia",
+            "name": "name"
+          }
+        ],
+        "value": "hello"
+      },
+      {
+        "kind": "equals",
+        "path": [
+          {
+            "kind": "uia",
+            "name": "name"
+          }
+        ],
+        "value": "hello"
+      },
+      {
+        "kind": "equals",
+        "path": [
+          {
+            "kind": "uia",
+            "name": "name"
+          }
+        ],
+        "value": "hello"
+      },
+      {
+        "kind": "equals",
+        "path": [
+          {
+            "kind": "uia",
+            "name": "name"
+          }
+        ],
+        "value": "hello"
+      },
+      {
+        "kind": "equals",
+        "path": [
+          {
+            "kind": "uia",
+            "name": "name"
+          }
+        ],
+        "value": "hello"
+      },
+      {
+        "kind": "equals",
+        "path": [
+          {
+            "kind": "uia",
+            "name": "name"
+          }
+        ],
+        "value": "hello"
+      },
+      {
+        "kind": "equals",
+        "path": [
+          {
+            "kind": "uia",
+            "name": "name"
+          }
+        ],
+        "value": "hello"
+      },
+      {
+        "kind": "equals",
+        "path": [
+          {
+            "kind": "uia",
+            "name": "name"
+          }
+        ],
+        "value": "hello"
+      },
+      {
+        "kind": "equals",
+        "path": [
+          {
+            "kind": "uia",
+            "name": "name"
+          }
+        ],
+        "value": "hello"
+      },
+      {
+        "kind": "equals",
+        "path": [
+          {
+            "kind": "uia",
+            "name": "name"
+          }
+        ],
+        "value": "hello"
+      },
+      {
+        "kind": "equals",
+        "path": [
+          {
+            "kind": "uia",
+            "name": "name"
+          }
+        ],
+        "value": "hello"
+      },
+      {
+        "kind": "equals",
+        "path": [
+          {
+            "kind": "uia",
+            "name": "name"
+          }
+        ],
+        "value": "hello"
+      },
+      {
+        "kind": "equals",
+        "path": [
+          {
+            "kind": "uia",
+            "name": "name"
+          }
+        ],
+        "value": "hello"
+      },
+      {
+        "kind": "equals",
+        "path": [
+          {
+            "kind": "uia",
+            "name": "name"
+          }
+        ],
+        "value": "hello"
+      },
+      {
+        "kind": "equals",
+        "path": [
+          {
+            "kind": "uia",
+            "name": "name"
+          }
+        ],
+        "value": "hello"
+      },
+      {
+        "kind": "equals",
+        "path": [
+          {
+            "kind": "uia",
+            "name": "name"
+          }
+        ],
+        "value": "hello"
+      },
+      {
+        "kind": "equals",
+        "path": [
+          {
+            "kind": "uia",
+            "name": "name"
+          }
+        ],
+        "value": "hello"
+      },
+      {
+        "kind": "equals",
+        "path": [
+          {
+            "kind": "uia",
+            "name": "name"
+          }
+        ],
+        "value": "hello"
+      },
+      {
+        "kind": "equals",
+        "path": [
+          {
+            "kind": "uia",
+            "name": "name"
+          }
+        ],
+        "value": "hello"
+      },
+      {
+        "kind": "equals",
+        "path": [
+          {
+            "kind": "uia",
+            "name": "name"
+          }
+        ],
+        "value": "hello"
+      },
+      {
+        "kind": "equals",
+        "path": [
+          {
+            "kind": "uia",
+            "name": "name"
+          }
+        ],
+        "value": "hello"
+      },
+      {
+        "kind": "equals",
+        "path": [
+          {
+            "kind": "uia",
+            "name": "name"
+          }
+        ],
+        "value": "hello"
+      },
+      {
+        "kind": "equals",
+        "path": [
+          {
+            "kind": "uia",
+            "name": "name"
+          }
+        ],
+        "value": "hello"
+      },
+      {
+        "kind": "equals",
+        "path": [
+          {
+            "kind": "uia",
+            "name": "name"
+          }
+        ],
+        "value": "hello"
+      }
+    ],
+    "depth": 256,
+    "limit": 100
+  }
+}

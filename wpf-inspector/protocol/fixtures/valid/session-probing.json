@@ -1,1 +1,14 @@
-{"schema":"Session","instance":{"sessionId":"s","process":{"pid":42,"creationTimeUtc":"2026-01-01T00:00:00Z"},"state":"probing","protocolMajor":1,"protocolMinor":0,"features":[]}}
+{
+  "schema": "Session",
+  "instance": {
+    "sessionId": "s",
+    "process": {
+      "pid": 42,
+      "creationTimeUtc": "2026-01-01T00:00:00Z"
+    },
+    "state": "probing",
+    "protocolMajor": 2,
+    "protocolMinor": 0,
+    "features": []
+  }
+}

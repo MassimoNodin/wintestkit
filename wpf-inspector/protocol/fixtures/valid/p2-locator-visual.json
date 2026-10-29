@@ -1,0 +1,37 @@
+{
+  "schema": "Locator",
+  "instance": {
+    "scope": {
+      "kind": "window",
+      "handle": {
+        "sessionId": "s",
+        "objectId": "o",
+        "generation": 1,
+        "type": {
+          "name": "T",
+          "fullName": "Example.T",
+          "assemblyName": "A",
+          "assemblyQualifiedName": "Example.T, A",
+          "baseTypes": []
+        },
+        "dispatcherId": "d"
+      }
+    },
+    "tree": "visual",
+    "predicates": [
+      {
+        "kind": "equals",
+        "path": [
+          {
+            "kind": "uia",
+            "name": "name"
+          }
+        ],
+        "value": "hello"
+      }
+    ],
+    "depth": 256,
+    "limit": 100,
+    "index": 0
+  }
+}

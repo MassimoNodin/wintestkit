@@ -1,0 +1,7 @@
+{
+  "schema": "EventsUnsubscribeResult",
+  "instance": {
+    "unsubscribed": true,
+    "unexpected": true
+  }
+}

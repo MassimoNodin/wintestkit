@@ -1,0 +1,48 @@
+{
+  "schema": "WaitUntilResult",
+  "instance": {
+    "satisfied": true,
+    "handle": {
+      "sessionId": "s",
+      "objectId": "o",
+      "generation": 1,
+      "type": {
+        "name": "T",
+        "fullName": "Example.T",
+        "assemblyName": "A",
+        "assemblyQualifiedName": "Example.T, A",
+        "baseTypes": []
+      },
+      "dispatcherId": "d"
+    },
+    "state": {
+      "handle": {
+        "sessionId": "s",
+        "objectId": "o",
+        "generation": 1,
+        "type": {
+          "name": "T",
+          "fullName": "Example.T",
+          "assemblyName": "A",
+          "assemblyQualifiedName": "Example.T, A",
+          "baseTypes": []
+        },
+        "dispatcherId": "d"
+      },
+      "windowHandle": null,
+      "bounds": null,
+      "dpi": {
+        "x": 96,
+        "y": 96
+      },
+      "visible": true,
+      "clipped": false,
+      "offscreen": false,
+      "enabled": true,
+      "focused": false,
+      "isKeyboardFocusable": true,
+      "parts": []
+    },
+    "unexpected": true
+  }
+}
