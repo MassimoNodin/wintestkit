@@ -115,3 +115,27 @@ class UIAError(WtkError):
 
 class ElementTypeError(ActionError):
     """The element found does not fit the type it was declared as (``ComboBox``, ``Button`` ...)."""
+
+
+class InspectorError(WtkError):
+    """A managed inspector operation failed with a protocol error code."""
+
+    def __init__(self, message: str, *, code: str) -> None:
+        super().__init__(message)
+        self.code = code
+
+
+class InspectorUnavailableError(InspectorError):
+    """The inspector cannot attach or is unavailable."""
+
+
+class InspectorMappingError(InspectorError):
+    """A UIA element could not be mapped exactly."""
+
+
+class InspectorReadError(InspectorError):
+    """A managed value cannot be used for a locator."""
+
+
+class InspectorLimitError(InspectorError):
+    """An inspector resource limit was reached."""
