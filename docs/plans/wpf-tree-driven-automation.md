@@ -1,6 +1,7 @@
 # WPF-tree-driven automation: migration plan
 
-Status: decisions D1–D7 made (§3); implementation not started. Planning date: 2026-10-29.
+Status: decisions D1–D7 made (§3); phase 0 and phase 1 done (2026-10-31); phase 2 in
+progress (§6.2). Planning date: 2026-10-29.
 Builds on: `wpf-dotnet-attribute-analyzer.md` (the *inspector plan*) and the implemented
 inspector on `master` (agent, protocol, Python client, managed locators, Spy panel).
 
@@ -216,6 +217,54 @@ Each phase is separately shippable behind configuration; none changes UIA-only b
 
 Phase 1 alone delivers the biggest TestComplete-like gain (true WPF-tree `FindChild`) while
 actions stay on proven UIA.
+
+### 6.1 Phase 1 outcome (2026-10-31)
+
+Managed locators run one `query.findAll` in the agent and map matches back to UIA by
+`ElementState.uiaRuntimeId`; `inspector.query: postfilter` keeps the old path. Live gate on the
+owned fixture: 18/18 locators identical on both paths, no 1,000-candidate cap, `query.find`
+20 ms median on a 5,000-object window. Open cost: end-to-end resolution of a unique match on
+that window is ~1.2 s, dominated by the UIA RuntimeId lookup that phase 2 removes for finds.
+
+### 6.2 Phase 2 design (2026-10-31)
+
+Decisions:
+
+- **Backend selection.** `backend: uia | auto` (default `uia` until the phase 3 gate, D7).
+  Under `auto` the router picks per top-level window: the WPF backend when the window's
+  process is a WPF process, UIA otherwise. If a WPF window's agent is unavailable the step
+  fails with the agent error (D5); there is no fallback. Attach stays on the existing
+  `inspector.attach` modes until phase 7 (D4).
+- **Depth (owner, 2026-10-31).** On the WPF backend `depth=` counts only ancestors that have
+  an automation peer, so a locator's depth means the same on both backends. Protocol: Locator
+  gains a required `depthMode: "tree" | "peers"`; `peers` counts depth in peer-bearing
+  objects below the scope (the scope is depth 0).
+- **Identity reads.** The protocol `read` method accepts the single-segment `uia` paths
+  (`automation_id`, `name`, `class_name`, `control_type`) with the same peer-derived values as
+  predicates, so a WPF element can describe itself for diagnostics and `info()`.
+- **Element model.** A `TargetElement` protocol in `backends/` covers what resolution, waits
+  and expectations use from `UIAElement` (identity, bounds, enabled, offscreen, focus, process,
+  window handle, alive, parent/children, same_as, info). `UIAElement` satisfies it; the new
+  `WpfElement` wraps an agent ObjectRef and implements it from `read`, `state.get` and
+  `query.*`. Anything else — UIA patterns (text, value, toggle, selection, grid), actions,
+  arbitrary UIA `get_property` names, diagnostics — goes through `WpfElement.as_uia()`, the
+  phase 1 RuntimeId mapping. This is the designed phase 2/3 split, not a fallback: actions and
+  peer pattern reads move into the agent in phase 3. Pattern-based checks on an element
+  without a peer fail with a clear "needs a UI Automation peer" error.
+- **Resolution.** On the WPF backend every locator link is one `query.findAll` (or
+  `query.find` with `index`) scoped to the window or the previous link's handle; `within`,
+  `index`, ambiguity and popup search keep their semantics. Results keep agent traversal order.
+- **Waits.** The agent implements `wait.until` (feature `waits`) per the protocol; Python uses
+  it for `attached`, `visible` and `enabled` on the WPF backend and keeps polling for the
+  other states.
+- **Out of scope for phase 2:** diagnostics, relocation and suggestions on the WPF tree (use
+  `as_uia()` roots); Spy; actions in the agent.
+
+Slices: P2a protocol `depthMode` and `uia` reads; P2b agent `wait.until`; P2c Python
+`backends/` with `TargetElement` and `WpfElement`; P2d router, config and resolution on the
+WPF backend; P2e waits and `expect` on the WPF backend; P2f parity suite (existing locator,
+wait and expect tests run on both backends against the fixture; differences listed and
+justified).
 
 ## 7. Test strategy
 
