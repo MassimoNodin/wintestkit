@@ -71,6 +71,7 @@ ERROR_CODES = frozenset(
         "notFound",
         "actionUnsupported",
         "regexTimeout",
+        "valueUnreadable",
         "writeDenied",
         "writeRateExceeded",
     }

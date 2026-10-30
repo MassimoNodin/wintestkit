@@ -60,8 +60,11 @@ type and dispatcherId. Handles are session-bound and stale handles fail `objectS
   `automation_id`, `name`, `class_name`, or `control_type`. The agent computes automation_id
   from AutomationProperties.AutomationId then x:Name, name and control_type from the peer,
   and class_name from the control’s short runtime `Type.Name` (for example `Button`). Missing
-  peers yield unavailable peer-derived values, not guesses. Typed paths use the linked shapes. Redacted, truncated, unavailable and
-  getter-failed values cannot silently match; report the relevant failure.
+  peers yield unavailable peer-derived values, not guesses. Typed paths use the linked shapes.
+  Unreadable predicate values (redacted, truncated, unavailable, getter-failed, unsupported)
+  fail the query with `valueUnreadable` (`details.status` and `details.path`, unless the path is
+  redacted). Null and nullIntermediate do not match; peer-derived `uia` paths on elements
+  with no automation peer do not match and are not errors.
 * `ElementState` is `{handle:ObjectRef,windowHandle:integer|null,bounds:Rect|null,dpi:{x:number,y:number},
   visible:boolean,clipped:boolean,offscreen:boolean,enabled:boolean,focused:boolean,
   isKeyboardFocusable:boolean,parts:PartGeometry[]}`. Each part is
@@ -183,7 +186,7 @@ Dispatchers remain independent. Never abort a thread or terminate the target. Fo
 check foreground window ownership and target point before injecting input.
 
 The protocol includes the foundational error codes and `notFound`, `actionUnsupported`,
-`regexTimeout`, `writeDenied`, `writeRateExceeded`. All errors use the existing
+`regexTimeout`, `valueUnreadable`, `writeDenied`, `writeRateExceeded`. All errors use the existing
 `{code,message,details}` envelope and omit sensitive values. `writeDenied`, `writeRateExceeded`, and failed write/call
 errors carry `details.audit`. A timeout does not imply cancellation of running target code.
 
@@ -227,3 +230,4 @@ explicit `backend: uia` keep the UIA backend.
 5. Writes use overload-specific allowlists, exact scalar types, no nulls, and timeout/redaction-safe audit.
 6. ElementState exposes template-part geometry for actual sub-part mouse input.
 7. findAll returns capped results with complete:false and count only after full traversal.
+8. Unreadable predicate values fail the query with valueUnreadable; missing peers do not match.

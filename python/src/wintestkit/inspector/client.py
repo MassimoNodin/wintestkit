@@ -7,9 +7,14 @@ import time
 from collections.abc import Callable, Sequence
 from contextlib import suppress
 from dataclasses import dataclass, replace
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
-from wintestkit.errors import InspectorError, InspectorLimitError, InspectorUnavailableError
+from wintestkit.errors import (
+    InspectorError,
+    InspectorLimitError,
+    InspectorReadError,
+    InspectorUnavailableError,
+)
 from wintestkit.inspector.models import (
     ERROR_CODES,
     BindingInfo,
@@ -38,7 +43,13 @@ from wintestkit.inspector.paths import ManagedPath, PathSegment
 from wintestkit.inspector.transport import ByteTransport, read_frame, write_frame
 
 
-def _error(code: str) -> InspectorError:
+def _error(code: str, details: object = None) -> InspectorError:
+    if code == "valueUnreadable":
+        status = (
+            cast(dict[str, object], details).get("status") if isinstance(details, dict) else None
+        )
+        status = status if isinstance(status, str) else code
+        return InspectorReadError(f"Inspector value unreadable: {status}", code=status)
     if code in {"busy", "limitExceeded"}:
         return InspectorLimitError(f"Inspector request failed: {code}", code=code)
     if code in {
@@ -61,7 +72,7 @@ def _error(code: str) -> InspectorError:
     return InspectorError(f"Inspector request failed: {code}", code=code)
 
 
-def _response(value: object) -> tuple[int, object, str | None]:
+def _response(value: object) -> tuple[int, object, InspectorError | None]:
     data = _obj(value, "id", "result error")
     request_id = _int(data["id"], 1)
     if ("result" in data) == ("error" in data):
@@ -74,7 +85,7 @@ def _response(value: object) -> tuple[int, object, str | None]:
         raise ValueError("Invalid error message")
     if "details" in error and not isinstance(error["details"], dict):
         raise ValueError("Invalid error details")
-    return request_id, None, code
+    return request_id, None, _error(code, error.get("details"))
 
 
 @dataclass
@@ -141,11 +152,11 @@ class InspectorClient:
                 },
                 deadline,
             )
-            response_id, result, code = _response(read_frame(transport, deadline))
+            response_id, result, error = _response(read_frame(transport, deadline))
             if response_id != 1:
                 raise ValueError("Mismatched hello response ID")
-            if code is not None:
-                raise _error(code)
+            if error is not None:
+                raise error
             hello = HelloResult.from_json(result)
             if hello.process != facts.identity:
                 raise InspectorUnavailableError(
@@ -215,7 +226,7 @@ class InspectorClient:
     def _read_responses(self) -> None:
         try:
             while True:
-                request_id, result, code = _response(
+                request_id, result, error = _response(
                     read_frame(self._transport, time.monotonic() + 301)
                 )
                 with self._lock:
@@ -226,7 +237,7 @@ class InspectorClient:
                     if pending is None:
                         raise ValueError("Response ID is not outstanding")
                     pending.result = result
-                    pending.error = _error(code) if code is not None else None
+                    pending.error = error
                     pending.event.set()
         except TimeoutError:
             self.invalidate(
