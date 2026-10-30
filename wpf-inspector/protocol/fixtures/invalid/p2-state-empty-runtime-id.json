@@ -1,0 +1,48 @@
+{
+  "schema": "ElementState",
+  "instance": {
+    "handle": {
+      "sessionId": "s",
+      "objectId": "o",
+      "generation": 1,
+      "type": {
+        "name": "T",
+        "fullName": "Example.T",
+        "assemblyName": "A",
+        "assemblyQualifiedName": "Example.T, A",
+        "baseTypes": []
+      },
+      "dispatcherId": "d"
+    },
+    "windowHandle": 123,
+    "bounds": {
+      "x": 1,
+      "y": 2,
+      "width": 30,
+      "height": 40
+    },
+    "dpi": {
+      "x": 96,
+      "y": 96
+    },
+    "visible": true,
+    "clipped": false,
+    "offscreen": false,
+    "enabled": true,
+    "focused": false,
+    "isKeyboardFocusable": true,
+    "parts": [
+      {
+        "name": "PART_Button",
+        "role": "templatePart",
+        "bounds": {
+          "x": 2,
+          "y": 3,
+          "width": 4,
+          "height": 5
+        }
+      }
+    ],
+    "uiaRuntimeId": []
+  }
+}

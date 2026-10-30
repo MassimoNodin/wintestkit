@@ -91,6 +91,15 @@ def test_nullable_geometry_round_trips_in_nested_result() -> None:
     assert result["state"]["parts"][0]["bounds"] is None
 
 
+def test_state_runtime_id_round_trip() -> None:
+    fixture = json.loads((FIXTURES / "valid/p2-state-runtime-id.json").read_text(encoding="utf-8"))[
+        "instance"
+    ]
+    state = models.ElementState.from_json(fixture)
+    assert state.uia_runtime_id == (42, 1)
+    assert state.to_json()["uiaRuntimeId"] == [42, 1]
+
+
 @pytest.mark.parametrize("status", ["redacted", "truncated", None, 7])
 def test_unreadable_response_maps_to_read_error(status: object) -> None:
     _, _, error = _response(

@@ -1872,6 +1872,11 @@ export interface ElementState {
   focused: boolean;
   isKeyboardFocusable: boolean;
   parts: PartGeometry[];
+  /**
+   * @minItems 1
+   * @maxItems 1024
+   */
+  uiaRuntimeId?: [number, ...number[]];
 }
 /**
  * Physical screen pixels; all numbers finite.
