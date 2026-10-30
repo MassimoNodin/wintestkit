@@ -42,11 +42,17 @@ def _hashes() -> dict[str, str]:
 
 def _control(pid: int) -> dict[str, object]:
     kernel = _api()
-    handle = kernel.CreateFileW(
-        rf"\\.\pipe\WinTestKit.Fixture.{pid}", 0xC0000000, 0, None, 3, 0x40000000, None
-    )
-    if handle == ctypes.c_void_p(-1).value:
-        raise OSError(ctypes.get_last_error(), "Fixture control pipe not ready")
+    until = time.monotonic() + 2
+    while True:
+        handle = kernel.CreateFileW(
+            rf"\\.\pipe\WinTestKit.Fixture.{pid}", 0xC0000000, 0, None, 3, 0x40000000, None
+        )
+        if handle != ctypes.c_void_p(-1).value:
+            break
+        error = ctypes.get_last_error()
+        if error not in (2, 231) or time.monotonic() >= until:
+            raise OSError(error, "Fixture control pipe not ready")
+        time.sleep(0.01)
     pipe = WindowsPipe(handle)
     try:
         deadline = time.monotonic() + 2
