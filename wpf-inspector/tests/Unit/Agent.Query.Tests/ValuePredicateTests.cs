@@ -63,6 +63,54 @@ namespace WinTestKit.Inspector.Agent.Query.Tests
                     action(new ObjectInspector(), registry, new QueryPredicateContext(DateTime.UtcNow.AddSeconds(2)));
             });
         }
+        public sealed class LargeButton : Button
+        {
+            public string Group => "shared";
+            public string Key { get; set; } = "";
+        }
+        [Fact]
+        public void LargeManagedQueriesComplete()
+        {
+            OnSta(() =>
+            {
+                var executor = new DispatcherExecutor();
+                using (var registry = new ObjectRegistry("large", executor))
+                {
+                    var panel = new StackPanel();
+                    for (int i = 0; i < 1500; i++) panel.Children.Add(new LargeButton { Key = "Large " + i });
+                    for (int i = 0; i < 3500; i++) panel.Children.Add(i % 2 == 0 ? (UIElement)new Border() : new TextBlock());
+                    var window = new Window { Content = panel };
+                    var handle = registry.Register(window, window.Dispatcher, TypeInfoBuilder.Build(window.GetType()));
+                    foreach (bool typed in new[] { false, true })
+                    {
+                        var locator = new Locator
+                        {
+                            Scope = new Scope { Kind = "window", Handle = handle },
+                            Tree = "logical",
+                            Depth = 10,
+                            Limit = 2,
+                            Predicates = typed ? new[] { Equal("FullName", new JsonStringNode(typeof(LargeButton).FullName!), "type"), Equal("Key", new JsonStringNode("Large 1499")) } :
+                                new[] { Equal("Group", new JsonStringNode("shared")), Equal("Key", new JsonStringNode("Large 1499")) }
+                        };
+                        var samples = new List<long>();
+                        for (int iteration = 0; iteration < 11; iteration++)
+                        {
+                            var watch = System.Diagnostics.Stopwatch.StartNew();
+                            var task = new QueryEngine(executor, registry).FindAllAsync(locator, DateTime.UtcNow.AddSeconds(2), CancellationToken.None);
+                            var frame = new DispatcherFrame(); task.ContinueWith(_ => frame.Continue = false, TaskScheduler.Default); Dispatcher.PushFrame(frame);
+                            var result = task.GetAwaiter().GetResult();
+                            if (iteration > 0) samples.Add(watch.ElapsedMilliseconds);
+                            Assert.True(result.Complete); Assert.Single(result.Matches);
+                        }
+                        samples.Sort();
+                        Console.WriteLine("Large managed typed={0}: median={1} ms, p95={2} ms", typed, (samples[4] + samples[5]) / 2.0, samples[9]);
+#if !NET48
+                        Assert.True((samples[4] + samples[5]) / 2.0 <= 100);
+#endif
+                    }
+                }
+            });
+        }
         [Fact]
         public void ScalarEqualityAndRegexUseReaderValues()
         {
@@ -107,7 +155,7 @@ namespace WinTestKit.Inspector.Agent.Query.Tests
                 Check(Equal("BrokenValue", new JsonStringNode("x")), "exception", true);
                 Check(Equal("BrushValue", new JsonStringNode("x")), "unsupported", true);
                 Check(Equal("SecretValue", new JsonStringNode("x")), "redacted", false);
-                Check(Equal("TextValue", new JsonStringNode("x")), "redacted", true, new ProtectedButton());
+                Check(Equal("Content", new JsonStringNode("x")), "redacted", true, new ProtectedButton());
                 Check(Equal("TextValue", new JsonStringNode("x")), "redacted", false, reader: new ObjectInspector(new[] { "TextValue" }));
                 var predicate = (ValuePredicate)PredicateFactory.Create(Equal("TextValue", new JsonStringNode("x")), inspector, registry);
                 Assert.False(predicate.MatchesValue(new ValueDto { Status = "stale", Kind = "unavailable" }, context));
@@ -127,14 +175,14 @@ namespace WinTestKit.Inspector.Agent.Query.Tests
                 Assert.True(Match(button, "name", "Caption"));
                 Assert.True(Match(button, "control_type", "Button"));
                 var border = new Border { Name = "BorderName" };
-                Assert.True(Match(border, "automation_id", "BorderName"));
-                Assert.True(Match(border, "class_name", "Border"));
+                Assert.False(Match(border, "automation_id", "BorderName"));
+                Assert.False(Match(border, "class_name", "Border"));
                 Assert.False(Match(border, "name", "anything"));
                 Assert.False(Match(border, "control_type", "Custom"));
                 Assert.False(PredicateFactory.Create(Equal("name", new JsonStringNode("x"), "uia"), new ObjectInspector(new[] { "name" }), registry).Matches(border, context));
                 var uiaRegex = new Predicate { Kind = "regex", Path = new[] { Segment("name", "uia") }, Pattern = "^caption$", Flags = new[] { "ignoreCase" } };
                 Assert.True(PredicateFactory.Create(uiaRegex, inspector, registry).Matches(button, context));
-                Assert.True(Match(new Border(), "automation_id", ""));
+                Assert.False(Match(new Border(), "automation_id", ""));
                 string[] names = { "Button", "Calendar", "CheckBox", "ComboBox", "Edit", "Hyperlink", "Image", "ListItem", "List", "Menu", "MenuBar", "MenuItem", "ProgressBar", "RadioButton", "ScrollBar", "Slider", "Spinner", "StatusBar", "Tab", "TabItem", "Text", "ToolBar", "ToolTip", "Tree", "TreeItem", "Custom", "Group", "Thumb", "DataGrid", "DataItem", "Document", "SplitButton", "Window", "Pane", "Header", "HeaderItem", "Table", "TitleBar", "Separator", "SemanticZoom", "AppBar" };
                 Assert.All(Enum.GetValues(typeof(AutomationControlType)).Cast<AutomationControlType>(), type => Assert.Contains(ValuePredicate.ControlTypeName(type), names));
             });
@@ -146,6 +194,42 @@ namespace WinTestKit.Inspector.Agent.Query.Tests
             {
                 var predicate = PredicateFactory.Create(Regex("LongValue", "(a+)+$"), inspector, registry);
                 Assert.Equal(ErrorCodes.RegexTimeout, Assert.Throws<ProtocolException>(() => predicate.Matches(new Model(), context)).Code);
+            });
+        }
+        [Fact]
+        public void UiaClassNameUsesTheAutomationPeer()
+        {
+            WithPredicate((inspector, registry, context) =>
+            {
+                var model = new Model();
+                Assert.True(PredicateFactory.Create(Equal("class_name", new JsonStringNode("Button"), "uia"), inspector, registry).Matches(model, context));
+                Assert.False(PredicateFactory.Create(Equal("class_name", new JsonStringNode("Model"), "uia"), inspector, registry).Matches(model, context));
+            });
+        }
+        [Fact]
+        public void UiaMismatchSkipsManagedReadsEvenWhenListedSecond()
+        {
+            OnSta(() =>
+            {
+                var executor = new DispatcherExecutor();
+                using (var registry = new ObjectRegistry("query", executor))
+                {
+                    var model = new Model();
+                    ObjectRef handle = registry.Register(model, model.Dispatcher, TypeInfoBuilder.Build(model.GetType()));
+                    var locator = new Locator
+                    {
+                        Scope = new Scope { Kind = "object", Handle = handle },
+                        Tree = "logical",
+                        Depth = 0,
+                        Limit = 1,
+                        Predicates = new[] { Equal("SecretValue", new JsonStringNode("x")), Equal("automation_id", new JsonStringNode("other"), "uia") }
+                    };
+                    var task = new QueryEngine(executor, registry).FindAllAsync(locator, DateTime.UtcNow.AddSeconds(2), CancellationToken.None);
+                    var frame = new DispatcherFrame();
+                    task.ContinueWith(_ => frame.Continue = false, TaskScheduler.Default);
+                    Dispatcher.PushFrame(frame);
+                    Assert.Empty(task.GetAwaiter().GetResult().Matches);
+                }
             });
         }
         [Fact]

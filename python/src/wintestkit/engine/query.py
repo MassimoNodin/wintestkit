@@ -174,17 +174,19 @@ def _agent_query(
         mapped: dict[tuple[int, tuple[int, ...]], UIAElement] = {}
         for hwnd, ids in groups.items():
             window = from_handle(hwnd)
-            found = window.find_all(
-                TreeScope.Subtree, com.create_runtime_ids_condition(ids), cached=True
-            )
-            candidates = [*found, window]
-            for element in candidates:
-                try:
-                    identity = tuple(int(x) for x in element.runtime_id.split("."))
-                except ValueError:
-                    continue
-                if identity in ids:
-                    mapped.setdefault((hwnd, identity), element)
+            # Large OR conditions can exceed UI Automation provider limits.
+            for offset in range(0, len(ids), 25):
+                batch = ids[offset : offset + 25]
+                found = window.find_all(
+                    TreeScope.Subtree, com.create_runtime_ids_condition(batch), cached=True
+                )
+                for element in [*found, window]:
+                    try:
+                        identity = tuple(int(x) for x in element.runtime_id.split("."))
+                    except ValueError:
+                        continue
+                    if identity in batch:
+                        mapped.setdefault((hwnd, identity), element)
         missing = len(result.matches) - sum(key in mapped for key in ordered)
         if missing:
             log.debug("Skipped %d WPF matches without a mapped UIA element", missing)
