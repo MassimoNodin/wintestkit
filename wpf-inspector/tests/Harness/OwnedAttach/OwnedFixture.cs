@@ -9,6 +9,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.Win32.SafeHandles;
+using WinTestKit.Inspector.Protocol;
 
 internal static class OwnedFixture
 {
@@ -85,7 +86,7 @@ internal static class OwnedFixture
             sessionDir = newSessionDir;
             VerifyPrivateAcl(new DirectoryInfo(sessionDir).GetAccessControl(), sid, true);
             string newBootstrap = Path.Combine(sessionDir, Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(16)) + ".json");
-            var settings = new { schemaVersion = 1, protocolMajor = 1, protocolMinor = 0, sessionId = session, process = identity, pipeName, token, clientSid = sid, expiresUtc = DateTime.UtcNow.AddSeconds(30).ToString("O"), requestTimeoutMs = 2000, idleTimeoutMs = 300000, agentVersion = version };
+            var settings = new { schemaVersion = 1, protocolMajor = ProtocolInfo.Major, protocolMinor = ProtocolInfo.Minor, sessionId = session, process = identity, pipeName, token, clientSid = sid, expiresUtc = DateTime.UtcNow.AddSeconds(30).ToString("O"), requestTimeoutMs = 2000, idleTimeoutMs = 300000, agentVersion = version, redactNames = Array.Empty<string>(), writeAllowlist = new { properties = Array.Empty<string>(), methods = Array.Empty<string>() } };
             using (var file = new FileStream(newBootstrap, FileMode.CreateNew, FileAccess.Write, FileShare.None)) { bootstrap = newBootstrap; JsonSerializer.Serialize(file, settings); }
             VerifyPrivateAcl(new FileInfo(bootstrap).GetAccessControl(), sid, false);
             string exe = Path.Combine(payload, "launchers", arch, $"Snoop.InjectorLauncher.{arch}.exe");
@@ -100,7 +101,7 @@ internal static class OwnedFixture
             using (var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(10))) await pipe.ConnectAsync(deadline.Token);
             PackageVerifier.Require(GetNamedPipeServerProcessId(pipe.SafePipeHandle, out uint serverPid) && serverPid == target.Id && target.StartTime.ToUniversalTime() == created && !target.HasExited, "Pipe server identity mismatch");
             string helloToken = options.Contains("--bad-token") ? Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)) : token;
-            var hello = new { id = 1, method = "session.hello", @params = new { protocolMajor = 1, protocolMinor = 0, sessionId = session, token = helloToken, process = identity } };
+            var hello = new { id = 1, method = "session.hello", @params = new { protocolMajor = ProtocolInfo.Major, protocolMinor = ProtocolInfo.Minor, sessionId = session, token = helloToken, process = identity } };
             if (options.Contains("--bad-token"))
             {
                 try { _ = await Exchange(pipe, hello, 1, 4000); throw new InvalidDataException("Wrong token was accepted"); }

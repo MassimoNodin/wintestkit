@@ -30,6 +30,7 @@ def test_real_private_bootstrap_is_one_use_and_cleaned(
     settings = bootstrap.create_bootstrap(IDENTITY, sid, "1")
     try:
         document = json.loads(settings.path.read_text(encoding="utf-8"))
+        assert document["writeAllowlist"] == {"properties": [], "methods": []}
         assert set(document) == {
             "schemaVersion",
             "protocolMajor",
@@ -44,6 +45,7 @@ def test_real_private_bootstrap_is_one_use_and_cleaned(
             "idleTimeoutMs",
             "agentVersion",
             "redactNames",
+            "writeAllowlist",
         }
         assert document["redactNames"] == []
         assert len(base64.b64decode(document["token"], validate=True)) == 32

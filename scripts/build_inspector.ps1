@@ -40,6 +40,7 @@ foreach ($entry in $lock.files) {
 }
 foreach ($file in Get-ChildItem -LiteralPath $vendor -File -Recurse) {
     $relative = $file.FullName.Substring($vendor.Length + 1)
+    if ($relative -match '(^|\\)(bin|obj)\\') { continue }
     if (-not $expected.ContainsKey($relative)) { throw "Uninventoried Snoop source: $relative" }
 }
 $sdkInclude = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits/NETFXSDK/4.8/Include/um'
@@ -166,6 +167,11 @@ try {
     $versionSource = Get-Content -Raw (Join-Path $root 'python/src/wintestkit/__init__.py')
     if ($versionSource -notmatch '(?m)^__version__\s*=\s*["'']([^"'']+)["'']') { throw 'Cannot find inspector version.' }
     $version = $Matches[1]
+    $protocolSource = Get-Content -Raw (Join-Path $root 'wpf-inspector/src/Protocol/Core.cs')
+    $protocolMatches = [regex]::Matches($protocolSource, 'public\s+static\s+class\s+ProtocolInfo\s*\{\s*public\s+const\s+int\s+Major\s*=\s*(\d+)\s*,\s*Minor\s*=\s*(\d+)\s*;\s*\}')
+    if ($protocolMatches.Count -ne 1) { throw 'Cannot uniquely determine ProtocolInfo Major and Minor from wpf-inspector/src/Protocol/Core.cs.' }
+    $protocolMajor = [int]$protocolMatches[0].Groups[1].Value
+    $protocolMinor = [int]$protocolMatches[0].Groups[2].Value
     $sourceCommit = (& git rev-parse HEAD).Trim()
     if ($LASTEXITCODE -ne 0 -or $sourceCommit -notmatch '^[0-9a-f]{40}$') { throw 'Cannot determine source commit.' }
     if (@(& git status --porcelain --untracked-files=normal).Count -gt 0) { $sourceCommit += '-dirty' }
@@ -175,7 +181,7 @@ try {
         foreach ($architecture in @('x86', 'x64')) { $cells += [ordered]@{ runtime = $runtime; architecture = $architecture; verified = $false } }
     }
     $manifest = [ordered]@{
-        schemaVersion = 1; inspectorVersion = $version; protocolMajor = 1; protocolMinor = 0
+        schemaVersion = 1; inspectorVersion = $version; protocolMajor = $protocolMajor; protocolMinor = $protocolMinor
         sourceCommit = $sourceCommit; upstreamCommit = $lock.commit; signed = [bool]$Sign; cells = $cells
         launchers = [ordered]@{ x86 = 'launchers/x86/Snoop.InjectorLauncher.x86.exe'; x64 = 'launchers/x64/Snoop.InjectorLauncher.x64.exe' }
         agents = [ordered]@{ net48 = 'agents/net48/WinTestKit.Inspector.Agent.dll'; net8 = 'agents/net8/WinTestKit.Inspector.Agent.dll'; net10 = 'agents/net10/WinTestKit.Inspector.Agent.dll' }

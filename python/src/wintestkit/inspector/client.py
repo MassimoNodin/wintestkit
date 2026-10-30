@@ -132,7 +132,7 @@ class InspectorClient:
                     "id": 1,
                     "method": "session.hello",
                     "params": {
-                        "protocolMajor": 1,
+                        "protocolMajor": 2,
                         "protocolMinor": 0,
                         "sessionId": session_id,
                         "token": token,
@@ -174,7 +174,7 @@ class InspectorClient:
                 session_id,
                 facts.identity,
                 "ready",
-                1,
+                2,
                 0,
                 hello.features,
                 hello.runtime_version,

@@ -25,17 +25,19 @@ if ($Suite -eq 'Package') {
         if (-not (Test-Path -LiteralPath $source -PathType Leaf) -or (Get-FileHash -Algorithm SHA256 -LiteralPath $source).Hash.ToLowerInvariant() -ne $entry.sha256) { throw "Pinned Snoop source missing or changed: $($entry.path)" }
     }
     foreach ($item in Get-ChildItem -LiteralPath $vendor -File -Recurse) {
+        if ($item.FullName.Substring($vendor.Length + 1) -match '(^|\\)(bin|obj)\\') { continue }
         if (-not $inventory.ContainsKey($item.FullName.Substring($vendor.Length + 1))) { throw "Uninventoried Snoop source: $($item.FullName)" }
     }
     $versionSource = Get-Content -Raw (Join-Path $root 'python/src/wintestkit/__init__.py')
     if ($versionSource -notmatch '(?m)^__version__\s*=\s*["'']([^"'']+)["'']') { throw 'Cannot find inspector version.' }
     $version = $Matches[1]
-    $project = Join-Path $root 'wpf-inspector/tests/Harness/OwnedAttach/OwnedAttach.csproj'
+    $verifierSource = Join-Path $root 'wpf-inspector/tests/Harness/OwnedAttach'
+    $project = Join-Path $verifierSource 'OwnedAttach.csproj'
     & $dotnet restore $project --locked-mode
     if ($LASTEXITCODE -ne 0) { throw 'Package verifier locked restore failed.' }
     & $dotnet build $project -c Release --no-restore
     if ($LASTEXITCODE -ne 0) { throw 'Package verifier build failed.' }
-    $verifier = Join-Path $root 'wpf-inspector/tests/Harness/OwnedAttach/bin/Release/net10.0-windows/OwnedAttach.dll'
+    $verifier = Join-Path $verifierSource 'bin/Release/net10.0-windows/OwnedAttach.dll'
     & $dotnet $verifier package $PayloadRoot $version $lock.commit
     if ($LASTEXITCODE -ne 0) { throw 'Staged payload validation failed.' }
     $strongNameTool = Join-Path ${env:ProgramFiles(x86)} 'Microsoft SDKs/Windows/v10.0A/bin/NETFX 4.8 Tools/sn.exe'

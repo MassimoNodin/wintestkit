@@ -1,75 +1,37 @@
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
- * via the `definition` "AppCloseParams".
- */
-export type AppCloseParams = Record<string, never>;
-/**
- * This interface was referenced by `ProtocolContracts`'s JSON-Schema
- * via the `definition` "AppCloseResult".
- */
-export type AppCloseResult = null;
-/**
- * This interface was referenced by `ProtocolContracts`'s JSON-Schema
- * via the `definition` "AppLaunchParams".
- */
-export type AppLaunchParams = Record<string, never>;
-/**
- * This interface was referenced by `ProtocolContracts`'s JSON-Schema
- * via the `definition` "AppProcessesParams".
- */
-export type AppProcessesParams = Record<string, never>;
-/**
- * This interface was referenced by `ProtocolContracts`'s JSON-Schema
- * via the `definition` "AppStatusParams".
- */
-export type AppStatusParams = Record<string, never>;
-/**
- * This interface was referenced by `ProtocolContracts`'s JSON-Schema
- * via the `definition` "Key".
- */
-export type Key = string;
-/**
- * This interface was referenced by `ProtocolContracts`'s JSON-Schema
- * via the `definition` "AttributeLiteral".
- */
-export type AttributeLiteral = AttributeLiteral1;
-/**
- * Recursive binding trees have maximum depth 8 and 32 total entries.
- *
- * This interface was referenced by `ProtocolContracts`'s JSON-Schema
- * via the `definition` "BindingInfo".
- */
-export type BindingInfo = BindingInfo1;
-/**
- * This interface was referenced by `ProtocolContracts`'s JSON-Schema
  * via the `definition` "Identifier".
  */
 export type Identifier = string;
-/**
- * @minItems 1
- * @maxItems 1024
- *
- * This interface was referenced by `ProtocolContracts`'s JSON-Schema
- * via the `definition` "RuntimeId".
- */
-export type RuntimeId = [number, ...number[]];
-/**
- * This interface was referenced by `ProtocolContracts`'s JSON-Schema
- * via the `definition` "CandidateResult".
- */
-export type CandidateResult = CandidateResult1;
-/**
- * This interface was referenced by `ProtocolContracts`'s JSON-Schema
- * via the `definition` "Mapping".
- */
-export type Mapping = Mapping1;
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
  * via the `definition` "TypeName".
  */
 export type TypeName = string;
 /**
- * A type segment must be alone. Serialized paths must not exceed 1024 UTF-8 bytes.
+ * Validate the shared regex subset and bounds before matching; Python re.search semantics with ASCII-only case folding, multiline anchors and singleline dot; reject unsupported constructs and malformed patterns.
+ *
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "ItemMatch".
+ */
+export type ItemMatch =
+  | {
+      kind: "index";
+      index: number;
+    }
+  | {
+      kind: "equals";
+      path: Path;
+      value: Scalar;
+    }
+  | {
+      kind: "regex";
+      path: Path;
+      pattern: string;
+      flags: RegexFlags;
+    };
+/**
+ * Type and UIA segments must be alone. Serialized paths must not exceed 1024 UTF-8 bytes.
  *
  * @minItems 1
  * @maxItems 8
@@ -142,7 +104,111 @@ export type PathSegment =
         | "AssemblyName"
         | "AssemblyQualifiedName"
         | "BaseTypes";
+    }
+  | {
+      kind: "uia";
+      name: "automation_id" | "name" | "class_name" | "control_type";
     };
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "Key".
+ */
+export type Key = string;
+/**
+ * Numbers must be finite; writes require exact scalar CLR types and signed 64-bit integer tokens; no conversions or nulls.
+ *
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "Scalar".
+ */
+export type Scalar = string | boolean | number;
+/**
+ * @maxItems 3
+ *
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "RegexFlags".
+ */
+export type RegexFlags =
+  | []
+  | ["ignoreCase" | "multiline" | "singleline"]
+  | [
+      "ignoreCase" | "multiline" | "singleline",
+      "ignoreCase" | "multiline" | "singleline"
+    ]
+  | [
+      "ignoreCase" | "multiline" | "singleline",
+      "ignoreCase" | "multiline" | "singleline",
+      "ignoreCase" | "multiline" | "singleline"
+    ];
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "ScrollAmount".
+ */
+export type ScrollAmount =
+  | "none"
+  | "smallIncrement"
+  | "smallDecrement"
+  | "largeIncrement"
+  | "largeDecrement";
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "ScalarString".
+ */
+export type ScalarString = string;
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "AppCloseParams".
+ */
+export type AppCloseParams = Record<string, never>;
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "AppCloseResult".
+ */
+export type AppCloseResult = null;
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "AppLaunchParams".
+ */
+export type AppLaunchParams = Record<string, never>;
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "AppProcessesParams".
+ */
+export type AppProcessesParams = Record<string, never>;
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "AppStatusParams".
+ */
+export type AppStatusParams = Record<string, never>;
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "AttributeLiteral".
+ */
+export type AttributeLiteral = AttributeLiteral1;
+/**
+ * Recursive binding trees have maximum depth 8 and 32 total entries.
+ *
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "BindingInfo".
+ */
+export type BindingInfo = BindingInfo1;
+/**
+ * @minItems 1
+ * @maxItems 1024
+ *
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "RuntimeId".
+ */
+export type RuntimeId = [number, ...number[]];
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "CandidateResult".
+ */
+export type CandidateResult = CandidateResult1;
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "Mapping".
+ */
+export type Mapping = Mapping1;
 /**
  * For truncated values truncatedAt is greater than the Unicode scalar length of scalar; dependencySource is present only for dependency reads.
  *
@@ -150,11 +216,6 @@ export type PathSegment =
  * via the `definition` "Value".
  */
 export type Value = Value1;
-/**
- * This interface was referenced by `ProtocolContracts`'s JSON-Schema
- * via the `definition` "ScalarString".
- */
-export type ScalarString = string;
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
  * via the `definition` "CloseParams".
@@ -186,6 +247,18 @@ export type ItemSelectorData =
       column: number | string;
     };
 /**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "EventKind".
+ */
+export type EventKind = "windowOpened" | "windowClosed" | "treeChanged";
+/**
+ * Ordered per subscription; sequence gaps, overflow and reconnect require rescan. Buffer at most 1024; overflow drops pending and triggering events.
+ *
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "EventsEventParams".
+ */
+export type EventsEventParams = EventsEventParams1;
+/**
  * @maxItems 200
  *
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
@@ -198,6 +271,14 @@ export type Features = (
   | "bindings"
   | "exactUiaMapping"
   | "batchReads"
+  | "query"
+  | "geometry"
+  | "actions"
+  | "virtualItems"
+  | "writes"
+  | "hitTest"
+  | "waits"
+  | "events"
 )[];
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
@@ -265,7 +346,7 @@ export type InspectManagedMembersResult = {
   nextToken?: Identifier;
 };
 /**
- * A type segment must be alone. Serialized paths must not exceed 1024 UTF-8 bytes.
+ * Type and UIA segments must be alone. Serialized paths must not exceed 1024 UTF-8 bytes.
  *
  * @minItems 1
  * @maxItems 8
@@ -336,6 +417,46 @@ export type InspectManagedRootsResult = {
  * via the `definition` "InspectRootsResult".
  */
 export type InspectRootsResult = NodeInfo[];
+/**
+ * Depth-first pre-order; scoped roots are depth 0; combined visits visual before logical-only children and deduplicates identity.
+ *
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "Scope".
+ */
+export type Scope =
+  | {
+      kind: "allRoots";
+    }
+  | {
+      kind: "window";
+      handle: ObjectRef;
+    }
+  | {
+      kind: "object";
+      handle: ObjectRef;
+    };
+/**
+ * Validate the shared regex subset and bounds before matching; Python re.search semantics with ASCII-only case folding, multiline anchors and singleline dot; reject unsupported constructs and malformed patterns. Equality is type-aware; assignability uses already-loaded metadata. Unavailable, redacted, truncated or failed values cannot silently match.
+ *
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "Predicate".
+ */
+export type Predicate =
+  | {
+      kind: "equals";
+      path: Path;
+      value: Scalar;
+    }
+  | {
+      kind: "regex";
+      path: Path;
+      pattern: string;
+      flags: RegexFlags;
+    }
+  | {
+      kind: "assignableTo";
+      fullName: Key;
+    };
 /**
  * nextToken is present iff further items exist; incomplete pages may instead indicate partial failure.
  */
@@ -495,6 +616,39 @@ export type SpyStopParams = Record<string, never>;
  */
 export type SpyStopResult = null;
 /**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "WaitCondition".
+ */
+export type WaitCondition =
+  | {
+      kind: "exists";
+      locator: Locator;
+    }
+  | {
+      kind: "visible";
+      locator: Locator;
+    }
+  | {
+      kind: "enabled";
+      locator: Locator;
+    }
+  | {
+      kind: "propertyEquals";
+      locator: Locator;
+      path: Path;
+      value: Scalar;
+    };
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "WaitResult".
+ */
+export type WaitResult = WaitResult1;
+export type WaitUntilResult = {
+  satisfied: boolean;
+  handle?: ObjectRef;
+  state?: ElementState;
+};
+/**
  * Recursive binding trees have maximum depth 8 and 32 total entries.
  *
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
@@ -521,7 +675,7 @@ export type Mapping2 = ManagedMapping1;
  */
 export type MemberPage2 = ManagedMemberPage1;
 /**
- * A type segment must be alone. Serialized paths must not exceed 1024 UTF-8 bytes.
+ * Type and UIA segments must be alone. Serialized paths must not exceed 1024 UTF-8 bytes.
  *
  * @minItems 1
  * @maxItems 8
@@ -589,8 +743,39 @@ export type ManagedMapping2 = InspectManagedResolveResult1;
  * via the `definition` "InspectManagedRootsResult".
  */
 export type ManagedInspectorNodePage3 = InspectManagedRootsResult1;
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "WaitUntilResult".
+ */
+export type WaitResult2 = WaitUntilResult1;
 
 export interface ProtocolContracts {
+  ActBringIntoViewParams?: ActBringIntoViewParams;
+  ActBringIntoViewResult?: ActBringIntoViewResult;
+  ActCollapseParams?: ActCollapseParams;
+  ActCollapseResult?: ActCollapseResult;
+  ActExpandParams?: ActExpandParams;
+  ActExpandResult?: ActExpandResult;
+  ActFocusParams?: ActFocusParams;
+  ActFocusResult?: ActFocusResult;
+  ActInvokeParams?: ActInvokeParams;
+  ActInvokeResult?: ActInvokeResult;
+  ActRealizeItemParams?: ActRealizeItemParams;
+  ActRealizeItemResult?: ActRealizeItemResult;
+  ActResult?: ActResult;
+  ActScrollIntoViewParams?: ActScrollIntoViewParams;
+  ActScrollIntoViewResult?: ActScrollIntoViewResult;
+  ActScrollParams?: ActScrollParams;
+  ActScrollResult?: ActScrollResult;
+  ActSelectParams?: ActSelectParams;
+  ActSelectResult?: ActSelectResult;
+  ActSetRangeParams?: ActSetRangeParams;
+  ActSetRangeResult?: ActSetRangeResult;
+  ActSetValueParams?: ActSetValueParams;
+  ActSetValueResult?: ActSetValueResult;
+  ActToggleParams?: ActToggleParams;
+  ActToggleResult?: ActToggleResult;
+  AllowEntry?: AllowEntry;
   AppCloseParams?: AppCloseParams;
   AppCloseResult?: AppCloseResult;
   AppLaunchParams?: AppLaunchParams;
@@ -634,13 +819,23 @@ export interface ProtocolContracts {
   ElementHighlightResult?: ElementHighlightResult;
   ElementInfo?: ElementInfo;
   ElementResult?: ElementResult;
+  ElementState?: ElementState;
   ErrorInfo?: ErrorInfo;
+  EventKind?: EventKind;
+  EventsEventParams?: EventsEventParams;
+  EventsNotification?: EventsNotification;
+  EventsSubscribeParams?: EventsSubscribeParams;
+  EventsSubscribeResult?: EventsSubscribeResult;
+  EventsUnsubscribeParams?: EventsUnsubscribeParams;
+  EventsUnsubscribeResult?: EventsUnsubscribeResult;
   Features?: Features;
   FlowEntry?: FlowEntry;
   FlowRunParams?: FlowRunParams;
   FlowRunResult?: FlowRunResult;
   HelloParams?: HelloParams;
   HelloResult?: HelloResult;
+  HitTestParams?: HitTestParams;
+  HitTestResult?: HitTestResult;
   Identifier?: Identifier;
   InitializeParams?: InitializeParams;
   InitializeResult?: InitializeResult;
@@ -684,8 +879,11 @@ export interface ProtocolContracts {
   InspectRootsParams?: InspectRootsParams;
   InspectRootsResult?: InspectRootsResult;
   InspectionProperty?: InspectionProperty;
+  ItemMatch?: ItemMatch;
+  ItemSearch?: ItemSearch;
   ItemSelectorData?: ItemSelectorData;
   Key?: Key;
+  Locator?: Locator;
   LocatorData?: LocatorData;
   LogNotification?: LogNotification;
   ManagedBindingInfo?: ManagedBindingInfo;
@@ -699,8 +897,10 @@ export interface ProtocolContracts {
   ManagedPath?: ManagedPath;
   ManagedPathValue?: ManagedPathValue;
   ManagedProcessIdentity?: ManagedProcessIdentity;
+  ManagedRect?: ManagedRect;
   ManagedSession?: ManagedSession;
   Mapping?: Mapping;
+  MatchWarning?: MatchWarning;
   Matcher?: Matcher;
   Member?: Member;
   MemberPage?: MemberPage;
@@ -712,18 +912,25 @@ export interface ProtocolContracts {
   PageCheckParams?: PageCheckParams;
   PageCheckResult?: PageCheckResult;
   PageEntry?: PageEntry;
+  PartGeometry?: PartGeometry;
   Path?: Path;
   PathSegment?: PathSegment;
   PathValue?: PathValue;
   Position?: Position;
+  Predicate?: Predicate;
   PreviewImage?: PreviewImage;
   ProcessIdentity?: ProcessIdentity;
+  QueryFindAllParams?: QueryFindAllParams;
+  QueryFindAllResult?: QueryFindAllResult;
+  QueryFindParams?: QueryFindParams;
+  QueryFindResult?: QueryFindResult;
   Range?: Range;
   ReadBatchParams?: ReadBatchParams;
   ReadBatchResult?: ReadBatchResult;
   ReadParams?: ReadParams;
   ReadResult?: ReadResult;
   Rect?: Rect;
+  RegexFlags?: RegexFlags;
   RelativeSource?: RelativeSource;
   ReleaseParams?: ReleaseParams;
   ReleaseResult?: ReleaseResult;
@@ -737,7 +944,10 @@ export interface ProtocolContracts {
   RunEvent?: RunEvent;
   RunningProcess?: RunningProcess;
   RuntimeId?: RuntimeId;
+  Scalar?: Scalar;
   ScalarString?: ScalarString;
+  Scope?: Scope;
+  ScrollAmount?: ScrollAmount;
   Session?: Session;
   ShutdownParams?: ShutdownParams;
   ShutdownResult?: ShutdownResult;
@@ -748,6 +958,8 @@ export interface ProtocolContracts {
   SpyStartResult?: SpyStartResult;
   SpyStopParams?: SpyStopParams;
   SpyStopResult?: SpyStopResult;
+  StateGetParams?: StateGetParams;
+  StateGetResult?: StateGetResult;
   StepEvent?: StepEvent;
   SuggestLocatorParams?: SuggestLocatorParams;
   SuggestLocatorResult?: SuggestLocatorResult;
@@ -759,7 +971,202 @@ export interface ProtocolContracts {
   TypeInfo?: TypeInfo;
   TypeName?: TypeName;
   Value?: Value;
+  WaitCondition?: WaitCondition;
+  WaitResult?: WaitResult;
+  WaitUntilParams?: WaitUntilParams;
+  WaitUntilResult?: WaitUntilResult;
   WindowLocatorData?: WindowLocatorData;
+  WriteAllowlist?: WriteAllowlist;
+  WriteAudit?: WriteAudit;
+  WriteCallParams?: WriteCallParams;
+  WriteCallResult?: WriteCallResult;
+  WriteSetPropertyParams?: WriteSetPropertyParams;
+  WriteSetPropertyResult?: WriteSetPropertyResult;
+}
+export interface ActBringIntoViewParams {
+  handle: ObjectRef;
+  timeoutMs: number;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "ObjectRef".
+ */
+export interface ObjectRef {
+  sessionId: Identifier;
+  objectId: Identifier;
+  generation: number;
+  type: TypeInfo;
+  dispatcherId: Identifier;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "TypeInfo".
+ */
+export interface TypeInfo {
+  name: TypeName;
+  fullName: TypeName;
+  assemblyName: TypeName;
+  assemblyQualifiedName: TypeName;
+  /**
+   * @maxItems 1024
+   */
+  baseTypes: TypeName[];
+}
+export interface ActBringIntoViewResult {
+  outcome: "performed" | "noChange";
+  handle: ObjectRef;
+}
+export interface ActCollapseParams {
+  handle: ObjectRef;
+  timeoutMs: number;
+}
+export interface ActCollapseResult {
+  outcome: "performed" | "noChange";
+  handle: ObjectRef;
+}
+export interface ActExpandParams {
+  handle: ObjectRef;
+  timeoutMs: number;
+}
+export interface ActExpandResult {
+  outcome: "performed" | "noChange";
+  handle: ObjectRef;
+}
+export interface ActFocusParams {
+  handle: ObjectRef;
+  timeoutMs: number;
+}
+export interface ActFocusResult {
+  outcome: "performed" | "noChange";
+  handle: ObjectRef;
+}
+export interface ActInvokeParams {
+  handle: ObjectRef;
+  timeoutMs: number;
+}
+export interface ActInvokeResult {
+  outcome: "performed" | "noChange";
+  handle: ObjectRef;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "ActRealizeItemParams".
+ */
+export interface ActRealizeItemParams {
+  search: ItemSearch;
+  timeoutMs: number;
+}
+/**
+ * Enumerate item data in Items order without realizing candidates; select first match.
+ *
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "ItemSearch".
+ */
+export interface ItemSearch {
+  container: ObjectRef;
+  match: ItemMatch;
+  maxItems: number;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "ActRealizeItemResult".
+ */
+export interface ActRealizeItemResult {
+  outcome: "performed" | "noChange";
+  handle: ObjectRef;
+  warning?: MatchWarning;
+}
+/**
+ * Count observed within budget, potentially a lower bound.
+ *
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "MatchWarning".
+ */
+export interface MatchWarning {
+  code: "multipleMatches";
+  count: number;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "ActResult".
+ */
+export interface ActResult {
+  outcome: "performed" | "noChange";
+  handle: ObjectRef;
+}
+export interface ActScrollIntoViewParams {
+  handle: ObjectRef;
+  timeoutMs: number;
+}
+export interface ActScrollIntoViewResult {
+  outcome: "performed" | "noChange";
+  handle: ObjectRef;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "ActScrollParams".
+ */
+export interface ActScrollParams {
+  handle: ObjectRef;
+  horizontal: ScrollAmount;
+  vertical: ScrollAmount;
+  timeoutMs: number;
+}
+export interface ActScrollResult {
+  outcome: "performed" | "noChange";
+  handle: ObjectRef;
+}
+export interface ActSelectParams {
+  handle: ObjectRef;
+  timeoutMs: number;
+}
+export interface ActSelectResult {
+  outcome: "performed" | "noChange";
+  handle: ObjectRef;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "ActSetRangeParams".
+ */
+export interface ActSetRangeParams {
+  handle: ObjectRef;
+  value: number;
+  timeoutMs: number;
+}
+export interface ActSetRangeResult {
+  outcome: "performed" | "noChange";
+  handle: ObjectRef;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "ActSetValueParams".
+ */
+export interface ActSetValueParams {
+  handle: ObjectRef;
+  value: ScalarString;
+  timeoutMs: number;
+}
+export interface ActSetValueResult {
+  outcome: "performed" | "noChange";
+  handle: ObjectRef;
+}
+export interface ActToggleParams {
+  handle: ObjectRef;
+  timeoutMs: number;
+}
+export interface ActToggleResult {
+  outcome: "performed" | "noChange";
+  handle: ObjectRef;
+}
+/**
+ * Exact runtime type and public instance member; method keys specify exact CLR parameter types with no whitespace.
+ *
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "AllowEntry".
+ */
+export interface AllowEntry {
+  typeFullName: Key;
+  memberKey: Key;
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
@@ -888,7 +1295,7 @@ export interface BindingsResult {
  */
 export interface BootstrapSettings {
   schemaVersion: 1;
-  protocolMajor: number;
+  protocolMajor: 2;
   protocolMinor: number;
   sessionId: string;
   process: ProcessIdentity;
@@ -903,6 +1310,7 @@ export interface BootstrapSettings {
    * @maxItems 32
    */
   redactNames: string[];
+  writeAllowlist: WriteAllowlist;
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
@@ -911,6 +1319,20 @@ export interface BootstrapSettings {
 export interface ProcessIdentity {
   pid: number;
   creationTimeUtc: string;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "WriteAllowlist".
+ */
+export interface WriteAllowlist {
+  /**
+   * @maxItems 128
+   */
+  properties: AllowEntry[];
+  /**
+   * @maxItems 128
+   */
+  methods: AllowEntry[];
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
@@ -999,31 +1421,6 @@ export interface Mapping1 {
   process: ProcessIdentity;
   runtimeId: RuntimeId;
   object?: ObjectRef;
-}
-/**
- * This interface was referenced by `ProtocolContracts`'s JSON-Schema
- * via the `definition` "ObjectRef".
- */
-export interface ObjectRef {
-  sessionId: Identifier;
-  objectId: Identifier;
-  generation: number;
-  type: TypeInfo;
-  dispatcherId: Identifier;
-}
-/**
- * This interface was referenced by `ProtocolContracts`'s JSON-Schema
- * via the `definition` "TypeInfo".
- */
-export interface TypeInfo {
-  name: TypeName;
-  fullName: TypeName;
-  assemblyName: TypeName;
-  assemblyQualifiedName: TypeName;
-  /**
-   * @maxItems 1024
-   */
-  baseTypes: TypeName[];
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
@@ -1455,6 +1852,58 @@ export interface ElementResult {
   durationMs: number;
 }
 /**
+ * Snapshot of physical geometry and all named applied-template parts; null geometry is unusable. Values must be finite; visibility includes clipping and viewport.
+ *
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "ElementState".
+ */
+export interface ElementState {
+  handle: ObjectRef;
+  windowHandle: number | null;
+  bounds: ManagedRect | null;
+  dpi: {
+    x: number;
+    y: number;
+  };
+  visible: boolean;
+  clipped: boolean;
+  offscreen: boolean;
+  enabled: boolean;
+  focused: boolean;
+  isKeyboardFocusable: boolean;
+  parts: PartGeometry[];
+}
+/**
+ * Physical screen pixels; all numbers finite.
+ *
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "ManagedRect".
+ */
+export interface ManagedRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "PartGeometry".
+ */
+export interface PartGeometry {
+  name: Identifier;
+  role:
+    | "expanderToggle"
+    | "comboDropDown"
+    | "scrollThumb"
+    | "scrollDecrement"
+    | "scrollIncrement"
+    | "scrollTrack"
+    | "treeItemExpander"
+    | "gridColumnHeader"
+    | "templatePart";
+  bounds: ManagedRect | null;
+}
+/**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
  * via the `definition` "ErrorInfo".
  */
@@ -1462,6 +1911,53 @@ export interface ErrorInfo {
   type: string;
   message: string;
   diagnostic?: Diagnostic;
+}
+export interface EventsEventParams1 {
+  subscriptionId: Identifier;
+  sequence: number;
+  kind: "windowOpened" | "windowClosed" | "treeChanged" | "overflow";
+  handle?: ObjectRef;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "EventsNotification".
+ */
+export interface EventsNotification {
+  method: "events.event";
+  params: EventsEventParams;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "EventsSubscribeParams".
+ */
+export interface EventsSubscribeParams {
+  /**
+   * @minItems 1
+   * @maxItems 3
+   */
+  kinds:
+    [EventKind] | [EventKind, EventKind] | [EventKind, EventKind, EventKind];
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "EventsSubscribeResult".
+ */
+export interface EventsSubscribeResult {
+  subscriptionId: Identifier;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "EventsUnsubscribeParams".
+ */
+export interface EventsUnsubscribeParams {
+  subscriptionId: Identifier;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "EventsUnsubscribeResult".
+ */
+export interface EventsUnsubscribeResult {
+  unsubscribed: boolean;
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
@@ -1485,7 +1981,7 @@ export interface FlowRunResult {
  * via the `definition` "HelloParams".
  */
 export interface HelloParams {
-  protocolMajor: 1;
+  protocolMajor: 2;
   protocolMinor: number;
   sessionId: Identifier;
   token: Identifier;
@@ -1502,6 +1998,27 @@ export interface HelloResult {
   runtimeVersion: Identifier;
   features: Features;
   process: ProcessIdentity;
+}
+/**
+ * Point is in physical screen pixels; HWND must be a live WPF HwndSource of the target process.
+ *
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "HitTestParams".
+ */
+export interface HitTestParams {
+  nativeWindowHandle: number;
+  point: {
+    x: number;
+    y: number;
+  };
+  timeoutMs: number;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "HitTestResult".
+ */
+export interface HitTestResult {
+  handle: ObjectRef;
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
@@ -1624,7 +2141,7 @@ export interface InspectManagedAttachResult {
     | "detaching"
     | "faulted"
     | "exited";
-  protocolMajor: number;
+  protocolMajor: 2;
   protocolMinor: number;
   features: Features;
   runtimeVersion?: Identifier;
@@ -1853,7 +2370,7 @@ export interface InspectManagedStatusResult {
     | "detaching"
     | "faulted"
     | "exited";
-  protocolMajor: number;
+  protocolMajor: 2;
   protocolMinor: number;
   features: Features;
   runtimeVersion?: Identifier;
@@ -1964,6 +2481,23 @@ export interface InspectRootsParams {
   foregroundForProcessId?: number;
 }
 /**
+ * Predicates are ANDed; index selects after filtering. Defaults are applied before serialization.
+ *
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "Locator".
+ */
+export interface Locator {
+  scope: Scope;
+  tree: "visual" | "logical" | "combined";
+  /**
+   * @maxItems 32
+   */
+  predicates: Predicate[];
+  depth: number;
+  index?: number;
+  limit: number;
+}
+/**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
  * via the `definition` "LogNotification".
  */
@@ -2002,7 +2536,12 @@ export interface ManagedErrorInfo {
     | "limitExceeded"
     | "invalidPageToken"
     | "cancelled"
-    | "internalError";
+    | "internalError"
+    | "notFound"
+    | "actionUnsupported"
+    | "regexTimeout"
+    | "writeDenied"
+    | "writeRateExceeded";
   message: string;
   details?: Record<string, never>;
 }
@@ -2030,7 +2569,7 @@ export interface ManagedSession {
     | "detaching"
     | "faulted"
     | "exited";
-  protocolMajor: number;
+  protocolMajor: 2;
   protocolMinor: number;
   features: Features;
   runtimeVersion?: Identifier;
@@ -2076,6 +2615,40 @@ export interface PageCheckParams {
  */
 export interface PageCheckResult {
   results: CheckResult[];
+}
+export interface QueryFindAllParams {
+  locator: Locator;
+  timeoutMs: number;
+}
+/**
+ * Count only after full traversal; incomplete results may be capped or budget-limited.
+ *
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "QueryFindAllResult".
+ */
+export interface QueryFindAllResult {
+  /**
+   * @maxItems 200
+   */
+  matches: ObjectRef[];
+  count?: number;
+  complete: boolean;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "QueryFindParams".
+ */
+export interface QueryFindParams {
+  locator: Locator;
+  timeoutMs: number;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "QueryFindResult".
+ */
+export interface QueryFindResult {
+  match: ObjectRef;
+  warning?: MatchWarning;
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
@@ -2178,7 +2751,28 @@ export interface RequestEnvelope {
     | "members"
     | "read"
     | "bindings"
-    | "release";
+    | "release"
+    | "query.find"
+    | "query.findAll"
+    | "state.get"
+    | "act.focus"
+    | "act.bringIntoView"
+    | "act.invoke"
+    | "act.toggle"
+    | "act.expand"
+    | "act.collapse"
+    | "act.select"
+    | "act.scrollIntoView"
+    | "act.setValue"
+    | "act.setRange"
+    | "act.scroll"
+    | "act.realizeItem"
+    | "wait.until"
+    | "hitTest"
+    | "write.setProperty"
+    | "write.call"
+    | "events.subscribe"
+    | "events.unsubscribe";
   params: Record<string, never>;
 }
 /**
@@ -2301,7 +2895,7 @@ export interface Session {
     | "detaching"
     | "faulted"
     | "exited";
-  protocolMajor: number;
+  protocolMajor: 2;
   protocolMinor: number;
   features: Features;
   runtimeVersion?: Identifier;
@@ -2363,6 +2957,21 @@ export interface SpyStartParams {
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "StateGetParams".
+ */
+export interface StateGetParams {
+  handle: ObjectRef;
+  timeoutMs: number;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "StateGetResult".
+ */
+export interface StateGetResult {
+  state: ElementState;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
  * via the `definition` "SuggestLocatorParams".
  */
 export interface SuggestLocatorParams {
@@ -2384,6 +2993,185 @@ export interface SuggestLocatorResult {
     code: string;
     locator: WindowLocatorData;
   };
+}
+export interface WaitResult1 {
+  satisfied: boolean;
+  handle?: ObjectRef;
+  state?: ElementState;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "WaitUntilParams".
+ */
+export interface WaitUntilParams {
+  condition: WaitCondition;
+  timeoutMs: number;
+}
+/**
+ * Never include values; redacted identifiers use the applicable rule. Deadline failures are audited immediately with reason timeout.
+ *
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "WriteAudit".
+ */
+export interface WriteAudit {
+  operation: "setProperty" | "call";
+  typeFullName: Key;
+  memberKey: Key;
+  outcome: "performed" | "denied" | "failed";
+  timestampUtc: string;
+  reason?: string;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "WriteCallParams".
+ */
+export interface WriteCallParams {
+  handle: ObjectRef;
+  memberKey: Key;
+  /**
+   * @maxItems 16
+   */
+  arguments:
+    | []
+    | [Scalar]
+    | [Scalar, Scalar]
+    | [Scalar, Scalar, Scalar]
+    | [Scalar, Scalar, Scalar, Scalar]
+    | [Scalar, Scalar, Scalar, Scalar, Scalar]
+    | [Scalar, Scalar, Scalar, Scalar, Scalar, Scalar]
+    | [Scalar, Scalar, Scalar, Scalar, Scalar, Scalar, Scalar]
+    | [Scalar, Scalar, Scalar, Scalar, Scalar, Scalar, Scalar, Scalar]
+    | [Scalar, Scalar, Scalar, Scalar, Scalar, Scalar, Scalar, Scalar, Scalar]
+    | [
+        Scalar,
+        Scalar,
+        Scalar,
+        Scalar,
+        Scalar,
+        Scalar,
+        Scalar,
+        Scalar,
+        Scalar,
+        Scalar
+      ]
+    | [
+        Scalar,
+        Scalar,
+        Scalar,
+        Scalar,
+        Scalar,
+        Scalar,
+        Scalar,
+        Scalar,
+        Scalar,
+        Scalar,
+        Scalar
+      ]
+    | [
+        Scalar,
+        Scalar,
+        Scalar,
+        Scalar,
+        Scalar,
+        Scalar,
+        Scalar,
+        Scalar,
+        Scalar,
+        Scalar,
+        Scalar,
+        Scalar
+      ]
+    | [
+        Scalar,
+        Scalar,
+        Scalar,
+        Scalar,
+        Scalar,
+        Scalar,
+        Scalar,
+        Scalar,
+        Scalar,
+        Scalar,
+        Scalar,
+        Scalar,
+        Scalar
+      ]
+    | [
+        Scalar,
+        Scalar,
+        Scalar,
+        Scalar,
+        Scalar,
+        Scalar,
+        Scalar,
+        Scalar,
+        Scalar,
+        Scalar,
+        Scalar,
+        Scalar,
+        Scalar,
+        Scalar
+      ]
+    | [
+        Scalar,
+        Scalar,
+        Scalar,
+        Scalar,
+        Scalar,
+        Scalar,
+        Scalar,
+        Scalar,
+        Scalar,
+        Scalar,
+        Scalar,
+        Scalar,
+        Scalar,
+        Scalar,
+        Scalar
+      ]
+    | [
+        Scalar,
+        Scalar,
+        Scalar,
+        Scalar,
+        Scalar,
+        Scalar,
+        Scalar,
+        Scalar,
+        Scalar,
+        Scalar,
+        Scalar,
+        Scalar,
+        Scalar,
+        Scalar,
+        Scalar,
+        Scalar
+      ];
+  timeoutMs: number;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "WriteCallResult".
+ */
+export interface WriteCallResult {
+  audit: WriteAudit;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "WriteSetPropertyParams".
+ */
+export interface WriteSetPropertyParams {
+  handle: ObjectRef;
+  memberKey: Key;
+  value: Scalar;
+  timeoutMs: number;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "WriteSetPropertyResult".
+ */
+export interface WriteSetPropertyResult {
+  audit: WriteAudit;
 }
 export interface ManagedBindingInfo1 {
   memberKey: Key;
@@ -2474,7 +3262,7 @@ export interface Session1 {
     | "detaching"
     | "faulted"
     | "exited";
-  protocolMajor: number;
+  protocolMajor: 2;
   protocolMinor: number;
   features: Features;
   runtimeVersion?: Identifier;
@@ -2531,7 +3319,7 @@ export interface ManagedSession1 {
     | "detaching"
     | "faulted"
     | "exited";
-  protocolMajor: number;
+  protocolMajor: 2;
   protocolMinor: number;
   features: Features;
   runtimeVersion?: Identifier;
@@ -2605,7 +3393,7 @@ export interface ManagedSession2 {
     | "detaching"
     | "faulted"
     | "exited";
-  protocolMajor: number;
+  protocolMajor: 2;
   protocolMinor: number;
   features: Features;
   runtimeVersion?: Identifier;
@@ -2641,4 +3429,169 @@ export interface Suggestion1 {
     code: string;
     locator: WindowLocatorData;
   };
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "ActBringIntoViewParams".
+ */
+export interface StateGetParams1 {
+  handle: ObjectRef;
+  timeoutMs: number;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "ActBringIntoViewResult".
+ */
+export interface ActResult1 {
+  outcome: "performed" | "noChange";
+  handle: ObjectRef;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "ActCollapseParams".
+ */
+export interface StateGetParams2 {
+  handle: ObjectRef;
+  timeoutMs: number;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "ActCollapseResult".
+ */
+export interface ActResult2 {
+  outcome: "performed" | "noChange";
+  handle: ObjectRef;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "ActExpandParams".
+ */
+export interface StateGetParams3 {
+  handle: ObjectRef;
+  timeoutMs: number;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "ActExpandResult".
+ */
+export interface ActResult3 {
+  outcome: "performed" | "noChange";
+  handle: ObjectRef;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "ActFocusParams".
+ */
+export interface StateGetParams4 {
+  handle: ObjectRef;
+  timeoutMs: number;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "ActFocusResult".
+ */
+export interface ActResult4 {
+  outcome: "performed" | "noChange";
+  handle: ObjectRef;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "ActInvokeParams".
+ */
+export interface StateGetParams5 {
+  handle: ObjectRef;
+  timeoutMs: number;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "ActInvokeResult".
+ */
+export interface ActResult5 {
+  outcome: "performed" | "noChange";
+  handle: ObjectRef;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "ActScrollIntoViewParams".
+ */
+export interface StateGetParams6 {
+  handle: ObjectRef;
+  timeoutMs: number;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "ActScrollIntoViewResult".
+ */
+export interface ActResult6 {
+  outcome: "performed" | "noChange";
+  handle: ObjectRef;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "ActScrollResult".
+ */
+export interface ActResult7 {
+  outcome: "performed" | "noChange";
+  handle: ObjectRef;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "ActSelectParams".
+ */
+export interface StateGetParams7 {
+  handle: ObjectRef;
+  timeoutMs: number;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "ActSelectResult".
+ */
+export interface ActResult8 {
+  outcome: "performed" | "noChange";
+  handle: ObjectRef;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "ActSetRangeResult".
+ */
+export interface ActResult9 {
+  outcome: "performed" | "noChange";
+  handle: ObjectRef;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "ActSetValueResult".
+ */
+export interface ActResult10 {
+  outcome: "performed" | "noChange";
+  handle: ObjectRef;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "ActToggleParams".
+ */
+export interface StateGetParams8 {
+  handle: ObjectRef;
+  timeoutMs: number;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "ActToggleResult".
+ */
+export interface ActResult11 {
+  outcome: "performed" | "noChange";
+  handle: ObjectRef;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "QueryFindAllParams".
+ */
+export interface QueryFindParams1 {
+  locator: Locator;
+  timeoutMs: number;
+}
+export interface WaitUntilResult1 {
+  satisfied: boolean;
+  handle?: ObjectRef;
+  state?: ElementState;
 }

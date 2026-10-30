@@ -21,7 +21,7 @@ def tree(tmp_path, monkeypatch):
     manifest = {
         "schemaVersion": 1,
         "inspectorVersion": __version__,
-        "protocolMajor": 1,
+        "protocolMajor": 2,
         "protocolMinor": 0,
         "sourceCommit": "a",
         "upstreamCommit": "b",

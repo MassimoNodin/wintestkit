@@ -8,6 +8,7 @@ using System.Text.RegularExpressions;
 using System.Text;
 using System.Xml;
 using System.Xml.Linq;
+using WinTestKit.Inspector.Protocol;
 
 internal static class PackageVerifier
 {
@@ -20,7 +21,7 @@ internal static class PackageVerifier
         Unique(document.RootElement);
         var m = document.RootElement;
         Keys(m, "schemaVersion", "inspectorVersion", "protocolMajor", "protocolMinor", "sourceCommit", "upstreamCommit", "signed", "cells", "launchers", "agents", "files", "notices");
-        Require(m.GetProperty("schemaVersion").GetInt32() == 1 && m.GetProperty("protocolMajor").GetInt32() == 1 && m.GetProperty("protocolMinor").GetInt32() == 0, "Manifest schema or protocol mismatch");
+        Require(m.GetProperty("schemaVersion").GetInt32() == 1 && m.GetProperty("protocolMajor").GetInt32() == ProtocolInfo.Major && m.GetProperty("protocolMinor").GetInt32() == ProtocolInfo.Minor, "Manifest schema or protocol mismatch");
         Require(m.GetProperty("inspectorVersion").GetString() == version && m.GetProperty("upstreamCommit").GetString() == upstream, "Manifest version or upstream commit mismatch");
         Require(Regex.IsMatch(m.GetProperty("sourceCommit").GetString() ?? "", "^[0-9a-f]{40}(-dirty)?$"), "Invalid source commit");
         _ = m.GetProperty("signed").GetBoolean();

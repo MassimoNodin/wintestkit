@@ -12,7 +12,7 @@ MANAGED_PREFIXES = ("type:", "clr:", "field:", "dp:")
 
 @dataclass(frozen=True)
 class PathSegment:
-    kind: Literal["property", "field", "dependency", "type"]
+    kind: Literal["property", "field", "dependency", "type", "uia"]
     name: str
     declaring_type: str | None = None
     member_key: str | None = None
@@ -29,7 +29,7 @@ class PathSegment:
             required, allowed = {"kind", "name"}, {"kind", "name", "declaringType", "memberKey"}
         elif kind == "dependency":
             required = allowed = {"kind", "name", "ownerType", "ownerAssembly"}
-        elif kind == "type":
+        elif kind in ("type", "uia"):
             required = allowed = {"kind", "name"}
         else:
             raise ValueError("Invalid path segment kind")
@@ -46,6 +46,13 @@ class PathSegment:
             "BaseTypes",
         }:
             raise ValueError("Invalid type metadata name")
+        if kind == "uia" and data["name"] not in {
+            "automation_id",
+            "name",
+            "class_name",
+            "control_type",
+        }:
+            raise ValueError("Invalid UIA name")
         return cls(
             kind,
             data["name"],

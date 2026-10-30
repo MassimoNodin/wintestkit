@@ -30,6 +30,14 @@ FEATURES = frozenset(
         "bindings",
         "exactUiaMapping",
         "batchReads",
+        "query",
+        "geometry",
+        "actions",
+        "virtualItems",
+        "writes",
+        "hitTest",
+        "waits",
+        "events",
     }
 )
 ERROR_CODES = frozenset(
@@ -60,6 +68,11 @@ ERROR_CODES = frozenset(
         "invalidPageToken",
         "cancelled",
         "internalError",
+        "notFound",
+        "actionUnsupported",
+        "regexTimeout",
+        "writeDenied",
+        "writeRateExceeded",
     }
 )
 STATES = frozenset({"detached", "probing", "attaching", "ready", "detaching", "faulted", "exited"})
@@ -193,7 +206,14 @@ def _wire(value: Any) -> Any:
         result: dict[str, Any] = {}
         for item in fields(value):
             entry = getattr(value, item.name)
-            if (entry is None and item.name not in {"scalar", "value"}) or entry is MISSING:
+            if (
+                entry is None
+                and item.name not in {"scalar", "value"}
+                and not (
+                    type(value).__name__ in {"ElementState", "PartGeometry"}
+                    and item.name in {"bounds", "window_handle"}
+                )
+            ) or entry is MISSING:
                 continue
             name = {"object_ref": "object", "type_info": "typeInfo"}.get(
                 item.name, _camel(item.name)
@@ -263,7 +283,7 @@ class Session(WireModel):
             _identifier(data["sessionId"]),
             ProcessIdentity.from_json(data["process"]),
             _choice(data["state"], STATES),
-            _int(data["protocolMajor"]),
+            _int(data["protocolMajor"], 2, 2),
             _int(data["protocolMinor"]),
             _array(data["features"], lambda item: _choice(item, FEATURES), 200),
             _optional(data, "runtimeVersion", _identifier),
@@ -684,7 +704,7 @@ class Value(WireModel):
 
 def parse_path(value: object) -> tuple[PathSegment, ...]:
     path = _array(value, PathSegment.from_json, 8, 1)
-    if len(path) > 1 and any(segment.kind == "type" for segment in path):
+    if len(path) > 1 and any(segment.kind in {"type", "uia"} for segment in path):
         raise ValueError("Type metadata must be the only segment")
     if (
         len(
@@ -904,7 +924,7 @@ class HelloParams(WireModel):
     def from_json(cls, value: object) -> HelloParams:
         data = _obj(value, "protocolMajor protocolMinor sessionId token process")
         return cls(
-            _int(data["protocolMajor"], 1, 1),
+            _int(data["protocolMajor"], 2, 2),
             _int(data["protocolMinor"]),
             _identifier(data["sessionId"]),
             _identifier(data["token"]),
@@ -927,13 +947,15 @@ class BootstrapSettings(WireModel):
     idle_timeout_ms: int
     agent_version: str
     redact_names: tuple[str, ...] = field(repr=False)
+    write_allowlist: WriteAllowlist
 
     @classmethod
     def from_json(cls, value: object) -> BootstrapSettings:
         data = _obj(
             value,
             "schemaVersion protocolMajor protocolMinor sessionId process pipeName token "
-            "clientSid expiresUtc requestTimeoutMs idleTimeoutMs agentVersion redactNames",
+            "clientSid expiresUtc requestTimeoutMs idleTimeoutMs agentVersion "
+            "redactNames writeAllowlist",
         )
         session_id = _identifier(data["sessionId"])
         try:
@@ -947,7 +969,7 @@ class BootstrapSettings(WireModel):
             raise ValueError("Invalid redaction names")
         return cls(
             _int(data["schemaVersion"], 1, 1),
-            _int(data["protocolMajor"], 0, 2_147_483_647),
+            _int(data["protocolMajor"], 2, 2),
             _int(data["protocolMinor"], 0, 2_147_483_647),
             session_id,
             ProcessIdentity.from_json(data["process"]),
@@ -959,6 +981,7 @@ class BootstrapSettings(WireModel):
             _int(data["idleTimeoutMs"], 1, 300000),
             _identifier(data["agentVersion"]),
             validate_redact_names(cast("list[object]", data["redactNames"])),
+            WriteAllowlist.from_json(data["writeAllowlist"]),
         )
 
 
@@ -990,3 +1013,403 @@ class RequestEnvelope:
         if not isinstance(data["params"], dict):
             raise ValueError("Invalid request parameters")
         return cls(_int(data["id"], 1), method, cast(dict[str, Any], data["params"]))
+
+
+# Protocol 2.0 query, geometry, action, wait and event DTOs.
+@dataclass(frozen=True)
+class AllowEntry(WireModel):
+    type_full_name: str
+    member_key: str
+
+    @classmethod
+    def from_json(cls, value: object) -> AllowEntry:
+        data = _obj(value, "typeFullName memberKey")
+        return cls(_key(data["typeFullName"]), _key(data["memberKey"]))
+
+
+@dataclass(frozen=True)
+class WriteAllowlist(WireModel):
+    properties: tuple[AllowEntry, ...]
+    methods: tuple[AllowEntry, ...]
+
+    @classmethod
+    def from_json(cls, value: object) -> WriteAllowlist:
+        data = _obj(value, "properties methods")
+        properties = _array(data["properties"], AllowEntry.from_json, 128)
+        methods = _array(data["methods"], AllowEntry.from_json, 128)
+        if len(set(properties)) != len(properties) or len(set(methods)) != len(methods):
+            raise ValueError("Duplicate allowlist entry")
+        return cls(properties, methods)
+
+
+@dataclass(frozen=True)
+class Scope(WireModel):
+    kind: str
+    handle: ObjectRef | None = None
+
+    @classmethod
+    def from_json(cls, value: object) -> Scope:
+        data = _obj(value, "kind", "handle")
+        kind = _choice(data["kind"], {"allRoots", "window", "object"})
+        if (kind == "allRoots") != ("handle" not in data):
+            raise ValueError("Invalid scope handle")
+        return cls(kind, _optional(data, "handle", ObjectRef.from_json))
+
+
+def _scalar(value: object) -> str | bool | int | float:
+    if isinstance(value, str):
+        return _str(value, 4096, empty=True)
+    if type(value) is bool:
+        return value
+    if _finite_number(value):
+        return cast(int | float, value)
+    raise ValueError("Invalid scalar")
+
+
+def _regex_pattern(value: object) -> str:
+    pattern = _str(value, 1024, empty=True)
+    index = 0
+    while index < len(pattern):
+        char = pattern[index]
+        if ord(char) > 127:
+            raise ValueError("Regex literals must be ASCII")
+        if char == "\\":
+            index += 1
+            if index == len(pattern) or pattern[index] not in r"\.^$|?*+()[]{}-":
+                raise ValueError("Unsupported regex escape")
+        elif char == "(" and pattern[index + 1 : index + 2] == "?":
+            if pattern[index + 1 : index + 3] != "?:":
+                raise ValueError("Unsupported regex group")
+        elif char == "{":
+            end = pattern.find("}", index + 1)
+            if end < 0:
+                raise ValueError("Invalid regex bound")
+            match = re.fullmatch(r"([0-9]+)(?:,([0-9]*))?", pattern[index + 1 : end])
+            if match is None:
+                raise ValueError("Invalid regex bound")
+            lower = int(match.group(1))
+            upper = match.group(2)
+            if lower > 10000 or (upper and (int(upper) > 10000 or int(upper) < lower)):
+                raise ValueError("Invalid regex bound")
+            index = end
+        index += 1
+    try:
+        re.compile(pattern, re.ASCII)
+    except re.error as error:
+        raise ValueError("Invalid regex") from error
+    return pattern
+
+
+@dataclass(frozen=True)
+class Predicate(WireModel):
+    kind: str
+    path: tuple[PathSegment, ...] | None = None
+    value: str | bool | int | float | _Missing = MISSING
+    pattern: str | None = None
+    flags: tuple[str, ...] | None = None
+    full_name: str | None = None
+
+    @classmethod
+    def from_json(cls, value: object) -> Predicate:
+        data = _obj(value, "kind", "path value pattern flags fullName")
+        kind = _choice(data["kind"], {"equals", "regex", "assignableTo"})
+        if kind == "assignableTo":
+            _obj(value, "kind fullName")
+            return cls(kind, full_name=_key(data["fullName"]))
+        if kind == "equals":
+            _obj(value, "kind path value")
+            return cls(kind, path=parse_path(data["path"]), value=_scalar(data["value"]))
+        _obj(value, "kind path pattern flags")
+        flags = _array(
+            data["flags"], lambda x: _choice(x, {"ignoreCase", "multiline", "singleline"}), 3
+        )
+        if len(set(flags)) != len(flags):
+            raise ValueError("Duplicate regex flag")
+        return cls(
+            kind,
+            path=parse_path(data["path"]),
+            pattern=_regex_pattern(data["pattern"]),
+            flags=flags,
+        )
+
+
+@dataclass(frozen=True)
+class Locator(WireModel):
+    scope: Scope
+    tree: str
+    predicates: tuple[Predicate, ...]
+    depth: int
+    limit: int
+    index: int | None = None
+
+    @classmethod
+    def from_json(cls, value: object) -> Locator:
+        d = _obj(value, "scope tree predicates depth limit", "index")
+        return cls(
+            Scope.from_json(d["scope"]),
+            _choice(d["tree"], {"visual", "logical", "combined"}),
+            _array(d["predicates"], Predicate.from_json, 32),
+            _int(d["depth"], 0, 256),
+            _int(d["limit"], 1, 200),
+            _optional(d, "index", lambda x: _int(x, 0, 9999)),
+        )
+
+
+def _number(value: object) -> int | float:
+    if not _finite_number(value):
+        raise ValueError("Invalid number")
+    return cast(int | float, value)
+
+
+@dataclass(frozen=True)
+class Rect(WireModel):
+    x: int | float
+    y: int | float
+    width: int | float
+    height: int | float
+
+    @classmethod
+    def from_json(cls, value: object) -> Rect:
+        d = _obj(value, "x y width height")
+        result = cls(*(_number(d[k]) for k in ("x", "y", "width", "height")))
+        if result.width < 0 or result.height < 0:
+            raise ValueError("Negative rectangle size")
+        return result
+
+
+@dataclass(frozen=True)
+class Dpi(WireModel):
+    x: int | float
+    y: int | float
+
+    @classmethod
+    def from_json(cls, value: object) -> Dpi:
+        d = _obj(value, "x y")
+        result = cls(_number(d["x"]), _number(d["y"]))
+        if result.x <= 0 or result.y <= 0:
+            raise ValueError("Invalid DPI")
+        return result
+
+
+@dataclass(frozen=True)
+class PartGeometry(WireModel):
+    name: str
+    role: str
+    bounds: Rect | None
+
+    @classmethod
+    def from_json(cls, value: object) -> PartGeometry:
+        d = _obj(value, "name role bounds")
+        return cls(
+            _identifier(d["name"]),
+            _choice(
+                d["role"],
+                {
+                    "expanderToggle",
+                    "comboDropDown",
+                    "scrollThumb",
+                    "scrollDecrement",
+                    "scrollIncrement",
+                    "scrollTrack",
+                    "treeItemExpander",
+                    "gridColumnHeader",
+                    "templatePart",
+                },
+            ),
+            None if d["bounds"] is None else Rect.from_json(d["bounds"]),
+        )
+
+    def to_json(self) -> dict[str, Any]:
+        return {"name": self.name, "role": self.role, "bounds": _wire(self.bounds)}
+
+
+@dataclass(frozen=True)
+class ElementState(WireModel):
+    handle: ObjectRef
+    window_handle: int | None
+    bounds: Rect | None
+    dpi: Dpi
+    visible: bool
+    clipped: bool
+    offscreen: bool
+    enabled: bool
+    focused: bool
+    is_keyboard_focusable: bool
+    parts: tuple[PartGeometry, ...]
+
+    @classmethod
+    def from_json(cls, value: object) -> ElementState:
+        d = _obj(
+            value,
+            "handle windowHandle bounds dpi visible clipped offscreen enabled focused "
+            "isKeyboardFocusable parts",
+        )
+        hwnd = d["windowHandle"]
+        if hwnd is not None and type(hwnd) is not int:
+            raise ValueError("Invalid window handle")
+        return cls(
+            ObjectRef.from_json(d["handle"]),
+            hwnd,
+            None if d["bounds"] is None else Rect.from_json(d["bounds"]),
+            Dpi.from_json(d["dpi"]),
+            _bool(d["visible"]),
+            _bool(d["clipped"]),
+            _bool(d["offscreen"]),
+            _bool(d["enabled"]),
+            _bool(d["focused"]),
+            _bool(d["isKeyboardFocusable"]),
+            _array(d["parts"], PartGeometry.from_json, 1_000_000),
+        )
+
+    def to_json(self) -> dict[str, Any]:
+        result = super().to_json()
+        result["windowHandle"] = self.window_handle
+        result["bounds"] = _wire(self.bounds)
+        result["parts"] = [p.to_json() for p in self.parts]
+        return result
+
+
+@dataclass(frozen=True)
+class MatchWarning(WireModel):
+    code: str
+    count: int
+
+    @classmethod
+    def from_json(cls, value: object) -> MatchWarning:
+        d = _obj(value, "code count")
+        return cls(_choice(d["code"], {"multipleMatches"}), _int(d["count"], 2, 10000))
+
+
+@dataclass(frozen=True)
+class QueryFindResult(WireModel):
+    match: ObjectRef
+    warning: MatchWarning | None = None
+
+    @classmethod
+    def from_json(cls, value: object) -> QueryFindResult:
+        d = _obj(value, "match", "warning")
+        return cls(ObjectRef.from_json(d["match"]), _optional(d, "warning", MatchWarning.from_json))
+
+
+@dataclass(frozen=True)
+class QueryFindAllResult(WireModel):
+    matches: tuple[ObjectRef, ...]
+    complete: bool
+    count: int | None = None
+
+    @classmethod
+    def from_json(cls, value: object) -> QueryFindAllResult:
+        d = _obj(value, "matches complete", "count")
+        return cls(
+            _array(d["matches"], ObjectRef.from_json, 200),
+            _bool(d["complete"]),
+            _optional(d, "count", lambda x: _int(x, 0, 10000)),
+        )
+
+
+@dataclass(frozen=True)
+class ActResult(WireModel):
+    outcome: str
+    handle: ObjectRef
+
+    @classmethod
+    def from_json(cls, value: object) -> ActResult:
+        d = _obj(value, "outcome handle")
+        return cls(
+            _choice(d["outcome"], {"performed", "noChange"}), ObjectRef.from_json(d["handle"])
+        )
+
+
+@dataclass(frozen=True)
+class WaitCondition(WireModel):
+    kind: str
+    locator: Locator
+    path: tuple[PathSegment, ...] | None = None
+    value: str | bool | int | float | _Missing = MISSING
+
+    @classmethod
+    def from_json(cls, value: object) -> WaitCondition:
+        d = _obj(value, "kind locator", "path value")
+        kind = _choice(d["kind"], {"exists", "visible", "enabled", "propertyEquals"})
+        if kind == "propertyEquals":
+            _obj(value, "kind locator path value")
+            return cls(
+                kind, Locator.from_json(d["locator"]), parse_path(d["path"]), _scalar(d["value"])
+            )
+        _obj(value, "kind locator")
+        return cls(kind, Locator.from_json(d["locator"]))
+
+
+@dataclass(frozen=True)
+class WaitResult(WireModel):
+    satisfied: bool
+    handle: ObjectRef | None = None
+    state: ElementState | None = None
+
+    @classmethod
+    def from_json(cls, value: object) -> WaitResult:
+        d = _obj(value, "satisfied", "handle state")
+        satisfied = _bool(d["satisfied"])
+        if satisfied:
+            _obj(value, "satisfied handle state")
+        else:
+            _obj(value, "satisfied")
+        return cls(
+            satisfied,
+            _optional(d, "handle", ObjectRef.from_json),
+            _optional(d, "state", ElementState.from_json),
+        )
+
+
+@dataclass(frozen=True)
+class WriteAudit(WireModel):
+    operation: str
+    type_full_name: str
+    member_key: str
+    outcome: str
+    timestamp_utc: str
+    reason: str | None = None
+
+    @classmethod
+    def from_json(cls, value: object) -> WriteAudit:
+        d = _obj(value, "operation typeFullName memberKey outcome timestampUtc", "reason")
+        return cls(
+            _choice(d["operation"], {"setProperty", "call"}),
+            _key(d["typeFullName"]),
+            _key(d["memberKey"]),
+            _choice(d["outcome"], {"performed", "denied", "failed"}),
+            _timestamp(d["timestampUtc"]),
+            _optional(d, "reason", lambda x: _str(x, 1024, empty=True)),
+        )
+
+
+@dataclass(frozen=True)
+class EventsEventParams(WireModel):
+    subscription_id: str
+    sequence: int
+    kind: str
+    handle: ObjectRef | None = None
+
+    @classmethod
+    def from_json(cls, value: object) -> EventsEventParams:
+        d = _obj(value, "subscriptionId sequence kind", "handle")
+        kind = _choice(d["kind"], {"windowOpened", "windowClosed", "treeChanged", "overflow"})
+        if kind == "overflow" and "handle" in d:
+            raise ValueError("Overflow cannot have a handle")
+        return cls(
+            _identifier(d["subscriptionId"]),
+            _int(d["sequence"], 1),
+            kind,
+            _optional(d, "handle", ObjectRef.from_json),
+        )
+
+
+@dataclass(frozen=True)
+class EventsNotification(WireModel):
+    method: str
+    params: EventsEventParams
+
+    @classmethod
+    def from_json(cls, value: object) -> EventsNotification:
+        d = _obj(value, "method params")
+        return cls(_choice(d["method"], {"events.event"}), EventsEventParams.from_json(d["params"]))
