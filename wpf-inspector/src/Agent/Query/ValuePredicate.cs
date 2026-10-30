@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
+using System.Reflection;
 using System.Threading;
 using System.Windows;
 using System.Windows.Automation.Peers;
@@ -17,6 +19,8 @@ namespace WinTestKit.Inspector.Agent.Query
         private readonly QueryRegex? regex;
         private readonly ObjectInspector inspector;
         private readonly ObjectRegistry registry;
+        private readonly Dictionary<Type, Declaration[]> declarations = new Dictionary<Type, Declaration[]>();
+        private readonly Dictionary<Type, bool> descriptorNames = new Dictionary<Type, bool>();
 
         internal ValuePredicate(Predicate predicate, ObjectInspector inspector, ObjectRegistry registry)
         {
@@ -29,9 +33,70 @@ namespace WinTestKit.Inspector.Agent.Query
 
         public bool Matches(DependencyObject target, QueryPredicateContext context)
         {
-            ValueDto? value = path.Count == 1 && path[0].Kind == "uia" ? ReadUia(target) :
-                inspector.ReadPath(target, path, registry, target.Dispatcher, CancellationToken.None);
-            return value != null && MatchesValue(value, context);
+            if (context.Remaining <= TimeSpan.Zero) throw new ProtocolException(ErrorCodes.LimitExceeded, "Query deadline reached.");
+            if (path.Count == 1 && path[0].Kind == "type" && path[0].Name == "FullName" && regex == null)
+            {
+                if (!(expected is JsonStringNode typeName) || target.GetType().FullName != typeName.Value) return false;
+                if (inspector.IsPathRedacted(path) || RedactionPolicy.IsProtectedIdentity(target)) throw Unreadable("redacted");
+                return true;
+            }
+            PathSegment first = path[0];
+            if (first.Kind == "property" || first.Kind == "field")
+            {
+                Type type = target.GetType();
+                if (!declarations.TryGetValue(type, out Declaration[]? found))
+                {
+                    found = ReflectionCatalog.Get(type).Where(d => d.Name == first.Name &&
+                        (first.Kind == "property" ? d.Property != null : d.Field != null) &&
+                        (first.MemberKey == null || first.MemberKey == d.Key) &&
+                        (first.DeclaringType == null || first.DeclaringType == Declaration.TypeName(d.DeclaringType))).ToArray();
+                    declarations.Add(type, found);
+                }
+                if (found.Length == 0 && first.Kind == "field") return false;
+                if (found.Length == 0 && first.Kind == "property")
+                {
+                    if (target is System.ComponentModel.ICustomTypeDescriptor)
+                    {
+                        if (System.ComponentModel.TypeDescriptor.GetProperties(target)[first.Name] == null) return false;
+                    }
+                    else
+                    {
+                        if (!descriptorNames.TryGetValue(type, out bool present))
+                        {
+                            present = System.ComponentModel.TypeDescriptor.GetProperties(type)[first.Name] != null;
+                            descriptorNames.Add(type, present);
+                        }
+                        if (!present) return false;
+                    }
+                }
+                if (found.Length > 1) throw new ProtocolException(ErrorCodes.MemberAmbiguous, "Member is ambiguous");
+                if (found.Length == 1 && path.Count == 1 && !(target is System.ComponentModel.ICustomTypeDescriptor))
+                {
+                    Declaration d = found[0];
+                    if (inspector.IsPathRedacted(path) || RedactionPolicy.IsPasswordIdentity(d.DeclaringType, d.Name) || RedactionPolicy.IsProtectedIdentity(target))
+                        throw Unreadable("redacted");
+                    MethodInfo? getter = d.Property?.GetGetMethod(true);
+                    if (d.Property != null && (getter == null || !getter.IsPublic || d.Property.GetIndexParameters().Length != 0) || d.Field != null && !d.Field.IsPublic)
+                        throw Unreadable("notReadable");
+                    if (Declaration.Unsupported(d.ValueType)) throw Unreadable("unsupported");
+                    object? raw;
+                    try { raw = d.Property != null ? d.Property.GetValue(target, null) : d.Field!.GetValue(target); }
+                    catch (Exception) { throw Unreadable("exception"); }
+                    if (context.Remaining <= TimeSpan.Zero) throw new ProtocolException(ErrorCodes.LimitExceeded, "Query deadline reached.");
+                    return MatchesValue(ValueSerializer.Serialize(raw, d.ValueType, registry, target.Dispatcher), context);
+                }
+            }
+            if (first.Kind == "dependency" && !DependencyCatalog.Discover(target, _ => { }).Any(entry =>
+                entry.Property.Name == first.Name && Declaration.TypeName(entry.Property.OwnerType) == first.OwnerType &&
+                Declaration.AssemblyName(entry.Property.OwnerType) == first.OwnerAssembly &&
+                (first.MemberKey == null || entry.Key == first.MemberKey))) return false;
+            using (var cancellation = new CancellationTokenSource())
+            {
+                cancellation.CancelAfter(context.Remaining > TimeSpan.Zero ? context.Remaining : TimeSpan.Zero);
+                ValueDto? value = path.Count == 1 && path[0].Kind == "uia" ? ReadUia(target) :
+                    inspector.ReadPath(target, path, registry, target.Dispatcher, cancellation.Token);
+                return value != null && MatchesValue(value, context);
+            }
         }
 
         internal bool MatchesValue(ValueDto value, QueryPredicateContext context)
@@ -84,25 +149,13 @@ namespace WinTestKit.Inspector.Agent.Query
             string name = path[0].Name;
             try
             {
-                AutomationPeer? peer = null;
-                if (name == "name" || name == "control_type")
-                {
-                    peer = target is UIElement element ? UIElementAutomationPeer.FromElement(element) ?? UIElementAutomationPeer.CreatePeerForElement(element) :
-                        target is ContentElement content ? ContentElementAutomationPeer.FromElement(content) ?? ContentElementAutomationPeer.CreatePeerForElement(content) : null;
-                    if (peer == null) return null;
-                }
+                AutomationPeer? peer = target is UIElement element ? UIElementAutomationPeer.FromElement(element) ?? UIElementAutomationPeer.CreatePeerForElement(element) :
+                    target is ContentElement content ? ContentElementAutomationPeer.FromElement(content) ?? ContentElementAutomationPeer.CreatePeerForElement(content) : null;
+                if (peer == null) return null;
                 if (inspector.IsPathRedacted(path)) throw Unreadable("redacted");
-                string? result;
-                if (name == "class_name") result = target.GetType().Name;
-                else if (name == "automation_id")
-                {
-                    result = System.Windows.Automation.AutomationProperties.GetAutomationId(target);
-                    if (string.IsNullOrEmpty(result)) result = target is FrameworkElement element ? element.Name : target is FrameworkContentElement content ? content.Name : "";
-                }
-                else
-                {
-                    result = name == "name" ? peer!.GetName() : ControlTypeName(peer!.GetAutomationControlType());
-                }
+                string? result = name == "class_name" ? peer.GetClassName() :
+                    name == "automation_id" ? peer.GetAutomationId() :
+                    name == "name" ? peer.GetName() : ControlTypeName(peer.GetAutomationControlType());
                 return ValueSerializer.Serialize(result ?? "", typeof(string), registry, target.Dispatcher);
             }
             catch (ProtocolException) { throw; }

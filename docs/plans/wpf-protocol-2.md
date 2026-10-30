@@ -41,6 +41,7 @@ type and dispatcherId. Handles are session-bound and stale handles fail `objectS
   0–256, index is zero-based 0–9999, limit is 1–200. Tree defaults to combined, depth to
   256, limit to 100 when omitted by the caller before serialization. Index selects after
   filtering, in traversal order. A request always carries all required fields.
+* A predicate path whose first member is absent on an object's runtime type does not match that object.
 * `Predicate` is one of `{kind:"equals",path:PathSegment[],value:Scalar}`,
   `{kind:"regex",path:PathSegment[],pattern:string,flags:string[]}` or
   `{kind:"assignableTo",fullName:string}`. Scalar is a JSON string, boolean or finite
@@ -232,3 +233,5 @@ explicit `backend: uia` keep the UIA backend.
 7. findAll returns capped results with complete:false and count only after full traversal.
 8. Unreadable predicate values fail the query with valueUnreadable; missing peers do not match.
 9. ElementState carries an optional uiaRuntimeId so phase 1 can act on WPF matches through UIA.
+
+10. A predicate path whose first member is absent on an object's runtime type does not match that object.

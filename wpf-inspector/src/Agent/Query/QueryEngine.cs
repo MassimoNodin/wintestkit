@@ -64,8 +64,14 @@ namespace WinTestKit.Inspector.Agent.Query
             DateTime budgetDeadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
             if (deadline < budgetDeadline) budgetDeadline = deadline;
             var context = new QueryPredicateContext(budgetDeadline);
+            var uiaPredicates = new List<IQueryPredicate>();
             var predicates = new List<IQueryPredicate>();
-            foreach (Predicate predicate in locator.Predicates) predicates.Add(PredicateFactory.Create(predicate, inspector, registry));
+            foreach (Predicate predicate in locator.Predicates)
+            {
+                var compiled = PredicateFactory.Create(predicate, inspector, registry);
+                if (predicate.Kind == "assignableTo" || predicate.Path != null && predicate.Path.Count == 1 && (predicate.Path[0].Kind == "uia" || predicate.Path[0].Kind == "type")) uiaPredicates.Add(compiled);
+                else predicates.Add(compiled);
+            }
             var sources = new List<PresentationSource>();
             DependencyObject? scoped = null;
             Dispatcher? scopedDispatcher = null;
@@ -122,8 +128,10 @@ namespace WinTestKit.Inspector.Agent.Query
                             if (result.Visited >= ProtocolLimits.ScanMaxObjects) return true;
                             result.Visited++;
                             bool matches = true;
+                            foreach (IQueryPredicate predicate in uiaPredicates)
+                                if (!predicate.Matches(current, context)) { matches = false; break; }
                             ProtocolException? unreadable = null;
-                            foreach (IQueryPredicate predicate in predicates)
+                            if (matches) foreach (IQueryPredicate predicate in predicates)
                             {
                                 try { if (!predicate.Matches(current, context)) matches = false; }
                                 catch (ProtocolException error) when (error.Code == ErrorCodes.ValueUnreadable) { unreadable = unreadable ?? error; }
