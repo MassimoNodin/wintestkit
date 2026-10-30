@@ -174,6 +174,40 @@ public class RequestDispatcherTests
         await Task.WhenAll(pending);
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(2001)]
+    public async Task StateRejectsInvalidTimeout(int timeout)
+    {
+        var parameters = new JsonObjectNode();
+        parameters.Add("handle", StateService.Handle.ToJson());
+        parameters.Add("timeoutMs", JsonNumberNode.From(timeout));
+        var response = await Dispatch(new RequestDispatcher(Session, new StateService()), PipeMethods.StateGet, parameters);
+        Assert.Equal(ErrorCodes.InvalidParams, response.Error!.Code);
+    }
+
+    [Fact]
+    public async Task StateRoutesAndSerializes()
+    {
+        var service = new StateService();
+        var response = await Dispatch(new RequestDispatcher(Session, service), PipeMethods.StateGet,
+            new StateGetParams { Handle = StateService.Handle, TimeoutMs = 500 }.ToJson());
+        Assert.Null(response.Error);
+        Assert.Equal("object", StateGetResult.FromJson(response.Result!).State.Handle.ObjectId);
+        Assert.Equal(500, service.Timeout);
+    }
+
+    private sealed class StateService : RecordingService, IStateInspectionService
+    {
+        public static ObjectRef Handle => new() { SessionId = Session, ObjectId = "object", Generation = 1, DispatcherId = "dispatcher", Type = new TypeInfoDto() };
+        public int Timeout { get; private set; }
+        public Task<StateGetResult> GetStateAsync(ObjectRef handle, DateTime deadline, int timeoutMs, CancellationToken ct)
+        {
+            Timeout = timeoutMs;
+            return Task.FromResult(new StateGetResult { State = new ElementState { Handle = handle, Dpi = new PointDto { X = 96, Y = 96 } } });
+        }
+    }
+
     private sealed class QueryService : RecordingService, IQueryInspectionService
     {
         public ProtocolException? QueryError { get; set; }

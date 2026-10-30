@@ -99,6 +99,9 @@ namespace WinTestKit.Inspector.Agent.Session
                     var findAll = QueryFindAllParams.FromJson(request.Params);
                     return (await queryAllService.FindAllAsync(findAll.Locator, deadline, findAll.TimeoutMs, ct).ConfigureAwait(false)).ToJson();
                 case PipeMethods.StateGet:
+                    if (!(service is IStateInspectionService stateService)) throw new ProtocolException(ErrorCodes.UnsupportedTarget, "Feature not available.");
+                    var state = StateGetParams.FromJson(request.Params);
+                    return (await stateService.GetStateAsync(state.Handle, deadline, state.TimeoutMs, ct).ConfigureAwait(false)).ToJson();
                 case PipeMethods.ActFocus:
                 case PipeMethods.ActBringIntoView:
                 case PipeMethods.ActInvoke:
