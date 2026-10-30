@@ -30,7 +30,7 @@ Write-Host "Using MSBuild: $msbuild"
 if ($Sign -and -not $env:WTK_SIGN_CERT_THUMBPRINT) { throw '-Sign requires WTK_SIGN_CERT_THUMBPRINT.' }
 # Verify the complete pinned inventory before compiling or copying any upstream code.
 $vendor = Join-Path $root 'wpf-inspector/third_party/snoop'
-$lock = Get-Content -Raw (Join-Path $root 'wpf-inspector/third_party/snoop.lock.json') | ConvertFrom-Json
+$lock = Get-Content -Raw -LiteralPath (Join-Path $root 'wpf-inspector/third_party/snoop.lock.json') | ConvertFrom-Json
 $expected = @{}
 foreach ($entry in $lock.files) {
     $expected[$entry.path.Replace('/', '\')] = $true
@@ -79,7 +79,7 @@ try {
     $launcherCopy = Join-Path $copyRoot 'Snoop.InjectorLauncher'
     $sharedCopy = Join-Path $copyRoot 'Shared'
     New-Item -ItemType Directory -Force -Path $launcherCopy, $sharedCopy | Out-Null
-    Copy-Item -Path (Join-Path $vendor 'Snoop.InjectorLauncher/*') -Destination $launcherCopy -Recurse -Force
+    Get-ChildItem -LiteralPath (Join-Path $vendor 'Snoop.InjectorLauncher') | Copy-Item -Destination $launcherCopy -Recurse -Force
     Copy-Item -LiteralPath (Join-Path $vendor 'Shared/InjectorData.cs'), (Join-Path $vendor 'Shared/app.manifest') -Destination $sharedCopy -Force
     Copy-Item -LiteralPath (Join-Path $root 'wpf-inspector/src/Launcher/LauncherSupport.cs'), (Join-Path $root 'wpf-inspector/src/Launcher/packages.lock.json') -Destination $launcherCopy -Force
     $launcherPatch = Join-Path $root 'wpf-inspector/third_party/patches/snoop-injector-launcher.patch'
@@ -141,7 +141,7 @@ try {
                     # manifest authenticates their current bytes.
                     $oldManifestPath = Join-Path $payload 'manifest.json'
                     if ($relative -notmatch '^agents/(net48|net8|net10)/WinTestKit\.Inspector\.Protocol\.dll$' -or -not (Test-Path -LiteralPath $oldManifestPath -PathType Leaf)) { throw "Unexpected existing payload file: $relative" }
-                    $old = Get-Content -Raw $oldManifestPath | ConvertFrom-Json
+                    $old = Get-Content -Raw -LiteralPath $oldManifestPath | ConvertFrom-Json
                     $record = @($old.files | Where-Object { $_.path -ceq $relative })
                     if ($record.Count -ne 1 -or $record[0].sha256 -cne (Get-FileHash -LiteralPath $item.FullName -Algorithm SHA256).Hash.ToLowerInvariant()) { throw "Cannot safely migrate old payload file: $relative" }
                     Remove-Item -LiteralPath $item.FullName
@@ -164,10 +164,10 @@ try {
             if ($LASTEXITCODE -ne 0 -or (Get-AuthenticodeSignature -LiteralPath $file).Status -ne 'Valid') { throw "Signing or signature verification failed: $relative" }
         }
     }
-    $versionSource = Get-Content -Raw (Join-Path $root 'python/src/wintestkit/__init__.py')
+    $versionSource = Get-Content -Raw -LiteralPath (Join-Path $root 'python/src/wintestkit/__init__.py')
     if ($versionSource -notmatch '(?m)^__version__\s*=\s*["'']([^"'']+)["'']') { throw 'Cannot find inspector version.' }
     $version = $Matches[1]
-    $protocolSource = Get-Content -Raw (Join-Path $root 'wpf-inspector/src/Protocol/Core.cs')
+    $protocolSource = Get-Content -Raw -LiteralPath (Join-Path $root 'wpf-inspector/src/Protocol/Core.cs')
     $protocolMatches = [regex]::Matches($protocolSource, 'public\s+static\s+class\s+ProtocolInfo\s*\{\s*public\s+const\s+int\s+Major\s*=\s*(\d+)\s*,\s*Minor\s*=\s*(\d+)\s*;\s*\}')
     if ($protocolMatches.Count -ne 1) { throw 'Cannot uniquely determine ProtocolInfo Major and Minor from wpf-inspector/src/Protocol/Core.cs.' }
     $protocolMajor = [int]$protocolMatches[0].Groups[1].Value
