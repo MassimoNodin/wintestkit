@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.ComponentModel;
@@ -153,6 +153,20 @@ public sealed class MultiConverter : IMultiValueConverter
     public object Convert(object[] values, Type targetType, object parameter, CultureInfo culture) { Counts.Hit("converter.MultiConvert"); return string.Join(" ", values); }
     public object[] ConvertBack(object value, Type[] targetTypes, object parameter, CultureInfo culture) { Counts.Hit("converter.MultiConvertBack"); return targetTypes.Select(_ => Binding.DoNothing).ToArray(); }
 }
+public sealed class FancyButton : Button { }
+public sealed class LargeButton : FrameworkElement
+{
+    public string Group => "shared";
+    public string Key { get; set; } = "";
+    protected override AutomationPeer OnCreateAutomationPeer() => new LargeButtonPeer(this);
+}
+public sealed class LargeButtonPeer : FrameworkElementAutomationPeer
+{
+    public LargeButtonPeer(LargeButton owner) : base(owner) { }
+    protected override AutomationControlType GetAutomationControlTypeCore() => AutomationControlType.Button;
+    protected override string GetClassNameCore() => "LargeButton";
+}
+public sealed class PeerlessMarker : FrameworkElement { public string Marker => "peerless"; }
 public sealed class PeerControl : Button { protected override AutomationPeer OnCreateAutomationPeer() => new FixturePeer(this); }
 public sealed class GuardedControl : Button
 {
@@ -183,6 +197,7 @@ public sealed class MainWindow : Window
     private readonly Popup popup;
     private readonly ListBox rows;
     private Window? second;
+    private Window? large;
     private readonly StackPanel dynamicTree = new();
     private int generation;
     public MainWindow()
@@ -190,11 +205,19 @@ public sealed class MainWindow : Window
         Title = "WinTestKit WPF Fixture"; Width = 700; Height = 800; FontSize = 14;
         AutomationProperties.SetAutomationId(this, "MainWindow");
         DataContext = new ViewModel();
-        var panel = new StackPanel(); Content = new ScrollViewer { Content = panel };
+        var panel = Id(new StackPanel(), "MainPanel"); Content = new ScrollViewer { Content = panel };
         var fixture = Id(new FixtureControl { Content = "Fixture control", LocalValue = "local", CoercedValue = 25 }, "FixtureControl");
         AttachedOwner.SetMarker(fixture, "attached");
         fixture.BeginAnimation(OpacityProperty, new DoubleAnimation(0.5, 1, new Duration(TimeSpan.FromHours(1))));
         panel.Children.Add(fixture);
+        var effect = Id(new TextBlock { Text = "Ready" }, "ActionEffect");
+        var fancy = Id(new FancyButton { Name = "FancyXName", Content = "Fancy action", Tag = "fancy" }, "FancyAutomationId");
+        int clicks = 0; fancy.Click += (_, _) => effect.Text = "Clicked " + ++clicks;
+        panel.Children.Add(fancy); panel.Children.Add(effect);
+        panel.Children.Add(new PeerlessMarker());
+        var group = Id(new GroupBox { Header = "Parity group" }, "ParityGroup");
+        group.Content = Id(new Button { Content = "Nested", Tag = "nested" }, "NestedButton");
+        panel.Children.Add(group);
         var guarded = Id(new GuardedControl(), "GuardedControl");
         guarded.SetBinding(ContentControl.ContentProperty, new Binding("VisibleValue") { Source = guarded });
         fixture.Guarded = guarded;
@@ -226,6 +249,18 @@ public sealed class MainWindow : Window
     {
         switch (name)
         {
+            case "openLarge":
+                if (large != null) break;
+                var stack = new StackPanel();
+                for (int i = 0; i < 1500; i++)
+                {
+                    var button = Id(new LargeButton { Key = "Large " + i, Height = 1 }, "Large" + i);
+                    stack.Children.Add(button);
+                }
+                for (int i = 0; i < 3500; i++) stack.Children.Add(new PeerlessMarker());
+                large = new Window { Title = "Large", Width = 600, Height = 700, Content = new ScrollViewer { Content = stack } };
+                AutomationProperties.SetAutomationId(large, "LargeWindow");
+                large.Closed += (_, _) => large = null; large.Show(); break;
             case "openPopup": popup.IsOpen = true; break;
             case "changeDataContext": DataContext = new ViewModel("fixture-" + ++generation); break;
             case "addDynamic": dynamicTree.Children.Add(Id(new Button { Content = "Dynamic " + value }, "Dynamic" + value)); break;
@@ -322,3 +357,4 @@ public static class Program
         }
     }
 }
+
