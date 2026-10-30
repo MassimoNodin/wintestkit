@@ -5,7 +5,9 @@ from pathlib import Path
 
 import pytest
 
+from wintestkit.errors import InspectorReadError
 from wintestkit.inspector import models
+from wintestkit.inspector.client import _response
 
 FIXTURES = Path(__file__).resolve().parents[3] / "wpf-inspector/protocol/fixtures"
 MODELS = {
@@ -87,3 +89,21 @@ def test_nullable_geometry_round_trips_in_nested_result() -> None:
     assert result["state"]["bounds"] is None
     assert result["state"]["windowHandle"] is None
     assert result["state"]["parts"][0]["bounds"] is None
+
+
+@pytest.mark.parametrize("status", ["redacted", "truncated", None, 7])
+def test_unreadable_response_maps_to_read_error(status: object) -> None:
+    _, _, error = _response(
+        {
+            "id": 1,
+            "error": {
+                "code": "valueUnreadable",
+                "message": "unreadable",
+                "details": {"status": status},
+            },
+        }
+    )
+    assert isinstance(error, InspectorReadError)
+    expected = status if isinstance(status, str) else "valueUnreadable"
+    assert error.code == expected
+    assert expected in str(error)

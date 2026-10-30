@@ -1,0 +1,1 @@
+{"schema":"ResponseEnvelope","instance":{"id":1,"error":{"code":"valueUnreadable","message":"Predicate value is unreadable","details":{"status":"redacted","path":[{"kind":"property","name":"Text"}]}}}}

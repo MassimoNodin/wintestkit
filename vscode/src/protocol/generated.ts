@@ -2540,6 +2540,7 @@ export interface ManagedErrorInfo {
     | "notFound"
     | "actionUnsupported"
     | "regexTimeout"
+    | "valueUnreadable"
     | "writeDenied"
     | "writeRateExceeded";
   message: string;
