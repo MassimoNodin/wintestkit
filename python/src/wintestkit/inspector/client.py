@@ -19,7 +19,9 @@ from wintestkit.inspector.models import (
     ERROR_CODES,
     BindingInfo,
     CandidateResult,
+    ElementState,
     HelloResult,
+    Locator,
     ManagedNode,
     Mapping,
     Member,
@@ -27,6 +29,8 @@ from wintestkit.inspector.models import (
     Page,
     PathValue,
     ProcessFacts,
+    QueryFindAllResult,
+    QueryFindResult,
     Session,
     Value,
     parse_path,
@@ -380,6 +384,70 @@ class InspectorClient:
             return result
 
         return self._parse(parse, self._request("element.resolve", params, deadline))
+
+    def _timed_params(self, timeout_ms: int, deadline: float) -> int:
+        try:
+            requested = _int(timeout_ms, 1, 2000)
+        except (ValueError, TypeError) as error:
+            raise InspectorError("Invalid request timeout", code="invalidParams") from error
+        remaining = int((deadline - time.monotonic()) * 1000)
+        if remaining < 1:
+            raise InspectorError("Inspector request deadline expired", code="timeout")
+        return min(requested, remaining)
+
+    def _query(self, method: str, locator: Locator, timeout_ms: int, deadline: float) -> object:
+        self._feature("query")
+        self._object_ref(locator.scope.handle)
+        try:
+            wire = Locator.from_json(locator.to_json()).to_json()
+        except (ValueError, TypeError) as error:
+            raise InspectorError("Invalid query locator", code="invalidParams") from error
+        return self._request(
+            method,
+            {"locator": wire, "timeoutMs": self._timed_params(timeout_ms, deadline)},
+            deadline,
+        )
+
+    def query_find(self, locator: Locator, *, timeout_ms: int, deadline: float) -> QueryFindResult:
+        def parse(value: object) -> QueryFindResult:
+            result = QueryFindResult.from_json(value)
+            self._object_ref(result.match)
+            return result
+
+        return self._parse(parse, self._query("query.find", locator, timeout_ms, deadline))
+
+    def query_find_all(
+        self, locator: Locator, *, timeout_ms: int, deadline: float
+    ) -> QueryFindAllResult:
+        def parse(value: object) -> QueryFindAllResult:
+            result = QueryFindAllResult.from_json(value)
+            if len(result.matches) > locator.limit:
+                raise ValueError("Too many matches")
+            for match in result.matches:
+                self._object_ref(match)
+            return result
+
+        return self._parse(parse, self._query("query.findAll", locator, timeout_ms, deadline))
+
+    def state_get(self, handle: ObjectRef, *, timeout_ms: int, deadline: float) -> ElementState:
+        self._feature("geometry")
+        self._object_ref(handle)
+
+        def parse(value: object) -> ElementState:
+            state = ElementState.from_json(_obj(value, "state")["state"])
+            self._object_ref(state.handle)
+            if state.handle != handle:
+                raise ValueError("Mismatched state handle")
+            return state
+
+        return self._parse(
+            parse,
+            self._request(
+                "state.get",
+                {"handle": handle.to_json(), "timeoutMs": self._timed_params(timeout_ms, deadline)},
+                deadline,
+            ),
+        )
 
     def read_batch(
         self,

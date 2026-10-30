@@ -130,7 +130,14 @@ def parse_managed_key(key: str) -> ManagedPath:
     prefix, body = key.split(":", 1)
     offset = len(prefix) + 1
     if prefix == "type":
-        if body not in {"Name", "FullName", "AssemblyName", "AssemblyQualifiedName", "BaseTypes"}:
+        if body not in {
+            "Name",
+            "FullName",
+            "AssemblyName",
+            "AssemblyQualifiedName",
+            "BaseTypes",
+            "Is",
+        }:
             raise InvalidLocatorError(f"Invalid type name {body!r} at position {offset}")
         segments = [PathSegment("type", body)]
     elif prefix == "dp":

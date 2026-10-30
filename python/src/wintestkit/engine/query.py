@@ -2,21 +2,31 @@
 
 from __future__ import annotations
 
+import logging
 import time
 from collections.abc import Callable
+from contextlib import suppress
 from typing import Any
 
 from wintestkit import runtime
 from wintestkit.engine.locator import Locator
 from wintestkit.engine.managed import ManagedCondition, locator_deadline, matches_value
 from wintestkit.engine.properties import Condition, matches, native_value, read, resolve_where
-from wintestkit.errors import InspectorLimitError, InspectorMappingError, InspectorReadError
+from wintestkit.errors import (
+    InspectorError,
+    InspectorLimitError,
+    InspectorMappingError,
+    InspectorReadError,
+    InvalidLocatorError,
+)
 from wintestkit.inspector.client import InspectorClient
 from wintestkit.inspector.models import Value
 from wintestkit.inspector.paths import PathSegment
 from wintestkit.uia import com
 from wintestkit.uia.constants import CONTROL_TYPES, TreeScope
 from wintestkit.uia.element import UIAElement
+
+log = logging.getLogger(__name__)
 
 MAX_RELAXED_CANDIDATES = 1000
 
@@ -74,6 +84,16 @@ def query_all(
     managed = [c for c in constraints if not isinstance(c, Condition)]
     if managed and deadline is None:
         deadline = locator_deadline()
+    if managed:
+        assert deadline is not None
+        reason = "inspector.query is postfilter"
+        if runtime.get_config().inspector.query == "agent":
+            result, reason = _agent_query(root, locator, constraints, deadline)
+            if result is not None:
+                return result
+        log.debug("WPF query fallback: %s", reason)
+        if any(c.key == "type:Is" for c in managed):
+            raise InvalidLocatorError(f"type:Is requires an agent query; {reason}")
     props: dict[str, Any] = dict(locator.exact_props())
     for constraint in uia:
         if not constraint.is_regex:
@@ -96,6 +116,87 @@ def query_all(
     return filter_managed(found, managed, deadline)
 
 
+def _agent_query(
+    root: UIAElement,
+    locator: Locator,
+    constraints: tuple[Condition | ManagedCondition, ...],
+    deadline: float,
+) -> tuple[list[UIAElement] | None, str]:
+    __tracebackhide__ = True
+    from dataclasses import replace
+
+    from wintestkit.engine.wpf_query import UnsupportedQuery, translate
+    from wintestkit.inspector.models import Scope
+    from wintestkit.uia.element import from_handle
+
+    try:
+        wire = translate(locator, constraints, None)
+    except UnsupportedQuery as error:
+        return None, str(error)
+    if time.monotonic() >= deadline:
+        raise InspectorLimitError("Managed query deadline expired", code="limitExceeded")
+    client = runtime.managed_client_for(
+        root.process_id, deadline=deadline, target_hwnd=root_handle(root)
+    )
+    if not {"query", "geometry", "exactUiaMapping"} <= set(client.session.features):
+        return None, "agent lacks query, geometry or exact mapping"
+    try:
+        rid, hwnd = runtime.managed_element_identity(root)
+    except InspectorMappingError:
+        return None, "root has no usable UIA identity"
+    mapping = client.resolve(rid, hwnd, deadline=deadline)
+    if mapping.status != "exact" or mapping.object_ref is None:
+        return None, f"root mapping is {mapping.status}"
+    refs = [mapping.object_ref]
+    try:
+        wire = replace(wire, scope=Scope("object", mapping.object_ref))
+        timeout = max(1, min(2000, int((deadline - time.monotonic()) * 1000)))
+        result = client.query_find_all(wire, timeout_ms=timeout, deadline=deadline)
+        refs.extend(result.matches)
+        if not result.complete and len(result.matches) < wire.limit:
+            raise InspectorLimitError(
+                "WPF query exhausted its budget before traversal completed", code="limitExceeded"
+            )
+        groups: dict[int, list[tuple[int, ...]]] = {}
+        ordered: list[tuple[int, tuple[int, ...]]] = []
+        for ref in result.matches:
+            timeout = max(1, min(2000, int((deadline - time.monotonic()) * 1000)))
+            state = client.state_get(ref, timeout_ms=timeout, deadline=deadline)
+            if (
+                state.handle == mapping.object_ref
+                or not state.window_handle
+                or not state.uia_runtime_id
+            ):
+                continue
+            key = (state.window_handle, state.uia_runtime_id)
+            ordered.append(key)
+            groups.setdefault(key[0], []).append(key[1])
+        mapped: dict[tuple[int, tuple[int, ...]], UIAElement] = {}
+        for hwnd, ids in groups.items():
+            window = from_handle(hwnd)
+            found = window.find_all(
+                TreeScope.Subtree, com.create_runtime_ids_condition(ids), cached=True
+            )
+            candidates = [*found, window]
+            for element in candidates:
+                try:
+                    identity = tuple(int(x) for x in element.runtime_id.split("."))
+                except ValueError:
+                    continue
+                if identity in ids:
+                    mapped.setdefault((hwnd, identity), element)
+        missing = len(result.matches) - sum(key in mapped for key in ordered)
+        if missing:
+            log.debug("Skipped %d WPF matches without a mapped UIA element", missing)
+        return _unique([mapped[key] for key in ordered if key in mapped]), ""
+    finally:
+        with suppress(InspectorError):
+            client.release(
+                list(dict.fromkeys(ref.object_id for ref in refs)),
+                deadline=min(deadline, time.monotonic() + 0.25),
+            )
+
+
 def relaxed_descendants(root: UIAElement, control_type: str | None) -> list[UIAElement]:
     """Descendants for diagnostics: of one control type when given, otherwise everything."""
     __tracebackhide__ = True
@@ -110,6 +211,8 @@ def filter_managed(
     __tracebackhide__ = True
     from wintestkit.uia.element import from_handle
 
+    if any(c.key == "type:Is" for c in constraints):
+        raise InvalidLocatorError("type:Is requires an agent query; postfilter is required here")
     count = len(found)
     if count > 1000:
         raise InspectorLimitError(
