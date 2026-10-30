@@ -9,12 +9,13 @@ using System.Windows.Threading;
 using WinTestKit.Inspector.Agent.Contracts;
 using WinTestKit.Inspector.Agent.Mapping;
 using WinTestKit.Inspector.Agent.Query;
+using WinTestKit.Inspector.Agent.State;
 using WinTestKit.Inspector.Agent.Inspection.Members;
 using WinTestKit.Inspector.Protocol;
 
 namespace WinTestKit.Inspector.Agent.Inspection
 {
-    public sealed class WpfInspectionService : IInspectionService, IExactMappingCapability, IQueryInspectionService
+    public sealed class WpfInspectionService : IInspectionService, IExactMappingCapability, IQueryInspectionService, IStateInspectionService
     {
         private readonly DispatcherExecutor executor;
         private readonly ObjectRegistry registry;
@@ -41,6 +42,24 @@ namespace WinTestKit.Inspector.Agent.Inspection
         }
 
         public bool ExactMappingAvailable => mapper.IsAvailable;
+
+        public Task<StateGetResult> GetStateAsync(ObjectRef handle, DateTime deadline, int timeoutMs, CancellationToken ct) => RunAsync(async token =>
+        {
+            object target = GetObject(handle.ObjectId, handle.Generation, out Dispatcher dispatcher);
+            ObjectRef actual = registry.Register(target, dispatcher, inspector.DescribeType(target.GetType()));
+            if (actual.SessionId != handle.SessionId || actual.DispatcherId != handle.DispatcherId)
+                throw new ProtocolException(ErrorCodes.ObjectStale, "Unknown or stale object handle.");
+            DateTime end = DateTime.UtcNow.AddMilliseconds(timeoutMs);
+            if (deadline < end) end = deadline;
+            int remaining = (int)Math.Max(0, (end - DateTime.UtcNow).TotalMilliseconds);
+            if (remaining == 0) throw new ProtocolException(ErrorCodes.Timeout, "Request deadline elapsed.");
+            using (var timed = CancellationTokenSource.CreateLinkedTokenSource(token))
+            {
+                timed.CancelAfter(remaining);
+                try { return new StateGetResult { State = await executor.ExecuteAsync(dispatcher, () => StateReader.Read(target, actual, adapter), timed.Token).ConfigureAwait(false) }; }
+                catch (OperationCanceledException) when (!token.IsCancellationRequested) { throw new ProtocolException(ErrorCodes.Timeout, "Request deadline elapsed."); }
+            }
+        }, ct);
 
         public Task<QueryFindResult> FindAsync(Locator locator, DateTime deadline, int timeoutMs, CancellationToken ct) =>
             RunAsync(token => query.FindAsync(locator, deadline, timeoutMs, token), ct);

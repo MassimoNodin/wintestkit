@@ -32,6 +32,11 @@ namespace WinTestKit.Inspector.Agent.Contracts
         Task<QueryFindAllResult> FindAllAsync(Locator locator, DateTime deadline, int timeoutMs, CancellationToken ct);
     }
 
+    public interface IStateInspectionService
+    {
+        Task<StateGetResult> GetStateAsync(ObjectRef handle, DateTime deadline, int timeoutMs, CancellationToken ct);
+    }
+
     public interface IExactMappingCapability
     {
         bool ExactMappingAvailable { get; }
