@@ -186,3 +186,19 @@ def create_condition(**props: Any) -> Any:
         for condition in conditions[1:]:
             combined = uia.CreateAndCondition(combined, condition)
         return combined
+
+
+def create_runtime_ids_condition(runtime_ids: list[tuple[int, ...]]) -> Any:
+    """Match any runtime ID using UIA's integer SAFEARRAY property value."""
+    __tracebackhide__ = True
+    from array import array
+
+    if not runtime_ids:
+        raise ValueError("At least one runtime ID is required")
+    uia = get_uia()
+    with wrap_com_errors:
+        conditions = [uia.CreatePropertyCondition(30000, array("i", rid)) for rid in runtime_ids]
+        result = conditions[0]
+        for condition in conditions[1:]:
+            result = uia.CreateOrCondition(result, condition)
+        return result

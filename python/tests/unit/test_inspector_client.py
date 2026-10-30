@@ -238,3 +238,72 @@ def test_unexpected_hello_failure_closes_transport(monkeypatch: pytest.MonkeyPat
             transport, FACTS, "session", TOKEN, "1", deadline=time.monotonic() + 1
         )
     assert transport.closed
+
+
+def test_protocol2_query_and_state_requests() -> None:
+    from pathlib import Path
+
+    from wintestkit.inspector.models import ElementState, Locator, Scope
+
+    fixture = json.loads(
+        (
+            Path(__file__).resolve().parents[3]
+            / "wpf-inspector/protocol/fixtures/valid/p2-state-runtime-id.json"
+        ).read_text(encoding="utf-8")
+    )["instance"]
+    fixture["handle"]["sessionId"] = "session"
+    state = ElementState.from_json(fixture)
+    locator = Locator(Scope("object", state.handle), "combined", (), 256, 200)
+
+    def handler(request: dict[str, Any]) -> object:
+        method = request["method"]
+        result = {
+            "query.find": {"match": state.handle.to_json()},
+            "query.findAll": {"matches": [state.handle.to_json()], "complete": True},
+            "state.get": {"state": state.to_json()},
+            "session.close": {"closed": True},
+        }[method]
+        return {"id": request["id"], "result": result}
+
+    transport = ScriptedTransport(handler)
+    client = InspectorClient(transport, session())
+    try:
+        deadline = time.monotonic() + 1
+        assert client.query_find(locator, timeout_ms=2000, deadline=deadline).match == state.handle
+        assert client.query_find_all(locator, timeout_ms=2000, deadline=deadline).matches == (
+            state.handle,
+        )
+        assert client.state_get(state.handle, timeout_ms=2000, deadline=deadline) == state
+        assert [r["method"] for r in transport.requests] == [
+            "query.find",
+            "query.findAll",
+            "state.get",
+        ]
+        assert all(1 <= r["params"]["timeoutMs"] <= 1000 for r in transport.requests)
+    finally:
+        client.close()
+
+
+@pytest.mark.parametrize(
+    "code", ["notFound", "limitExceeded", "regexTimeout", "objectStale", "valueUnreadable"]
+)
+def test_protocol2_query_error_propagation(code: str) -> None:
+    from wintestkit.inspector.models import Locator, Scope
+
+    transport = ScriptedTransport(
+        lambda request: {
+            "id": request["id"],
+            "error": {"code": code, "message": "error", "details": {"status": "redacted"}},
+        }
+    )
+    client = InspectorClient(transport, session())
+    try:
+        with pytest.raises(InspectorError) as exc:
+            client.query_find_all(
+                Locator(Scope("allRoots"), "combined", (), 256, 200),
+                timeout_ms=1000,
+                deadline=time.monotonic() + 1,
+            )
+        assert exc.value.code == ("redacted" if code == "valueUnreadable" else code)
+    finally:
+        client.invalidate(InspectorUnavailableError("done", code="notAttached"))

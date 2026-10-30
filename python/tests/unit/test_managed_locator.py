@@ -42,7 +42,7 @@ def condition(expected):
 @pytest.fixture(autouse=True)
 def setup(monkeypatch, tmp_path):
     runtime.reset()
-    runtime.set_config(load_config(tmp_path))
+    runtime.set_config(load_config(tmp_path, overrides={"inspector.query": "postfilter"}))
     monkeypatch.setattr(query, "make_condition", lambda **props: props)
     yield
     runtime.reset()

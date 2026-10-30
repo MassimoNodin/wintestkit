@@ -215,6 +215,8 @@ def normalize_where(where: Mapping[str, WhereValue] | None, taken: Mapping[str, 
             from wintestkit.inspector.paths import parse_managed_key
 
             parse_managed_key(key)
+            if key == "type:Is" and (not isinstance(value, str) or not value or len(value) > 1024):
+                raise InvalidLocatorError("type:Is requires an exact type name string")
             if _value_problem(None, value) is not None:
                 raise InvalidLocatorError(f"where[{key!r}] expects a scalar or compiled regex")
         problem = _value_problem(spec.kind if spec else None, value)
@@ -273,6 +275,10 @@ def resolve_where(
             from wintestkit.inspector.paths import parse_managed_key
 
             path = parse_managed_key(target)
+            if target == "type:Is" and (
+                not isinstance(value, str) or not value or len(value) > 1024
+            ):
+                raise InvalidLocatorError("type:Is requires an exact type name string")
             if _value_problem(None, value) is not None:
                 raise InvalidLocatorError(f"where[{key!r}] expects a scalar or compiled regex")
             if target in seen:

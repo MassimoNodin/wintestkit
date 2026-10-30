@@ -93,7 +93,14 @@ _TOP_LEVEL_KEYS = {
     "object_previews_share",
 }
 _APP_KEYS = {"path", "args", "cwd", "env", "process", "startup_timeout", "close_timeout"}
-_INSPECTOR_KEYS = {"enabled", "attach", "attach_timeout", "request_timeout", "redact_names"}
+_INSPECTOR_KEYS = {
+    "enabled",
+    "attach",
+    "attach_timeout",
+    "request_timeout",
+    "redact_names",
+    "query",
+}
 
 _ENV_VARS = {
     "WTK_APP_PATH": "app.path",
@@ -139,6 +146,7 @@ class InspectorConfig:
     attach_timeout: float = 10.0
     request_timeout: float = 2.0
     redact_names: tuple[str, ...] = ()
+    query: Literal["agent", "postfilter"] = "agent"
 
 
 @dataclass(frozen=True)
@@ -490,6 +498,12 @@ def _build_inspector(values: Mapping[str, Any]) -> InspectorConfig:
         attach_timeout=timeout("attach_timeout", 10.0),
         request_timeout=timeout("request_timeout", 2.0),
         redact_names=tuple(dict.fromkeys(names)),
+        query=cast(
+            "Literal['agent', 'postfilter']",
+            _enum(
+                "inspector.query", values.get("inspector.query", "agent"), ("agent", "postfilter")
+            ),
+        ),
     )
 
 

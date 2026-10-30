@@ -34,6 +34,7 @@ inspector:
   attach: manual
   attach_timeout: 10.0
   request_timeout: 2.0
+  query: agent
   redact_names: [account]
 ```
 
@@ -43,6 +44,7 @@ inspector:
 | `inspector.attach` | `manual` | `manual` or `on-demand` |
 | `inspector.attach_timeout` | `10.0` | Positive seconds, at most 10 |
 | `inspector.request_timeout` | `2.0` | Positive seconds, at most 2 |
+| `inspector.query` | `agent` | `agent` or `postfilter` |
 | `inspector.redact_names` | `[]` | At most 32 nonempty names, each at most 128 Unicode characters |
 
 Redaction names from configuration layers are additive. There are no inspector environment
@@ -98,12 +100,14 @@ Use qualified keys observed in Spy, for example:
 ```python
 # pseudo-code
 Element(automation_id='Order', where={'type:FullName': 'Example.OrderView'})
+Element(where={'type:Is': 'Example.BaseView'})
 Element(automation_id='Order', where={'clr:DataContext.Status': 'Ready'})
 Element(automation_id='Order', where={'field:State': 'Ready'})
 Element(automation_id='Order', where={'dp:PresentationFramework|System.Windows.FrameworkElement::Tag': 'Ready'})
 ```
 
 `type:` accepts `Name`, `FullName`, `AssemblyName`, `AssemblyQualifiedName`, or `BaseTypes`.
+`type:Is` matches a loaded type or a derived type by its exact full name and requires an agent query.
 `clr:` traverses properties separated by dots; `field:` starts with a field and continues
 with properties. Escape a literal dot as `\.` and a backslash as `\\` in the key (double
 backslashes again in ordinary Python string literals). `dp:` uses
@@ -112,9 +116,12 @@ escape literal slashes as `\/` and backslashes as `\\` in those segments. Paths 
 most eight segments and 1,024 UTF-8 bytes; whitespace, indexers and method calls are not
 supported. Do not guess paths or dependency owners.
 
-UIA constraints first narrow candidates; managed constraints then filter them in document
-order before `index` and `within` semantics are applied. A scan is capped at 1,000 UIA
-candidates before attachment; narrow broad locators. Equality and regular expressions use the
+Agent queries search the combined WPF tree, then map results to UIA peers in traversal order.
+Matches without a UIA peer are skipped. The agent returns at most 200 matches: if traversal
+is incomplete with fewer than 200, the query raises a limit error; 200 incomplete matches
+are returned because ambiguity is already evident. Unsupported locators fall back to the
+UIA postfilter, which is capped at 1,000 candidates. Set `inspector.query: postfilter` to
+force that path. Equality and regular expressions use the
 normal `where` matching rules; managed scalar comparison distinguishes booleans from numbers
 and supports enum names or integer values. Redacted, unsupported or ambiguous values cannot
 be treated as ordinary matches. See [property matching](property-matching.md).
