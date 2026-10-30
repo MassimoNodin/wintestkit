@@ -21,12 +21,12 @@ try {
     }
     if (Test-Path -LiteralPath $dist) { Remove-Item -LiteralPath $dist -Recurse -Force }
     Invoke-Checked "Build source distribution" { uv build --directory $python --sdist }
-    $sdist = Get-ChildItem $dist -Filter "wintestkit-*.tar.gz" | Select-Object -First 1
+    $sdist = Get-ChildItem -LiteralPath $dist -Filter "wintestkit-*.tar.gz" | Select-Object -First 1
     if (-not $sdist) { throw "No source distribution in $dist" }
     Invoke-Checked "Build wheel from source distribution" { uv build $sdist.FullName --wheel --out-dir $dist }
-    $distributions = Get-ChildItem $dist -File | Where-Object { $_.Name -match '\.(whl|tar\.gz)$' }
+    $distributions = Get-ChildItem -LiteralPath $dist -File | Where-Object { $_.Name -match '\.(whl|tar\.gz)$' }
     Invoke-Checked "Validate distribution metadata" { uv run --directory $python --locked twine check --strict $distributions.FullName }
-    $wheel = Get-ChildItem $dist -Filter "wintestkit-*-py3-none-any.whl" | Select-Object -First 1
+    $wheel = Get-ChildItem -LiteralPath $dist -Filter "wintestkit-*-py3-none-any.whl" | Select-Object -First 1
     if (-not $wheel) { throw "No py3-none-any wheel in $dist" }
 
     Add-Type -AssemblyName System.IO.Compression.FileSystem
