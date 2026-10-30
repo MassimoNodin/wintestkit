@@ -65,13 +65,13 @@ type and dispatcherId. Handles are session-bound and stale handles fail `objectS
   fail the query with `valueUnreadable` (`details.status` and `details.path`, unless the path is
   redacted). Null and nullIntermediate do not match; peer-derived `uia` paths on elements
   with no automation peer do not match and are not errors.
-* `ElementState` is `{handle:ObjectRef,windowHandle:integer|null,bounds:Rect|null,dpi:{x:number,y:number},
+* `ElementState` includes optional `uiaRuntimeId:integer[]` from its automation peer, and is `{handle:ObjectRef,windowHandle:integer|null,bounds:Rect|null,dpi:{x:number,y:number},
   visible:boolean,clipped:boolean,offscreen:boolean,enabled:boolean,focused:boolean,
   isKeyboardFocusable:boolean,parts:PartGeometry[]}`. Each part is
   `{name:string,role:string,bounds:Rect|null}`; name is its template `x:Name`, and role is
   `expanderToggle`, `comboDropDown`, `scrollThumb`, `scrollDecrement`, `scrollIncrement`,
   `scrollTrack`, `treeItemExpander`, `gridColumnHeader`, or `templatePart`. Include all named
-  parts found in the applied template, including header instances, with semantic roles when
+  parts found in the applied template (up to 64, scanning at most 4096 visual nodes), including header instances, with semantic roles when
   recognized. Missing parts are absent; null bounds mean no usable geometry. Including parts in
   state gives geometry and visibility one snapshot and deadline. `Rect` is `{x:number,y:number,width:number,height:number}`
   in physical screen pixels, including negative coordinates; width and height are nonnegative.
@@ -231,3 +231,4 @@ explicit `backend: uia` keep the UIA backend.
 6. ElementState exposes template-part geometry for actual sub-part mouse input.
 7. findAll returns capped results with complete:false and count only after full traversal.
 8. Unreadable predicate values fail the query with valueUnreadable; missing peers do not match.
+9. ElementState carries an optional uiaRuntimeId so phase 1 can act on WPF matches through UIA.

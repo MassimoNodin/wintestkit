@@ -1237,6 +1237,7 @@ class ElementState(WireModel):
     focused: bool
     is_keyboard_focusable: bool
     parts: tuple[PartGeometry, ...]
+    uia_runtime_id: tuple[int, ...] | None = None
 
     @classmethod
     def from_json(cls, value: object) -> ElementState:
@@ -1244,6 +1245,7 @@ class ElementState(WireModel):
             value,
             "handle windowHandle bounds dpi visible clipped offscreen enabled focused "
             "isKeyboardFocusable parts",
+            "uiaRuntimeId",
         )
         hwnd = d["windowHandle"]
         if hwnd is not None and type(hwnd) is not int:
@@ -1260,6 +1262,7 @@ class ElementState(WireModel):
             _bool(d["focused"]),
             _bool(d["isKeyboardFocusable"]),
             _array(d["parts"], PartGeometry.from_json, 1_000_000),
+            _optional(d, "uiaRuntimeId", _runtime_id),
         )
 
     def to_json(self) -> dict[str, Any]:

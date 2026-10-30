@@ -2599,6 +2599,16 @@
           "items": {
             "$ref": "#/$defs/PartGeometry"
           }
+        },
+        "uiaRuntimeId": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": -2147483648,
+            "maximum": 2147483647
+          },
+          "minItems": 1,
+          "maxItems": 1024
         }
       },
       "required": [
