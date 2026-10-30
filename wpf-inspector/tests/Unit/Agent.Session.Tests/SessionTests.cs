@@ -211,6 +211,7 @@ public class SessionTests
         var bytes = (await FrameCodec.ReadFrameAsync(client, timeout.Token))!;
         var response = HelloResult.FromJson(ResponseEnvelope.FromJson(StrictJson.Parse(bytes, 0, bytes.Length)).Result!);
         Assert.Equal(available, response.Features.Contains(Features.ExactUiaMapping));
+        Assert.Contains(Features.Query, response.Features);
         await FrameCodec.WriteFrameAsync(client, StrictJson.Serialize(new RequestEnvelope { Id = 2, Method = PipeMethods.Close }.ToJson()), timeout.Token);
         await FrameCodec.ReadFrameAsync(client, timeout.Token);
         await serving.WaitAsync(timeout.Token);
@@ -305,6 +306,30 @@ public class SessionTests
         await serving.WaitAsync(timeout.Token);
         server.Dispose();
         Assert.Null(await FrameCodec.ReadFrameAsync(client, timeout.Token));
+    }
+
+    [Fact]
+    public async Task UnadvertisedQueryIsRejectedBeforeHandler()
+    {
+        var settings = Settings();
+        using var server = new PipeServer(settings, new TestHandler(), new Verifier(true), false, () => { });
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var serving = server.RunAsync(timeout.Token);
+        using var client = new NamedPipeClientStream(".", settings.PipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
+        await client.ConnectAsync(timeout.Token);
+        await Send(client, new RequestEnvelope { Id = 1, Method = PipeMethods.Hello, Params = new HelloParams { ProtocolMajor = 2, ProtocolMinor = 0, SessionId = settings.SessionId, Token = settings.Token, Process = settings.Process }.ToJson() }, timeout.Token);
+        var helloBytes = (await FrameCodec.ReadFrameAsync(client, timeout.Token))!;
+        var hello = HelloResult.FromJson(ResponseEnvelope.FromJson(StrictJson.Parse(helloBytes, 0, helloBytes.Length)).Result!);
+        Assert.DoesNotContain(Features.Query, hello.Features);
+        foreach (var pair in new[] { (2L, PipeMethods.QueryFind), (3L, PipeMethods.QueryFindAll) })
+        {
+            await Send(client, new RequestEnvelope { Id = pair.Item1, Method = pair.Item2 }, timeout.Token);
+            var bytes = (await FrameCodec.ReadFrameAsync(client, timeout.Token))!;
+            Assert.Equal(ErrorCodes.UnsupportedTarget, ResponseEnvelope.FromJson(StrictJson.Parse(bytes, 0, bytes.Length)).Error!.Code);
+        }
+        await Send(client, new RequestEnvelope { Id = 4, Method = PipeMethods.Close }, timeout.Token);
+        await FrameCodec.ReadFrameAsync(client, timeout.Token);
+        await serving.WaitAsync(timeout.Token);
     }
 
     private sealed class TestHandler : ISessionRequestHandler

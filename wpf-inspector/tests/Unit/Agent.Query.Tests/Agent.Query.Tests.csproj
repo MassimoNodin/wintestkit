@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFrameworks>net10.0-windows;net48</TargetFrameworks>
+    <IsTestProject>true</IsTestProject>
+    <UseWPF>true</UseWPF>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" PrivateAssets="all" />
+    <ProjectReference Include="../../../src/Protocol/Protocol.csproj" />
+    <Compile Include="../../../src/Agent/Query/*.cs" LinkBase="Query" />
+    <Compile Include="../../../src/Agent/Mapping/TreeWalker.cs" Link="TreeWalker.cs" />
+    <Compile Include="../../../src/Agent/Inspection/DispatcherExecutor.cs" Link="DispatcherExecutor.cs" />
+    <Compile Include="../../../src/Agent/Inspection/ObjectRegistry.cs" Link="ObjectRegistry.cs" />
+    <Compile Include="../../../src/Agent/Inspection/Members/**/*.cs" LinkBase="Members" />
+    <Compile Include="../../../src/Agent/Contracts/**/*.cs" LinkBase="Contracts" />
+  </ItemGroup>
+</Project>

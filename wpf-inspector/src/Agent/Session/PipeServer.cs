@@ -86,7 +86,7 @@ namespace WinTestKit.Inspector.Agent.Session
             }
             catch (Exception error) when (error is ProtocolException || error is FormatException || error is ArgumentException) { return; }
             var result = new HelloResult { AgentVersion = typeof(PipeServer).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "", Tfm = Tfm, Architecture = Environment.Is64BitProcess ? "x64" : "x86", RuntimeVersion = Environment.Version.ToString(), Process = settings.Process,
-                Features = production ? (exactMappingAvailable ? new[] { Features.TypeMetadata, Features.ClrMembers, Features.DependencyProperties, Features.Bindings, Features.ExactUiaMapping, Features.BatchReads } : new[] { Features.TypeMetadata, Features.ClrMembers, Features.DependencyProperties, Features.Bindings, Features.BatchReads }) : Array.Empty<string>() };
+                Features = production ? (exactMappingAvailable ? new[] { Features.TypeMetadata, Features.ClrMembers, Features.DependencyProperties, Features.Bindings, Features.ExactUiaMapping, Features.BatchReads, Features.Query } : new[] { Features.TypeMetadata, Features.ClrMembers, Features.DependencyProperties, Features.Bindings, Features.BatchReads, Features.Query }) : Array.Empty<string>() };
             await SendAsync(new ResponseEnvelope { Id = request.Id, Result = result.ToJson() }, ct).ConfigureAwait(false);
             activity();
             long lastId = request.Id;
@@ -128,7 +128,9 @@ namespace WinTestKit.Inspector.Agent.Session
         {
             try
             {
-                var response = await handler.HandleAsync(request, ct).ConfigureAwait(false);
+                var response = !production && (request.Method == PipeMethods.QueryFind || request.Method == PipeMethods.QueryFindAll)
+                    ? new ResponseEnvelope { Id = request.Id, Error = new ErrorInfo { Code = ErrorCodes.UnsupportedTarget, Message = "Request failed." } }
+                    : await handler.HandleAsync(request, ct).ConfigureAwait(false);
                 await SendAsync(response, ct).ConfigureAwait(false);
             }
             catch (Exception error) when (error is OperationCanceledException || error is ObjectDisposedException || error is IOException) { }
