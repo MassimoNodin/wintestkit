@@ -1,4 +1,4 @@
-﻿"""Validate every golden fixture and count protocol 2 additions."""
+"""Validate every golden fixture and count protocol 2 additions."""
 
 import json
 from pathlib import Path
