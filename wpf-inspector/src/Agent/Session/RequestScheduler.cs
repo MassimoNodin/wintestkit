@@ -26,6 +26,8 @@ namespace WinTestKit.Inspector.Agent.Session
 
         public RequestScheduler(int timeoutMs) { timeout = Math.Min(ProtocolLimits.RequestTimeoutMs, Math.Max(1, timeoutMs)); }
 
+        internal int TimeoutMs => timeout;
+
         public Task<JsonNode> ExecuteAsync(RequestEnvelope request, Func<CancellationToken, Task<JsonNode>> operation, CancellationToken ct)
         {
             var work = new Work { Id = request.Id, Operation = operation };

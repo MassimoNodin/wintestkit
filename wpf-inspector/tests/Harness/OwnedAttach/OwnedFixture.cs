@@ -86,7 +86,7 @@ internal static class OwnedFixture
             sessionDir = newSessionDir;
             VerifyPrivateAcl(new DirectoryInfo(sessionDir).GetAccessControl(), sid, true);
             string newBootstrap = Path.Combine(sessionDir, Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(16)) + ".json");
-            var settings = new { schemaVersion = 1, protocolMajor = ProtocolInfo.Major, protocolMinor = ProtocolInfo.Minor, sessionId = session, process = identity, pipeName, token, clientSid = sid, expiresUtc = DateTime.UtcNow.AddSeconds(30).ToString("O"), requestTimeoutMs = 2000, idleTimeoutMs = 300000, agentVersion = version, redactNames = Array.Empty<string>(), writeAllowlist = new { properties = Array.Empty<string>(), methods = Array.Empty<string>() } };
+            var settings = new { schemaVersion = 1, protocolMajor = ProtocolInfo.Major, protocolMinor = ProtocolInfo.Minor, sessionId = session, process = identity, pipeName, token, clientSid = sid, expiresUtc = DateTime.UtcNow.AddSeconds(30).ToString("O"), requestTimeoutMs = 2000, idleTimeoutMs = 300000, agentVersion = version, redactNames = new[] { "Title" }, writeAllowlist = new { properties = Array.Empty<string>(), methods = Array.Empty<string>() } };
             using (var file = new FileStream(newBootstrap, FileMode.CreateNew, FileAccess.Write, FileShare.None)) { bootstrap = newBootstrap; JsonSerializer.Serialize(file, settings); }
             VerifyPrivateAcl(new FileInfo(bootstrap).GetAccessControl(), sid, false);
             string exe = Path.Combine(payload, "launchers", arch, $"Snoop.InjectorLauncher.{arch}.exe");
@@ -120,6 +120,20 @@ internal static class OwnedFixture
             PackageVerifier.Require(readiness.Elapsed < TimeSpan.FromSeconds(10) && !File.Exists(bootstrap), "Readiness deadline or bootstrap deletion failed");
             Console.WriteLine($"{runtime}/{arch}: authenticated hello pid={target.Id} creationUtc={createdText} agent={version} tfm={tfm} architecture={arch} runtime={runtimeVersion} serverPid={serverPid} readinessMs={readiness.ElapsedMilliseconds}; bootstrap deleted.");
             long id = 2;
+            PackageVerifier.Require(result.GetProperty("features").EnumerateArray().Any(feature => feature.GetString() == "query"), "Query feature was not advertised");
+            using var query = await Exchange(pipe, new { id, method = "query.find", @params = new { locator = new { scope = new { kind = "allRoots" }, tree = "combined", predicates = new[] { new { kind = "equals", path = new[] { new { kind = "uia", name = "automation_id" } }, value = "MainWindow" } }, depth = 256, limit = 200 }, timeoutMs = 2000 } }, id++, 5000);
+            PackageVerifier.Require(GetResult(query).GetProperty("match").GetProperty("sessionId").GetString() == session, "Query did not find the fixture main window");
+            JsonElement match = GetResult(query).GetProperty("match");
+            using var queryAll = await Exchange(pipe, new { id, method = "query.findAll", @params = new { locator = new { scope = new { kind = "object", handle = match }, tree = "logical", predicates = Array.Empty<object>(), depth = 0, limit = 200 }, timeoutMs = 2000 } }, id++, 5000);
+            PackageVerifier.Require(GetResult(queryAll).GetProperty("complete").GetBoolean() && GetResult(queryAll).GetProperty("count").GetInt32() == 1, "Scoped query.findAll did not return its root");
+            var stale = new { sessionId = session, objectId = match.GetProperty("objectId").GetString(), generation = match.GetProperty("generation").GetInt64() + 1, type = match.GetProperty("type"), dispatcherId = match.GetProperty("dispatcherId").GetString() };
+            using var staleQuery = await Exchange(pipe, new { id, method = "query.find", @params = new { locator = new { scope = new { kind = "object", handle = stale }, tree = "logical", predicates = Array.Empty<object>(), depth = 0, limit = 200 }, timeoutMs = 2000 } }, id++, 5000);
+            PackageVerifier.Require(staleQuery.RootElement.GetProperty("error").GetProperty("code").GetString() == "objectStale", "Query accepted a stale scope");
+            using var missingQuery = await Exchange(pipe, new { id, method = "query.find", @params = new { locator = new { scope = new { kind = "object", handle = match }, tree = "logical", predicates = new[] { new { kind = "equals", path = new[] { new { kind = "uia", name = "automation_id" } }, value = "missing" } }, depth = 0, limit = 200 }, timeoutMs = 2000 } }, id++, 5000);
+            PackageVerifier.Require(missingQuery.RootElement.GetProperty("error").GetProperty("code").GetString() == "notFound", "Query should report a missing match");
+            using var redactedQuery = await Exchange(pipe, new { id, method = "query.find", @params = new { locator = new { scope = new { kind = "object", handle = match }, tree = "logical", predicates = new[] { new { kind = "equals", path = new[] { new { kind = "property", name = "Title" } }, value = "unused" } }, depth = 0, limit = 200 }, timeoutMs = 2000 } }, id++, 5000);
+            JsonElement redactedError = redactedQuery.RootElement.GetProperty("error");
+            PackageVerifier.Require(redactedError.GetProperty("code").GetString() == "valueUnreadable" && redactedError.GetProperty("details").GetProperty("status").GetString() == "redacted" && !redactedError.GetProperty("details").TryGetProperty("path", out _), "Query did not preserve bootstrap redaction details");
             using var roots = await Exchange(pipe, new { id, method = "roots", @params = new { sessionId = session } }, id++, 5000);
             JsonElement items = GetResult(roots).GetProperty("items");
             PackageVerifier.Require(items.GetArrayLength() > 0, "Agent returned no WPF roots");

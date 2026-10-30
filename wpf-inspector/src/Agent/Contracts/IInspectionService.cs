@@ -26,6 +26,12 @@ namespace WinTestKit.Inspector.Agent.Contracts
         public long? NativeWindowHandle { get; }
     }
 
+    public interface IQueryInspectionService
+    {
+        Task<QueryFindResult> FindAsync(Locator locator, DateTime deadline, int timeoutMs, CancellationToken ct);
+        Task<QueryFindAllResult> FindAllAsync(Locator locator, DateTime deadline, int timeoutMs, CancellationToken ct);
+    }
+
     public interface IExactMappingCapability
     {
         bool ExactMappingAvailable { get; }

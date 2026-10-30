@@ -8,11 +8,13 @@ using System.Windows;
 using System.Windows.Threading;
 using WinTestKit.Inspector.Agent.Contracts;
 using WinTestKit.Inspector.Agent.Mapping;
+using WinTestKit.Inspector.Agent.Query;
+using WinTestKit.Inspector.Agent.Inspection.Members;
 using WinTestKit.Inspector.Protocol;
 
 namespace WinTestKit.Inspector.Agent.Inspection
 {
-    public sealed class WpfInspectionService : IInspectionService, IExactMappingCapability
+    public sealed class WpfInspectionService : IInspectionService, IExactMappingCapability, IQueryInspectionService
     {
         private readonly DispatcherExecutor executor;
         private readonly ObjectRegistry registry;
@@ -21,6 +23,7 @@ namespace WinTestKit.Inspector.Agent.Inspection
         private readonly ElementMapper mapper;
         private readonly IObjectInspector inspector;
         private readonly TreeWalker walker;
+        private readonly QueryEngine query;
         private readonly CancellationTokenSource lifetime = new CancellationTokenSource();
         private int disposed;
 
@@ -34,9 +37,16 @@ namespace WinTestKit.Inspector.Agent.Inspection
             this.adapter = adapter ?? new PeerRuntimeIdAdapter();
             walker = new TreeWalker(executor);
             mapper = new ElementMapper(executor, this.adapter, registry, walker);
+            query = new QueryEngine(executor, registry, inspector as ObjectInspector);
         }
 
         public bool ExactMappingAvailable => mapper.IsAvailable;
+
+        public Task<QueryFindResult> FindAsync(Locator locator, DateTime deadline, int timeoutMs, CancellationToken ct) =>
+            RunAsync(token => query.FindAsync(locator, deadline, timeoutMs, token), ct);
+
+        public Task<QueryFindAllResult> FindAllAsync(Locator locator, DateTime deadline, int timeoutMs, CancellationToken ct) =>
+            RunAsync(token => query.FindAllAsync(locator, deadline, timeoutMs, token), ct);
 
         public Task<MappingDto> ResolveAsync(int[] runtimeId, long? nativeWindowHandle, CancellationToken ct) =>
             RunAsync(token => mapper.ResolveAsync(runtimeId, nativeWindowHandle, token), ct);

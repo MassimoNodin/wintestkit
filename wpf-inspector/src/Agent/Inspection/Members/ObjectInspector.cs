@@ -16,6 +16,7 @@ namespace WinTestKit.Inspector.Agent.Inspection.Members
         private readonly RedactionPolicy redaction;
         public ObjectInspector() : this(Array.Empty<string>()) { }
         public ObjectInspector(IEnumerable<string> extraRedactNames) { redaction = new RedactionPolicy(extraRedactNames ?? throw new ArgumentNullException(nameof(extraRedactNames))); }
+        internal bool IsPathRedacted(IReadOnlyList<PathSegment> path) => path.Any(segment => redaction.Match(segment.Name) != null);
         public TypeInfoDto DescribeType(Type type) => TypeInfoBuilder.Build(type);
 
         public IReadOnlyList<MemberInfo> GetMembers(object target, List<Diagnostic> diagnostics)

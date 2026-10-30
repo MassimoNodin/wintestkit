@@ -104,7 +104,93 @@ public class RequestDispatcherTests
         release.SetResult(JsonNullNode.Instance);
     }
 
-    private sealed class RecordingService : IInspectionService
+    private static JsonObjectNode QueryParams(string scope = "allRoots", int limit = 200, int depth = 256, int timeout = 1000, string predicates = "[]")
+    {
+        string json = $"{{\"locator\":{{\"scope\":{{\"kind\":\"{scope}\"}},\"tree\":\"logical\",\"predicates\":{predicates},\"depth\":{depth},\"limit\":{limit}}},\"timeoutMs\":{timeout}}}";
+        var bytes = System.Text.Encoding.UTF8.GetBytes(json);
+        return (JsonObjectNode)StrictJson.Parse(bytes, 0, bytes.Length);
+    }
+
+    [Theory]
+    [InlineData("bad", 200, 256, 1000, "[]")]
+    [InlineData("allRoots", 0, 256, 1000, "[]")]
+    [InlineData("allRoots", 200, 257, 1000, "[]")]
+    [InlineData("allRoots", 200, 256, 0, "[]")]
+    [InlineData("allRoots", 200, 256, 2001, "[]")]
+    [InlineData("allRoots", 200, 256, 1000, "[{\"kind\":\"unknown\"}]")]
+    public async Task QueryRejectsMalformedParameters(string scope, int limit, int depth, int timeout, string predicates)
+    {
+        var response = await Dispatch(new RequestDispatcher(Session, new QueryService()), PipeMethods.QueryFind, QueryParams(scope, limit, depth, timeout, predicates));
+        Assert.Equal(ErrorCodes.InvalidParams, response.Error!.Code);
+    }
+
+    [Fact]
+    public async Task QueryResultsAndErrorDetailsAreSerialized()
+    {
+        var service = new QueryService();
+        var dispatcher = new RequestDispatcher(Session, service);
+        var response = await Dispatch(dispatcher, PipeMethods.QueryFind, QueryParams());
+        Assert.Equal(2, QueryFindResult.FromJson(response.Result!).Warning!.Count);
+        response = await Dispatch(dispatcher, PipeMethods.QueryFindAll, QueryParams());
+        var all = QueryFindAllResult.FromJson(response.Result!);
+        Assert.True(all.Complete); Assert.Equal(1, all.Count); Assert.Single(all.Matches);
+        foreach (string code in new[] { ErrorCodes.NotFound, ErrorCodes.ObjectStale, ErrorCodes.ValueUnreadable })
+        {
+            var details = new JsonObjectNode(); details.Add("status", new JsonStringNode("redacted"));
+            service.QueryError = new ProtocolException(code, "sensitive", details);
+            response = await Dispatch(dispatcher, PipeMethods.QueryFind, QueryParams());
+            var serialized = ResponseEnvelope.FromJson(StrictJson.Parse(StrictJson.Serialize(response.ToJson()), 0, StrictJson.Serialize(response.ToJson()).Length));
+            Assert.Equal(code, serialized.Error!.Code);
+            if (code == ErrorCodes.ValueUnreadable) Assert.Equal("redacted", ((JsonStringNode)serialized.Error.Details!.Get("status")).Value);
+        }
+    }
+
+    [Fact]
+    public async Task QueryCancellationUsesTheSharedScheduler()
+    {
+        using var scheduler = new RequestScheduler(2000);
+        var service = new QueryService { Block = true };
+        var dispatcher = new RequestDispatcher(Session, service, scheduler);
+        var pending = dispatcher.HandleAsync(new RequestEnvelope { Id = 1, Method = PipeMethods.QueryFind, Params = QueryParams() }, CancellationToken.None);
+        await service.Started.Task.WaitAsync(TimeSpan.FromSeconds(1));
+        var cancel = await dispatcher.HandleAsync(new RequestEnvelope { Id = 2, Method = PipeMethods.Cancel, Params = new CancelParams { RequestId = 1 }.ToJson() }, CancellationToken.None);
+        Assert.True(CancelResult.FromJson(cancel.Result!).Accepted);
+        Assert.Equal(ErrorCodes.Cancelled, (await pending).Error!.Code);
+    }
+
+    [Fact]
+    public async Task QueryUsesSharedBusyLimit()
+    {
+        using var scheduler = new RequestScheduler(2000);
+        var service = new QueryService { Block = true };
+        var dispatcher = new RequestDispatcher(Session, service, scheduler);
+        var pending = new List<Task<ResponseEnvelope>>();
+        int capacity = ProtocolLimits.MaxActivePerSession + ProtocolLimits.MaxQueuedOps;
+        for (int index = 1; index <= capacity; index++)
+            pending.Add(dispatcher.HandleAsync(new RequestEnvelope { Id = index, Method = PipeMethods.QueryFind, Params = QueryParams() }, CancellationToken.None));
+        var busy = await dispatcher.HandleAsync(new RequestEnvelope { Id = capacity + 1, Method = PipeMethods.QueryFindAll, Params = QueryParams() }, CancellationToken.None);
+        Assert.Equal(ErrorCodes.Busy, busy.Error!.Code);
+        for (int index = 1; index <= capacity; index++) scheduler.Cancel(index);
+        await Task.WhenAll(pending);
+    }
+
+    private sealed class QueryService : RecordingService, IQueryInspectionService
+    {
+        public ProtocolException? QueryError { get; set; }
+        public bool Block { get; set; }
+        public TaskCompletionSource<bool> Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private static ObjectRef Match => new() { SessionId = Session, ObjectId = "object", Generation = 1, DispatcherId = "dispatcher", Type = new TypeInfoDto() };
+        public async Task<QueryFindResult> FindAsync(Locator locator, DateTime deadline, int timeoutMs, CancellationToken ct)
+        {
+            if (QueryError != null) throw QueryError;
+            Started.TrySetResult(true);
+            if (Block) await Task.Delay(Timeout.Infinite, ct);
+            return new QueryFindResult { Match = Match, Warning = new MatchWarning { Count = 2 } };
+        }
+        public Task<QueryFindAllResult> FindAllAsync(Locator locator, DateTime deadline, int timeoutMs, CancellationToken ct) => Task.FromResult(new QueryFindAllResult { Matches = new[] { Match }, Count = 1, Complete = true });
+    }
+
+    private class RecordingService : IInspectionService
     {
         public string? Call { get; private set; }
         public Exception? Error { get; set; }

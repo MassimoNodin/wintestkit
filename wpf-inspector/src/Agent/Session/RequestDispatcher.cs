@@ -32,20 +32,21 @@ namespace WinTestKit.Inspector.Agent.Session
 
         public async Task<ResponseEnvelope> HandleAsync(RequestEnvelope request, CancellationToken ct)
         {
+            var deadline = DateTime.UtcNow.AddMilliseconds((scheduler as RequestScheduler)?.TimeoutMs ?? ProtocolLimits.RequestTimeoutMs);
             try
             {
                 JsonNode result;
                 if (request.Method == PipeMethods.Cancel && scheduler is RequestScheduler concrete)
                     result = new CancelResult { Accepted = concrete.Cancel(CancelParams.FromJson(request.Params).RequestId) }.ToJson();
                 else if (request.Method == PipeMethods.Close)
-                    result = await RouteAsync(request, ct).ConfigureAwait(false);
+                    result = await RouteAsync(request, deadline, ct).ConfigureAwait(false);
                 else
-                    result = await scheduler.ExecuteAsync(request, token => RouteAsync(request, token), ct).ConfigureAwait(false);
+                    result = await scheduler.ExecuteAsync(request, token => RouteAsync(request, deadline, token), ct).ConfigureAwait(false);
                 return new ResponseEnvelope { Id = request.Id, Result = result };
             }
             catch (ProtocolException error)
             {
-                return new ResponseEnvelope { Id = request.Id, Error = new ErrorInfo { Code = error.Code, Message = "Request failed." } };
+                return new ResponseEnvelope { Id = request.Id, Error = new ErrorInfo { Code = error.Code, Message = "Request failed.", Details = error.Code == ErrorCodes.ValueUnreadable ? error.Details : null } };
             }
             catch (Exception)
             {
@@ -58,7 +59,7 @@ namespace WinTestKit.Inspector.Agent.Session
             if (!string.Equals(value, sessionId, StringComparison.Ordinal)) throw new ProtocolException(ErrorCodes.SessionStale, "Invalid session.");
         }
 
-        private async Task<JsonNode> RouteAsync(RequestEnvelope request, CancellationToken ct)
+        private async Task<JsonNode> RouteAsync(RequestEnvelope request, DateTime deadline, CancellationToken ct)
         {
             switch (request.Method)
             {
@@ -90,7 +91,13 @@ namespace WinTestKit.Inspector.Agent.Session
                     CloseParams.FromJson(request.Params);
                     return new CloseResult { Closed = true }.ToJson();
                 case PipeMethods.QueryFind:
+                    if (!(service is IQueryInspectionService queryService)) throw new ProtocolException(ErrorCodes.UnsupportedTarget, "Feature not available.");
+                    var find = QueryFindParams.FromJson(request.Params);
+                    return (await queryService.FindAsync(find.Locator, deadline, find.TimeoutMs, ct).ConfigureAwait(false)).ToJson();
                 case PipeMethods.QueryFindAll:
+                    if (!(service is IQueryInspectionService queryAllService)) throw new ProtocolException(ErrorCodes.UnsupportedTarget, "Feature not available.");
+                    var findAll = QueryFindAllParams.FromJson(request.Params);
+                    return (await queryAllService.FindAllAsync(findAll.Locator, deadline, findAll.TimeoutMs, ct).ConfigureAwait(false)).ToJson();
                 case PipeMethods.StateGet:
                 case PipeMethods.ActFocus:
                 case PipeMethods.ActBringIntoView:

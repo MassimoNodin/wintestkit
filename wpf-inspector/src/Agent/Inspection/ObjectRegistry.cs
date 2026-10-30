@@ -29,7 +29,7 @@ namespace WinTestKit.Inspector.Agent.Inspection
         public ObjectRef Register(object target, Dispatcher traversalDispatcher, TypeInfoDto type)
         {
             if (target == null) throw new ArgumentNullException(nameof(target));
-            Dispatcher dispatcher = target is DispatcherObject dispatcherObject ? dispatcherObject.Dispatcher : traversalDispatcher;
+            Dispatcher dispatcher = target is DispatcherObject dispatcherObject ? (dispatcherObject.Dispatcher ?? traversalDispatcher) : traversalDispatcher;
             lock (gate)
             {
                 CheckDisposed();
