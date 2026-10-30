@@ -85,7 +85,7 @@ def hello(**changes: Any) -> dict[str, Any]:
 
 
 def session() -> Session:
-    return Session("session", IDENTITY, "ready", 1, 0, tuple(FEATURES), "10.0.11", "x64", "1")
+    return Session("session", IDENTITY, "ready", 2, 0, tuple(FEATURES), "10.0.11", "x64", "1")
 
 
 def page() -> dict[str, object]:
@@ -214,7 +214,7 @@ def test_unexpected_id_and_unknown_fields_fault_session() -> None:
 
 def test_batch_checks_path_features_before_sending() -> None:
     transport = ScriptedTransport(lambda request: {"id": request["id"], "result": {"closed": True}})
-    limited = Session("session", IDENTITY, "ready", 1, 0, ("exactUiaMapping", "batchReads"))
+    limited = Session("session", IDENTITY, "ready", 2, 0, ("exactUiaMapping", "batchReads"))
     client = InspectorClient(transport, limited)
     try:
         with pytest.raises(InspectorUnavailableError) as error:

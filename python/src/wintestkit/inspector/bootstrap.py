@@ -276,9 +276,9 @@ def create_bootstrap(
             _verify_acl(handle, sid)
         finally:
             kernel.CloseHandle(handle)
-        settings = {
+        settings: dict[str, Any] = {
             "schemaVersion": 1,
-            "protocolMajor": 1,
+            "protocolMajor": 2,
             "protocolMinor": 0,
             "sessionId": session_id,
             "process": identity.to_json(),
@@ -292,6 +292,7 @@ def create_bootstrap(
             "idleTimeoutMs": idle_timeout_ms,
             "agentVersion": agent_version,
             "redactNames": list(rules),
+            "writeAllowlist": {"properties": [], "methods": []},
         }
         payload = json.dumps(settings, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
         if len(payload) > 16384:

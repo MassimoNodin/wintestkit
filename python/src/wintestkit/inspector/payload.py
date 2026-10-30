@@ -122,7 +122,7 @@ def load_payload() -> Payload:
             type(manifest["schemaVersion"]) is not int
             or manifest["schemaVersion"] != 1
             or type(manifest["protocolMajor"]) is not int
-            or manifest["protocolMajor"] != 1
+            or manifest["protocolMajor"] != 2
             or type(manifest["protocolMinor"]) is not int
             or manifest["protocolMinor"] != 0
             or type(manifest["signed"]) is not bool

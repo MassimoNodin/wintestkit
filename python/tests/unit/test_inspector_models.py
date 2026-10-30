@@ -60,7 +60,8 @@ FIXTURES = [
 
 def test_every_golden_fixture_has_a_python_reader() -> None:
     assert len(FIXTURES) == sum(
-        len(list((ROOT / directory).glob("*.json"))) for directory in ("valid", "invalid")
+        sum(not path.name.startswith("p2-") for path in (ROOT / directory).glob("*.json"))
+        for directory in ("valid", "invalid")
     )
 
 

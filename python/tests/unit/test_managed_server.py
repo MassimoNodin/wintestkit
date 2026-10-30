@@ -33,7 +33,7 @@ ROOT = Path(__file__).resolve().parents[3]
 IDENTITY = ProcessIdentity(42, "2026-01-01T00:00:00Z")
 TYPE = TypeInfo("Window", "Test.Window", "Test", "Test.Window, Test", ())
 REF = ObjectRef("session", "object", 1, TYPE, "dispatcher")
-SESSION = Session("session", IDENTITY, "ready", 1, 0, ("typeMetadata", "clrMembers"))
+SESSION = Session("session", IDENTITY, "ready", 2, 0, ("typeMetadata", "clrMembers"))
 
 
 def _identity(pid: int) -> ProcessIdentity:
