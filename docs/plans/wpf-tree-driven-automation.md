@@ -266,6 +266,34 @@ WPF backend; P2e waits and `expect` on the WPF backend; P2f parity suite (existi
 wait and expect tests run on both backends against the fixture; differences listed and
 justified).
 
+### 6.3 Phase 2 parity results (2026-10-31)
+
+This is a **partial result, not phase 2 gate sign-off**. The parametrized live fixture
+test uses on-demand inspector attach and exercises the same cases with each backend.
+
+| Scenario | uia | auto |
+| --- | --- | --- |
+| Identity locators, depth, within, UIA and managed where, shared and lookahead regex | Pass | Pass |
+| Duplicate count, index, ambiguity, missing results | Pass | Pass |
+| Duplicate element order, compared by UIA RuntimeId | Pass | Pass |
+| Popup content resolution | Pass | Pass |
+| Wait: attached, detached, visible, hidden, enabled, stable | Pass | Pass |
+| Expect: exist, visible, enabled, text, contains, count; selected negations | Pass | Pass |
+| Click and resulting text | Pass | Pass |
+| Remaining required wait, expect, input, menu and diagnostic matrix | Not yet covered | Not yet covered |
+
+The parametrized test call times were 4.46 s for uia and 3.10 s for auto, excluding
+fixture startup. These are not full-suite backend timings. No inherent differences were
+established by these cases. A parallel live run hit an inspector readiness timeout; the
+isolated rerun passed, so live desktop tests should run serially when measuring parity.
+The separate agent-test change increases non-deadline helper budgets to 60 seconds; no
+production backend fixes were made. Integration tests use native/Tk windows or no app,
+and the Calculator example targets Windows Calculator rather than this WPF fixture.
+
+Remaining gate work includes disabled waits; checked, selected, value and property
+assertions and all negations; type/select; menu and error-message comparisons;
+broader managed predicates and regex cases; and full per-backend timings.
+
 ## 7. Test strategy
 
 - **Parity suite**: run the same locator, wait, action and typed-control tests under
