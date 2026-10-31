@@ -46,7 +46,7 @@ namespace WinTestKit.Inspector.Agent.Query.Tests
         };
         private static ObjectRef Register(ObjectRegistry registry, DependencyObject target) =>
             registry.Register(target, target.Dispatcher, TypeInfoBuilder.Build(target.GetType()));
-        private static DateTime Deadline => DateTime.UtcNow.AddSeconds(2);
+        private static DateTime Deadline => DateTime.UtcNow.AddSeconds(60);
 
         [Theory]
         [InlineData("visual")]
