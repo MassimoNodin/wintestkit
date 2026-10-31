@@ -1,5 +1,6 @@
 """Unit tests for waits, using a fake clock."""
 
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -8,7 +9,7 @@ from fakes import FakeElement
 from wintestkit.engine import waits
 from wintestkit.engine.diagnose import Diagnostic
 from wintestkit.engine.waits import element_state_ok, wait_for_state, wait_until
-from wintestkit.errors import ElementNotFoundError, UIAError, WaitTimeoutError
+from wintestkit.errors import ElementNotFoundError, InspectorError, UIAError, WaitTimeoutError
 from wintestkit.uia.element import Rect
 
 
@@ -248,6 +249,41 @@ def test_wait_for_state_visible_reraises_diagnostic(fake_time: FakeTime) -> None
 
     with pytest.raises(ElementNotFoundError, match=r"\(waited 1\.0s\)"):
         wait_for_state(get, "visible", 1, "x to appear")
+
+
+def test_wait_for_state_inspector_deadline_at_budget_edge(fake_time: FakeTime) -> None:
+    from wintestkit.backends.element import WpfElement
+
+    class Client:
+        def state_get(self, ref, *, timeout_ms, deadline):
+            assert deadline == 1.0
+            fake_time.now = 1.0
+            raise InspectorError("request deadline", code="timeout")
+
+        def release(self, *args, **kwargs):
+            pass
+
+    element = WpfElement(Client(), SimpleNamespace(session_id="s", object_id="o", generation=1), 1)
+
+    with pytest.raises(WaitTimeoutError):
+        wait_for_state(lambda: element, "visible", 1, "visible")
+
+
+@pytest.mark.parametrize(
+    "message,code,expected",
+    [
+        ("Query deadline reached.", "limitExceeded", WaitTimeoutError),
+        ("candidate cap reached", "limitExceeded", InspectorError),
+        ("dispatcher unavailable", "dispatcherUnavailable", InspectorError),
+    ],
+)
+def test_wait_preserves_real_inspector_failures_at_deadline(fake_time, message, code, expected):
+    def get():
+        fake_time.now = 1.0
+        raise InspectorError(message, code=code)
+
+    with pytest.raises(expected):
+        wait_for_state(get, "visible", 1, "visible")
 
 
 def test_wait_for_state_timeout_message(fake_time: FakeTime) -> None:

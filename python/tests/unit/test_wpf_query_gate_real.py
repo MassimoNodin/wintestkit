@@ -561,3 +561,24 @@ def test_auto_expect_missing_message_matches_uia(owned):
                 page.missing.wait_for("attached", timeout=2)
             diagnostics.append(str(error.value))
     assert diagnostics[0] == diagnostics[1]
+
+
+@pytest.mark.parametrize("method", ["to_exist", "to_be_visible"])
+def test_negated_expect_present_message_matches_uia(owned, method):
+    from wintestkit.expect import expect
+    from wintestkit.model import Element, Page
+
+    scope, path = owned
+
+    class FixturePage(Page):
+        present = Element(automation_id="FixtureControl")
+
+    page = FixturePage(scope.app)
+    messages = []
+    for backend in ("uia", "auto"):
+        with runtime.config_scope(replace(config(path, "agent"), backend=backend)):
+            resolve(scope, Locator(automation_id="FixtureControl"))
+            with pytest.raises(AssertionError) as error:
+                getattr(expect(page.present, timeout=1).not_, method)()
+            messages.append(str(error.value))
+    assert messages[0] == messages[1]

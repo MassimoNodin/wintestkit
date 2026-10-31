@@ -8,6 +8,7 @@ from contextlib import suppress
 from typing import Any, Protocol
 
 from wintestkit.backends.mapping import map_runtime_ids, map_state_at_point
+from wintestkit.engine.managed import operation_deadline
 from wintestkit.errors import InspectorError, InspectorReadError, NoUiaPeerError
 from wintestkit.inspector.client import InspectorClient
 from wintestkit.inspector.models import ElementState, ObjectRef
@@ -97,7 +98,7 @@ class WpfElement:
             names = ("automation_id", "name", "class_name", "control_type")
             paths = [(PathSegment("uia", name),) for name in names]
             values, _ = self.client.read(
-                self.ref.object_id, self.ref.generation, paths, deadline=time.monotonic() + 2
+                self.ref.object_id, self.ref.generation, paths, deadline=operation_deadline(2)
             )
             identity: dict[str, str] = {}
             for name, item in zip(names, values, strict=True):
@@ -116,7 +117,7 @@ class WpfElement:
     def _get_state(self) -> ElementState:
         if self._state is None:
             self._state = self.client.state_get(
-                self.ref, timeout_ms=2000, deadline=time.monotonic() + 2
+                self.ref, timeout_ms=2000, deadline=operation_deadline(2)
             )
         return self._state
 
@@ -199,7 +200,7 @@ class WpfElement:
 
     def is_alive(self) -> bool:
         try:
-            self.client.state_get(self.ref, timeout_ms=2000, deadline=time.monotonic() + 2)
+            self.client.state_get(self.ref, timeout_ms=2000, deadline=operation_deadline(2))
         except InspectorError as error:
             if error.code in ("objectStale", "mappingFailed"):
                 return False

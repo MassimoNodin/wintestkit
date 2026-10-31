@@ -63,6 +63,14 @@ def locator_deadline() -> float:
     return start + runtime.get_config().timeout
 
 
+def operation_deadline(timeout: float) -> float:
+    deadline = time.monotonic() + timeout
+    budget = _budget.get()
+    if budget is not None and budget[1] is not None:
+        deadline = min(deadline, budget[1])
+    return deadline
+
+
 @dataclass(frozen=True, slots=True)
 class ManagedCondition:
     key: str
