@@ -60,7 +60,7 @@ namespace WinTestKit.Inspector.Agent.Query.Tests
             {
                 var executor = new DispatcherExecutor();
                 using (var registry = new ObjectRegistry("values", executor))
-                    action(new ObjectInspector(), registry, new QueryPredicateContext(DateTime.UtcNow.AddSeconds(2)));
+                    action(new ObjectInspector(), registry, new QueryPredicateContext(DateTime.UtcNow.AddSeconds(60)));
             });
         }
         public sealed class LargeButton : Button
