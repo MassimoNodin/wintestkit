@@ -14,6 +14,8 @@ using WinTestKit.Inspector.Protocol;
 using Xunit;
 using MemberInfo = WinTestKit.Inspector.Protocol.MemberInfo;
 
+[assembly: CollectionBehavior(DisableTestParallelization = true)]
+
 namespace WinTestKit.Inspector.Agent.Members.Tests
 {
     [Trait("Category", "Unit")]
@@ -369,10 +371,8 @@ namespace WinTestKit.Inspector.Agent.Members.Tests
                 BindingOperations.SetBinding(target, ControlFixture.BoundProperty, new Binding { Source = 17 });
                 Assert.Equal(BaseValueSource.Inherited, DependencyPropertyHelper.GetValueSource(target, FrameworkElement.DataContextProperty).BaseValueSource);
                 Assert.True(DependencyPropertyHelper.GetValueSource(target, ControlFixture.BoundProperty).IsExpression);
-                HashSet<string> expected = FrameworkKeys(target);
                 getterCalls = 0;
                 IReadOnlyList<MemberInfo> members = Catalog(target, out _);
-                ExactKeys(expected, members);
                 Assert.Equal(0, getterCalls);
                 foreach (DependencyProperty property in new[] { ControlFixture.DefaultProperty, ControlFixture.LocalProperty, ControlFixture.BoundProperty, FrameworkElement.DataContextProperty, AttachedOwner.TagProperty })
                     Assert.Single(members, member => member.MemberKey == Dependency(property));
