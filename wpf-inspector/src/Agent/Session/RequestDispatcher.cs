@@ -102,6 +102,10 @@ namespace WinTestKit.Inspector.Agent.Session
                     if (!(service is IStateInspectionService stateService)) throw new ProtocolException(ErrorCodes.UnsupportedTarget, "Feature not available.");
                     var state = StateGetParams.FromJson(request.Params);
                     return (await stateService.GetStateAsync(state.Handle, deadline, state.TimeoutMs, ct).ConfigureAwait(false)).ToJson();
+                case PipeMethods.WaitUntil:
+                    if (!(service is IWaitInspectionService waitService)) throw new ProtocolException(ErrorCodes.UnsupportedTarget, "Feature not available.");
+                    var wait = WaitUntilParams.FromJson(request.Params);
+                    return (await waitService.WaitUntilAsync(wait.Condition, deadline, wait.TimeoutMs, ct).ConfigureAwait(false)).ToJson();
                 case PipeMethods.ActFocus:
                 case PipeMethods.ActBringIntoView:
                 case PipeMethods.ActInvoke:
@@ -114,7 +118,6 @@ namespace WinTestKit.Inspector.Agent.Session
                 case PipeMethods.ActSetRange:
                 case PipeMethods.ActScroll:
                 case PipeMethods.ActRealizeItem:
-                case PipeMethods.WaitUntil:
                 case PipeMethods.HitTest:
                 case PipeMethods.WriteSetProperty:
                 case PipeMethods.WriteCall:

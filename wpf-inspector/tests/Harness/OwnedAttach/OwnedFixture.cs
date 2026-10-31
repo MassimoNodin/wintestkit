@@ -124,6 +124,11 @@ internal static class OwnedFixture
             using var query = await Exchange(pipe, new { id, method = "query.find", @params = new { locator = new { scope = new { kind = "allRoots" }, tree = "combined", predicates = new[] { new { kind = "equals", path = new[] { new { kind = "uia", name = "automation_id" } }, value = "MainWindow" } }, depth = 256, depthMode = "tree", limit = 200 }, timeoutMs = 2000 } }, id++, 5000);
             PackageVerifier.Require(GetResult(query).GetProperty("match").GetProperty("sessionId").GetString() == session, "Query did not find the fixture main window");
             JsonElement match = GetResult(query).GetProperty("match");
+            PackageVerifier.Require(result.GetProperty("features").EnumerateArray().Any(feature => feature.GetString() == "waits"), "Wait feature was not advertised");
+            using var wait = await Exchange(pipe, new { id, method = "wait.until", @params = new { condition = new { kind = "exists", locator = new { scope = new { kind = "object", handle = match }, tree = "logical", predicates = Array.Empty<object>(), depth = 0, depthMode = "tree", limit = 200 } }, timeoutMs = 1000 } }, id++, 5000);
+            PackageVerifier.Require(GetResult(wait).GetProperty("satisfied").GetBoolean(), "Wait did not find the fixture root");
+            using var waitMissing = await Exchange(pipe, new { id, method = "wait.until", @params = new { condition = new { kind = "exists", locator = new { scope = new { kind = "object", handle = match }, tree = "logical", predicates = new[] { new { kind = "equals", path = new[] { new { kind = "uia", name = "automation_id" } }, value = "missing" } }, depth = 0, depthMode = "tree", limit = 200 } }, timeoutMs = 150 } }, id++, 5000);
+            PackageVerifier.Require(!GetResult(waitMissing).GetProperty("satisfied").GetBoolean(), "Missing wait did not time out");
             PackageVerifier.Require(result.GetProperty("features").EnumerateArray().Any(feature => feature.GetString() == "geometry"), "Geometry feature was not advertised");
             using var stateResponse = await Exchange(pipe, new { id, method = "state.get", @params = new { handle = match, timeoutMs = 2000 } }, id++, 5000);
             JsonElement state = GetResult(stateResponse).GetProperty("state");

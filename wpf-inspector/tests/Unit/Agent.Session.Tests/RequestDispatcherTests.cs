@@ -208,6 +208,29 @@ public class RequestDispatcherTests
         }
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(2001)]
+    [InlineData(500)]
+    public async Task WaitValidatesAndRoutes(int timeout)
+    {
+        var parameters = new JsonObjectNode();
+        var condition = new JsonObjectNode();
+        condition.Add("kind", new JsonStringNode("exists"));
+        condition.Add("locator", QueryParams().Get("locator"));
+        parameters.Add("condition", condition);
+        parameters.Add("timeoutMs", JsonNumberNode.From(timeout));
+        var response = await Dispatch(new RequestDispatcher(Session, new WaitService()), PipeMethods.WaitUntil, parameters);
+        if (timeout == 500) Assert.False(WaitUntilResult.FromJson(response.Result!).Satisfied);
+        else Assert.Equal(ErrorCodes.InvalidParams, response.Error!.Code);
+    }
+
+    private sealed class WaitService : RecordingService, IWaitInspectionService
+    {
+        public Task<WaitUntilResult> WaitUntilAsync(WaitCondition condition, DateTime deadline, int timeoutMs, CancellationToken ct) =>
+            Task.FromResult(new WaitUntilResult { Satisfied = false });
+    }
+
     private sealed class QueryService : RecordingService, IQueryInspectionService
     {
         public ProtocolException? QueryError { get; set; }

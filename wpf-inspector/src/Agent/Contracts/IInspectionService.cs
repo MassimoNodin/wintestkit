@@ -42,6 +42,11 @@ namespace WinTestKit.Inspector.Agent.Contracts
         bool ExactMappingAvailable { get; }
     }
 
+    public interface IWaitInspectionService
+    {
+        Task<WaitUntilResult> WaitUntilAsync(WaitCondition condition, DateTime deadline, int timeoutMs, CancellationToken ct);
+    }
+
     public interface IInspectionServiceFactory
     {
         IInspectionService Create(string sessionId, IReadOnlyList<string> redactNames);

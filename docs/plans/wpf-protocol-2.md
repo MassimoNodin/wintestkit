@@ -117,7 +117,7 @@ are exact; no implicit sessionId is needed beyond the ObjectRefs and authenticat
 | `act.setRange` | `{handle:ObjectRef,value:number,timeoutMs}` | ActResult; finite value, within peer range |
 | `act.scroll` | `{handle:ObjectRef,horizontal:ScrollAmount,vertical:ScrollAmount,timeoutMs}` | ActResult; ScrollAmount is `none`, `smallIncrement`, `smallDecrement`, `largeIncrement`, `largeDecrement` |
 | `act.realizeItem` | `{search:ItemSearch,timeoutMs}` | `{outcome:"performed"|"noChange",handle:ObjectRef,warning?:MatchWarning}`. Search data first, then ScrollIntoView and generate only the first match; never realize the other items. |
-| `wait.until` | `{condition:WaitCondition,timeoutMs}` | WaitResult. Recheck on relevant layout/property changes until deadline; timeout returns `satisfied:false`. |
+| `wait.until` | `{condition:WaitCondition,timeoutMs}` | WaitResult. Recheck on relevant layout/property changes until deadline; timeout returns `satisfied:false`. Multiple matches use the first; the query warning is not included. |
 | `hitTest` | `{nativeWindowHandle:integer,point:{x:number,y:number},timeoutMs}` | `{handle:ObjectRef}` or `notFound`; point uses physical screen pixels. |
 | `write.setProperty` | `{handle:ObjectRef,memberKey:string,value:Scalar,timeoutMs}` | `{audit:WriteAudit}` |
 | `write.call` | `{handle:ObjectRef,memberKey:string,arguments:Scalar[],timeoutMs}` | `{audit:WriteAudit}`; at most 16 scalar arguments, no return value |
