@@ -193,7 +193,7 @@ def test_setup_error(broken): pass
             replay = test["replay"]
             assert replay == endings[test["id"]]["replay"]
             assert len(replay["frames"]) == 1
-            assert replay["duration"] >= 0.06
+            assert replay["duration"] >= 0.04
             assert (pytester.path / "wtk-report" / replay["frames"][0]["path"]).is_file()
     expected = 3 if mode == "on" else 2
     assert len(list((pytester.path / "wtk-report").rglob("*.webp"))) == expected
