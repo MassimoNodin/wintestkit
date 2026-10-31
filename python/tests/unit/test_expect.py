@@ -13,7 +13,7 @@ from wintestkit.config import load_config
 from wintestkit.engine import actions, waits
 from wintestkit.engine.diagnose import Diagnostic
 from wintestkit.engine.locator import Locator
-from wintestkit.errors import AmbiguousElementError, ElementNotFoundError
+from wintestkit.errors import AmbiguousElementError, ElementNotFoundError, InspectorError
 from wintestkit.expect import expect
 from wintestkit.model import Element, Elements, Page, Window
 
@@ -98,6 +98,50 @@ def not_found(
             match_count=0,
         )
     )
+
+
+@pytest.mark.parametrize("negated", [False, True])
+def test_expect_inspector_deadline_at_budget_edge(page, world, steps, monkeypatch, negated):
+    from types import SimpleNamespace
+
+    from wintestkit.backends.element import WpfElement
+    from wintestkit.engine.managed import locator_deadline
+
+    clock = FakeTime()
+    monkeypatch.setattr(waits, "_clock", clock.clock)
+    monkeypatch.setattr(waits, "_sleep", clock.sleep)
+
+    class Client:
+        calls = 0
+
+        def query(self, scope, locator):
+            self.calls += 1
+            assert locator_deadline() == 1.0
+            if self.calls > 1:
+                clock.now = 1.0
+                raise InspectorError("request deadline", code="timeout")
+            return element
+
+        def release(self, *args, **kwargs):
+            pass
+
+    client = Client()
+    element = WpfElement(client, SimpleNamespace(session_id="s", object_id="o", generation=1), 1)
+    monkeypatch.setattr(model, "resolve", client.query)
+    monkeypatch.setattr(actions, "is_password", lambda element: False)
+    assertion = expect(page.status, timeout=1)
+    if negated:
+        assertion = assertion.not_
+    with pytest.raises(AssertionError) as error:
+        assertion.to_have_text("Ready" if negated else "Other")
+    assert all(part in str(error.value) for part in ("Expected:", "Actual:", "Locator:"))
+    assert client.calls == 2
+
+
+def test_expect_inspector_real_error_propagates(page, world, steps):
+    world.error = InspectorError("blocked", code="blockedByPolicy")
+    with pytest.raises(InspectorError, match="blocked"):
+        expect(page.status, timeout=1).not_.to_exist()
 
 
 def test_passes_immediately(page: MainPage, world: World, steps: list[runtime.StepRecord]) -> None:
