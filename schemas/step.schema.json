@@ -34,6 +34,10 @@
           "type": "string",
           "enum": ["passed", "failed"]
         },
+        "backend": {
+          "type": "string",
+          "enum": ["uia", "wpf"]
+        },
         "error": {
           "$ref": "common.schema.json#/$defs/ErrorInfo"
         },

@@ -6,9 +6,11 @@ resolves again so elements are never stale.
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, replace
 from typing import cast
 
+from wintestkit import runtime
 from wintestkit.app import App
 from wintestkit.backends.element import TargetElement, WpfElement, uia_of
 from wintestkit.engine.diagnose import (
@@ -21,10 +23,11 @@ from wintestkit.engine.diagnose import (
     quote,
 )
 from wintestkit.engine.locator import ItemSelector, Locator, WindowLocator, match_value
-from wintestkit.engine.managed import query_budget
+from wintestkit.engine.managed import diagnostic_query_budget, locator_deadline, query_budget
 from wintestkit.engine.properties import Condition, read, resolve_where
 from wintestkit.engine.properties import matches as matches_property
 from wintestkit.engine.query import filter_managed, query_all
+from wintestkit.engine.wpf_query import UnsupportedQuery, translate
 from wintestkit.engine.wpf_resolve import query as wpf_query
 from wintestkit.engine.wpf_resolve import route
 from wintestkit.errors import (
@@ -35,6 +38,7 @@ from wintestkit.errors import (
     NoUiaPeerError,
     WindowNotFoundError,
 )
+from wintestkit.inspector.models import WaitCondition
 from wintestkit.uia import patterns
 from wintestkit.uia.element import UIAElement
 
@@ -210,6 +214,59 @@ def _walk(scope: Scope, locator: Locator, final_all: bool) -> list[TargetElement
         searched_in = f"{element.info().short()} in {searched_in}"
         root = element
     raise AssertionError("a locator chain always has at least one link")  # pragma: no cover
+
+
+def wait_link(scope: Scope, locator: Locator, state: str) -> tuple[bool, TargetElement | None]:
+    """Try an agent wait for one bounded chunk; return (eligible, element)."""
+    __tracebackhide__ = True
+    links = locator.chain()
+    link = links[-1]
+    if state not in ("attached", "visible", "enabled") or link.item is not None:
+        return False, None
+    try:
+        constraints = resolve_where(link.where, link.describe_link(), link.taken())
+        # Probe translation before resolving the window; unsupported filters keep polling.
+        translate(link, tuple(constraints), None)
+    except UnsupportedQuery:
+        return False, None
+    if runtime.get_config().backend == "auto" and locator_deadline() - time.monotonic() <= 0.2:
+        with diagnostic_query_budget():
+            return True, resolve(scope, locator)
+    window = resolve_window(scope.app, locator.window or scope.window)
+    root = route(window)
+    if not isinstance(root, WpfElement) or "waits" not in root.client.session.features:
+        return False, None
+    searched_in = window.info().short()
+    for position, outer in enumerate(links[:-1]):
+        try:
+            root = _resolve_link(scope, root, outer, searched_in, locator, position == 0, window)
+        except LocatorError as exc:
+            raise type(exc)(diagnose_within_failed(outer, exc.diagnostic, locator)) from None
+        searched_in = f"{root.info().short()} in {searched_in}"
+    if not isinstance(root, WpfElement):
+        return False, None
+    deadline = locator_deadline()
+    remaining = deadline - time.monotonic()
+    if remaining <= 0.2:
+        with diagnostic_query_budget():
+            return True, resolve(scope, locator)
+    wire = replace(translate(link, tuple(constraints), root.ref), index=link.index)
+    # Outer links and implicit popup search must be revisited at the polling cadence.
+    chunk_ms = 100 if len(links) > 1 or (locator.window is None and scope.window is None) else 2000
+    result = root.client.wait_until(
+        WaitCondition("exists" if state == "attached" else state, wire),
+        timeout_ms=max(1, min(chunk_ms, int((remaining - 0.15) * 1000))),
+        deadline=deadline,
+    )
+    if result.satisfied and result.handle is not None:
+        # Normal resolution enforces ambiguity, popup and index semantics.
+        resolved = _resolve_link(scope, root, link, searched_in, locator, len(links) == 1, window)
+        if isinstance(resolved, WpfElement) and resolved.ref == result.handle:
+            return True, WpfElement(root.client, result.handle, root.process_id)
+        return True, resolved
+    # Resolve normally to preserve last-error diagnostics and popup fallback.
+    element = _resolve_link(scope, root, link, searched_in, locator, len(links) == 1, window)
+    return True, element
 
 
 @query_budget()

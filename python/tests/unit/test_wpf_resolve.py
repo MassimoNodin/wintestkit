@@ -372,3 +372,92 @@ def test_actions_and_patterns_accept_wpf_element(setup, monkeypatch):
     )
     original_invoke(root)
     assert called == [peer]
+
+
+@pytest.mark.parametrize(
+    "state,kind", [("attached", "exists"), ("visible", "visible"), ("enabled", "enabled")]
+)
+def test_agent_wait_translates_and_checks_ambiguity(setup, monkeypatch, state, kind):
+    import time
+
+    from wintestkit.engine.managed import query_budget
+
+    resolver = importlib.import_module("wintestkit.engine.resolve")
+    _, client, window = setup
+    client.session.features.append("waits")
+    window.info = lambda: SimpleNamespace(short=lambda: "window")
+    monkeypatch.setattr(resolver, "resolve_window", lambda *args: window)
+    calls = []
+
+    def wait(condition, *, timeout_ms, deadline):
+        calls.append((condition, timeout_ms))
+        return SimpleNamespace(satisfied=True, handle=ref("child"))
+
+    client.wait_until = wait
+    scope = resolver.Scope(SimpleNamespace(), window=SimpleNamespace())
+    with query_budget(time.monotonic() + 5):
+        eligible, element = resolver.wait_link(scope, Locator(automation_id="id"), state)
+    assert eligible and isinstance(element, WpfElement)
+    assert calls[0][0].kind == kind and calls[0][0].locator.depth_mode == "peers"
+    assert calls[0][1] == 2000
+    client.matches = (ref("child"), ref("other"))
+    with query_budget(time.monotonic() + 5), pytest.raises(AmbiguousElementError):
+        resolver.wait_link(scope, Locator(automation_id="id"), state)
+
+
+@pytest.mark.parametrize("state", ["hidden", "detached", "disabled", "stable"])
+def test_agent_wait_ineligible_states(setup, state):
+    resolver = importlib.import_module("wintestkit.engine.resolve")
+    assert resolver.wait_link(
+        resolver.Scope(SimpleNamespace()), Locator(automation_id="id"), state
+    ) == (False, None)
+
+
+def test_agent_wait_ineligible_filters_and_item(setup):
+    resolver = importlib.import_module("wintestkit.engine.resolve")
+    scope = resolver.Scope(SimpleNamespace())
+    assert resolver.wait_link(scope, Locator(name=re.compile("(?<=na)me")), "visible") == (
+        False,
+        None,
+    )
+    assert resolver.wait_link(scope, Locator(where=(("HelpText", "x"),)), "visible") == (
+        False,
+        None,
+    )
+    assert resolver.wait_link(
+        scope, Locator(automation_id="id", item=ItemSelector("row", 0)), "visible"
+    ) == (
+        False,
+        None,
+    )
+
+
+def test_agent_wait_chunks_until_satisfied(setup, monkeypatch):
+    from wintestkit.engine import waits
+
+    resolver = importlib.import_module("wintestkit.engine.resolve")
+    _, client, window = setup
+    client.session.features.append("waits")
+    window.info = lambda: SimpleNamespace(short=lambda: "window")
+    monkeypatch.setattr(resolver, "resolve_window", lambda *args: window)
+    clock = SimpleNamespace(now=0.0)
+    monkeypatch.setattr(resolver, "time", SimpleNamespace(monotonic=lambda: clock.now))
+    monkeypatch.setattr(waits, "_clock", lambda: clock.now)
+    monkeypatch.setattr(waits, "_sleep", lambda seconds: setattr(clock, "now", clock.now + seconds))
+    chunks = []
+
+    def wait(condition, *, timeout_ms, deadline):
+        chunks.append(timeout_ms)
+        clock.now += timeout_ms / 1000
+        return SimpleNamespace(satisfied=len(chunks) == 3, handle=ref("child"))
+
+    client.wait_until = wait
+    monkeypatch.setattr(waits, "element_state_ok", lambda element, state: len(chunks) == 3)
+    scope = resolver.Scope(SimpleNamespace(), window=SimpleNamespace())
+    locator = Locator(automation_id="id")
+    result = waits.wait_for_state(
+        lambda: resolver.wait_link(scope, locator, "enabled")[1], "enabled", 6, "enabled"
+    )
+    assert isinstance(result, WpfElement)
+    assert chunks[:2] == [2000, 2000]
+    assert all(1 <= chunk <= 2000 for chunk in chunks)

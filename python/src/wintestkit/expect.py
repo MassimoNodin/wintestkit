@@ -13,13 +13,20 @@ from typing import Any
 from wintestkit import runtime
 from wintestkit.backends.element import TargetElement
 from wintestkit.engine import actions, waits
+from wintestkit.engine.resolve import wait_link
 from wintestkit.errors import (
     AmbiguousElementError,
     LocatorError,
     UIAError,
     WaitTimeoutError,
 )
-from wintestkit.model import BoundControl, BoundElements, BoundWindow, is_password_locator
+from wintestkit.model import (
+    BoundControl,
+    BoundElements,
+    BoundWindow,
+    _scope,  # pyright: ignore[reportPrivateUsage]
+    is_password_locator,
+)
 from wintestkit.uia import patterns
 from wintestkit.uia.constants import ToggleState
 
@@ -155,8 +162,29 @@ class Expectation:
             nonlocal secret
             self._locator_error = None
             try:
-                element = self._element() if method != "to_have_count" else None
+                element = None
+                agent_states = {
+                    "to_exist": "attached",
+                    "to_be_visible": "visible",
+                    "to_be_enabled": "enabled",
+                }
+                if not self._negate and isinstance(target, BoundControl) and method in agent_states:
+                    try:
+                        eligible, element = wait_link(
+                            _scope(target.page), target.locator, agent_states[method]
+                        )
+                        if eligible and element is not None and target.definition.validate:
+                            target.check_type(element)
+                        if not eligible:
+                            element = self._element()
+                    except AmbiguousElementError:
+                        raise
+                    except LocatorError as exc:
+                        self._locator_error = exc
+                elif method != "to_have_count":
+                    element = self._element()
                 if element is not None:
+                    runtime.record_backend(element)
                     record.sensitive = True
                     secret = secret or actions.is_password(element)
                     record.set_arguments(args, secret=secret)
