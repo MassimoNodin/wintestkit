@@ -18,7 +18,7 @@
           "value": "hello"
         }
       ],
-      "depth": 256,
+      "depth": 256,"depthMode":"tree",
       "limit": 100
     },
     "timeoutMs": 1000,

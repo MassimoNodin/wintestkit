@@ -86,7 +86,7 @@ namespace WinTestKit.Inspector.Agent.Query.Tests
                         var locator = new Locator
                         {
                             Scope = new Scope { Kind = "window", Handle = handle },
-                            Tree = "logical",
+                            Tree = "logical", DepthMode = "tree",
                             Depth = 10,
                             Limit = 2,
                             Predicates = typed ? new[] { Equal("FullName", new JsonStringNode(typeof(LargeButton).FullName!), "type"), Equal("Key", new JsonStringNode("Large 1499")) } :
@@ -219,7 +219,7 @@ namespace WinTestKit.Inspector.Agent.Query.Tests
                     var locator = new Locator
                     {
                         Scope = new Scope { Kind = "object", Handle = handle },
-                        Tree = "logical",
+                        Tree = "logical", DepthMode = "tree",
                         Depth = 0,
                         Limit = 1,
                         Predicates = new[] { Equal("SecretValue", new JsonStringNode("x")), Equal("automation_id", new JsonStringNode("other"), "uia") }
@@ -245,7 +245,7 @@ namespace WinTestKit.Inspector.Agent.Query.Tests
                     var locator = new Locator
                     {
                         Scope = new Scope { Kind = "object", Handle = handle },
-                        Tree = "logical",
+                        Tree = "logical", DepthMode = "tree",
                         Depth = 0,
                         Limit = 1,
                         Predicates = new[] { Equal("TextValue", new JsonStringNode("mismatch")), Equal("SecretValue", new JsonStringNode("x")) }

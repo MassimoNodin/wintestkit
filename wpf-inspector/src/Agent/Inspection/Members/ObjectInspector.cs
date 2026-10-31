@@ -105,7 +105,7 @@ namespace WinTestKit.Inspector.Agent.Inspection.Members
         }
         public ValueDto ReadPath(object root, IReadOnlyList<PathSegment> path, IObjectRegistry registry, Dispatcher dispatcher, CancellationToken ct)
         {
-            if (path.Count == 0 || path.Count > ProtocolLimits.MaxPathSegments || (path.Count != 1 && path.Any(x => x.Kind == "type"))) throw new ProtocolException(ErrorCodes.InvalidParams, "Invalid path");
+            if (path.Count == 0 || path.Count > ProtocolLimits.MaxPathSegments || (path.Count != 1 && path.Any(x => x.Kind == "type" || x.Kind == "uia"))) throw new ProtocolException(ErrorCodes.InvalidParams, "Invalid path");
             foreach (PathSegment segment in path) segment.ToJson();
             PathSegment first = path[0];
             if (first.Kind == "property" && ReflectionCatalog.Get(root.GetType()).Any(declaration =>
@@ -117,6 +117,12 @@ namespace WinTestKit.Inspector.Agent.Inspection.Members
             {
                 string? rule = redaction.Match(segment.Name);
                 if (rule != null) return new ValueDto { Status = "redacted", Kind = "unavailable", RedactionRule = rule };
+            }
+            if (first.Kind == "uia")
+            {
+                try { if (!(root is DependencyObject dependency) || PeerIdentity.GetPeer(dependency) == null) return new ValueDto { Status = "unavailable", Kind = "unavailable" }; }
+                catch (Exception) { return new ValueDto { Status = "exception", Kind = "unavailable", FailedSegment = 0 }; }
+                return PeerIdentity.Read(root, first.Name, registry, dispatcher);
             }
             if (RedactionPolicy.IsProtectedIdentity(root)) return new ValueDto { Status = "redacted", Kind = "unavailable", RedactionRule = "identity" };
             if (path[0].Kind == "type")

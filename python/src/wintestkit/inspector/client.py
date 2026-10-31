@@ -339,6 +339,8 @@ class InspectorClient:
     def _path_features(self, paths: Sequence[Sequence[PathSegment]]) -> None:
         for path in paths:
             for segment in path:
+                if segment.kind == "uia":
+                    continue
                 self._feature(
                     {
                         "type": "typeMetadata",

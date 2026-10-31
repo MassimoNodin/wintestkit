@@ -240,6 +240,45 @@ def test_unexpected_hello_failure_closes_transport(monkeypatch: pytest.MonkeyPat
     assert transport.closed
 
 
+def test_read_uia_path() -> None:
+    from wintestkit.inspector.paths import PathSegment
+
+    path = PathSegment("uia", "name")
+
+    def handler(request: dict[str, Any]) -> object:
+        if request["method"] == "session.close":
+            return {"id": request["id"], "result": {"closed": True}}
+        return {
+            "id": request["id"],
+            "result": {
+                "readId": "read",
+                "values": [
+                    {
+                        "path": [path.to_json()],
+                        "value": {
+                            "status": "ok",
+                            "kind": "string",
+                            "declaredType": "System.String",
+                            "runtimeType": "System.String",
+                            "scalar": "Caption",
+                        },
+                    }
+                ],
+            },
+        }
+
+    transport = ScriptedTransport(handler)
+    client = InspectorClient(transport, session())
+    try:
+        values, _ = client.read("object", 1, [(path,)], deadline=time.monotonic() + 2)
+        assert values[0].value.scalar == "Caption"
+        assert transport.requests[0]["params"]["paths"] == [[path.to_json()]]
+        with pytest.raises(InspectorError):
+            client.read("object", 1, [(path, path)], deadline=time.monotonic() + 2)
+    finally:
+        client.close()
+
+
 def test_protocol2_query_and_state_requests() -> None:
     from pathlib import Path
 
@@ -253,7 +292,7 @@ def test_protocol2_query_and_state_requests() -> None:
     )["instance"]
     fixture["handle"]["sessionId"] = "session"
     state = ElementState.from_json(fixture)
-    locator = Locator(Scope("object", state.handle), "combined", (), 256, 200)
+    locator = Locator(Scope("object", state.handle), "combined", (), 256, 200, "tree")
 
     def handler(request: dict[str, Any]) -> object:
         method = request["method"]
@@ -300,7 +339,7 @@ def test_protocol2_query_error_propagation(code: str) -> None:
     try:
         with pytest.raises(InspectorError) as exc:
             client.query_find_all(
-                Locator(Scope("allRoots"), "combined", (), 256, 200),
+                Locator(Scope("allRoots"), "combined", (), 256, 200, "tree"),
                 timeout_ms=1000,
                 deadline=time.monotonic() + 1,
             )

@@ -39,7 +39,7 @@ namespace WinTestKit.Inspector.Agent.Query.Tests
         private static Locator Scope(ObjectRef handle, string tree = "logical", int depth = 256) => new Locator
         {
             Scope = new Scope { Kind = "object", Handle = handle },
-            Tree = tree,
+            Tree = tree, DepthMode = "tree",
             Depth = depth,
             Limit = 200,
             Predicates = new List<Predicate>()
@@ -87,6 +87,72 @@ namespace WinTestKit.Inspector.Agent.Query.Tests
             }
         }
         [Fact]
+        public async Task PeerDepthSkipsPeerlessContainers()
+        {
+            using (var ui = new Ui())
+            {
+                var executor = new DispatcherExecutor();
+                using (var registry = new ObjectRegistry("session", executor))
+                {
+                    var objects = await ui.Dispatcher.InvokeAsync(() =>
+                    {
+                        var inner = new Button();
+                        var panel = new StackPanel();
+                        panel.Children.Add(inner);
+                        var outer = new Button { Content = panel };
+                        var root = new StackPanel();
+                        root.Children.Add(outer);
+                        return new DependencyObject[] { root, outer, panel, inner };
+                    }).Task;
+                    var locator = Scope(Register(registry, objects[0]), "logical", 1);
+                    var engine = new QueryEngine(executor, registry);
+                    Assert.Equal(2, (await engine.FindAllAsync(locator, Deadline, CancellationToken.None)).Count);
+                    locator.DepthMode = "peers";
+                    var first = await engine.FindAllAsync(locator, Deadline, CancellationToken.None);
+                    Assert.Contains(first.Matches, item => item.ObjectId == Register(registry, objects[1]).ObjectId);
+                    Assert.DoesNotContain(first.Matches, item => item.ObjectId == Register(registry, objects[3]).ObjectId);
+                    locator.Depth = 2;
+                    var second = await engine.FindAllAsync(locator, Deadline, CancellationToken.None);
+                    Assert.Contains(second.Matches, item => item.ObjectId == Register(registry, objects[3]).ObjectId);
+                }
+            }
+        }
+        [Fact]
+        public async Task PeerDepthTraversesTemplatePresenters()
+        {
+            using (var ui = new Ui())
+            {
+                var executor = new DispatcherExecutor();
+                using (var registry = new ObjectRegistry("session", executor))
+                {
+                    var objects = await ui.Dispatcher.InvokeAsync(() =>
+                    {
+                        var inner = new Button();
+                        var presenter = new ContentPresenter { Content = new ContentPresenter { Content = inner } };
+                        var factory = new FrameworkElementFactory(typeof(ContentPresenter));
+                        factory.SetValue(ContentPresenter.ContentProperty, new TemplateBindingExtension(ContentControl.ContentProperty));
+                        var template = new ControlTemplate(typeof(Button)) { VisualTree = factory };
+                        var outer = new Button { Content = presenter, Template = template };
+                        var root = new StackPanel();
+                        root.Children.Add(outer);
+                        root.Measure(new Size(500, 500)); root.Arrange(new Rect(0, 0, 500, 500)); root.UpdateLayout();
+                        return new DependencyObject[] { root, outer, inner };
+                    }).Task;
+                    var locator = Scope(Register(registry, objects[0]), "visual", 2);
+                    var engine = new QueryEngine(executor, registry);
+                    var tree = await engine.FindAllAsync(locator, Deadline, CancellationToken.None);
+                    Assert.DoesNotContain(tree.Matches, item => item.ObjectId == Register(registry, objects[2]).ObjectId);
+                    locator.DepthMode = "peers";
+                    locator.Depth = 1;
+                    var first = await engine.FindAllAsync(locator, Deadline, CancellationToken.None);
+                    Assert.DoesNotContain(first.Matches, item => item.ObjectId == Register(registry, objects[2]).ObjectId);
+                    locator.Depth = 2;
+                    var second = await engine.FindAllAsync(locator, Deadline, CancellationToken.None);
+                    Assert.Contains(second.Matches, item => item.ObjectId == Register(registry, objects[2]).ObjectId);
+                }
+            }
+        }
+        [Fact]
         public async Task PredicateAndStaleHandling()
         {
             using (var ui = new Ui())
@@ -127,7 +193,7 @@ namespace WinTestKit.Inspector.Agent.Query.Tests
                         var locator = new Locator
                         {
                             Scope = new Scope { Kind = "allRoots" },
-                            Tree = "logical",
+                            Tree = "logical", DepthMode = "tree",
                             Depth = 0,
                             Limit = 200,
                             Predicates = new[] { new Predicate { Kind = "assignableTo", FullName = typeof(System.Windows.IInputElement).FullName } }
@@ -167,7 +233,7 @@ namespace WinTestKit.Inspector.Agent.Query.Tests
                     using (var registry = new ObjectRegistry("roots", executor))
                     {
                         var engine = new QueryEngine(executor, registry);
-                        var locator = new Locator { Scope = new Scope { Kind = "allRoots" }, Tree = "logical", Depth = 0, Limit = 200 };
+                        var locator = new Locator { Scope = new Scope { Kind = "allRoots" }, Tree = "logical", DepthMode = "tree", Depth = 0, Limit = 200 };
                         var result = await engine.FindAllAsync(locator, Deadline, CancellationToken.None);
                         Assert.Contains(result.Matches, item => item.ObjectId == Register(registry, firstWindow).ObjectId);
                         Assert.Contains(result.Matches, item => item.ObjectId == Register(registry, secondWindow).ObjectId);

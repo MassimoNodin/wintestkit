@@ -715,7 +715,8 @@
             "truncated",
             "cycle",
             "timeout",
-            "unsupported"
+            "unsupported",
+            "unavailable"
           ]
         },
         "kind": {
@@ -2460,6 +2461,12 @@
           "type": "integer",
           "minimum": 1,
           "maximum": 200
+        },
+        "depthMode": {
+          "enum": [
+            "tree",
+            "peers"
+          ]
         }
       },
       "required": [
@@ -2467,7 +2474,8 @@
         "tree",
         "predicates",
         "depth",
-        "limit"
+        "limit",
+        "depthMode"
       ],
       "additionalProperties": false,
       "description": "Predicates are ANDed; index selects after filtering. Defaults are applied before serialization."

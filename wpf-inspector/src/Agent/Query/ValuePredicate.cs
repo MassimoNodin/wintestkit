@@ -90,11 +90,16 @@ namespace WinTestKit.Inspector.Agent.Query
                 entry.Property.Name == first.Name && Declaration.TypeName(entry.Property.OwnerType) == first.OwnerType &&
                 Declaration.AssemblyName(entry.Property.OwnerType) == first.OwnerAssembly &&
                 (first.MemberKey == null || entry.Key == first.MemberKey))) return false;
+            if (first.Kind == "uia")
+            {
+                try { if (PeerIdentity.GetPeer(target) == null) return false; }
+                catch (Exception) { throw Unreadable("exception"); }
+            }
             using (var cancellation = new CancellationTokenSource())
             {
                 cancellation.CancelAfter(context.Remaining > TimeSpan.Zero ? context.Remaining : TimeSpan.Zero);
-                ValueDto? value = path.Count == 1 && path[0].Kind == "uia" ? ReadUia(target) :
-                    inspector.ReadPath(target, path, registry, target.Dispatcher, cancellation.Token);
+                ValueDto? value = inspector.ReadPath(target, path, registry, target.Dispatcher, cancellation.Token);
+                if (path[0].Kind == "uia" && value.Status == "unavailable") return false;
                 return value != null && MatchesValue(value, context);
             }
         }
@@ -142,24 +147,6 @@ namespace WinTestKit.Inspector.Agent.Query
                 details.Add("path", segments);
             }
             return new ProtocolException(ErrorCodes.ValueUnreadable, "Predicate value is unreadable.", details);
-        }
-
-        private ValueDto? ReadUia(DependencyObject target)
-        {
-            string name = path[0].Name;
-            try
-            {
-                AutomationPeer? peer = target is UIElement element ? UIElementAutomationPeer.FromElement(element) ?? UIElementAutomationPeer.CreatePeerForElement(element) :
-                    target is ContentElement content ? ContentElementAutomationPeer.FromElement(content) ?? ContentElementAutomationPeer.CreatePeerForElement(content) : null;
-                if (peer == null) return null;
-                if (inspector.IsPathRedacted(path)) throw Unreadable("redacted");
-                string? result = name == "class_name" ? peer.GetClassName() :
-                    name == "automation_id" ? peer.GetAutomationId() :
-                    name == "name" ? peer.GetName() : ControlTypeName(peer.GetAutomationControlType());
-                return ValueSerializer.Serialize(result ?? "", typeof(string), registry, target.Dispatcher);
-            }
-            catch (ProtocolException) { throw; }
-            catch (Exception) { throw Unreadable("exception"); }
         }
 
         internal static string ControlTypeName(AutomationControlType controlType) => Enum.GetName(typeof(AutomationControlType), controlType) ?? throw new InvalidOperationException();
