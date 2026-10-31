@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import re
 
+from wintestkit.backends.element import TargetElement
 from wintestkit.engine import actions
 from wintestkit.model import (
     BoundControl,
@@ -37,7 +38,6 @@ from wintestkit.model import (
     _TextEntry,
     _Valued,
 )
-from wintestkit.uia.element import UIAElement
 
 __all__ = [
     "BoundButton",
@@ -143,7 +143,7 @@ class BoundComboBox(_Valued, _Expandable, _Choice):
 
     required_patterns = ("ExpandCollapse", "Selection")
 
-    def _choose(self, element: UIAElement, item: str | int | re.Pattern[str]) -> None:
+    def _choose(self, element: TargetElement, item: str | int | re.Pattern[str]) -> None:
         __tracebackhide__ = True
         actions.select_in_combo(element, item)
 

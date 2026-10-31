@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from wintestkit import runtime
+from wintestkit.backends.element import TargetElement
 from wintestkit.engine import actions, waits
 from wintestkit.errors import (
     AmbiguousElementError,
@@ -21,7 +22,6 @@ from wintestkit.errors import (
 from wintestkit.model import BoundControl, BoundElements, BoundWindow, is_password_locator
 from wintestkit.uia import patterns
 from wintestkit.uia.constants import ToggleState
-from wintestkit.uia.element import UIAElement
 
 __all__ = ["Expectation", "expect"]
 
@@ -50,19 +50,19 @@ def _describe(value: Any) -> str:
     return repr(value)
 
 
-def _needs(element: UIAElement | None, check: Callable[[UIAElement], _Outcome]) -> _Outcome:
+def _needs(element: TargetElement | None, check: Callable[[TargetElement], _Outcome]) -> _Outcome:
     __tracebackhide__ = True
     if element is None:
         return _Outcome(False, _NOT_FOUND, missing=True)
     return check(element)
 
 
-def _exists(element: UIAElement | None) -> _Outcome:
+def _exists(element: TargetElement | None) -> _Outcome:
     __tracebackhide__ = True
     return _Outcome(element is not None, "exists" if element is not None else "does not exist")
 
 
-def _state(element: UIAElement | None, state: waits.State) -> _Outcome:
+def _state(element: TargetElement | None, state: waits.State) -> _Outcome:
     __tracebackhide__ = True
     ok = waits.element_state_ok(element, state)
     if element is None:
@@ -112,7 +112,7 @@ class Expectation:
             return float(definition.timeout)
         return runtime.get_config().timeout
 
-    def _element(self) -> UIAElement | None:
+    def _element(self) -> TargetElement | None:
         """Resolve once; ``None`` if nothing matches. Ambiguity is a test bug and propagates."""
         __tracebackhide__ = True
         target = self._target
@@ -132,7 +132,7 @@ class Expectation:
         self,
         method: str,
         expected: Any,
-        evaluate: Callable[[UIAElement | None], _Outcome],
+        evaluate: Callable[[TargetElement | None], _Outcome],
         *,
         wanted: str | None = None,
     ) -> None:
@@ -216,7 +216,7 @@ class Expectation:
     def to_be_enabled(self) -> None:
         __tracebackhide__ = True
 
-        def check(element: UIAElement) -> _Outcome:
+        def check(element: TargetElement) -> _Outcome:
             __tracebackhide__ = True
             enabled = element.is_enabled
             return _Outcome(enabled, "enabled" if enabled else "disabled")
@@ -228,7 +228,7 @@ class Expectation:
     def to_be_disabled(self) -> None:
         __tracebackhide__ = True
 
-        def check(element: UIAElement) -> _Outcome:
+        def check(element: TargetElement) -> _Outcome:
             __tracebackhide__ = True
             enabled = element.is_enabled
             return _Outcome(not enabled, "enabled" if enabled else "disabled")
@@ -240,7 +240,7 @@ class Expectation:
     def to_be_checked(self) -> None:
         __tracebackhide__ = True
 
-        def check(element: UIAElement) -> _Outcome:
+        def check(element: TargetElement) -> _Outcome:
             __tracebackhide__ = True
             state = patterns.toggle_state(element)
             return _Outcome(state == ToggleState.On, state.name)
@@ -252,7 +252,7 @@ class Expectation:
     def to_have_text(self, expected: str | re.Pattern[str]) -> None:
         __tracebackhide__ = True
 
-        def check(element: UIAElement) -> _Outcome:
+        def check(element: TargetElement) -> _Outcome:
             __tracebackhide__ = True
             actual = actions.get_text(element).strip()
             return _Outcome(_text_matches(expected, actual), _describe(actual))
@@ -262,7 +262,7 @@ class Expectation:
     def to_contain_text(self, expected: str) -> None:
         __tracebackhide__ = True
 
-        def check(element: UIAElement) -> _Outcome:
+        def check(element: TargetElement) -> _Outcome:
             __tracebackhide__ = True
             actual = actions.get_text(element)
             return _Outcome(expected in actual, _describe(actual))
@@ -272,7 +272,7 @@ class Expectation:
     def to_have_value(self, expected: str | re.Pattern[str]) -> None:
         __tracebackhide__ = True
 
-        def check(element: UIAElement) -> _Outcome:
+        def check(element: TargetElement) -> _Outcome:
             __tracebackhide__ = True
             actual = actions.get_value(element)
             return _Outcome(_text_matches(expected, actual), _describe(actual))
@@ -285,7 +285,7 @@ class Expectation:
         if not isinstance(target, BoundElements):
             raise TypeError("to_have_count() needs an Elements target")
 
-        def evaluate(_: UIAElement | None) -> _Outcome:
+        def evaluate(_: TargetElement | None) -> _Outcome:
             __tracebackhide__ = True
             try:
                 found = len(target.resolve_all())
@@ -299,7 +299,7 @@ class Expectation:
     def to_be_selected(self) -> None:
         __tracebackhide__ = True
 
-        def check(element: UIAElement) -> _Outcome:
+        def check(element: TargetElement) -> _Outcome:
             __tracebackhide__ = True
             selected = patterns.is_selected(element)
             return _Outcome(selected, "selected" if selected else "not selected")
@@ -311,7 +311,7 @@ class Expectation:
     def to_have_property(self, name: str, expected: Any) -> None:
         __tracebackhide__ = True
 
-        def check(element: UIAElement) -> _Outcome:
+        def check(element: TargetElement) -> _Outcome:
             __tracebackhide__ = True
             actual = element.get_property(name)
             return _Outcome(actual == expected, _describe(actual))

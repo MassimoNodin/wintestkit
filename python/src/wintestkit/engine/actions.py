@@ -11,6 +11,7 @@ import logging
 import re
 from typing import Literal
 
+from wintestkit.backends.element import TargetElement, uia_of
 from wintestkit.engine import waits
 from wintestkit.engine.diagnose import Candidate, Diagnostic, quote
 from wintestkit.engine.locator import Locator
@@ -41,9 +42,10 @@ def _short(el: UIAElement) -> str:
 # -- visibility and focus -------------------------------------------------------------------------
 
 
-def ensure_visible(el: UIAElement) -> None:
+def ensure_visible(el: TargetElement) -> None:
     """Scroll a virtualized or scrolled-away element into view."""
     __tracebackhide__ = True
+    el = uia_of(el)
     if not el.is_offscreen:
         return
     if patterns.has_pattern(el, "VirtualizedItem"):
@@ -65,9 +67,10 @@ def _top_level_hwnd(el: UIAElement) -> int:
     return 0
 
 
-def bring_to_front(el: UIAElement) -> bool:
+def bring_to_front(el: TargetElement) -> bool:
     """Raise the owning window without clicking or focusing the control itself."""
     __tracebackhide__ = True
+    el = uia_of(el)
     hwnd = _top_level_hwnd(el)
     if not hwnd:
         return False
@@ -77,16 +80,18 @@ def bring_to_front(el: UIAElement) -> bool:
     return raised
 
 
-def window_is_minimized(el: UIAElement) -> bool:
+def window_is_minimized(el: TargetElement) -> bool:
     """Whether the element's top-level window is minimized (its controls then have no bounds)."""
     __tracebackhide__ = True
+    el = uia_of(el)
     hwnd = _top_level_hwnd(el)
     return bool(hwnd) and bool(win32.IsIconic(hwnd))
 
 
-def raise_without_activating(el: UIAElement) -> bool:
+def raise_without_activating(el: TargetElement) -> bool:
     """Show the owning window above the others while the current window keeps keyboard focus."""
     __tracebackhide__ = True
+    el = uia_of(el)
     hwnd = _top_level_hwnd(el)
     if not hwnd:
         return False
@@ -123,9 +128,10 @@ def _keyboard_target(el: UIAElement) -> None:
         raise ActionError("Target control does not own keyboard focus; refusing global input")
 
 
-def focus(el: UIAElement) -> None:
+def focus(el: TargetElement) -> None:
     """Give the element keyboard focus (bringing its window forward first)."""
     __tracebackhide__ = True
+    el = uia_of(el)
     _foreground(el)
     try:
         el.set_focus()
@@ -162,9 +168,10 @@ def _validate_mouse_target(el: UIAElement, x: int, y: int) -> None:
         raise ActionError("Target point belongs to another window; refusing global input")
 
 
-def click(el: UIAElement, *, mode: InputMode = "pattern", button: MouseButton = "left") -> str:
+def click(el: TargetElement, *, mode: InputMode = "pattern", button: MouseButton = "left") -> str:
     """Click the element; returns the strategy used (``invoke``, ``toggle``, ``mouse`` ...)."""
     __tracebackhide__ = True
+    el = uia_of(el)
     if mode == "pattern" and button == "left":
         if patterns.has_pattern(el, "Invoke"):
             patterns.invoke(el)
@@ -185,18 +192,21 @@ def click(el: UIAElement, *, mode: InputMode = "pattern", button: MouseButton = 
     return "mouse"
 
 
-def double_click(el: UIAElement) -> None:
+def double_click(el: TargetElement) -> None:
     __tracebackhide__ = True
+    el = uia_of(el)
     _mouse_click(el, count=2)
 
 
-def right_click(el: UIAElement) -> None:
+def right_click(el: TargetElement) -> None:
     __tracebackhide__ = True
+    el = uia_of(el)
     _mouse_click(el, button="right")
 
 
-def hover(el: UIAElement) -> None:
+def hover(el: TargetElement) -> None:
     __tracebackhide__ = True
+    el = uia_of(el)
     x, y = _mouse_target(el)
     _validate_mouse_target(el, x, y)
     input.move_mouse(x, y)
@@ -205,8 +215,9 @@ def hover(el: UIAElement) -> None:
 # -- text -----------------------------------------------------------------------------------------
 
 
-def is_password(el: UIAElement) -> bool:
+def is_password(el: TargetElement) -> bool:
     __tracebackhide__ = True
+    el = uia_of(el)
     return el.get_property("IsPassword") == 1 or el.class_name == "PasswordBox"
 
 
@@ -215,9 +226,10 @@ def _can_set_value(el: UIAElement) -> bool:
     return patterns.has_pattern(el, "Value") and not patterns.is_read_only(el)
 
 
-def type_text(el: UIAElement, text: str, *, clear: bool = True, keys: bool = False) -> str:
+def type_text(el: TargetElement, text: str, *, clear: bool = True, keys: bool = False) -> str:
     """Enter text; returns ``"value"`` (ValuePattern) or ``"keys"`` (keyboard input)."""
     __tracebackhide__ = True
+    el = uia_of(el)
     if not keys and _can_set_value(el) and (clear or not is_password(el)):
         try:
             patterns.set_value(el, text if clear else patterns.get_value(el) + text)
@@ -233,9 +245,10 @@ def type_text(el: UIAElement, text: str, *, clear: bool = True, keys: bool = Fal
     return "keys"
 
 
-def clear(el: UIAElement) -> None:
+def clear(el: TargetElement) -> None:
     """Remove all text from an edit control."""
     __tracebackhide__ = True
+    el = uia_of(el)
     if _can_set_value(el):
         try:
             patterns.set_value(el, "")
@@ -247,17 +260,19 @@ def clear(el: UIAElement) -> None:
     input.press("Ctrl+A Delete")
 
 
-def press(el: UIAElement, keys: str) -> None:
+def press(el: TargetElement, keys: str) -> None:
     """Focus the element and press key combinations such as ``"Ctrl+S"``."""
     __tracebackhide__ = True
+    el = uia_of(el)
     focus(el)
     _keyboard_target(el)
     input.press(keys)
 
 
-def get_text(el: UIAElement) -> str:
+def get_text(el: TargetElement) -> str:
     """The element's text: its value, document text or UIA name."""
     __tracebackhide__ = True
+    el = uia_of(el)
     if patterns.has_pattern(el, "Value") and not is_password(el):
         return patterns.get_value(el)
     if patterns.has_pattern(el, "Text"):
@@ -265,17 +280,19 @@ def get_text(el: UIAElement) -> str:
     return el.name
 
 
-def get_value(el: UIAElement) -> str:
+def get_value(el: TargetElement) -> str:
     __tracebackhide__ = True
+    el = uia_of(el)
     return patterns.get_value(el)
 
 
 # -- state ----------------------------------------------------------------------------------------
 
 
-def set_checked(el: UIAElement, checked: bool) -> None:
+def set_checked(el: TargetElement, checked: bool) -> None:
     """Toggle a check box or toggle button until it reaches the requested state."""
     __tracebackhide__ = True
+    el = uia_of(el)
     target = ToggleState.On if checked else ToggleState.Off
     for _ in range(3):
         if patterns.toggle_state(el) == target:
@@ -285,40 +302,47 @@ def set_checked(el: UIAElement, checked: bool) -> None:
         raise ActionError(f"{_short(el)} did not reach the {target.name} state")
 
 
-def is_checked(el: UIAElement) -> bool:
+def is_checked(el: TargetElement) -> bool:
     __tracebackhide__ = True
+    el = uia_of(el)
     return patterns.toggle_state(el) == ToggleState.On
 
 
-def toggle(el: UIAElement) -> None:
+def toggle(el: TargetElement) -> None:
     __tracebackhide__ = True
+    el = uia_of(el)
     patterns.toggle(el)
 
 
-def select_self(el: UIAElement) -> None:
+def select_self(el: TargetElement) -> None:
     """Select the element itself (a radio button, list item or tab)."""
     __tracebackhide__ = True
+    el = uia_of(el)
     patterns.select_item(el)
 
 
-def is_selected(el: UIAElement) -> bool:
+def is_selected(el: TargetElement) -> bool:
     __tracebackhide__ = True
+    el = uia_of(el)
     return patterns.is_selected(el)
 
 
-def expand(el: UIAElement) -> None:
+def expand(el: TargetElement) -> None:
     __tracebackhide__ = True
+    el = uia_of(el)
     patterns.expand(el)
 
 
-def collapse(el: UIAElement) -> None:
+def collapse(el: TargetElement) -> None:
     __tracebackhide__ = True
+    el = uia_of(el)
     patterns.collapse(el)
 
 
-def selected_items(el: UIAElement) -> list[str]:
+def selected_items(el: TargetElement) -> list[str]:
     """Names of the selected items of a list-like element."""
     __tracebackhide__ = True
+    el = uia_of(el)
     if patterns.has_pattern(el, "Selection"):
         return [item.name for item in patterns.selection(el)]
     if patterns.has_pattern(el, "SelectionItem"):
@@ -411,15 +435,17 @@ def _select_in_combo(el: UIAElement, item: Item) -> None:
             patterns.collapse(el)
 
 
-def select_in_combo(el: UIAElement, item: Item) -> None:
+def select_in_combo(el: TargetElement, item: Item) -> None:
     """Select an item of a combo box (even one that does not report the ``ComboBox`` type)."""
     __tracebackhide__ = True
+    el = uia_of(el)
     _select_in_combo(el, item)
 
 
-def combo_item_names(el: UIAElement) -> list[str]:
+def combo_item_names(el: TargetElement) -> list[str]:
     """Names of a combo box's items: expand it, read them, and collapse it again."""
     __tracebackhide__ = True
+    el = uia_of(el)
     was_expanded = patterns.expand_state(el) == ExpandCollapseState.Expanded
     if not was_expanded:
         patterns.expand(el)
@@ -438,9 +464,10 @@ def combo_item_names(el: UIAElement) -> list[str]:
             patterns.collapse(el)
 
 
-def listed_item_names(el: UIAElement) -> list[str]:
+def listed_item_names(el: TargetElement) -> list[str]:
     """Names of the items of a list, tree or tab control that are currently realized."""
     __tracebackhide__ = True
+    el = uia_of(el)
     return [c.name for t in _ITEM_TYPES for c in query_all(el, Locator(control_type=t))]
 
 
@@ -479,9 +506,10 @@ def _item_by_index(el: UIAElement, index: int) -> UIAElement | None:
     return realized[index].as_live() if index < len(realized) else None
 
 
-def select(el: UIAElement, item: Item) -> None:
+def select(el: TargetElement, item: Item) -> None:
     """Select an item of a combo box, list, grid, tree or tab control by name, regex or index."""
     __tracebackhide__ = True
+    el = uia_of(el)
     if el.control_type == "ComboBox":
         _select_in_combo(el, item)
         return

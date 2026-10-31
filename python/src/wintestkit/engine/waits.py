@@ -6,9 +6,9 @@ import time
 from collections.abc import Callable
 from typing import Literal
 
+from wintestkit.backends.element import TargetElement
 from wintestkit.engine.managed import query_budget
 from wintestkit.errors import LocatorError, UIAError, WaitTimeoutError
-from wintestkit.uia.element import UIAElement
 
 POLL_INTERVAL = 0.1
 STABLE_INTERVAL = 0.05
@@ -65,7 +65,7 @@ def wait_until[T](
     )
 
 
-def _attached(el: UIAElement | None) -> bool:
+def _attached(el: TargetElement | None) -> bool:
     __tracebackhide__ = True
     if el is None:
         return False
@@ -75,7 +75,7 @@ def _attached(el: UIAElement | None) -> bool:
         return False
 
 
-def _visible(el: UIAElement | None) -> bool:
+def _visible(el: TargetElement | None) -> bool:
     __tracebackhide__ = True
     if not _attached(el):
         return False
@@ -87,7 +87,7 @@ def _visible(el: UIAElement | None) -> bool:
         return False
 
 
-def element_state_ok(el: UIAElement | None, state: State) -> bool:
+def element_state_ok(el: TargetElement | None, state: State) -> bool:
     """Whether ``el`` is currently in ``state``."""
     __tracebackhide__ = True
     if state == "attached":
@@ -114,12 +114,12 @@ def element_state_ok(el: UIAElement | None, state: State) -> bool:
 
 
 def wait_for_state(
-    get: Callable[[], UIAElement | None],
+    get: Callable[[], TargetElement | None],
     state: State,
     timeout: float,
     description: str,
     retry_on: tuple[type[BaseException], ...] = (LocatorError, UIAError),
-) -> UIAElement | None:
+) -> TargetElement | None:
     """Wait until the element returned by ``get`` is in ``state``; returns it (``None`` if gone).
 
     ``get`` normally resolves a locator. For ``detached`` and ``hidden`` a failed resolution counts
@@ -128,7 +128,7 @@ def wait_for_state(
     __tracebackhide__ = True
     missing_is_ok = state in ("detached", "hidden")
 
-    def check() -> tuple[UIAElement | None] | None:
+    def check() -> tuple[TargetElement | None] | None:
         __tracebackhide__ = True
         try:
             el = get()

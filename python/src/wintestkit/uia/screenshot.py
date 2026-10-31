@@ -9,9 +9,10 @@ from pathlib import Path
 
 from PIL import Image
 
+from wintestkit.backends.element import TargetElement
 from wintestkit.errors import EnvironmentNotReadyError
 from wintestkit.uia import win32
-from wintestkit.uia.element import Rect, UIAElement
+from wintestkit.uia.element import Rect
 from wintestkit.uia.png import encode_png
 from wintestkit.uia.webp import encode_webp
 
@@ -142,7 +143,7 @@ def capture_screen_pixels() -> Pixels:
     return _capture_pixels(win32.virtual_screen_rect())
 
 
-def capture_element(el: UIAElement) -> bytes | None:
+def capture_element(el: TargetElement) -> bytes | None:
     """Capture an element's visible area; ``None`` if it has no on-screen rectangle."""
     rect = el.rect
     if rect is None:

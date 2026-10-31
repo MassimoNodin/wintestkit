@@ -7,7 +7,7 @@ import weakref
 from contextlib import suppress
 from typing import Any, Protocol
 
-from wintestkit.backends.mapping import map_runtime_ids
+from wintestkit.backends.mapping import map_runtime_ids, map_state_at_point
 from wintestkit.errors import InspectorError, InspectorReadError, NoUiaPeerError
 from wintestkit.inspector.client import InspectorClient
 from wintestkit.inspector.models import ElementState, ObjectRef
@@ -90,6 +90,7 @@ class WpfElement:
         self._lease = lease
         self._identity: dict[str, str] | None = None
         self._state: ElementState | None = None
+        self._uia: UIAElement | None = None
 
     def _get_identity(self) -> dict[str, str]:
         if self._identity is None:
@@ -219,9 +220,21 @@ class WpfElement:
         """Map the agent handle to its peer for phase 2 UIA-only operations."""
         state = self._get_state()
         if state.window_handle and state.uia_runtime_id:
+            if self._uia is not None:
+                try:
+                    if self._uia.is_alive() and self._uia.runtime_id == self.runtime_id:
+                        return self._uia
+                except Exception:
+                    pass
+                self._uia = None
+            result = map_state_at_point(state)
+            if result is not None:
+                self._uia = result
+                return result
             key = (state.window_handle, state.uia_runtime_id)
             result = map_runtime_ids({state.window_handle: [state.uia_runtime_id]}).get(key)
             if result is not None:
+                self._uia = result
                 return result
         raise NoUiaPeerError(
             f"{self.info().short()} has no UI Automation peer; "
@@ -263,5 +276,7 @@ class WpfElement:
         )
 
 
-def uia_of(element: UIAElement | WpfElement) -> UIAElement:
-    return element if isinstance(element, UIAElement) else element.as_uia()
+def uia_of(element: TargetElement) -> UIAElement:
+    from typing import cast
+
+    return element.as_uia() if isinstance(element, WpfElement) else cast(UIAElement, element)

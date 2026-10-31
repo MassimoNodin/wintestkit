@@ -36,6 +36,7 @@ from typing import (
 
 from wintestkit import runtime
 from wintestkit.app import App
+from wintestkit.backends.element import TargetElement
 from wintestkit.engine import actions, overlay, relocate, waits
 from wintestkit.engine.diagnose import Relocation
 from wintestkit.engine.locator import (
@@ -637,7 +638,7 @@ class _BoundBase:
         __tracebackhide__ = True
         return _default_timeout(self.definition, per_call)
 
-    def resolve_once(self) -> UIAElement:
+    def resolve_once(self) -> TargetElement:
         __tracebackhide__ = True
         raise NotImplementedError
 
@@ -654,7 +655,7 @@ class _BoundBase:
         """Annotate a not-found error with where the element was found instead (elements only)."""
         __tracebackhide__ = True
 
-    def resolve(self, timeout: float | None = None) -> UIAElement:
+    def resolve(self, timeout: float | None = None) -> TargetElement:
         """Wait until the element exists (strictly one match) and return it."""
         __tracebackhide__ = True
         try:
@@ -840,7 +841,7 @@ class BoundControl(_BoundBase):
 
     # -- type validation ------------------------------------------------------------------------
 
-    def check_type(self, element: UIAElement) -> None:
+    def check_type(self, element: TargetElement) -> None:
         """Raise ``ElementTypeError`` when ``element`` cannot be this control.
 
         The default checks ``required_patterns`` (or ``accepted_control_types`` when there are no
@@ -865,7 +866,7 @@ class BoundControl(_BoundBase):
                 element, "is not one of the control types " + ", ".join(self.accepted_control_types)
             )
 
-    def type_mismatch(self, element: UIAElement, reason: str) -> ElementTypeError:
+    def type_mismatch(self, element: TargetElement, reason: str) -> ElementTypeError:
         """The error for an element that does not fit the declared type (for ``check_type``)."""
         __tracebackhide__ = True
         declared = type(self.definition).__name__
@@ -878,20 +879,20 @@ class BoundControl(_BoundBase):
 
     # -- resolution and waiting -----------------------------------------------------------------
 
-    def resolve_once(self) -> UIAElement:
+    def resolve_once(self) -> TargetElement:
         __tracebackhide__ = True
         element = resolve(_scope(self.page), self.locator)
         if self.definition.validate:
             self.check_type(element)
         return element
 
-    def _actionable(self, timeout: float | None) -> UIAElement:
+    def _actionable(self, timeout: float | None) -> TargetElement:
         """Wait until the element is attached and enabled (and visible unless it can scroll)."""
         __tracebackhide__ = True
         budget = self._timeout(timeout)
         unmet = ["to exist"]
 
-        def poll() -> UIAElement | None:
+        def poll() -> TargetElement | None:
             __tracebackhide__ = True
             element = self.resolve_once()
             if not element.is_enabled:
@@ -919,7 +920,7 @@ class BoundControl(_BoundBase):
                 waited=exc.waited,
             ) from None
 
-    def perform(self, timeout: float | None, act: Callable[[UIAElement], _T]) -> _T:
+    def perform(self, timeout: float | None, act: Callable[[TargetElement], _T]) -> _T:
         """Wait until the element is actionable, then run ``act`` on it and return its result.
 
         This is the hook for writing actions: it auto-waits (exists, enabled, visible), highlights
@@ -936,7 +937,7 @@ class BoundControl(_BoundBase):
                     raise
         raise AssertionError("unreachable")  # pragma: no cover
 
-    def _maybe_highlight(self, element: UIAElement) -> None:
+    def _maybe_highlight(self, element: TargetElement) -> None:
         __tracebackhide__ = True
         if runtime.get_config().highlight_actions:
             rect = element.rect
@@ -1124,7 +1125,7 @@ class _TextEntry(_Valued):
         args = {"text": text, "clear": clear, "keys": keys}
         with self.step("type", args, secret=True) as rec:
 
-            def enter(el: UIAElement) -> str:
+            def enter(el: TargetElement) -> str:
                 __tracebackhide__ = True
                 nonlocal secret
                 rec.sensitive = True
@@ -1145,7 +1146,7 @@ class _TextEntry(_Valued):
         secret = secret or is_password_locator(self.locator)
         with self.step("press", {"keys": keys}, secret=True) as rec:
 
-            def send(el: UIAElement) -> None:
+            def send(el: TargetElement) -> None:
                 __tracebackhide__ = True
                 nonlocal secret
                 rec.sensitive = True
@@ -1173,7 +1174,7 @@ class _Checkable(BoundControl):
 
 
 class _Selecting(BoundControl):
-    def _choose(self, element: UIAElement, item: str | int | re.Pattern[str]) -> None:
+    def _choose(self, element: TargetElement, item: str | int | re.Pattern[str]) -> None:
         __tracebackhide__ = True
         actions.select(element, item)
 
@@ -1304,7 +1305,7 @@ class BoundElements:
         __tracebackhide__ = True
         return f"<BoundElements {self.qualname} {self.locator.describe()}>"
 
-    def resolve_all(self) -> list[UIAElement]:
+    def resolve_all(self) -> list[TargetElement]:
         __tracebackhide__ = True
         return resolve_all(_scope(self.page), self.locator)
 

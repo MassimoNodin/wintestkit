@@ -76,6 +76,7 @@ def sync_object_previews_ignore(root: Path, share: bool) -> None:
 _TOP_LEVEL_KEYS = {
     "launch",
     "timeout",
+    "backend",
     "input_mode",
     "screenshots",
     "report_dir",
@@ -106,6 +107,7 @@ _ENV_VARS = {
     "WTK_APP_PATH": "app.path",
     "WTK_LAUNCH": "launch",
     "WTK_TIMEOUT": "timeout",
+    "WTK_BACKEND": "backend",
     "WTK_INPUT_MODE": "input_mode",
     "WTK_SCREENSHOTS": "screenshots",
     "WTK_REPLAY": "replay",
@@ -174,6 +176,7 @@ class WtkConfig:
     object_previews_share: bool = False
     highlight_color: str = "#FF0000"
     inspector: InspectorConfig = field(default_factory=InspectorConfig)
+    backend: Literal["uia", "auto"] = "uia"
 
 
 # -- project discovery ----------------------------------------------------------------------------
@@ -551,6 +554,10 @@ def load_config(start: Path | None = None, overrides: Mapping[str, Any] | None =
         inspector=_build_inspector(values),
         launch=cast("LaunchMode", launch),
         timeout=_number("timeout", values.get("timeout", 10.0), positive=True),
+        backend=cast(
+            "Literal['uia', 'auto']",
+            _enum("backend", values.get("backend", "uia"), ("uia", "auto")),
+        ),
         input_mode=cast(
             "InputMode", _enum("input_mode", values.get("input_mode", "pattern"), INPUT_MODES)
         ),

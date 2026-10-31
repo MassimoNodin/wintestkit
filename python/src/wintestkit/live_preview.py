@@ -12,6 +12,7 @@ from typing import Any
 
 from PIL import Image, ImageDraw
 
+from wintestkit.backends.element import TargetElement, uia_of
 from wintestkit.uia import screenshot, win32
 from wintestkit.uia.element import UIAElement
 
@@ -71,14 +72,14 @@ def _fit(image: Image.Image) -> tuple[Image.Image, float]:
     return resized, scale
 
 
-def capture_live_preview(element: UIAElement) -> dict[str, Any]:
+def capture_live_preview(element: TargetElement) -> dict[str, Any]:
     """The element's crop and its top-level window with the element outlined, as WebP images.
 
     Returns ``{"reason": ...}`` instead when there is nothing to show. The window is rendered
     without being brought forward, so it may be covered; a minimized window cannot be rendered.
     """
     try:
-        return _capture(element)
+        return _capture(uia_of(element))
     except PreviewUnavailable as exc:
         return {"reason": str(exc)}
     except Exception as exc:

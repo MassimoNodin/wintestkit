@@ -53,6 +53,7 @@ Shared `wintestkit.yaml` (commit this):
 ```yaml
 launch: per-test
 timeout: 10
+backend: uia
 input_mode: pattern
 screenshots: on-failure
 report_dir: wtk-report
@@ -62,6 +63,11 @@ app:
   startup_timeout: 30
   close_timeout: 10
 ```
+
+`backend` defaults to `uia`. Set it to `auto` to use the inspector's WPF tree for WPF
+windows and UI Automation for other windows. WPF resolution requires an enabled and attached
+inspector; it does not fall back to UI Automation if attachment or mapping fails. Grid row and
+cell item selection still uses UI Automation until phase 3.
 
 Local `wintestkit.local.yaml` (do not commit this):
 
@@ -331,3 +337,7 @@ update the Test Explorer live. The events are `session_start`, `collected`, `tes
 `test_output`, `test_end` and `session_end`; their exact shapes are defined by
 [`schemas/events.schema.json`](../../schemas/events.schema.json). `session_end` includes the run
 summary and the paths of the report and JUnit file.
+
+When an indexed WPF locator requires Python-side filtering beyond the first 200 raw matches,
+WinTestKit checks at most 50 more indexed candidates. The inspector protocol has no offset
+paging for `findAll`; if this bound is reached, narrow the locator to reduce the candidate set.

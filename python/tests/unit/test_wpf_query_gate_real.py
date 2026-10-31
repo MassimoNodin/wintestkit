@@ -86,6 +86,33 @@ def config(path, mode):
     )
 
 
+def test_auto_backend_smoke(owned):
+    scope, path = owned
+    with runtime.config_scope(replace(config(path, "agent"), backend="auto")):
+        assert (
+            resolve(scope, Locator(automation_id="FixtureControl")).automation_id
+            == "FixtureControl"
+        )
+        assert (
+            resolve(
+                scope, Locator(automation_id="FancyAutomationId", where=(("clr:Tag", "fancy"),))
+            ).automation_id
+            == "FancyAutomationId"
+        )
+        assert (
+            resolve(
+                scope,
+                Locator(automation_id="NestedButton", within=Locator(automation_id="ParityGroup")),
+            ).automation_id
+            == "NestedButton"
+        )
+        peerless = resolve(
+            scope, Locator(where=(("type:Is", "WinTestKit.Fixture.PeerlessMarker"),))
+        )
+        assert peerless.runtime_id.startswith("wpf:")
+        assert click(resolve(scope, Locator(automation_id="FancyAutomationId"))) == "invoke"
+
+
 def test_parity_and_features(owned):
     scope, path = owned
     where = (("type:FullName", "WinTestKit.Fixture.FixtureControl"),)
@@ -274,3 +301,22 @@ def test_large_cap(owned):
         assert resolve(scope, unique).automation_id == "Large1499"
         with pytest.raises(AmbiguousElementError):
             resolve(scope, shared)
+
+
+def test_large_mapping_latency(owned):
+    scope, path = owned
+    locator = Locator(automation_id="Large100", window=WindowLocator(automation_id="LargeWindow"))
+    root = next(w for w in scope.app.top_level_windows() if w.automation_id == "LargeWindow")
+    assert win32.raise_window(root.native_window_handle)
+    samples = []
+    with runtime.config_scope(replace(config(path, "agent"), backend="auto")):
+        for _ in range(10):
+            start = time.perf_counter()
+            element = resolve(scope, locator)
+            assert not element.is_offscreen
+            assert element.as_uia().runtime_id == element.runtime_id
+            samples.append((time.perf_counter() - start) * 1000)
+    print(
+        f"WPF_RESOLVE_AS_UIA median={statistics.median(samples):.2f}ms p95={sorted(samples)[-1]:.2f}ms samples={samples}",
+        flush=True,
+    )
