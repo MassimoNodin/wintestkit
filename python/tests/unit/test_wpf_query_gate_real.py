@@ -86,6 +86,81 @@ def config(path, mode):
     )
 
 
+@pytest.mark.parametrize("backend", ["uia", "auto"])
+def test_phase2_backend_parity(owned, backend):
+    from wintestkit.expect import expect
+    from wintestkit.model import Element, Elements, Page
+
+    scope, path = owned
+
+    class FixturePage(Page):
+        button = Element(automation_id="FancyAutomationId")
+        effect = Element(automation_id="ActionEffect")
+        missing = Element(automation_id="NeverAppears")
+        duplicates = Elements(automation_id="Duplicate")
+
+    page = FixturePage(scope.app)
+    with runtime.config_scope(replace(config(path, "agent"), backend=backend)):
+        cases = [
+            Locator(automation_id="FancyAutomationId"),
+            Locator(name="Fancy action", control_type="Button"),
+            Locator(class_name="Button", automation_id="FancyAutomationId"),
+            Locator(control_type="Button", automation_id="FancyAutomationId"),
+            Locator(automation_id=re.compile("^FancyAutomationId$")),
+            Locator(automation_id="FancyAutomationId", where=(("clr:Tag", "fancy"),)),
+            Locator(automation_id="NestedButton", within=Locator(automation_id="ParityGroup")),
+        ]
+        cases.extend(
+            [
+                Locator(automation_id=re.compile("Fancy(?=AutomationId)")),
+                Locator(automation_id="FancyAutomationId", where=(("Name", "Fancy action"),)),
+                Locator(automation_id="FancyAutomationId", where=(("IsEnabled", True),)),
+                Locator(automation_id="FancyAutomationId", depth=20),
+            ]
+        )
+        for locator in cases:
+            assert len(resolve_all(scope, locator)) == 1
+        assert len(resolve_all(scope, Locator(automation_id="Duplicate"))) == 2
+        assert resolve(scope, Locator(automation_id="Duplicate", index=1)).name == "Duplicate"
+        assert not resolve_all(scope, Locator(automation_id="NeverAppears"))
+        with pytest.raises(AmbiguousElementError):
+            resolve(scope, Locator(automation_id="Duplicate"))
+        for state in ("attached", "visible", "enabled", "stable"):
+            page.button.wait_for(state, timeout=5)
+        for state in ("detached", "hidden"):
+            page.missing.wait_for(state, timeout=5)
+        expect(page.button, timeout=5).to_exist()
+        expect(page.button, timeout=5).to_be_visible()
+        expect(page.button, timeout=5).to_be_enabled()
+        expect(page.button, timeout=5).not_.to_be_disabled()
+        expect(page.missing, timeout=5).not_.to_exist()
+        expect(page.duplicates, timeout=5).to_have_count(2)
+        expect(page.button, timeout=5).to_have_text("Fancy action")
+        expect(page.button, timeout=5).to_contain_text("Fancy")
+        assert click(resolve(scope, Locator(automation_id="FancyAutomationId"))) == "invoke"
+        expect(page.effect, timeout=5).to_have_text("Clicked 1")
+
+
+def test_phase2_duplicate_order_matches(owned):
+    from wintestkit.backends.element import uia_of
+
+    scope, path = owned
+    results = []
+    for backend in ("uia", "auto"):
+        with runtime.config_scope(replace(config(path, "agent"), backend=backend)):
+            matches = resolve_all(scope, Locator(automation_id="Duplicate"))
+            results.append([uia_of(element).runtime_id for element in matches])
+    assert len(results[0]) == 2
+    assert results[0] == results[1]
+
+
+@pytest.mark.parametrize("backend", ["uia", "auto"])
+def test_phase2_popup_backend_parity(owned, backend):
+    scope, path = owned
+    with runtime.config_scope(replace(config(path, "agent"), backend=backend)):
+        assert resolve(scope, Locator(automation_id="PopupContent")).name == "Popup content"
+
+
 def test_auto_backend_smoke(owned):
     scope, path = owned
     with runtime.config_scope(replace(config(path, "agent"), backend="auto")):
