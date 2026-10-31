@@ -125,7 +125,7 @@ def _agent_query(
     __tracebackhide__ = True
     from dataclasses import replace
 
-    from wintestkit.backends.mapping import map_runtime_ids
+    from wintestkit.backends.mapping import map_runtime_ids, map_state_at_point
     from wintestkit.engine.wpf_query import UnsupportedQuery, translate
     from wintestkit.inspector.models import Scope
 
@@ -159,6 +159,7 @@ def _agent_query(
             )
         groups: dict[int, list[tuple[int, ...]]] = {}
         ordered: list[tuple[int, tuple[int, ...]]] = []
+        single_state = None
         for ref in result.matches:
             timeout = max(1, min(2000, int((deadline - time.monotonic()) * 1000)))
             state = client.state_get(ref, timeout_ms=timeout, deadline=deadline)
@@ -169,9 +170,12 @@ def _agent_query(
             ):
                 continue
             key = (state.window_handle, state.uia_runtime_id)
+            if len(result.matches) == 1:
+                single_state = state
             ordered.append(key)
             groups.setdefault(key[0], []).append(key[1])
-        mapped = map_runtime_ids(groups)
+        fast = map_state_at_point(single_state) if single_state is not None else None
+        mapped = {ordered[0]: fast} if fast is not None else map_runtime_ids(groups)
         missing = len(result.matches) - sum(key in mapped for key in ordered)
         if missing:
             log.debug("Skipped %d WPF matches without a mapped UIA element", missing)

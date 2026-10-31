@@ -21,6 +21,8 @@ class Client:
             uia_runtime_id=(1, 2),
             bounds=AgentRect(1.2, 2.7, 10.4, 4.4),
             enabled=True,
+            visible=True,
+            clipped=True,
             offscreen=False,
             focused=True,
         )

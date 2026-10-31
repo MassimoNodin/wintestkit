@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from difflib import SequenceMatcher
 from typing import TYPE_CHECKING, Any, Literal
 
+from wintestkit.backends.element import TargetElement
 from wintestkit.engine.locator import Locator, WindowLocator, describe_matcher, match_value
 from wintestkit.engine.query import relaxed_descendants
 from wintestkit.uia.element import ElementInfo, UIAElement
@@ -389,14 +390,14 @@ def diagnose_not_found(
     )
 
 
-def _match_candidates(matches: Sequence[UIAElement], link: Locator) -> tuple[Candidate, ...]:
+def _match_candidates(matches: Sequence[TargetElement], link: Locator) -> tuple[Candidate, ...]:
     __tracebackhide__ = True
     full_score = _specified_property_count(link)
     return tuple(Candidate(m.info(), full_score, ()) for m in matches[:MAX_CANDIDATES])
 
 
 def diagnose_ambiguous(
-    matches: Sequence[UIAElement], link: Locator, searched_in: str, full_locator: Locator
+    matches: Sequence[TargetElement], link: Locator, searched_in: str, full_locator: Locator
 ) -> Diagnostic:
     """Explain why ``link`` matched several elements."""
     __tracebackhide__ = True
@@ -415,7 +416,7 @@ def diagnose_ambiguous(
 
 
 def diagnose_index_out_of_range(
-    matches: Sequence[UIAElement], link: Locator, searched_in: str, full_locator: Locator
+    matches: Sequence[TargetElement], link: Locator, searched_in: str, full_locator: Locator
 ) -> Diagnostic:
     """Explain an ``index=`` that is beyond the number of matches."""
     __tracebackhide__ = True

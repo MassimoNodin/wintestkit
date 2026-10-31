@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING, cast
 from PIL import Image, ImageDraw
 
 from wintestkit import runtime
+from wintestkit.backends.element import TargetElement, uia_of
 from wintestkit.config import sync_object_previews_ignore
 from wintestkit.uia import screenshot, win32
 from wintestkit.uia.element import Rect, UIAElement
@@ -255,11 +256,11 @@ def _discard(directory: Path, names: list[str]) -> None:
             (directory / name).unlink()
 
 
-def capture_bound(bound: BoundControl, element: UIAElement) -> None:
+def capture_bound(bound: BoundControl, element: TargetElement) -> None:
     """Save an explicitly checked element; failures must never affect its result."""
     try:
         if runtime.get_config().object_previews:
-            _capture_bound(bound, element)
+            _capture_bound(bound, uia_of(element))
     except Exception:
         log.debug("Could not save object preview", exc_info=True)
 

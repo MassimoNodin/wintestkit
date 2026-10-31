@@ -8,6 +8,7 @@ import re
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any
 
+from wintestkit.backends.element import TargetElement, uia_of
 from wintestkit.engine.locator import Locator, Matcher, WindowLocator
 from wintestkit.engine.query import query_all
 from wintestkit.errors import WtkError
@@ -246,7 +247,8 @@ def _top_window(element: UIAElement, app: App | None) -> UIAElement:
     raise WtkError("UI Automation ancestor chain exceeds 100 nodes")
 
 
-def suggest_locator(el: UIAElement, app: App | None = None) -> Suggestion:
+def suggest_locator(el: TargetElement, app: App | None = None) -> Suggestion:
+    el = uia_of(el)
     top = _top_window(el, app)
     if top.same_as(el):
         raise WindowSelectedError("Select a window descendant to generate an element locator")

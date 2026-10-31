@@ -11,6 +11,7 @@ ENV_VARS = [
     "WTK_APP_PATH",
     "WTK_LAUNCH",
     "WTK_TIMEOUT",
+    "WTK_BACKEND",
     "WTK_INPUT_MODE",
     "WTK_SCREENSHOTS",
     "WTK_REPLAY",
@@ -65,6 +66,7 @@ def test_defaults_without_pyproject(tmp_path: Path) -> None:
     assert config.app is None
     assert config.launch == "per-test"
     assert config.timeout == 10.0
+    assert config.backend == "uia"
     assert config.input_mode == "pattern"
     assert config.screenshots == "on-failure"
     assert config.report_dir == tmp_path.resolve() / "wtk-report"
@@ -74,6 +76,16 @@ def test_defaults_without_pyproject(tmp_path: Path) -> None:
     assert config.python_paths == (tmp_path.resolve(),)
     assert (config.replay, config.replay_fps, config.replay_scope) == ("off", 15.0, "window")
     assert (config.replay_max_frames, config.replay_max_bytes) == (3000, 104857600)
+
+
+def test_backend_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    (tmp_path / "wintestkit.yaml").write_text("backend: auto\n", encoding="utf-8")
+    assert load_config(tmp_path).backend == "auto"
+    monkeypatch.setenv("WTK_BACKEND", "uia")
+    assert load_config(tmp_path).backend == "uia"
+    monkeypatch.setenv("WTK_BACKEND", "invalid")
+    with pytest.raises(ConfigError):
+        load_config(tmp_path)
 
 
 def test_replay_config_and_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -322,3 +334,10 @@ def test_invalid_toml_reports_file(tmp_path: Path) -> None:
     write_pyproject(tmp_path, "[tool.wintestkit\n")
     with pytest.raises(ConfigError, match=r"pyproject.toml"):
         find_project_root(tmp_path)
+
+
+@pytest.mark.parametrize("value", ["invalid", "", "Auto", "true", "42"])
+def test_backend_invalid_yaml(tmp_path: Path, value: str) -> None:
+    (tmp_path / "wintestkit.yaml").write_text(f"backend: {value!r}\n", encoding="utf-8")
+    with pytest.raises(ConfigError, match="backend"):
+        load_config(tmp_path)
