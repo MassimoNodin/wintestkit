@@ -155,6 +155,82 @@ def test_phase2_duplicate_order_matches(owned):
 
 
 @pytest.mark.parametrize("backend", ["uia", "auto"])
+def test_phase2_existing_expectations_and_input(owned, backend):
+    from wintestkit.controls import TextBox
+    from wintestkit.expect import expect
+    from wintestkit.model import Element, Elements, Page
+
+    scope, path = owned
+
+    class FixturePage(Page):
+        button = Element(automation_id="FancyAutomationId")
+        source = TextBox(automation_id="BindingSource")
+        duplicates = Elements(automation_id="Duplicate")
+
+    page = FixturePage(scope.app)
+    with runtime.config_scope(replace(config(path, "agent"), backend=backend)):
+        expect(page.button, timeout=5).not_.to_be_hidden()
+        expect(page.button, timeout=5).not_.to_have_text("wrong")
+        expect(page.button, timeout=5).not_.to_contain_text("wrong")
+        expect(page.button, timeout=5).to_have_property("IsEnabled", True)
+        expect(page.button, timeout=5).not_.to_have_property("Name", "wrong")
+        expect(page.duplicates, timeout=5).not_.to_have_count(3)
+        expect(page.source, timeout=5).to_have_value("source")
+        expect(page.source, timeout=5).not_.to_have_value("wrong")
+        page.source.type("parity")
+        expect(page.source, timeout=5).to_have_value("parity")
+        page.source.clear()
+        expect(page.source, timeout=5).to_have_value("")
+
+
+def test_phase2_error_diagnostics_match(owned):
+    from wintestkit.errors import LocatorError
+
+    scope, path = owned
+    locators = [
+        Locator(automation_id="NeverAppears"),
+        Locator(name="Never appears"),
+        Locator(automation_id="Duplicate"),
+        Locator(name="Duplicate", control_type="Button"),
+        Locator(automation_id="Duplicate", index=10),
+        Locator(name="Duplicate", control_type="Button", index=10),
+        Locator(automation_id="NestedButton", within=Locator(automation_id="NeverAppears")),
+        Locator(automation_id="NestedButton", within=Locator(name="Never appears")),
+    ]
+    messages = []
+    for backend in ("uia", "auto"):
+        results = []
+        with runtime.config_scope(replace(config(path, "agent"), backend=backend)):
+            for locator in locators:
+                with pytest.raises(LocatorError) as error:
+                    resolve(scope, locator)
+                results.append((type(error.value), str(error.value)))
+        messages.append(results)
+    assert messages[0] == messages[1]
+
+
+@pytest.mark.parametrize("backend", ["uia", "auto"])
+def test_phase2_predicates_backend_parity(owned, backend):
+    scope, path = owned
+    predicates = [
+        ("type:FullName", "WinTestKit.Fixture.FixtureControl"),
+        ("clr:DataContext.Customer.Address.City", "Sydney"),
+        ("field:PublicField", "public field"),
+        ("dp:WinTestKit.Fixture|WinTestKit.Fixture.FixtureControl::DefaultValue", "default"),
+        ("clr:CoercedValue", 10),
+        ("IsEnabled", True),
+        ("Name", re.compile("fixture control", re.IGNORECASE)),
+        ("Name", re.compile("^Fixture control$", re.MULTILINE)),
+        ("Name", re.compile("Fixture.*control", re.DOTALL)),
+        ("Name", re.compile("Fixture(?= control)")),
+    ]
+    with runtime.config_scope(replace(config(path, "agent"), backend=backend)):
+        for key, value in predicates:
+            locator = Locator(automation_id="FixtureControl", where=((key, value),))
+            assert len(resolve_all(scope, locator)) == 1, key
+
+
+@pytest.mark.parametrize("backend", ["uia", "auto"])
 def test_phase2_popup_backend_parity(owned, backend):
     scope, path = owned
     with runtime.config_scope(replace(config(path, "agent"), backend=backend)):
