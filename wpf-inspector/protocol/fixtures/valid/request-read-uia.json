@@ -1,0 +1,1 @@
+{"schema":"RequestEnvelope","instance":{"id":1,"method":"read","params":{"sessionId":"s","objectId":"o","generation":1,"paths":[[{"kind":"uia","name":"name"}]]}}}

@@ -26,6 +26,7 @@ LOCATOR = {
     "tree": "combined",
     "predicates": [PRED],
     "depth": 256,
+    "depthMode": "tree",
     "limit": 100,
 }
 STATE = {

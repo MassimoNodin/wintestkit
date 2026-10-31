@@ -575,6 +575,7 @@ class Value(WireModel):
             data["status"],
             {
                 "ok",
+                "unavailable",
                 "notRead",
                 "notReadable",
                 "nullIntermediate",
@@ -1141,17 +1142,19 @@ class Locator(WireModel):
     predicates: tuple[Predicate, ...]
     depth: int
     limit: int
+    depth_mode: str
     index: int | None = None
 
     @classmethod
     def from_json(cls, value: object) -> Locator:
-        d = _obj(value, "scope tree predicates depth limit", "index")
+        d = _obj(value, "scope tree predicates depth depthMode limit", "index")
         return cls(
             Scope.from_json(d["scope"]),
             _choice(d["tree"], {"visual", "logical", "combined"}),
             _array(d["predicates"], Predicate.from_json, 32),
             _int(d["depth"], 0, 256),
             _int(d["limit"], 1, 200),
+            _choice(d["depthMode"], {"tree", "peers"}),
             _optional(d, "index", lambda x: _int(x, 0, 9999)),
         )
 

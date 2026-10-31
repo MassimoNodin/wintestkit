@@ -1442,7 +1442,8 @@ export interface Value1 {
     | "truncated"
     | "cycle"
     | "timeout"
-    | "unsupported";
+    | "unsupported"
+    | "unavailable";
   kind:
     | "null"
     | "string"
@@ -2501,6 +2502,7 @@ export interface Locator {
   depth: number;
   index?: number;
   limit: number;
+  depthMode: "tree" | "peers";
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema

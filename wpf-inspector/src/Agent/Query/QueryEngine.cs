@@ -127,6 +127,9 @@ namespace WinTestKit.Inspector.Agent.Query
                             if (current.Dispatcher != dispatcher || !seen.Add(current)) continue;
                             if (result.Visited >= ProtocolLimits.ScanMaxObjects) return true;
                             result.Visited++;
+                            bool hasPeer = locator.DepthMode == "peers" && frame.Depth > 0 && PeerIdentity.GetPeer(current) != null;
+                            int currentDepth = locator.DepthMode == "peers" && frame.Depth > 0 ? frame.Depth - 1 + (hasPeer ? 1 : 0) : frame.Depth;
+                            if (currentDepth > locator.Depth) continue;
                             bool matches = true;
                             foreach (IQueryPredicate predicate in uiaPredicates)
                                 if (!predicate.Matches(current, context)) { matches = false; break; }
@@ -144,7 +147,8 @@ namespace WinTestKit.Inspector.Agent.Query
                                     result.Matches.Add(registry.Register(current, dispatcher, TypeInfoBuilder.Build(current.GetType())));
                                 else if (!find && (!locator.Index.HasValue || locator.Index.Value == matchIndex)) result.Overflow = true;
                             }
-                            if (frame.Depth < locator.Depth) stack.Push(new Frame(Children(current, locator.Tree).GetEnumerator(), frame.Depth + 1));
+                            if (locator.DepthMode == "tree" ? currentDepth < locator.Depth : !(hasPeer && currentDepth == locator.Depth))
+                                stack.Push(new Frame(Children(current, locator.Tree).GetEnumerator(), currentDepth + 1));
                         }
                         return stack.Count == 0 || result.Visited >= ProtocolLimits.ScanMaxObjects || DateTime.UtcNow >= budgetDeadline;
                     }, ct).ConfigureAwait(false);

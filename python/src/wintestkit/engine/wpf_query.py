@@ -68,8 +68,6 @@ def translate(
     constraints: tuple[Condition | ManagedCondition, ...],
     handle: ObjectRef | None,
 ) -> WireLocator:
-    if locator.depth is not None:
-        raise UnsupportedQuery("depth is set")
     predicates: list[Predicate] = []
     for name in ("automation_id", "name", "class_name", "control_type"):
         value = getattr(locator, name)
@@ -89,4 +87,11 @@ def translate(
             predicates.append(predicate(condition.path.segments, condition.value))
     if len(predicates) > 32:
         raise UnsupportedQuery("more than 32 predicates")
-    return WireLocator(Scope("object", handle), "combined", tuple(predicates), 256, 200)
+    return WireLocator(
+        Scope("object", handle),
+        "combined",
+        tuple(predicates),
+        locator.depth if locator.depth is not None else 256,
+        200,
+        "peers",
+    )

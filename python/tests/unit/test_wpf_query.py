@@ -43,6 +43,8 @@ def test_translation_all_kinds():
     )
     result = wire(locator)
     assert result.scope.handle == ref(0) and result.depth == 256 and result.limit == 200
+    assert result.depth_mode == "peers"
+    assert wire(Locator(name="x", depth=1)).depth == 1
     assert [p.kind for p in result.predicates] == [
         "equals",
         "regex",
@@ -73,7 +75,6 @@ def test_regex_accepted(pattern):
 
 def test_fallbacks_and_type_is_validation():
     for locator in (
-        Locator(depth=1, where=(("clr:X", 1),)),
         Locator(where=(("HelpText", "x"), ("clr:X", 1))),
         Locator(name=re.compile("a", re.X), where=(("clr:X", 1),)),
         Locator(where=tuple((f"clr:P{i}", 1) for i in range(33))),

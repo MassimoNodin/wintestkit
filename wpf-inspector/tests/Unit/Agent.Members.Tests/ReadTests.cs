@@ -56,6 +56,22 @@ namespace WinTestKit.Inspector.Agent.Members.Tests
             if (error != null) throw new Exception("STA test failed", error);
         }
         [Fact]
+        public void ReadsUiaIdentityAndPeerlessValues()
+        {
+            Sta(() =>
+            {
+                var inspector = new ObjectInspector(); var registry = new Registry(); var dispatcher = Dispatcher.CurrentDispatcher;
+                var button = new System.Windows.Controls.Button { Name = "MyButton", Content = "Caption" };
+                var path = new[] { new PathSegment { Kind = "uia", Name = "name" } };
+                var value = ValueTestSupport.RoundTrip(inspector.ReadPath(button, path, registry, dispatcher, CancellationToken.None));
+                Assert.Equal("Caption", ((JsonStringNode)value.Scalar!).Value);
+                value = ValueTestSupport.RoundTrip(inspector.ReadPath(new System.Windows.Controls.Border(), path, registry, dispatcher, CancellationToken.None));
+                Assert.Equal("unavailable", value.Status);
+                Assert.Equal("unavailable", value.Kind);
+                Assert.Throws<ProtocolException>(() => inspector.ReadPath(button, new[] { path[0], Property("X") }, registry, dispatcher, CancellationToken.None));
+            });
+        }
+        [Fact]
         public void ReadsScalarsAndProtectsSensitiveGetters()
         {
             Sta(() =>

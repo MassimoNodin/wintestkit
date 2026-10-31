@@ -106,7 +106,7 @@ public class RequestDispatcherTests
 
     private static JsonObjectNode QueryParams(string scope = "allRoots", int limit = 200, int depth = 256, int timeout = 1000, string predicates = "[]")
     {
-        string json = $"{{\"locator\":{{\"scope\":{{\"kind\":\"{scope}\"}},\"tree\":\"logical\",\"predicates\":{predicates},\"depth\":{depth},\"limit\":{limit}}},\"timeoutMs\":{timeout}}}";
+        string json = $"{{\"locator\":{{\"scope\":{{\"kind\":\"{scope}\"}},\"tree\":\"logical\",\"predicates\":{predicates},\"depth\":{depth},\"depthMode\":\"tree\",\"limit\":{limit}}},\"timeoutMs\":{timeout}}}";
         var bytes = System.Text.Encoding.UTF8.GetBytes(json);
         return (JsonObjectNode)StrictJson.Parse(bytes, 0, bytes.Length);
     }

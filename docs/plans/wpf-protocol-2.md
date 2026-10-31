@@ -37,10 +37,14 @@ type and dispatcherId. Handles are session-bound and stale handles fail `objectS
   children, deduplicating by identity across the traversal; each category follows WPF enumeration
   order. Item searches use their container’s Items enumeration order.
 * `Locator` is `{scope:Scope,tree:"visual"|"logical"|"combined",predicates:Predicate[],
-  depth:integer,index?:integer,limit:integer}`. Predicates are ANDed, 0–32 entries; depth is
+  depth:integer,depthMode:"tree"|"peers",index?:integer,limit:integer}`. Predicates are ANDed, 0–32 entries; depth is
   0–256, index is zero-based 0–9999, limit is 1–200. Tree defaults to combined, depth to
   256, limit to 100 when omitted by the caller before serialization. Index selects after
-  filtering, in traversal order. A request always carries all required fields.
+  filtering, in traversal order. A request always carries all required fields. In tree mode depth
+  counts tree edges. In peers mode the scope root is peer depth 0; every other object has
+  peer depth equal to the number of peer-bearing objects on the path from the root (exclusive)
+  to that object (inclusive). Objects at peer depth at most depth are visited and matched,
+  including peerless objects; traversal stops below a peer-bearing object at the depth limit.
 * A predicate path whose first member is absent on an object's runtime type does not match that object.
 * `Predicate` is one of `{kind:"equals",path:PathSegment[],value:Scalar}`,
   `{kind:"regex",path:PathSegment[],pattern:string,flags:string[]}` or
@@ -57,6 +61,8 @@ type and dispatcherId. Handles are session-bound and stale handles fail `objectS
   Unicode categories and other constructs, malformed patterns and flags fail `invalidParams`.
   Validate before matching and implement equivalent anchor and case behavior. `assignableTo` implements `type:Is` using already loaded type
   metadata, never loading a type. Exact type matching uses equality on `type:FullName`.
+  The read and element.readBatch methods also accept these single-segment UIA paths; no peer
+  yields an unavailable Value, subject to the same redaction rules.
   UIA-equivalent paths use one segment `{kind:"uia",name:...}` with name exactly
   `automation_id`, `name`, `class_name`, or `control_type`. The agent computes automation_id
   from AutomationProperties.AutomationId then x:Name, name and control_type from the peer,
@@ -235,3 +241,5 @@ explicit `backend: uia` keep the UIA backend.
 9. ElementState carries an optional uiaRuntimeId so phase 1 can act on WPF matches through UIA.
 
 10. A predicate path whose first member is absent on an object's runtime type does not match that object.
+
+11. depthMode peers counts depth in automation-peer-bearing objects so depth= means the same on the UIA and WPF backends.
