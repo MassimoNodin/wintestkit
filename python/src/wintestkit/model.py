@@ -47,7 +47,7 @@ from wintestkit.engine.locator import (
     match_value,
 )
 from wintestkit.engine.properties import WhereValue, normalize_where
-from wintestkit.engine.resolve import Scope, resolve, resolve_all, resolve_window
+from wintestkit.engine.resolve import Scope, resolve, resolve_all, resolve_window, wait_link
 from wintestkit.engine.waits import State
 from wintestkit.errors import (
     ActionError,
@@ -701,8 +701,21 @@ class _BoundBase:
         """Wait until the element reaches ``state`` and return ``self``."""
         __tracebackhide__ = True
         try:
+
+            def get() -> TargetElement | None:
+                __tracebackhide__ = True
+                if isinstance(self, BoundControl):
+                    eligible, element = wait_link(_scope(self.page), self.locator, state)
+                    if eligible:
+                        if element is not None:
+                            runtime.record_backend(element)
+                        if element is not None and self.definition.validate:
+                            self.check_type(element)
+                        return element
+                return self.resolve_once()
+
             waits.wait_for_state(
-                self.resolve_once,
+                get,
                 state,
                 self._timeout(timeout),
                 f"{self._description()} to be {state}",
@@ -755,7 +768,9 @@ class BoundWindow(_BoundBase):
 
     def resolve_once(self) -> UIAElement:
         __tracebackhide__ = True
-        return resolve_window(self.page.app, self.locator)
+        element = resolve_window(self.page.app, self.locator)
+        runtime.record_backend(element)
+        return element
 
     @property
     def title(self) -> str:
@@ -882,6 +897,7 @@ class BoundControl(_BoundBase):
     def resolve_once(self) -> TargetElement:
         __tracebackhide__ = True
         element = resolve(_scope(self.page), self.locator)
+        runtime.record_backend(element)
         if self.definition.validate:
             self.check_type(element)
         return element
@@ -1307,7 +1323,10 @@ class BoundElements:
 
     def resolve_all(self) -> list[TargetElement]:
         __tracebackhide__ = True
-        return resolve_all(_scope(self.page), self.locator)
+        elements = resolve_all(_scope(self.page), self.locator)
+        if elements:
+            runtime.record_backend(elements[0])
+        return elements
 
     def count(self, *, timeout: float = 0) -> int:
         """Number of matches; waits up to ``timeout`` seconds for at least one.

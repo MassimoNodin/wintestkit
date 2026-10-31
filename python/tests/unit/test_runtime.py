@@ -258,3 +258,13 @@ def test_bad_config_surfaces_config_error(monkeypatch: pytest.MonkeyPatch, tmp_p
     monkeypatch.chdir(tmp_path)
     with pytest.raises(ConfigError):
         runtime.get_config()
+
+
+def test_step_records_resolved_backend() -> None:
+    from wintestkit.backends.element import WpfElement
+
+    with runtime.step("test", "target", "locator") as record:
+        runtime.record_backend(object())
+        assert record.to_dict()["backend"] == "uia"
+        runtime.record_backend(object.__new__(WpfElement))
+        assert record.to_dict()["backend"] == "wpf"

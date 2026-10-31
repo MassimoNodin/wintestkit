@@ -49,6 +49,7 @@ class StepRecord:
     status: Literal["passed", "failed"] = "passed"
     error: dict[str, Any] | None = None
     screenshot: str | None = None
+    backend: Literal["uia", "wpf"] | None = None
     sensitive: bool = field(default=False, repr=False)
 
     def set_arguments(self, args: Mapping[str, Any], *, secret: bool) -> None:
@@ -70,11 +71,25 @@ class StepRecord:
             "duration": self.duration,
             "status": self.status,
         }
+        if self.backend is not None:
+            data["backend"] = self.backend
         if self.error is not None:
             data["error"] = self.error
         if self.screenshot is not None:
             data["screenshot"] = self.screenshot
         return data
+
+
+_current_step: ContextVar[StepRecord | None] = ContextVar("wtk_step", default=None)
+
+
+def record_backend(element: object) -> None:
+    __tracebackhide__ = True
+    from wintestkit.backends.element import WpfElement
+
+    record = _current_step.get()
+    if record is not None:
+        record.backend = "wpf" if isinstance(element, WpfElement) else "uia"
 
 
 StepListener = Callable[[StepRecord], None]
@@ -451,6 +466,7 @@ class _StepContext:
     def __enter__(self) -> StepRecord:
         __tracebackhide__ = True
         self._started = time.perf_counter()
+        self._token = _current_step.set(self._record)
         return self._record
 
     def __exit__(
@@ -460,6 +476,7 @@ class _StepContext:
         tb: TracebackType | None,
     ) -> None:
         __tracebackhide__ = True
+        _current_step.reset(self._token)
         record = self._record
         record.duration = time.perf_counter() - self._started
         if exc is not None:

@@ -320,3 +320,93 @@ def test_large_mapping_latency(owned):
         f"WPF_RESOLVE_AS_UIA median={statistics.median(samples):.2f}ms p95={sorted(samples)[-1]:.2f}ms samples={samples}",
         flush=True,
     )
+
+
+def test_auto_backend_waits_for_delayed_appearance(owned, monkeypatch):
+    import ctypes
+    import json
+    import threading
+
+    from wintestkit.expect import expect
+    from wintestkit.inspector.client import InspectorClient
+    from wintestkit.inspector.pipe import WindowsPipe, _api
+    from wintestkit.model import Element, Page
+
+    scope, path = owned
+
+    class FixturePage(Page):
+        dynamic = Element(automation_id="Dynamic73")
+
+    page = FixturePage(scope.app)
+    calls = []
+    original = InspectorClient.wait_until
+
+    def recorded(self, condition, *, timeout_ms, deadline):
+        calls.append(condition.kind)
+        return original(self, condition, timeout_ms=timeout_ms, deadline=deadline)
+
+    monkeypatch.setattr(InspectorClient, "wait_until", recorded)
+
+    def appear():
+        time.sleep(0.5)
+        handle = _api().CreateFileW(
+            rf"\\.\pipe\WinTestKit.Fixture.{scope.app.pids[0]}",
+            0xC0000000,
+            0,
+            None,
+            3,
+            0x40000000,
+            None,
+        )
+        assert handle != ctypes.c_void_p(-1).value
+        pipe = WindowsPipe(handle)
+        try:
+            deadline = time.monotonic() + 2
+            pipe.write(
+                json.dumps({"cmd": "scenario", "name": "addDynamic", "value": 73}).encode() + b"\n",
+                deadline,
+            )
+            while pipe.read_exact(1, deadline) != b"\n":
+                pass
+        finally:
+            pipe.close()
+
+    with runtime.config_scope(replace(config(path, "agent"), backend="auto")):
+        resolve(scope, Locator(automation_id="FixtureControl"))
+        thread = threading.Thread(target=appear)
+        thread.start()
+        page.dynamic.wait_for("attached", timeout=10)
+        thread.join()
+        expect(page.dynamic, timeout=5).to_exist()
+        expect(page.dynamic, timeout=5).to_be_enabled()
+        assert "exists" in calls and "enabled" in calls
+
+
+def test_auto_expect_missing_message_matches_uia(owned):
+    from wintestkit.expect import expect
+    from wintestkit.model import Element, Page
+
+    scope, path = owned
+
+    class FixturePage(Page):
+        missing = Element(automation_id="NeverAppears")
+
+    page = FixturePage(scope.app)
+    messages = []
+    for backend in ("uia", "auto"):
+        with runtime.config_scope(replace(config(path, "agent"), backend=backend)):
+            resolve(scope, Locator(automation_id="FixtureControl"))
+            with pytest.raises(AssertionError) as error:
+                expect(page.missing, timeout=2).to_exist()
+            messages.append(str(error.value))
+    assert messages[0] == messages[1]
+
+    from wintestkit.errors import LocatorError
+
+    diagnostics = []
+    for backend in ("uia", "auto"):
+        with runtime.config_scope(replace(config(path, "agent"), backend=backend)):
+            with pytest.raises(LocatorError) as error:
+                page.missing.wait_for("attached", timeout=2)
+            diagnostics.append(str(error.value))
+    assert diagnostics[0] == diagnostics[1]

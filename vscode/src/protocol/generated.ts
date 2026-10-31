@@ -2876,6 +2876,7 @@ export interface StepEvent {
   start: number;
   duration: number;
   status: "passed" | "failed";
+  backend?: "uia" | "wpf";
   error?: ErrorInfo;
   screenshot?: string;
 }

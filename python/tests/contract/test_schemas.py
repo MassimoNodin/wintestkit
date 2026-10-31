@@ -476,6 +476,16 @@ def test_open_argument_map(validate: Validate) -> None:
         validate("step.schema.json", "StepEvent", step)
 
 
+def test_step_backend_contract(validate: Validate) -> None:
+    step = fixture_data("step.json")
+    for backend in ("uia", "wpf"):
+        step["backend"] = backend
+        validate("step.schema.json", "StepEvent", step)
+    step["backend"] = "other"
+    with pytest.raises(ValidationError):
+        validate("step.schema.json", "StepEvent", step)
+
+
 def test_report_metadata_fields(validate: Validate) -> None:
     results = fixture_data("results.json")
     results.update(root="C:/project", command="pytest -q")

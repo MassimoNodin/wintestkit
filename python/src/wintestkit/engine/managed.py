@@ -39,6 +39,18 @@ def query_budget(deadline: float | None = None) -> Generator[None]:
         _budget.reset(token)
 
 
+@contextmanager
+def diagnostic_query_budget() -> Generator[None]:
+    """Allow one final resolution to construct a diagnostic after the wait deadline."""
+    __tracebackhide__ = True
+    token = _budget.set(None)
+    try:
+        with query_budget():
+            yield
+    finally:
+        _budget.reset(token)
+
+
 def locator_deadline() -> float:
     """Compute a default only when a query actually needs managed inspection."""
     __tracebackhide__ = True

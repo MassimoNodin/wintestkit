@@ -399,3 +399,23 @@ def test_window_target(
     expect(page.window).to_be_visible()
     expect(page.window).to_have_text("WTK Demo")
     assert steps[0].locator == 'Window[title="WTK Demo"]'
+
+
+@pytest.mark.parametrize(
+    "method,state",
+    [("to_exist", "attached"), ("to_be_visible", "visible"), ("to_be_enabled", "enabled")],
+)
+def test_positive_expectations_use_agent_wait(steps, page, world, monkeypatch, method, state):
+    import importlib
+
+    expectation = importlib.import_module("wintestkit.expect")
+    calls = []
+
+    def agent(scope, locator, requested):
+        calls.append(requested)
+        return True, world.element
+
+    monkeypatch.setattr(expectation, "wait_link", agent)
+    getattr(expect(page.status), method)()
+    assert calls == [state]
+    assert steps[-1].backend == "uia"
