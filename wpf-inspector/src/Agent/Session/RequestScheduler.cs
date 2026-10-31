@@ -11,6 +11,7 @@ namespace WinTestKit.Inspector.Agent.Session
         private sealed class Work
         {
             public long Id;
+            public bool IsWait;
             public Func<CancellationToken, Task<JsonNode>> Operation = null!;
             public readonly CancellationTokenSource Cancellation = new CancellationTokenSource();
             public readonly TaskCompletionSource<JsonNode> Completion = new TaskCompletionSource<JsonNode>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -22,6 +23,7 @@ namespace WinTestKit.Inspector.Agent.Session
         private readonly LinkedList<Work> queue = new LinkedList<Work>();
         private readonly int timeout;
         private int active;
+        private int activeWaits;
         private bool disposed;
 
         public RequestScheduler(int timeoutMs) { timeout = Math.Min(ProtocolLimits.RequestTimeoutMs, Math.Max(1, timeoutMs)); }
@@ -30,14 +32,14 @@ namespace WinTestKit.Inspector.Agent.Session
 
         public Task<JsonNode> ExecuteAsync(RequestEnvelope request, Func<CancellationToken, Task<JsonNode>> operation, CancellationToken ct)
         {
-            var work = new Work { Id = request.Id, Operation = operation };
+            var work = new Work { Id = request.Id, Operation = operation, IsWait = request.Method == PipeMethods.WaitUntil };
             lock (gate)
             {
                 if (disposed || ct.IsCancellationRequested) return Task.FromCanceled<JsonNode>(new CancellationToken(true));
-                if (active >= ProtocolLimits.MaxActivePerSession && queue.Count >= ProtocolLimits.MaxQueuedOps)
+                if ((active >= ProtocolLimits.MaxActivePerSession || work.IsWait && activeWaits >= ProtocolLimits.MaxActivePerSession - 1) && queue.Count >= ProtocolLimits.MaxQueuedOps)
                     return Task.FromException<JsonNode>(new ProtocolException(ErrorCodes.Busy, "Queue full."));
                 pending.Add(work.Id, work);
-                if (active < ProtocolLimits.MaxActivePerSession) Start(work);
+                if (active < ProtocolLimits.MaxActivePerSession && (!work.IsWait || activeWaits < ProtocolLimits.MaxActivePerSession - 1)) Start(work);
                 else work.Node = queue.AddLast(work);
             }
             _ = ExpireAsync(work, ct);
@@ -64,7 +66,7 @@ namespace WinTestKit.Inspector.Agent.Session
         {
             using (var registration = ct.Register(() => Finish(work.Id, ErrorCodes.Cancelled)))
             {
-                var delay = Task.Delay(timeout);
+                var delay = Task.Delay(timeout + (work.IsWait ? 50 : 0));
                 if (await Task.WhenAny(work.Completion.Task, delay).ConfigureAwait(false) == delay)
                     Finish(work.Id, ErrorCodes.Timeout);
             }
@@ -73,6 +75,7 @@ namespace WinTestKit.Inspector.Agent.Session
         private void Start(Work work)
         {
             active++;
+            if (work.IsWait) activeWaits++;
             _ = Task.Run(async () =>
             {
                 try
@@ -89,10 +92,13 @@ namespace WinTestKit.Inspector.Agent.Session
                     lock (gate)
                     {
                         active--;
-                        if (!disposed && queue.First != null)
+                        if (work.IsWait) activeWaits--;
+                        var node = queue.First;
+                        while (node != null && node.Value.IsWait && activeWaits >= ProtocolLimits.MaxActivePerSession - 1) node = node.Next;
+                        if (!disposed && node != null)
                         {
-                            var next = queue.First.Value;
-                            queue.RemoveFirst(); next.Node = null; Start(next);
+                            var next = node.Value;
+                            queue.Remove(node); next.Node = null; Start(next);
                         }
                     }
                 }

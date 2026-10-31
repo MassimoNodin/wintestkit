@@ -282,7 +282,7 @@ def test_read_uia_path() -> None:
 def test_protocol2_query_and_state_requests() -> None:
     from pathlib import Path
 
-    from wintestkit.inspector.models import ElementState, Locator, Scope
+    from wintestkit.inspector.models import ElementState, Locator, Scope, WaitCondition
 
     fixture = json.loads(
         (
@@ -300,6 +300,11 @@ def test_protocol2_query_and_state_requests() -> None:
             "query.find": {"match": state.handle.to_json()},
             "query.findAll": {"matches": [state.handle.to_json()], "complete": True},
             "state.get": {"state": state.to_json()},
+            "wait.until": {
+                "satisfied": True,
+                "handle": state.handle.to_json(),
+                "state": state.to_json(),
+            },
             "session.close": {"closed": True},
         }[method]
         return {"id": request["id"], "result": result}
@@ -313,10 +318,14 @@ def test_protocol2_query_and_state_requests() -> None:
             state.handle,
         )
         assert client.state_get(state.handle, timeout_ms=2000, deadline=deadline) == state
+        assert client.wait_until(
+            WaitCondition("exists", locator), timeout_ms=2000, deadline=deadline
+        ).satisfied
         assert [r["method"] for r in transport.requests] == [
             "query.find",
             "query.findAll",
             "state.get",
+            "wait.until",
         ]
         assert all(1 <= r["params"]["timeoutMs"] <= 1000 for r in transport.requests)
     finally:

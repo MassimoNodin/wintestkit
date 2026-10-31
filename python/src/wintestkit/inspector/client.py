@@ -33,6 +33,8 @@ from wintestkit.inspector.models import (
     QueryFindResult,
     Session,
     Value,
+    WaitCondition,
+    WaitResult,
     parse_path,
 )
 from wintestkit.inspector.models import array_value as _array
@@ -430,6 +432,34 @@ class InspectorClient:
             return result
 
         return self._parse(parse, self._query("query.findAll", locator, timeout_ms, deadline))
+
+    def wait_until(
+        self, condition: WaitCondition, *, timeout_ms: int, deadline: float
+    ) -> WaitResult:
+        self._feature("waits")
+        self._object_ref(condition.locator.scope.handle)
+        try:
+            wire = WaitCondition.from_json(condition.to_json()).to_json()
+        except (ValueError, TypeError) as error:
+            raise InspectorError("Invalid wait condition", code="invalidParams") from error
+
+        def parse(value: object) -> WaitResult:
+            result = WaitResult.from_json(value)
+            self._object_ref(result.handle)
+            if result.state is not None:
+                self._object_ref(result.state.handle)
+                if result.state.handle != result.handle:
+                    raise ValueError("Mismatched state handle")
+            return result
+
+        return self._parse(
+            parse,
+            self._request(
+                "wait.until",
+                {"condition": wire, "timeoutMs": self._timed_params(timeout_ms, deadline)},
+                deadline,
+            ),
+        )
 
     def state_get(self, handle: ObjectRef, *, timeout_ms: int, deadline: float) -> ElementState:
         self._feature("geometry")

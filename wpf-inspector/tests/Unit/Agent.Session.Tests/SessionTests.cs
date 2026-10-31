@@ -212,6 +212,7 @@ public class SessionTests
         var response = HelloResult.FromJson(ResponseEnvelope.FromJson(StrictJson.Parse(bytes, 0, bytes.Length)).Result!);
         Assert.Equal(available, response.Features.Contains(Features.ExactUiaMapping));
         Assert.Contains(Features.Query, response.Features);
+        Assert.Contains(Features.Waits, response.Features);
         await FrameCodec.WriteFrameAsync(client, StrictJson.Serialize(new RequestEnvelope { Id = 2, Method = PipeMethods.Close }.ToJson()), timeout.Token);
         await FrameCodec.ReadFrameAsync(client, timeout.Token);
         await serving.WaitAsync(timeout.Token);

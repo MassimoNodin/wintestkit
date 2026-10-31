@@ -10,12 +10,13 @@ using WinTestKit.Inspector.Agent.Contracts;
 using WinTestKit.Inspector.Agent.Mapping;
 using WinTestKit.Inspector.Agent.Query;
 using WinTestKit.Inspector.Agent.State;
+using WinTestKit.Inspector.Agent.Wait;
 using WinTestKit.Inspector.Agent.Inspection.Members;
 using WinTestKit.Inspector.Protocol;
 
 namespace WinTestKit.Inspector.Agent.Inspection
 {
-    public sealed class WpfInspectionService : IInspectionService, IExactMappingCapability, IQueryInspectionService, IStateInspectionService
+    public sealed class WpfInspectionService : IInspectionService, IExactMappingCapability, IQueryInspectionService, IStateInspectionService, IWaitInspectionService
     {
         private readonly DispatcherExecutor executor;
         private readonly ObjectRegistry registry;
@@ -42,6 +43,9 @@ namespace WinTestKit.Inspector.Agent.Inspection
         }
 
         public bool ExactMappingAvailable => mapper.IsAvailable;
+
+        public Task<WaitUntilResult> WaitUntilAsync(WaitCondition condition, DateTime deadline, int timeoutMs, CancellationToken ct) =>
+            RunAsync(token => new WaitEngine(query, executor, registry, inspector as ObjectInspector ?? new ObjectInspector(), adapter).UntilAsync(condition, deadline, timeoutMs, token), ct);
 
         public Task<StateGetResult> GetStateAsync(ObjectRef handle, DateTime deadline, int timeoutMs, CancellationToken ct) => RunAsync(async token =>
         {

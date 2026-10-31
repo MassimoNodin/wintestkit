@@ -12,6 +12,25 @@ namespace WinTestKit.Inspector.Agent.Session.Tests;
 [Trait("Category", "Unit")]
 public class RequestSchedulerTests
 {
+    [Fact]
+    public async Task WaitsLeaveCapacityForReads()
+    {
+        using var scheduler = new RequestScheduler(2000);
+        var release = new TaskCompletionSource<JsonNode>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var started = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        int count = 0;
+        var waits = Enumerable.Range(1, 4).Select(id => scheduler.ExecuteAsync(new RequestEnvelope { Id = id, Method = PipeMethods.WaitUntil }, async ct =>
+        {
+            if (Interlocked.Increment(ref count) == 3) started.TrySetResult(true);
+            return await release.Task;
+        }, default)).ToArray();
+        await started.Task.WaitAsync(TimeSpan.FromSeconds(1));
+        var read = scheduler.ExecuteAsync(Request(5), ct => Task.FromResult<JsonNode>(JsonNullNode.Instance), default);
+        await read.WaitAsync(TimeSpan.FromSeconds(1));
+        Assert.Equal(3, count);
+        release.SetResult(JsonNullNode.Instance);
+        await Task.WhenAll(waits);
+    }
     private static RequestEnvelope Request(long id) => new() { Id = id, Method = PipeMethods.Roots };
     private static async Task<string> Error(Task<JsonNode> task) => (await Assert.ThrowsAsync<ProtocolException>(async () => await task)).Code;
 
