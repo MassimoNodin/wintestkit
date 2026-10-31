@@ -113,6 +113,10 @@ class UIAError(WtkError):
         self.element_gone = element_gone
 
 
+class NoUiaPeerError(UIAError):
+    """An operation requires a UI Automation peer that is not available."""
+
+
 class ElementTypeError(ActionError):
     """The element found does not fit the type it was declared as (``ComboBox``, ``Button`` ...)."""
 
