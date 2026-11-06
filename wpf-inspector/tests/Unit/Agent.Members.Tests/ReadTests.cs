@@ -106,6 +106,48 @@ namespace WinTestKit.Inspector.Agent.Members.Tests
                     Assert.Equal("unavailable", Read(new System.Windows.Controls.Border(), name).Status);
             });
         }
+        private static string SelectionDiagnostics(System.Windows.Controls.Primitives.Selector selector, System.Windows.Window window, string member, ValueDto actual)
+        {
+            string Describe(Func<object?> action)
+            {
+                try { object? value = action(); return value == null ? "null" : value.ToString() ?? "null"; }
+                catch (Exception ex) { return ex.GetType().FullName + ": " + ex.Message; }
+            }
+            System.Windows.Automation.Peers.AutomationPeer? existing = null, peer = null;
+            string existingDescription = Describe(() => { existing = System.Windows.Automation.Peers.UIElementAutomationPeer.FromElement(selector); return existing?.GetType().FullName; });
+            string createdDescription = Describe(() => { peer = System.Windows.Automation.Peers.UIElementAutomationPeer.CreatePeerForElement(selector); return peer?.GetType().FullName; });
+            peer = existing ?? peer;
+            object? pattern = null;
+            string patternDescription = Describe(() => { pattern = peer?.GetPattern(System.Windows.Automation.Peers.PatternInterface.Selection); return pattern?.GetType().FullName; });
+            string childrenDescription = Describe(() => peer?.GetChildren()?.Count);
+            System.Windows.Automation.Provider.IRawElementProviderSimple[]? selected = null;
+            string selectionDescription = Describe(() =>
+            {
+                if (!(pattern is System.Windows.Automation.Provider.ISelectionProvider provider)) return "no ISelectionProvider";
+                selected = provider.GetSelection();
+                return selected == null ? "null" : "length=" + selected.Length;
+            });
+            string conversionDescription = Describe(() =>
+            {
+                if (selected == null || selected.Length == 0 || peer == null) return "no selected provider";
+                var method = typeof(System.Windows.Automation.Peers.AutomationPeer).GetMethod("PeerFromProvider", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+                var itemPeer = method.Invoke(peer, new object[] { selected[0] }) as System.Windows.Automation.Peers.AutomationPeer;
+                return itemPeer == null ? "null peer" : itemPeer.GetType().FullName + ", name=" + itemPeer.GetName();
+            });
+            string path = peer == null ? "peer null -> unavailable" : !(pattern is System.Windows.Automation.Provider.ISelectionProvider) ? "Selection pattern is not ISelectionProvider -> unavailable" :
+                member == "selection_count" ? "GetSelection length -> result (exception -> exception)" : "out of range or PeerFromProvider/GetName null -> unavailable (exception -> exception)";
+            return "member=" + member + ", status=" + actual.Status + ", reproduced path=" + path +
+                "; FromElement=" + existingDescription + "; CreatePeerForElement=" + createdDescription +
+                "; Selection pattern=" + patternDescription + "; GetChildren count=" + childrenDescription +
+                "; GetSelection=" + selectionDescription + "; PeerFromProvider=" + conversionDescription +
+                "; ClientsAreListening=" + System.Windows.Automation.Provider.AutomationInteropProvider.ClientsAreListening +
+                "; SelectedIndex=" + selector.SelectedIndex + "; SelectedItem=" + Describe(() => selector.SelectedItem) +
+                "; HwndSource=" + (System.Windows.PresentationSource.FromVisual(window) is System.Windows.Interop.HwndSource);
+        }
+        private static void AssertSelectionOk(System.Windows.Controls.Primitives.Selector selector, System.Windows.Window window, string member, ValueDto actual)
+        {
+            Assert.True(actual.Status == "ok", actual.Status == "ok" ? null : SelectionDiagnostics(selector, window, member, actual));
+        }
         [Fact]
         public void ReadsSelectionProviderNamesWithoutJoining()
         {
@@ -117,9 +159,9 @@ namespace WinTestKit.Inspector.Agent.Members.Tests
                 combo.Items.Add(new System.Windows.Controls.ComboBoxItem { Content = "first,\nsecond" });
                 var window = new System.Windows.Window { Content = combo }; window.Show(); window.UpdateLayout();
                 combo.SelectedIndex = 0; window.UpdateLayout();
-                var count = Read(combo, "selection_count"); Assert.Equal("ok", count.Status);
+                var count = Read(combo, "selection_count"); AssertSelectionOk(combo, window, "selection_count", count);
                 Assert.Equal("1", ((JsonNumberNode)count.Scalar!).RawText);
-                var name = Read(combo, "selection_name_0"); Assert.Equal("ok", name.Status);
+                var name = Read(combo, "selection_name_0"); AssertSelectionOk(combo, window, "selection_name_0", name);
                 Assert.Equal("first,\nsecond", ((JsonStringNode)name.Scalar!).Value);
                 Assert.Equal("unavailable", Read(combo, "selection_name_1").Status);
                 Assert.Equal("unavailable", Read(new System.Windows.Controls.Button(), "selection_count").Status); window.Close();
@@ -138,9 +180,9 @@ namespace WinTestKit.Inspector.Agent.Members.Tests
                 window.Show(); window.UpdateLayout();
                 list.SelectedIndex = 199;
                 Assert.Null(list.ItemContainerGenerator.ContainerFromIndex(199));
-                var count = Read(list, "selection_count"); Assert.Equal("ok", count.Status);
+                var count = Read(list, "selection_count"); AssertSelectionOk(list, window, "selection_count", count);
                 Assert.Equal("1", ((JsonNumberNode)count.Scalar!).RawText);
-                var name = Read(list, "selection_name_0"); Assert.Equal("ok", name.Status);
+                var name = Read(list, "selection_name_0"); AssertSelectionOk(list, window, "selection_name_0", name);
                 Assert.Equal("Item 199", ((JsonStringNode)name.Scalar!).Value);
                 Assert.Null(list.ItemContainerGenerator.ContainerFromIndex(199));
                 window.Close();
