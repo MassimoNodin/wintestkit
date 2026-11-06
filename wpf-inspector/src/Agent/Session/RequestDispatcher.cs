@@ -127,6 +127,9 @@ namespace WinTestKit.Inspector.Agent.Session
                 case PipeMethods.ActCollapse:
                 case PipeMethods.ActSelect:
                 case PipeMethods.ActScrollIntoView:
+                    if (!(service is IActionInspectionService actionService)) throw new ProtocolException(ErrorCodes.UnsupportedTarget, "Feature not available.");
+                    var action = StateGetParams.FromJson(request.Params);
+                    return (await actionService.ActAsync(request.Method, action.Handle, deadline, action.TimeoutMs, ct).ConfigureAwait(false)).ToJson();
                 case PipeMethods.ActSetValue:
                 case PipeMethods.ActSetRange:
                 case PipeMethods.ActScroll:

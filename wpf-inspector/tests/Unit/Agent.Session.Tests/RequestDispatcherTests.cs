@@ -233,6 +233,25 @@ public class RequestDispatcherTests
         else Assert.Equal(ErrorCodes.InvalidParams, response.Error!.Code);
     }
 
+    [Fact]
+    public async Task ActionRoutesAndPreservesHandle()
+    {
+        var service = new ActionService();
+        var response = await Dispatch(new RequestDispatcher(Session, service), PipeMethods.ActToggle, new StateGetParams { Handle = StateService.Handle, TimeoutMs = 500 }.ToJson());
+        Assert.Equal(PipeMethods.ActToggle, service.Method);
+        Assert.Equal(StateService.Handle.ObjectId, ActResult.FromJson(response.Result!).Handle.ObjectId);
+    }
+
+    private sealed class ActionService : RecordingService, IActionInspectionService
+    {
+        public string? Method { get; private set; }
+        public Task<ActResult> ActAsync(string method, ObjectRef handle, DateTime deadline, int timeoutMs, CancellationToken ct)
+        {
+            Method = method;
+            return Task.FromResult(new ActResult { Outcome = ActionOutcome.Performed, Handle = handle });
+        }
+    }
+
     private sealed class WaitService : RecordingService, IWaitInspectionService
     {
         public Task<WaitUntilResult> WaitUntilAsync(WaitCondition condition, DateTime deadline, int timeoutMs, CancellationToken ct) =>

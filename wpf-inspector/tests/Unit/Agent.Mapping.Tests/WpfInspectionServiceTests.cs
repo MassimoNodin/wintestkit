@@ -249,6 +249,7 @@ namespace WinTestKit.Inspector.Agent.Mapping.Tests
                 Assert.Equal(keys, inspector.BindingKeys);
                 await Error(ErrorCodes.ObjectStale, () => service.ReadAsync(root.ObjectId, root.Generation + 1, Paths("A"), None));
                 Assert.Equal(1, await service.ReleaseAsync(new[] { root.ObjectId, root.ObjectId, "unknown" }, None));
+                await Error(ErrorCodes.ObjectStale, () => service.ActAsync(PipeMethods.ActFocus, root, DateTime.UtcNow.AddSeconds(1), 1000, None));
                 Assert.Equal(0, await service.ReleaseAsync(new[] { root.ObjectId }, None));
                 await Error(ErrorCodes.ObjectStale, () => service.ReadAsync(root.ObjectId, root.Generation, Paths("A"), None));
                 await Error(ErrorCodes.ObjectStale, () => service.BindingsAsync(root.ObjectId, root.Generation, keys, None));
