@@ -11,6 +11,7 @@
     <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" PrivateAssets="all" />
     <ProjectReference Include="../../../src/Protocol/Protocol.csproj" />
     <Compile Include="../../../src/Agent/Query/*.cs" LinkBase="Query" />
+    <Compile Include="../../../src/Agent/Actions/RealizeItemEngine.cs" Link="RealizeItemEngine.cs" />
     <Compile Include="../../../src/Agent/Mapping/TreeWalker.cs" Link="TreeWalker.cs" />
     <Compile Include="../../../src/Agent/Inspection/DispatcherExecutor.cs" Link="DispatcherExecutor.cs" />
     <Compile Include="../../../src/Agent/Inspection/ObjectRegistry.cs" Link="ObjectRegistry.cs" />

@@ -47,6 +47,8 @@ def owned(tmp_path, monkeypatch, request):
         + (
             ["--scenario", "openLarge"]
             if "large" in request.node.name
+            else ["--scenario", "openVirtualItems"]
+            if "virtual_items" in request.node.name
             else ["--scenario", "openPopup"]
             if "popup" in request.node.name
             else []
@@ -84,6 +86,51 @@ def config(path, mode):
     return load_config(
         path, {"inspector.enabled": True, "inspector.attach": "on-demand", "inspector.query": mode}
     )
+
+
+def test_virtual_items_realization(owned):
+    from wintestkit.inspector.models import ItemMatch
+
+    scope, path = owned
+    with runtime.config_scope(config(path, "agent")):
+        deadline = time.monotonic() + 10
+        while True:
+            windows = [
+                window
+                for window in scope.app.top_level_windows()
+                if window.automation_id == "VirtualItemsWindow"
+            ]
+            if windows:
+                break
+            assert time.monotonic() < deadline
+            time.sleep(0.1)
+        root = windows[0]
+        client = runtime.managed_client_for(
+            root.process_id, deadline=deadline, target_hwnd=root.native_window_handle
+        )
+        rid, hwnd = runtime.managed_element_identity(root)
+        mapping = client.resolve(rid, hwnd, deadline=deadline)
+        assert mapping.object_ref is not None
+        for automation_id in ("VirtualItemsList", "VirtualItemsGrid"):
+            locator = Locator(automation_id=automation_id)
+            constraints = resolve_where(locator.where, locator.describe_link(), locator.taken())
+            wire = replace(
+                translate(locator, constraints, mapping.object_ref),
+                scope=WireScope("object", mapping.object_ref),
+            )
+            container = client.query_find(
+                wire, timeout_ms=2000, deadline=time.monotonic() + 5
+            ).match
+            result = client.act_realize_item(
+                container,
+                ItemMatch("index", index=4999),
+                max_items=5000,
+                timeout_ms=2000,
+                deadline=time.monotonic() + 5,
+            )
+            state = client.state_get(result.handle, timeout_ms=2000, deadline=time.monotonic() + 5)
+            assert state.bounds is not None and state.bounds.width > 0 and state.bounds.height > 0
+            assert not state.offscreen
 
 
 @pytest.mark.parametrize("backend", ["uia", "auto"])

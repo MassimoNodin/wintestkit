@@ -17,6 +17,7 @@ using Xunit.Abstractions;
 namespace WinTestKit.Inspector.Agent.Query.Tests
 {
     [Trait("Category", "Unit")]
+    [Collection("Wpf windows")]
     public sealed class QueryEngineTests
     {
         private readonly ITestOutputHelper output;
