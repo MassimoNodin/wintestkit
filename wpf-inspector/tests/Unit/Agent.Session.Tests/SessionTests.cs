@@ -17,7 +17,6 @@ using Xunit;
 
 namespace WinTestKit.Inspector.Agent.Session.Tests;
 
-[Trait("Category", "Unit")]
 public class SessionTests
 {
     private static BootstrapSettings Settings()
@@ -32,6 +31,7 @@ public class SessionTests
             AgentVersion = typeof(EntryPoint).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()!.InformationalVersion };
     }
 
+    [Trait("Category", "Unit")]
     [Fact]
     public void ValidBootstrapIsDeleted()
     {
@@ -40,6 +40,7 @@ public class SessionTests
         finally { Directory.Delete(root, true); }
     }
 
+    [Trait("Category", "Unit")]
     [Theory]
     [InlineData("malformed")][InlineData("unknown")][InlineData("expired")][InlineData("pid")][InlineData("creation")][InlineData("version")][InlineData("oversized")]
     public void InvalidBootstrapIsDeleted(string kind)
@@ -61,12 +62,14 @@ public class SessionTests
         finally { Directory.Delete(root, true); }
     }
 
+    [Trait("Category", "Unit")]
     [Fact]
     public void OutsideRootRemainsUntouched()
     {
         var path = Path.GetTempFileName(); try { Assert.Throws<InvalidDataException>(() => BootstrapReader.Read(path, Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString()))); Assert.True(File.Exists(path)); } finally { File.Delete(path); }
     }
 
+    [Trait("Category", "Unit")]
     [Fact]
     [Trait("Category", "Security")]
     public void BootstrapFileReparsePointIsRejected()
@@ -87,6 +90,7 @@ public class SessionTests
         finally { Directory.Delete(root, true); }
     }
 
+    [Trait("Category", "Unit")]
     [Fact]
     [Trait("Category", "Security")]
     public void BootstrapParentReparsePointIsRejected()
@@ -119,14 +123,24 @@ public class SessionTests
         }
     }
 
+    [Trait("Category", "Unit")]
     [Fact]
     public void StartNeverThrowsForInvalidPaths()
     {
         Assert.Equal(1, EntryPoint.Start(null!)); Assert.Equal(1, EntryPoint.Start("")); Assert.NotEqual(0, EntryPoint.Start("bad\0path"));
     }
 
+    [Trait("Category", "Unit")]
     [Fact]
     public void StartWithValidPathReturnsPromptly()
+    {
+        var path = Path.Combine(BootstrapReader.BootstrapRoot, Guid.NewGuid() + ".json");
+        Assert.Equal(0, EntryPoint.Start(path));
+    }
+
+    [Trait("Category", "Performance")]
+    [Fact]
+    public void StartWithValidPathReturnsWithinBudget()
     {
         var path = Path.Combine(BootstrapReader.BootstrapRoot, Guid.NewGuid() + ".json");
         var timer = Stopwatch.StartNew();
@@ -136,6 +150,7 @@ public class SessionTests
         Assert.True(timer.Elapsed < TimeSpan.FromMilliseconds(100), $"Start took {timer.Elapsed}.");
     }
 
+    [Trait("Category", "Unit")]
     [Fact]
     public async Task IdleTimeoutDisposesServiceAndAllowsNewHost()
     {
@@ -153,6 +168,7 @@ public class SessionTests
         Assert.Equal(SessionState.Detached, next.State);
     }
 
+    [Trait("Category", "Unit")]
     [Fact]
     public async Task MutexRejectsConcurrentHost()
     {
@@ -166,6 +182,7 @@ public class SessionTests
         first.Dispose(); await running.WaitAsync(TimeSpan.FromSeconds(5));
     }
 
+    [Trait("Category", "Unit")]
     [Theory]
     [Trait("Category", "Security")]
     [InlineData("success")][InlineData("realSid")][InlineData("token")][InlineData("session")][InlineData("major")][InlineData("sid")][InlineData("first")]
@@ -195,6 +212,7 @@ public class SessionTests
         if (mode != "success" && mode != "realSid") { server.Dispose(); Assert.Null(await FrameCodec.ReadFrameAsync(client, timeout.Token)); }
     }
 
+    [Trait("Category", "Unit")]
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -219,6 +237,7 @@ public class SessionTests
         await serving.WaitAsync(timeout.Token);
     }
 
+    [Trait("Category", "Unit")]
     [Fact]
     [Trait("Category", "Security")]
     public async Task SecondConnectionIsRefused()
@@ -262,6 +281,7 @@ public class SessionTests
         public Task<int> ReleaseAsync(IReadOnlyList<string> objectIds, CancellationToken ct) => throw new NotSupportedException();
     }
 
+    [Trait("Category", "Unit")]
     [Theory]
     [InlineData(3)]
     [InlineData(1)]
@@ -287,6 +307,7 @@ public class SessionTests
         Assert.Null(await FrameCodec.ReadFrameAsync(client, timeout.Token));
     }
 
+    [Trait("Category", "Unit")]
     [Fact]
     public async Task RealPipeRoutesRootsAndClosesAfterResponse()
     {
@@ -310,6 +331,7 @@ public class SessionTests
         Assert.Null(await FrameCodec.ReadFrameAsync(client, timeout.Token));
     }
 
+    [Trait("Category", "Unit")]
     [Fact]
     public async Task UnadvertisedQueryIsRejectedBeforeHandler()
     {
@@ -344,6 +366,7 @@ public class SessionTests
         }
     }
 
+    [Trait("Category", "Unit")]
     [Fact]
     public async Task ConcurrentResponsesAreUniqueAndOversizedResponseIsLimited()
     {

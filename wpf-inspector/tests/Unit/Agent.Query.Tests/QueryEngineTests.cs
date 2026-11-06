@@ -16,7 +16,6 @@ using Xunit.Abstractions;
 
 namespace WinTestKit.Inspector.Agent.Query.Tests
 {
-    [Trait("Category", "Unit")]
     [Collection("Wpf windows")]
     public sealed class QueryEngineTests
     {
@@ -49,6 +48,7 @@ namespace WinTestKit.Inspector.Agent.Query.Tests
             registry.Register(target, target.Dispatcher, TypeInfoBuilder.Build(target.GetType()));
         private static DateTime Deadline => DateTime.UtcNow.AddSeconds(60);
 
+        [Trait("Category", "Unit")]
         [Theory]
         [InlineData("visual")]
         [InlineData("logical")]
@@ -87,6 +87,7 @@ namespace WinTestKit.Inspector.Agent.Query.Tests
                 }
             }
         }
+        [Trait("Category", "Unit")]
         [Fact]
         public async Task PeerDepthSkipsPeerlessContainers()
         {
@@ -118,6 +119,7 @@ namespace WinTestKit.Inspector.Agent.Query.Tests
                 }
             }
         }
+        [Trait("Category", "Unit")]
         [Fact]
         public async Task PeerDepthTraversesTemplatePresenters()
         {
@@ -153,6 +155,7 @@ namespace WinTestKit.Inspector.Agent.Query.Tests
                 }
             }
         }
+        [Trait("Category", "Unit")]
         [Fact]
         public async Task PredicateAndStaleHandling()
         {
@@ -174,6 +177,7 @@ namespace WinTestKit.Inspector.Agent.Query.Tests
                 }
             }
         }
+        [Trait("Category", "Unit")]
         [Fact]
         public async Task InterfaceShortDeadlineAndSameDispatcherRoots()
         {
@@ -220,6 +224,7 @@ namespace WinTestKit.Inspector.Agent.Query.Tests
             }
         }
 
+        [Trait("Category", "Unit")]
         [Fact]
         public async Task AllRootsAcrossDispatchers()
         {
@@ -248,6 +253,7 @@ namespace WinTestKit.Inspector.Agent.Query.Tests
             }
         }
 
+        [Trait("Category", "Unit")]
         [Fact]
         public async Task BudgetReturnsExistingMatchOrLimitExceeded()
         {
@@ -274,6 +280,7 @@ namespace WinTestKit.Inspector.Agent.Query.Tests
             }
         }
 
+        [Trait("Category", "Unit")]
         [Fact]
         public async Task LogicalOnlyChildAndWindowScope()
         {
@@ -301,6 +308,7 @@ namespace WinTestKit.Inspector.Agent.Query.Tests
             }
         }
 
+        [Trait("Category", "Unit")]
         [Fact]
         public async Task DispatcherRunsOtherWorkBetweenSlices()
         {
@@ -336,6 +344,7 @@ namespace WinTestKit.Inspector.Agent.Query.Tests
             }
         }
 
+        [Trait("Category", "Unit")]
         [Fact]
         public async Task ScanObjectCapHasNoDeadlineDetails()
         {
@@ -360,8 +369,15 @@ namespace WinTestKit.Inspector.Agent.Query.Tests
             }
         }
 
+        [Trait("Category", "Unit")]
         [Fact]
-        public async Task LargeTreeMedian()
+        public Task LargeTreeQueryCompletes() => RunLargeTreeQuery(false);
+
+        [Trait("Category", "Performance")]
+        [Fact]
+        public Task LargeTreeMedian() => RunLargeTreeQuery(true);
+
+        private async Task RunLargeTreeQuery(bool measurePerformance)
         {
             using (var ui = new Ui())
             {
@@ -377,12 +393,14 @@ namespace WinTestKit.Inspector.Agent.Query.Tests
                     var engine = new QueryEngine(executor, registry);
                     Locator locator = Scope(Register(registry, root));
                     var times = new List<long>();
-                    for (int iteration = 0; iteration < 20; iteration++)
+                    for (int iteration = 0; iteration < (measurePerformance ? 20 : 1); iteration++)
                     {
                         var timer = Stopwatch.StartNew();
-                        await engine.FindAsync(locator, Deadline, CancellationToken.None);
+                        var result = await engine.FindAsync(locator, Deadline, CancellationToken.None);
+                        Assert.NotNull(result.Match);
                         times.Add(timer.ElapsedMilliseconds);
                     }
+                    if (!measurePerformance) return;
                     times.Sort(); long median = (times[9] + times[10]) / 2;
                     output.WriteLine("5000 element median: {0} ms", median);
                     Assert.True(median < 1000);
