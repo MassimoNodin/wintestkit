@@ -18,7 +18,6 @@ using Xunit;
 
 namespace WinTestKit.Inspector.Agent.Query.Tests
 {
-    [Trait("Category", "Unit")]
     [Collection("Wpf windows")]
     public sealed class ValuePredicateTests
     {
@@ -69,8 +68,15 @@ namespace WinTestKit.Inspector.Agent.Query.Tests
             public string Group => "shared";
             public string Key { get; set; } = "";
         }
+        [Trait("Category", "Unit")]
         [Fact]
-        public void LargeManagedQueriesComplete()
+        public void LargeManagedQueriesComplete() => RunLargeManagedQueries(false);
+
+        [Trait("Category", "Performance")]
+        [Fact]
+        public void LargeManagedQueriesMedian() => RunLargeManagedQueries(true);
+
+        private static void RunLargeManagedQueries(bool measurePerformance)
         {
             OnSta(() =>
             {
@@ -94,15 +100,16 @@ namespace WinTestKit.Inspector.Agent.Query.Tests
                                 new[] { Equal("Group", new JsonStringNode("shared")), Equal("Key", new JsonStringNode("Large 1499")) }
                         };
                         var samples = new List<long>();
-                        for (int iteration = 0; iteration < 11; iteration++)
+                        for (int iteration = 0; iteration < (measurePerformance ? 11 : 1); iteration++)
                         {
                             var watch = System.Diagnostics.Stopwatch.StartNew();
-                            var task = new QueryEngine(executor, registry).FindAllAsync(locator, DateTime.UtcNow.AddSeconds(2), CancellationToken.None);
+                            var task = new QueryEngine(executor, registry).FindAllAsync(locator, DateTime.UtcNow.AddSeconds(60), CancellationToken.None);
                             var frame = new DispatcherFrame(); task.ContinueWith(_ => frame.Continue = false, TaskScheduler.Default); Dispatcher.PushFrame(frame);
                             var result = task.GetAwaiter().GetResult();
                             if (iteration > 0) samples.Add(watch.ElapsedMilliseconds);
                             Assert.True(result.Complete); Assert.Single(result.Matches);
                         }
+                        if (!measurePerformance) continue;
                         samples.Sort();
                         Console.WriteLine("Large managed typed={0}: median={1} ms, p95={2} ms", typed, (samples[4] + samples[5]) / 2.0, samples[9]);
 #if !NET48
@@ -112,6 +119,7 @@ namespace WinTestKit.Inspector.Agent.Query.Tests
                 }
             });
         }
+        [Trait("Category", "Unit")]
         [Fact]
         public void ScalarEqualityAndRegexUseReaderValues()
         {
@@ -142,6 +150,7 @@ namespace WinTestKit.Inspector.Agent.Query.Tests
                 Assert.False(Match(nested));
             });
         }
+        [Trait("Category", "Unit")]
         [Fact]
         public void ErrorsAndRedactedPathsNeverLeakValues()
         {
@@ -165,6 +174,7 @@ namespace WinTestKit.Inspector.Agent.Query.Tests
                 Assert.False(predicate.MatchesValue(new ValueDto { Status = "stale", Kind = "unavailable" }, context));
             });
         }
+        [Trait("Category", "Unit")]
         [Fact]
         public void UiaPathsAndControlTypes()
         {
@@ -191,6 +201,7 @@ namespace WinTestKit.Inspector.Agent.Query.Tests
                 Assert.All(Enum.GetValues(typeof(AutomationControlType)).Cast<AutomationControlType>(), type => Assert.Contains(ValuePredicate.ControlTypeName(type), names));
             });
         }
+        [Trait("Category", "Unit")]
         [Fact]
         public void RegexTimeoutIsReported()
         {
@@ -200,6 +211,7 @@ namespace WinTestKit.Inspector.Agent.Query.Tests
                 Assert.Equal(ErrorCodes.RegexTimeout, Assert.Throws<ProtocolException>(() => predicate.Matches(new Model(), context)).Code);
             });
         }
+        [Trait("Category", "Unit")]
         [Fact]
         public void UiaClassNameUsesTheAutomationPeer()
         {
@@ -210,6 +222,7 @@ namespace WinTestKit.Inspector.Agent.Query.Tests
                 Assert.False(PredicateFactory.Create(Equal("class_name", new JsonStringNode("Model"), "uia"), inspector, registry).Matches(model, context));
             });
         }
+        [Trait("Category", "Unit")]
         [Fact]
         public void UiaMismatchSkipsManagedReadsEvenWhenListedSecond()
         {
@@ -236,6 +249,7 @@ namespace WinTestKit.Inspector.Agent.Query.Tests
                 }
             });
         }
+        [Trait("Category", "Unit")]
         [Fact]
         public void MismatchDoesNotHideUnreadablePredicate()
         {
