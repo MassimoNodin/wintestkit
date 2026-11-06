@@ -1,7 +1,7 @@
 # WPF-tree-driven automation: migration plan
 
-Status: decisions D1–D7 made (§3); phase 0 and phase 1 done (2026-10-31); phase 2 in
-progress (§6.2). Planning date: 2026-10-29.
+Status: decisions D1–D7 made (§3); phases 0–2 done (phase 2 gate passed 2026-11-06,
+§6.3); phase 3 in progress. Planning date: 2026-10-29.
 Builds on: `wpf-dotnet-attribute-analyzer.md` (the *inspector plan*) and the implemented
 inspector on `master` (agent, protocol, Python client, managed locators, Spy panel).
 
@@ -208,9 +208,9 @@ Each phase is separately shippable behind configuration; none changes UIA-only b
 | 0 | Amend the inspector plan per D1–D7; protocol 2.0 contracts and fixtures | Owner sign-off; schemas and golden fixtures pass in Python and C# |
 | 1 | Agent query engine + geometry/state (read-only); Python `query.find`; WPF-backed *find* with UIA-mapped *act* | Same results as today's managed post-filter on the fixture; no 1,000 cap; latency budget met |
 | 2 | Backend abstraction + router; WPF backend for properties, waits, `expect` | Parity suite: existing locator/wait tests pass on both backends |
-| 3 | Actions: OS input at WPF geometry (`mouse`, default), then peer patterns (`pattern`); typed controls on WPF; **switch the default to `backend: auto`** (D7) | Parity suite for every typed control and input mode; actions on objects with no UIA peer; `wtk doctor` detects agent blocks |
+| 3 | Actions: OS input at WPF geometry (`mouse`, default), then peer patterns (`pattern`); typed controls on WPF; virtualized item selection (D6); **switch the default to `backend: auto`** (D7) | Parity suite for every typed control and input mode; actions on objects with no UIA peer; `wtk doctor` detects agent blocks; find a row 5,000 items down without realizing others |
 | 4 | Spy WPF-native: tree, picker, Identity, suggestions with uniqueness | Spy DOM + live tests; suggested locators round-trip on the fixture and the real suite's pages |
-| 5 | Virtualization (D6) and TestComplete helpers + importer output | Find a row 5,000 items down without realizing others; migrated `FindChild` samples pass |
+| 5 | TestComplete helpers + importer output (virtualization moved to phase 3, §6.4) | Migrated `FindChild` samples pass |
 | 6 | Optional writes/calls (D2) with allowlist and audit | Off by default; allowlist enforced; audit in reports; security review |
 | 7 | Auto-attach on launch, events, stress (100 cycles), six-cell matrix, CI desktop job | Inspector-plan release gates plus new action/stress gates |
 | 8 | Docs, skill, migration guide; deprecate the managed post-filter path | Real 27-page suite runs on `auto` with no regressions versus UIA |
@@ -312,6 +312,58 @@ completed missing-element diagnostic. The throwing-getter case remains an explic
 Grid item operations remain on UIA on both backends. Integration tests use native/Tk
 windows or no app, and the Calculator example targets Windows Calculator rather than
 this WPF fixture.
+
+**Gate verdict (owner, 2026-11-06): passed.** Every row of the parity matrix passes on both
+backends. The one accepted difference is that DataGrid row and cell operations go through
+UIA on both backends via `as_uia()`, per the §6.2 phase 2/3 split. The two bugs found by the
+matrix (nested missing managed member and lost diagnostic on a final-poll deadline) are
+fixed with regression tests. The intermittent assertion-redaction failure seen once was not
+reproduced in later runs and remains an open observation. Per-backend timings exclude the
+shared message comparisons. The default stays `backend: uia` until the phase 3 gate (D7).
+
+### 6.4 Phase 3 design (2026-11-06)
+
+Decisions (owner, 2026-11-06):
+
+- **Input mode default.** `input_mode` defaults to `mouse` on both backends from the phase 3
+  gate, switched together with `backend: auto` (D1, D7). Until then the default stays
+  `pattern`; per-call `mode=` keeps overriding it.
+- **Item selection.** `act.realizeItem` and the `virtualItems` feature (D6) move from phase 5
+  into phase 3, so typed-control item selection on the WPF backend never goes through
+  `as_uia()`. Phase 5 keeps only the TestComplete helpers and importer output.
+
+Design:
+
+- **Agent actions** (new `Agent/Actions/`). Every `act.*` method in the protocol runs on the
+  owning Dispatcher through the existing executor and deadlines, using the element's
+  automation peer in-process. One action runs at a time per Dispatcher; a hung action marks
+  the Dispatcher unresponsive as reads do. An unsupported pattern, or an element without a
+  peer, fails `actionUnsupported`; results never carry control values. The agent advertises
+  `actions` and `virtualItems` only when implemented.
+- **Pattern mode on WPF.** `engine/actions.py` dispatches a `WpfElement` to the `act.*` verb
+  from the protocol mapping table instead of `uia_of()`. Reads (`get_text`, `get_value`,
+  `is_checked`, `is_selected`, `selected_items`, item names) come from the agent, with the
+  same redaction rules as today (password fields are never read).
+- **Mouse mode on WPF.** Click points come from `state.get`: the centre of the element's
+  bounds, or of the named part for sub-part actions (`comboDropDown`, `expanderToggle`,
+  `treeItemExpander`, scroll parts, `gridColumnHeader`). Python verifies the foreground
+  window from `state.windowHandle` before injecting input, and fails rather than guessing on
+  a missing, invisible, clipped or unsafe rectangle. Elements without an automation peer can
+  be clicked, hovered and typed into in this mode.
+- **Typed controls.** `BoundComboBox`, `BoundListBox`, `BoundDataGrid`, `BoundTreeView` and
+  `BoundTabControl` select items by data search (`act.realizeItem`) followed by `act.select`
+  (pattern) or a click on the realized container's bounds (mouse); public APIs are unchanged.
+- **Doctor.** `wtk doctor` reports when the agent cannot load (`blockedByPolicy`,
+  `unsupportedTarget`, ...) so a blocked machine is found before a run under `backend: auto`.
+- **Gate.** The parity suite covers every typed control in both input modes on both
+  backends, actions on objects with no UIA peer, and selecting a row 5,000 items down
+  without realizing the others. Then the defaults switch and docs are updated.
+
+Slices: P3a agent actions focus, bringIntoView, scrollIntoView, invoke, toggle, expand,
+collapse, select; P3b agent setValue, setRange, scroll and the Python client `act.*`
+methods; P3c agent `act.realizeItem`; P3d pattern mode and reads on the WPF backend; P3e
+mouse mode on WPF geometry; P3f typed controls on WPF; P3g `wtk doctor` agent-block check;
+P3h parity suite, default switch and docs.
 
 ## 7. Test strategy
 
