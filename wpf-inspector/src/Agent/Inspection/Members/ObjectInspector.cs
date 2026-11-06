@@ -115,7 +115,7 @@ namespace WinTestKit.Inspector.Agent.Inspection.Members
                 return new ValueDto { Status = "redacted", Kind = "unavailable", RedactionRule = "identity" };
             foreach (PathSegment segment in path)
             {
-                string? rule = redaction.Match(segment.Name);
+                string? rule = segment.Kind == "uia" && (segment.Name == "is_password" || segment.Name == "supported_patterns") ? null : redaction.Match(segment.Name);
                 if (rule != null) return new ValueDto { Status = "redacted", Kind = "unavailable", RedactionRule = rule };
             }
             if (first.Kind == "uia")

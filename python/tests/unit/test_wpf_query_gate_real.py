@@ -134,7 +134,7 @@ def test_virtual_items_realization(owned):
 
 
 @pytest.mark.parametrize("backend", ["uia", "auto"])
-def test_phase2_backend_parity(owned, backend):
+def test_phase2_backend_parity(owned, backend, monkeypatch):
     from wintestkit.expect import expect
     from wintestkit.model import Element, Elements, Page
 
@@ -184,7 +184,12 @@ def test_phase2_backend_parity(owned, backend):
         expect(page.duplicates, timeout=5).to_have_count(2)
         expect(page.button, timeout=5).to_have_text("Fancy action")
         expect(page.button, timeout=5).to_contain_text("Fancy")
-        assert click(resolve(scope, Locator(automation_id="FancyAutomationId"))) == "invoke"
+        target = resolve(scope, Locator(automation_id="FancyAutomationId"))
+        if backend == "auto":
+            monkeypatch.setattr(
+                target, "as_uia", lambda: pytest.fail("pattern action mapped to UIA")
+            )
+        assert click(target) == "invoke"
         expect(page.effect, timeout=5).to_have_text("Clicked 1")
 
 
@@ -202,7 +207,7 @@ def test_phase2_duplicate_order_matches(owned):
 
 
 @pytest.mark.parametrize("backend", ["uia", "auto"])
-def test_phase2_existing_expectations_and_input(owned, backend):
+def test_phase2_existing_expectations_and_input(owned, backend, monkeypatch):
     from wintestkit.controls import TextBox
     from wintestkit.expect import expect
     from wintestkit.model import Element, Elements, Page
@@ -224,14 +229,21 @@ def test_phase2_existing_expectations_and_input(owned, backend):
         expect(page.duplicates, timeout=5).not_.to_have_count(3)
         expect(page.source, timeout=5).to_have_value("source")
         expect(page.source, timeout=5).not_.to_have_value("wrong")
-        page.source.type("parity")
-        expect(page.source, timeout=5).to_have_value("parity")
-        page.source.clear()
+        from wintestkit.backends.element import WpfElement
+
+        with monkeypatch.context() as guard:
+            if backend == "auto":
+                guard.setattr(
+                    WpfElement, "as_uia", lambda self: pytest.fail("unexpected UIA mapping")
+                )
+            page.source.type("parity")
+            expect(page.source, timeout=5).to_have_value("parity")
+            page.source.clear()
         expect(page.source, timeout=5).to_have_value("")
 
 
 @pytest.mark.parametrize("backend", ["uia", "auto"])
-def test_phase2_typed_selection_parity(owned, backend):
+def test_phase2_typed_selection_parity(owned, backend, monkeypatch):
     from wintestkit.controls import CheckBox, ComboBox, ListBox, RadioButton
     from wintestkit.expect import expect
     from wintestkit.model import Element, Page
@@ -248,14 +260,21 @@ def test_phase2_typed_selection_parity(owned, backend):
 
     page = FixturePage(scope.app)
     with runtime.config_scope(replace(config(path, "agent"), backend=backend)):
-        page.checkbox.check()
-        expect(page.checkbox, timeout=5).to_be_checked()
-        page.checkbox.uncheck()
-        expect(page.checkbox, timeout=5).not_.to_be_checked()
-        page.checkbox.toggle()
-        expect(page.checkbox, timeout=5).to_be_checked()
-        page.radio.select()
-        expect(page.radio, timeout=5).to_be_selected()
+        from wintestkit.backends.element import WpfElement
+
+        with monkeypatch.context() as guard:
+            if backend == "auto":
+                guard.setattr(
+                    WpfElement, "as_uia", lambda self: pytest.fail("unexpected UIA mapping")
+                )
+            page.checkbox.check()
+            expect(page.checkbox, timeout=5).to_be_checked()
+            page.checkbox.uncheck()
+            expect(page.checkbox, timeout=5).not_.to_be_checked()
+            page.checkbox.toggle()
+            expect(page.checkbox, timeout=5).to_be_checked()
+            page.radio.select()
+            expect(page.radio, timeout=5).to_be_selected()
         for selection, expected in (
             ("Alpha", "Alpha"),
             (re.compile("^Beta$"), "Beta"),
@@ -266,10 +285,15 @@ def test_phase2_typed_selection_parity(owned, backend):
         for selection, expected in (("Beta", "Beta"), (0, "Alpha")):
             page.listing.select(selection)
             assert page.listing.selected_items() == [expected]
-        page.expander.expand()
-        expect(page.expanded_content, timeout=5).to_be_visible()
-        page.expander.collapse()
-        expect(page.expanded_content, timeout=5).not_.to_be_visible()
+        with monkeypatch.context() as guard:
+            if backend == "auto":
+                guard.setattr(
+                    WpfElement, "as_uia", lambda self: pytest.fail("unexpected UIA mapping")
+                )
+            page.expander.expand()
+            expect(page.expanded_content, timeout=5).to_be_visible()
+            page.expander.collapse()
+            expect(page.expanded_content, timeout=5).not_.to_be_visible()
 
 
 @pytest.mark.parametrize("backend", ["uia", "auto"])

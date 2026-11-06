@@ -12,7 +12,7 @@ from typing import Any
 import comtypes
 import comtypes.automation
 
-from wintestkit.backends.element import TargetElement, uia_of
+from wintestkit.backends.element import TargetElement, WpfElement, uia_of
 from wintestkit.errors import ActionError
 from wintestkit.uia import com
 from wintestkit.uia.constants import PATTERN_IDS, PROPERTY_IDS, ExpandCollapseState, ToggleState
@@ -60,9 +60,24 @@ def _pattern(el: UIAElement, name: str) -> Any:
 
 def has_pattern(el: TargetElement, name: str) -> bool:
     __tracebackhide__ = True
-    el = uia_of(el)
     if name not in PATTERN_IDS:
         raise ValueError(f"unknown UIA pattern {name!r}")
+    if isinstance(el, WpfElement) and name in {
+        "Invoke",
+        "Toggle",
+        "SelectionItem",
+        "Selection",
+        "ExpandCollapse",
+        "Value",
+        "RangeValue",
+        "Scroll",
+        "ScrollItem",
+        "Text",
+    }:
+        from wintestkit.engine.actions import _wpf_patterns
+
+        return name in _wpf_patterns(el)
+    el = uia_of(el)
     return _raw_pattern(el, name) is not None
 
 
@@ -111,6 +126,10 @@ def toggle(el: TargetElement) -> None:
 
 def toggle_state(el: TargetElement) -> ToggleState:
     __tracebackhide__ = True
+    if isinstance(el, WpfElement):
+        from wintestkit.engine.actions import _wpf_read
+
+        return ToggleState[str(_wpf_read(el, "toggle_state", "Toggle"))]
     el = uia_of(el)
     pattern = _pattern(el, "Toggle")
     with com.wrap_com_errors:
@@ -138,6 +157,10 @@ def add_to_selection(el: TargetElement) -> None:
 
 def is_selected(el: TargetElement) -> bool:
     __tracebackhide__ = True
+    if isinstance(el, WpfElement):
+        from wintestkit.engine.actions import _wpf_read
+
+        return bool(_wpf_read(el, "is_selected", "SelectionItem"))
     el = uia_of(el)
     pattern = _pattern(el, "SelectionItem")
     with com.wrap_com_errors:

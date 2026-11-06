@@ -63,6 +63,10 @@ def locator_deadline() -> float:
     return start + runtime.get_config().timeout
 
 
+def in_query_budget() -> bool:
+    return _budget.get() is not None
+
+
 def operation_deadline(timeout: float) -> float:
     deadline = time.monotonic() + timeout
     budget = _budget.get()
