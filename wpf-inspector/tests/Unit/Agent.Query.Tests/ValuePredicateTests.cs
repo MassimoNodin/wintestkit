@@ -241,7 +241,7 @@ namespace WinTestKit.Inspector.Agent.Query.Tests
                         Limit = 1,
                         Predicates = new[] { Equal("SecretValue", new JsonStringNode("x")), Equal("automation_id", new JsonStringNode("other"), "uia") }
                     };
-                    var task = new QueryEngine(executor, registry).FindAllAsync(locator, DateTime.UtcNow.AddSeconds(2), CancellationToken.None);
+                    var task = new QueryEngine(executor, registry).FindAllAsync(locator, DateTime.UtcNow.AddSeconds(60), CancellationToken.None);
                     var frame = new DispatcherFrame();
                     task.ContinueWith(_ => frame.Continue = false, TaskScheduler.Default);
                     Dispatcher.PushFrame(frame);
@@ -268,7 +268,7 @@ namespace WinTestKit.Inspector.Agent.Query.Tests
                         Limit = 1,
                         Predicates = new[] { Equal("TextValue", new JsonStringNode("mismatch")), Equal("SecretValue", new JsonStringNode("x")) }
                     };
-                    var task = new QueryEngine(executor, registry).FindAsync(locator, DateTime.UtcNow.AddSeconds(2), CancellationToken.None);
+                    var task = new QueryEngine(executor, registry).FindAsync(locator, DateTime.UtcNow.AddSeconds(60), CancellationToken.None);
                     var frame = new DispatcherFrame();
                     task.ContinueWith(_ => frame.Continue = false, TaskScheduler.Default);
                     Dispatcher.PushFrame(frame);

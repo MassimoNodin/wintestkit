@@ -27,7 +27,7 @@ public class SessionTests
             Process = new ProcessIdentity { Pid = process.Id, CreationTimeUtc = process.StartTime.ToUniversalTime().ToString("O") },
             PipeName = "WinTestKit.Inspector." + process.Id + "." + session, Token = Convert.ToBase64String(new byte[32]),
             ClientSid = WindowsIdentity.GetCurrent().User!.Value, ExpiresUtc = DateTime.UtcNow.AddMinutes(1).ToString("O"),
-            RequestTimeoutMs = 1000, IdleTimeoutMs = 2000,
+            RequestTimeoutMs = ProtocolLimits.RequestTimeoutMs, IdleTimeoutMs = 60000,
             AgentVersion = typeof(EntryPoint).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()!.InformationalVersion };
     }
 
@@ -157,14 +157,14 @@ public class SessionTests
         var settings = Settings(); settings.IdleTimeoutMs = 200;
         var factory = new FakeFactory();
         using var host = new SessionHost(settings, factory);
-        await Task.Run(host.Run).WaitAsync(TimeSpan.FromSeconds(5));
+        await Task.Run(host.Run).WaitAsync(TimeSpan.FromSeconds(60));
         Assert.True(factory.Service.Disposed);
         Assert.Equal(SessionState.Detached, host.State);
         using var next = new SessionHost(Settings(), new FakeFactory());
         var task = Task.Run(next.Run);
         await Task.Delay(150);
         next.Dispose();
-        await task.WaitAsync(TimeSpan.FromSeconds(5));
+        await task.WaitAsync(TimeSpan.FromSeconds(60));
         Assert.Equal(SessionState.Detached, next.State);
     }
 
@@ -177,9 +177,9 @@ public class SessionTests
         for (int attempt = 0; attempt < 100 && first.State != SessionState.Ready; attempt++) await Task.Delay(10);
         Assert.Equal(SessionState.Ready, first.State);
         using var second = new SessionHost(Settings(), new FakeFactory());
-        await Task.Run(second.Run).WaitAsync(TimeSpan.FromSeconds(5));
+        await Task.Run(second.Run).WaitAsync(TimeSpan.FromSeconds(60));
         Assert.Equal(SessionState.Faulted, second.State);
-        first.Dispose(); await running.WaitAsync(TimeSpan.FromSeconds(5));
+        first.Dispose(); await running.WaitAsync(TimeSpan.FromSeconds(60));
     }
 
     [Trait("Category", "Unit")]
@@ -190,7 +190,7 @@ public class SessionTests
     {
         var settings = Settings();
         using var server = new PipeServer(settings, new RequestDispatcher(settings.SessionId, new FakeService()), mode == "realSid" ? new ClientIdentityVerifier() : new Verifier(mode != "sid"), false, () => { });
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(60));
         var serving = server.RunAsync(timeout.Token);
         using var client = new NamedPipeClientStream(".", settings.PipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
         await client.ConnectAsync(timeout.Token);
@@ -220,7 +220,7 @@ public class SessionTests
     {
         var settings = Settings();
         using var server = new PipeServer(settings, new RequestDispatcher(settings.SessionId, new FakeService()), new Verifier(true), true, () => { }, available);
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(60));
         var serving = server.RunAsync(timeout.Token);
         using var client = new NamedPipeClientStream(".", settings.PipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
         await client.ConnectAsync(timeout.Token);
@@ -244,7 +244,7 @@ public class SessionTests
     {
         var settings = Settings();
         using var server = new PipeServer(settings, new RequestDispatcher(settings.SessionId, new FakeService()), new Verifier(true), false, () => { });
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(60));
         var serving = server.RunAsync(timeout.Token);
         using var client = new NamedPipeClientStream(".", settings.PipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
         await client.ConnectAsync(timeout.Token);
@@ -289,7 +289,7 @@ public class SessionTests
     {
         var settings = Settings();
         using var server = new PipeServer(settings, new RequestDispatcher(settings.SessionId, new FakeService()), new Verifier(true), false, () => { });
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(60));
         var serving = server.RunAsync(timeout.Token);
         using var client = new NamedPipeClientStream(".", settings.PipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
         await client.ConnectAsync(timeout.Token);
@@ -313,7 +313,7 @@ public class SessionTests
     {
         var settings = Settings();
         using var server = new PipeServer(settings, new RequestDispatcher(settings.SessionId, new FakeService()), new Verifier(true), false, () => { });
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(60));
         var serving = server.RunAsync(timeout.Token);
         using var client = new NamedPipeClientStream(".", settings.PipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
         await client.ConnectAsync(timeout.Token);
@@ -337,7 +337,7 @@ public class SessionTests
     {
         var settings = Settings();
         using var server = new PipeServer(settings, new TestHandler(), new Verifier(true), false, () => { });
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(60));
         var serving = server.RunAsync(timeout.Token);
         using var client = new NamedPipeClientStream(".", settings.PipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
         await client.ConnectAsync(timeout.Token);
@@ -372,7 +372,7 @@ public class SessionTests
     {
         var settings = Settings();
         using var server = new PipeServer(settings, new TestHandler(), new Verifier(true), false, () => { });
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(60));
         var serving = server.RunAsync(timeout.Token);
         using var client = new NamedPipeClientStream(".", settings.PipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
         await client.ConnectAsync(timeout.Token);

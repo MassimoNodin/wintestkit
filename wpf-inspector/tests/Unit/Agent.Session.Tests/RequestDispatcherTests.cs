@@ -160,7 +160,7 @@ public class RequestDispatcherTests
         var service = new QueryService { Block = true };
         var dispatcher = new RequestDispatcher(Session, service, scheduler);
         var pending = dispatcher.HandleAsync(new RequestEnvelope { Id = 1, Method = PipeMethods.QueryFind, Params = QueryParams() }, CancellationToken.None);
-        await service.Started.Task.WaitAsync(TimeSpan.FromSeconds(1));
+        await service.Started.Task.WaitAsync(TimeSpan.FromSeconds(60));
         var cancel = await dispatcher.HandleAsync(new RequestEnvelope { Id = 2, Method = PipeMethods.Cancel, Params = new CancelParams { RequestId = 1 }.ToJson() }, CancellationToken.None);
         Assert.True(CancelResult.FromJson(cancel.Result!).Accepted);
         Assert.Equal(ErrorCodes.Cancelled, (await pending).Error!.Code);

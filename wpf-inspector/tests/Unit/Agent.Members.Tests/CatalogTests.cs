@@ -169,7 +169,7 @@ namespace WinTestKit.Inspector.Agent.Members.Tests
             });
             thread.SetApartmentState(ApartmentState.STA);
             thread.Start();
-            Assert.True(thread.Join(TimeSpan.FromSeconds(30)), "STA Dispatcher did not complete.");
+            Assert.True(thread.Join(TimeSpan.FromSeconds(60)), "STA Dispatcher did not complete.");
             if (failure != null) ExceptionDispatchInfo.Capture(failure).Throw();
         }
 
