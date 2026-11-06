@@ -39,7 +39,7 @@ namespace WinTestKit.Inspector.Agent.Contracts
 
     public interface IActionInspectionService
     {
-        Task<ActResult> ActAsync(string method, ObjectRef handle, DateTime deadline, int timeoutMs, CancellationToken ct);
+        Task<ActResult> ActAsync(string method, ObjectRef handle, DateTime deadline, int timeoutMs, CancellationToken ct, object? parameters = null);
     }
 
     public interface IExactMappingCapability

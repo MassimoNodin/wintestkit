@@ -14,6 +14,24 @@ namespace WinTestKit.Inspector.Agent.Actions.Tests
     [Trait("Category", "Unit")]
     public sealed class ActionEngineTests
     {
+        private sealed class Scrollable : FrameworkElement
+        {
+            internal int Calls;
+            protected override System.Windows.Automation.Peers.AutomationPeer OnCreateAutomationPeer() => new ScrollablePeer(this);
+        }
+        private sealed class ScrollablePeer : System.Windows.Automation.Peers.FrameworkElementAutomationPeer, System.Windows.Automation.Provider.IScrollProvider
+        {
+            internal ScrollablePeer(Scrollable owner) : base(owner) { }
+            public override object GetPattern(System.Windows.Automation.Peers.PatternInterface pattern) => pattern == System.Windows.Automation.Peers.PatternInterface.Scroll ? this : base.GetPattern(pattern);
+            public bool HorizontallyScrollable => false;
+            public bool VerticallyScrollable => true;
+            public double HorizontalScrollPercent => -1;
+            public double VerticalScrollPercent => 0;
+            public double HorizontalViewSize => 100;
+            public double VerticalViewSize => 50;
+            public void Scroll(System.Windows.Automation.ScrollAmount horizontal, System.Windows.Automation.ScrollAmount vertical) => ((Scrollable)Owner).Calls++;
+            public void SetScrollPercent(double horizontal, double vertical) { }
+        }
         private sealed class Selectable : FrameworkElement
         {
             internal bool Selected;
@@ -70,6 +88,66 @@ namespace WinTestKit.Inspector.Agent.Actions.Tests
 
         private static Task<ActResult> Act(Ui ui, DispatcherExecutor executor, object target, string method, int timeout = 1000) =>
             ActionEngine.ExecuteAsync(executor, ui.Dispatcher, target, new ObjectRef(), method, DateTime.UtcNow.AddSeconds(2), timeout, CancellationToken.None);
+
+        [Theory]
+        [InlineData(PipeMethods.ActSetValue)]
+        [InlineData(PipeMethods.ActSetRange)]
+        [InlineData(PipeMethods.ActScroll)]
+        public async Task NewActionsRejectExpiredDeadlines(string method)
+        {
+            using (var ui = new Ui())
+            {
+                var element = await ui.Dispatcher.InvokeAsync(() => new Button()).Task;
+                var error = await Assert.ThrowsAsync<ProtocolException>(() => ActionEngine.ExecuteAsync(new DispatcherExecutor(), ui.Dispatcher, element, new ObjectRef(), method, DateTime.UtcNow.AddSeconds(-1), 1000, CancellationToken.None));
+                Assert.Equal(ErrorCodes.LimitExceeded, error.Code);
+            }
+        }
+
+        [Fact]
+        public async Task ValueAndRangeActionsValidateAndRespectProtection()
+        {
+            using (var ui = new Ui())
+            {
+                var controls = await ui.Dispatcher.InvokeAsync(() => (text: new TextBox(), password: new PasswordBox(), slider: new Slider { Minimum = 0, Maximum = 10 })).Task;
+                var executor = new DispatcherExecutor();
+                Task<ActResult> Run(object target, string method, object args) => ActionEngine.ExecuteAsync(executor, ui.Dispatcher, target, new ObjectRef(), method, DateTime.UtcNow.AddSeconds(2), 1000, CancellationToken.None, args);
+                var text = new ActSetValueParams { Value = "example" };
+                Assert.Equal(ActionOutcome.Performed, (await Run(controls.text, PipeMethods.ActSetValue, text)).Outcome);
+                Assert.Equal(ActionOutcome.NoChange, (await Run(controls.text, PipeMethods.ActSetValue, text)).Outcome);
+                await ui.Dispatcher.InvokeAsync(() => controls.text.IsReadOnly = true).Task;
+                Assert.Equal(ErrorCodes.ActionUnsupported, (await Assert.ThrowsAsync<ProtocolException>(() => Run(controls.text, PipeMethods.ActSetValue, text))).Code);
+                Assert.Equal(ErrorCodes.ActionUnsupported, (await Assert.ThrowsAsync<ProtocolException>(() => Run(controls.password, PipeMethods.ActSetValue, text))).Code);
+                Assert.Equal(ErrorCodes.ActionUnsupported, (await Assert.ThrowsAsync<ProtocolException>(() => Run(controls.text, PipeMethods.ActSetRange, new ActSetRangeParams()))).Code);
+                Assert.Equal(ErrorCodes.ActionUnsupported, (await Assert.ThrowsAsync<ProtocolException>(() => Run(controls.text, PipeMethods.ActScroll, new ActScrollParams { Horizontal = ScrollAmount.None, Vertical = ScrollAmount.None }))).Code);
+                var range = new ActSetRangeParams { Value = 5 };
+                Assert.Equal(ActionOutcome.Performed, (await Run(controls.slider, PipeMethods.ActSetRange, range)).Outcome);
+                Assert.Equal(ActionOutcome.NoChange, (await Run(controls.slider, PipeMethods.ActSetRange, range)).Outcome);
+                range.Value = 11;
+                Assert.Equal(ErrorCodes.InvalidParams, (await Assert.ThrowsAsync<ProtocolException>(() => Run(controls.slider, PipeMethods.ActSetRange, range))).Code);
+                range.Value = double.NaN;
+                Assert.Equal(ErrorCodes.InvalidParams, (await Assert.ThrowsAsync<ProtocolException>(() => Run(controls.slider, PipeMethods.ActSetRange, range))).Code);
+            }
+        }
+
+        [Fact]
+        public async Task ScrollActionsRespectAxesAndDeadline()
+        {
+            using (var ui = new Ui())
+            {
+                var control = await ui.Dispatcher.InvokeAsync(() => new Scrollable()).Task;
+                var executor = new DispatcherExecutor();
+                var args = new ActScrollParams { Horizontal = ScrollAmount.None, Vertical = ScrollAmount.None };
+                Task<ActResult> Run(DateTime deadline) => ActionEngine.ExecuteAsync(executor, ui.Dispatcher, control, new ObjectRef(), PipeMethods.ActScroll, deadline, 1000, CancellationToken.None, args);
+                Assert.Equal(ActionOutcome.NoChange, (await Run(DateTime.UtcNow.AddSeconds(2))).Outcome);
+                args.Vertical = ScrollAmount.SmallIncrement;
+                Assert.Equal(ActionOutcome.Performed, (await Run(DateTime.UtcNow.AddSeconds(2))).Outcome);
+                args.Horizontal = ScrollAmount.SmallIncrement;
+                Assert.Equal(ErrorCodes.ActionUnsupported, (await Assert.ThrowsAsync<ProtocolException>(() => Run(DateTime.UtcNow.AddSeconds(2)))).Code);
+                args.Horizontal = "invalid";
+                Assert.Equal(ErrorCodes.InvalidParams, (await Assert.ThrowsAsync<ProtocolException>(() => Run(DateTime.UtcNow.AddSeconds(2)))).Code);
+                Assert.Equal(ErrorCodes.LimitExceeded, (await Assert.ThrowsAsync<ProtocolException>(() => Run(DateTime.UtcNow.AddSeconds(-1)))).Code);
+            }
+        }
 
         [Theory]
         [InlineData(PipeMethods.ActBringIntoView)]

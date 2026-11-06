@@ -131,8 +131,17 @@ namespace WinTestKit.Inspector.Agent.Session
                     var action = StateGetParams.FromJson(request.Params);
                     return (await actionService.ActAsync(request.Method, action.Handle, deadline, action.TimeoutMs, ct).ConfigureAwait(false)).ToJson();
                 case PipeMethods.ActSetValue:
+                    if (!(service is IActionInspectionService valueService)) throw new ProtocolException(ErrorCodes.UnsupportedTarget, "Feature not available.");
+                    var setValue = ActSetValueParams.FromJson(request.Params);
+                    return (await valueService.ActAsync(request.Method, setValue.Handle, deadline, setValue.TimeoutMs, ct, setValue).ConfigureAwait(false)).ToJson();
                 case PipeMethods.ActSetRange:
+                    if (!(service is IActionInspectionService rangeService)) throw new ProtocolException(ErrorCodes.UnsupportedTarget, "Feature not available.");
+                    var setRange = ActSetRangeParams.FromJson(request.Params);
+                    return (await rangeService.ActAsync(request.Method, setRange.Handle, deadline, setRange.TimeoutMs, ct, setRange).ConfigureAwait(false)).ToJson();
                 case PipeMethods.ActScroll:
+                    if (!(service is IActionInspectionService scrollService)) throw new ProtocolException(ErrorCodes.UnsupportedTarget, "Feature not available.");
+                    var scroll = ActScrollParams.FromJson(request.Params);
+                    return (await scrollService.ActAsync(request.Method, scroll.Handle, deadline, scroll.TimeoutMs, ct, scroll).ConfigureAwait(false)).ToJson();
                 case PipeMethods.ActRealizeItem:
                 case PipeMethods.HitTest:
                 case PipeMethods.WriteSetProperty:
