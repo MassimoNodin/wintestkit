@@ -336,6 +336,30 @@ namespace WinTestKit.Inspector.Agent.Query.Tests
         }
 
         [Fact]
+        public async Task ScanObjectCapHasNoDeadlineDetails()
+        {
+            using (var ui = new Ui())
+            {
+                var executor = new DispatcherExecutor();
+                using (var registry = new ObjectRegistry("session", executor))
+                {
+                    var root = await ui.Dispatcher.InvokeAsync(() =>
+                    {
+                        var panel = new StackPanel();
+                        for (int index = 0; index <= ProtocolLimits.ScanMaxObjects; index++) panel.Children.Add(new Border());
+                        return panel;
+                    }).Task;
+                    Locator locator = Scope(Register(registry, root), depth: 1);
+                    locator.Predicates = new[] { new Predicate { Kind = "equals", Path = new[] { new PathSegment { Kind = "type", Name = "FullName" } }, Value = new JsonStringNode("System.Windows.Controls.Button") } };
+                    var engine = new QueryEngine(executor, registry);
+                    var error = await Assert.ThrowsAsync<ProtocolException>(() => engine.FindAsync(locator, Deadline, CancellationToken.None));
+                    Assert.Equal(ErrorCodes.LimitExceeded, error.Code);
+                    Assert.Null(error.Details);
+                }
+            }
+        }
+
+        [Fact]
         public async Task LargeTreeMedian()
         {
             using (var ui = new Ui())

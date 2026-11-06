@@ -183,6 +183,85 @@ def test_phase2_existing_expectations_and_input(owned, backend):
         expect(page.source, timeout=5).to_have_value("")
 
 
+@pytest.mark.parametrize("backend", ["uia", "auto"])
+def test_phase2_typed_selection_parity(owned, backend):
+    from wintestkit.controls import CheckBox, ComboBox, ListBox, RadioButton
+    from wintestkit.expect import expect
+    from wintestkit.model import Element, Page
+
+    scope, path = owned
+
+    class FixturePage(Page):
+        checkbox = CheckBox(automation_id="ParityCheck")
+        radio = RadioButton(automation_id="ParityRadio")
+        combo = ComboBox(automation_id="ParityCombo")
+        listing = ListBox(automation_id="ParityList")
+        expander = Element(automation_id="ParityExpander")
+        expanded_content = Element(automation_id="ParityExpandedContent")
+
+    page = FixturePage(scope.app)
+    with runtime.config_scope(replace(config(path, "agent"), backend=backend)):
+        page.checkbox.check()
+        expect(page.checkbox, timeout=5).to_be_checked()
+        page.checkbox.uncheck()
+        expect(page.checkbox, timeout=5).not_.to_be_checked()
+        page.checkbox.toggle()
+        expect(page.checkbox, timeout=5).to_be_checked()
+        page.radio.select()
+        expect(page.radio, timeout=5).to_be_selected()
+        for selection, expected in (
+            ("Alpha", "Alpha"),
+            (re.compile("^Beta$"), "Beta"),
+            (2, "Gamma"),
+        ):
+            page.combo.select(selection)
+            assert page.combo.selected == expected
+        for selection, expected in (("Beta", "Beta"), (0, "Alpha")):
+            page.listing.select(selection)
+            assert page.listing.selected_items() == [expected]
+        page.expander.expand()
+        expect(page.expanded_content, timeout=5).to_be_visible()
+        page.expander.collapse()
+        expect(page.expanded_content, timeout=5).not_.to_be_visible()
+
+
+@pytest.mark.parametrize("backend", ["uia", "auto"])
+def test_phase2_keyboard_menu_pointer_and_grid_parity(owned, backend):
+    from wintestkit.controls import DataGrid, TextBox
+    from wintestkit.expect import expect
+    from wintestkit.model import Element, Page
+
+    scope, path = owned
+
+    class FixturePage(Page):
+        source = TextBox(automation_id="BindingSource")
+        menu = Element(automation_id="ParityMenu")
+        menu_item = Element(automation_id="ParityMenuItem")
+        context_item = Element(automation_id="ParityContextItem")
+        pointer = Element(automation_id="ParityPointer")
+        effect = Element(automation_id="ParityInteractionEffect")
+        grid = DataGrid(automation_id="ParityGrid")
+
+    page = FixturePage(scope.app)
+    with runtime.config_scope(replace(config(path, "agent"), backend=backend)):
+        page.source.focus()
+        page.source.press("Ctrl+A Backspace h e l l o")
+        expect(page.source, timeout=5).to_have_value("hello")
+        page.menu.click()
+        page.menu_item.click()
+        expect(page.effect, timeout=5).to_have_text("Menu clicked")
+        page.pointer.hover()
+        expect(page.effect, timeout=5).to_have_text("Hovered")
+        page.pointer.double_click()
+        expect(page.effect, timeout=5).to_have_text("Double clicked")
+        page.pointer.right_click()
+        page.context_item.click()
+        expect(page.effect, timeout=5).to_have_text("Context clicked")
+        assert "First" in page.grid.row(0).text
+        assert page.grid.cell(0, 0).text == "First"
+        assert page.grid.cell(1, 1).text == "Two"
+
+
 def test_phase2_error_diagnostics_match(owned):
     from wintestkit.errors import LocatorError
 

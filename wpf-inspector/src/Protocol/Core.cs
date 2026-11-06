@@ -21,6 +21,12 @@ namespace WinTestKit.Inspector.Protocol
     public sealed class ProtocolException : Exception
     {
         public ProtocolException(string code, string message, JsonObjectNode? details = null) : base(message) { Code = code; Details = details; }
+        public static ProtocolException Deadline(string message)
+        {
+            var details = new JsonObjectNode();
+            details.Add("deadline", new JsonBoolNode(true));
+            return new ProtocolException(ErrorCodes.LimitExceeded, message, details);
+        }
         public string Code { get; }
         public JsonObjectNode? Details { get; }
     }

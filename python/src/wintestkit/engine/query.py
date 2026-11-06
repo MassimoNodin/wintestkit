@@ -13,6 +13,7 @@ from wintestkit.engine.locator import Locator
 from wintestkit.engine.managed import ManagedCondition, locator_deadline, matches_value
 from wintestkit.engine.properties import Condition, matches, native_value, read, resolve_where
 from wintestkit.errors import (
+    InspectorDeadlineError,
     InspectorError,
     InspectorLimitError,
     InspectorMappingError,
@@ -134,7 +135,7 @@ def _agent_query(
     except UnsupportedQuery as error:
         return None, str(error)
     if time.monotonic() >= deadline:
-        raise InspectorLimitError("Managed query deadline expired", code="limitExceeded")
+        raise InspectorDeadlineError("Managed query deadline expired", code="limitExceeded")
     client = runtime.managed_client_for(
         root.process_id, deadline=deadline, target_hwnd=root_handle(root)
     )
@@ -154,7 +155,7 @@ def _agent_query(
         result = client.query_find_all(wire, timeout_ms=timeout, deadline=deadline)
         refs.extend(result.matches)
         if not result.complete and len(result.matches) < wire.limit:
-            raise InspectorLimitError(
+            raise InspectorDeadlineError(
                 "WPF query exhausted its budget before traversal completed", code="limitExceeded"
             )
         groups: dict[int, list[tuple[int, ...]]] = {}
@@ -283,7 +284,7 @@ def _check_budget(
     __tracebackhide__ = True
     available = deadline - time.monotonic()
     if available <= 0 or (completed and elapsed / completed * remaining > available):
-        raise InspectorLimitError(
+        raise InspectorDeadlineError(
             f"Cannot evaluate {count} UIA candidates within the deadline; use a tighter UIA scope",
             code="limitExceeded",
         )

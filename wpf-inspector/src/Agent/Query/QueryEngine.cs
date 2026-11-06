@@ -27,8 +27,9 @@ namespace WinTestKit.Inspector.Agent.Query
         {
             Search result = await RunAsync(locator, deadline, timeoutMs, true, ct).ConfigureAwait(false);
             if (result.Matches.Count == 0)
-                throw new ProtocolException(result.Finished ? ErrorCodes.NotFound : ErrorCodes.LimitExceeded,
-                    result.Finished ? "No matching object." : "Traversal budget exhausted.");
+                throw result.Finished ? new ProtocolException(ErrorCodes.NotFound, "No matching object.") :
+                    result.Visited >= ProtocolLimits.ScanMaxObjects ? new ProtocolException(ErrorCodes.LimitExceeded, "Traversal budget exhausted.") :
+                    ProtocolException.Deadline("Traversal budget exhausted.");
             return new QueryFindResult { Match = result.Matches[0], Warning = !locator.Index.HasValue && result.Count > 1 ? new MatchWarning { Count = result.Count } : null };
         }
         internal Task<QueryFindAllResult> FindAllAsync(Locator locator, DateTime deadline, CancellationToken ct) =>
@@ -36,6 +37,8 @@ namespace WinTestKit.Inspector.Agent.Query
         internal async Task<QueryFindAllResult> FindAllAsync(Locator locator, DateTime deadline, int timeoutMs, CancellationToken ct)
         {
             Search result = await RunAsync(locator, deadline, timeoutMs, false, ct).ConfigureAwait(false);
+            if (!result.Finished && result.Visited >= ProtocolLimits.ScanMaxObjects && result.Matches.Count < locator.Limit)
+                throw new ProtocolException(ErrorCodes.LimitExceeded, "Traversal budget exhausted.");
             return new QueryFindAllResult
             {
                 Matches = result.Matches,

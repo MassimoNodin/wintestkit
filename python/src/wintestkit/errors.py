@@ -143,3 +143,7 @@ class InspectorReadError(InspectorError):
 
 class InspectorLimitError(InspectorError):
     """An inspector resource limit was reached."""
+
+
+class InspectorDeadlineError(InspectorLimitError):
+    """An inspector operation exhausted its deadline."""

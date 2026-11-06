@@ -12,8 +12,13 @@ from typing import Any
 
 import pytest
 
-from wintestkit.errors import InspectorError, InspectorUnavailableError
-from wintestkit.inspector.client import InspectorClient
+from wintestkit.errors import (
+    InspectorDeadlineError,
+    InspectorError,
+    InspectorLimitError,
+    InspectorUnavailableError,
+)
+from wintestkit.inspector.client import InspectorClient, _error
 from wintestkit.inspector.models import (
     FEATURES,
     HelloResult,
@@ -26,6 +31,13 @@ from wintestkit.inspector.paths import parse_managed_key
 IDENTITY = ProcessIdentity(42, "2026-10-29T00:00:00.1234567Z")
 FACTS = ProcessFacts(IDENTITY, "app.exe", "x64", "net10", True, 1, "S-1-1", "medium")
 TOKEN = "A" * 43 + "="
+
+
+def test_deadline_error_marker_does_not_reclassify_resource_limits() -> None:
+    assert isinstance(_error("timeout"), InspectorDeadlineError)
+    assert isinstance(_error("limitExceeded", {"deadline": True}), InspectorDeadlineError)
+    assert type(_error("limitExceeded")) is InspectorLimitError
+    assert type(_error("limitExceeded", {"deadline": False})) is InspectorLimitError
 
 
 class ScriptedTransport:
@@ -155,7 +167,7 @@ def test_timeout_cancels_and_discards_late_response() -> None:
     transport = ScriptedTransport(handle)
     client = InspectorClient(transport, session(), request_timeout=0.1)
     try:
-        with pytest.raises(InspectorError) as error:
+        with pytest.raises(InspectorDeadlineError) as error:
             client.roots(deadline=time.monotonic() + 1)
         assert error.value.code == "timeout"
         assert cancel.wait(1)

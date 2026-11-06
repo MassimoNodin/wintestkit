@@ -13,7 +13,12 @@ from wintestkit.config import load_config
 from wintestkit.engine import actions, waits
 from wintestkit.engine.diagnose import Diagnostic
 from wintestkit.engine.locator import Locator
-from wintestkit.errors import AmbiguousElementError, ElementNotFoundError, InspectorError
+from wintestkit.errors import (
+    AmbiguousElementError,
+    ElementNotFoundError,
+    InspectorDeadlineError,
+    InspectorError,
+)
 from wintestkit.expect import expect
 from wintestkit.model import Element, Elements, Page, Window
 
@@ -119,7 +124,7 @@ def test_expect_inspector_deadline_at_budget_edge(page, world, steps, monkeypatc
             assert locator_deadline() == 1.0
             if self.calls > 1:
                 clock.now = 1.0
-                raise InspectorError("request deadline", code="timeout")
+                raise InspectorDeadlineError("request deadline", code="timeout")
             return element
 
         def release(self, *args, **kwargs):

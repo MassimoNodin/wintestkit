@@ -15,6 +15,7 @@ from wintestkit.engine.properties import Condition, matches, read, resolve_where
 from wintestkit.engine.query import root_handle
 from wintestkit.engine.wpf_query import UnsupportedQuery, predicate, translate
 from wintestkit.errors import (
+    InspectorDeadlineError,
     InspectorError,
     InspectorLimitError,
     InspectorMappingError,
@@ -94,7 +95,7 @@ def query(root: WpfElement, locator: Locator, *, use_index: bool = False) -> Que
     timeout = max(1, min(2000, int((deadline - time.monotonic()) * 1000)))
     result = root.client.query_find_all(wire, timeout_ms=timeout, deadline=deadline)
     if not result.complete and len(result.matches) < wire.limit:
-        raise InspectorLimitError("WPF query exhausted its budget", code="limitExceeded")
+        raise InspectorDeadlineError("WPF query exhausted its budget", code="limitExceeded")
     elements = [
         WpfElement(root.client, ref, root.process_id) for ref in result.matches if ref != root.ref
     ]
@@ -129,7 +130,7 @@ def query(root: WpfElement, locator: Locator, *, use_index: bool = False) -> Que
                     code="limitExceeded",
                 )
             if time.monotonic() >= deadline:
-                raise InspectorLimitError("WPF query exhausted its budget", code="limitExceeded")
+                raise InspectorDeadlineError("WPF query exhausted its budget", code="limitExceeded")
             indexed = replace(wire, index=raw_index)
             timeout = max(1, min(2000, int((deadline - time.monotonic()) * 1000)))
             try:
@@ -144,7 +145,7 @@ def query(root: WpfElement, locator: Locator, *, use_index: bool = False) -> Que
                             middle = (low + high) // 2
                             timeout = max(1, min(2000, int((deadline - time.monotonic()) * 1000)))
                             if time.monotonic() >= deadline:
-                                raise InspectorLimitError(
+                                raise InspectorDeadlineError(
                                     "WPF query exhausted its budget", code="limitExceeded"
                                 ) from None
                             try:

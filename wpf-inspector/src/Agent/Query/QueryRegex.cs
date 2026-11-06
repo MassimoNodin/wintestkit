@@ -41,7 +41,7 @@ namespace WinTestKit.Inspector.Agent.Query
 
         internal bool IsMatch(string input, int remainingMilliseconds)
         {
-            if (remainingMilliseconds < 1) throw new ProtocolException(ErrorCodes.LimitExceeded, "Query deadline reached.");
+            if (remainingMilliseconds < 1) throw ProtocolException.Deadline("Query deadline reached.");
             int timeout = Math.Min(50, remainingMilliseconds);
             if (!cache.TryGetValue(timeout, out Regex? regex))
                 cache.Add(timeout, regex = new Regex(pattern, options, TimeSpan.FromMilliseconds(timeout)));

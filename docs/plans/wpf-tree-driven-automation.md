@@ -284,25 +284,32 @@ test uses on-demand inspector attach and exercises the same cases with each back
 | Missing, ambiguous, index and within diagnostic text (two locators each) | Match | Match |
 | FullName, nested CLR, field, dependency property, numeric and regex flag predicates | Pass | Pass |
 | Click and resulting text | Pass | Pass |
-| Remaining required wait, expect, input, menu and diagnostic matrix | Not yet covered | Not yet covered |
+| CheckBox check, uncheck, toggle, checked and negated checked | Pass | Pass |
+| RadioButton select and selected assertion | Pass | Pass |
+| ComboBox select by name, regex and index; selected value | Pass | Pass |
+| ListBox select by name and index; selected items | Pass | Pass |
+| Expander expand and collapse; content visibility | Pass | Pass |
+| Focused TextBox keyboard input | Pass | Pass |
+| Top-level and context menu popup item actions | Pass | Pass |
+| DataGrid row and cell items | Pass (UIA) | Pass (UIA) |
+| Hover, double-click and right-click visible effects | Pass | Pass |
+| Remaining required wait, expect and diagnostic matrix | Not yet covered | Not yet covered |
 
 The serial backend-filtered module runs took 24.05 s for uia (5 passed) and 27.94 s for
 auto (7 passed), including startup. These filters also select backend-specific tests and
-exclude unparametrized comparisons, so they are not complete-suite timings. No inherent differences were
-established by these cases. A parallel live run hit an inspector readiness timeout; the
+exclude unparametrized comparisons, so they are not complete-suite timings for the expanded
+matrix. A parallel live run hit an inspector readiness timeout; the
 isolated rerun passed, so live desktop tests should run serially when measuring parity.
-The separate agent-test change increases non-deadline helper budgets to 60 seconds; no
-production backend fixes were made. Integration tests use native/Tk windows or no app,
+The auto backend now treats a peerless element as potentially sensitive when redacting
+action errors, fixing collapsed-expander visibility assertions. Grid item operations
+remain on UIA on both backends. Integration tests use native/Tk windows or no app,
 and the Calculator example targets Windows Calculator rather than this WPF fixture.
 
-Remaining gate work includes disabled waits; checked, selected, value and property
-assertions and all negations; type/select; menu and error-message comparisons;
+Remaining gate work includes disabled waits; the broader expect assertion and negation
+matrix and error-message comparisons;
 broader managed predicates and regex cases; and full per-backend timings.
-An attempted negated-expectation failure comparison with a 1-second timeout exposed an
-unresolved difference: auto can propagate an inspector request deadline error at the
-polling deadline instead of producing the expected AssertionError. This was observed
-after pre-attaching the inspector. The attempted comparison is not included in the suite;
-the gate remains open until this is fixed and regression-tested.
+Deadline exhaustion now has a typed marker so polling can distinguish it from resource
+limits. The full expect-matrix slice remains to be completed before gate sign-off.
 
 ## 7. Test strategy
 

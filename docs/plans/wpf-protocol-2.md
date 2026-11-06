@@ -196,6 +196,7 @@ The protocol includes the foundational error codes and `notFound`, `actionUnsupp
 `regexTimeout`, `valueUnreadable`, `writeDenied`, `writeRateExceeded`. All errors use the existing
 `{code,message,details}` envelope and omit sensitive values. `writeDenied`, `writeRateExceeded`, and failed write/call
 errors carry `details.audit`. A timeout does not imply cancellation of running target code.
+A `limitExceeded` caused by a request or traversal deadline, rather than an object or candidate cap, carries `details:{deadline:true}`; other `limitExceeded` errors carry no details, and Python maps the marked form to `InspectorDeadlineError`.
 
 ## Existing Python actions
 
@@ -243,3 +244,5 @@ explicit `backend: uia` keep the UIA backend.
 10. A predicate path whose first member is absent on an object's runtime type does not match that object.
 
 11. depthMode peers counts depth in automation-peer-bearing objects so depth= means the same on the UIA and WPF backends.
+
+12. Deadline-related `limitExceeded` errors carry `details:{deadline:true}` and map to Python `InspectorDeadlineError`; cap-related errors have no details.

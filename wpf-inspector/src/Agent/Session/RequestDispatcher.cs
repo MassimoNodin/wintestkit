@@ -46,12 +46,25 @@ namespace WinTestKit.Inspector.Agent.Session
             }
             catch (ProtocolException error)
             {
-                return new ResponseEnvelope { Id = request.Id, Error = new ErrorInfo { Code = error.Code, Message = "Request failed.", Details = error.Code == ErrorCodes.ValueUnreadable ? error.Details : null } };
+                return new ResponseEnvelope { Id = request.Id, Error = new ErrorInfo { Code = error.Code, Message = "Request failed.", Details = SafeErrorDetails(error) } };
             }
             catch (Exception)
             {
                 return new ResponseEnvelope { Id = request.Id, Error = new ErrorInfo { Code = ErrorCodes.InternalError, Message = "Request failed." } };
             }
+        }
+
+        private static JsonObjectNode? SafeErrorDetails(ProtocolException error)
+        {
+            if (error.Code == ErrorCodes.ValueUnreadable) return error.Details;
+            if (error.Code == ErrorCodes.LimitExceeded && error.Details != null &&
+                error.Details.TryGet("deadline", out var marker) && marker is JsonBoolNode boolean && boolean.Value)
+            {
+                var details = new JsonObjectNode();
+                details.Add("deadline", new JsonBoolNode(true));
+                return details;
+            }
+            return null;
         }
 
         private void CheckSession(string value)
