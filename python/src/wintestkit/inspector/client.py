@@ -24,6 +24,7 @@ from wintestkit.inspector.models import (
     CandidateResult,
     ElementState,
     HelloResult,
+    ItemMatch,
     Locator,
     ManagedNode,
     Mapping,
@@ -34,6 +35,7 @@ from wintestkit.inspector.models import (
     ProcessFacts,
     QueryFindAllResult,
     QueryFindResult,
+    RealizeResult,
     Session,
     Value,
     WaitCondition,
@@ -519,6 +521,41 @@ class InspectorClient:
             self._request(
                 method,
                 {"handle": handle, **params, "timeoutMs": self._timed_params(timeout_ms, deadline)},
+                deadline,
+            ),
+        )
+
+    def act_realize_item(
+        self,
+        container_ref: ObjectRef,
+        match: ItemMatch,
+        *,
+        max_items: int,
+        timeout_ms: int,
+        deadline: float,
+    ) -> RealizeResult:
+        self._feature("virtualItems")
+        self._object_ref(container_ref)
+        try:
+            container = ObjectRef.from_json(container_ref.to_json()).to_json()
+            item_match = ItemMatch.from_json(match.to_json()).to_json()
+            maximum = _int(max_items, 1, 10000)
+        except (ValueError, TypeError, AttributeError) as error:
+            raise InspectorError("Invalid item search", code="invalidParams") from error
+
+        def parse(value: object) -> RealizeResult:
+            result = RealizeResult.from_json(value)
+            self._object_ref(result.handle)
+            return result
+
+        return self._parse(
+            parse,
+            self._request(
+                "act.realizeItem",
+                {
+                    "search": {"container": container, "match": item_match, "maxItems": maximum},
+                    "timeoutMs": self._timed_params(timeout_ms, deadline),
+                },
                 deadline,
             ),
         )

@@ -143,6 +143,9 @@ namespace WinTestKit.Inspector.Agent.Session
                     var scroll = ActScrollParams.FromJson(request.Params);
                     return (await scrollService.ActAsync(request.Method, scroll.Handle, deadline, scroll.TimeoutMs, ct, scroll).ConfigureAwait(false)).ToJson();
                 case PipeMethods.ActRealizeItem:
+                    if (!(service is IRealizeInspectionService realizeService)) throw new ProtocolException(ErrorCodes.UnsupportedTarget, "Feature not available.");
+                    var realize = ActRealizeItemParams.FromJson(request.Params);
+                    return (await realizeService.RealizeItemAsync(realize.Search, deadline, realize.TimeoutMs, ct).ConfigureAwait(false)).ToJson();
                 case PipeMethods.HitTest:
                 case PipeMethods.WriteSetProperty:
                 case PipeMethods.WriteCall:

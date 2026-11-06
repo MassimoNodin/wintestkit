@@ -86,7 +86,7 @@ namespace WinTestKit.Inspector.Agent.Session
             }
             catch (Exception error) when (error is ProtocolException || error is FormatException || error is ArgumentException) { return; }
             var result = new HelloResult { AgentVersion = typeof(PipeServer).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "", Tfm = Tfm, Architecture = Environment.Is64BitProcess ? "x64" : "x86", RuntimeVersion = Environment.Version.ToString(), Process = settings.Process,
-                Features = production ? (exactMappingAvailable ? new[] { Features.TypeMetadata, Features.ClrMembers, Features.DependencyProperties, Features.Bindings, Features.ExactUiaMapping, Features.BatchReads, Features.Query, Features.Geometry, Features.Waits, Features.Actions } : new[] { Features.TypeMetadata, Features.ClrMembers, Features.DependencyProperties, Features.Bindings, Features.BatchReads, Features.Query, Features.Geometry, Features.Waits, Features.Actions }) : Array.Empty<string>() };
+                Features = production ? (exactMappingAvailable ? new[] { Features.TypeMetadata, Features.ClrMembers, Features.DependencyProperties, Features.Bindings, Features.ExactUiaMapping, Features.BatchReads, Features.Query, Features.Geometry, Features.Waits, Features.Actions, Features.VirtualItems } : new[] { Features.TypeMetadata, Features.ClrMembers, Features.DependencyProperties, Features.Bindings, Features.BatchReads, Features.Query, Features.Geometry, Features.Waits, Features.Actions, Features.VirtualItems }) : Array.Empty<string>() };
             await SendAsync(new ResponseEnvelope { Id = request.Id, Result = result.ToJson() }, ct).ConfigureAwait(false);
             activity();
             long lastId = request.Id;

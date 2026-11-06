@@ -6,6 +6,7 @@ using System.Reflection;
 using System.Threading;
 using System.Windows;
 using System.Windows.Automation.Peers;
+using System.Windows.Threading;
 using WinTestKit.Inspector.Agent.Inspection;
 using WinTestKit.Inspector.Agent.Inspection.Members;
 using WinTestKit.Inspector.Protocol;
@@ -31,7 +32,9 @@ namespace WinTestKit.Inspector.Agent.Query
             this.registry = registry;
         }
 
-        public bool Matches(DependencyObject target, QueryPredicateContext context)
+        public bool Matches(DependencyObject target, QueryPredicateContext context) => MatchesObject(target, target.Dispatcher, context);
+
+        internal bool MatchesObject(object target, Dispatcher dispatcher, QueryPredicateContext context)
         {
             if (context.Remaining <= TimeSpan.Zero) throw ProtocolException.Deadline("Query deadline reached.");
             if (path.Count == 1 && path[0].Kind == "type" && path[0].Name == "FullName" && regex == null)
@@ -83,23 +86,23 @@ namespace WinTestKit.Inspector.Agent.Query
                     try { raw = d.Property != null ? d.Property.GetValue(target, null) : d.Field!.GetValue(target); }
                     catch (Exception) { throw Unreadable("exception"); }
                     if (context.Remaining <= TimeSpan.Zero) throw ProtocolException.Deadline("Query deadline reached.");
-                    return MatchesValue(ValueSerializer.Serialize(raw, d.ValueType, registry, target.Dispatcher), context);
+                    return MatchesValue(ValueSerializer.Serialize(raw, d.ValueType, registry, dispatcher), context);
                 }
             }
-            if (first.Kind == "dependency" && !DependencyCatalog.Discover(target, _ => { }).Any(entry =>
+            if (first.Kind == "dependency" && (!(target is DependencyObject dependency) || !DependencyCatalog.Discover(dependency, _ => { }).Any(entry =>
                 entry.Property.Name == first.Name && Declaration.TypeName(entry.Property.OwnerType) == first.OwnerType &&
                 Declaration.AssemblyName(entry.Property.OwnerType) == first.OwnerAssembly &&
-                (first.MemberKey == null || entry.Key == first.MemberKey))) return false;
+                (first.MemberKey == null || entry.Key == first.MemberKey)))) return false;
             if (first.Kind == "uia")
             {
-                try { if (PeerIdentity.GetPeer(target) == null) return false; }
+                try { if (!(target is DependencyObject element) || PeerIdentity.GetPeer(element) == null) return false; }
                 catch (Exception) { throw Unreadable("exception"); }
             }
             using (var cancellation = new CancellationTokenSource())
             {
                 cancellation.CancelAfter(context.Remaining > TimeSpan.Zero ? context.Remaining : TimeSpan.Zero);
                 ValueDto? value;
-                try { value = inspector.ReadPath(target, path, registry, target.Dispatcher, cancellation.Token); }
+                try { value = inspector.ReadPath(target, path, registry, dispatcher, cancellation.Token); }
                 catch (ProtocolException error) when (error.Code == ErrorCodes.MemberNotFound) { return false; }
                 if (path[0].Kind == "uia" && value.Status == "unavailable") return false;
                 return value != null && MatchesValue(value, context);

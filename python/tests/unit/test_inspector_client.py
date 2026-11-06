@@ -22,6 +22,7 @@ from wintestkit.inspector.client import InspectorClient, _error
 from wintestkit.inspector.models import (
     FEATURES,
     HelloResult,
+    ItemMatch,
     ObjectRef,
     ProcessFacts,
     ProcessIdentity,
@@ -33,6 +34,56 @@ from wintestkit.inspector.paths import parse_managed_key
 IDENTITY = ProcessIdentity(42, "2026-10-29T00:00:00.1234567Z")
 FACTS = ProcessFacts(IDENTITY, "app.exe", "x64", "net10", True, 1, "S-1-1", "medium")
 TOKEN = "A" * 43 + "="
+
+
+def test_realize_item_wire_validation_and_gate() -> None:
+    ref = ObjectRef(
+        "session", "object", 1, TypeInfo("ListBox", "ListBox", "App", "ListBox", ()), "dispatcher"
+    )
+    transport = ScriptedTransport(
+        lambda request: {
+            "id": request["id"],
+            "result": {
+                "outcome": "performed",
+                "handle": ref.to_json(),
+                "warning": {"code": "multipleMatches", "count": 2},
+            },
+        }
+    )
+    client = InspectorClient(transport, session())
+    try:
+        result = client.act_realize_item(
+            ref,
+            ItemMatch("index", index=4999),
+            max_items=5000,
+            timeout_ms=500,
+            deadline=time.monotonic() + 2,
+        )
+        assert result.warning is not None and result.warning.count == 2
+        assert transport.requests[0]["params"]["search"]["match"] == {
+            "kind": "index",
+            "index": 4999,
+        }
+        with pytest.raises(InspectorError) as error:
+            client.act_realize_item(
+                ref,
+                ItemMatch("index", index=-1),
+                max_items=5000,
+                timeout_ms=500,
+                deadline=time.monotonic() + 2,
+            )
+        assert error.value.code == "invalidParams"
+        client.session = Session("session", IDENTITY, "ready", 2, 0, ())
+        with pytest.raises(InspectorUnavailableError):
+            client.act_realize_item(
+                ref,
+                ItemMatch("index", index=0),
+                max_items=1,
+                timeout_ms=500,
+                deadline=time.monotonic() + 2,
+            )
+    finally:
+        client.close()
 
 
 @pytest.mark.parametrize(

@@ -42,6 +42,11 @@ namespace WinTestKit.Inspector.Agent.Contracts
         Task<ActResult> ActAsync(string method, ObjectRef handle, DateTime deadline, int timeoutMs, CancellationToken ct, object? parameters = null);
     }
 
+    public interface IRealizeInspectionService
+    {
+        Task<ActRealizeItemResult> RealizeItemAsync(ItemSearch search, DateTime deadline, int timeoutMs, CancellationToken ct);
+    }
+
     public interface IExactMappingCapability
     {
         bool ExactMappingAvailable { get; }

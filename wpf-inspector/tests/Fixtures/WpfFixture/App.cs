@@ -143,6 +143,12 @@ public sealed class ViewModel
     private string label;
     public ViewModel(string label = "fixture") { this.label = label; }
 }
+public sealed class VirtualItem
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = "";
+    public bool Enabled { get; set; }
+}
 public sealed class CountingConverter : IValueConverter
 {
     public object Convert(object value, Type targetType, object parameter, CultureInfo culture) { Counts.Hit("converter.Convert"); return value; }
@@ -292,6 +298,16 @@ public sealed class MainWindow : Window
                 AutomationProperties.SetAutomationId(large, "LargeWindow");
                 large.Closed += (_, _) => large = null; large.Show(); break;
             case "openPopup": popup.IsOpen = true; break;
+            case "openVirtualItems":
+                var items = Enumerable.Range(0, 5000).Select(index => new VirtualItem { Id = index, Name = "Item " + index, Enabled = index % 2 == 0 }).ToArray();
+                var list = Id(new ListBox { Height = 250, ItemsSource = items, DisplayMemberPath = "Name" }, "VirtualItemsList");
+                VirtualizingPanel.SetIsVirtualizing(list, true);
+                VirtualizingPanel.SetVirtualizationMode(list, VirtualizationMode.Recycling);
+                var virtualGrid = Id(new DataGrid { Height = 250, ItemsSource = items, AutoGenerateColumns = true, CanUserAddRows = false, EnableRowVirtualization = true }, "VirtualItemsGrid");
+                var virtualPanel = new StackPanel(); virtualPanel.Children.Add(list); virtualPanel.Children.Add(virtualGrid);
+                var virtualWindow = new Window { Title = "Virtual items", Width = 600, Height = 600, Content = virtualPanel };
+                AutomationProperties.SetAutomationId(virtualWindow, "VirtualItemsWindow");
+                virtualWindow.Show(); break;
             case "enableDelayed":
                 parityDisabled.IsEnabled = false;
                 var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(Math.Max(1, value)) };

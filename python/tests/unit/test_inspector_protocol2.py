@@ -46,6 +46,7 @@ MODELS.update(
     }
 )
 MODELS["WaitUntilResult"] = models.WaitResult
+MODELS["ActRealizeItemResult"] = models.RealizeResult
 CASES = []
 for directory in ("valid", "invalid"):
     for path in sorted((FIXTURES / directory).glob("p2-*.json")):

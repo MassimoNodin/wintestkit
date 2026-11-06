@@ -19,6 +19,7 @@ using Xunit;
 namespace WinTestKit.Inspector.Agent.Query.Tests
 {
     [Trait("Category", "Unit")]
+    [Collection("Wpf windows")]
     public sealed class ValuePredicateTests
     {
         public enum Sample { First = 1, Second = 2 }

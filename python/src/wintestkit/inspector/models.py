@@ -1136,6 +1136,33 @@ class Predicate(WireModel):
 
 
 @dataclass(frozen=True)
+class ItemMatch(WireModel):
+    kind: str
+    index: int | None = None
+    path: tuple[PathSegment, ...] | None = None
+    value: str | bool | int | float | _Missing = MISSING
+    pattern: str | None = None
+    flags: tuple[str, ...] | None = None
+
+    @classmethod
+    def from_json(cls, value: object) -> ItemMatch:
+        data = _obj(value, "kind", "index path value pattern flags")
+        if data["kind"] == "index":
+            _obj(value, "kind index")
+            return cls("index", index=_int(data["index"], 0, 9999))
+        predicate = Predicate.from_json(value)
+        if predicate.kind not in {"equals", "regex"}:
+            raise ValueError("Invalid item match")
+        return cls(
+            predicate.kind,
+            path=predicate.path,
+            value=predicate.value,
+            pattern=predicate.pattern,
+            flags=predicate.flags,
+        )
+
+
+@dataclass(frozen=True)
 class Locator(WireModel):
     scope: Scope
     tree: str
@@ -1324,6 +1351,22 @@ class ActResult(WireModel):
         d = _obj(value, "outcome handle")
         return cls(
             _choice(d["outcome"], {"performed", "noChange"}), ObjectRef.from_json(d["handle"])
+        )
+
+
+@dataclass(frozen=True)
+class RealizeResult(WireModel):
+    outcome: str
+    handle: ObjectRef
+    warning: MatchWarning | None = None
+
+    @classmethod
+    def from_json(cls, value: object) -> RealizeResult:
+        data = _obj(value, "outcome handle", "warning")
+        return cls(
+            _choice(data["outcome"], {"performed", "noChange"}),
+            ObjectRef.from_json(data["handle"]),
+            _optional(data, "warning", MatchWarning.from_json),
         )
 
 
