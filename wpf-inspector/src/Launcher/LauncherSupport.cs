@@ -153,11 +153,27 @@ public static class NativeMethods
     public static IEnumerable<MODULEENTRY32> GetModules(Process process)
     {
         // Include both native and 32-bit modules, as in the upstream helper.
-        using var snapshot = CreateToolhelp32Snapshot(0x00000008 | 0x00000010, process.Id);
-        if (snapshot.IsInvalid) yield break;
+        using var snapshot = RetrySnapshot(
+            () => CreateToolhelp32Snapshot(0x00000008 | 0x00000010, process.Id),
+            handle => handle.IsInvalid, Marshal.GetLastWin32Error, handle => handle.Dispose());
         var module = new MODULEENTRY32 { dwSize = (uint)Marshal.SizeOf(typeof(MODULEENTRY32)) };
-        if (!Module32First(snapshot, ref module)) yield break;
+        if (!Module32First(snapshot, ref module)) throw new Win32Exception(Marshal.GetLastWin32Error());
         do { yield return module; } while (Module32Next(snapshot, ref module));
+        int error = Marshal.GetLastWin32Error();
+        if (error != 18) throw new Win32Exception(error);
+    }
+
+    internal static T RetrySnapshot<T>(Func<T> create, Func<T, bool> invalid, Func<int> lastError, Action<T> dispose)
+    {
+        for (int attempt = 0; ; attempt++)
+        {
+            T snapshot = create();
+            if (!invalid(snapshot)) return snapshot;
+            int error = lastError();
+            dispose(snapshot);
+            if (error != 24 || attempt == 7) throw new Win32Exception(error);
+            System.Threading.Thread.Sleep(10);
+        }
     }
 
     [DllImport("kernel32.dll", SetLastError = true, EntryPoint = "VirtualAllocEx")]
