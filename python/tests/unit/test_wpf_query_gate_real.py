@@ -250,6 +250,7 @@ def test_phase2_keyboard_menu_pointer_and_grid_parity(owned, backend):
         page.menu.click()
         page.menu_item.click()
         expect(page.effect, timeout=5).to_have_text("Menu clicked")
+        page.menu.hover()  # Ensure MouseEnter fires even when a previous test left the pointer here.
         page.pointer.hover()
         expect(page.effect, timeout=5).to_have_text("Hovered")
         page.pointer.double_click()
@@ -660,4 +661,143 @@ def test_negated_expect_present_message_matches_uia(owned, method):
             with pytest.raises(AssertionError) as error:
                 getattr(expect(page.present, timeout=1).not_, method)()
             messages.append(str(error.value))
+    assert messages[0] == messages[1]
+
+
+@pytest.mark.parametrize(
+    ("target", "method", "args", "truth"),
+    [
+        ("button", "to_exist", (), True),
+        ("missing", "to_exist", (), False),
+        ("button", "to_be_visible", (), True),
+        ("missing", "to_be_visible", (), False),
+        ("button", "to_be_hidden", (), False),
+        ("missing", "to_be_hidden", (), True),
+        ("button", "to_be_enabled", (), True),
+        ("disabled", "to_be_enabled", (), False),
+        ("button", "to_be_disabled", (), False),
+        ("disabled", "to_be_disabled", (), True),
+        ("checkbox", "to_be_checked", (), False),
+        ("checkbox", "to_be_checked", (), True),
+        ("radio", "to_be_selected", (), False),
+        ("radio", "to_be_selected", (), True),
+        ("button", "to_have_text", ("Fancy action",), True),
+        ("button", "to_have_text", ("wrong",), False),
+        ("button", "to_contain_text", ("Fancy",), True),
+        ("button", "to_contain_text", ("wrong",), False),
+        ("source", "to_have_value", ("source",), True),
+        ("source", "to_have_value", ("wrong",), False),
+        ("button", "to_have_property", ("IsEnabled", True), True),
+        ("button", "to_have_property", ("IsEnabled", False), False),
+        ("duplicates", "to_have_count", (2,), True),
+        ("duplicates", "to_have_count", (3,), False),
+    ],
+)
+def test_phase2_expect_matrix_messages_match(owned, target, method, args, truth):
+    from wintestkit.expect import expect
+    from wintestkit.model import Element, Elements, Page
+
+    scope, path = owned
+
+    class FixturePage(Page):
+        button = Element(automation_id="FancyAutomationId")
+        missing = Element(automation_id="NeverAppears")
+        disabled = Element(automation_id="ParityDisabled")
+        checkbox = Element(automation_id="ParityCheck")
+        radio = Element(automation_id="ParityRadio")
+        source = Element(automation_id="BindingSource")
+        duplicates = Elements(automation_id="Duplicate")
+
+    page = FixturePage(scope.app)
+    if truth and target in ("checkbox", "radio"):
+        with runtime.config_scope(replace(config(path, "agent"), backend="uia")):
+            click(resolve(scope, getattr(page, target).locator))
+    messages = []
+    for backend in ("uia", "auto"):
+        with runtime.config_scope(replace(config(path, "agent"), backend=backend)):
+            resolve(scope, Locator(automation_id="FixtureControl"))
+            for negate in (False, True):
+                assertion = expect(getattr(page, target), timeout=0.5)
+                if negate:
+                    assertion = assertion.not_
+                call = getattr(assertion, method)
+                if truth != negate:
+                    call(*args)
+                else:
+                    with pytest.raises(AssertionError) as error:
+                        call(*args)
+                    messages.append(re.sub(r"after [0-9.]+s", "after <time>", str(error.value)))
+    assert messages[0] == messages[1]
+
+
+@pytest.mark.parametrize("backend", ["uia", "auto"])
+def test_phase2_predicate_edges(owned, backend):
+    scope, path = owned
+    matches = [
+        ("clr:CoercedValue", 10),
+        ("clr:IsEnabled", True),
+        ("clr:Flags", 3),
+        ("clr:Flags", "One, Two"),
+        ("clr:DataContext.Customer.Address.City", "Sydney"),
+        ("Name", re.compile("fixture CONTROL", re.IGNORECASE)),
+        ("Name", re.compile("^fixture control$", re.IGNORECASE)),
+    ]
+    misses = [
+        ("clr:NoSuchMember", "anything"),
+        ("clr:DataContext.Customer.NoSuchMember", "anything"),
+        ("Name", re.compile("^control", re.IGNORECASE)),
+    ]
+    with runtime.config_scope(replace(config(path, "agent"), backend=backend)):
+        for key, value in matches:
+            assert len(resolve_all(scope, Locator(automation_id="FixtureControl", where=((key, value),)))) == 1
+        for key, value in misses:
+            assert not resolve_all(scope, Locator(automation_id="FixtureControl", where=((key, value),)))
+        with pytest.raises(InspectorError) as error:
+            resolve_all(scope, Locator(automation_id="FixtureControl", where=(("clr:Throwing", "x"),)))
+        assert error.value.code == "exception"
+
+
+def _fixture_scenario(pid, name, value):
+    import ctypes
+    import json
+
+    from wintestkit.inspector.pipe import WindowsPipe, _api
+
+    handle = _api().CreateFileW(
+        rf"\\.\pipe\WinTestKit.Fixture.{pid}", 0xC0000000, 0, None, 3, 0x40000000, None
+    )
+    assert handle != ctypes.c_void_p(-1).value
+    pipe = WindowsPipe(handle)
+    try:
+        deadline = time.monotonic() + 2
+        pipe.write(json.dumps({"cmd": "scenario", "name": name, "value": value}).encode() + b"\n", deadline)
+        line = bytearray()
+        while not line.endswith(b"\n"):
+            line.extend(pipe.read_exact(1, deadline))
+        assert json.loads(line) == {"ok": True}
+    finally:
+        pipe.close()
+
+
+def test_phase2_disabled_waits_match(owned):
+    from wintestkit.errors import WaitTimeoutError
+    from wintestkit.model import Element, Page
+
+    scope, path = owned
+
+    class FixturePage(Page):
+        disabled = Element(automation_id="ParityDisabled")
+
+    page = FixturePage(scope.app)
+    messages = []
+    for backend in ("uia", "auto"):
+        with runtime.config_scope(replace(config(path, "agent"), backend=backend)):
+            resolve(scope, Locator(automation_id="FixtureControl"))
+            with pytest.raises(WaitTimeoutError) as error:
+                page.disabled.wait_for("enabled", timeout=0.5)
+            messages.append(re.sub(r"[0-9.]+s", "<time>", str(error.value)))
+            _fixture_scenario(scope.app.pids[0], "enableDelayed", 500)
+            page.disabled.wait_for("enabled", timeout=5)
+            _fixture_scenario(scope.app.pids[0], "enableDelayed", 60000)
+            time.sleep(0.1)
     assert messages[0] == messages[1]

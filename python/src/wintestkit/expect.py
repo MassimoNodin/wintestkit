@@ -16,6 +16,7 @@ from wintestkit.engine import actions, waits
 from wintestkit.engine.resolve import wait_link
 from wintestkit.errors import (
     AmbiguousElementError,
+    InspectorDeadlineError,
     LocatorError,
     UIAError,
     WaitTimeoutError,
@@ -160,6 +161,7 @@ class Expectation:
         def poll() -> bool | None:
             __tracebackhide__ = True
             nonlocal secret
+            previous_error = self._locator_error
             self._locator_error = None
             try:
                 element = None
@@ -189,6 +191,9 @@ class Expectation:
                     secret = secret or actions.is_password(element)
                     record.set_arguments(args, secret=secret)
                 outcome = evaluate(element)
+            except InspectorDeadlineError:
+                self._locator_error = previous_error
+                raise
             except AmbiguousElementError:
                 if method != "to_exist":
                     raise

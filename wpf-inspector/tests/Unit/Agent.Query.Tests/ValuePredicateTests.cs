@@ -136,6 +136,9 @@ namespace WinTestKit.Inspector.Agent.Query.Tests
                 var nested = Equal("EmptyValue", new JsonStringNode("anything"));
                 nested.Path = new[] { Segment("EmptyValue"), Segment("Name") };
                 Assert.False(Match(nested));
+                nested.Path = new[] { Segment("DataContext"), Segment("NoSuchMember") };
+                model.DataContext = new object();
+                Assert.False(Match(nested));
             });
         }
         [Fact]

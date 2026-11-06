@@ -199,6 +199,7 @@ public sealed class MainWindow : Window
     private Window? second;
     private Window? large;
     private readonly StackPanel dynamicTree = new();
+    private readonly Button parityDisabled = Id(new Button { Content = "Disabled", IsEnabled = false }, "ParityDisabled");
     private int generation;
     public MainWindow()
     {
@@ -224,6 +225,7 @@ public sealed class MainWindow : Window
         var expander = Id(new Expander { Header = "Expand", Content = Id(new TextBlock { Text = "Expanded content" }, "ParityExpandedContent") }, "ParityExpander");
         parity.Children.Add(expander);
         panel.Children.Add(parity);
+        panel.Children.Add(parityDisabled);
         var interactionEffect = Id(new TextBlock { Text = "Ready" }, "ParityInteractionEffect");
         var menu = new Menu();
         var topMenu = Id(new MenuItem { Header = "Actions" }, "ParityMenu");
@@ -290,6 +292,11 @@ public sealed class MainWindow : Window
                 AutomationProperties.SetAutomationId(large, "LargeWindow");
                 large.Closed += (_, _) => large = null; large.Show(); break;
             case "openPopup": popup.IsOpen = true; break;
+            case "enableDelayed":
+                parityDisabled.IsEnabled = false;
+                var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(Math.Max(1, value)) };
+                timer.Tick += (_, _) => { timer.Stop(); parityDisabled.IsEnabled = true; };
+                timer.Start(); break;
             case "changeDataContext": DataContext = new ViewModel("fixture-" + ++generation); break;
             case "addDynamic": dynamicTree.Children.Add(Id(new Button { Content = "Dynamic " + value }, "Dynamic" + value)); break;
             case "clearDynamic": dynamicTree.Children.Clear(); break;

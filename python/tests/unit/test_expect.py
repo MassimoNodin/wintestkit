@@ -143,6 +143,27 @@ def test_expect_inspector_deadline_at_budget_edge(page, world, steps, monkeypatc
     assert client.calls == 2
 
 
+def test_expect_deadline_preserves_last_missing_diagnostic(page, world, steps, monkeypatch):
+    clock = FakeTime()
+    monkeypatch.setattr(waits, "_clock", clock.clock)
+    monkeypatch.setattr(waits, "_sleep", clock.sleep)
+    calls = 0
+
+    def resolve_then_expire(scope, locator):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise not_found()
+        clock.now = 1.0
+        raise InspectorDeadlineError("request deadline", code="timeout")
+
+    monkeypatch.setattr(model, "resolve", resolve_then_expire)
+    with pytest.raises(AssertionError) as error:
+        expect(page.status, timeout=1).not_.to_be_hidden()
+    assert 'No element matches *[id="StatusText"]' in str(error.value)
+    assert calls == 2
+
+
 def test_expect_inspector_real_error_propagates(page, world, steps):
     world.error = InspectorError("blocked", code="blockedByPolicy")
     with pytest.raises(InspectorError, match="blocked"):
