@@ -123,7 +123,7 @@ internal static class PackageVerifier
             var frameworkReferences = new HashSet<string>(StringComparer.Ordinal) {
                 "mscorlib", "System", "System.Core", "System.Runtime", "System.Collections", "System.Text.Encoding.Extensions",
                 "System.Diagnostics.Process", "System.IO.Pipes", "System.Security.Principal.Windows", "System.Threading",
-                "WindowsBase", "PresentationCore", "PresentationFramework", "System.Security.Cryptography", "System.ComponentModel.TypeConverter",
+                "WindowsBase", "PresentationCore", "PresentationFramework", "UIAutomationProvider", "UIAutomationTypes", "System.Security.Cryptography", "System.ComponentModel.TypeConverter",
                 "System.Text.RegularExpressions", "System.Threading.Thread", "System.Diagnostics.TraceSource", "System.Runtime.InteropServices",
                 "Microsoft.Win32.Primitives", "System.Linq"
             };
