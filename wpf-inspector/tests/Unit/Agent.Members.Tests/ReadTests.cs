@@ -106,6 +106,17 @@ namespace WinTestKit.Inspector.Agent.Members.Tests
                     Assert.Equal("unavailable", Read(new System.Windows.Controls.Border(), name).Status);
             });
         }
+        private static string SelectionDiagnostic(System.Windows.DependencyObject target)
+        {
+            var peer = PeerIdentity.GetPeer(target);
+            var selection = peer?.GetPattern(System.Windows.Automation.Peers.PatternInterface.Selection) as System.Windows.Automation.Provider.ISelectionProvider;
+            return $"peer={peer?.GetType().FullName ?? "null"}; selectionLength={selection?.GetSelection()?.Length.ToString() ?? "null"}; route={PeerIdentity.SelectionNameRoute ?? "none"}";
+        }
+        private static void AssertSelectionName(ValueDto value, string expected, System.Windows.DependencyObject target)
+        {
+            Assert.True(value.Status == "ok" && value.Scalar is JsonStringNode text && text.Value == expected,
+                $"status={value.Status}; {SelectionDiagnostic(target)}");
+        }
         [Fact]
         public void ReadsSelectionProviderNamesWithoutJoining()
         {
@@ -119,10 +130,39 @@ namespace WinTestKit.Inspector.Agent.Members.Tests
                 combo.SelectedIndex = 0; window.UpdateLayout();
                 var count = Read(combo, "selection_count"); Assert.Equal("ok", count.Status);
                 Assert.Equal("1", ((JsonNumberNode)count.Scalar!).RawText);
-                var name = Read(combo, "selection_name_0"); Assert.Equal("ok", name.Status);
-                Assert.Equal("first,\nsecond", ((JsonStringNode)name.Scalar!).Value);
+                var name = Read(combo, "selection_name_0"); AssertSelectionName(name, "first,\nsecond", combo);
+                PeerIdentity.DisablePeerFromProvider = true;
+                try { name = Read(combo, "selection_name_0"); AssertSelectionName(name, "first,\nsecond", combo); Assert.Equal("ElementProxy.Peer", PeerIdentity.SelectionNameRoute); }
+                finally { PeerIdentity.DisablePeerFromProvider = false; }
                 Assert.Equal("unavailable", Read(combo, "selection_name_1").Status);
                 Assert.Equal("unavailable", Read(new System.Windows.Controls.Button(), "selection_count").Status); window.Close();
+            });
+        }
+        [Fact]
+        public void ReadsMultipleSelectionNamesWithoutPeerFromProvider()
+        {
+            Sta(() =>
+            {
+                var inspector = new ObjectInspector(); var registry = new Registry(); var dispatcher = Dispatcher.CurrentDispatcher;
+                var list = new System.Windows.Controls.ListBox { SelectionMode = System.Windows.Controls.SelectionMode.Multiple };
+                list.Items.Add("first,\nline"); list.Items.Add("second"); list.Items.Add("third");
+                var window = new System.Windows.Window { Content = list }; window.Show(); window.UpdateLayout();
+                try
+                {
+                    list.SelectedItems.Add(list.Items[2]); list.SelectedItems.Add(list.Items[0]);
+                    var peer = PeerIdentity.GetPeer(list)!; peer.GetChildren();
+                    var providers = ((System.Windows.Automation.Provider.ISelectionProvider)peer.GetPattern(System.Windows.Automation.Peers.PatternInterface.Selection)).GetSelection();
+                    Assert.Equal(2, providers.Length);
+                    PeerIdentity.DisablePeerFromProvider = true;
+                    for (int index = 0; index < providers.Length; index++)
+                    {
+                        var expected = (string)providers[index].GetPropertyValue(System.Windows.Automation.AutomationElementIdentifiers.NameProperty.Id);
+                        var value = inspector.ReadPath(list, new[] { new PathSegment { Kind = "uia", Name = "selection_name_" + index } }, registry, dispatcher, CancellationToken.None);
+                        AssertSelectionName(value, expected, list);
+                        Assert.Equal("ElementProxy.Peer", PeerIdentity.SelectionNameRoute);
+                    }
+                }
+                finally { PeerIdentity.DisablePeerFromProvider = false; window.Close(); }
             });
         }
         [Fact]
@@ -140,8 +180,10 @@ namespace WinTestKit.Inspector.Agent.Members.Tests
                 Assert.Null(list.ItemContainerGenerator.ContainerFromIndex(199));
                 var count = Read(list, "selection_count"); Assert.Equal("ok", count.Status);
                 Assert.Equal("1", ((JsonNumberNode)count.Scalar!).RawText);
-                var name = Read(list, "selection_name_0"); Assert.Equal("ok", name.Status);
-                Assert.Equal("Item 199", ((JsonStringNode)name.Scalar!).Value);
+                var name = Read(list, "selection_name_0"); AssertSelectionName(name, "Item 199", list);
+                PeerIdentity.DisablePeerFromProvider = true;
+                try { name = Read(list, "selection_name_0"); AssertSelectionName(name, "Item 199", list); Assert.Equal("ElementProxy.Peer", PeerIdentity.SelectionNameRoute); }
+                finally { PeerIdentity.DisablePeerFromProvider = false; }
                 Assert.Null(list.ItemContainerGenerator.ContainerFromIndex(199));
                 window.Close();
             });
