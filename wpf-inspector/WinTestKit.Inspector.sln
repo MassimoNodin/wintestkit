@@ -15,6 +15,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Protocol.Tests", "tests\Uni
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Agent.Query.Tests", "tests\Unit\Agent.Query.Tests\Agent.Query.Tests.csproj", "{15EE23F3-72BF-4C0E-AB31-672DB9C9DD51}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Agent.Actions.Tests", "tests\Unit\Agent.Actions.Tests\Agent.Actions.Tests.csproj", "{2C5280F4-9BE6-4F33-B25A-53EF4DF8EDB2}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -25,6 +27,18 @@ Global
 		Release|x86 = Release|x86
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{2C5280F4-9BE6-4F33-B25A-53EF4DF8EDB2}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2C5280F4-9BE6-4F33-B25A-53EF4DF8EDB2}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2C5280F4-9BE6-4F33-B25A-53EF4DF8EDB2}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{2C5280F4-9BE6-4F33-B25A-53EF4DF8EDB2}.Debug|x64.Build.0 = Debug|Any CPU
+		{2C5280F4-9BE6-4F33-B25A-53EF4DF8EDB2}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{2C5280F4-9BE6-4F33-B25A-53EF4DF8EDB2}.Debug|x86.Build.0 = Debug|Any CPU
+		{2C5280F4-9BE6-4F33-B25A-53EF4DF8EDB2}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2C5280F4-9BE6-4F33-B25A-53EF4DF8EDB2}.Release|Any CPU.Build.0 = Release|Any CPU
+		{2C5280F4-9BE6-4F33-B25A-53EF4DF8EDB2}.Release|x64.ActiveCfg = Release|Any CPU
+		{2C5280F4-9BE6-4F33-B25A-53EF4DF8EDB2}.Release|x64.Build.0 = Release|Any CPU
+		{2C5280F4-9BE6-4F33-B25A-53EF4DF8EDB2}.Release|x86.ActiveCfg = Release|Any CPU
+		{2C5280F4-9BE6-4F33-B25A-53EF4DF8EDB2}.Release|x86.Build.0 = Release|Any CPU
 		{6928C322-02C4-417E-8C54-E310DE7FF003}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{6928C322-02C4-417E-8C54-E310DE7FF003}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{6928C322-02C4-417E-8C54-E310DE7FF003}.Debug|x64.ActiveCfg = Debug|Any CPU
@@ -66,6 +80,7 @@ Global
 		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
+		{2C5280F4-9BE6-4F33-B25A-53EF4DF8EDB2} = {9D556B49-86D1-93A7-9596-FFAAB74EC556}
 		{6928C322-02C4-417E-8C54-E310DE7FF003} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{9D556B49-86D1-93A7-9596-FFAAB74EC556} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 		{B42C28C7-1016-4D7F-8D28-0DBB63089918} = {9D556B49-86D1-93A7-9596-FFAAB74EC556}

@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Threading;
 using WinTestKit.Inspector.Agent.Contracts;
+using WinTestKit.Inspector.Agent.Actions;
 using WinTestKit.Inspector.Agent.Mapping;
 using WinTestKit.Inspector.Agent.Query;
 using WinTestKit.Inspector.Agent.State;
@@ -16,7 +17,7 @@ using WinTestKit.Inspector.Protocol;
 
 namespace WinTestKit.Inspector.Agent.Inspection
 {
-    public sealed class WpfInspectionService : IInspectionService, IExactMappingCapability, IQueryInspectionService, IStateInspectionService, IWaitInspectionService
+    public sealed class WpfInspectionService : IInspectionService, IExactMappingCapability, IQueryInspectionService, IStateInspectionService, IWaitInspectionService, IActionInspectionService
     {
         private readonly DispatcherExecutor executor;
         private readonly ObjectRegistry registry;
@@ -43,6 +44,15 @@ namespace WinTestKit.Inspector.Agent.Inspection
         }
 
         public bool ExactMappingAvailable => mapper.IsAvailable;
+
+        public Task<ActResult> ActAsync(string method, ObjectRef handle, DateTime deadline, int timeoutMs, CancellationToken ct) => RunAsync(async token =>
+        {
+            object target = GetObject(handle.ObjectId, handle.Generation, out Dispatcher dispatcher);
+            ObjectRef actual = registry.Register(target, dispatcher, inspector.DescribeType(target.GetType()));
+            if (actual.SessionId != handle.SessionId || actual.DispatcherId != handle.DispatcherId)
+                throw new ProtocolException(ErrorCodes.ObjectStale, "Unknown or stale object handle.");
+            return await ActionEngine.ExecuteAsync(executor, dispatcher, target, actual, method, deadline, timeoutMs, token).ConfigureAwait(false);
+        }, ct);
 
         public Task<WaitUntilResult> WaitUntilAsync(WaitCondition condition, DateTime deadline, int timeoutMs, CancellationToken ct) =>
             RunAsync(token => new WaitEngine(query, executor, registry, inspector as ObjectInspector ?? new ObjectInspector(), adapter).UntilAsync(condition, deadline, timeoutMs, token), ct);

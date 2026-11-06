@@ -213,6 +213,7 @@ public class SessionTests
         Assert.Equal(available, response.Features.Contains(Features.ExactUiaMapping));
         Assert.Contains(Features.Query, response.Features);
         Assert.Contains(Features.Waits, response.Features);
+        Assert.Contains(Features.Actions, response.Features);
         await FrameCodec.WriteFrameAsync(client, StrictJson.Serialize(new RequestEnvelope { Id = 2, Method = PipeMethods.Close }.ToJson()), timeout.Token);
         await FrameCodec.ReadFrameAsync(client, timeout.Token);
         await serving.WaitAsync(timeout.Token);
