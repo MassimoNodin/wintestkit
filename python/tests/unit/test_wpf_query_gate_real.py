@@ -749,11 +749,22 @@ def test_phase2_predicate_edges(owned, backend):
     ]
     with runtime.config_scope(replace(config(path, "agent"), backend=backend)):
         for key, value in matches:
-            assert len(resolve_all(scope, Locator(automation_id="FixtureControl", where=((key, value),)))) == 1
+            assert (
+                len(
+                    resolve_all(
+                        scope, Locator(automation_id="FixtureControl", where=((key, value),))
+                    )
+                )
+                == 1
+            )
         for key, value in misses:
-            assert not resolve_all(scope, Locator(automation_id="FixtureControl", where=((key, value),)))
+            assert not resolve_all(
+                scope, Locator(automation_id="FixtureControl", where=((key, value),))
+            )
         with pytest.raises(InspectorError) as error:
-            resolve_all(scope, Locator(automation_id="FixtureControl", where=(("clr:Throwing", "x"),)))
+            resolve_all(
+                scope, Locator(automation_id="FixtureControl", where=(("clr:Throwing", "x"),))
+            )
         assert error.value.code == "exception"
 
 
@@ -770,7 +781,9 @@ def _fixture_scenario(pid, name, value):
     pipe = WindowsPipe(handle)
     try:
         deadline = time.monotonic() + 2
-        pipe.write(json.dumps({"cmd": "scenario", "name": name, "value": value}).encode() + b"\n", deadline)
+        pipe.write(
+            json.dumps({"cmd": "scenario", "name": name, "value": value}).encode() + b"\n", deadline
+        )
         line = bytearray()
         while not line.endswith(b"\n"):
             line.extend(pipe.read_exact(1, deadline))
