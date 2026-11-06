@@ -9,14 +9,16 @@ from __future__ import annotations
 
 import logging
 import re
+import time
 from typing import Literal
 
-from wintestkit.backends.element import TargetElement, uia_of
+from wintestkit.backends.element import TargetElement, WpfElement, uia_of
 from wintestkit.engine import waits
 from wintestkit.engine.diagnose import Candidate, Diagnostic, quote
 from wintestkit.engine.locator import Locator
 from wintestkit.engine.query import query_all
 from wintestkit.errors import ActionError, ElementNotFoundError, NoUiaPeerError, UIAError
+from wintestkit.inspector.paths import PathSegment
 from wintestkit.uia import element, input, patterns, win32
 from wintestkit.uia.constants import ExpandCollapseState, ToggleState
 from wintestkit.uia.element import UIAElement
@@ -217,6 +219,14 @@ def hover(el: TargetElement) -> None:
 
 def is_password(el: TargetElement) -> bool:
     __tracebackhide__ = True
+    if isinstance(el, WpfElement):
+        values, _ = el.client.read(
+            el.ref.object_id,
+            el.ref.generation,
+            [(PathSegment("type", "FullName"),)],
+            deadline=time.monotonic() + 2,
+        )
+        return values[0].value.status != "ok"
     try:
         el = uia_of(el)
     except NoUiaPeerError:
