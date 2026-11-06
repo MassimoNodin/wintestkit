@@ -49,6 +49,7 @@ namespace WinTestKit.Inspector.Agent.Inspection.Members
                 }
                 if ((name == "selection_count" || name.StartsWith("selection_name_", StringComparison.Ordinal)) && peer.GetPattern(PatternInterface.Selection) is ISelectionProvider provider)
                 {
+                    if (peer is ItemsControlAutomationPeer) peer.GetChildren();
                     IRawElementProviderSimple[] selected = provider.GetSelection() ?? Array.Empty<IRawElementProviderSimple>();
                     if (name == "selection_count") result = selected.Length;
                     else if (int.TryParse(name.Substring("selection_name_".Length), out int index) && index >= 0 && index < selected.Length)
