@@ -293,23 +293,25 @@ test uses on-demand inspector attach and exercises the same cases with each back
 | Top-level and context menu popup item actions | Pass | Pass |
 | DataGrid row and cell items | Pass (UIA) | Pass (UIA) |
 | Hover, double-click and right-click visible effects | Pass | Pass |
-| Remaining required wait, expect and diagnostic matrix | Not yet covered | Not yet covered |
+| Expect: all 12 methods, positive and negated pass/failure; failure messages compared | Pass | Pass |
+| Wait: disabled timeout and delayed enable; timeout messages compared | Pass | Pass |
+| Managed numeric, boolean and enum equality; nested and absent members; unreadable getter | Pass | Pass |
+| Regex case-insensitive, anchored and unanchored predicates | Pass | Pass |
 
-The serial backend-filtered module runs took 24.05 s for uia (5 passed) and 27.94 s for
-auto (7 passed), including startup. These filters also select backend-specific tests and
-exclude unparametrized comparisons, so they are not complete-suite timings for the expanded
-matrix. A parallel live run hit an inspector readiness timeout; the
-isolated rerun passed, so live desktop tests should run serially when measuring parity.
-The auto backend now treats a peerless element as potentially sensitive when redacting
-action errors, fixing collapsed-expander visibility assertions. Grid item operations
-remain on UIA on both backends. Integration tests use native/Tk windows or no app,
-and the Calculator example targets Windows Calculator rather than this WPF fixture.
+The serial backend-filtered module runs took 43.72 s for uia (10 passed, 42
+deselected) and 33.32 s for auto (10 passed, 42 deselected), including startup.
+These filters select backend-specific tests and tests whose names mention a backend;
+they exclude the shared assertion and wait message comparisons, which exercise both
+backends within each case. They are therefore not full-matrix timings.
 
-Remaining gate work includes disabled waits; the broader expect assertion and negation
-matrix and error-message comparisons;
-broader managed predicates and regex cases; and full per-backend timings.
-Deadline exhaustion now has a typed marker so polling can distinguish it from resource
-limits. The full expect-matrix slice remains to be completed before gate sign-off.
+A missing nested managed member previously raised `memberNotFound` instead of
+being treated as a non-match; the query predicate now applies decision 10 at every
+path depth. A deadline during a final assertion poll also no longer drops the last
+completed missing-element diagnostic. The throwing-getter case remains an explicit
+`valueUnreadable` error.
+Grid item operations remain on UIA on both backends. Integration tests use native/Tk
+windows or no app, and the Calculator example targets Windows Calculator rather than
+this WPF fixture.
 
 ## 7. Test strategy
 

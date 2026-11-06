@@ -98,7 +98,9 @@ namespace WinTestKit.Inspector.Agent.Query
             using (var cancellation = new CancellationTokenSource())
             {
                 cancellation.CancelAfter(context.Remaining > TimeSpan.Zero ? context.Remaining : TimeSpan.Zero);
-                ValueDto? value = inspector.ReadPath(target, path, registry, target.Dispatcher, cancellation.Token);
+                ValueDto? value;
+                try { value = inspector.ReadPath(target, path, registry, target.Dispatcher, cancellation.Token); }
+                catch (ProtocolException error) when (error.Code == ErrorCodes.MemberNotFound) { return false; }
                 if (path[0].Kind == "uia" && value.Status == "unavailable") return false;
                 return value != null && MatchesValue(value, context);
             }
