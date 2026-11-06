@@ -533,11 +533,24 @@
               "const": "uia"
             },
             "name": {
-              "enum": [
+              "anyOf": [
+                { "type": "string", "pattern": "^selection_name_(0|[1-9][0-9]{0,8})$" },
+                { "enum": [
                 "automation_id",
                 "name",
                 "class_name",
-                "control_type"
+                "control_type",
+                "supported_patterns",
+                "value",
+                "is_read_only",
+                "toggle_state",
+                "is_selected",
+                "expand_state",
+                "range_value",
+                "document_text",
+                "is_password",
+                "selection_count"
+              ] }
               ]
             }
           },

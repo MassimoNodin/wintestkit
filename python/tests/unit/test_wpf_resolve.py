@@ -70,27 +70,27 @@ class Client:
 def test_password_classification_uses_agent_redaction(status, expected):
     client = Client()
     client.read = lambda *args, **kwargs: (
-        (SimpleNamespace(value=SimpleNamespace(status=status)),),
+        (SimpleNamespace(value=SimpleNamespace(status=status, scalar=False)),),
         "read",
     )
     target = WpfElement(client, ref("child"), 42)
     assert actions.is_password(target) is expected
 
 
-def test_password_classification_has_independent_deadline(monkeypatch):
+def test_password_classification_honors_query_deadline(monkeypatch):
     client = Client()
     deadlines = []
 
     def read(*args, deadline):
         deadlines.append(deadline)
-        return ((SimpleNamespace(value=SimpleNamespace(status="ok")),), "read")
+        return ((SimpleNamespace(value=SimpleNamespace(status="ok", scalar=False)),), "read")
 
     client.read = read
     target = WpfElement(client, ref("child"), 42)
     monkeypatch.setattr(target, "as_uia", lambda: pytest.fail("UIA mapping was attempted"))
     with query_budget(time.monotonic() - 1):
         assert not actions.is_password(target)
-    assert deadlines[0] > time.monotonic()
+    assert deadlines[0] < time.monotonic()
 
 
 @pytest.fixture
@@ -378,32 +378,31 @@ def test_popup_index_after_capped_popup_and_out_of_range(setup, monkeypatch):
 
 
 def test_actions_and_patterns_accept_wpf_element(setup, monkeypatch):
-    from wintestkit.uia import patterns
-
-    _, _, window = setup
+    _, client, window = setup
     root = wpf_resolve.route(window)
-    peer = SimpleNamespace(name="text")
-    monkeypatch.setattr(root, "as_uia", lambda: peer)
+    monkeypatch.setattr(root, "as_uia", lambda: pytest.fail("unexpected UIA mapping"))
     seen = []
-    monkeypatch.setattr(patterns, "has_pattern", lambda el, name: name in ("Invoke", "Value"))
-    original_invoke = patterns.invoke
-    monkeypatch.setattr(patterns, "invoke", lambda el: seen.append(("click", el)))
-    monkeypatch.setattr(patterns, "is_read_only", lambda el: False)
-    monkeypatch.setattr(patterns, "set_value", lambda el, value: seen.append((value, el)))
-    monkeypatch.setattr(patterns, "get_value", lambda el: "value")
-    monkeypatch.setattr(actions, "is_password", lambda el: False)
+    values = {
+        "supported_patterns": "Invoke,Value",
+        "value": "value",
+        "is_read_only": False,
+        "is_password": False,
+        "FullName": "T",
+    }
+
+    def read(object_id, generation, paths, *, deadline):
+        return tuple(
+            SimpleNamespace(value=SimpleNamespace(status="ok", scalar=values[p[0].name]))
+            for p in paths
+        ), "read"
+
+    client.read = read
+    client.act_invoke = lambda ref, **kw: seen.append(("invoke", ref))
+    client.act_set_value = lambda ref, value, **kw: seen.append((value, ref))
     assert actions.click(root) == "invoke"
     assert actions.type_text(root, "hello") == "value"
     assert actions.get_text(root) == "value"
-    assert seen == [("click", peer), ("hello", peer)]
-    called = []
-    monkeypatch.setattr(
-        patterns,
-        "_pattern",
-        lambda el, name: called.append(el) or SimpleNamespace(Invoke=lambda: None),
-    )
-    original_invoke(root)
-    assert called == [peer]
+    assert seen == [("invoke", root.ref), ("hello", root.ref)]
 
 
 @pytest.mark.parametrize(

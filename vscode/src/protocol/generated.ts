@@ -107,7 +107,24 @@ export type PathSegment =
     }
   | {
       kind: "uia";
-      name: "automation_id" | "name" | "class_name" | "control_type";
+      name:
+        | string
+        | (
+            | "automation_id"
+            | "name"
+            | "class_name"
+            | "control_type"
+            | "supported_patterns"
+            | "value"
+            | "is_read_only"
+            | "toggle_state"
+            | "is_selected"
+            | "expand_state"
+            | "range_value"
+            | "document_text"
+            | "is_password"
+            | "selection_count"
+          );
     };
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema

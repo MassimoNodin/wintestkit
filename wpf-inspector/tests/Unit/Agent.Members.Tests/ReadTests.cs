@@ -72,6 +72,74 @@ namespace WinTestKit.Inspector.Agent.Members.Tests
             });
         }
         [Fact]
+        public void ReadsPeerPatternsAndRedactsPasswords()
+        {
+            Sta(() =>
+            {
+                var inspector = new ObjectInspector(); var registry = new Registry(); var dispatcher = Dispatcher.CurrentDispatcher;
+                ValueDto Read(object target, string name) => inspector.ReadPath(target, new[] { new PathSegment { Kind = "uia", Name = name } }, registry, dispatcher, CancellationToken.None);
+                var check = new System.Windows.Controls.CheckBox { IsChecked = true };
+                Assert.Contains("Toggle", ((JsonStringNode)Read(check, "supported_patterns").Scalar!).Value);
+                Assert.Equal("On", ((JsonStringNode)Read(check, "toggle_state").Scalar!).Value);
+                Assert.Equal("unavailable", Read(check, "range_value").Status);
+                var button = new System.Windows.Controls.Button();
+                foreach (string name in new[] { "value", "is_read_only", "toggle_state", "is_selected", "expand_state", "range_value", "document_text", "selection_count" })
+                    Assert.Equal("unavailable", Read(button, name).Status);
+                Assert.Equal("ok", Read(button, "supported_patterns").Status);
+                Assert.False(((JsonBoolNode)Read(button, "is_password").Scalar!).Value);
+                var text = new System.Windows.Controls.TextBox { Text = "hello" };
+                Assert.Equal("hello", ((JsonStringNode)Read(text, "value").Scalar!).Value);
+                Assert.False(((JsonBoolNode)Read(text, "is_read_only").Scalar!).Value);
+                var expander = new System.Windows.Controls.Expander { IsExpanded = false };
+                Assert.Equal("Collapsed", ((JsonStringNode)Read(expander, "expand_state").Scalar!).Value);
+                var slider = new System.Windows.Controls.Slider { Value = 5 };
+                Assert.Equal("ok", Read(slider, "range_value").Status);
+                Assert.Equal("ok", Read(text, "document_text").Status);
+                var password = new System.Windows.Controls.PasswordBox { Password = "secret" };
+                Assert.Equal("redacted", Read(password, "value").Status);
+                Assert.Equal("redacted", Read(password, "document_text").Status);
+                Assert.True(((JsonBoolNode)Read(password, "is_password").Scalar!).Value);
+                Assert.Equal("ok", Read(password, "supported_patterns").Status);
+                foreach (string name in new[] { "supported_patterns", "value", "is_read_only", "toggle_state", "is_selected", "expand_state", "range_value", "document_text", "is_password" })
+                    Assert.Equal("unavailable", Read(new System.Windows.Controls.Border(), name).Status);
+            });
+        }
+        [Fact]
+        public void ReadsSelectionProviderNamesWithoutJoining()
+        {
+            Sta(() =>
+            {
+                var inspector = new ObjectInspector(); var registry = new Registry(); var dispatcher = Dispatcher.CurrentDispatcher;
+                ValueDto Read(object target, string name) => inspector.ReadPath(target, new[] { new PathSegment { Kind = "uia", Name = name } }, registry, dispatcher, CancellationToken.None);
+                var combo = new System.Windows.Controls.ComboBox();
+                combo.Items.Add(new System.Windows.Controls.ComboBoxItem { Content = "first,\nsecond" });
+                var window = new System.Windows.Window { Content = combo }; window.Show(); window.UpdateLayout();
+                combo.SelectedIndex = 0; window.UpdateLayout();
+                Assert.Equal("1", ((JsonNumberNode)Read(combo, "selection_count").Scalar!).RawText);
+                Assert.Equal("first,\nsecond", ((JsonStringNode)Read(combo, "selection_name_0").Scalar!).Value);
+                Assert.Equal("unavailable", Read(combo, "selection_name_1").Status);
+                Assert.Equal("unavailable", Read(new System.Windows.Controls.Button(), "selection_count").Status); window.Close();
+            });
+        }
+        [Fact]
+        public void ReadsSelectionAfterContainerVirtualization()
+        {
+            Sta(() =>
+            {
+                var inspector = new ObjectInspector(); var registry = new Registry(); var dispatcher = Dispatcher.CurrentDispatcher;
+                ValueDto Read(object target, string name) => inspector.ReadPath(target, new[] { new PathSegment { Kind = "uia", Name = name } }, registry, dispatcher, CancellationToken.None);
+                var list = new System.Windows.Controls.ListBox();
+                for (int index = 0; index < 200; index++) list.Items.Add("Item " + index);
+                var window = new System.Windows.Window { Content = list, Width = 200, Height = 150 };
+                window.Show(); window.UpdateLayout();
+                list.SelectedIndex = 199;
+                Assert.Null(list.ItemContainerGenerator.ContainerFromIndex(199));
+                Assert.Equal("1", ((JsonNumberNode)Read(list, "selection_count").Scalar!).RawText);
+                Assert.Equal("Item 199", ((JsonStringNode)Read(list, "selection_name_0").Scalar!).Value);
+                window.Close();
+            });
+        }
+        [Fact]
         public void ReadsScalarsAndProtectsSensitiveGetters()
         {
             Sta(() =>

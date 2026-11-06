@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Any, Literal, cast
 
@@ -46,12 +47,27 @@ class PathSegment:
             "BaseTypes",
         }:
             raise ValueError("Invalid type metadata name")
-        if kind == "uia" and data["name"] not in {
-            "automation_id",
-            "name",
-            "class_name",
-            "control_type",
-        }:
+        if (
+            kind == "uia"
+            and not re.fullmatch(r"selection_name_(0|[1-9][0-9]{0,8})", data["name"])
+            and data["name"]
+            not in {
+                "automation_id",
+                "name",
+                "class_name",
+                "control_type",
+                "supported_patterns",
+                "value",
+                "is_read_only",
+                "toggle_state",
+                "is_selected",
+                "expand_state",
+                "range_value",
+                "document_text",
+                "is_password",
+                "selection_count",
+            }
+        ):
             raise ValueError("Invalid UIA name")
         return cls(
             kind,

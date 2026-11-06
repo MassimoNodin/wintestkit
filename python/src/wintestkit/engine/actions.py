@@ -9,15 +9,22 @@ from __future__ import annotations
 
 import logging
 import re
-import time
 from typing import Literal
 
 from wintestkit.backends.element import TargetElement, WpfElement, uia_of
 from wintestkit.engine import waits
 from wintestkit.engine.diagnose import Candidate, Diagnostic, quote
 from wintestkit.engine.locator import Locator
+from wintestkit.engine.managed import in_query_budget, operation_deadline
 from wintestkit.engine.query import query_all
-from wintestkit.errors import ActionError, ElementNotFoundError, NoUiaPeerError, UIAError
+from wintestkit.errors import (
+    ActionError,
+    ElementNotFoundError,
+    InspectorDeadlineError,
+    InspectorError,
+    NoUiaPeerError,
+    UIAError,
+)
 from wintestkit.inspector.paths import PathSegment
 from wintestkit.uia import element, input, patterns, win32
 from wintestkit.uia.constants import ExpandCollapseState, ToggleState
@@ -33,12 +40,93 @@ _STABLE_TIMEOUT = 1.0
 MAX_LISTED_ITEMS = 5
 
 
-def _short(el: UIAElement) -> str:
+def _short(el: TargetElement) -> str:
     __tracebackhide__ = True
     try:
         return el.info().short()
     except UIAError:
         return repr(el)
+
+
+def _translate_wpf_error(exc: InspectorError) -> None:
+    __tracebackhide__ = True
+    if exc.code == "objectStale":
+        raise UIAError("The UI element is no longer available", element_gone=True) from exc
+    if isinstance(exc, InspectorDeadlineError) or exc.code == "timeout":
+        if in_query_budget():
+            if isinstance(exc, InspectorDeadlineError):
+                raise exc
+            raise InspectorDeadlineError(str(exc), code=exc.code) from exc
+        raise UIAError(
+            "UI Automation call failed (0x80131505): The operation timed out", -2146233083
+        ) from exc
+
+
+def _wpf_read(
+    el: WpfElement, name: str, pattern: str | None = None, *, fail_closed: bool = False
+) -> object:
+    __tracebackhide__ = True
+    try:
+        values, _ = el.client.read(
+            el.ref.object_id,
+            el.ref.generation,
+            [(PathSegment("uia", name),)],
+            deadline=operation_deadline(2),
+        )
+    except InspectorError as exc:
+        _translate_wpf_error(exc)
+        raise
+    value = values[0].value
+    if value.status == "unavailable" and pattern:
+        raise ActionError(f"{_short(el)} does not support the {pattern} pattern")
+    if value.status != "ok" and fail_closed:
+        return True
+    if value.status != "ok":
+        raise UIAError(f"Cannot read {name}: {value.status}")
+    return value.scalar
+
+
+def _wpf_patterns(el: WpfElement) -> set[str]:
+    __tracebackhide__ = True
+    return set(str(_wpf_read(el, "supported_patterns")).split(","))
+
+
+def _wpf_act(
+    el: WpfElement, verb: str, pattern: str | None = None, value: str | None = None
+) -> None:
+    __tracebackhide__ = True
+    try:
+        method = getattr(el.client, "act_" + verb)
+        args = (el.ref,) if value is None else (el.ref, value)
+        method(*args, timeout_ms=2000, deadline=operation_deadline(2))
+    except InspectorError as exc:
+        if exc.code == "actionUnsupported" and pattern:
+            raise ActionError(f"{_short(el)} does not support the {pattern} pattern") from exc
+        _translate_wpf_error(exc)
+        raise
+
+
+def _wpf_window(el: WpfElement, *, activate: bool = False) -> None:
+    __tracebackhide__ = True
+    state = el.client.state_get(el.ref, timeout_ms=2000, deadline=operation_deadline(2))
+    hwnd = state.window_handle or 0
+    if activate and (not hwnd or not win32.bring_to_foreground(hwnd)):
+        raise ActionError("Cannot activate the target window; refusing global input")
+    if (
+        not hwnd
+        or not win32.IsWindow(hwnd)
+        or win32.window_pid(hwnd) != el.process_id
+        or win32.GetForegroundWindow() != hwnd
+    ):
+        raise ActionError("Target window ownership or foreground changed; refusing global input")
+
+
+def _wpf_keyboard_target(el: WpfElement) -> None:
+    __tracebackhide__ = True
+    _wpf_window(el)
+    state = el.client.state_get(el.ref, timeout_ms=2000, deadline=operation_deadline(2))
+    if not state.focused:
+        raise ActionError("Target control does not own keyboard focus; refusing global input")
 
 
 # -- visibility and focus -------------------------------------------------------------------------
@@ -47,6 +135,13 @@ def _short(el: UIAElement) -> str:
 def ensure_visible(el: TargetElement) -> None:
     """Scroll a virtualized or scrolled-away element into view."""
     __tracebackhide__ = True
+    if isinstance(el, WpfElement):
+        if not el.as_live().is_offscreen:
+            return
+        _wpf_act(el, "scroll_into_view" if "ScrollItem" in _wpf_patterns(el) else "bring_into_view")
+        if el.as_live().is_offscreen:
+            raise ActionError(f"{_short(el)} is off-screen and cannot be scrolled into view")
+        return
     el = uia_of(el)
     if not el.is_offscreen:
         return
@@ -133,6 +228,10 @@ def _keyboard_target(el: UIAElement) -> None:
 def focus(el: TargetElement) -> None:
     """Give the element keyboard focus (bringing its window forward first)."""
     __tracebackhide__ = True
+    if isinstance(el, WpfElement):
+        _wpf_window(el, activate=True)
+        _wpf_act(el, "focus")
+        return
     el = uia_of(el)
     _foreground(el)
     try:
@@ -173,6 +272,24 @@ def _validate_mouse_target(el: UIAElement, x: int, y: int) -> None:
 def click(el: TargetElement, *, mode: InputMode = "pattern", button: MouseButton = "left") -> str:
     """Click the element; returns the strategy used (``invoke``, ``toggle``, ``mouse`` ...)."""
     __tracebackhide__ = True
+    if isinstance(el, WpfElement) and mode == "pattern" and button == "left":
+        available = _wpf_patterns(el)
+        for pattern, verb, strategy in (
+            ("Invoke", "invoke", "invoke"),
+            ("Toggle", "toggle", "toggle"),
+            ("SelectionItem", "select", "select"),
+            ("ExpandCollapse", "expand", "expand_collapse"),
+        ):
+            if pattern in available:
+                if (
+                    pattern == "ExpandCollapse"
+                    and _wpf_read(el, "expand_state", pattern) != "Collapsed"
+                ):
+                    verb = "collapse"
+                _wpf_act(el, verb, pattern)
+                return strategy
+        _mouse_click(uia_of(el), button=button)
+        return "mouse"
     el = uia_of(el)
     if mode == "pattern" and button == "left":
         if patterns.has_pattern(el, "Invoke"):
@@ -220,13 +337,7 @@ def hover(el: TargetElement) -> None:
 def is_password(el: TargetElement) -> bool:
     __tracebackhide__ = True
     if isinstance(el, WpfElement):
-        values, _ = el.client.read(
-            el.ref.object_id,
-            el.ref.generation,
-            [(PathSegment("type", "FullName"),)],
-            deadline=time.monotonic() + 2,
-        )
-        return values[0].value.status != "ok"
+        return bool(_wpf_read(el, "is_password", fail_closed=True))
     try:
         el = uia_of(el)
     except NoUiaPeerError:
@@ -242,6 +353,23 @@ def _can_set_value(el: UIAElement) -> bool:
 def type_text(el: TargetElement, text: str, *, clear: bool = True, keys: bool = False) -> str:
     """Enter text; returns ``"value"`` (ValuePattern) or ``"keys"`` (keyboard input)."""
     __tracebackhide__ = True
+    if isinstance(el, WpfElement):
+        password = is_password(el)
+        if (
+            not keys
+            and not password
+            and "Value" in _wpf_patterns(el)
+            and not _wpf_read(el, "is_read_only", "Value")
+        ):
+            value = text if clear else str(_wpf_read(el, "value", "Value")) + text
+            _wpf_act(el, "set_value", "Value", value)
+            return "value"
+        focus(el)
+        _wpf_keyboard_target(el)
+        input.press("Ctrl+A Delete" if clear else "Ctrl+End")
+        _wpf_keyboard_target(el)
+        input.type_text(text)
+        return "keys"
     el = uia_of(el)
     if not keys and _can_set_value(el) and (clear or not is_password(el)):
         try:
@@ -261,6 +389,18 @@ def type_text(el: TargetElement, text: str, *, clear: bool = True, keys: bool = 
 def clear(el: TargetElement) -> None:
     """Remove all text from an edit control."""
     __tracebackhide__ = True
+    if isinstance(el, WpfElement):
+        if (
+            not is_password(el)
+            and "Value" in _wpf_patterns(el)
+            and not _wpf_read(el, "is_read_only", "Value")
+        ):
+            _wpf_act(el, "set_value", "Value", "")
+            return
+        focus(el)
+        _wpf_keyboard_target(el)
+        input.press("Ctrl+A Delete")
+        return
     el = uia_of(el)
     if _can_set_value(el):
         try:
@@ -276,6 +416,11 @@ def clear(el: TargetElement) -> None:
 def press(el: TargetElement, keys: str) -> None:
     """Focus the element and press key combinations such as ``"Ctrl+S"``."""
     __tracebackhide__ = True
+    if isinstance(el, WpfElement):
+        focus(el)
+        _wpf_keyboard_target(el)
+        input.press(keys)
+        return
     el = uia_of(el)
     focus(el)
     _keyboard_target(el)
@@ -285,6 +430,14 @@ def press(el: TargetElement, keys: str) -> None:
 def get_text(el: TargetElement) -> str:
     """The element's text: its value, document text or UIA name."""
     __tracebackhide__ = True
+    if isinstance(el, WpfElement):
+        available = _wpf_patterns(el)
+        password = is_password(el)
+        if "Value" in available and not password:
+            return str(_wpf_read(el, "value", "Value"))
+        if "Text" in available and not password:
+            return str(_wpf_read(el, "document_text", "Text"))
+        return el.name
     el = uia_of(el)
     if patterns.has_pattern(el, "Value") and not is_password(el):
         return patterns.get_value(el)
@@ -295,6 +448,8 @@ def get_text(el: TargetElement) -> str:
 
 def get_value(el: TargetElement) -> str:
     __tracebackhide__ = True
+    if isinstance(el, WpfElement):
+        return str(_wpf_read(el, "value", "Value"))
     el = uia_of(el)
     return patterns.get_value(el)
 
@@ -305,6 +460,15 @@ def get_value(el: TargetElement) -> str:
 def set_checked(el: TargetElement, checked: bool) -> None:
     """Toggle a check box or toggle button until it reaches the requested state."""
     __tracebackhide__ = True
+    if isinstance(el, WpfElement):
+        target_name = "On" if checked else "Off"
+        for _ in range(3):
+            if _wpf_read(el, "toggle_state", "Toggle") == target_name:
+                return
+            _wpf_act(el, "toggle", "Toggle")
+        if _wpf_read(el, "toggle_state", "Toggle") != target_name:
+            raise ActionError(f"{_short(el)} did not reach the {target_name} state")
+        return
     el = uia_of(el)
     target = ToggleState.On if checked else ToggleState.Off
     for _ in range(3):
@@ -317,12 +481,17 @@ def set_checked(el: TargetElement, checked: bool) -> None:
 
 def is_checked(el: TargetElement) -> bool:
     __tracebackhide__ = True
+    if isinstance(el, WpfElement):
+        return _wpf_read(el, "toggle_state", "Toggle") == "On"
     el = uia_of(el)
     return patterns.toggle_state(el) == ToggleState.On
 
 
 def toggle(el: TargetElement) -> None:
     __tracebackhide__ = True
+    if isinstance(el, WpfElement):
+        _wpf_act(el, "toggle", "Toggle")
+        return
     el = uia_of(el)
     patterns.toggle(el)
 
@@ -330,24 +499,35 @@ def toggle(el: TargetElement) -> None:
 def select_self(el: TargetElement) -> None:
     """Select the element itself (a radio button, list item or tab)."""
     __tracebackhide__ = True
+    if isinstance(el, WpfElement):
+        _wpf_act(el, "select", "SelectionItem")
+        return
     el = uia_of(el)
     patterns.select_item(el)
 
 
 def is_selected(el: TargetElement) -> bool:
     __tracebackhide__ = True
+    if isinstance(el, WpfElement):
+        return bool(_wpf_read(el, "is_selected", "SelectionItem"))
     el = uia_of(el)
     return patterns.is_selected(el)
 
 
 def expand(el: TargetElement) -> None:
     __tracebackhide__ = True
+    if isinstance(el, WpfElement):
+        _wpf_act(el, "expand", "ExpandCollapse")
+        return
     el = uia_of(el)
     patterns.expand(el)
 
 
 def collapse(el: TargetElement) -> None:
     __tracebackhide__ = True
+    if isinstance(el, WpfElement):
+        _wpf_act(el, "collapse", "ExpandCollapse")
+        return
     el = uia_of(el)
     patterns.collapse(el)
 
@@ -355,6 +535,16 @@ def collapse(el: TargetElement) -> None:
 def selected_items(el: TargetElement) -> list[str]:
     """Names of the selected items of a list-like element."""
     __tracebackhide__ = True
+    if isinstance(el, WpfElement):
+        available = _wpf_patterns(el)
+        if "Selection" not in available:
+            if "SelectionItem" in available:
+                return [el.name] if is_selected(el) else []
+            raise ActionError(f"{_short(el)} does not expose a selection")
+        count = int(str(_wpf_read(el, "selection_count", "Selection")))
+        return [
+            str(_wpf_read(el, f"selection_name_{index}", "Selection")) for index in range(count)
+        ]
     el = uia_of(el)
     if patterns.has_pattern(el, "Selection"):
         return [item.name for item in patterns.selection(el)]
