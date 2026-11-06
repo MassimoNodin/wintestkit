@@ -11,6 +11,48 @@ namespace WinTestKit.Inspector.Agent.Inspection.Members
 {
     internal static class PeerIdentity
     {
+        // Test hook and diagnostic are thread-local so concurrent inspector reads are unaffected.
+        [ThreadStatic] private static bool disablePeerFromProvider;
+        internal static bool DisablePeerFromProvider { get => disablePeerFromProvider; set => disablePeerFromProvider = value; }
+        [ThreadStatic] internal static string? SelectionNameRoute;
+
+        private static AutomationPeer? SelectedPeer(AutomationPeer owner, IRawElementProviderSimple provider)
+        {
+            SelectionNameRoute = "unavailable";
+            if (!DisablePeerFromProvider)
+            {
+                try
+                {
+                    var method = typeof(AutomationPeer).GetMethod("PeerFromProvider", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+                    if (method?.Invoke(owner, new object[] { provider }) is AutomationPeer peer)
+                    {
+                        SelectionNameRoute = "PeerFromProvider";
+                        return peer;
+                    }
+                }
+                catch (Exception) { /* Try the WPF proxy below. */ }
+            }
+
+            // WPF's ElementProxy holds the exact peer used by UIA, even for virtualized
+            // items. Reading it preserves GetSelection order and never realizes a container.
+            // Restrict reflection to WPF's own type and tolerate changes in its internals.
+            try
+            {
+                Type type = provider.GetType();
+                if (type.Assembly == typeof(AutomationPeer).Assembly && type.FullName == "MS.Internal.Automation.ElementProxy")
+                {
+                    var property = type.GetProperty("Peer", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+                    if (property?.GetValue(provider, null) is AutomationPeer peer)
+                    {
+                        SelectionNameRoute = "ElementProxy.Peer";
+                        return peer;
+                    }
+                }
+            }
+            catch (Exception) { /* An unsupported proxy remains unavailable. */ }
+            return null;
+        }
+
         internal static AutomationPeer? GetPeer(DependencyObject target) =>
             target is UIElement element ? UIElementAutomationPeer.FromElement(element) ?? UIElementAutomationPeer.CreatePeerForElement(element) :
             target is ContentElement content ? ContentElementAutomationPeer.FromElement(content) ?? ContentElementAutomationPeer.CreatePeerForElement(content) : null;
@@ -53,7 +95,7 @@ namespace WinTestKit.Inspector.Agent.Inspection.Members
                     IRawElementProviderSimple[] selected = provider.GetSelection() ?? Array.Empty<IRawElementProviderSimple>();
                     if (name == "selection_count") result = selected.Length;
                     else if (int.TryParse(name.Substring("selection_name_".Length), out int index) && index >= 0 && index < selected.Length)
-                        result = (typeof(AutomationPeer).GetMethod("PeerFromProvider", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(peer, new object[] { selected[index] }) as AutomationPeer)?.GetName();
+                        result = SelectedPeer(peer, selected[index])?.GetName();
                 }
                 if (result == null) return new ValueDto { Status = "unavailable", Kind = "unavailable" };
                 return ValueSerializer.Serialize(result, result.GetType(), registry, dispatcher);
