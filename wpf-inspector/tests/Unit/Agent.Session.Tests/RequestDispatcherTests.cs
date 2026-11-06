@@ -143,6 +143,14 @@ public class RequestDispatcherTests
             Assert.Equal(code, serialized.Error!.Code);
             if (code == ErrorCodes.ValueUnreadable) Assert.Equal("redacted", ((JsonStringNode)serialized.Error.Details!.Get("status")).Value);
         }
+        service.QueryError = ProtocolException.Deadline("Query deadline reached.");
+        response = await Dispatch(dispatcher, PipeMethods.QueryFind, QueryParams());
+        var deadline = ResponseEnvelope.FromJson(StrictJson.Parse(StrictJson.Serialize(response.ToJson()), 0, StrictJson.Serialize(response.ToJson()).Length));
+        Assert.Equal(ErrorCodes.LimitExceeded, deadline.Error!.Code);
+        Assert.True(((JsonBoolNode)deadline.Error.Details!.Get("deadline")).Value);
+        service.QueryError = new ProtocolException(ErrorCodes.LimitExceeded, "Object registry limit reached.");
+        response = await Dispatch(dispatcher, PipeMethods.QueryFind, QueryParams());
+        Assert.Null(response.Error!.Details);
     }
 
     [Fact]

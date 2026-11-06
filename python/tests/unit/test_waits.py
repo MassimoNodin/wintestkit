@@ -9,7 +9,13 @@ from fakes import FakeElement
 from wintestkit.engine import waits
 from wintestkit.engine.diagnose import Diagnostic
 from wintestkit.engine.waits import element_state_ok, wait_for_state, wait_until
-from wintestkit.errors import ElementNotFoundError, InspectorError, UIAError, WaitTimeoutError
+from wintestkit.errors import (
+    ElementNotFoundError,
+    InspectorDeadlineError,
+    InspectorError,
+    UIAError,
+    WaitTimeoutError,
+)
 from wintestkit.uia.element import Rect
 
 
@@ -258,7 +264,7 @@ def test_wait_for_state_inspector_deadline_at_budget_edge(fake_time: FakeTime) -
         def state_get(self, ref, *, timeout_ms, deadline):
             assert deadline == 1.0
             fake_time.now = 1.0
-            raise InspectorError("request deadline", code="timeout")
+            raise InspectorDeadlineError("request deadline", code="timeout")
 
         def release(self, *args, **kwargs):
             pass
@@ -270,19 +276,27 @@ def test_wait_for_state_inspector_deadline_at_budget_edge(fake_time: FakeTime) -
 
 
 @pytest.mark.parametrize(
-    "message,code,expected",
+    "error,expected",
     [
-        ("Query deadline reached.", "limitExceeded", WaitTimeoutError),
-        ("candidate cap reached", "limitExceeded", InspectorError),
-        ("dispatcher unavailable", "dispatcherUnavailable", InspectorError),
+        (InspectorDeadlineError("any text", code="limitExceeded"), WaitTimeoutError),
+        (InspectorError("deadline reached", code="limitExceeded"), InspectorError),
+        (InspectorError("dispatcher unavailable", code="dispatcherUnavailable"), InspectorError),
     ],
 )
-def test_wait_preserves_real_inspector_failures_at_deadline(fake_time, message, code, expected):
+def test_wait_preserves_real_inspector_failures_at_deadline(fake_time, error, expected):
     def get():
         fake_time.now = 1.0
-        raise InspectorError(message, code=code)
+        raise error
 
     with pytest.raises(expected):
+        wait_for_state(get, "visible", 1, "visible")
+
+
+def test_wait_propagates_deadline_before_outer_budget(fake_time):
+    def get():
+        raise InspectorDeadlineError("early", code="timeout")
+
+    with pytest.raises(InspectorDeadlineError, match="early"):
         wait_for_state(get, "visible", 1, "visible")
 
 

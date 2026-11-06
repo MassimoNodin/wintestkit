@@ -33,7 +33,7 @@ namespace WinTestKit.Inspector.Agent.Query
 
         public bool Matches(DependencyObject target, QueryPredicateContext context)
         {
-            if (context.Remaining <= TimeSpan.Zero) throw new ProtocolException(ErrorCodes.LimitExceeded, "Query deadline reached.");
+            if (context.Remaining <= TimeSpan.Zero) throw ProtocolException.Deadline("Query deadline reached.");
             if (path.Count == 1 && path[0].Kind == "type" && path[0].Name == "FullName" && regex == null)
             {
                 if (!(expected is JsonStringNode typeName) || target.GetType().FullName != typeName.Value) return false;
@@ -82,7 +82,7 @@ namespace WinTestKit.Inspector.Agent.Query
                     object? raw;
                     try { raw = d.Property != null ? d.Property.GetValue(target, null) : d.Field!.GetValue(target); }
                     catch (Exception) { throw Unreadable("exception"); }
-                    if (context.Remaining <= TimeSpan.Zero) throw new ProtocolException(ErrorCodes.LimitExceeded, "Query deadline reached.");
+                    if (context.Remaining <= TimeSpan.Zero) throw ProtocolException.Deadline("Query deadline reached.");
                     return MatchesValue(ValueSerializer.Serialize(raw, d.ValueType, registry, target.Dispatcher), context);
                 }
             }

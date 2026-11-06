@@ -16,7 +16,7 @@ from wintestkit.engine import waits
 from wintestkit.engine.diagnose import Candidate, Diagnostic, quote
 from wintestkit.engine.locator import Locator
 from wintestkit.engine.query import query_all
-from wintestkit.errors import ActionError, ElementNotFoundError, UIAError
+from wintestkit.errors import ActionError, ElementNotFoundError, NoUiaPeerError, UIAError
 from wintestkit.uia import element, input, patterns, win32
 from wintestkit.uia.constants import ExpandCollapseState, ToggleState
 from wintestkit.uia.element import UIAElement
@@ -217,7 +217,10 @@ def hover(el: TargetElement) -> None:
 
 def is_password(el: TargetElement) -> bool:
     __tracebackhide__ = True
-    el = uia_of(el)
+    try:
+        el = uia_of(el)
+    except NoUiaPeerError:
+        return True
     return el.get_property("IsPassword") == 1 or el.class_name == "PasswordBox"
 
 

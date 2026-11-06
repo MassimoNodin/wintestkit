@@ -17,11 +17,13 @@ from wintestkit.engine.resolve import Scope, resolve, resolve_all, resolve_windo
 from wintestkit.errors import (
     AmbiguousElementError,
     ConfigError,
+    InspectorDeadlineError,
     InspectorLimitError,
     InspectorMappingError,
     InspectorReadError,
     InspectorUnavailableError,
     InvalidLocatorError,
+    WaitTimeoutError,
 )
 from wintestkit.inspector.models import CandidateResult, Mapping, PathValue, ProcessIdentity, Value
 from wintestkit.inspector.paths import parse_managed_key
@@ -318,7 +320,7 @@ def test_attach_and_uia_search_consume_original_poll_deadline(monkeypatch):
     monkeypatch.setattr(runtime, "managed_client_for", attach)
     reader.values[rid(reader.nodes[1]), "clr:Value"] = scalar(value="different")
     locator = Locator(where=(("clr:Value", "match"),))
-    with pytest.raises(InspectorLimitError):
+    with pytest.raises(WaitTimeoutError):
         waits.wait_until(lambda: query.query_all(root, locator) or None, 1.0, description="managed")
     assert all(a[1] == 1.0 for a in reader.attaches)
     assert all(c[2] == 1.0 for c in reader.calls)
@@ -327,7 +329,7 @@ def test_attach_and_uia_search_consume_original_poll_deadline(monkeypatch):
 
 def test_expired_deadline_never_attaches(monkeypatch):
     root, _, reader = tree(monkeypatch, 1)
-    with query_budget(time.monotonic() - 1), pytest.raises(InspectorLimitError):
+    with query_budget(time.monotonic() - 1), pytest.raises(InspectorDeadlineError):
         query.query_all(root, Locator(where=(("clr:Value", "match"),)))
     assert not reader.attaches
 

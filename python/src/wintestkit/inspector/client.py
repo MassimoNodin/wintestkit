@@ -10,6 +10,7 @@ from dataclasses import dataclass, replace
 from typing import Any, Literal, cast
 
 from wintestkit.errors import (
+    InspectorDeadlineError,
     InspectorError,
     InspectorLimitError,
     InspectorReadError,
@@ -50,6 +51,12 @@ from wintestkit.inspector.transport import ByteTransport, read_frame, write_fram
 
 
 def _error(code: str, details: object = None) -> InspectorError:
+    if code == "timeout" or (
+        code == "limitExceeded"
+        and isinstance(details, dict)
+        and cast(dict[str, object], details).get("deadline") is True
+    ):
+        return InspectorDeadlineError(f"Inspector request failed: {code}", code=code)
     if code == "valueUnreadable":
         status = (
             cast(dict[str, object], details).get("status") if isinstance(details, dict) else None
@@ -267,7 +274,7 @@ class InspectorClient:
     ) -> _Pending:
         remaining = deadline - time.monotonic()
         if remaining <= 0 or not self._write_lock.acquire(timeout=max(0, remaining)):
-            raise InspectorError("Inspector request deadline expired", code="timeout")
+            raise InspectorDeadlineError("Inspector request deadline expired", code="timeout")
         entry = _Pending(threading.Event())
         try:
             with self._lock:
@@ -316,7 +323,9 @@ class InspectorClient:
                 if self._pending.pop(request_id, None) is not None:
                     self._abandoned.add(request_id)
                     threading.Thread(target=self._cancel, args=(request_id,), daemon=True).start()
-                    raise InspectorError("Inspector request deadline expired", code="timeout")
+                    raise InspectorDeadlineError(
+                        "Inspector request deadline expired", code="timeout"
+                    )
         if entry.error is not None:
             raise entry.error
         return entry.result
@@ -396,7 +405,7 @@ class InspectorClient:
             raise InspectorError("Invalid request timeout", code="invalidParams") from error
         remaining = int((deadline - time.monotonic()) * 1000)
         if remaining < 1:
-            raise InspectorError("Inspector request deadline expired", code="timeout")
+            raise InspectorDeadlineError("Inspector request deadline expired", code="timeout")
         return min(requested, remaining)
 
     def _query(self, method: str, locator: Locator, timeout_ms: int, deadline: float) -> object:

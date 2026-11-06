@@ -4,10 +4,19 @@ from types import SimpleNamespace
 import pytest
 
 from wintestkit.backends import WpfElement, uia_of
+from wintestkit.engine import actions
 from wintestkit.errors import InspectorError, NoUiaPeerError
 from wintestkit.inspector.models import ObjectRef, TypeInfo
 from wintestkit.inspector.models import Rect as AgentRect
 from wintestkit.uia.element import Rect, UIAElement
+
+
+def test_peerless_password_detection_is_conservative(monkeypatch):
+    def missing_peer(element):
+        raise NoUiaPeerError("no peer")
+
+    monkeypatch.setattr(actions, "uia_of", missing_peer)
+    assert actions.is_password(object())
 
 
 class Client:

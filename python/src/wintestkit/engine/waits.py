@@ -8,7 +8,7 @@ from typing import Literal
 
 from wintestkit.backends.element import TargetElement
 from wintestkit.engine.managed import query_budget
-from wintestkit.errors import InspectorError, LocatorError, UIAError, WaitTimeoutError
+from wintestkit.errors import InspectorDeadlineError, LocatorError, UIAError, WaitTimeoutError
 
 POLL_INTERVAL = 0.1
 STABLE_INTERVAL = 0.05
@@ -43,15 +43,8 @@ def wait_until[T](
         try:
             with query_budget(start + timeout):
                 result = fn()
-        except InspectorError as exc:
-            deadline_error = exc.code == "timeout" or (
-                exc.code == "limitExceeded"
-                and any(
-                    text in str(exc)
-                    for text in ("exhausted its budget", "deadline expired", "deadline reached")
-                )
-            )
-            if not deadline_error or _clock() < start + timeout - 0.001:
+        except InspectorDeadlineError:
+            if _clock() < start + timeout - 0.001:
                 raise
             waited = _clock() - start
             break
