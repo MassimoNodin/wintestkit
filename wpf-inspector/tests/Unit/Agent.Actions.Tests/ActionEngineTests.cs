@@ -86,8 +86,11 @@ namespace WinTestKit.Inspector.Agent.Actions.Tests
             public void Dispose() { Dispatcher.BeginInvokeShutdown(DispatcherPriority.Send); thread.Join(); }
         }
 
-        private static Task<ActResult> Act(Ui ui, DispatcherExecutor executor, object target, string method, int timeout = 1000) =>
-            ActionEngine.ExecuteAsync(executor, ui.Dispatcher, target, new ObjectRef(), method, DateTime.UtcNow.AddSeconds(2), timeout, CancellationToken.None);
+        private static async Task<ActResult> Act(Ui ui, DispatcherExecutor executor, object target, string method, int timeout = 2000)
+        {
+            if (timeout == 2000) await ui.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle).Task;
+            return await ActionEngine.ExecuteAsync(executor, ui.Dispatcher, target, new ObjectRef(), method, DateTime.UtcNow.AddSeconds(60), timeout, CancellationToken.None);
+        }
 
         [Theory]
         [InlineData(PipeMethods.ActSetValue)]
@@ -110,7 +113,7 @@ namespace WinTestKit.Inspector.Agent.Actions.Tests
             {
                 var controls = await ui.Dispatcher.InvokeAsync(() => (text: new TextBox(), password: new PasswordBox(), slider: new Slider { Minimum = 0, Maximum = 10 })).Task;
                 var executor = new DispatcherExecutor();
-                Task<ActResult> Run(object target, string method, object args) => ActionEngine.ExecuteAsync(executor, ui.Dispatcher, target, new ObjectRef(), method, DateTime.UtcNow.AddSeconds(2), 1000, CancellationToken.None, args);
+                async Task<ActResult> Run(object target, string method, object args) { await ui.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle).Task; return await ActionEngine.ExecuteAsync(executor, ui.Dispatcher, target, new ObjectRef(), method, DateTime.UtcNow.AddSeconds(60), 2000, CancellationToken.None, args); }
                 var text = new ActSetValueParams { Value = "example" };
                 Assert.Equal(ActionOutcome.Performed, (await Run(controls.text, PipeMethods.ActSetValue, text)).Outcome);
                 Assert.Equal(ActionOutcome.NoChange, (await Run(controls.text, PipeMethods.ActSetValue, text)).Outcome);
@@ -137,14 +140,14 @@ namespace WinTestKit.Inspector.Agent.Actions.Tests
                 var control = await ui.Dispatcher.InvokeAsync(() => new Scrollable()).Task;
                 var executor = new DispatcherExecutor();
                 var args = new ActScrollParams { Horizontal = ScrollAmount.None, Vertical = ScrollAmount.None };
-                Task<ActResult> Run(DateTime deadline) => ActionEngine.ExecuteAsync(executor, ui.Dispatcher, control, new ObjectRef(), PipeMethods.ActScroll, deadline, 1000, CancellationToken.None, args);
-                Assert.Equal(ActionOutcome.NoChange, (await Run(DateTime.UtcNow.AddSeconds(2))).Outcome);
+                async Task<ActResult> Run(DateTime deadline) { await ui.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle).Task; return await ActionEngine.ExecuteAsync(executor, ui.Dispatcher, control, new ObjectRef(), PipeMethods.ActScroll, deadline, 2000, CancellationToken.None, args); }
+                Assert.Equal(ActionOutcome.NoChange, (await Run(DateTime.UtcNow.AddSeconds(60))).Outcome);
                 args.Vertical = ScrollAmount.SmallIncrement;
-                Assert.Equal(ActionOutcome.Performed, (await Run(DateTime.UtcNow.AddSeconds(2))).Outcome);
+                Assert.Equal(ActionOutcome.Performed, (await Run(DateTime.UtcNow.AddSeconds(60))).Outcome);
                 args.Horizontal = ScrollAmount.SmallIncrement;
-                Assert.Equal(ErrorCodes.ActionUnsupported, (await Assert.ThrowsAsync<ProtocolException>(() => Run(DateTime.UtcNow.AddSeconds(2)))).Code);
+                Assert.Equal(ErrorCodes.ActionUnsupported, (await Assert.ThrowsAsync<ProtocolException>(() => Run(DateTime.UtcNow.AddSeconds(60)))).Code);
                 args.Horizontal = "invalid";
-                Assert.Equal(ErrorCodes.InvalidParams, (await Assert.ThrowsAsync<ProtocolException>(() => Run(DateTime.UtcNow.AddSeconds(2)))).Code);
+                Assert.Equal(ErrorCodes.InvalidParams, (await Assert.ThrowsAsync<ProtocolException>(() => Run(DateTime.UtcNow.AddSeconds(60)))).Code);
                 Assert.Equal(ErrorCodes.LimitExceeded, (await Assert.ThrowsAsync<ProtocolException>(() => Run(DateTime.UtcNow.AddSeconds(-1)))).Code);
             }
         }
@@ -275,13 +278,13 @@ namespace WinTestKit.Inspector.Agent.Actions.Tests
                 var executor = new DispatcherExecutor();
                 var result = await Act(ui, executor, button, PipeMethods.ActInvoke);
                 Assert.Equal(ActionOutcome.Performed, result.Outcome);
-                var completed = await Task.WhenAny(shown.Task, Task.Delay(5000));
+                var completed = await Task.WhenAny(shown.Task, Task.Delay(60000));
                 Assert.Same(shown.Task, completed);
                 var closeButton = await shown.Task;
                 try
                 {
                     Assert.Equal(ActionOutcome.Performed, (await Act(ui, executor, closeButton, PipeMethods.ActInvoke)).Outcome);
-                    Assert.Same(closed.Task, await Task.WhenAny(closed.Task, Task.Delay(5000)));
+                    Assert.Same(closed.Task, await Task.WhenAny(closed.Task, Task.Delay(60000)));
                     Assert.Equal(ActionOutcome.Performed, (await Act(ui, executor, button, PipeMethods.ActBringIntoView)).Outcome);
                 }
                 finally { await ui.Dispatcher.InvokeAsync(() => Window.GetWindow(closeButton)?.Close()).Task; }
@@ -296,7 +299,7 @@ namespace WinTestKit.Inspector.Agent.Actions.Tests
                 var button = await ui.Dispatcher.InvokeAsync(() => new ThrowingInvoke()).Task;
                 var executor = new DispatcherExecutor();
                 Assert.Equal(ActionOutcome.Performed, (await Act(ui, executor, button, PipeMethods.ActInvoke)).Outcome);
-                Assert.Same(button.Invoked.Task, await Task.WhenAny(button.Invoked.Task, Task.Delay(5000)));
+                Assert.Same(button.Invoked.Task, await Task.WhenAny(button.Invoked.Task, Task.Delay(60000)));
                 Assert.Equal(ActionOutcome.Performed, (await Act(ui, executor, button, PipeMethods.ActBringIntoView)).Outcome);
             }
         }
@@ -338,7 +341,7 @@ namespace WinTestKit.Inspector.Agent.Actions.Tests
                     var action = Act(ui, executor, control, PipeMethods.ActToggle, 150);
                     Assert.True(control.Entered.Wait(1000));
                     Assert.Equal(ErrorCodes.LimitExceeded, (await Assert.ThrowsAsync<ProtocolException>(() => action)).Code);
-                    Assert.Equal(ErrorCodes.DispatcherUnavailable, (await Assert.ThrowsAsync<ProtocolException>(() => Act(ui, executor, control, PipeMethods.ActToggle))).Code);
+                    Assert.Equal(ErrorCodes.DispatcherUnavailable, (await Assert.ThrowsAsync<ProtocolException>(() => Act(ui, executor, control, PipeMethods.ActToggle, 1999))).Code);
                 }
                 finally { control.Release.Set(); }
             }

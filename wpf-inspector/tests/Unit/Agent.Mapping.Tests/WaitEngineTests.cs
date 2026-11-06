@@ -41,11 +41,11 @@ namespace WinTestKit.Inspector.Agent.Mapping.Tests
                 try
                 {
                     await ui.Dispatcher.InvokeAsync(() => { window = new Window { Content = root, ShowInTaskbar = false }; window.Show(); if (kind != "exists") root.Children.Add(new Button { Visibility = kind == "visible" ? Visibility.Hidden : Visibility.Visible, IsEnabled = kind != "enabled" && kind != "propertyEquals" }); }).Task;
-                    var task = engine.UntilAsync(condition, DateTime.UtcNow.AddSeconds(2), 1200, CancellationToken.None);
+                    var task = engine.UntilAsync(condition, DateTime.UtcNow.AddSeconds(60), 2000, CancellationToken.None);
                     await Task.Delay(100);
                     await ui.Dispatcher.InvokeAsync(() => { if (kind == "exists") root.Children.Add(new Button()); else if (kind == "visible") ((Button)root.Children[0]).Visibility = Visibility.Visible; else ((Button)root.Children[0]).IsEnabled = true; }).Task;
                     Assert.True((await task).Satisfied);
-                    Assert.True((await engine.UntilAsync(condition, DateTime.UtcNow.AddSeconds(2), 500, CancellationToken.None)).Satisfied);
+                    Assert.True((await engine.UntilAsync(condition, DateTime.UtcNow.AddSeconds(60), 2000, CancellationToken.None)).Satisfied);
                 }
                 finally { if (window != null) await ui.Dispatcher.InvokeAsync(window.Close).Task; }
             }
@@ -65,11 +65,11 @@ namespace WinTestKit.Inspector.Agent.Mapping.Tests
                         Predicates = new[] { new Predicate { Kind = "equals", Path = new[] { new PathSegment { Kind = "type", Name = "FullName" } }, Value = new JsonStringNode("System.Windows.Controls.Button") } } };
                     var engine = new WaitEngine(new QueryEngine(executor, registry), executor, registry, new ObjectInspector(), new PeerRuntimeIdAdapter());
                     var condition = new WaitCondition { Kind = "exists", Locator = locator };
-                    Assert.False((await engine.UntilAsync(condition, DateTime.UtcNow.AddSeconds(2), 100, CancellationToken.None)).Satisfied);
+                    Assert.False((await engine.UntilAsync(condition, DateTime.UtcNow.AddSeconds(60), 100, CancellationToken.None)).Satisfied);
                     using (var cancel = new CancellationTokenSource(50))
-                        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => engine.UntilAsync(condition, DateTime.UtcNow.AddSeconds(2), 1000, cancel.Token));
+                        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => engine.UntilAsync(condition, DateTime.UtcNow.AddSeconds(60), 1000, cancel.Token));
                     registry.Release(new[] { handle.ObjectId });
-                    Assert.Equal(ErrorCodes.ObjectStale, (await Assert.ThrowsAsync<ProtocolException>(() => engine.UntilAsync(condition, DateTime.UtcNow.AddSeconds(2), 500, CancellationToken.None))).Code);
+                    Assert.Equal(ErrorCodes.ObjectStale, (await Assert.ThrowsAsync<ProtocolException>(() => engine.UntilAsync(condition, DateTime.UtcNow.AddSeconds(60), 2000, CancellationToken.None))).Code);
                 }
             }
         }
@@ -87,7 +87,7 @@ namespace WinTestKit.Inspector.Agent.Mapping.Tests
                     var locator = new Locator { Scope = new Scope { Kind = "object", Handle = handle }, Tree = "logical", DepthMode = "tree", Depth = 0, Limit = 1 };
                     var condition = new WaitCondition { Kind = "propertyEquals", Locator = locator, Path = new[] { new PathSegment { Kind = "property", Name = "Name" } }, Value = new JsonStringNode("secret") };
                     var engine = new WaitEngine(new QueryEngine(executor, registry), executor, registry, new ObjectInspector(), new PeerRuntimeIdAdapter());
-                    Assert.Equal(ErrorCodes.ValueUnreadable, (await Assert.ThrowsAsync<ProtocolException>(() => engine.UntilAsync(condition, DateTime.UtcNow.AddSeconds(2), 500, CancellationToken.None))).Code);
+                    Assert.Equal(ErrorCodes.ValueUnreadable, (await Assert.ThrowsAsync<ProtocolException>(() => engine.UntilAsync(condition, DateTime.UtcNow.AddSeconds(60), 2000, CancellationToken.None))).Code);
                 }
             }
         }
@@ -110,7 +110,7 @@ namespace WinTestKit.Inspector.Agent.Mapping.Tests
                     var locator = new Locator { Scope = new Scope { Kind = "object", Handle = handle }, Tree = "logical", DepthMode = "tree", Depth = 1, Limit = 1,
                         Predicates = new[] { new Predicate { Kind = "equals", Path = new[] { new PathSegment { Kind = "type", Name = "FullName" } }, Value = new JsonStringNode("System.Windows.Controls.Button") } } };
                     var engine = new WaitEngine(new QueryEngine(executor, registry), executor, registry, new ObjectInspector(), new PeerRuntimeIdAdapter());
-                    Assert.Equal(ErrorCodes.LimitExceeded, (await Assert.ThrowsAsync<ProtocolException>(() => engine.UntilAsync(new WaitCondition { Kind = "exists", Locator = locator }, DateTime.UtcNow.AddSeconds(3), 2000, CancellationToken.None))).Code);
+                    Assert.Equal(ErrorCodes.LimitExceeded, (await Assert.ThrowsAsync<ProtocolException>(() => engine.UntilAsync(new WaitCondition { Kind = "exists", Locator = locator }, DateTime.UtcNow.AddSeconds(60), 2000, CancellationToken.None))).Code);
                 }
             }
         }

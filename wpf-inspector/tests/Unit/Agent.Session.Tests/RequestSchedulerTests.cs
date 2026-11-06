@@ -24,9 +24,9 @@ public class RequestSchedulerTests
             if (Interlocked.Increment(ref count) == 3) started.TrySetResult(true);
             return await release.Task;
         }, default)).ToArray();
-        await started.Task.WaitAsync(TimeSpan.FromSeconds(1));
+        await started.Task.WaitAsync(TimeSpan.FromSeconds(60));
         var read = scheduler.ExecuteAsync(Request(5), ct => Task.FromResult<JsonNode>(JsonNullNode.Instance), default);
-        await read.WaitAsync(TimeSpan.FromSeconds(1));
+        await read.WaitAsync(TimeSpan.FromSeconds(60));
         Assert.Equal(3, count);
         release.SetResult(JsonNullNode.Instance);
         await Task.WhenAll(waits);

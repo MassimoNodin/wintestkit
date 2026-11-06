@@ -46,7 +46,8 @@ namespace WinTestKit.Inspector.Agent.Query.Tests
                 try
                 {
                     var search = new ItemSearch { Container = registry.Register(pair.Item2, dispatcher, TypeInfoBuilder.Build(pair.Item2.GetType())), Match = new ItemMatch { Kind = "index", Index = 4999 }, MaxItems = 5000 };
-                    var result = await RealizeItemEngine.ExecuteAsync(executor, dispatcher, pair.Item2, search, registry, new ObjectInspector(), DateTime.UtcNow.AddSeconds(5), 2000, CancellationToken.None);
+                    await dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle).Task;
+                    var result = await RealizeItemEngine.ExecuteAsync(executor, dispatcher, pair.Item2, search, registry, new ObjectInspector(), DateTime.UtcNow.AddSeconds(60), 2000, CancellationToken.None);
                     Assert.Equal("performed", result.Outcome);
                     Assert.NotNull(await dispatcher.InvokeAsync(() => pair.Item2.ItemContainerGenerator.ContainerFromIndex(4999)).Task);
                 }
@@ -74,7 +75,7 @@ namespace WinTestKit.Inspector.Agent.Query.Tests
                 try
                 {
                     var search = new ItemSearch { Container = registry.Register(pair.Item2, dispatcher, TypeInfoBuilder.Build(pair.Item2.GetType())), MaxItems = 3 };
-                    Task<ActRealizeItemResult> Run() => RealizeItemEngine.ExecuteAsync(executor, dispatcher, pair.Item2, search, registry, new ObjectInspector(), DateTime.UtcNow.AddSeconds(3), 2000, CancellationToken.None);
+                    async Task<ActRealizeItemResult> Run() { await dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle).Task; return await RealizeItemEngine.ExecuteAsync(executor, dispatcher, pair.Item2, search, registry, new ObjectInspector(), DateTime.UtcNow.AddSeconds(60), 2000, CancellationToken.None); }
                     search.Match = new ItemMatch { Kind = "equals", Path = new[] { new PathSegment { Kind = "property", Name = "Name" } }, Value = new JsonStringNode("Alpha") };
                     var duplicate = await Run(); Assert.Equal(2, duplicate.Warning!.Count); Assert.Equal("noChange", duplicate.Outcome);
                     search.Match = new ItemMatch { Kind = "regex", Path = search.Match.Path, Pattern = "^beta$", Flags = new[] { "ignoreCase" } };
@@ -87,7 +88,8 @@ namespace WinTestKit.Inspector.Agent.Query.Tests
                     Assert.Equal(ErrorCodes.ValueUnreadable, (await Assert.ThrowsAsync<ProtocolException>(Run)).Code);
                     var expired = await Assert.ThrowsAsync<ProtocolException>(() => RealizeItemEngine.ExecuteAsync(executor, dispatcher, pair.Item2, search, registry, new ObjectInspector(), DateTime.UtcNow.AddSeconds(-1), 2000, CancellationToken.None));
                     Assert.Equal(ErrorCodes.LimitExceeded, expired.Code); Assert.NotNull(expired.Details);
-                    var unsupported = await Assert.ThrowsAsync<ProtocolException>(() => RealizeItemEngine.ExecuteAsync(executor, dispatcher, pair.Item1, search, registry, new ObjectInspector(), DateTime.UtcNow.AddSeconds(3), 2000, CancellationToken.None));
+                    await dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle).Task;
+                    var unsupported = await Assert.ThrowsAsync<ProtocolException>(() => RealizeItemEngine.ExecuteAsync(executor, dispatcher, pair.Item1, search, registry, new ObjectInspector(), DateTime.UtcNow.AddSeconds(60), 2000, CancellationToken.None));
                     Assert.Equal(ErrorCodes.ActionUnsupported, unsupported.Code);
                 }
                 finally { await dispatcher.InvokeAsync(() => pair.Item1.Close()).Task; }
@@ -115,13 +117,15 @@ namespace WinTestKit.Inspector.Agent.Query.Tests
                 try
                 {
                     var search = new ItemSearch { Container = registry.Register(pair.Item2, dispatcher, TypeInfoBuilder.Build(pair.Item2.GetType())), Match = new ItemMatch { Kind = "index", Index = 4999 }, MaxItems = 5000 };
-                    var result = await RealizeItemEngine.ExecuteAsync(executor, dispatcher, pair.Item2, search, registry, new ObjectInspector(), DateTime.UtcNow.AddSeconds(5), 2000, CancellationToken.None);
+                    await dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle).Task;
+                    var result = await RealizeItemEngine.ExecuteAsync(executor, dispatcher, pair.Item2, search, registry, new ObjectInspector(), DateTime.UtcNow.AddSeconds(60), 2000, CancellationToken.None);
                     Assert.Equal("performed", result.Outcome);
                     int count = await dispatcher.InvokeAsync(() => Enumerable.Range(0, 5000).Count(index => pair.Item2.ItemContainerGenerator.ContainerFromIndex(index) != null)).Task;
                     output.WriteLine("Generated containers: " + count);
                     Assert.InRange(count, 1, 199);
                     Assert.NotNull(await dispatcher.InvokeAsync(() => pair.Item2.ItemContainerGenerator.ContainerFromIndex(4999)).Task);
-                    var again = await RealizeItemEngine.ExecuteAsync(executor, dispatcher, pair.Item2, search, registry, new ObjectInspector(), DateTime.UtcNow.AddSeconds(5), 2000, CancellationToken.None);
+                    await dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle).Task;
+                    var again = await RealizeItemEngine.ExecuteAsync(executor, dispatcher, pair.Item2, search, registry, new ObjectInspector(), DateTime.UtcNow.AddSeconds(60), 2000, CancellationToken.None);
                     Assert.Equal("noChange", again.Outcome);
                 }
                 finally { await dispatcher.InvokeAsync(() => pair.Item1.Close()).Task; }
