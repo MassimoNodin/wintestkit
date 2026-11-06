@@ -12,5 +12,6 @@
     <ProjectReference Include="../../../src/Protocol/Protocol.csproj" />
     <Compile Include="../../../src/Agent/Actions/**/*.cs" LinkBase="Actions" />
     <Compile Include="../../../src/Agent/Inspection/DispatcherExecutor.cs" Link="DispatcherExecutor.cs" />
+    <Compile Include="../../../src/Agent/Inspection/Members/RedactionPolicy.cs" Link="RedactionPolicy.cs" />
   </ItemGroup>
 </Project>

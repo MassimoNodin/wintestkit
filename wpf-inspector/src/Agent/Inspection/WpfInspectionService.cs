@@ -45,13 +45,13 @@ namespace WinTestKit.Inspector.Agent.Inspection
 
         public bool ExactMappingAvailable => mapper.IsAvailable;
 
-        public Task<ActResult> ActAsync(string method, ObjectRef handle, DateTime deadline, int timeoutMs, CancellationToken ct) => RunAsync(async token =>
+        public Task<ActResult> ActAsync(string method, ObjectRef handle, DateTime deadline, int timeoutMs, CancellationToken ct, object? parameters = null) => RunAsync(async token =>
         {
             object target = GetObject(handle.ObjectId, handle.Generation, out Dispatcher dispatcher);
             ObjectRef actual = registry.Register(target, dispatcher, inspector.DescribeType(target.GetType()));
             if (actual.SessionId != handle.SessionId || actual.DispatcherId != handle.DispatcherId)
                 throw new ProtocolException(ErrorCodes.ObjectStale, "Unknown or stale object handle.");
-            return await ActionEngine.ExecuteAsync(executor, dispatcher, target, actual, method, deadline, timeoutMs, token).ConfigureAwait(false);
+            return await ActionEngine.ExecuteAsync(executor, dispatcher, target, actual, method, deadline, timeoutMs, token, parameters).ConfigureAwait(false);
         }, ct);
 
         public Task<WaitUntilResult> WaitUntilAsync(WaitCondition condition, DateTime deadline, int timeoutMs, CancellationToken ct) =>

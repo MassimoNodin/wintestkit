@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import threading
 import time
 from collections.abc import Callable, Sequence
@@ -18,6 +19,7 @@ from wintestkit.errors import (
 )
 from wintestkit.inspector.models import (
     ERROR_CODES,
+    ActResult,
     BindingInfo,
     CandidateResult,
     ElementState,
@@ -488,6 +490,109 @@ class InspectorClient:
                 {"handle": handle.to_json(), "timeoutMs": self._timed_params(timeout_ms, deadline)},
                 deadline,
             ),
+        )
+
+    def _act(
+        self,
+        method: str,
+        ref: ObjectRef,
+        params: dict[str, object],
+        timeout_ms: int,
+        deadline: float,
+    ) -> ActResult:
+        self._feature("actions")
+        self._object_ref(ref)
+        try:
+            handle = ObjectRef.from_json(ref.to_json()).to_json()
+        except (ValueError, TypeError, AttributeError) as error:
+            raise InspectorError("Invalid action handle", code="invalidParams") from error
+
+        def parse(value: object) -> ActResult:
+            result = ActResult.from_json(value)
+            self._object_ref(result.handle)
+            if result.handle != ref:
+                raise ValueError("Mismatched action handle")
+            return result
+
+        return self._parse(
+            parse,
+            self._request(
+                method,
+                {"handle": handle, **params, "timeoutMs": self._timed_params(timeout_ms, deadline)},
+                deadline,
+            ),
+        )
+
+    def act_focus(self, ref: ObjectRef, *, timeout_ms: int, deadline: float) -> ActResult:
+        return self._act("act.focus", ref, {}, timeout_ms, deadline)
+
+    def act_bring_into_view(self, ref: ObjectRef, *, timeout_ms: int, deadline: float) -> ActResult:
+        return self._act("act.bringIntoView", ref, {}, timeout_ms, deadline)
+
+    def act_scroll_into_view(
+        self, ref: ObjectRef, *, timeout_ms: int, deadline: float
+    ) -> ActResult:
+        return self._act("act.scrollIntoView", ref, {}, timeout_ms, deadline)
+
+    def act_invoke(self, ref: ObjectRef, *, timeout_ms: int, deadline: float) -> ActResult:
+        return self._act("act.invoke", ref, {}, timeout_ms, deadline)
+
+    def act_toggle(self, ref: ObjectRef, *, timeout_ms: int, deadline: float) -> ActResult:
+        return self._act("act.toggle", ref, {}, timeout_ms, deadline)
+
+    def act_expand(self, ref: ObjectRef, *, timeout_ms: int, deadline: float) -> ActResult:
+        return self._act("act.expand", ref, {}, timeout_ms, deadline)
+
+    def act_collapse(self, ref: ObjectRef, *, timeout_ms: int, deadline: float) -> ActResult:
+        return self._act("act.collapse", ref, {}, timeout_ms, deadline)
+
+    def act_select(self, ref: ObjectRef, *, timeout_ms: int, deadline: float) -> ActResult:
+        return self._act("act.select", ref, {}, timeout_ms, deadline)
+
+    def act_set_value(
+        self, ref: ObjectRef, value: str, *, timeout_ms: int, deadline: float
+    ) -> ActResult:
+        self._feature("actions")
+        if (
+            not isinstance(cast(object, value), str)
+            or len(value) > 4096
+            or any(0xD800 <= ord(character) <= 0xDFFF for character in value)
+        ):
+            raise InspectorError("Invalid action value", code="invalidParams")
+        return self._act("act.setValue", ref, {"value": value}, timeout_ms, deadline)
+
+    def act_set_range(
+        self, ref: ObjectRef, value: float, *, timeout_ms: int, deadline: float
+    ) -> ActResult:
+        self._feature("actions")
+        if isinstance(value, bool) or not isinstance(cast(object, value), (int, float)):
+            raise InspectorError("Invalid range value", code="invalidParams")
+        try:
+            finite = math.isfinite(value)
+        except OverflowError:
+            finite = False
+        if not finite:
+            raise InspectorError("Invalid range value", code="invalidParams")
+        return self._act("act.setRange", ref, {"value": value}, timeout_ms, deadline)
+
+    def act_scroll(
+        self, ref: ObjectRef, horizontal: str, vertical: str, *, timeout_ms: int, deadline: float
+    ) -> ActResult:
+        self._feature("actions")
+        amounts = {"none", "smallIncrement", "smallDecrement", "largeIncrement", "largeDecrement"}
+        if (
+            not isinstance(cast(object, horizontal), str)
+            or not isinstance(cast(object, vertical), str)
+            or horizontal not in amounts
+            or vertical not in amounts
+        ):
+            raise InspectorError("Invalid scroll amount", code="invalidParams")
+        return self._act(
+            "act.scroll",
+            ref,
+            {"horizontal": horizontal, "vertical": vertical},
+            timeout_ms,
+            deadline,
         )
 
     def read_batch(

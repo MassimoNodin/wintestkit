@@ -245,7 +245,7 @@ public class RequestDispatcherTests
     private sealed class ActionService : RecordingService, IActionInspectionService
     {
         public string? Method { get; private set; }
-        public Task<ActResult> ActAsync(string method, ObjectRef handle, DateTime deadline, int timeoutMs, CancellationToken ct)
+        public Task<ActResult> ActAsync(string method, ObjectRef handle, DateTime deadline, int timeoutMs, CancellationToken ct, object? parameters = null)
         {
             Method = method;
             return Task.FromResult(new ActResult { Outcome = ActionOutcome.Performed, Handle = handle });

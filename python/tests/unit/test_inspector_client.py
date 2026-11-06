@@ -22,15 +22,110 @@ from wintestkit.inspector.client import InspectorClient, _error
 from wintestkit.inspector.models import (
     FEATURES,
     HelloResult,
+    ObjectRef,
     ProcessFacts,
     ProcessIdentity,
     Session,
+    TypeInfo,
 )
 from wintestkit.inspector.paths import parse_managed_key
 
 IDENTITY = ProcessIdentity(42, "2026-10-29T00:00:00.1234567Z")
 FACTS = ProcessFacts(IDENTITY, "app.exe", "x64", "net10", True, 1, "S-1-1", "medium")
 TOKEN = "A" * 43 + "="
+
+
+@pytest.mark.parametrize(
+    ("method", "wire", "args", "extra"),
+    [
+        ("act_focus", "act.focus", (), {}),
+        ("act_bring_into_view", "act.bringIntoView", (), {}),
+        ("act_scroll_into_view", "act.scrollIntoView", (), {}),
+        ("act_invoke", "act.invoke", (), {}),
+        ("act_toggle", "act.toggle", (), {}),
+        ("act_expand", "act.expand", (), {}),
+        ("act_collapse", "act.collapse", (), {}),
+        ("act_select", "act.select", (), {}),
+        ("act_set_value", "act.setValue", ("secret",), {"value": "secret"}),
+        ("act_set_range", "act.setRange", (2.5,), {"value": 2.5}),
+        (
+            "act_scroll",
+            "act.scroll",
+            ("none", "smallIncrement"),
+            {"horizontal": "none", "vertical": "smallIncrement"},
+        ),
+    ],
+)
+def test_actions_wire_and_feature_gate(
+    method: str, wire: str, args: tuple[Any, ...], extra: dict[str, object]
+) -> None:
+    ref = ObjectRef(
+        "session", "object", 1, TypeInfo("Button", "Button", "App", "Button", ()), "dispatcher"
+    )
+    transport = ScriptedTransport(
+        lambda request: {
+            "id": request["id"],
+            "result": {"outcome": "performed", "handle": ref.to_json()},
+        }
+    )
+    client = InspectorClient(transport, session())
+    try:
+        result = getattr(client, method)(ref, *args, timeout_ms=500, deadline=time.monotonic() + 2)
+        assert result.handle == ref and result.outcome == "performed"
+        request = transport.requests[0]
+        assert request["method"] == wire
+        assert request["params"] == {"handle": ref.to_json(), "timeoutMs": 500, **extra}
+        client.session = Session("session", IDENTITY, "ready", 2, 0, ())
+        with pytest.raises(InspectorUnavailableError):
+            getattr(client, method)(ref, *args, timeout_ms=500, deadline=time.monotonic() + 2)
+        assert len(transport.requests) == 1
+    finally:
+        client.close()
+
+
+def test_action_error_does_not_expose_value(caplog: pytest.LogCaptureFixture) -> None:
+    ref = ObjectRef(
+        "session", "object", 1, TypeInfo("Button", "Button", "App", "Button", ()), "dispatcher"
+    )
+    transport = ScriptedTransport(
+        lambda request: {
+            "id": request["id"],
+            "error": {"code": "actionUnsupported", "message": "secret"},
+        }
+    )
+    client = InspectorClient(transport, session())
+    try:
+        with pytest.raises(InspectorError) as error:
+            client.act_set_value(ref, "secret", timeout_ms=100, deadline=time.monotonic() + 2)
+        assert error.value.code == "actionUnsupported"
+        assert "secret" not in str(error.value) and "secret" not in caplog.text
+    finally:
+        client.close()
+
+
+@pytest.mark.parametrize(
+    ("method", "args"),
+    [
+        ("act_set_value", ("x" * 4097,)),
+        ("act_set_value", ("\ud800",)),
+        ("act_set_range", (float("nan"),)),
+        ("act_set_range", (float("inf"),)),
+        ("act_set_range", (True,)),
+        ("act_scroll", ("invalid", "none")),
+    ],
+)
+def test_actions_reject_invalid_parameters(method: str, args: tuple[Any, ...]) -> None:
+    ref = ObjectRef(
+        "session", "object", 1, TypeInfo("Button", "Button", "App", "Button", ()), "dispatcher"
+    )
+    transport = ScriptedTransport(lambda request: None)
+    client = InspectorClient(transport, session())
+    try:
+        with pytest.raises(InspectorError) as error:
+            getattr(client, method)(ref, *args, timeout_ms=100, deadline=time.monotonic() + 2)
+        assert error.value.code == "invalidParams" and not transport.requests
+    finally:
+        client.invalidate(InspectorError("done", code="cancelled"))
 
 
 def test_deadline_error_marker_does_not_reclassify_resource_limits() -> None:
