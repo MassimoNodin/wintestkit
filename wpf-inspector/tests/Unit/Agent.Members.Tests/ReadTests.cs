@@ -62,8 +62,10 @@ namespace WinTestKit.Inspector.Agent.Members.Tests
             {
                 var inspector = new ObjectInspector(); var registry = new Registry(); var dispatcher = Dispatcher.CurrentDispatcher;
                 var button = new System.Windows.Controls.Button { Name = "MyButton", Content = "Caption" };
+                Assert.Null(System.Windows.Automation.Peers.UIElementAutomationPeer.FromElement(button));
                 var path = new[] { new PathSegment { Kind = "uia", Name = "name" } };
                 var value = ValueTestSupport.RoundTrip(inspector.ReadPath(button, path, registry, dispatcher, CancellationToken.None));
+                Assert.Equal("ok", value.Status);
                 Assert.Equal("Caption", ((JsonStringNode)value.Scalar!).Value);
                 value = ValueTestSupport.RoundTrip(inspector.ReadPath(new System.Windows.Controls.Border(), path, registry, dispatcher, CancellationToken.None));
                 Assert.Equal("unavailable", value.Status);
@@ -115,8 +117,10 @@ namespace WinTestKit.Inspector.Agent.Members.Tests
                 combo.Items.Add(new System.Windows.Controls.ComboBoxItem { Content = "first,\nsecond" });
                 var window = new System.Windows.Window { Content = combo }; window.Show(); window.UpdateLayout();
                 combo.SelectedIndex = 0; window.UpdateLayout();
-                Assert.Equal("1", ((JsonNumberNode)Read(combo, "selection_count").Scalar!).RawText);
-                Assert.Equal("first,\nsecond", ((JsonStringNode)Read(combo, "selection_name_0").Scalar!).Value);
+                var count = Read(combo, "selection_count"); Assert.Equal("ok", count.Status);
+                Assert.Equal("1", ((JsonNumberNode)count.Scalar!).RawText);
+                var name = Read(combo, "selection_name_0"); Assert.Equal("ok", name.Status);
+                Assert.Equal("first,\nsecond", ((JsonStringNode)name.Scalar!).Value);
                 Assert.Equal("unavailable", Read(combo, "selection_name_1").Status);
                 Assert.Equal("unavailable", Read(new System.Windows.Controls.Button(), "selection_count").Status); window.Close();
             });
@@ -134,8 +138,11 @@ namespace WinTestKit.Inspector.Agent.Members.Tests
                 window.Show(); window.UpdateLayout();
                 list.SelectedIndex = 199;
                 Assert.Null(list.ItemContainerGenerator.ContainerFromIndex(199));
-                Assert.Equal("1", ((JsonNumberNode)Read(list, "selection_count").Scalar!).RawText);
-                Assert.Equal("Item 199", ((JsonStringNode)Read(list, "selection_name_0").Scalar!).Value);
+                var count = Read(list, "selection_count"); Assert.Equal("ok", count.Status);
+                Assert.Equal("1", ((JsonNumberNode)count.Scalar!).RawText);
+                var name = Read(list, "selection_name_0"); Assert.Equal("ok", name.Status);
+                Assert.Equal("Item 199", ((JsonStringNode)name.Scalar!).Value);
+                Assert.Null(list.ItemContainerGenerator.ContainerFromIndex(199));
                 window.Close();
             });
         }
