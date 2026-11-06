@@ -4,6 +4,9 @@ using System.Windows.Automation.Peers;
 using System.Windows.Automation.Provider;
 using System.Collections.Generic;
 using System.Windows.Threading;
+using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
+using System.Reflection;
 using WinTestKit.Inspector.Agent.Contracts;
 using WinTestKit.Inspector.Protocol;
 
@@ -53,6 +56,64 @@ namespace WinTestKit.Inspector.Agent.Inspection.Members
             return null;
         }
 
+        private static List<object>? SelectedItems(object target, AutomationPeer peer)
+        {
+            if (!(peer is ItemsControlAutomationPeer)) return null;
+            var items = new List<object>();
+            if (target is DataGrid grid && grid.SelectionUnit != DataGridSelectionUnit.FullRow) return null;
+            if (target is MultiSelector multi)
+            {
+                foreach (object item in multi.SelectedItems) items.Add(item);
+            }
+            else if (target is ListBox list)
+            {
+                foreach (object item in list.SelectedItems) items.Add(item);
+            }
+            else if (target is Selector selector)
+            {
+                if (selector.SelectedIndex >= 0) items.Add(selector.SelectedItem);
+            }
+            else if (target is TreeView tree)
+            {
+                if (tree.SelectedItem != null) items.Add(tree.SelectedItem);
+            }
+            else return null;
+            return items;
+        }
+
+        private static ItemAutomationPeer? FindChildItemPeer(AutomationPeer peer, object item)
+        {
+            var children = peer.GetChildren();
+            if (children == null) return null;
+            foreach (AutomationPeer child in children)
+            {
+                if (child is ItemAutomationPeer itemPeer && Equals(itemPeer.Item, item)) return itemPeer;
+                // TreeView item peers own nested items rather than the root peer.
+                if (child is TreeViewItemAutomationPeer)
+                {
+                    var nested = FindChildItemPeer(child, item);
+                    if (nested != null) return nested;
+                }
+            }
+            return null;
+        }
+
+        private static ItemAutomationPeer? SelectedItemPeer(ItemsControlAutomationPeer peer, object item)
+        {
+            SelectionNameRoute = "ItemsControl.GetChildren";
+            var child = FindChildItemPeer(peer, item);
+            if (child != null) return child;
+            // This WPF method looks up or creates an item peer without realizing a container.
+            SelectionNameRoute = "ItemsControl.FindOrCreateItemAutomationPeer";
+            try
+            {
+                var method = typeof(ItemsControlAutomationPeer).GetMethod("FindOrCreateItemAutomationPeer",
+                    BindingFlags.Instance | BindingFlags.NonPublic, null, new[] { typeof(object) }, null);
+                return method?.Invoke(peer, new[] { item }) as ItemAutomationPeer;
+            }
+            catch (Exception) { return null; }
+        }
+
         internal static AutomationPeer? GetPeer(DependencyObject target) =>
             target is UIElement element ? UIElementAutomationPeer.FromElement(element) ?? UIElementAutomationPeer.CreatePeerForElement(element) :
             target is ContentElement content ? ContentElementAutomationPeer.FromElement(content) ?? ContentElementAutomationPeer.CreatePeerForElement(content) : null;
@@ -91,11 +152,21 @@ namespace WinTestKit.Inspector.Agent.Inspection.Members
                 }
                 if ((name == "selection_count" || name.StartsWith("selection_name_", StringComparison.Ordinal)) && peer.GetPattern(PatternInterface.Selection) is ISelectionProvider provider)
                 {
-                    if (peer is ItemsControlAutomationPeer) peer.GetChildren();
-                    IRawElementProviderSimple[] selected = provider.GetSelection() ?? Array.Empty<IRawElementProviderSimple>();
-                    if (name == "selection_count") result = selected.Length;
-                    else if (int.TryParse(name.Substring("selection_name_".Length), out int index) && index >= 0 && index < selected.Length)
-                        result = SelectedPeer(peer, selected[index])?.GetName();
+                    var items = SelectedItems(target, peer);
+                    if (items != null && peer is ItemsControlAutomationPeer itemsPeer)
+                    {
+                        if (name == "selection_count") result = items.Count;
+                        else if (int.TryParse(name.Substring("selection_name_".Length), out int index) && index >= 0 && index < items.Count)
+                            result = SelectedItemPeer(itemsPeer, items[index])?.GetName();
+                    }
+                    else
+                    {
+                        if (peer is ItemsControlAutomationPeer) peer.GetChildren();
+                        IRawElementProviderSimple[] selected = provider.GetSelection() ?? Array.Empty<IRawElementProviderSimple>();
+                        if (name == "selection_count") result = selected.Length;
+                        else if (int.TryParse(name.Substring("selection_name_".Length), out int index) && index >= 0 && index < selected.Length)
+                            result = SelectedPeer(peer, selected[index])?.GetName();
+                    }
                 }
                 if (result == null) return new ValueDto { Status = "unavailable", Kind = "unavailable" };
                 return ValueSerializer.Serialize(result, result.GetType(), registry, dispatcher);
