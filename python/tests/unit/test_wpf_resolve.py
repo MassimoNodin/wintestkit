@@ -1,5 +1,6 @@
 import importlib
 import re
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -7,6 +8,7 @@ import pytest
 from wintestkit.backends import WpfElement
 from wintestkit.engine import actions, wpf_resolve
 from wintestkit.engine.locator import ItemSelector, Locator
+from wintestkit.engine.managed import query_budget
 from wintestkit.errors import (
     AmbiguousElementError,
     ElementNotFoundError,
@@ -59,6 +61,36 @@ class Client:
             offscreen=False,
             focused=False,
         )
+
+
+@pytest.mark.parametrize(
+    ("status", "expected"),
+    [("ok", False), ("redacted", True), ("unavailable", True), ("exception", True)],
+)
+def test_password_classification_uses_agent_redaction(status, expected):
+    client = Client()
+    client.read = lambda *args, **kwargs: (
+        (SimpleNamespace(value=SimpleNamespace(status=status)),),
+        "read",
+    )
+    target = WpfElement(client, ref("child"), 42)
+    assert actions.is_password(target) is expected
+
+
+def test_password_classification_has_independent_deadline(monkeypatch):
+    client = Client()
+    deadlines = []
+
+    def read(*args, deadline):
+        deadlines.append(deadline)
+        return ((SimpleNamespace(value=SimpleNamespace(status="ok")),), "read")
+
+    client.read = read
+    target = WpfElement(client, ref("child"), 42)
+    monkeypatch.setattr(target, "as_uia", lambda: pytest.fail("UIA mapping was attempted"))
+    with query_budget(time.monotonic() - 1):
+        assert not actions.is_password(target)
+    assert deadlines[0] > time.monotonic()
 
 
 @pytest.fixture
