@@ -68,6 +68,7 @@ namespace WinTestKit.Inspector.Agent.Mapping.Tests
                     Assert.False((await engine.UntilAsync(condition, DateTime.UtcNow.AddSeconds(60), 100, CancellationToken.None)).Satisfied);
                     using (var cancel = new CancellationTokenSource(50))
                         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => engine.UntilAsync(condition, DateTime.UtcNow.AddSeconds(60), 1000, cancel.Token));
+                    GC.KeepAlive(root);
                     registry.Release(new[] { handle.ObjectId });
                     Assert.Equal(ErrorCodes.ObjectStale, (await Assert.ThrowsAsync<ProtocolException>(() => engine.UntilAsync(condition, DateTime.UtcNow.AddSeconds(60), 2000, CancellationToken.None))).Code);
                 }
@@ -88,6 +89,7 @@ namespace WinTestKit.Inspector.Agent.Mapping.Tests
                     var condition = new WaitCondition { Kind = "propertyEquals", Locator = locator, Path = new[] { new PathSegment { Kind = "property", Name = "Name" } }, Value = new JsonStringNode("secret") };
                     var engine = new WaitEngine(new QueryEngine(executor, registry), executor, registry, new ObjectInspector(), new PeerRuntimeIdAdapter());
                     Assert.Equal(ErrorCodes.ValueUnreadable, (await Assert.ThrowsAsync<ProtocolException>(() => engine.UntilAsync(condition, DateTime.UtcNow.AddSeconds(60), 2000, CancellationToken.None))).Code);
+                    GC.KeepAlive(root);
                 }
             }
         }
@@ -111,6 +113,7 @@ namespace WinTestKit.Inspector.Agent.Mapping.Tests
                         Predicates = new[] { new Predicate { Kind = "equals", Path = new[] { new PathSegment { Kind = "type", Name = "FullName" } }, Value = new JsonStringNode("System.Windows.Controls.Button") } } };
                     var engine = new WaitEngine(new QueryEngine(executor, registry), executor, registry, new ObjectInspector(), new PeerRuntimeIdAdapter());
                     Assert.Equal(ErrorCodes.LimitExceeded, (await Assert.ThrowsAsync<ProtocolException>(() => engine.UntilAsync(new WaitCondition { Kind = "exists", Locator = locator }, DateTime.UtcNow.AddSeconds(60), 2000, CancellationToken.None))).Code);
+                    GC.KeepAlive(root);
                 }
             }
         }

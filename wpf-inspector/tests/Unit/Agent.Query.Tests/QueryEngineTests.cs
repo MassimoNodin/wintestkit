@@ -172,6 +172,7 @@ namespace WinTestKit.Inspector.Agent.Query.Tests
                     Assert.Null((await engine.FindAsync(locator, Deadline, CancellationToken.None)).Warning);
                     locator.Predicates = new[] { new Predicate { Kind = "assignableTo", FullName = typeof(IDisposable).FullName } };
                     Assert.Equal(ErrorCodes.NotFound, (await Assert.ThrowsAsync<ProtocolException>(() => engine.FindAsync(locator, Deadline, CancellationToken.None))).Code);
+                    GC.KeepAlive(button);
                     registry.Release(new[] { handle.ObjectId });
                     Assert.Equal(ErrorCodes.ObjectStale, (await Assert.ThrowsAsync<ProtocolException>(() => engine.FindAsync(locator, Deadline, CancellationToken.None))).Code);
                 }
@@ -215,6 +216,7 @@ namespace WinTestKit.Inspector.Agent.Query.Tests
                         locator = Scope(Register(registry, root));
                         try { Assert.NotNull((await engine.FindAsync(locator, Deadline, 1, CancellationToken.None)).Match); }
                         catch (ProtocolException error) { Assert.Equal(ErrorCodes.LimitExceeded, error.Code); }
+                        GC.KeepAlive(root);
                     }
                 }
                 finally
@@ -276,6 +278,7 @@ namespace WinTestKit.Inspector.Agent.Query.Tests
                     Assert.False(all.Complete); Assert.Null(all.Count);
                     locator.Predicates = new[] { new Predicate { Kind = "assignableTo", FullName = "No.Such.Type" } };
                     Assert.Equal(ErrorCodes.LimitExceeded, (await Assert.ThrowsAsync<ProtocolException>(() => engine.FindAsync(locator, Deadline, CancellationToken.None))).Code);
+                    GC.KeepAlive(root);
                 }
             }
         }
@@ -304,6 +307,7 @@ namespace WinTestKit.Inspector.Agent.Query.Tests
                     Assert.Empty((await new QueryEngine(executor, registry).FindAllAsync(locator, Deadline, CancellationToken.None)).Matches);
                     locator.Predicates = new Predicate[0]; locator.Depth = 0;
                     Assert.Equal(handle.ObjectId, (await new QueryEngine(executor, registry).FindAsync(locator, Deadline, CancellationToken.None)).Match.ObjectId);
+                    GC.KeepAlive(window);
                 }
             }
         }
@@ -340,6 +344,7 @@ namespace WinTestKit.Inspector.Agent.Query.Tests
                         await search;
                     }
                     finally { ui.Dispatcher.Hooks.OperationStarted -= hook; }
+                    GC.KeepAlive(root);
                 }
             }
         }
@@ -365,6 +370,7 @@ namespace WinTestKit.Inspector.Agent.Query.Tests
                     var error = await Assert.ThrowsAsync<ProtocolException>(() => engine.FindAsync(locator, Deadline, CancellationToken.None));
                     Assert.Equal(ErrorCodes.LimitExceeded, error.Code);
                     Assert.Null(error.Details);
+                    GC.KeepAlive(root);
                 }
             }
         }
@@ -400,6 +406,7 @@ namespace WinTestKit.Inspector.Agent.Query.Tests
                         Assert.NotNull(result.Match);
                         times.Add(timer.ElapsedMilliseconds);
                     }
+                    GC.KeepAlive(root);
                     if (!measurePerformance) return;
                     times.Sort(); long median = (times[9] + times[10]) / 2;
                     output.WriteLine("5000 element median: {0} ms", median);
