@@ -386,7 +386,7 @@ def test_column_only_grid_mouse_selection(owned, backend, monkeypatch):
 @pytest.mark.parametrize("mode", ["pattern", "mouse"])
 def test_phase3_item_not_found_messages_match(owned, mode, monkeypatch):
     from wintestkit.backends.element import WpfElement
-    from wintestkit.controls import ComboBox, ListBox
+    from wintestkit.controls import ComboBox, DataGrid, ListBox, TabControl, TreeView
     from wintestkit.errors import ElementNotFoundError
     from wintestkit.model import Page
 
@@ -395,6 +395,9 @@ def test_phase3_item_not_found_messages_match(owned, mode, monkeypatch):
     class FixturePage(Page):
         combo = ComboBox(automation_id="ParityCombo")
         listing = ListBox(automation_id="ParityList")
+        grid = DataGrid(automation_id="ParityGrid")
+        tree = TreeView(automation_id="ParityTree")
+        tabs = TabControl(automation_id="ParityTabs")
 
     page = FixturePage(scope.app)
     messages = []
@@ -406,7 +409,7 @@ def test_phase3_item_not_found_messages_match(owned, mode, monkeypatch):
                         WpfElement, "as_uia", lambda self: pytest.fail("unexpected UIA mapping")
                     )
                 errors = []
-                for control in (page.combo, page.listing):
+                for control in (page.combo, page.listing, page.grid, page.tree, page.tabs):
                     with pytest.raises(ElementNotFoundError) as error:
                         control.select("Absent", timeout=5)
                     errors.append(re.sub(r"[0-9.]+s", "<time>", str(error.value)))
@@ -505,6 +508,71 @@ def test_phase2_keyboard_menu_pointer_and_grid_parity(owned, backend, mode, monk
         assert "First" in page.grid.row(0).text
         assert page.grid.cell(0, 0).text == "First"
         assert page.grid.cell(1, 1).text == "Two"
+
+
+@pytest.mark.parametrize("mode", ["pattern", "mouse"])
+def test_phase3_typed_failed_expectations_match(owned, mode, monkeypatch):
+    from wintestkit.backends.element import WpfElement
+    from wintestkit.controls import (
+        Button,
+        CheckBox,
+        ComboBox,
+        DataGrid,
+        ListBox,
+        ListItem,
+        RadioButton,
+        TabControl,
+        Text,
+        TextBox,
+        TreeView,
+    )
+    from wintestkit.expect import expect
+    from wintestkit.model import Page
+
+    scope, path = owned
+
+    class FixturePage(Page):
+        button = Button(automation_id="FancyAutomationId")
+        source = TextBox(automation_id="BindingSource")
+        checkbox = CheckBox(automation_id="ParityCheck")
+        radio = RadioButton(automation_id="ParityRadio")
+        combo = ComboBox(automation_id="ParityCombo")
+        listing = ListBox(automation_id="ParityList")
+        item = ListItem(name="Beta", control_type="ListItem", within=listing)
+        grid = DataGrid(automation_id="ParityGrid")
+        tree = TreeView(automation_id="ParityTree")
+        tabs = TabControl(automation_id="ParityTabs")
+        text = Text(automation_id="ActionEffect")
+
+    page = FixturePage(scope.app)
+    messages = []
+    for backend in ("uia", "auto"):
+        with runtime.config_scope(replace(config(path, "agent"), backend=backend, input_mode=mode)):
+            resolve(scope, Locator(automation_id="FixtureControl"))
+            with monkeypatch.context() as guard:
+                if backend == "auto":
+                    guard.setattr(
+                        WpfElement, "as_uia", lambda self: pytest.fail("unexpected UIA mapping")
+                    )
+                errors = []
+                for name in (
+                    "button",
+                    "source",
+                    "checkbox",
+                    "radio",
+                    "combo",
+                    "listing",
+                    "item",
+                    "grid",
+                    "tree",
+                    "tabs",
+                    "text",
+                ):
+                    with pytest.raises(AssertionError) as error:
+                        expect(getattr(page, name), timeout=0.2).to_be_disabled()
+                    errors.append(re.sub(r"after [0-9.]+s", "after <time>", str(error.value)))
+                messages.append(errors)
+    assert messages[0] == messages[1]
 
 
 @pytest.mark.parametrize("mode", ["pattern", "mouse"])
