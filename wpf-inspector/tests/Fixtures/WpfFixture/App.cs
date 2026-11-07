@@ -250,6 +250,8 @@ public sealed class MainWindow : Window
         parity.Children.Add(expander);
         panel.Children.Add(parity);
         panel.Children.Add(parityDisabled);
+        panel.Children.Add(Id(new TextBox { Text = "read only", IsReadOnly = true }, "ParityReadOnly"));
+        panel.Children.Add(Id(new Expander { Header = "Hidden", Content = Id(new TextBox { Text = "hidden" }, "ParityHiddenInput") }, "ParityHiddenExpander"));
         var interactionEffect = Id(new TextBlock { Text = "Ready" }, "ParityInteractionEffect");
         var menu = new Menu();
         var topMenu = Id(new MenuItem { Header = "Actions" }, "ParityMenu");
