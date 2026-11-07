@@ -109,6 +109,7 @@ namespace WinTestKit.Inspector.Agent.Query.Tests
                             if (iteration > 0) samples.Add(watch.ElapsedMilliseconds);
                             Assert.True(result.Complete); Assert.Single(result.Matches);
                         }
+                        GC.KeepAlive(window);
                         if (!measurePerformance) continue;
                         samples.Sort();
                         Console.WriteLine("Large managed typed={0}: median={1} ms, p95={2} ms", typed, (samples[4] + samples[5]) / 2.0, samples[9]);
@@ -246,6 +247,7 @@ namespace WinTestKit.Inspector.Agent.Query.Tests
                     task.ContinueWith(_ => frame.Continue = false, TaskScheduler.Default);
                     Dispatcher.PushFrame(frame);
                     Assert.Empty(task.GetAwaiter().GetResult().Matches);
+                    GC.KeepAlive(model);
                 }
             });
         }
@@ -274,6 +276,7 @@ namespace WinTestKit.Inspector.Agent.Query.Tests
                     Dispatcher.PushFrame(frame);
                     var error = Assert.Throws<ProtocolException>(() => task.GetAwaiter().GetResult());
                     Assert.Equal(ErrorCodes.ValueUnreadable, error.Code);
+                    GC.KeepAlive(model);
                 }
             });
         }
