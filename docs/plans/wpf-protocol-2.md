@@ -77,7 +77,7 @@ type and dispatcherId. Handles are session-bound and stale handles fail `objectS
   isKeyboardFocusable:boolean,parts:PartGeometry[]}`. Each part is
   `{name:string,role:string,bounds:Rect|null}`; name is its template `x:Name`, and role is
   `expanderToggle`, `comboDropDown`, `scrollThumb`, `scrollDecrement`, `scrollIncrement`,
-  `scrollTrack`, `treeItemExpander`, `gridColumnHeader`, or `templatePart`. Include all named
+  `scrollTrack`, `treeItemExpander`, `gridColumnHeader`, `gridRowHeader`, or `templatePart`. Include all named
   parts found in the applied template (up to 64, scanning at most 4096 visual nodes), including header instances, with semantic roles when
   recognized. Missing parts are absent; null bounds mean no usable geometry. Including parts in
   state gives geometry and visibility one snapshot and deadline. `Rect` is `{x:number,y:number,width:number,height:number}`
@@ -216,7 +216,7 @@ the control center; missing, invisible, clipped or unsafe parts fail rather than
 | check, uncheck, toggle (CheckBox) | `act.toggle` until requested state, bounded as existing action | center click; verify state |
 | select self (RadioButton, ListItem) | `act.select` | center click |
 | expand, collapse | `act.expand`, `act.collapse` | click `expanderToggle` or `treeItemExpander` as appropriate |
-| select item (ComboBox, ListBox, DataGrid, TreeView, TabControl) | item-data search, `act.realizeItem`, `act.scrollIntoView`, `act.select` | ComboBox: click `comboDropDown` to open, then realize the first matching item and click its bounds; other controls: realize the first item and click its bounds |
+| select item (ComboBox, ListBox, DataGrid, TreeView, TabControl) | item-data search, `act.realizeItem`, `act.scrollIntoView`, `act.select` | ComboBox: click `comboDropDown` to open, then realize the first matching item and click its bounds; DataGrid: click a safe `gridRowHeader` if available, otherwise select the realized row with `act.select`; other controls: realize the first item and click its bounds |
 | scroll bar | `act.scroll` / `act.setRange` | click `scrollDecrement`, `scrollIncrement` or `scrollTrack`, or drag `scrollThumb`, according to action |
 | grid column header | peer action when supported | click the target `gridColumnHeader` part |
 | named template part | peer action when supported | click the requested `templatePart` by `x:Name` |

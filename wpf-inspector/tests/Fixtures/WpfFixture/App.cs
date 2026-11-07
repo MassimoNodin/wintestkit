@@ -148,6 +148,7 @@ public sealed class VirtualItem
     public int Id { get; set; }
     public string Name { get; set; } = "";
     public bool Enabled { get; set; }
+    public override string ToString() => Name;
 }
 public sealed class CountingConverter : IValueConverter
 {
@@ -241,6 +242,10 @@ public sealed class MainWindow : Window
         parity.Children.Add(combo);
         var list = Id(new ListBox { Width = 110, Height = 75, ItemsSource = new[] { "Alpha", "Beta", "Gamma" } }, "ParityList");
         parity.Children.Add(list);
+        var tree = Id(new TreeView { Width = 90, Height = 75 }, "ParityTree");
+        tree.Items.Add(new TreeViewItem { Header = "Tree Alpha" }); parity.Children.Add(tree);
+        var tabs = Id(new TabControl { Width = 100, Height = 75 }, "ParityTabs");
+        tabs.Items.Add(new TabItem { Header = "Tab Alpha" }); tabs.Items.Add(new TabItem { Header = "Tab Beta" }); parity.Children.Add(tabs);
         var expander = Id(new Expander { Header = "Expand", Content = Id(new TextBlock { Text = "Expanded content" }, "ParityExpandedContent") }, "ParityExpander");
         parity.Children.Add(expander);
         panel.Children.Add(parity);
@@ -266,6 +271,9 @@ public sealed class MainWindow : Window
         grid.Columns.Add(new DataGridTextColumn { Header = "Name", Binding = new Binding("Name") });
         grid.Columns.Add(new DataGridTextColumn { Header = "Value", Binding = new Binding("Value") });
         panel.Children.Add(grid);
+        var columnOnlyGrid = Id(new DataGrid { AutoGenerateColumns = false, CanUserAddRows = false, Height = 95, HeadersVisibility = DataGridHeadersVisibility.Column, ItemsSource = new[] { "Column Alpha", "Column Beta" } }, "ParityColumnOnlyGrid");
+        columnOnlyGrid.Columns.Add(new DataGridTextColumn { Header = "Name", Binding = new Binding(".") });
+        panel.Children.Add(columnOnlyGrid);
         panel.Children.Add(new PeerlessMarker());
         var group = Id(new GroupBox { Header = "Parity group" }, "ParityGroup");
         group.Content = Id(new Button { Content = "Nested", Tag = "nested" }, "NestedButton");

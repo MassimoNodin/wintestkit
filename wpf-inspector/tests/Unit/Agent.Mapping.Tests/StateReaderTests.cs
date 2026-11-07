@@ -79,6 +79,29 @@ namespace WinTestKit.Inspector.Agent.Mapping.Tests
             }
         }
         [Fact]
+        public async Task DataGridRowExposesClickableHeader()
+        {
+            using (var ui = new DispatcherThread())
+            {
+                await ui.Dispatcher.InvokeAsync(() =>
+                {
+                    var grid = new DataGrid { ItemsSource = new[] { "one", "two" } };
+                    var window = new Window { Width = 300, Height = 200, Content = grid, ShowInTaskbar = false };
+                    try
+                    {
+                        window.Show(); window.UpdateLayout();
+                        var row = Assert.IsType<DataGridRow>(grid.ItemContainerGenerator.ContainerFromIndex(0));
+                        var state = StateReader.Read(row, new ObjectRef(), new PeerRuntimeIdAdapter());
+                        var part = Assert.Single(state.Parts, item => item.Role == "gridRowHeader");
+                        Assert.NotNull(part.Bounds);
+                        Assert.Equal("gridRowHeader", PartGeometry.FromJson(part.ToJson()).Role);
+                    }
+                    finally { window.Close(); }
+                }).Task;
+            }
+        }
+
+        [Fact]
         public async Task ScrollBarTemplateExposesTrackAndThumb()
         {
             using (var ui = new DispatcherThread())

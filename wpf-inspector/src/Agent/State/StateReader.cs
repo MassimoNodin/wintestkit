@@ -152,6 +152,11 @@ namespace WinTestKit.Inspector.Agent.State
                     Rect? bounds = SafePartBounds(fe);
                     parts.Add(new PartGeometry { Name = fe.Name, Role = Role(control, fe), Bounds = bounds.HasValue ? Dto(bounds.Value) : null });
                 }
+                if (control is DataGridRow && node is DataGridRowHeader rowHeader && parts.Count < MaxParts)
+                {
+                    Rect? rowHeaderBounds = SafePartBounds(rowHeader);
+                    parts.Add(new PartGeometry { Name = "RowHeader", Role = "gridRowHeader", Bounds = rowHeaderBounds.HasValue ? Dto(rowHeaderBounds.Value) : null });
+                }
                 if (control is DataGrid && node is DataGridColumnHeader header && parts.Count < MaxParts &&
                     !(header.TemplatedParent == control && !string.IsNullOrEmpty(header.Name)))
                 {

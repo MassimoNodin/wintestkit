@@ -143,6 +143,10 @@ def test_schema_definitions_and_version():
                 {**STATE, "clickPoint": {"x": -3, "y": 12}},
                 {
                     **STATE,
+                    "parts": [{"name": "RowHeader", "role": "gridRowHeader", "bounds": None}],
+                },
+                {
+                    **STATE,
                     "windowHandle": 42,
                     "parts": [{"name": "part", "role": "templatePart", "bounds": None}],
                 },
