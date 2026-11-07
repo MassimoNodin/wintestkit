@@ -193,6 +193,30 @@ def test_phase2_backend_parity(owned, backend, monkeypatch):
         expect(page.effect, timeout=5).to_have_text("Clicked 1")
 
 
+@pytest.mark.parametrize("mode", ["pattern", "mouse"])
+@pytest.mark.parametrize("backend", ["uia", "auto"])
+def test_phase3_typed_button_click(owned, backend, mode, monkeypatch):
+    from wintestkit.backends.element import WpfElement
+    from wintestkit.controls import Button, Text
+    from wintestkit.expect import expect
+    from wintestkit.model import Page
+
+    scope, path = owned
+
+    class FixturePage(Page):
+        button = Button(automation_id="FancyAutomationId")
+        effect = Text(automation_id="ActionEffect")
+
+    page = FixturePage(scope.app)
+    with runtime.config_scope(replace(config(path, "agent"), backend=backend, input_mode=mode)):
+        if backend == "auto":
+            monkeypatch.setattr(
+                WpfElement, "as_uia", lambda self: pytest.fail("unexpected UIA mapping")
+            )
+        assert page.button.click() is None
+        expect(page.effect, timeout=5).to_have_text("Clicked 1")
+
+
 def test_phase2_duplicate_order_matches(owned):
     from wintestkit.backends.element import uia_of
 
@@ -206,8 +230,9 @@ def test_phase2_duplicate_order_matches(owned):
     assert results[0] == results[1]
 
 
+@pytest.mark.parametrize("mode", ["pattern", "mouse"])
 @pytest.mark.parametrize("backend", ["uia", "auto"])
-def test_phase2_existing_expectations_and_input(owned, backend, monkeypatch):
+def test_phase2_existing_expectations_and_input(owned, backend, mode, monkeypatch):
     from wintestkit.controls import TextBox
     from wintestkit.expect import expect
     from wintestkit.model import Element, Elements, Page
@@ -220,7 +245,7 @@ def test_phase2_existing_expectations_and_input(owned, backend, monkeypatch):
         duplicates = Elements(automation_id="Duplicate")
 
     page = FixturePage(scope.app)
-    with runtime.config_scope(replace(config(path, "agent"), backend=backend)):
+    with runtime.config_scope(replace(config(path, "agent"), backend=backend, input_mode=mode)):
         expect(page.button, timeout=5).not_.to_be_hidden()
         expect(page.button, timeout=5).not_.to_have_text("wrong")
         expect(page.button, timeout=5).not_.to_contain_text("wrong")
@@ -242,8 +267,9 @@ def test_phase2_existing_expectations_and_input(owned, backend, monkeypatch):
         expect(page.source, timeout=5).to_have_value("")
 
 
+@pytest.mark.parametrize("mode", ["pattern", "mouse"])
 @pytest.mark.parametrize("backend", ["uia", "auto"])
-def test_phase2_typed_selection_parity(owned, backend, monkeypatch):
+def test_phase2_typed_selection_parity(owned, backend, mode, monkeypatch):
     from wintestkit.controls import CheckBox, ComboBox, ListBox, RadioButton
     from wintestkit.expect import expect
     from wintestkit.model import Element, Page
@@ -259,7 +285,7 @@ def test_phase2_typed_selection_parity(owned, backend, monkeypatch):
         expanded_content = Element(automation_id="ParityExpandedContent")
 
     page = FixturePage(scope.app)
-    with runtime.config_scope(replace(config(path, "agent"), backend=backend)):
+    with runtime.config_scope(replace(config(path, "agent"), backend=backend, input_mode=mode)):
         from wintestkit.backends.element import WpfElement
 
         with monkeypatch.context() as guard:
@@ -300,7 +326,7 @@ def test_phase2_typed_selection_parity(owned, backend, monkeypatch):
 @pytest.mark.parametrize("backend", ["uia", "auto"])
 def test_phase3_typed_selection(owned, backend, mode, monkeypatch):
     from wintestkit.backends.element import WpfElement
-    from wintestkit.controls import ComboBox, ListBox, TabControl, TreeView
+    from wintestkit.controls import ComboBox, ListBox, ListItem, TabControl, Text, TreeView
     from wintestkit.model import Page
 
     scope, path = owned
@@ -308,8 +334,10 @@ def test_phase3_typed_selection(owned, backend, mode, monkeypatch):
     class FixturePage(Page):
         combo = ComboBox(automation_id="ParityCombo")
         listing = ListBox(automation_id="ParityList")
+        item = ListItem(name="Beta", control_type="ListItem", within=listing)
         tree = TreeView(automation_id="ParityTree")
         tabs = TabControl(automation_id="ParityTabs")
+        effect = Text(automation_id="ActionEffect")
 
     page = FixturePage(scope.app)
     with runtime.config_scope(replace(config(path, "agent"), backend=backend, input_mode=mode)):
@@ -319,12 +347,15 @@ def test_phase3_typed_selection(owned, backend, mode, monkeypatch):
             )
         assert page.combo.items() == ["Alpha", "Beta", "Gamma"]
         assert page.listing.items() == ["Alpha", "Beta", "Gamma"]
+        assert page.effect.text == "Ready"
         for item, expected in (("Alpha", "Alpha"), (re.compile("^Beta$"), "Beta"), (2, "Gamma")):
             page.combo.select(item)
             assert page.combo.selected == expected
         for item, expected in (("Beta", "Beta"), (0, "Alpha")):
             page.listing.select(item)
             assert page.listing.selected_items() == [expected]
+        assert page.item.select() is None
+        assert page.item.is_selected()
         page.tree.select("Tree Alpha")
         assert page.tree.selected_items() == ["Tree Alpha"]
         page.tabs.select("Tab Beta")
@@ -430,8 +461,9 @@ def test_phase3_virtual_items_selection(owned, backend, mode, control_id, monkey
             print(f"{backend} {mode} {control_id}: median {statistics.median(times):.3f}s")
 
 
+@pytest.mark.parametrize("mode", ["pattern", "mouse"])
 @pytest.mark.parametrize("backend", ["uia", "auto"])
-def test_phase2_keyboard_menu_pointer_and_grid_parity(owned, backend, monkeypatch):
+def test_phase2_keyboard_menu_pointer_and_grid_parity(owned, backend, mode, monkeypatch):
     from wintestkit.controls import DataGrid, TextBox
     from wintestkit.expect import expect
     from wintestkit.model import Element, Page
@@ -448,7 +480,7 @@ def test_phase2_keyboard_menu_pointer_and_grid_parity(owned, backend, monkeypatc
         grid = DataGrid(automation_id="ParityGrid")
 
     page = FixturePage(scope.app)
-    with runtime.config_scope(replace(config(path, "agent"), backend=backend)):
+    with runtime.config_scope(replace(config(path, "agent"), backend=backend, input_mode=mode)):
         page.source.focus()
         page.source.press("Ctrl+A Backspace h e l l o")
         expect(page.source, timeout=5).to_have_value("hello")
@@ -473,6 +505,37 @@ def test_phase2_keyboard_menu_pointer_and_grid_parity(owned, backend, monkeypatc
         assert "First" in page.grid.row(0).text
         assert page.grid.cell(0, 0).text == "First"
         assert page.grid.cell(1, 1).text == "Two"
+
+
+@pytest.mark.parametrize("mode", ["pattern", "mouse"])
+def test_phase3_grid_access_parity(owned, mode):
+    from wintestkit.controls import DataGrid
+    from wintestkit.model import Page
+
+    scope, path = owned
+
+    class FixturePage(Page):
+        grid = DataGrid(automation_id="ParityGrid")
+
+    page = FixturePage(scope.app)
+    results = []
+    for backend in ("uia", "auto"):
+        with runtime.config_scope(replace(config(path, "agent"), backend=backend, input_mode=mode)):
+            results.append(
+                (
+                    page.grid.row_count(),
+                    page.grid.column_count(),
+                    page.grid.row(0).text,
+                    page.grid.cell(0, 0).text,
+                    page.grid.cell(1, 1).text,
+                    page.grid.find_row("Name", "Second").text,
+                )
+            )
+    assert results[0] == results[1]
+    assert results[0][0:2] == (2, 2)
+    assert "First" in results[0][2]
+    assert results[0][3:5] == ("First", "Two")
+    assert "Second" in results[0][5]
 
 
 def test_phase2_error_diagnostics_match(owned):
@@ -1002,6 +1065,33 @@ def _fixture_scenario(pid, name, value):
         assert json.loads(line) == {"ok": True}
     finally:
         pipe.close()
+
+
+@pytest.mark.parametrize("mode", ["pattern", "mouse"])
+def test_phase3_disabled_action_messages_match(owned, mode, monkeypatch):
+    from wintestkit.backends.element import WpfElement
+    from wintestkit.controls import Button
+    from wintestkit.errors import WaitTimeoutError
+    from wintestkit.model import Page
+
+    scope, path = owned
+
+    class FixturePage(Page):
+        disabled = Button(automation_id="ParityDisabled")
+
+    page = FixturePage(scope.app)
+    messages = []
+    for backend in ("uia", "auto"):
+        with runtime.config_scope(replace(config(path, "agent"), backend=backend, input_mode=mode)):  # noqa: SIM117
+            with monkeypatch.context() as guard:
+                if backend == "auto":
+                    guard.setattr(
+                        WpfElement, "as_uia", lambda self: pytest.fail("unexpected UIA mapping")
+                    )
+                with pytest.raises(WaitTimeoutError) as error:
+                    page.disabled.click(timeout=0.5)
+                messages.append(re.sub(r"[0-9.]+s", "<time>", str(error.value)))
+    assert messages[0] == messages[1]
 
 
 def test_phase2_disabled_waits_match(owned):
