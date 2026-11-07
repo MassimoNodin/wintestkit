@@ -150,6 +150,14 @@ namespace WinTestKit.Inspector.Agent.Inspection.Members
                     case "range_value": if (peer.GetPattern(PatternInterface.RangeValue) is IRangeValueProvider range) result = range.Value; break;
                     case "document_text": if (peer.GetPattern(PatternInterface.Text) is ITextProvider text) result = text.DocumentRange.GetText(ProtocolLimits.MaxScalarChars); break;
                 }
+                if (target is ItemsControl itemControl && peer is ItemsControlAutomationPeer itemPeer)
+                {
+                    if (name == "item_count") result = itemControl.Items.Count;
+                    else if (name.StartsWith("item_name_", StringComparison.Ordinal) &&
+                        int.TryParse(name.Substring("item_name_".Length), out int itemIndex) &&
+                        itemIndex >= 0 && itemIndex < itemControl.Items.Count)
+                        result = SelectedItemPeer(itemPeer, itemControl.Items[itemIndex])?.GetName();
+                }
                 if ((name == "selection_count" || name.StartsWith("selection_name_", StringComparison.Ordinal)) && peer.GetPattern(PatternInterface.Selection) is ISelectionProvider provider)
                 {
                     var items = SelectedItems(target, peer);

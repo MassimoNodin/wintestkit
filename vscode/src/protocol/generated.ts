@@ -21,12 +21,18 @@ export type ItemMatch =
     }
   | {
       kind: "equals";
-      path: Path;
+      path: Path &
+        {
+          [k: string]: unknown;
+        }[];
       value: Scalar;
     }
   | {
       kind: "regex";
-      path: Path;
+      path: Path &
+        {
+          [k: string]: unknown;
+        }[];
       pattern: string;
       flags: RegexFlags;
     };
@@ -124,6 +130,7 @@ export type PathSegment =
             | "document_text"
             | "is_password"
             | "selection_count"
+            | "item_count"
           );
     };
 /**

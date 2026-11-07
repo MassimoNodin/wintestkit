@@ -49,7 +49,7 @@ class PathSegment:
             raise ValueError("Invalid type metadata name")
         if (
             kind == "uia"
-            and not re.fullmatch(r"selection_name_(0|[1-9][0-9]{0,8})", data["name"])
+            and not re.fullmatch(r"(?:selection|item)_name_(0|[1-9][0-9]{0,8})", data["name"])
             and data["name"]
             not in {
                 "automation_id",
@@ -66,6 +66,7 @@ class PathSegment:
                 "document_text",
                 "is_password",
                 "selection_count",
+                "item_count",
             }
         ):
             raise ValueError("Invalid UIA name")

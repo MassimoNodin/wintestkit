@@ -134,7 +134,29 @@ namespace WinTestKit.Inspector.Agent.Members.Tests
                 var name = Read(combo, "selection_name_0"); AssertSelectionName(name, "first,\nsecond", combo);
                 Assert.StartsWith("ItemsControl.", PeerIdentity.SelectionNameRoute);
                 Assert.Equal("unavailable", Read(combo, "selection_name_1").Status);
+                Assert.Equal("1", ((JsonNumberNode)Read(combo, "item_count").Scalar!).RawText);
+                AssertSelectionName(Read(combo, "item_name_0"), "first,\nsecond", combo);
+                Assert.Equal("unavailable", Read(combo, "item_name_1").Status);
+                Assert.Equal("unavailable", Read(new System.Windows.Controls.Button(), "item_count").Status);
                 Assert.Equal("unavailable", Read(new System.Windows.Controls.Button(), "selection_count").Status); window.Close();
+            });
+        }
+        [Fact]
+        public void ReadsVirtualizedItemNamesWithoutRealizingContainers()
+        {
+            Sta(() =>
+            {
+                var inspector = new ObjectInspector(); var registry = new Registry(); var dispatcher = Dispatcher.CurrentDispatcher;
+                ValueDto Read(object target, string name) => inspector.ReadPath(target, new[] { new PathSegment { Kind = "uia", Name = name } }, registry, dispatcher, CancellationToken.None);
+                var list = new System.Windows.Controls.ListBox();
+                for (int index = 0; index < 5000; index++) list.Items.Add(index == 4999 ? "last,\nitem" : "item " + index);
+                var window = new System.Windows.Window { Width = 300, Height = 200, Content = list }; window.Show(); window.UpdateLayout();
+                Assert.Null(list.ItemContainerGenerator.ContainerFromIndex(4999));
+                Assert.Equal("5000", ((JsonNumberNode)Read(list, "item_count").Scalar!).RawText);
+                AssertSelectionName(Read(list, "item_name_4999"), "last,\nitem", list);
+                Assert.Null(list.ItemContainerGenerator.ContainerFromIndex(4999));
+                Assert.Equal("unavailable", Read(new System.Windows.Controls.Button(), "item_name_0").Status);
+                window.Close();
             });
         }
         [Fact]
