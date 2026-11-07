@@ -11,5 +11,6 @@ public class StateDtoTests
     [InlineData("{\"x\":0,\"y\":0,\"width\":1,\"height\":0,\"extra\":1}")]
     public void RejectsInvalidBounds(string s) => Assert.Throws<ProtocolException>(() => RectDto.FromJson(Parse(s)));
     [Fact] public void PartRequiresNullableBounds() { Assert.Throws<ProtocolException>(() => PartGeometry.FromJson(Parse("{\"name\":\"PART\",\"role\":\"templatePart\"}"))); var p = PartGeometry.FromJson(Parse("{\"name\":\"PART\",\"role\":\"templatePart\",\"bounds\":null}")); Assert.Null(PartGeometry.FromJson(p.ToJson()).Bounds); }
+    [Fact] public void ClickPointCoordinatesRoundTrip() { var point = PointDto.FromJson(Parse("{\"x\":-2.5,\"y\":3}")); Assert.Equal(-2.5, PointDto.FromJson(point.ToJson()).X); Assert.Throws<ProtocolException>(() => PointDto.FromJson(Parse("{\"x\":1}"))); }
     [Fact] public void RejectsUnknownRole() => Assert.Throws<ProtocolException>(() => PartGeometry.FromJson(Parse("{\"name\":\"PART\",\"role\":\"other\",\"bounds\":null}")));
 }

@@ -116,9 +116,45 @@ namespace WinTestKit.Inspector.Agent.Mapping.Tests
                         var adapter = new PeerRuntimeIdAdapter();
                         var partial = StateReader.Read(button, new ObjectRef(), adapter);
                         Assert.True(partial.Visible); Assert.True(partial.Clipped);
+                        Assert.NotNull(partial.ClickPoint);
+                        Assert.True(partial.ClickPoint!.Y >= partial.Bounds!.Y && partial.ClickPoint.Y < partial.Bounds.Y + 50);
                         scroll.ScrollToVerticalOffset(200); window.UpdateLayout();
                         var outOfView = StateReader.Read(button, new ObjectRef(), adapter);
-                        Assert.False(outOfView.Visible); Assert.True(outOfView.Offscreen);
+                        Assert.False(outOfView.Visible); Assert.True(outOfView.Offscreen); Assert.Null(outOfView.ClickPoint);
+                    }
+                    finally { window.Close(); }
+                }).Task;
+            }
+        }
+
+        [Fact]
+        public async Task ClickPointHonorsClipAndOcclusion()
+        {
+            using (var ui = new DispatcherThread())
+            {
+                await ui.Dispatcher.InvokeAsync(() =>
+                {
+                    var button = new Button { Width = 100, Height = 80, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top };
+                    var grid = new Grid(); grid.Children.Add(button);
+                    var window = new Window { Width = 240, Height = 200, Content = grid, ShowInTaskbar = false };
+                    try
+                    {
+                        window.Show(); window.UpdateLayout();
+                        var adapter = new PeerRuntimeIdAdapter();
+                        Assert.NotNull(StateReader.Read(button, new ObjectRef(), adapter).ClickPoint);
+                        grid.Clip = new RectangleGeometry(new Rect(0, 0, 30, 80));
+                        var rect = StateReader.Read(button, new ObjectRef(), adapter);
+                        Assert.True(rect.Clipped); Assert.NotNull(rect.ClickPoint);
+                        grid.Clip = new EllipseGeometry(new Point(15, 40), 15, 30);
+                        Assert.NotNull(StateReader.Read(button, new ObjectRef(), adapter).ClickPoint);
+                        grid.Clip = null;
+                        var cover = new Border { Background = Brushes.Black, HorizontalAlignment = HorizontalAlignment.Stretch, VerticalAlignment = VerticalAlignment.Stretch };
+                        grid.Children.Add(cover); window.UpdateLayout();
+                        Assert.Null(StateReader.Read(button, new ObjectRef(), adapter).ClickPoint);
+                        grid.Children.Remove(cover); button.Visibility = System.Windows.Visibility.Hidden; window.UpdateLayout();
+                        Assert.Null(StateReader.Read(button, new ObjectRef(), adapter).ClickPoint);
+                        button.Visibility = System.Windows.Visibility.Visible; button.Width = 0; window.UpdateLayout();
+                        Assert.Null(StateReader.Read(button, new ObjectRef(), adapter).ClickPoint);
                     }
                     finally { window.Close(); }
                 }).Task;

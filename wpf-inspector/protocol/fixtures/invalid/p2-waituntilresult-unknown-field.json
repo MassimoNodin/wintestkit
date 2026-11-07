@@ -29,7 +29,7 @@
         },
         "dispatcherId": "d"
       },
-      "windowHandle": null,
+      "windowHandle": null, "clickPoint": null,
       "bounds": null,
       "dpi": {
         "x": 96,

@@ -14,7 +14,7 @@
       },
       "dispatcherId": "d"
     },
-    "windowHandle": null,
+    "windowHandle": null, "clickPoint": null,
     "bounds": {
       "x": 0,
       "y": 0,

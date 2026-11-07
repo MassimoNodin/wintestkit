@@ -172,6 +172,12 @@ public sealed class LargeButtonPeer : FrameworkElementAutomationPeer
     protected override AutomationControlType GetAutomationControlTypeCore() => AutomationControlType.Button;
     protected override string GetClassNameCore() => "LargeButton";
 }
+public sealed class PeerlessClickTarget : FrameworkElement
+{
+    public PeerlessClickTarget() { Width = 120; Height = 24; }
+    protected override AutomationPeer? OnCreateAutomationPeer() => null;
+    protected override void OnRender(System.Windows.Media.DrawingContext dc) { dc.DrawRectangle(System.Windows.Media.Brushes.LightBlue, null, new Rect(RenderSize)); }
+}
 public sealed class PeerlessMarker : FrameworkElement { public string Marker => "peerless"; }
 public sealed class PeerControl : Button { protected override AutomationPeer OnCreateAutomationPeer() => new FixturePeer(this); }
 public sealed class GuardedControl : Button
@@ -221,6 +227,13 @@ public sealed class MainWindow : Window
         var fancy = Id(new FancyButton { Name = "FancyXName", Content = "Fancy action", Tag = "fancy" }, "FancyAutomationId");
         int clicks = 0; fancy.Click += (_, _) => effect.Text = "Clicked " + ++clicks;
         panel.Children.Add(fancy); panel.Children.Add(effect);
+        var clippedButton = Id(new Button { Content = "Clipped button", Height = 80, Width = 120 }, "ParityClippedButton");
+        clippedButton.Click += (_, _) => effect.Text = "Clipped clicked";
+        var clippedPanel = new StackPanel(); clippedPanel.Children.Add(clippedButton); clippedPanel.Children.Add(new Border { Height = 100 });
+        var clippedScroll = new ScrollViewer { Height = 50, Width = 150, Content = clippedPanel, VerticalScrollBarVisibility = ScrollBarVisibility.Hidden };
+        clippedScroll.Loaded += (_, _) => clippedScroll.ScrollToVerticalOffset(20);
+        panel.Children.Add(clippedScroll);
+
         var parity = new StackPanel { Orientation = Orientation.Horizontal };
         parity.Children.Add(Id(new CheckBox { Content = "Check" }, "ParityCheck"));
         parity.Children.Add(Id(new RadioButton { Content = "Radio" }, "ParityRadio"));
@@ -246,6 +259,9 @@ public sealed class MainWindow : Window
         contextItem.Click += (_, _) => interactionEffect.Text = "Context clicked";
         context.Items.Add(contextItem); pointer.ContextMenu = context;
         panel.Children.Add(pointer); panel.Children.Add(interactionEffect);
+        var peerlessClick = new PeerlessClickTarget();
+        peerlessClick.MouseDown += (_, _) => interactionEffect.Text = "Peerless clicked";
+        panel.Children.Add(peerlessClick);
         var grid = Id(new DataGrid { AutoGenerateColumns = false, CanUserAddRows = false, Height = 95, ItemsSource = new[] { new { Name = "First", Value = "One" }, new { Name = "Second", Value = "Two" } } }, "ParityGrid");
         grid.Columns.Add(new DataGridTextColumn { Header = "Name", Binding = new Binding("Name") });
         grid.Columns.Add(new DataGridTextColumn { Header = "Value", Binding = new Binding("Value") });

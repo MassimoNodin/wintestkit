@@ -38,17 +38,18 @@ namespace WinTestKit.Inspector.Agent.State
             bool focusable = element?.Focusable ?? content?.Focusable ?? false;
             Rect intersection = bounds ?? Rect.Empty;
             bool transparent = false;
+            bool explicitClip = false;
             for (DependencyObject? node = visual; node != null; node = VisualTreeHelper.GetParent(node))
             {
                 if (node is UIElement ui)
                 {
                     if (ui.Opacity <= 0) transparent = true;
-                    if (ui.Clip != null) Intersect(ref intersection, ScreenRect((Visual)ui, ui.Clip.Bounds));
+                    if (ui.Clip != null) { explicitClip = true; Intersect(ref intersection, ScreenRect((Visual)ui, ui.Clip.Bounds)); }
                     if (ui.ClipToBounds || ui is ScrollContentPresenter)
                         Intersect(ref intersection, ScreenRect((Visual)ui, new Rect(new Point(), ui.RenderSize)));
                 }
             }
-            bool clipped = bounds.HasValue && !intersection.IsEmpty && intersection != bounds.Value;
+            bool clipped = explicitClip || (bounds.HasValue && intersection != bounds.Value);
             bool visible = isVisible && !transparent && bounds.HasValue && !intersection.IsEmpty;
             var peer = dependency == null ? null : PeerRuntimeIdAdapter.ResolveSingleElement(dependency);
             int[]? id = peer == null || !adapter.IsAvailable ? null : adapter.GetRuntimeId(peer);
@@ -57,6 +58,7 @@ namespace WinTestKit.Inspector.Agent.State
                 Handle = handle,
                 WindowHandle = source == null || source.Handle == IntPtr.Zero ? (long?)null : source.Handle.ToInt64(),
                 Bounds = bounds.HasValue ? Dto(bounds.Value) : null,
+                ClickPoint = visible && visual != null ? ClickPoint(visual, source, intersection) : null,
                 Dpi = new PointDto { X = 96 * scale.M11, Y = 96 * scale.M22 },
                 Visible = visible,
                 Clipped = clipped,
@@ -67,6 +69,29 @@ namespace WinTestKit.Inspector.Agent.State
                 Parts = Parts(element as Control),
                 UiaRuntimeId = id != null && id.Length > 0 ? id : null
             };
+        }
+
+        private static PointDto? ClickPoint(Visual visual, HwndSource? source, Rect visible)
+        {
+            if (source?.RootVisual == null || visible.IsEmpty || visible.Width <= 0 || visible.Height <= 0) return null;
+            double[] offsets = { 0.5, 0.25, 0.75 };
+            foreach (double y in offsets)
+            foreach (double x in offsets)
+            {
+                var screen = new Point(Math.Round(visible.Left + visible.Width * x), Math.Round(visible.Top + visible.Height * y));
+                if (!visible.Contains(screen)) continue;
+                bool valid = true;
+                for (DependencyObject? node = visual; node != null; node = VisualTreeHelper.GetParent(node))
+                {
+                    if (node is UIElement ui && (!ui.IsVisible || ui.Opacity <= 0 || (ui.Clip != null && !ui.Clip.FillContains(((Visual)ui).PointFromScreen(screen)))))
+                    { valid = false; break; }
+                }
+                if (!valid) continue;
+                var hit = VisualTreeHelper.HitTest(source.RootVisual, source.RootVisual.PointFromScreen(screen));
+                for (DependencyObject? node = hit?.VisualHit; node != null; node = VisualTreeHelper.GetParent(node))
+                    if (node == visual) return new PointDto { X = screen.X, Y = screen.Y };
+            }
+            return null;
         }
 
         private static Rect? Bounds(Visual visual)
@@ -93,6 +118,26 @@ namespace WinTestKit.Inspector.Agent.State
         private static void Intersect(ref Rect current, Rect clip) { current.Intersect(clip); }
         private static RectDto Dto(Rect r) => new RectDto { X = r.X, Y = r.Y, Width = r.Width, Height = r.Height };
 
+        // A part has no clip field in the wire format. Hide its rectangle unless it is
+        // fully visible through every ancestor clip and opacity.
+        private static Rect? SafePartBounds(Visual visual)
+        {
+            Rect? bounds = Bounds(visual);
+            if (!bounds.HasValue) return null;
+            Rect intersection = bounds.Value;
+            for (DependencyObject? node = visual; node != null; node = VisualTreeHelper.GetParent(node))
+            {
+                if (node is UIElement ui)
+                {
+                    if (!ui.IsVisible || ui.Opacity <= 0) return null;
+                    if (ui.Clip != null) return null;
+                    if (ui.ClipToBounds || ui is ScrollContentPresenter)
+                        Intersect(ref intersection, ScreenRect((Visual)ui, new Rect(new Point(), ui.RenderSize)));
+                }
+            }
+            return intersection == bounds.Value ? bounds : null;
+        }
+
         private static IReadOnlyList<PartGeometry> Parts(Control? control)
         {
             var parts = new List<PartGeometry>();
@@ -104,19 +149,19 @@ namespace WinTestKit.Inspector.Agent.State
                 DependencyObject node = stack.Pop();
                 if (node is FrameworkElement fe && fe.TemplatedParent == control && !string.IsNullOrEmpty(fe.Name))
                 {
-                    Rect? bounds = Bounds(fe);
+                    Rect? bounds = SafePartBounds(fe);
                     parts.Add(new PartGeometry { Name = fe.Name, Role = Role(control, fe), Bounds = bounds.HasValue ? Dto(bounds.Value) : null });
                 }
                 if (control is DataGrid && node is DataGridColumnHeader header && parts.Count < MaxParts &&
                     !(header.TemplatedParent == control && !string.IsNullOrEmpty(header.Name)))
                 {
-                    Rect? headerBounds = Bounds(header);
+                    Rect? headerBounds = SafePartBounds(header);
                     parts.Add(new PartGeometry { Name = string.IsNullOrEmpty(header.Name) ? "ColumnHeader" : header.Name, Role = "gridColumnHeader", Bounds = headerBounds.HasValue ? Dto(headerBounds.Value) : null });
                 }
                 // WPF's default Track.Thumb is an unnamed template object.
                 if (control is ScrollBar && node is Track track && track.TemplatedParent == control && track.Thumb != null && (track.Thumb.TemplatedParent != control || string.IsNullOrEmpty(track.Thumb.Name)) && parts.Count < MaxParts)
                 {
-                    Rect? thumbBounds = Bounds(track.Thumb);
+                    Rect? thumbBounds = SafePartBounds(track.Thumb);
                     parts.Add(new PartGeometry { Name = string.IsNullOrEmpty(track.Thumb.Name) ? "Thumb" : track.Thumb.Name, Role = "scrollThumb", Bounds = thumbBounds.HasValue ? Dto(thumbBounds.Value) : null });
                 }
                 int count = VisualTreeHelper.GetChildrenCount(node);
