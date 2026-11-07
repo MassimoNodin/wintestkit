@@ -39,7 +39,7 @@ namespace WinTestKit.Inspector.Agent.Actions
         {
             ct.ThrowIfCancellationRequested();
             if (!(target is UIElement element) || !element.IsEnabled) throw Unsupported();
-            AutomationPeer? peer = UIElementAutomationPeer.FromElement(element) ?? UIElementAutomationPeer.CreatePeerForElement(element);
+            AutomationPeer? peer = PeerIdentity.GetPeer(element);
             if (peer == null) throw Unsupported();
             if (method == PipeMethods.ActFocus)
             {

@@ -255,6 +255,43 @@ namespace WinTestKit.Inspector.Agent.Actions.Tests
         }
 
         [Fact]
+        public async Task ItemContainerActionsUseItemPeers()
+        {
+            using (var ui = new Ui())
+            {
+                var fixture = await ui.Dispatcher.InvokeAsync(() =>
+                {
+                    var combo = new ComboBox(); combo.Items.Add("combo");
+                    var list = new ListBox(); list.Items.Add("list");
+                    var tabs = new TabControl(); tabs.Items.Add("tab");
+                    var tree = new TreeView(); var branch = new TreeViewItem { Header = "branch" }; branch.Items.Add("child"); tree.Items.Add(branch);
+                    var grid = new DataGrid { AutoGenerateColumns = true }; grid.Items.Add("row");
+                    var panel = new StackPanel(); panel.Children.Add(combo); panel.Children.Add(list); panel.Children.Add(tabs); panel.Children.Add(tree); panel.Children.Add(grid);
+                    var window = new Window { Content = panel, Width = 500, Height = 800, ShowInTaskbar = false }; window.Show(); combo.IsDropDownOpen = true; window.UpdateLayout(); combo.UpdateLayout();
+                    return (window, combo, list, tabs, tree, branch, grid);
+                }).Task;
+                try
+                {
+                    var containers = await ui.Dispatcher.InvokeAsync(() => new object[] {
+                        fixture.combo.ItemContainerGenerator.ContainerFromIndex(0), fixture.list.ItemContainerGenerator.ContainerFromIndex(0),
+                        fixture.tabs.ItemContainerGenerator.ContainerFromIndex(0), fixture.branch, fixture.grid.ItemContainerGenerator.ContainerFromIndex(0) }).Task;
+                    var executor = new DispatcherExecutor();
+                    foreach (object container in containers)
+                    {
+                        Assert.NotNull(container);
+                        Assert.Equal(ActionOutcome.Performed, (await Act(ui, executor, container, PipeMethods.ActScrollIntoView)).Outcome);
+                        var result = await Act(ui, executor, container, PipeMethods.ActSelect);
+                        Assert.Contains(result.Outcome, new[] { ActionOutcome.Performed, ActionOutcome.NoChange });
+                        Assert.Equal(ActionOutcome.NoChange, (await Act(ui, executor, container, PipeMethods.ActSelect)).Outcome);
+                    }
+                    Assert.Equal(ActionOutcome.Performed, (await Act(ui, executor, fixture.branch, PipeMethods.ActExpand)).Outcome);
+                    Assert.True(await ui.Dispatcher.InvokeAsync(() => fixture.branch.IsExpanded).Task);
+                }
+                finally { await ui.Dispatcher.InvokeAsync(fixture.window.Close).Task; }
+            }
+        }
+
+        [Fact]
         public async Task InvokeReturnsWhileModalDialogIsOpen()
         {
             using (var ui = new Ui())

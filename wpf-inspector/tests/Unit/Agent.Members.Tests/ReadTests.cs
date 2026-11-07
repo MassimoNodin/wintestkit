@@ -119,6 +119,41 @@ namespace WinTestKit.Inspector.Agent.Members.Tests
                 $"status={value.Status}; {SelectionDiagnostic(target)}");
         }
         [Fact]
+        public void ReadsItemContainerPatternsAndItemIdentity()
+        {
+            Sta(() =>
+            {
+                var combo = new System.Windows.Controls.ComboBox(); combo.Items.Add("combo");
+                var list = new System.Windows.Controls.ListBox(); list.Items.Add("list");
+                var tabs = new System.Windows.Controls.TabControl(); tabs.Items.Add("tab");
+                var tree = new System.Windows.Controls.TreeView(); var branch = new System.Windows.Controls.TreeViewItem { Header = "branch" }; branch.Items.Add("child"); tree.Items.Add(branch);
+                var grid = new System.Windows.Controls.DataGrid(); grid.Items.Add("row");
+                var panel = new System.Windows.Controls.StackPanel(); panel.Children.Add(combo); panel.Children.Add(list); panel.Children.Add(tabs); panel.Children.Add(tree); panel.Children.Add(grid);
+                var window = new System.Windows.Window { Content = panel, Width = 500, Height = 800, ShowInTaskbar = false }; window.Show(); combo.IsDropDownOpen = true; window.UpdateLayout(); combo.UpdateLayout();
+                try
+                {
+                    var containers = new System.Windows.DependencyObject[] { combo.ItemContainerGenerator.ContainerFromIndex(0), list.ItemContainerGenerator.ContainerFromIndex(0), tabs.ItemContainerGenerator.ContainerFromIndex(0), branch, grid.ItemContainerGenerator.ContainerFromIndex(0) };
+                    var inspector = new ObjectInspector(); var registry = new Registry(); var dispatcher = Dispatcher.CurrentDispatcher;
+                    ValueDto Read(object target, string name) => inspector.ReadPath(target, new[] { new PathSegment { Kind = "uia", Name = name } }, registry, dispatcher, CancellationToken.None);
+                    foreach (var container in containers)
+                    {
+                        Assert.NotNull(container);
+                        var peer = Assert.IsAssignableFrom<System.Windows.Automation.Peers.ItemAutomationPeer>(PeerIdentity.GetPeer(container));
+                        Assert.Equal("ok", Read(container, "is_selected").Status);
+                        var patterns = ((JsonStringNode)Read(container, "supported_patterns").Scalar!).Value;
+                        Assert.Contains("SelectionItem", patterns);
+                        Assert.Equal(peer.GetPattern(System.Windows.Automation.Peers.PatternInterface.ScrollItem) != null, patterns.Contains("ScrollItem"));
+                        Assert.Equal(peer.GetName(), ((JsonStringNode)Read(container, "name").Scalar!).Value);
+                        Assert.Equal(peer.GetAutomationId(), ((JsonStringNode)Read(container, "automation_id").Scalar!).Value);
+                        Assert.Equal(peer.GetAutomationControlType().ToString(), ((JsonStringNode)Read(container, "control_type").Scalar!).Value);
+                    }
+                    Assert.Equal("Collapsed", ((JsonStringNode)Read(branch, "expand_state").Scalar!).Value);
+                    Assert.Contains("ExpandCollapse", ((JsonStringNode)Read(branch, "supported_patterns").Scalar!).Value);
+                }
+                finally { window.Close(); }
+            });
+        }
+        [Fact]
         public void ReadsSelectionProviderNamesWithoutJoining()
         {
             Sta(() =>
