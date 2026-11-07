@@ -297,7 +297,7 @@ def test_phase2_typed_selection_parity(owned, backend, monkeypatch):
 
 
 @pytest.mark.parametrize("backend", ["uia", "auto"])
-def test_phase2_keyboard_menu_pointer_and_grid_parity(owned, backend):
+def test_phase2_keyboard_menu_pointer_and_grid_parity(owned, backend, monkeypatch):
     from wintestkit.controls import DataGrid, TextBox
     from wintestkit.expect import expect
     from wintestkit.model import Element, Page
@@ -321,12 +321,19 @@ def test_phase2_keyboard_menu_pointer_and_grid_parity(owned, backend):
         page.menu.click()
         page.menu_item.click()
         expect(page.effect, timeout=5).to_have_text("Menu clicked")
-        page.menu.hover()  # Ensure MouseEnter fires even when a previous test left the pointer here.
-        page.pointer.hover()
-        expect(page.effect, timeout=5).to_have_text("Hovered")
-        page.pointer.double_click()
-        expect(page.effect, timeout=5).to_have_text("Double clicked")
-        page.pointer.right_click()
+        from wintestkit.backends import WpfElement
+
+        with monkeypatch.context() as guard:
+            if backend == "auto":
+                guard.setattr(
+                    WpfElement, "as_uia", lambda self: pytest.fail("unexpected UIA mapping")
+                )
+            page.menu.hover()  # Move away so MouseEnter fires on the pointer target.
+            page.pointer.hover()
+            expect(page.effect, timeout=5).to_have_text("Hovered")
+            page.pointer.double_click()
+            expect(page.effect, timeout=5).to_have_text("Double clicked")
+            page.pointer.right_click()
         page.context_item.click()
         expect(page.effect, timeout=5).to_have_text("Context clicked")
         assert "First" in page.grid.row(0).text
@@ -885,3 +892,40 @@ def test_phase2_disabled_waits_match(owned):
             _fixture_scenario(scope.app.pids[0], "enableDelayed", 60000)
             time.sleep(0.1)
     assert messages[0] == messages[1]
+
+
+def test_peerless_mouse_click(owned, monkeypatch):
+    from wintestkit.backends import WpfElement
+
+    scope, path = owned
+    locator = Locator(where=(("type:Is", "WinTestKit.Fixture.PeerlessClickTarget"),))
+    with runtime.config_scope(replace(config(path, "agent"), backend="uia")):
+        assert not resolve_all(scope, locator)
+    with runtime.config_scope(replace(config(path, "agent"), backend="auto")):
+        target = resolve(scope, locator)
+        assert target.runtime_id.startswith("wpf:")
+        monkeypatch.setattr(
+            WpfElement, "as_uia", lambda self: pytest.fail("unexpected UIA mapping")
+        )
+        assert click(target, mode="mouse") == "mouse"
+        assert (
+            resolve(scope, Locator(automation_id="ParityInteractionEffect")).name
+            == "Peerless clicked"
+        )
+
+
+@pytest.mark.parametrize("backend", ["uia", "auto"])
+def test_partly_scrolled_mouse_parity(owned, backend):
+    from wintestkit.expect import expect
+    from wintestkit.model import Element, Page
+
+    scope, path = owned
+
+    class FixturePage(Page):
+        button = Element(automation_id="ParityClippedButton")
+        effect = Element(automation_id="ActionEffect")
+
+    page = FixturePage(scope.app)
+    with runtime.config_scope(replace(config(path, "agent"), backend=backend)):
+        page.button.click(mode="mouse")
+        expect(page.effect, timeout=5).to_have_text("Clipped clicked")

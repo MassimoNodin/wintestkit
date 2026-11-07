@@ -32,6 +32,7 @@ LOCATOR = {
 STATE = {
     "handle": HANDLE,
     "windowHandle": None,
+    "clickPoint": None,
     "bounds": None,
     "dpi": {"x": 96, "y": 96},
     "visible": True,
@@ -139,6 +140,7 @@ def test_schema_definitions_and_version():
             "ElementState",
             [
                 STATE,
+                {**STATE, "clickPoint": {"x": -3, "y": 12}},
                 {
                     **STATE,
                     "windowHandle": 42,

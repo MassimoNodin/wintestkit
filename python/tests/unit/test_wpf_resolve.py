@@ -171,11 +171,13 @@ def test_query_depth_filter_and_limit(setup):
         wpf_resolve.query(root, Locator(automation_id="id"))
 
 
-def test_action_reports_peerless(setup):
+def test_action_mouse_fallback_does_not_map_to_uia(setup, monkeypatch):
     _, _, window = setup
     root = wpf_resolve.route(window)
-    with pytest.raises(NoUiaPeerError):
-        actions.click(root)
+    calls = []
+    monkeypatch.setattr(actions, "_wpf_mouse_click", lambda el, **kw: calls.append(el))
+    assert actions.click(root) == "mouse"
+    assert calls == [root]
 
 
 def test_index_beyond_cap(setup):

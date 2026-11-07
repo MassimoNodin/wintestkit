@@ -147,7 +147,11 @@ def test_action_errors_map_consistently(target, code, read):
     assert str(exc.value) == (
         "The UI element is no longer available"
         if code == "objectStale"
-        else "UI Automation call failed (0x80131505): The operation timed out"
+        else (
+            "The WPF inspector did not complete reading toggle_state within its deadline"
+            if read
+            else "The WPF inspector did not complete toggle within its deadline"
+        )
     )
 
 
@@ -173,3 +177,246 @@ def test_agent_errors_are_not_retried_via_uia(target, monkeypatch):
     with pytest.raises(UIAError) as exc:
         actions.toggle(el)
     assert exc.value.element_gone
+
+
+@pytest.fixture
+def mouse(target, monkeypatch):
+    from wintestkit.inspector.models import Dpi, ElementState, Point, Rect
+
+    client, el = target
+    state = ElementState(
+        el.ref,
+        123,
+        Rect(10, 20, 100, 40),
+        Dpi(96, 96),
+        True,
+        False,
+        False,
+        True,
+        False,
+        True,
+        (),
+        click_point=Point(60, 40),
+    )
+    client.state_get = lambda *args, **kwargs: state
+    monkeypatch.setattr(actions, "_short", lambda el: "target")
+    monkeypatch.setattr(actions.time, "sleep", lambda _: None)
+    monkeypatch.setattr(actions.win32, "bring_to_foreground", lambda hwnd: True)
+    monkeypatch.setattr(actions.win32, "IsWindow", lambda hwnd: True)
+    monkeypatch.setattr(actions.win32, "window_pid", lambda hwnd: 42)
+    monkeypatch.setattr(actions.win32, "GetForegroundWindow", lambda: 123)
+    monkeypatch.setattr(actions.win32, "WindowFromPoint", lambda point: 123)
+    monkeypatch.setattr(actions.win32, "root_window", lambda hwnd: hwnd)
+    events = []
+    monkeypatch.setattr(actions.input, "click", lambda x, y, **kw: events.append((x, y, kw)))
+    monkeypatch.setattr(actions.input, "move_mouse", lambda x, y: events.append((x, y)))
+    return client, el, state, events
+
+
+def test_mouse_entry_points_and_pattern_fallback(mouse):
+    _client, el, state, events = mouse
+    assert actions.click(el, mode="mouse") == "mouse"
+    assert actions.click(el, button="right") == "mouse"
+    assert actions.click(el) == "mouse"
+    actions.double_click(el)
+    actions.right_click(el)
+    actions.hover(el)
+    assert events == [
+        (60, 40, {"button": "left", "count": 1}),
+        (60, 40, {"button": "right", "count": 1}),
+        (60, 40, {"button": "left", "count": 1}),
+        (60, 40, {"button": "left", "count": 2}),
+        (60, 40, {"button": "right", "count": 1}),
+        (60, 40),
+    ]
+    assert state.uia_runtime_id is None
+
+
+@pytest.mark.parametrize("field", ["visible", "offscreen", "click_point", "bounds"])
+def test_mouse_rejects_unsafe_state(mouse, field):
+    from dataclasses import replace
+
+    client, el, state, events = mouse
+    value = {"visible": False, "offscreen": True, "click_point": None, "bounds": None}[field]
+    client.state_get = lambda *a, **k: replace(state, **{field: value})
+    with pytest.raises(ActionError):
+        actions.click(el, mode="mouse")
+    assert not events
+
+
+def test_mouse_part_and_missing_part(mouse):
+    from dataclasses import replace
+
+    from wintestkit.inspector.models import PartGeometry, Rect
+
+    client, el, state, events = mouse
+    state = replace(state, parts=(PartGeometry("toggle", "expanderToggle", Rect(20, 25, 20, 10)),))
+    client.state_get = lambda *a, **k: state
+    actions._wpf_mouse_click(el, role="expanderToggle")
+    assert events[0][:2] == (30, 30)
+    with pytest.raises(ActionError):
+        actions._wpf_mouse_click(el, role="comboDropDown")
+
+
+def test_mouse_rejects_foreground_change(mouse, monkeypatch):
+    _client, el, _state, events = mouse
+    monkeypatch.setattr(actions.win32, "GetForegroundWindow", lambda: 999)
+    with pytest.raises(ActionError, match="foreground"):
+        actions.click(el, mode="mouse")
+    assert not events
+
+
+def test_mouse_rejects_unstable_bounds(mouse, monkeypatch):
+    from dataclasses import replace
+
+    from wintestkit.inspector.models import Rect
+
+    client, el, state, events = mouse
+    states = iter([state, state, state, replace(state, bounds=Rect(11, 20, 100, 40))])
+    client.state_get = lambda *a, **k: next(states)
+
+    def fail_wait(fn, *a, **k):
+        assert fn() is None
+        raise actions.waits.WaitTimeoutError("unstable")
+
+    monkeypatch.setattr(actions.waits, "wait_until", fail_wait)
+    with pytest.raises(ActionError, match="unstable"):
+        actions.click(el, mode="mouse")
+    assert not events
+
+
+@pytest.mark.parametrize(
+    "read_only,keys,password", [(True, False, False), (False, True, False), (False, False, True)]
+)
+def test_keyboard_entry_and_clear(target, monkeypatch, read_only, keys, password):
+    client, el = target
+    client.values.update(supported_patterns="Value", is_read_only=read_only, is_password=password)
+    events = []
+    monkeypatch.setattr(actions, "focus", lambda el: events.append("focus"))
+    monkeypatch.setattr(actions, "_wpf_keyboard_target", lambda el: events.append("guard"))
+    monkeypatch.setattr(actions.input, "press", lambda key: events.append(key))
+    monkeypatch.setattr(actions.input, "type_text", lambda value: events.append(value))
+    assert actions.type_text(el, "hello", clear=False, keys=keys) == "keys"
+    assert events == ["focus", "guard", "Ctrl+End", "guard", "hello"]
+    events.clear()
+    if read_only or password:
+        actions.clear(el)
+        assert events == ["focus", "guard", "Ctrl+A Delete"]
+    actions.press(el, "Enter")
+    assert events[-3:] == ["focus", "guard", "Enter"]
+
+
+def test_checked_does_not_converge(target, monkeypatch):
+    _client, el = target
+    monkeypatch.setattr(actions, "_short", lambda el: "target")
+    monkeypatch.setattr(actions, "_wpf_act", lambda *args: None)
+    with pytest.raises(ActionError, match="did not reach the On state"):
+        actions.set_checked(el, True)
+
+
+def test_get_text_name_and_password(target, monkeypatch):
+    client, el = target
+    monkeypatch.setattr(type(el), "name", property(lambda self: "label"))
+    client.values.update(supported_patterns="Value,Text", is_password=True)
+    assert actions.get_text(el) == "label"
+    client.values.update(supported_patterns="", is_password=False)
+    assert actions.get_text(el) == "label"
+
+
+@pytest.mark.parametrize(
+    "patterns,verb", [("ScrollItem", "act_scroll_into_view"), ("", "act_bring_into_view")]
+)
+def test_ensure_visible_uses_agent(target, monkeypatch, patterns, verb):
+    client, el = target
+    client.values["supported_patterns"] = patterns
+    states = iter([True, False])
+    monkeypatch.setattr(el, "as_live", lambda: SimpleNamespace(is_offscreen=next(states)))
+    actions.ensure_visible(el)
+    assert client.calls == [(verb,)]
+
+
+@pytest.mark.parametrize(
+    ("control_type", "role"),
+    [("ComboBox", "comboDropDown"), ("TreeItem", "treeItemExpander"), ("Group", "expanderToggle")],
+)
+def test_expand_collapse_mouse_uses_part(target, monkeypatch, control_type, role):
+    client, el = target
+    monkeypatch.setattr(type(el), "control_type", property(lambda self: control_type))
+    calls = []
+    monkeypatch.setattr(actions, "_wpf_mouse_click", lambda el, **kw: calls.append(kw["role"]))
+    actions.expand(el, mode="mouse")
+    client.values["expand_state"] = "Expanded"
+    actions.collapse(el, mode="mouse")
+    assert calls == [role, role]
+
+
+def test_mouse_uses_agent_point_for_clipped_element(mouse):
+    from dataclasses import replace
+
+    from wintestkit.inspector.models import Point
+
+    client, el, state, events = mouse
+    client.state_get = lambda *args, **kwargs: replace(
+        state, clipped=True, click_point=Point(25, 35)
+    )
+    actions.click(el, mode="mouse")
+    assert events[0][:2] == (25, 35)
+
+
+def test_mouse_scrolls_offscreen_before_click(mouse):
+    from dataclasses import replace
+
+    client, el, state, events = mouse
+    from itertools import chain, repeat
+
+    states = chain([replace(state, offscreen=True)], repeat(state))
+    client.state_get = lambda *args, **kwargs: next(states)
+    actions.click(el, mode="mouse")
+    assert client.calls == [("act_bring_into_view",)]
+    assert events[0][:2] == (60, 40)
+
+
+@pytest.mark.parametrize("failure", ["owner", "point_window", "point_owner"])
+def test_mouse_rejects_foreign_window(mouse, monkeypatch, failure):
+    _client, el, _state, events = mouse
+    if failure == "owner":
+        monkeypatch.setattr(actions.win32, "window_pid", lambda hwnd: 99)
+    elif failure == "point_window":
+        monkeypatch.setattr(actions.win32, "root_window", lambda hwnd: 999)
+    else:
+        monkeypatch.setattr(actions.win32, "WindowFromPoint", lambda point: 124)
+        monkeypatch.setattr(actions.win32, "root_window", lambda hwnd: 123)
+        monkeypatch.setattr(actions.win32, "window_pid", lambda hwnd: 99 if hwnd == 124 else 42)
+    with pytest.raises(ActionError, match="refusing global input"):
+        actions.click(el, mode="mouse")
+    assert not events
+
+
+def test_mouse_rejects_unstable_click_point(mouse, monkeypatch):
+    from dataclasses import replace
+    from itertools import chain, repeat
+
+    from wintestkit.inspector.models import Point
+
+    client, el, state, events = mouse
+    changed = replace(state, click_point=Point(61, 40))
+    states = chain([state, state, state, changed], repeat(changed))
+    client.state_get = lambda *args, **kwargs: next(states)
+
+    def fail_wait(fn, *args, **kwargs):
+        assert fn() is None
+        raise actions.waits.WaitTimeoutError("unstable")
+
+    monkeypatch.setattr(actions.waits, "wait_until", fail_wait)
+    with pytest.raises(ActionError, match="unstable"):
+        actions.click(el, mode="mouse")
+    assert not events
+
+
+def test_deadline_outside_query_budget_is_honest(target):
+    from wintestkit.errors import InspectorDeadlineError
+
+    client, el = target
+    client.error = InspectorDeadlineError("deadline", code="limitExceeded")
+    with pytest.raises(UIAError, match="did not complete toggle within its deadline"):
+        actions.toggle(el)

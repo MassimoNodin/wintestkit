@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import re
+import time
 from typing import Literal
 
 from wintestkit.backends.element import TargetElement, WpfElement, uia_of
@@ -25,6 +26,7 @@ from wintestkit.errors import (
     NoUiaPeerError,
     UIAError,
 )
+from wintestkit.inspector.models import ElementState
 from wintestkit.inspector.paths import PathSegment
 from wintestkit.uia import element, input, patterns, win32
 from wintestkit.uia.constants import ExpandCollapseState, ToggleState
@@ -48,7 +50,7 @@ def _short(el: TargetElement) -> str:
         return repr(el)
 
 
-def _translate_wpf_error(exc: InspectorError) -> None:
+def _translate_wpf_error(exc: InspectorError, verb: str = "the request") -> None:
     __tracebackhide__ = True
     if exc.code == "objectStale":
         raise UIAError("The UI element is no longer available", element_gone=True) from exc
@@ -57,9 +59,7 @@ def _translate_wpf_error(exc: InspectorError) -> None:
             if isinstance(exc, InspectorDeadlineError):
                 raise exc
             raise InspectorDeadlineError(str(exc), code=exc.code) from exc
-        raise UIAError(
-            "UI Automation call failed (0x80131505): The operation timed out", -2146233083
-        ) from exc
+        raise UIAError(f"The WPF inspector did not complete {verb} within its deadline") from exc
 
 
 def _wpf_read(
@@ -74,7 +74,7 @@ def _wpf_read(
             deadline=operation_deadline(2),
         )
     except InspectorError as exc:
-        _translate_wpf_error(exc)
+        _translate_wpf_error(exc, f"reading {name}")
         raise
     value = values[0].value
     if value.status == "unavailable" and pattern:
@@ -102,7 +102,7 @@ def _wpf_act(
     except InspectorError as exc:
         if exc.code == "actionUnsupported" and pattern:
             raise ActionError(f"{_short(el)} does not support the {pattern} pattern") from exc
-        _translate_wpf_error(exc)
+        _translate_wpf_error(exc, verb.replace("_", " "))
         raise
 
 
@@ -110,14 +110,11 @@ def _wpf_window(el: WpfElement, *, activate: bool = False) -> None:
     __tracebackhide__ = True
     state = el.client.state_get(el.ref, timeout_ms=2000, deadline=operation_deadline(2))
     hwnd = state.window_handle or 0
-    if activate and (not hwnd or not win32.bring_to_foreground(hwnd)):
+    if not hwnd or not win32.IsWindow(hwnd) or win32.window_pid(hwnd) != el.process_id:
+        raise ActionError("Target window ownership or foreground changed; refusing global input")
+    if activate and not win32.bring_to_foreground(hwnd):
         raise ActionError("Cannot activate the target window; refusing global input")
-    if (
-        not hwnd
-        or not win32.IsWindow(hwnd)
-        or win32.window_pid(hwnd) != el.process_id
-        or win32.GetForegroundWindow() != hwnd
-    ):
+    if win32.GetForegroundWindow() != hwnd:
         raise ActionError("Target window ownership or foreground changed; refusing global input")
 
 
@@ -243,6 +240,96 @@ def focus(el: TargetElement) -> None:
 # -- mouse ----------------------------------------------------------------------------------------
 
 
+def _wpf_mouse_target(el: WpfElement, role: str | None = None) -> tuple[int, int]:
+    """Resolve stable agent-verified physical-pixel geometry."""
+    __tracebackhide__ = True
+
+    def read() -> ElementState:
+        __tracebackhide__ = True
+        try:
+            return el.client.state_get(el.ref, timeout_ms=2000, deadline=operation_deadline(2))
+        except InspectorError as exc:
+            _translate_wpf_error(exc, "state.get")
+            raise
+
+    def target(state: ElementState) -> tuple[int, int]:
+        __tracebackhide__ = True
+        if role is None:
+            point = state.click_point
+            if point is not None and state.visible and not state.offscreen:
+                return round(point.x), round(point.y)
+        else:
+            matches = [part for part in state.parts if part.role == role]
+            rect = matches[0].bounds if len(matches) == 1 else None
+            if (
+                state.visible
+                and not state.offscreen
+                and rect
+                and rect.width > 0
+                and rect.height > 0
+            ):
+                x, y = round(rect.x + rect.width / 2), round(rect.y + rect.height / 2)
+                if rect.x <= x < rect.x + rect.width and rect.y <= y < rect.y + rect.height:
+                    return x, y
+        raise ActionError(f"{_short(el)} has no on-screen rectangle to click")
+
+    first = read()
+    if first.offscreen or (role is None and first.click_point is None and first.clipped):
+        _wpf_act(el, "scroll_into_view" if "ScrollItem" in _wpf_patterns(el) else "bring_into_view")
+        first = read()
+    target(first)
+    _wpf_window(el, activate=True)
+
+    def stable() -> ElementState | None:
+        __tracebackhide__ = True
+        before = read()
+        a = target(before)
+        time.sleep(waits.STABLE_INTERVAL)
+        after = read()
+        b = target(after)
+        return (
+            after
+            if a == b
+            and before.bounds == after.bounds
+            and before.click_point == after.click_point
+            and before.window_handle == after.window_handle
+            else None
+        )
+
+    try:
+        state = waits.wait_until(
+            stable, _STABLE_TIMEOUT, description=f"{_short(el)} to stop moving"
+        )
+    except waits.WaitTimeoutError as exc:
+        raise ActionError(str(exc)) from exc
+    x, y = target(state)
+    bounds = state.bounds
+    if bounds is None or not (
+        bounds.x <= x < bounds.x + bounds.width and bounds.y <= y < bounds.y + bounds.height
+    ):
+        raise ActionError(f"{_short(el)} has no on-screen rectangle to click")
+    _wpf_window(el)
+    hwnd = state.window_handle or 0
+    hit = win32.WindowFromPoint(win32.POINT(x, y))
+    if (
+        not hwnd
+        or win32.GetForegroundWindow() != hwnd
+        or not hit
+        or win32.root_window(hit) != hwnd
+        or win32.window_pid(hit) != el.process_id
+    ):
+        raise ActionError("Target point belongs to another window; refusing global input")
+    return x, y
+
+
+def _wpf_mouse_click(
+    el: WpfElement, button: MouseButton = "left", count: int = 1, *, role: str | None = None
+) -> None:
+    __tracebackhide__ = True
+    x, y = _wpf_mouse_target(el, role)
+    input.click(x, y, button=button, count=count)
+
+
 def _mouse_target(el: UIAElement) -> tuple[int, int]:
     __tracebackhide__ = True
     ensure_visible(el)
@@ -288,7 +375,10 @@ def click(el: TargetElement, *, mode: InputMode = "pattern", button: MouseButton
                     verb = "collapse"
                 _wpf_act(el, verb, pattern)
                 return strategy
-        _mouse_click(uia_of(el), button=button)
+        _wpf_mouse_click(el, button=button)
+        return "mouse"
+    if isinstance(el, WpfElement):
+        _wpf_mouse_click(el, button=button)
         return "mouse"
     el = uia_of(el)
     if mode == "pattern" and button == "left":
@@ -313,18 +403,28 @@ def click(el: TargetElement, *, mode: InputMode = "pattern", button: MouseButton
 
 def double_click(el: TargetElement) -> None:
     __tracebackhide__ = True
+    if isinstance(el, WpfElement):
+        _wpf_mouse_click(el, count=2)
+        return
     el = uia_of(el)
     _mouse_click(el, count=2)
 
 
 def right_click(el: TargetElement) -> None:
     __tracebackhide__ = True
+    if isinstance(el, WpfElement):
+        _wpf_mouse_click(el, button="right")
+        return
     el = uia_of(el)
     _mouse_click(el, button="right")
 
 
 def hover(el: TargetElement) -> None:
     __tracebackhide__ = True
+    if isinstance(el, WpfElement):
+        x, y = _wpf_mouse_target(el)
+        input.move_mouse(x, y)
+        return
     el = uia_of(el)
     x, y = _mouse_target(el)
     _validate_mouse_target(el, x, y)
@@ -514,18 +614,36 @@ def is_selected(el: TargetElement) -> bool:
     return patterns.is_selected(el)
 
 
-def expand(el: TargetElement) -> None:
+def _wpf_expand_collapse_mouse(el: WpfElement, *, expanded: bool) -> None:
+    __tracebackhide__ = True
+    state = _wpf_read(el, "expand_state", "ExpandCollapse")
+    if state == ("Expanded" if expanded else "Collapsed"):
+        return
+    roles = {"ComboBox": "comboDropDown", "TreeItem": "treeItemExpander", "Group": "expanderToggle"}
+    role = roles.get(el.control_type)
+    if role is None:
+        raise ActionError(f"{_short(el)} has no on-screen rectangle to click")
+    _wpf_mouse_click(el, role=role)
+
+
+def expand(el: TargetElement, *, mode: InputMode = "pattern") -> None:
     __tracebackhide__ = True
     if isinstance(el, WpfElement):
+        if mode == "mouse":
+            _wpf_expand_collapse_mouse(el, expanded=True)
+            return
         _wpf_act(el, "expand", "ExpandCollapse")
         return
     el = uia_of(el)
     patterns.expand(el)
 
 
-def collapse(el: TargetElement) -> None:
+def collapse(el: TargetElement, *, mode: InputMode = "pattern") -> None:
     __tracebackhide__ = True
     if isinstance(el, WpfElement):
+        if mode == "mouse":
+            _wpf_expand_collapse_mouse(el, expanded=False)
+            return
         _wpf_act(el, "collapse", "ExpandCollapse")
         return
     el = uia_of(el)

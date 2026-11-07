@@ -212,7 +212,7 @@ def _wire(value: Any) -> Any:
                 and item.name not in {"scalar", "value"}
                 and not (
                     type(value).__name__ in {"ElementState", "PartGeometry"}
-                    and item.name in {"bounds", "window_handle"}
+                    and item.name in {"bounds", "window_handle", "click_point"}
                 )
             ) or entry is MISSING:
                 continue
@@ -1209,6 +1209,17 @@ class Rect(WireModel):
 
 
 @dataclass(frozen=True)
+class Point(WireModel):
+    x: int | float
+    y: int | float
+
+    @classmethod
+    def from_json(cls, value: object) -> Point:
+        d = _obj(value, "x y")
+        return cls(_number(d["x"]), _number(d["y"]))
+
+
+@dataclass(frozen=True)
 class Dpi(WireModel):
     x: int | float
     y: int | float
@@ -1268,12 +1279,13 @@ class ElementState(WireModel):
     is_keyboard_focusable: bool
     parts: tuple[PartGeometry, ...]
     uia_runtime_id: tuple[int, ...] | None = None
+    click_point: Point | None = None
 
     @classmethod
     def from_json(cls, value: object) -> ElementState:
         d = _obj(
             value,
-            "handle windowHandle bounds dpi visible clipped offscreen enabled focused "
+            "handle windowHandle bounds clickPoint dpi visible clipped offscreen enabled focused "
             "isKeyboardFocusable parts",
             "uiaRuntimeId",
         )
@@ -1293,12 +1305,14 @@ class ElementState(WireModel):
             _bool(d["isKeyboardFocusable"]),
             _array(d["parts"], PartGeometry.from_json, 1_000_000),
             _optional(d, "uiaRuntimeId", _runtime_id),
+            None if d["clickPoint"] is None else Point.from_json(d["clickPoint"]),
         )
 
     def to_json(self) -> dict[str, Any]:
         result = super().to_json()
         result["windowHandle"] = self.window_handle
         result["bounds"] = _wire(self.bounds)
+        result["clickPoint"] = _wire(self.click_point)
         result["parts"] = [p.to_json() for p in self.parts]
         return result
 

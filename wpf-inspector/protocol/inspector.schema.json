@@ -2579,6 +2579,12 @@
             }
           ]
         },
+        "clickPoint": {
+          "oneOf": [
+            { "type": "object", "properties": { "x": { "type": "number" }, "y": { "type": "number" } }, "required": ["x", "y"], "additionalProperties": false },
+            { "type": "null" }
+          ]
+        },
         "dpi": {
           "type": "object",
           "properties": {
@@ -2636,6 +2642,7 @@
         "handle",
         "windowHandle",
         "bounds",
+        "clickPoint",
         "dpi",
         "visible",
         "clipped",

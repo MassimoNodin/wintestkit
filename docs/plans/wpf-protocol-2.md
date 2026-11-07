@@ -248,3 +248,8 @@ explicit `backend: uia` keep the UIA backend.
 12. Deadline-related `limitExceeded` errors carry `details:{deadline:true}` and map to Python `InspectorDeadlineError`; cap-related errors have no details.
 
 13. Single-segment `uia` reads and predicates also expose `supported_patterns`, `value`, `is_read_only`, `toggle_state`, `is_selected`, `expand_state`, `range_value`, `document_text`, and `is_password` from the peer. `supported_patterns` is a comma-separated string because ValueDto arrays are object references. Unsupported patterns or missing peers are unavailable. Protected identities and password peers redact `value` and `document_text`; `is_password` and `supported_patterns` remain readable. Document text is capped at the protocol string limit. Selection exposes `selection_count` and zero-based `selection_name_N` reads from the Selection provider, using the selected provider's automation peer Name, including when no item container is realized; if the peer cannot be recovered or its name is unavailable, the read is unavailable; an out-of-range index is unavailable. The count and names are separate reads and selection changes between them can make an index unavailable.
+
+
+### Decision 14: safe physical click point
+
+`ElementState.clickPoint` is a required nullable `{x, y}` in physical screen pixels. The dispatcher intersects the element bounds with ancestor viewport and clip bounds, tests the visible centre and a bounded set of alternatives against explicit clip geometry, visibility and WPF hit testing, and returns null when no safe point exists. `clipped` remains diagnostic; template parts retain their stricter fully-visible rectangle requirement.

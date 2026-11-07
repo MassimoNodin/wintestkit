@@ -1879,6 +1879,10 @@ export interface ElementState {
   handle: ObjectRef;
   windowHandle: number | null;
   bounds: ManagedRect | null;
+  clickPoint: {
+    x: number;
+    y: number;
+  } | null;
   dpi: {
     x: number;
     y: number;

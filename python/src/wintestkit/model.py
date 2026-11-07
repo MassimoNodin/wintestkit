@@ -1205,15 +1205,21 @@ class _Selecting(BoundControl):
 
 
 class _Expandable(BoundControl):
-    def expand(self, *, timeout: float | None = None) -> None:
+    def expand(
+        self, *, timeout: float | None = None, mode: actions.InputMode | None = None
+    ) -> None:
         __tracebackhide__ = True
+        effective = mode or runtime.get_config().input_mode
         with self.step("expand"):
-            self.perform(timeout, actions.expand)
+            self.perform(timeout, lambda el: actions.expand(el, mode=effective))
 
-    def collapse(self, *, timeout: float | None = None) -> None:
+    def collapse(
+        self, *, timeout: float | None = None, mode: actions.InputMode | None = None
+    ) -> None:
         __tracebackhide__ = True
+        effective = mode or runtime.get_config().input_mode
         with self.step("collapse"):
-            self.perform(timeout, actions.collapse)
+            self.perform(timeout, lambda el: actions.collapse(el, mode=effective))
 
 
 class _GridControl(BoundControl):

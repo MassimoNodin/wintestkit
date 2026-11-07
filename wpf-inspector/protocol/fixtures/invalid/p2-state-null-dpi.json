@@ -14,7 +14,7 @@
       },
       "dispatcherId": "d"
     },
-    "windowHandle": null,
+    "windowHandle": null, "clickPoint": null,
     "bounds": null,
     "dpi": null,
     "visible": true,
