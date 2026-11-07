@@ -114,9 +114,25 @@ namespace WinTestKit.Inspector.Agent.Inspection.Members
             catch (Exception) { return null; }
         }
 
-        internal static AutomationPeer? GetPeer(DependencyObject target) =>
-            target is UIElement element ? UIElementAutomationPeer.FromElement(element) ?? UIElementAutomationPeer.CreatePeerForElement(element) :
-            target is ContentElement content ? ContentElementAutomationPeer.FromElement(content) ?? ContentElementAutomationPeer.CreatePeerForElement(content) : null;
+        internal static AutomationPeer? GetPeer(DependencyObject target)
+        {
+            if (target is UIElement element)
+            {
+                var owner = ItemsControl.ItemsControlFromItemContainer(element);
+                if (owner != null)
+                {
+                    object item = owner.ItemContainerGenerator.ItemFromContainer(element);
+                    if (item != DependencyProperty.UnsetValue &&
+                        (UIElementAutomationPeer.FromElement(owner) ?? UIElementAutomationPeer.CreatePeerForElement(owner)) is ItemsControlAutomationPeer ownerPeer)
+                    {
+                        var itemPeer = SelectedItemPeer(ownerPeer, item);
+                        if (itemPeer != null) return itemPeer;
+                    }
+                }
+                return UIElementAutomationPeer.FromElement(element) ?? UIElementAutomationPeer.CreatePeerForElement(element);
+            }
+            return target is ContentElement content ? ContentElementAutomationPeer.FromElement(content) ?? ContentElementAutomationPeer.CreatePeerForElement(content) : null;
+        }
 
         internal static ValueDto Read(object target, string name, IObjectRegistry registry, Dispatcher dispatcher)
         {
