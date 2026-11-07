@@ -221,6 +221,38 @@ def mouse(target, monkeypatch):
     return client, el, state, events
 
 
+@pytest.mark.parametrize("case", ["owner", "popup", "foreign", "activate", "denied", "hit"])
+def test_popup_mouse_safety(mouse, monkeypatch, case):
+    _client, el, _state, events = mouse
+    foreground = [200 if case != "popup" else 123]
+    if case in ("activate", "denied"):
+        foreground[0] = 300
+    activated = []
+
+    def activate(hwnd):
+        activated.append(hwnd)
+        if case == "denied":
+            return False
+        foreground[0] = hwnd
+        return True
+
+    monkeypatch.setattr(actions.win32, "window_owner", lambda hwnd: 200 if hwnd == 123 else 0)
+    monkeypatch.setattr(
+        actions.win32, "window_pid", lambda hwnd: 999 if case == "foreign" and hwnd == 123 else 42
+    )
+    monkeypatch.setattr(actions.win32, "GetForegroundWindow", lambda: foreground[0])
+    monkeypatch.setattr(actions.win32, "bring_to_foreground", activate)
+    monkeypatch.setattr(actions.win32, "root_window", lambda hwnd: 300 if case == "hit" else 123)
+    if case in ("foreign", "denied", "hit"):
+        with pytest.raises(ActionError, match="refusing global input"):
+            actions._wpf_mouse_click(el)
+        assert events == []
+    else:
+        actions._wpf_mouse_click(el)
+        assert len(events) == 1
+    assert activated == ([200] if case in ("activate", "denied") else [])
+
+
 def test_mouse_entry_points_and_pattern_fallback(mouse):
     _client, el, state, events = mouse
     assert actions.click(el, mode="mouse") == "mouse"
