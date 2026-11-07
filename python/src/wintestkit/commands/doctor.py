@@ -20,6 +20,11 @@ def add_parser(subparsers: Any) -> None:
         description="Check the machine, session, UI Automation and project configuration.",
     )
     parser.add_argument("--json", action="store_true", help="print the checks as JSON")
+    parser.add_argument(
+        "--agent",
+        action="store_true",
+        help="launch the configured app if needed to check the WPF agent",
+    )
     parser.set_defaults(handler=run)
 
 
@@ -27,7 +32,7 @@ def format_checks(checks: list[Check]) -> str:
     lines: list[str] = []
     for check in checks:
         lines.append(f"{_ICONS[check.status]} {check.title}: {check.detail}")
-        if check.hint and check.status in ("warn", "fail"):
+        if check.hint and check.status in ("warn", "fail", "skip"):
             lines.append(f"    {check.hint}")
     return "\n".join(lines)
 
@@ -39,9 +44,9 @@ def run(args: argparse.Namespace) -> int:
 
     root = common.resolve_root(args)
     try:
-        checks = run_checks(load_config(root))
+        checks = run_checks(load_config(root), agent=args.agent)
     except ConfigError as error:
-        checks = run_checks(None, config_error=error)
+        checks = run_checks(None, config_error=error, agent=args.agent)
     if args.json:
         common.print_json([c.to_dict() for c in checks])
     else:

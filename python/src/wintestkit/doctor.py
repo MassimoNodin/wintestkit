@@ -6,7 +6,9 @@ from __future__ import annotations
 import ctypes
 import os
 import struct
+import subprocess
 import sys
+import time
 from ctypes import wintypes
 from dataclasses import dataclass
 from pathlib import Path
@@ -411,10 +413,145 @@ def _check_inspector(cfg: WtkConfig | None) -> Check:
     return Check("inspector", "Managed inspector", "ok" if healthy else "warn", detail, hint)
 
 
+def _check_wpf_agent(cfg: WtkConfig | None, *, launch: bool = False) -> Check:
+    """Probe an isolated agent session without querying application data."""
+    from wintestkit.errors import InspectorError
+
+    title = "WPF agent"
+    check_id = "wpf_agent"
+    if cfg is None:
+        return Check(check_id, title, "skip", "no application configured")
+    if cfg.backend == "uia":
+        return Check(check_id, title, "skip", "backend is uia")
+    if not cfg.inspector.enabled:
+        return Check(
+            check_id,
+            title,
+            "skip",
+            "managed inspection is disabled",
+            "Enable inspector.enabled to check the agent.",
+        )
+    from wintestkit.inspector import probe
+    from wintestkit.inspector.sessions import SessionRegistry
+    from wintestkit.uia import win32
+
+    app = None
+    registry = None
+    try:
+        name, pids = _app_pids(cfg)
+        if not pids:
+            if not launch:
+                return Check(
+                    check_id,
+                    title,
+                    "skip",
+                    f"{name or 'application'} is not running",
+                    "Start the application or run `wtk doctor --agent`.",
+                )
+            if cfg.app is None or cfg.app.path is None:
+                return Check(
+                    check_id,
+                    title,
+                    "fail",
+                    "no application path configured",
+                    "Configure app.path before using --agent.",
+                )
+            from wintestkit.app import App
+
+            settings = cfg.app
+            assert settings.path is not None
+            app = App.launch(
+                settings.path,
+                args=settings.args,
+                cwd=settings.cwd,
+                env=settings.env,
+                process=settings.process,
+                startup_timeout=min(settings.startup_timeout, 30.0),
+                owned_only=True,
+            )
+            pids = app.pids
+        deadline = time.monotonic() + min(cfg.app.startup_timeout, 30.0) if app and cfg.app else 0
+        while True:
+            facts_list = [probe.identify(pid) for pid in pids]
+            facts = next((item for item in facts_list if item.wpf_loaded), None)
+            if app is None or (facts is not None and win32.top_level_windows({facts.identity.pid})):
+                break
+            if time.monotonic() >= deadline:
+                return Check(
+                    check_id,
+                    title,
+                    "fail",
+                    "launched application did not show a WPF window",
+                    "Check the configured application and startup timeout.",
+                )
+            time.sleep(0.1)
+        if facts is None:
+            return Check(check_id, title, "skip", "not a WPF application; the UIA backend is used")
+        registry = SessionRegistry(
+            request_timeout=cfg.inspector.request_timeout, redact_names=cfg.inspector.redact_names
+        )
+        client = registry.attach(
+            facts.identity,
+            target_hwnd=None,
+            deadline=time.monotonic() + cfg.inspector.attach_timeout,
+        )
+        session = client.session
+        tfm = {"net48": "net48", "net8": "net8.0-windows", "net10": "net10.0-windows"}.get(
+            facts.runtime or "", str(facts.runtime)
+        )
+        return Check(
+            check_id,
+            title,
+            "ok",
+            f"version={session.agent_version}, TFM={tfm}, architecture={session.architecture}, "
+            f"features={', '.join(session.features)}",
+        )
+    except InspectorError as error:
+        hints = {
+            "blockedByPolicy": "Allow-list the WinTestKit payload directory in your "
+            "security policy.",
+            "unsupportedTarget": "Use a supported WPF runtime and architecture with "
+            "native x64 Python.",
+            "agentVersionMismatch": "Match the agent payload version and restart the application.",
+            "payloadMismatch": "Reinstall the matching inspector payload.",
+            "timeout": "Check agent readiness and security policy, then increase "
+            "inspector.attach_timeout if needed.",
+        }
+        return Check(
+            check_id,
+            title,
+            "fail",
+            f"{error.code}: {error}",
+            hints.get(
+                error.code,
+                "Check the inspector payload, target permissions, and application compatibility.",
+            ),
+        )
+    except Exception as error:
+        return Check(
+            check_id,
+            title,
+            "fail",
+            f"{type(error).__name__}: {error}",
+            "Check the configured application and agent prerequisites.",
+        )
+    finally:
+        if registry is not None:
+            registry.close_all()
+        if app is not None and app._popen is not None and app._popen.poll() is None:
+            app._popen.terminate()
+            try:
+                app._popen.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                app._popen.kill()
+                app._popen.wait()
+
+
 def run_checks(
     cfg: WtkConfig | None,
     *,
     quick: bool = False,
+    agent: bool = False,
     config_error: ConfigError | None = None,
 ) -> list[Check]:
     """Run the environment checks. ``quick`` runs only those needed before a test run."""
@@ -433,6 +570,7 @@ def run_checks(
         ("elevation", lambda: _check_elevation(cfg)),
         ("comtypes_cache", _check_comtypes_cache),
         ("inspector", lambda: _check_inspector(cfg)),
+        ("wpf_agent", lambda: _check_wpf_agent(cfg, launch=agent)),
     ]
     for check_id, runner in runners:
         if quick and check_id not in QUICK_CHECKS:

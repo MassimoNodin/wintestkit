@@ -7,9 +7,12 @@ Run `wtk doctor`, and ask your security administrator about policy blocks rather
 
 ## Start with `wtk doctor`
 
+With `backend: auto` and `inspector.enabled`, doctor checks the WPF agent on a running configured application using an authenticated hello, without reading application values. It reports the agent version, target framework, architecture and advertised features, or the error and a suggested fix. If the application is stopped, the check is skipped; `wtk doctor --agent` starts the configured application, checks it, and closes only that launched process. A missing WPF window fails the check. UIA-only and disabled-inspector configurations skip it. Quick pre-run checks never attach or launch.
+
 ```powershell
 wtk doctor
 wtk doctor --json
+wtk doctor --agent
 ```
 
 It exits with 3 if any check fails; warnings don't change the exit code. `wtk run` runs the three
