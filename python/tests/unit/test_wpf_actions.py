@@ -420,3 +420,139 @@ def test_deadline_outside_query_budget_is_honest(target):
     client.error = InspectorDeadlineError("deadline", code="limitExceeded")
     with pytest.raises(UIAError, match="did not complete toggle within its deadline"):
         actions.toggle(el)
+
+
+@pytest.fixture
+def item_target(target, monkeypatch):
+    from wintestkit.inspector.models import RealizeResult
+
+    client, el = target
+    client.values.update(
+        control_type="List", supported_patterns="Selection,ScrollItem", item_count=2
+    )
+    client.values.update(item_name_0="Alpha", item_name_1="Beta")
+    monkeypatch.setattr(actions, "_short", lambda el: "target")
+    monkeypatch.setattr(
+        actions, "_wpf_mouse_click", lambda el, **kw: client.calls.append(("click", kw.get("role")))
+    )
+
+    def realize(ref, match, **kwargs):
+        client.calls.append(("realize", match))
+        if client.error:
+            raise client.error
+        return RealizeResult("performed", ref)
+
+    client.act_realize_item = realize
+
+    def action(name):
+        def call(ref, **kwargs):
+            client.calls.append((name,))
+            if name == "act_expand":
+                client.values["expand_state"] = "Expanded"
+            elif name == "act_collapse":
+                client.values["expand_state"] = "Collapsed"
+
+        return call
+
+    client.act_expand = action("act_expand")
+    client.act_collapse = action("act_collapse")
+    return client, el
+
+
+@pytest.mark.parametrize("kind", ["List", "ComboBox", "DataGrid"])
+@pytest.mark.parametrize("mode", ["pattern", "mouse"])
+@pytest.mark.parametrize(
+    "item", ["Alpha", __import__("re").compile("lPh", __import__("re").IGNORECASE), 1]
+)
+def test_wpf_select_items(item_target, monkeypatch, kind, mode, item):
+    client, el = item_target
+    client.values["control_type"] = kind
+    if mode == "mouse" and kind == "ComboBox":
+
+        def expand_mouse(el, *, expanded):
+            client.calls.append(("part", "comboDropDown", expanded))
+            client.values["expand_state"] = "Expanded" if expanded else "Collapsed"
+
+        monkeypatch.setattr(actions, "_wpf_expand_collapse_mouse", expand_mouse)
+    actions.select(el, item, mode=mode)
+    calls = client.calls
+    match = next(call[1] for call in calls if call[0] == "realize")
+    if isinstance(item, str):
+        assert match.kind == "equals" and match.value == item
+    elif isinstance(item, int):
+        assert match.kind == "index" and match.index == item
+    else:
+        assert match.kind == "regex" and match.pattern == "lPh" and match.flags == ("ignoreCase",)
+    assert [c[0] for c in calls] == (
+        (
+            ["act_expand"]
+            if kind == "ComboBox" and mode == "pattern"
+            else ["part"]
+            if kind == "ComboBox"
+            else []
+        )
+        + ["realize"]
+        + (["act_scroll_into_view", "act_select"] if mode == "pattern" else ["click"])
+        + (
+            ["act_collapse"]
+            if kind == "ComboBox" and mode == "pattern"
+            else ["part"]
+            if kind == "ComboBox"
+            else []
+        )
+    )
+
+
+@pytest.mark.parametrize("mode", ["pattern", "mouse"])
+def test_wpf_combo_failure_collapses(item_target, monkeypatch, mode):
+    client, el = item_target
+    client.values.update(control_type="ComboBox", item_count=7)
+    for i in range(7):
+        client.values[f"item_name_{i}"] = f"item{i}"
+    client.error = InspectorError("missing", code="notFound")
+    if mode == "mouse":
+
+        def expand_mouse(el, *, expanded):
+            client.calls.append(("part", expanded))
+            client.values["expand_state"] = "Expanded" if expanded else "Collapsed"
+
+        monkeypatch.setattr(actions, "_wpf_expand_collapse_mouse", expand_mouse)
+    from wintestkit.errors import ElementNotFoundError
+
+    with pytest.raises(ElementNotFoundError) as exc:
+        actions.select(el, "missing", mode=mode)
+    assert str(exc.value).startswith(
+        'No item "missing" in target (available: "item0", "item1", "item2", "item3", "item4")'
+    )
+    assert client.values["expand_state"] == "Collapsed"
+    assert client.calls[-1][0] == ("act_collapse" if mode == "pattern" else "part")
+
+
+def test_wpf_negative_and_unsupported_regex(item_target):
+    import re
+
+    from wintestkit.errors import ElementNotFoundError, InvalidLocatorError
+
+    client, el = item_target
+    with pytest.raises(ElementNotFoundError):
+        actions.select(el, -1)
+    assert not client.calls
+    with pytest.raises(InvalidLocatorError, match="Unsupported WPF item locator"):
+        actions.select(el, re.compile("x", re.ASCII))
+
+
+def test_wpf_item_name_reads_and_query(item_target, monkeypatch):
+    from wintestkit.engine import wpf_resolve
+
+    client, el = item_target
+    assert actions.combo_item_names(el) == ["Alpha", "Beta"]
+    calls = []
+
+    def query(root, locator):
+        calls.append(locator.control_type)
+        return [el] if locator.control_type in ("ListItem", "TreeItem") else []
+
+    monkeypatch.setattr(wpf_resolve, "query", query)
+    client.values["name"] = "Realized"
+    assert actions.listed_item_names(el) == ["Realized", "Realized"]
+    assert calls == list(actions._ITEM_TYPES)

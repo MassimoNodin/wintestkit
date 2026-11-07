@@ -26,7 +26,7 @@ from wintestkit.errors import (
     NoUiaPeerError,
     UIAError,
 )
-from wintestkit.inspector.models import ElementState
+from wintestkit.inspector.models import ElementState, ItemMatch
 from wintestkit.inspector.paths import PathSegment
 from wintestkit.uia import element, input, patterns, win32
 from wintestkit.uia.constants import ExpandCollapseState, ToggleState
@@ -756,16 +756,34 @@ def _select_in_combo(el: UIAElement, item: Item) -> None:
             patterns.collapse(el)
 
 
-def select_in_combo(el: TargetElement, item: Item) -> None:
+def select_in_combo(el: TargetElement, item: Item, *, mode: InputMode = "pattern") -> None:
     """Select an item of a combo box (even one that does not report the ``ComboBox`` type)."""
     __tracebackhide__ = True
+    if isinstance(el, WpfElement):
+        _wpf_select(el, item, mode=mode, combo=True)
+        return
     el = uia_of(el)
     _select_in_combo(el, item)
 
 
 def combo_item_names(el: TargetElement) -> list[str]:
-    """Names of a combo box's items: expand it, read them, and collapse it again."""
+    """Names of a combo box's items."""
     __tracebackhide__ = True
+    if isinstance(el, WpfElement):
+        # Item peer reads work with the dropdown closed; open only if unavailable.
+        try:
+            return _wpf_item_names(el)
+        except UIAError as error:
+            if not str(error).endswith(": unavailable"):
+                raise
+        was_expanded = _wpf_read(el, "expand_state", "ExpandCollapse") == "Expanded"
+        if not was_expanded:
+            expand(el)
+        try:
+            return _wpf_item_names(el)
+        finally:
+            if not was_expanded and _wpf_read(el, "expand_state", "ExpandCollapse") == "Expanded":
+                collapse(el)
     el = uia_of(el)
     was_expanded = patterns.expand_state(el) == ExpandCollapseState.Expanded
     if not was_expanded:
@@ -788,6 +806,14 @@ def combo_item_names(el: TargetElement) -> list[str]:
 def listed_item_names(el: TargetElement) -> list[str]:
     """Names of the items of a list, tree or tab control that are currently realized."""
     __tracebackhide__ = True
+    if isinstance(el, WpfElement):
+        from wintestkit.engine.wpf_resolve import query
+
+        return [
+            str(_wpf_read(c, "name"))
+            for t in _ITEM_TYPES
+            for c in query(el, Locator(control_type=t))
+        ]
     el = uia_of(el)
     return [c.name for t in _ITEM_TYPES for c in query_all(el, Locator(control_type=t))]
 
@@ -827,9 +853,75 @@ def _item_by_index(el: UIAElement, index: int) -> UIAElement | None:
     return realized[index].as_live() if index < len(realized) else None
 
 
-def select(el: TargetElement, item: Item) -> None:
+def _wpf_item_names(el: WpfElement, *, limit: int | None = None) -> list[str]:
+    __tracebackhide__ = True
+    count = int(str(_wpf_read(el, "item_count")))
+    return [str(_wpf_read(el, f"item_name_{i}")) for i in range(min(count, limit or count))]
+
+
+def _wpf_item_not_found(el: WpfElement, item: Item) -> ElementNotFoundError:
+    __tracebackhide__ = True
+    names = ", ".join(quote(name) for name in _wpf_item_names(el, limit=MAX_LISTED_ITEMS)) or "none"
+    short = _short(el)
+    return ElementNotFoundError(
+        Diagnostic(
+            kind="not_found",
+            message=f"No item {_describe_item(item)} in {short} (available: {names})",
+            locator=f"select({_describe_item(item)})",
+            searched_in=short,
+            match_count=0,
+            candidates=(),
+        )
+    )
+
+
+def _wpf_select(el: WpfElement, item: Item, *, mode: InputMode, combo: bool) -> None:
+    __tracebackhide__ = True
+    from wintestkit.engine.wpf_query import UnsupportedQuery, predicate
+    from wintestkit.errors import InvalidLocatorError
+
+    if isinstance(item, int):
+        match = ItemMatch("index", index=item) if 0 <= item <= 9999 else None
+    else:
+        try:
+            match = ItemMatch.from_json(predicate((PathSegment("uia", "name"),), item).to_json())
+        except UnsupportedQuery as error:
+            raise InvalidLocatorError(f"Unsupported WPF item locator: {error}") from error
+    if combo:
+        expand(el, mode=mode)
+    try:
+        if match is None:
+            raise _wpf_item_not_found(el, item)
+        try:
+            result = el.client.act_realize_item(
+                el.ref, match, max_items=10000, timeout_ms=2000, deadline=operation_deadline(2)
+            )
+        except InspectorError as error:
+            if error.code == "notFound":
+                raise _wpf_item_not_found(el, item) from error
+            _translate_wpf_error(error, "realizing item")
+            raise
+        chosen = WpfElement(el.client, result.handle, el.process_id)
+        if mode == "mouse":
+            _wpf_mouse_click(chosen)
+        else:
+            if "ScrollItem" in _wpf_patterns(chosen):
+                _wpf_act(chosen, "scroll_into_view", "ScrollItem")
+            _wpf_act(chosen, "select", "SelectionItem")
+    finally:
+        if combo and _wpf_read(el, "expand_state", "ExpandCollapse") == "Expanded":
+            collapse(el, mode=mode)
+
+
+def select(el: TargetElement, item: Item, *, mode: InputMode = "pattern") -> None:
     """Select an item of a combo box, list, grid, tree or tab control by name, regex or index."""
     __tracebackhide__ = True
+    if isinstance(el, WpfElement):
+        kind = str(_wpf_read(el, "control_type"))
+        if kind != "ComboBox" and "Selection" not in _wpf_patterns(el):
+            raise ActionError(f"select() is not supported on {_short(el)}")
+        _wpf_select(el, item, mode=mode, combo=kind == "ComboBox")
+        return
     el = uia_of(el)
     if el.control_type == "ComboBox":
         _select_in_combo(el, item)

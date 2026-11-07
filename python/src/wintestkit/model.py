@@ -36,7 +36,7 @@ from typing import (
 
 from wintestkit import runtime
 from wintestkit.app import App
-from wintestkit.backends.element import TargetElement
+from wintestkit.backends.element import TargetElement, WpfElement
 from wintestkit.engine import actions, overlay, relocate, waits
 from wintestkit.engine.diagnose import Relocation
 from wintestkit.engine.locator import (
@@ -1192,7 +1192,10 @@ class _Checkable(BoundControl):
 class _Selecting(BoundControl):
     def _choose(self, element: TargetElement, item: str | int | re.Pattern[str]) -> None:
         __tracebackhide__ = True
-        actions.select(element, item)
+        if isinstance(element, WpfElement):
+            actions.select(element, item, mode=runtime.get_config().input_mode)
+        else:
+            actions.select(element, item)
 
     def select(self, item: str | int | re.Pattern[str], *, timeout: float | None = None) -> None:
         __tracebackhide__ = True

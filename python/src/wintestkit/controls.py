@@ -25,7 +25,8 @@ from __future__ import annotations
 
 import re
 
-from wintestkit.backends.element import TargetElement
+from wintestkit import runtime
+from wintestkit.backends.element import TargetElement, WpfElement
 from wintestkit.engine import actions
 from wintestkit.model import (
     BoundControl,
@@ -145,7 +146,10 @@ class BoundComboBox(_Valued, _Expandable, _Choice):
 
     def _choose(self, element: TargetElement, item: str | int | re.Pattern[str]) -> None:
         __tracebackhide__ = True
-        actions.select_in_combo(element, item)
+        if isinstance(element, WpfElement):
+            actions.select_in_combo(element, item, mode=runtime.get_config().input_mode)
+        else:
+            actions.select_in_combo(element, item)
 
     def items(self) -> list[str]:
         """Names of all items: expands the combo box, reads them and collapses it again."""
