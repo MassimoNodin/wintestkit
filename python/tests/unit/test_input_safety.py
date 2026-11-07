@@ -44,7 +44,8 @@ def test_activation_denied_never_injects(
     target: tuple[Any, list[str]], monkeypatch: pytest.MonkeyPatch, action: Any
 ) -> None:
     control, calls = target
-    monkeypatch.setattr(actions, "bring_to_front", lambda element: False)
+    monkeypatch.setattr(win32, "GetForegroundWindow", lambda: 999)
+    monkeypatch.setattr(win32, "bring_to_foreground", lambda hwnd: False)
     with pytest.raises(ActionError, match="refusing global input"):
         action(control)
     assert calls == []
@@ -68,6 +69,42 @@ def test_mouse_requires_live_owned_foreground_and_unobscured_point(
     with pytest.raises(ActionError, match="refusing global input"):
         actions.click(control)
     assert calls == []
+
+
+@pytest.mark.parametrize("case", ["owner", "popup", "foreign", "activate", "denied", "hit"])
+def test_popup_mouse_safety(
+    target: tuple[Any, list[str]], monkeypatch: pytest.MonkeyPatch, case: str
+) -> None:
+    control, calls = target
+    foreground = [200 if case != "popup" else 100]
+    if case in ("activate", "denied"):
+        foreground[0] = 300
+    activated: list[int] = []
+
+    def activate(hwnd: int) -> bool:
+        activated.append(hwnd)
+        if case == "denied":
+            return False
+        foreground[0] = hwnd
+        return True
+
+    monkeypatch.setattr(win32, "window_owner", lambda hwnd: 200 if hwnd == 100 else 0)
+    monkeypatch.setattr(
+        win32,
+        "window_pid",
+        lambda hwnd: 999 if case == "foreign" and hwnd == 100 else control.process_id,
+    )
+    monkeypatch.setattr(win32, "GetForegroundWindow", lambda: foreground[0])
+    monkeypatch.setattr(win32, "bring_to_foreground", activate)
+    monkeypatch.setattr(win32, "root_window", lambda hwnd: 300 if case == "hit" else 100)
+    if case in ("foreign", "denied", "hit"):
+        with pytest.raises(ActionError, match="refusing global input"):
+            actions.click(control)
+        assert calls == []
+    else:
+        actions.click(control)
+        assert calls == ["click"]
+    assert activated == ([200] if case in ("activate", "denied") else [])
 
 
 def test_keyboard_requires_control_focus(target: tuple[Any, list[str]]) -> None:

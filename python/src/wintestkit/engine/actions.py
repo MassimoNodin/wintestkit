@@ -106,16 +106,34 @@ def _wpf_act(
         raise
 
 
-def _wpf_window(el: WpfElement, *, activate: bool = False) -> None:
+def _window_guard(hwnd: int, process_id: int, *, activate: bool = False) -> None:
+    """Validate the target and its owner chain before allowing global input."""
+    __tracebackhide__ = True
+    error = "Target window ownership or foreground changed; refusing global input"
+    if not hwnd or not win32.IsWindow(hwnd) or win32.window_pid(hwnd) != process_id:
+        raise ActionError(error)
+    root = hwnd
+    seen = {hwnd}
+    while owner := win32.window_owner(root):
+        if owner in seen or not win32.IsWindow(owner) or win32.window_pid(owner) != process_id:
+            raise ActionError(error)
+        seen.add(owner)
+        root = owner
+    foreground = win32.GetForegroundWindow()
+    if activate and foreground not in (hwnd, root):
+        if not win32.bring_to_foreground(root):
+            raise ActionError("Cannot activate the target window; refusing global input")
+        foreground = win32.GetForegroundWindow()
+    if foreground not in (hwnd, root):
+        raise ActionError(error)
+
+
+def _wpf_window(el: WpfElement, *, activate: bool = False) -> int:
     __tracebackhide__ = True
     state = el.client.state_get(el.ref, timeout_ms=2000, deadline=operation_deadline(2))
     hwnd = state.window_handle or 0
-    if not hwnd or not win32.IsWindow(hwnd) or win32.window_pid(hwnd) != el.process_id:
-        raise ActionError("Target window ownership or foreground changed; refusing global input")
-    if activate and not win32.bring_to_foreground(hwnd):
-        raise ActionError("Cannot activate the target window; refusing global input")
-    if win32.GetForegroundWindow() != hwnd:
-        raise ActionError("Target window ownership or foreground changed; refusing global input")
+    _window_guard(hwnd, el.process_id, activate=activate)
+    return hwnd
 
 
 def _wpf_keyboard_target(el: WpfElement) -> None:
@@ -197,21 +215,13 @@ def raise_without_activating(el: TargetElement) -> bool:
 
 def _foreground(el: UIAElement) -> None:
     __tracebackhide__ = True
-    if not bring_to_front(el):
-        raise ActionError("Cannot activate the target window; refusing global input")
-    _validate_foreground(el)
+    _window_guard(_top_level_hwnd(el), el.process_id, activate=True)
 
 
 def _validate_foreground(el: UIAElement) -> int:
     __tracebackhide__ = True
     hwnd = _top_level_hwnd(el)
-    if (
-        not hwnd
-        or not win32.IsWindow(hwnd)
-        or win32.window_pid(hwnd) != el.process_id
-        or win32.GetForegroundWindow() != hwnd
-    ):
-        raise ActionError("Target window ownership or foreground changed; refusing global input")
+    _window_guard(hwnd, el.process_id)
     return hwnd
 
 
@@ -308,17 +318,10 @@ def _wpf_mouse_target(el: WpfElement, role: str | None = None) -> tuple[int, int
         bounds.x <= x < bounds.x + bounds.width and bounds.y <= y < bounds.y + bounds.height
     ):
         raise ActionError(f"{_short(el)} has no on-screen rectangle to click")
-    _wpf_window(el)
-    hwnd = state.window_handle or 0
-    hit = win32.WindowFromPoint(win32.POINT(x, y))
-    if (
-        not hwnd
-        or win32.GetForegroundWindow() != hwnd
-        or not hit
-        or win32.root_window(hit) != hwnd
-        or win32.window_pid(hit) != el.process_id
-    ):
-        raise ActionError("Target point belongs to another window; refusing global input")
+    hwnd = _wpf_window(el)
+    if hwnd != state.window_handle:
+        raise ActionError("Target window ownership or foreground changed; refusing global input")
+    _validate_point(hwnd, el.process_id, x, y)
     return x, y
 
 
@@ -351,8 +354,13 @@ def _mouse_click(el: UIAElement, button: MouseButton = "left", count: int = 1) -
 def _validate_mouse_target(el: UIAElement, x: int, y: int) -> None:
     __tracebackhide__ = True
     hwnd = _validate_foreground(el)
+    _validate_point(hwnd, el.process_id, x, y)
+
+
+def _validate_point(hwnd: int, process_id: int, x: int, y: int) -> None:
+    __tracebackhide__ = True
     hit = win32.WindowFromPoint(win32.POINT(x, y))
-    if not hit or win32.root_window(hit) != hwnd or win32.window_pid(hit) != el.process_id:
+    if not hit or win32.root_window(hit) != hwnd or win32.window_pid(hit) != process_id:
         raise ActionError("Target point belongs to another window; refusing global input")
 
 
