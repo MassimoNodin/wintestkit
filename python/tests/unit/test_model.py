@@ -15,6 +15,7 @@ from wintestkit.engine.locator import ItemSelector, Locator, WindowLocator
 from wintestkit.errors import (
     ActionError,
     ElementNotFoundError,
+    InspectorDeadlineError,
     UIAError,
     WaitTimeoutError,
 )
@@ -458,6 +459,38 @@ def test_actions_time_out_naming_the_unmet_state(
     assert str(exc_info.value) == (
         'Timed out after 2.0s waiting for MainPage.sign_in Button[name="Sign in"] to be enabled'
     )
+
+
+@pytest.mark.parametrize("first_poll_deadline", [False, True])
+def test_action_deadline_preserves_disabled_state(
+    page: MainPage, recorder: Recorder, monkeypatch: pytest.MonkeyPatch, first_poll_deadline: bool
+) -> None:
+    clock = FakeTime()
+    monkeypatch.setattr(waits, "_clock", clock.clock)
+    monkeypatch.setattr(waits, "_sleep", clock.sleep)
+    recorder.element.is_enabled = False
+    with pytest.raises(WaitTimeoutError) as uia_error:
+        page.sign_in.click(timeout=1)
+    clock.now = 0.0
+    original = recorder._resolve
+    calls = 0
+
+    def resolve(scope: Any, locator: Locator) -> FakeElement:
+        nonlocal calls
+        calls += 1
+        if calls == (1 if first_poll_deadline else 2):
+            clock.now = 1.0
+            raise InspectorDeadlineError("WPF query deadline", code="timeout")
+        return original(scope, locator)
+
+    monkeypatch.setattr(model, "resolve", resolve)
+    with pytest.raises(WaitTimeoutError) as error:
+        page.sign_in.click(timeout=1)
+    assert str(error.value) == str(uia_error.value)
+    assert str(error.value) == (
+        'Timed out after 1.0s waiting for MainPage.sign_in Button[name="Sign in"] to be enabled'
+    )
+    assert calls == 2
 
 
 def test_offpage_elements_wait_for_visibility_unless_scrollable(

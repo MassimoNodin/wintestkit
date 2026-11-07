@@ -15,6 +15,7 @@ import dataclasses
 import inspect
 import os
 import re
+import time
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import AbstractContextManager
 from types import FrameType
@@ -46,6 +47,7 @@ from wintestkit.engine.locator import (
     WindowLocator,
     match_value,
 )
+from wintestkit.engine.managed import diagnostic_query_budget, query_budget
 from wintestkit.engine.properties import WhereValue, normalize_where
 from wintestkit.engine.resolve import Scope, resolve, resolve_all, resolve_window, wait_link
 from wintestkit.engine.waits import State
@@ -54,6 +56,8 @@ from wintestkit.errors import (
     AmbiguousElementError,
     ElementNotFoundError,
     ElementTypeError,
+    InspectorDeadlineError,
+    InspectorError,
     LocatorError,
     UIAError,
     WaitTimeoutError,
@@ -907,20 +911,26 @@ class BoundControl(_BoundBase):
         __tracebackhide__ = True
         budget = self._timeout(timeout)
         unmet = ["to exist"]
+        deadline_exhausted = False
 
         def poll() -> TargetElement | None:
             __tracebackhide__ = True
-            element = self.resolve_once()
-            if not element.is_enabled:
-                unmet[0] = "to be enabled"
-                return None
-            if element.is_offscreen and not (
-                patterns.has_pattern(element, "ScrollItem")
-                or patterns.has_pattern(element, "VirtualizedItem")
-            ):
-                unmet[0] = "to be visible"
-                return None
-            return element
+            nonlocal deadline_exhausted
+            try:
+                element = self.resolve_once()
+                if not element.is_enabled:
+                    unmet[0] = "to be enabled"
+                    return None
+                if element.is_offscreen and not (
+                    patterns.has_pattern(element, "ScrollItem")
+                    or patterns.has_pattern(element, "VirtualizedItem")
+                ):
+                    unmet[0] = "to be visible"
+                    return None
+                return element
+            except InspectorDeadlineError:
+                deadline_exhausted = True
+                raise
 
         try:
             return waits.wait_until(
@@ -930,6 +940,12 @@ class BoundControl(_BoundBase):
             self.explain_relocation(exc)
             raise
         except WaitTimeoutError as exc:
+            if deadline_exhausted and unmet[0] == "to exist":
+                try:
+                    with diagnostic_query_budget(), query_budget(time.monotonic() + 2):
+                        poll()
+                except (InspectorError, LocatorError, UIAError):
+                    pass
             raise WaitTimeoutError(
                 f"Timed out after {budget:.1f}s waiting for {self._description()} {unmet[0]}",
                 last_error=exc.last_error,
