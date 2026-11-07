@@ -147,3 +147,19 @@ def test_shared_lease_releases_once():
     del other
     gc.collect()
     assert client.released == ["object"]
+
+
+def test_password_reads_are_redacted_on_both_backends(setup, monkeypatch):
+    from wintestkit.errors import ActionError
+
+    _, managed = setup
+    uia = UIAElement(SimpleNamespace())
+    monkeypatch.setattr(actions, "is_password", lambda element: True)
+    monkeypatch.setattr(actions, "_wpf_patterns", lambda element: {"Text", "Value"})
+    monkeypatch.setattr(actions.patterns, "has_pattern", lambda element, name: True)
+    monkeypatch.setattr(UIAElement, "name", property(lambda self: ""))
+    monkeypatch.setattr(WpfElement, "name", property(lambda self: ""))
+    for element in (uia, managed):
+        assert actions.get_text(element) == ""
+        with pytest.raises(ActionError, match="Cannot read a password value"):
+            actions.get_value(element)

@@ -505,6 +505,24 @@ def test_offpage_elements_wait_for_visibility_unless_scrollable(
     page.sign_in.click(timeout=1)  # scrollable: ensure_visible handles it
 
 
+def test_offscreen_managed_element_does_not_map_virtualized_pattern(
+    page: MainPage, recorder: Recorder, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    recorder.element.is_offscreen = True
+    monkeypatch.setattr(model, "WpfElement", type(recorder.element))
+    names = []
+
+    def has_pattern(element: Any, name: str) -> bool:
+        names.append(name)
+        return False
+
+    monkeypatch.setattr(model.patterns, "has_pattern", has_pattern)
+    with pytest.raises(WaitTimeoutError, match="to be visible"):
+        page.sign_in.click(timeout=0)
+    assert "ScrollItem" in names
+    assert "VirtualizedItem" not in names
+
+
 def test_timeout_precedence(page: MainPage, recorder: Recorder) -> None:
     recorder.error = not_found()
     with pytest.raises(ElementNotFoundError, match=r"waited 5\.0s"):
