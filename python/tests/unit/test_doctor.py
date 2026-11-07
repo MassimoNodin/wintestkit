@@ -62,6 +62,7 @@ def test_all_checks_ok_on_a_healthy_machine(tmp_path: Path) -> None:
         "elevation",
         "comtypes_cache",
         "inspector",
+        "wpf_agent",
     ]
     assert not has_failures(list(checks.values()))
 

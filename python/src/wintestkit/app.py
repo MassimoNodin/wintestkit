@@ -64,6 +64,7 @@ class App:
         process: str | None = None,
         startup_timeout: float = 30.0,
         progress: Callable[[str], None] | None = None,
+        owned_only: bool = False,
     ) -> App:
         """Start ``path`` and wait until it shows a main window.
 
@@ -85,11 +86,23 @@ class App:
             )
         except OSError as exc:
             raise AppError(f"Could not start {exe}: {exc}") from exc
-        app = cls(process_name, launched=True, popen=popen, baseline=baseline)
+        app = cls(
+            process_name, launched=True, popen=popen, baseline=baseline, by_name=not owned_only
+        )
         log.info("launched %s (pid %d)", exe, popen.pid)
         if progress is not None:
             progress("process")
-        app._wait_for_startup(startup_timeout, progress)
+        try:
+            app._wait_for_startup(startup_timeout, progress)
+        except BaseException:
+            if owned_only and popen.poll() is None:
+                popen.terminate()
+                try:
+                    popen.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    popen.kill()
+                    popen.wait()
+            raise
         return app
 
     @classmethod
