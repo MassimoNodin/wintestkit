@@ -296,6 +296,140 @@ def test_phase2_typed_selection_parity(owned, backend, monkeypatch):
             expect(page.expanded_content, timeout=5).not_.to_be_visible()
 
 
+@pytest.mark.parametrize("mode", ["pattern", "mouse"])
+@pytest.mark.parametrize("backend", ["uia", "auto"])
+def test_phase3_typed_selection(owned, backend, mode, monkeypatch):
+    from wintestkit.backends.element import WpfElement
+    from wintestkit.controls import ComboBox, ListBox, TabControl, TreeView
+    from wintestkit.model import Page
+
+    scope, path = owned
+
+    class FixturePage(Page):
+        combo = ComboBox(automation_id="ParityCombo")
+        listing = ListBox(automation_id="ParityList")
+        tree = TreeView(automation_id="ParityTree")
+        tabs = TabControl(automation_id="ParityTabs")
+
+    page = FixturePage(scope.app)
+    with runtime.config_scope(replace(config(path, "agent"), backend=backend, input_mode=mode)):
+        if backend == "auto":
+            monkeypatch.setattr(
+                WpfElement, "as_uia", lambda self: pytest.fail("unexpected UIA mapping")
+            )
+        assert page.combo.items() == ["Alpha", "Beta", "Gamma"]
+        assert page.listing.items() == ["Alpha", "Beta", "Gamma"]
+        for item, expected in (("Alpha", "Alpha"), (re.compile("^Beta$"), "Beta"), (2, "Gamma")):
+            page.combo.select(item)
+            assert page.combo.selected == expected
+        for item, expected in (("Beta", "Beta"), (0, "Alpha")):
+            page.listing.select(item)
+            assert page.listing.selected_items() == [expected]
+        page.tree.select("Tree Alpha")
+        assert page.tree.selected_items() == ["Tree Alpha"]
+        page.tabs.select("Tab Beta")
+        assert page.tabs.selected_items() == ["Tab Beta"]
+
+
+@pytest.mark.parametrize("backend", ["uia", "auto"])
+def test_column_only_grid_mouse_selection(owned, backend, monkeypatch):
+    from wintestkit.backends.element import WpfElement
+    from wintestkit.controls import DataGrid
+    from wintestkit.model import Page
+
+    scope, path = owned
+
+    class FixturePage(Page):
+        grid = DataGrid(automation_id="ParityColumnOnlyGrid")
+
+    with runtime.config_scope(replace(config(path, "agent"), backend=backend, input_mode="mouse")):
+        if backend == "auto":
+            monkeypatch.setattr(
+                WpfElement, "as_uia", lambda self: pytest.fail("unexpected UIA mapping")
+            )
+        page = FixturePage(scope.app)
+        page.grid.select("Column Beta")
+        assert page.grid.selected_items() == ["Column Beta"]
+
+
+@pytest.mark.parametrize("mode", ["pattern", "mouse"])
+def test_phase3_item_not_found_messages_match(owned, mode, monkeypatch):
+    from wintestkit.backends.element import WpfElement
+    from wintestkit.controls import ComboBox, ListBox
+    from wintestkit.errors import ElementNotFoundError
+    from wintestkit.model import Page
+
+    scope, path = owned
+
+    class FixturePage(Page):
+        combo = ComboBox(automation_id="ParityCombo")
+        listing = ListBox(automation_id="ParityList")
+
+    page = FixturePage(scope.app)
+    messages = []
+    for backend in ("uia", "auto"):
+        with runtime.config_scope(replace(config(path, "agent"), backend=backend, input_mode=mode)):  # noqa: SIM117
+            with monkeypatch.context() as guard:
+                if backend == "auto":
+                    guard.setattr(
+                        WpfElement, "as_uia", lambda self: pytest.fail("unexpected UIA mapping")
+                    )
+                errors = []
+                for control in (page.combo, page.listing):
+                    with pytest.raises(ElementNotFoundError) as error:
+                        control.select("Absent", timeout=5)
+                    errors.append(re.sub(r"[0-9.]+s", "<time>", str(error.value)))
+                messages.append(errors)
+    assert messages[0] == messages[1]
+
+
+@pytest.mark.parametrize("mode", ["pattern", "mouse"])
+@pytest.mark.parametrize("backend", ["uia", "auto"])
+@pytest.mark.parametrize("control_id", ["VirtualItemsList", "VirtualItemsGrid"])
+def test_phase3_virtual_items_selection(owned, backend, mode, control_id, monkeypatch):
+    from wintestkit.backends.element import WpfElement
+    from wintestkit.controls import DataGrid, ListBox
+    from wintestkit.model import Page, Window
+
+    scope, path = owned
+    scope = Scope(scope.app, WindowLocator(automation_id="VirtualItemsWindow"))
+
+    class FixturePage(Page):
+        window = Window(automation_id="VirtualItemsWindow")
+        listing = ListBox(automation_id="VirtualItemsList")
+        grid = DataGrid(automation_id="VirtualItemsGrid")
+
+    page = FixturePage(scope.app)
+    control = page.listing if control_id == "VirtualItemsList" else page.grid
+    with runtime.config_scope(replace(config(path, "agent"), backend=backend, input_mode=mode)):  # noqa: SIM117
+        with monkeypatch.context() as guard:
+            if backend == "auto":
+                guard.setattr(
+                    WpfElement, "as_uia", lambda self: pytest.fail("unexpected UIA mapping")
+                )
+            times = []
+            for _ in range(3):
+                control.select(0, timeout=10)
+                start = time.monotonic()
+                control.select("Item 4999", timeout=10)
+                times.append(time.monotonic() - start)
+                from wintestkit.engine import waits
+
+                assert waits.wait_until(
+                    lambda: control.selected_items() or None, 2, description="item selection"
+                ) == ["Item 4999"]
+                items = resolve_all(
+                    scope,
+                    Locator(
+                        name="Item 4999",
+                        control_type="ListItem" if control_id == "VirtualItemsList" else "DataItem",
+                        within=Locator(automation_id=control_id),
+                    ),
+                )
+                assert any(item.rect is not None and not item.is_offscreen for item in items)
+            print(f"{backend} {mode} {control_id}: median {statistics.median(times):.3f}s")
+
+
 @pytest.mark.parametrize("backend", ["uia", "auto"])
 def test_phase2_keyboard_menu_pointer_and_grid_parity(owned, backend, monkeypatch):
     from wintestkit.controls import DataGrid, TextBox

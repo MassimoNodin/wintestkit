@@ -1255,6 +1255,7 @@ class PartGeometry(WireModel):
                     "scrollTrack",
                     "treeItemExpander",
                     "gridColumnHeader",
+                    "gridRowHeader",
                     "templatePart",
                 },
             ),

@@ -365,6 +365,29 @@ methods; P3c agent `act.realizeItem`; P3d pattern mode and reads on the WPF back
 mouse mode on WPF geometry; P3f typed controls on WPF; P3g `wtk doctor` agent-block check;
 P3h parity suite, default switch and docs.
 
+### 6.5 Phase 3 progress (2026-11-07)
+
+The owned fixture exercises the following parity rows. UIA selection currently uses its
+selection pattern for either configured input mode; `auto` exercises the requested mouse or
+pattern path. Grid row/cell access remains on UIA as designed.
+DataGrid mouse selection clicks a safe row header when available; otherwise it uses
+`act.select` on the realized row, including when row headers are hidden.
+
+| Parity row | UIA | auto |
+| --- | --- | --- |
+| Pattern-mode actions | Pass | Pass |
+| Mouse actions, including partly clipped elements | Pass | Pass |
+| Peerless mouse action | No UIA peer | Pass |
+| Typed-control selection, both modes | Pass | Pass |
+| Virtualized item 4,999, both modes | Pass | Pass |
+
+Median wall times over three selections (seconds, pattern/mouse) were: ListBox UIA
+0.260/0.288 and auto 0.193/0.296; DataGrid UIA 1.014/1.165 and auto 0.569/0.630.
+These are fixture measurements, including selection overhead, and vary with machine load.
+
+Remaining phase 3 work: P3g doctor agent-block check; P3h full parity matrix, default
+switch and documentation.
+
 ## 7. Test strategy
 
 - **Parity suite**: run the same locator, wait, action and typed-control tests under

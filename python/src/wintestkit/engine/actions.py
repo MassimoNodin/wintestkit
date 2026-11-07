@@ -903,7 +903,25 @@ def _wpf_select(el: WpfElement, item: Item, *, mode: InputMode, combo: bool) -> 
             raise
         chosen = WpfElement(el.client, result.handle, el.process_id)
         if mode == "mouse":
-            _wpf_mouse_click(chosen)
+            if combo:
+
+                def ready() -> bool:
+                    __tracebackhide__ = True
+                    state = chosen.client.state_get(
+                        chosen.ref, timeout_ms=2000, deadline=operation_deadline(2)
+                    )
+                    return state.visible and not state.offscreen and state.click_point is not None
+
+                waits.wait_until(ready, _STABLE_TIMEOUT, description="combo item to become visible")
+            if _wpf_read(el, "control_type") == "DataGrid":
+                try:
+                    point = _wpf_mouse_target(chosen, "gridRowHeader")
+                except ActionError:
+                    _wpf_act(chosen, "select", "SelectionItem")
+                else:
+                    input.click(*point, button="left", count=1)
+            else:
+                _wpf_mouse_click(chosen)
         else:
             if "ScrollItem" in _wpf_patterns(chosen):
                 _wpf_act(chosen, "scroll_into_view", "ScrollItem")

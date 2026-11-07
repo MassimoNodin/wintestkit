@@ -1934,6 +1934,7 @@ export interface PartGeometry {
     | "scrollTrack"
     | "treeItemExpander"
     | "gridColumnHeader"
+    | "gridRowHeader"
     | "templatePart";
   bounds: ManagedRect | null;
 }

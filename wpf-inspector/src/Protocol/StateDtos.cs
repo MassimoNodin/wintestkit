@@ -17,7 +17,7 @@ namespace WinTestKit.Inspector.Protocol
     {
         public string Name { get; set; } = ""; public string Role { get; set; } = ""; public RectDto? Bounds { get; set; }
         public JsonObjectNode ToJson() { var o = new JsonObjectNode(); DtoHelpers.Add(o,"name",Name); DtoHelpers.Add(o,"role",Role); o.Add("bounds",(JsonNode?)Bounds?.ToJson() ?? JsonNullNode.Instance); FromJson(o); return o; }
-        public static PartGeometry FromJson(JsonNode n) { var o = DtoHelpers.Object(n,"name","role","bounds"); var b = o.Get("bounds"); var x = new PartGeometry { Name = DtoHelpers.Required(o,"name"), Role = DtoHelpers.Required(o,"role"), Bounds = b is JsonNullNode ? null : RectDto.FromJson(b) }; DtoHelpers.OneOf(x.Role,"expanderToggle","comboDropDown","scrollThumb","scrollDecrement","scrollIncrement","scrollTrack","treeItemExpander","gridColumnHeader","templatePart"); return x; }
+        public static PartGeometry FromJson(JsonNode n) { var o = DtoHelpers.Object(n,"name","role","bounds"); var b = o.Get("bounds"); var x = new PartGeometry { Name = DtoHelpers.Required(o,"name"), Role = DtoHelpers.Required(o,"role"), Bounds = b is JsonNullNode ? null : RectDto.FromJson(b) }; DtoHelpers.OneOf(x.Role,"expanderToggle","comboDropDown","scrollThumb","scrollDecrement","scrollIncrement","scrollTrack","treeItemExpander","gridColumnHeader","gridRowHeader","templatePart"); return x; }
     }
     public sealed class ElementState
     {

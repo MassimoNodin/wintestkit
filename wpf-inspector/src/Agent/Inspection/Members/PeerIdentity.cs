@@ -152,7 +152,7 @@ namespace WinTestKit.Inspector.Agent.Inspection.Members
                     case "is_password": result = peer.IsPassword(); break;
                     case "supported_patterns":
                         var names = new List<string>();
-                        foreach (PatternInterface pattern in new[] { PatternInterface.Invoke, PatternInterface.Toggle, PatternInterface.SelectionItem, PatternInterface.Selection, PatternInterface.ExpandCollapse, PatternInterface.Value, PatternInterface.RangeValue, PatternInterface.Scroll, PatternInterface.ScrollItem, PatternInterface.Text })
+                        foreach (PatternInterface pattern in new[] { PatternInterface.Invoke, PatternInterface.Toggle, PatternInterface.SelectionItem, PatternInterface.Selection, PatternInterface.ExpandCollapse, PatternInterface.Value, PatternInterface.RangeValue, PatternInterface.Scroll, PatternInterface.ScrollItem, PatternInterface.Text, PatternInterface.Grid })
                             if (peer.GetPattern(pattern) != null) names.Add(pattern.ToString());
                         result = string.Join(",", names); break;
                     case "value": if (peer.GetPattern(PatternInterface.Value) is IValueProvider value) result = value.Value; break;

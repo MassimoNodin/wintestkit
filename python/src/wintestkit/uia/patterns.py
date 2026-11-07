@@ -73,6 +73,7 @@ def has_pattern(el: TargetElement, name: str) -> bool:
         "Scroll",
         "ScrollItem",
         "Text",
+        "Grid",
     }:
         from wintestkit.engine.actions import _wpf_patterns
 

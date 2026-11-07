@@ -75,6 +75,14 @@ def test_click_pattern_order(target, pattern, state, expected, verb):
     assert client.calls == [(verb,)]
 
 
+def test_grid_pattern_validation_uses_agent(target):
+    from wintestkit.uia import patterns
+
+    client, el = target
+    client.values["supported_patterns"] = "Grid,Selection"
+    assert patterns.has_pattern(el, "Grid")
+
+
 def test_states_and_actions(target):
     client, el = target
     actions.set_checked(el, True)
@@ -436,6 +444,13 @@ def item_target(target, monkeypatch):
         actions, "_wpf_mouse_click", lambda el, **kw: client.calls.append(("click", kw.get("role")))
     )
 
+    monkeypatch.setattr(actions, "_wpf_mouse_target", lambda el, role: (10, 20))
+    monkeypatch.setattr(
+        actions.input,
+        "click",
+        lambda *args, **kwargs: client.calls.append(("click", "gridRowHeader")),
+    )
+
     def realize(ref, match, **kwargs):
         client.calls.append(("realize", match))
         if client.error:
@@ -443,6 +458,9 @@ def item_target(target, monkeypatch):
         return RealizeResult("performed", ref)
 
     client.act_realize_item = realize
+    client.state_get = lambda *args, **kwargs: SimpleNamespace(
+        visible=True, offscreen=False, click_point=object()
+    )
 
     def action(name):
         def call(ref, **kwargs):
@@ -476,6 +494,8 @@ def test_wpf_select_items(item_target, monkeypatch, kind, mode, item):
         monkeypatch.setattr(actions, "_wpf_expand_collapse_mouse", expand_mouse)
     actions.select(el, item, mode=mode)
     calls = client.calls
+    if mode == "mouse":
+        assert ("click", "gridRowHeader" if kind == "DataGrid" else None) in calls
     match = next(call[1] for call in calls if call[0] == "realize")
     if isinstance(item, str):
         assert match.kind == "equals" and match.value == item
@@ -501,6 +521,37 @@ def test_wpf_select_items(item_target, monkeypatch, kind, mode, item):
             else []
         )
     )
+
+
+def test_wpf_grid_mouse_falls_back_when_header_unsafe(item_target, monkeypatch):
+    client, el = item_target
+    client.values["control_type"] = "DataGrid"
+
+    def unsafe(el, role):
+        raise actions.ActionError("no safe row header")
+
+    monkeypatch.setattr(actions, "_wpf_mouse_target", unsafe)
+    actions.select(el, "Alpha", mode="mouse")
+    assert [call[0] for call in client.calls] == ["realize", "act_select"]
+
+
+def test_wpf_combo_mouse_waits_for_item_geometry(item_target, monkeypatch):
+    client, el = item_target
+    client.values["control_type"] = "ComboBox"
+    states = iter(
+        [
+            SimpleNamespace(visible=False, offscreen=True, click_point=None),
+            SimpleNamespace(visible=True, offscreen=False, click_point=object()),
+        ]
+    )
+    client.state_get = lambda *args, **kwargs: next(states)
+
+    def expand_mouse(el, *, expanded):
+        client.values["expand_state"] = "Expanded" if expanded else "Collapsed"
+
+    monkeypatch.setattr(actions, "_wpf_expand_collapse_mouse", expand_mouse)
+    actions.select(el, "Alpha", mode="mouse")
+    assert ("click", None) in client.calls
 
 
 @pytest.mark.parametrize("mode", ["pattern", "mouse"])

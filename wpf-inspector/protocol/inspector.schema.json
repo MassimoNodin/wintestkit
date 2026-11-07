@@ -2537,6 +2537,7 @@
             "scrollTrack",
             "treeItemExpander",
             "gridColumnHeader",
+            "gridRowHeader",
             "templatePart"
           ]
         },
