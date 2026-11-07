@@ -549,13 +549,15 @@ def get_text(el: TargetElement) -> str:
     el = uia_of(el)
     if patterns.has_pattern(el, "Value") and not is_password(el):
         return patterns.get_value(el)
-    if patterns.has_pattern(el, "Text"):
+    if patterns.has_pattern(el, "Text") and not is_password(el):
         return patterns.document_text(el)
     return el.name
 
 
 def get_value(el: TargetElement) -> str:
     __tracebackhide__ = True
+    if is_password(el):
+        raise ActionError("Cannot read a password value")
     if isinstance(el, WpfElement):
         return str(_wpf_read(el, "value", "Value"))
     el = uia_of(el)

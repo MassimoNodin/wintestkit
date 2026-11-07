@@ -923,7 +923,10 @@ class BoundControl(_BoundBase):
                     return None
                 if element.is_offscreen and not (
                     patterns.has_pattern(element, "ScrollItem")
-                    or patterns.has_pattern(element, "VirtualizedItem")
+                    or (
+                        not isinstance(element, WpfElement)
+                        and patterns.has_pattern(element, "VirtualizedItem")
+                    )
                 ):
                     unmet[0] = "to be visible"
                     return None
