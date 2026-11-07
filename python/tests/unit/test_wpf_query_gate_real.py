@@ -1186,6 +1186,126 @@ def test_phase2_disabled_waits_match(owned):
     assert messages[0] == messages[1]
 
 
+@pytest.mark.parametrize("mode", ["pattern", "mouse"])
+def test_phase3_readonly_typing_parity(owned, mode, monkeypatch):
+    from wintestkit.backends.element import WpfElement
+    from wintestkit.model import Element, Page
+
+    scope, path = owned
+
+    class FixturePage(Page):
+        field = Element(automation_id="ParityReadOnly")
+
+    page = FixturePage(scope.app)
+    outcomes = []
+    for backend in ("uia", "auto"):
+        with runtime.config_scope(replace(config(path, "agent"), backend=backend, input_mode=mode)):  # noqa: SIM117
+            with monkeypatch.context() as guard:
+                if backend == "auto":
+                    guard.setattr(
+                        WpfElement, "as_uia", lambda self: pytest.fail("unexpected UIA mapping")
+                    )
+                records = []
+                remove = runtime.add_step_listener(records.append)
+                try:
+                    try:
+                        page.field.type("changed", keys=mode == "mouse", timeout=5)
+                        outcome = ("success", records[-1].args.get("strategy"))
+                    except Exception as error:
+                        outcome = (type(error).__name__, str(error))
+                finally:
+                    remove()
+                outcomes.append((outcome, page.field.text))
+    assert outcomes[0] == outcomes[1]
+    assert outcomes[0][1] == "read only"
+
+
+@pytest.mark.parametrize("mode", ["pattern", "mouse"])
+def test_phase3_password_parity_and_redaction(owned, mode, monkeypatch, caplog):
+    import logging
+
+    from wintestkit.backends.element import WpfElement
+    from wintestkit.model import Element, Page
+
+    scope, path = owned
+    secret = "ParitySecret987"
+
+    class FixturePage(Page):
+        password = Element(automation_id="PasswordBox")
+
+    page = FixturePage(scope.app)
+    outcomes = []
+    caplog.set_level(logging.DEBUG)
+    for backend in ("uia", "auto"):
+        with runtime.config_scope(replace(config(path, "agent"), backend=backend, input_mode=mode)):  # noqa: SIM117
+            with monkeypatch.context() as guard:
+                if backend == "auto":
+                    guard.setattr(
+                        WpfElement, "as_uia", lambda self: pytest.fail("unexpected UIA mapping")
+                    )
+                records = []
+                remove = runtime.add_step_listener(records.append)
+                try:
+                    page.password.type(secret, keys=mode == "mouse", timeout=5)
+                    results = []
+                    for getter in (lambda: page.password.text, lambda: page.password.value):
+                        try:
+                            results.append(("value", getter()))
+                        except Exception as error:
+                            assert secret not in str(error)
+                            results.append((type(error).__name__, str(error)))
+                    page.password.clear(timeout=5)
+                finally:
+                    remove()
+                assert secret not in repr([record.args for record in records])
+                assert secret not in repr(results)
+                outcomes.append(results)
+    assert secret not in caplog.text
+    assert outcomes[0] == outcomes[1]
+
+
+@pytest.mark.parametrize("mode", ["pattern", "mouse"])
+def test_phase3_hidden_actions_parity(owned, mode, monkeypatch):
+    from wintestkit.backends.element import WpfElement
+    from wintestkit.errors import WtkError
+    from wintestkit.model import Element, Page
+
+    scope, path = owned
+
+    class FixturePage(Page):
+        hidden = Element(automation_id="ParityHiddenInput")
+
+    page = FixturePage(scope.app)
+    outcomes = []
+    for backend in ("uia", "auto"):
+        with runtime.config_scope(replace(config(path, "agent"), backend=backend, input_mode=mode)):  # noqa: SIM117
+            with monkeypatch.context() as guard:
+                if backend == "auto":
+                    guard.setattr(
+                        WpfElement, "as_uia", lambda self: pytest.fail("unexpected UIA mapping")
+                    )
+                errors = []
+                for action in (
+                    lambda: page.hidden.click(timeout=0.5),
+                    lambda: page.hidden.type("hidden", timeout=0.5),
+                ):
+                    start = time.monotonic()
+                    with pytest.raises(WtkError) as error:
+                        action()
+                    assert time.monotonic() - start < 5
+                    errors.append(
+                        (
+                            type(error.value).__name__,
+                            re.sub(r"[0-9.]+s", "<time>", str(error.value)),
+                        )
+                    )
+                outcomes.append(errors)
+    assert outcomes[0][0][0] == "ElementNotFoundError", "UIA omits collapsed descendants"
+    assert outcomes[1][0][0] == "WaitTimeoutError"
+    assert "to be visible" in outcomes[1][0][1]
+    assert outcomes[0][1] == outcomes[1][1]
+
+
 def test_peerless_mouse_click(owned, monkeypatch):
     from wintestkit.backends import WpfElement
 
