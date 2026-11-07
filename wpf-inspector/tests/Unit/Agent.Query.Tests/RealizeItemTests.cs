@@ -97,6 +97,47 @@ namespace WinTestKit.Inspector.Agent.Query.Tests
             dispatcher.BeginInvokeShutdown(DispatcherPriority.Send); thread.Join();
         }
 
+        [Theory]
+        [InlineData("list")]
+        [InlineData("combo")]
+        [InlineData("grid")]
+        public async Task MatchesItemAutomationPeerNames(string kind)
+        {
+            var ready = new TaskCompletionSource<Dispatcher>();
+            var thread = new Thread(() => { ready.SetResult(Dispatcher.CurrentDispatcher); Dispatcher.Run(); }) { IsBackground = true };
+            thread.SetApartmentState(ApartmentState.STA); thread.Start();
+            var dispatcher = await ready.Task;
+            var executor = new DispatcherExecutor();
+            using (var registry = new ObjectRegistry("session", executor))
+            {
+                var pair = await dispatcher.InvokeAsync(() =>
+                {
+                    ItemsControl control = kind == "list" ? (ItemsControl)new ListBox() : kind == "combo" ? new ComboBox() : new DataGrid();
+                    control.Items.Add("Alpha"); control.Items.Add("Beta");
+                    var window = new Window { Width = 400, Height = 300, Content = control, ShowInTaskbar = false };
+                    window.Show(); if (control is ComboBox combo) combo.IsDropDownOpen = true;
+                    window.UpdateLayout(); return Tuple.Create(window, control);
+                }).Task;
+                try
+                {
+                    var search = new ItemSearch { Container = registry.Register(pair.Item2, dispatcher, TypeInfoBuilder.Build(pair.Item2.GetType())), MaxItems = 2,
+                        Match = new ItemMatch { Kind = "equals", Path = new[] { new PathSegment { Kind = "uia", Name = "name" } }, Value = new JsonStringNode("Alpha") } };
+                    async Task<ActRealizeItemResult> Run() { await dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle).Task; return await RealizeItemEngine.ExecuteAsync(executor, dispatcher, pair.Item2, search, registry, new ObjectInspector(), DateTime.UtcNow.AddSeconds(60), 2000, CancellationToken.None); }
+                    Assert.NotNull((await Run()).Handle);
+                    search.Match = new ItemMatch { Kind = "regex", Path = search.Match.Path, Pattern = "lph", Flags = Array.Empty<string>() };
+                    Assert.NotNull((await Run()).Handle);
+                    search.Match.Pattern = "LPH";
+                    Assert.Equal(ErrorCodes.NotFound, (await Assert.ThrowsAsync<ProtocolException>(Run)).Code);
+                    search.Match.Flags = new[] { "ignoreCase" };
+                    Assert.NotNull((await Run()).Handle);
+                    search.Match.Path = new[] { new PathSegment { Kind = "uia", Name = "automation_id" } };
+                    Assert.Equal(ErrorCodes.InvalidParams, (await Assert.ThrowsAsync<ProtocolException>(Run)).Code);
+                }
+                finally { await dispatcher.InvokeAsync(() => pair.Item1.Close()).Task; }
+            }
+            dispatcher.BeginInvokeShutdown(DispatcherPriority.Send); thread.Join();
+        }
+
         [Fact]
         public async Task VirtualizedListRealizesLastItemWithoutGeneratingAll()
         {
@@ -117,6 +158,7 @@ namespace WinTestKit.Inspector.Agent.Query.Tests
                 try
                 {
                     var search = new ItemSearch { Container = registry.Register(pair.Item2, dispatcher, TypeInfoBuilder.Build(pair.Item2.GetType())), Match = new ItemMatch { Kind = "index", Index = 4999 }, MaxItems = 5000 };
+                    search.Match = new ItemMatch { Kind = "equals", Path = new[] { new PathSegment { Kind = "uia", Name = "name" } }, Value = new JsonStringNode("4999") };
                     await dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle).Task;
                     var result = await RealizeItemEngine.ExecuteAsync(executor, dispatcher, pair.Item2, search, registry, new ObjectInspector(), DateTime.UtcNow.AddSeconds(60), 2000, CancellationToken.None);
                     Assert.Equal("performed", result.Outcome);
@@ -125,6 +167,7 @@ namespace WinTestKit.Inspector.Agent.Query.Tests
                     Assert.InRange(count, 1, 199);
                     Assert.NotNull(await dispatcher.InvokeAsync(() => pair.Item2.ItemContainerGenerator.ContainerFromIndex(4999)).Task);
                     await dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle).Task;
+                    search.Match = new ItemMatch { Kind = "index", Index = 4999 };
                     var again = await RealizeItemEngine.ExecuteAsync(executor, dispatcher, pair.Item2, search, registry, new ObjectInspector(), DateTime.UtcNow.AddSeconds(60), 2000, CancellationToken.None);
                     Assert.Equal("noChange", again.Outcome);
                 }

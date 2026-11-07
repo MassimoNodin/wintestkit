@@ -41,6 +41,7 @@ public class FixtureTests
         ["HitTestResult"] = n => HitTestResult.FromJson(n),
         ["Locator"] = n => Locator.FromJson(n),
         ["Predicate"] = n => Predicate.FromJson(n),
+        ["ItemMatch"] = n => ItemMatch.FromJson(n),
         ["QueryFindAllParams"] = n => QueryFindAllParams.FromJson(n),
         ["QueryFindAllResult"] = n => QueryFindAllResult.FromJson(n),
         ["QueryFindParams"] = n => QueryFindParams.FromJson(n),

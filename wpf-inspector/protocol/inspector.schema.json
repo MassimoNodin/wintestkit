@@ -534,7 +534,7 @@
             },
             "name": {
               "anyOf": [
-                { "type": "string", "pattern": "^selection_name_(0|[1-9][0-9]{0,8})$" },
+                { "type": "string", "pattern": "^(selection|item)_name_(0|[1-9][0-9]{0,8})$" },
                 { "enum": [
                 "automation_id",
                 "name",
@@ -549,7 +549,8 @@
                 "range_value",
                 "document_text",
                 "is_password",
-                "selection_count"
+                "selection_count",
+                "item_count"
               ] }
               ]
             }
@@ -2828,7 +2829,10 @@
               "const": "equals"
             },
             "path": {
-              "$ref": "#/$defs/Path"
+              "allOf": [
+                { "$ref": "#/$defs/Path" },
+                { "items": { "if": { "properties": { "kind": { "const": "uia" } }, "required": ["kind"] }, "then": { "properties": { "name": { "const": "name" } } } } }
+              ]
             },
             "value": {
               "$ref": "#/$defs/Scalar"
@@ -2848,7 +2852,10 @@
               "const": "regex"
             },
             "path": {
-              "$ref": "#/$defs/Path"
+              "allOf": [
+                { "$ref": "#/$defs/Path" },
+                { "items": { "if": { "properties": { "kind": { "const": "uia" } }, "required": ["kind"] }, "then": { "properties": { "name": { "const": "name" } } } } }
+              ]
             },
             "pattern": {
               "type": "string",

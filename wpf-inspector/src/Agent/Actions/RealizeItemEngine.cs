@@ -52,7 +52,16 @@ namespace WinTestKit.Inspector.Agent.Actions
                         token.ThrowIfCancellationRequested();
                         object item = control.Items[visited];
                         bool found;
-                        try { found = predicate == null ? visited == match.Index : item != null && predicate.MatchesObject(item, dispatcher, context); }
+                        try
+                        {
+                            if (predicate == null) found = visited == match.Index;
+                            else if (match.Path![0].Kind == "uia")
+                            {
+                                ValueDto value = PeerIdentity.Read(control, "item_name_" + visited, registry, dispatcher);
+                                found = value.Status != "unavailable" && predicate.MatchesValue(value, context);
+                            }
+                            else found = item != null && predicate.MatchesObject(item, dispatcher, context);
+                        }
                         catch (OperationCanceledException) when (context.Remaining <= TimeSpan.Zero && !token.IsCancellationRequested)
                         { throw ProtocolException.Deadline("Item search deadline reached."); }
                         catch (ProtocolException error) when (error.Code == ErrorCodes.RegexTimeout && context.Remaining <= TimeSpan.Zero)

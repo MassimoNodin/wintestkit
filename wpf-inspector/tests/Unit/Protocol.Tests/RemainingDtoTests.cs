@@ -10,6 +10,7 @@ public class RemainingDtoTests
     private const string Handle = "{\"sessionId\":\"s\",\"objectId\":\"o\",\"generation\":1,\"type\":{\"name\":\"T\",\"fullName\":\"T\",\"assemblyName\":\"A\",\"assemblyQualifiedName\":\"T, A\",\"baseTypes\":[]},\"dispatcherId\":\"d\"}";
     [Fact] public void ItemVariantsAndBounds() {
         foreach (var s in new[]{"{\"kind\":\"index\",\"index\":9999}","{\"kind\":\"equals\",\"path\":[{\"kind\":\"uia\",\"name\":\"name\"}],\"value\":true}","{\"kind\":\"regex\",\"path\":[{\"kind\":\"uia\",\"name\":\"name\"}],\"pattern\":\"x\",\"flags\":[\"ignoreCase\"]}"}) ItemMatch.FromJson(ItemMatch.FromJson(Parse(s)).ToJson());
+        Assert.Throws<ProtocolException>(() => ItemMatch.FromJson(Parse("{\"kind\":\"equals\",\"path\":[{\"kind\":\"uia\",\"name\":\"automation_id\"}],\"value\":\"x\"}")));
         Assert.Throws<ProtocolException>(() => ItemMatch.FromJson(Parse("{\"kind\":\"index\",\"index\":10000}")));
         Assert.Throws<ProtocolException>(() => ItemMatch.FromJson(Parse("{\"kind\":\"index\",\"index\":0,\"value\":1}")));
     }

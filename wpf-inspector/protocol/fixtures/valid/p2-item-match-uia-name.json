@@ -1,0 +1,1 @@
+{"schema":"ItemMatch","instance":{"kind":"equals","path":[{"kind":"uia","name":"name"}],"value":"Alpha"}}
