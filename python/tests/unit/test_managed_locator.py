@@ -353,7 +353,10 @@ def test_managed_aliases_are_explicit_and_uia_aliases_unchanged(tmp_path):
 
 def test_disabled_managed_alias_fails_without_probing(monkeypatch, tmp_path):
     root = FakeElement("Window", children=[FakeElement("Button")])
-    cfg = load_config(tmp_path, {"property_aliases": {"ClrFullClassName": "type:FullName"}})
+    cfg = load_config(
+        tmp_path,
+        {"inspector.enabled": False, "property_aliases": {"ClrFullClassName": "type:FullName"}},
+    )
     from wintestkit.inspector import probe
 
     monkeypatch.setattr(probe, "current_identity", lambda pid: pytest.fail("disabled probe"))

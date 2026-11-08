@@ -143,8 +143,8 @@ class AppConfig:
 
 @dataclass(frozen=True)
 class InspectorConfig:
-    enabled: bool = False
-    attach: Literal["manual", "on-demand"] = "manual"
+    enabled: bool = True
+    attach: Literal["manual", "on-demand"] = "on-demand"
     attach_timeout: float = 10.0
     request_timeout: float = 2.0
     redact_names: tuple[str, ...] = ()
@@ -176,7 +176,7 @@ class WtkConfig:
     object_previews_share: bool = False
     highlight_color: str = "#FF0000"
     inspector: InspectorConfig = field(default_factory=InspectorConfig)
-    backend: Literal["uia", "auto"] = "uia"
+    backend: Literal["uia", "auto"] = "auto"
 
 
 # -- project discovery ----------------------------------------------------------------------------
@@ -489,12 +489,12 @@ def _build_inspector(values: Mapping[str, Any]) -> InspectorConfig:
 
     names = _redact_names(values.get("inspector.redact_names", []))
     return InspectorConfig(
-        enabled=_boolean("inspector.enabled", values.get("inspector.enabled", False)),
+        enabled=_boolean("inspector.enabled", values.get("inspector.enabled", True)),
         attach=cast(
             "Literal['manual', 'on-demand']",
             _enum(
                 "inspector.attach",
-                values.get("inspector.attach", "manual"),
+                values.get("inspector.attach", "on-demand"),
                 ("manual", "on-demand"),
             ),
         ),
@@ -556,10 +556,10 @@ def load_config(start: Path | None = None, overrides: Mapping[str, Any] | None =
         timeout=_number("timeout", values.get("timeout", 10.0), positive=True),
         backend=cast(
             "Literal['uia', 'auto']",
-            _enum("backend", values.get("backend", "uia"), ("uia", "auto")),
+            _enum("backend", values.get("backend", "auto"), ("uia", "auto")),
         ),
         input_mode=cast(
-            "InputMode", _enum("input_mode", values.get("input_mode", "pattern"), INPUT_MODES)
+            "InputMode", _enum("input_mode", values.get("input_mode", "mouse"), INPUT_MODES)
         ),
         screenshots=cast(
             "ScreenshotMode",

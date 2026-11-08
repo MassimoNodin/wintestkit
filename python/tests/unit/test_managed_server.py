@@ -375,7 +375,7 @@ def test_disabled_methods_do_not_probe_or_create_registry(
     managed_server: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     server, output, _ = managed_server
-    server.cfg = load_config(server.cfg.root)
+    server.cfg = load_config(server.cfg.root, {"inspector.enabled": False})
     monkeypatch.setattr(probe, "identify", _unexpected_probe)
     monkeypatch.setattr(runtime, "inspector_sessions", lambda: pytest.fail("unexpected registry"))
     for method, params in (

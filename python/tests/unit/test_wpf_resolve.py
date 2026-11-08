@@ -146,6 +146,38 @@ def test_attach_failure_reports_cause_and_fix(setup, monkeypatch, code):
     assert "backend: uia" in str(error.value)
 
 
+def test_default_wpf_missing_payload_suggests_install_or_uia(tmp_path, monkeypatch):
+    from wintestkit import runtime
+    from wintestkit.config import load_config
+    from wintestkit.inspector import payload, probe, sessions
+    from wintestkit.inspector.models import ProcessIdentity
+
+    identity = ProcessIdentity(42, "2026-01-01T00:00:00Z")
+    window = SimpleNamespace(framework_id="WPF", process_id=42)
+    monkeypatch.setattr(probe, "current_identity", lambda pid: identity)
+    monkeypatch.setattr(wpf_resolve, "root_handle", lambda window: 12)
+    monkeypatch.setattr(
+        sessions.SessionRegistry, "_attach_owned", lambda *args: payload.load_payload()
+    )
+
+    def missing(package):
+        raise ModuleNotFoundError(package)
+
+    monkeypatch.setattr(payload.resources, "files", missing)
+    runtime.reset()
+    try:
+        with (
+            runtime.config_scope(load_config(tmp_path)),
+            pytest.raises(InspectorUnavailableError) as error,
+        ):
+            wpf_resolve.route(window)
+        assert error.value.code == "payloadMissing"
+        assert 'pip install "wintestkit[inspector]"' in str(error.value)
+        assert "backend: uia" in str(error.value)
+    finally:
+        runtime.reset()
+
+
 @pytest.mark.parametrize("feature", ["query", "geometry", "exactUiaMapping"])
 def test_missing_required_feature_fails(setup, feature):
     _, client, window = setup

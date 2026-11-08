@@ -66,8 +66,8 @@ def test_defaults_without_pyproject(tmp_path: Path) -> None:
     assert config.app is None
     assert config.launch == "per-test"
     assert config.timeout == 10.0
-    assert config.backend == "uia"
-    assert config.input_mode == "pattern"
+    assert config.backend == "auto"
+    assert config.input_mode == "mouse"
     assert config.screenshots == "on-failure"
     assert config.report_dir == tmp_path.resolve() / "wtk-report"
     assert config.highlight_actions is False

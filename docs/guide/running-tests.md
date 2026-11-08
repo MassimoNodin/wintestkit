@@ -53,8 +53,11 @@ Shared `wintestkit.yaml` (commit this):
 ```yaml
 launch: per-test
 timeout: 10
-backend: uia
-input_mode: pattern
+backend: auto
+input_mode: mouse
+inspector:
+  enabled: true
+  attach: on-demand
 screenshots: on-failure
 report_dir: wtk-report
 python_paths: ["."]
@@ -64,10 +67,13 @@ app:
   close_timeout: 10
 ```
 
-`backend` defaults to `uia`. Set it to `auto` to use the inspector's WPF tree for WPF
-windows and UI Automation for other windows. WPF resolution requires an enabled and attached
-inspector; it does not fall back to UI Automation if attachment or mapping fails. Grid row and
-cell item selection still uses UI Automation until phase 3.
+`backend: auto` selects the WPF tree for WPF windows and UI Automation for other windows.
+WPF resolution attaches the enabled inspector on demand by default; install `wintestkit[inspector]`
+or select `backend: uia` to opt out. Agent failures never silently fall
+back to UI Automation. Security software blocking the agent causes WPF tests to fail until
+the agent is allow-listed; run `wtk doctor --agent` to diagnose it. Set `backend: uia` to
+opt out and use UI Automation. `input_mode: mouse` sends real input by default on both
+backends; set `input_mode: pattern` to opt out or override `mode` on individual actions.
 
 Local `wintestkit.local.yaml` (do not commit this):
 

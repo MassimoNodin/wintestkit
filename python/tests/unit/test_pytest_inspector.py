@@ -27,7 +27,7 @@ def test_pytest_header_and_attachment_summary(pytester: pytest.Pytester) -> None
 
 
 def test_pytest_disabled_does_not_print_inspector_report(pytester: pytest.Pytester) -> None:
-    pytester.makepyprojecttoml("[tool.wintestkit]\n")
+    pytester.makepyprojecttoml("[tool.wintestkit.inspector]\nenabled = false\n")
     pytester.makepyfile("def test_x(): pass")
     result = pytester.runpytest("-p", "no:cacheprovider", "--wtk-no-report")
     result.assert_outcomes(passed=1)
