@@ -461,6 +461,10 @@ def test_phase3_virtual_items_selection(owned, backend, mode, control_id, monkey
                     ),
                 )
                 assert any(item.rect is not None and not item.is_offscreen for item in items)
+                from wintestkit.engine.actions import ensure_visible
+
+                ensure_visible(items[0])
+                assert not items[0].as_live().is_offscreen
             print(f"{backend} {mode} {control_id}: median {statistics.median(times):.3f}s")
 
 
@@ -1286,8 +1290,8 @@ def test_phase3_hidden_actions_parity(owned, mode, monkeypatch):
                     )
                 errors = []
                 for action in (
-                    lambda: page.hidden.click(timeout=0.5),
-                    lambda: page.hidden.type("hidden", timeout=0.5),
+                    lambda: page.hidden.click(timeout=2),
+                    lambda: page.hidden.type("hidden", timeout=2),
                 ):
                     start = time.monotonic()
                     with pytest.raises(WtkError) as error:
@@ -1306,7 +1310,8 @@ def test_phase3_hidden_actions_parity(owned, mode, monkeypatch):
     assert outcomes[0][1] == outcomes[1][1]
 
 
-def test_peerless_mouse_click(owned, monkeypatch):
+@pytest.mark.parametrize("mode", ["pattern", "mouse"])
+def test_peerless_mouse_click(owned, monkeypatch, mode):
     from wintestkit.backends import WpfElement
 
     scope, path = owned
@@ -1319,15 +1324,22 @@ def test_peerless_mouse_click(owned, monkeypatch):
         monkeypatch.setattr(
             WpfElement, "as_uia", lambda self: pytest.fail("unexpected UIA mapping")
         )
-        assert click(target, mode="mouse") == "mouse"
+        if mode == "pattern":
+            from wintestkit.errors import UIAError
+
+            with pytest.raises(UIAError, match="supported_patterns: unavailable"):
+                click(target, mode=mode)
+            return
+        assert click(target, mode=mode) == "mouse"
         assert (
             resolve(scope, Locator(automation_id="ParityInteractionEffect")).name
             == "Peerless clicked"
         )
 
 
+@pytest.mark.parametrize("mode", ["pattern", "mouse"])
 @pytest.mark.parametrize("backend", ["uia", "auto"])
-def test_partly_scrolled_mouse_parity(owned, backend):
+def test_partly_scrolled_mouse_parity(owned, backend, mode):
     from wintestkit.expect import expect
     from wintestkit.model import Element, Page
 
@@ -1339,5 +1351,89 @@ def test_partly_scrolled_mouse_parity(owned, backend):
 
     page = FixturePage(scope.app)
     with runtime.config_scope(replace(config(path, "agent"), backend=backend)):
-        page.button.click(mode="mouse")
+        page.button.click(mode=mode)
         expect(page.effect, timeout=5).to_have_text("Clipped clicked")
+
+
+@pytest.mark.parametrize("backend", ["uia", "auto"])
+def test_background_window_mouse_and_keyboard(owned, backend):
+    from wintestkit.controls import TextBox
+    from wintestkit.expect import expect
+    from wintestkit.model import Element, Page
+
+    scope, path = owned
+
+    class FixturePage(Page):
+        button = Element(automation_id="FancyAutomationId")
+        effect = Element(automation_id="ActionEffect")
+        source = TextBox(automation_id="BindingSource")
+
+    page = FixturePage(scope.app)
+    # A native top-level window avoids creating multiple Tcl interpreters in one run.
+    hwnd = win32.CreateWindowExW(
+        0,
+        "STATIC",
+        "WinTestKit foreground helper",
+        0x10CF0000,
+        100,
+        100,
+        200,
+        100,
+        None,
+        None,
+        None,
+        None,
+    )
+    assert hwnd
+    try:
+        with runtime.config_scope(replace(config(path, "agent"), backend=backend)):
+            assert win32.bring_to_foreground(hwnd)
+            assert win32.GetForegroundWindow() == hwnd
+            page.button.click(mode="mouse")
+            expect(page.effect, timeout=5).to_have_text("Clicked 1")
+            assert win32.bring_to_foreground(hwnd)
+            assert win32.GetForegroundWindow() == hwnd
+            page.source.focus()
+            page.source.press("Ctrl+A Backspace h i")
+            expect(page.source, timeout=5).to_have_value("hi")
+    finally:
+        win32.DestroyWindow(hwnd)
+
+
+@pytest.mark.parametrize("mode", ["pattern", "mouse"])
+@pytest.mark.parametrize("backend", ["uia", "auto"])
+def test_ensure_visible_scrolled(owned, backend, mode):
+    from wintestkit.engine.actions import ensure_visible
+
+    scope, path = owned
+    with runtime.config_scope(replace(config(path, "agent"), backend=backend, input_mode=mode)):
+        target = resolve(scope, Locator(automation_id="RichText"))
+        # WPF's UIA provider reports this clipped descendant as on-screen.
+        assert target.as_live().is_offscreen == (backend == "auto")
+        ensure_visible(target)
+        assert not target.as_live().is_offscreen
+
+
+@pytest.mark.parametrize("mode", ["pattern", "mouse"])
+@pytest.mark.parametrize("backend", ["uia", "auto"])
+def test_ensure_visible_virtual_items_cached(owned, backend, mode):
+    from wintestkit.engine import waits
+    from wintestkit.engine.actions import ensure_visible
+
+    scope, path = owned
+    waits.wait_until(
+        lambda: any(w.automation_id == "VirtualItemsWindow" for w in scope.app.top_level_windows()),
+        10,
+        description="virtual items window",
+    )
+    scope = Scope(scope.app, WindowLocator(automation_id="VirtualItemsWindow"))
+    with runtime.config_scope(replace(config(path, "agent"), backend=backend, input_mode=mode)):
+        items = resolve_all(
+            scope,
+            Locator(control_type="ListItem", within=Locator(automation_id="VirtualItemsList")),
+        )
+        offscreen = [item for item in items if item.as_live().is_offscreen]
+        assert offscreen, f"No off-screen cached item among {len(items)} realized items"
+        target = offscreen[0]
+        ensure_visible(target)
+        assert not target.as_live().is_offscreen
