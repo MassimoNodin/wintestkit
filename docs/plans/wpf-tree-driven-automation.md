@@ -393,13 +393,14 @@ that case. Each row names the specific operation or outcome tested, not every co
 | focus: followed by keyboard input | n/a | n/a | n/a | n/a |
 | type and clear: value | Pass | Pass | Pass | Pass |
 | press: value | n/a | n/a | n/a | n/a |
-| ensure_visible | not covered | not covered | not covered | not covered |
+| ensure_visible: outer scrolled descendant | UIA reports on-screen; no-op | UIA reports on-screen; no-op | Pass | Pass |
+| ensure_visible: off-screen cached virtualized item | Pass | Pass | Pass | Pass |
 | expand/collapse: visibility | Pass | Pass | Pass | Pass |
 | context menu: choose item | Pass | Pass | Pass | Pass |
-| peerless element: mouse click | not covered | no UIA peer | not covered | Pass |
-| partly clipped: mouse click | not covered | Pass | not covered | Pass |
+| peerless element: click | no UIA peer | no UIA peer | unavailable pattern metadata error | Pass |
+| partly clipped: click | Pass | Pass | Pass | Pass |
 | virtualized item 4,999: select | Pass | Pass | Pass | Pass |
-| doctor agent check | not covered | not covered | not covered | not covered |
+| doctor agent check | backend-independent | backend-independent | Pass (auto) | Pass (auto) |
 | disabled: click timeout message | Pass | Pass | Pass | Pass |
 | missing item: selection message | Pass | Pass | Pass | Pass |
 | read-only: typing outcome and text | Pass | Pass | Pass | Pass |
@@ -409,7 +410,14 @@ that case. Each row names the specific operation or outcome tested, not every co
 | failing typed expectations: messages | Pass | Pass | Pass | Pass |
 
 UIA omits elements inside a collapsed Expander; auto finds them as hidden. The peerless
-element is addressable only on auto. DataGrid `row()`, `cell()`, `row_count()`,
+element is addressable only on auto; pattern mode fails on unavailable pattern metadata,
+while mouse mode clicks it. The doctor agent check is covered by
+`python/tests/unit/test_doctor_agent_real.py` in auto; it is backend-independent.
+The UIA provider reports the outer scrolled descendant as on-screen, so ensure_visible
+does not scroll it. Virtualized coverage uses an off-screen item realized in the list's
+cache, then verifies that ensure_visible scrolls it into view.
+The shared foreground helper retries through a temporarily attached foreground input thread
+when Windows denies direct activation; the existing ownership, foreground and hit tests remain. DataGrid `row()`, `cell()`, `row_count()`,
 `column_count()` and `find_row()` still use the UIA Grid pattern on both backends. Grid
 row mouse selection clicks a safe row header when available, otherwise it uses
 `act.select`, as UIA does. UIA select uses the selection pattern in both input modes.
@@ -423,7 +431,20 @@ Median wall times over three selections (seconds, pattern/mouse) were: ListBox U
 0.260/0.288 and auto 0.193/0.296; DataGrid UIA 1.014/1.165 and auto 0.569/0.630.
 These are fixture measurements, including selection overhead, and vary with machine load.
 
-Serial module runs from `python/` with `WTK_INSPECTOR_REAL=1` measured process wall time:
+Serial measurements with the expanded coverage, from `python/` with
+`WTK_INSPECTOR_REAL=1`:
+
+- `-k auto`: 29 passed, 78 deselected in 82.75 s.
+- `-k uia`: 29 passed, 78 deselected in 118.67 s (a preceding run hit an inspector limit).
+- Full module: 107 passed in 437.75 s.
+
+Earlier post-fix serial runs before the cached virtualized-item cases:
+
+- `-k auto`: 27 passed, 76 deselected in 73.24 s.
+- `-k uia`: 27 passed, 76 deselected in 102.20 s.
+- The combined five-module live suite passed twice: 109 passed in 386.71 s and 388.09 s.
+
+Historical pre-fix serial module runs measured process wall time:
 
 - `-k uia`: 98.299 s, 23 passed and 71 deselected.
 - `-k auto`: 65.717 s, 16 passed, 7 failed and 71 deselected.
