@@ -172,3 +172,28 @@ def test_foreground_activation_never_uses_synthetic_alt(monkeypatch: pytest.Monk
     monkeypatch.setattr(win32, "BringWindowToTop", lambda *args: False)
     monkeypatch.setattr(win32, "_tap_alt", lambda: pytest.fail("unsafe synthetic Alt"))
     assert not win32.bring_to_foreground(100, timeout=0)
+
+
+def test_foreground_activation_attaches_and_detaches_input(monkeypatch: pytest.MonkeyPatch) -> None:
+    foreground = [999]
+    calls: list[tuple[int, int, bool]] = []
+    monkeypatch.setattr(win32, "IsIconic", lambda hwnd: False)
+    monkeypatch.setattr(win32, "GetForegroundWindow", lambda: foreground[0])
+    monkeypatch.setattr(win32, "AllowSetForegroundWindow", lambda *args: True)
+    monkeypatch.setattr(win32, "GetWindowThreadProcessId", lambda hwnd, pid: 22)
+    monkeypatch.setattr(win32, "GetCurrentThreadId", lambda: 11)
+
+    def attach(source: int, target: int, enabled: bool) -> bool:
+        calls.append((source, target, enabled))
+        return True
+
+    def activate(hwnd: int) -> bool:
+        if calls:
+            foreground[0] = hwnd
+        return True
+
+    monkeypatch.setattr(win32, "AttachThreadInput", attach)
+    monkeypatch.setattr(win32, "SetForegroundWindow", activate)
+    monkeypatch.setattr(win32, "BringWindowToTop", lambda hwnd: True)
+    assert win32.bring_to_foreground(100, timeout=0)
+    assert calls == [(11, 22, True), (11, 22, False)]

@@ -121,9 +121,10 @@ def _window_guard(hwnd: int, process_id: int, *, activate: bool = False) -> None
         root = owner
     foreground = win32.GetForegroundWindow()
     if activate and foreground not in (hwnd, root):
-        if not win32.bring_to_foreground(root):
-            raise ActionError("Cannot activate the target window; refusing global input")
+        raised = win32.bring_to_foreground(root)
         foreground = win32.GetForegroundWindow()
+        if not raised and foreground not in (hwnd, root):
+            raise ActionError("Cannot activate the target window; refusing global input")
     if foreground not in (hwnd, root):
         raise ActionError(error)
 
