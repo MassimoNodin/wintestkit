@@ -193,6 +193,32 @@ def test_phase2_backend_parity(owned, backend, monkeypatch):
         expect(page.effect, timeout=5).to_have_text("Clicked 1")
 
 
+def test_default_backend_and_mouse_input(owned):
+    from wintestkit.controls import Button, Text
+    from wintestkit.expect import expect
+    from wintestkit.model import Page
+
+    scope, path = owned
+
+    class FixturePage(Page):
+        button = Button(automation_id="FancyAutomationId")
+        effect = Text(automation_id="ActionEffect")
+
+    records = []
+    remove = runtime.add_step_listener(records.append)
+    try:
+        with runtime.config_scope(load_config(path)):
+            page = FixturePage(scope.app)
+            page.button.click()
+            expect(page.effect, timeout=5).to_have_text("Clicked 1")
+        record = next(record for record in records if record.action == "click")
+        assert record.backend == "wpf"
+        assert record.args["mode"] == "mouse"
+        assert record.args["strategy"] == "mouse"
+    finally:
+        remove()
+
+
 @pytest.mark.parametrize("mode", ["pattern", "mouse"])
 @pytest.mark.parametrize("backend", ["uia", "auto"])
 def test_phase3_typed_button_click(owned, backend, mode, monkeypatch):
@@ -739,7 +765,7 @@ def test_parity_and_features(owned):
     for locator in cases:
         results = []
         for mode in ("agent", "postfilter"):
-            with runtime.config_scope(config(path, mode)):
+            with runtime.config_scope(replace(config(path, mode), backend="uia")):
                 if locator.index is not None:
                     found = [resolve(scope, locator)]
                 else:
@@ -747,7 +773,7 @@ def test_parity_and_features(owned):
                 results.append([element.runtime_id for element in found])
         print("PARITY", locator.describe(), results)
         assert results[0] == results[1] and results[0]
-    with runtime.config_scope(config(path, "agent")):
+    with runtime.config_scope(replace(config(path, "agent"), backend="uia")):
         fancy = resolve(
             scope,
             Locator(
@@ -871,11 +897,11 @@ def test_large_cap(owned):
         window=large,
     )
     unique = replace(shared, where=(*shared.where, ("clr:Key", "Large 1499")))
-    with runtime.config_scope(config(path, "postfilter")):
+    with runtime.config_scope(replace(config(path, "postfilter"), backend="uia")):
         with pytest.raises(InspectorLimitError) as exc:
             resolve_all(scope, shared)
         assert exc.value.code == "limitExceeded"
-    with runtime.config_scope(config(path, "agent")):
+    with runtime.config_scope(replace(config(path, "agent"), backend="uia")):
         assert resolve(scope, unique).automation_id == "Large1499"
         with pytest.raises(AmbiguousElementError):
             resolve(scope, shared)
@@ -1161,7 +1187,7 @@ def test_phase3_disabled_action_messages_match(owned, mode, monkeypatch):
                         WpfElement, "as_uia", lambda self: pytest.fail("unexpected UIA mapping")
                     )
                 with pytest.raises(WaitTimeoutError) as error:
-                    page.disabled.click(timeout=0.5)
+                    page.disabled.click(timeout=2.0)
                 messages.append(re.sub(r"[0-9.]+s", "<time>", str(error.value)))
     assert messages[0] == messages[1]
 

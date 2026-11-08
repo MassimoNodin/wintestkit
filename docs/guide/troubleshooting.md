@@ -5,9 +5,13 @@
 **Preview:** For unreleased managed inspection, see the [state and error guide](managed-inspection.md#troubleshooting).
 Run `wtk doctor`, and ask your security administrator about policy blocks rather than disabling protection.
 
+A security policy that blocks the WPF agent makes WPF tests fail without a UIA fallback until
+the agent is allow-listed. Run `wtk doctor --agent` to investigate, or explicitly configure
+`backend: uia` to opt out. Set `input_mode: pattern` if real mouse input is unsuitable.
+
 ## Start with `wtk doctor`
 
-With `backend: auto` and `inspector.enabled`, doctor checks the WPF agent on a running configured application using an authenticated hello, without reading application values. It reports the agent version, target framework, architecture and advertised features, or the error and a suggested fix. If the application is stopped, the check is skipped; `wtk doctor --agent` starts the configured application, checks it, and closes only that launched process. A missing WPF window fails the check. UIA-only and disabled-inspector configurations skip it. Quick pre-run checks never attach or launch.
+With the defaults `backend: auto`, `inspector.enabled: true`, and `inspector.attach: on-demand`, doctor checks the WPF agent on a running configured application using an authenticated hello, without reading application values. It reports the agent version, target framework, architecture and advertised features, or the error and a suggested fix. If the application is stopped, the check is skipped; `wtk doctor --agent` starts the configured application, checks it, and closes only that launched process. A missing WPF window fails the check. UIA-only and disabled-inspector configurations skip it. Quick pre-run checks never attach or launch.
 
 ```powershell
 wtk doctor

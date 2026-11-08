@@ -93,7 +93,8 @@ def load_payload() -> Payload:
         root = Path(str(resources.files("wintestkit_inspector") / "payload"))
     except ModuleNotFoundError as error:
         raise InspectorUnavailableError(
-            f"Install wintestkit[inspector]=={__version__}", code="payloadMissing"
+            'Install the inspector with pip install "wintestkit[inspector]" or set backend: uia',
+            code="payloadMissing",
         ) from error
     try:
         manifest_path = _path(root, "manifest.json")

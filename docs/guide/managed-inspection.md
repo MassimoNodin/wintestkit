@@ -21,6 +21,17 @@ single-file applications, multiple WPF runtimes or AppDomains in one process, di
 users or Windows sessions, protected processes, and mismatched integrity levels. Unlisted
 .NET versions are not assumed compatible. Use an interactive Windows desktop.
 
+With the default `backend: auto`, WPF windows use the agent and non-WPF windows use UIA.
+Agent failures do not fall back silently: if security software blocks the agent, WPF tests
+fail until it is allow-listed. Run `wtk doctor --agent`; use `backend: uia` to opt out.
+The default `input_mode: mouse` sends real input on both backends; use `input_mode: pattern`
+to request automation-peer or UIA pattern actions instead.
+
+WPF can find hidden descendants of collapsed expanders and peerless elements that UIA may
+omit. Peerless elements require mouse actions. DataGrid row/cell reads and counts still use
+UIA Grid patterns, and mouse row selection may use a row header or pattern fallback.
+A visible irregular region may have no safe click point; unrooted handles may go stale.
+
 ## Installation and configuration
 
 Install in the Python environment used by WinTestKit: `pip install 'wintestkit[inspector]'`
@@ -31,7 +42,7 @@ Configure shared defaults in `wintestkit.yaml` and machine-specific overrides in
 ```yaml
 inspector:
   enabled: true
-  attach: manual
+  attach: on-demand
   attach_timeout: 10.0
   request_timeout: 2.0
   query: agent
@@ -40,17 +51,17 @@ inspector:
 
 | Key | Default | Allowed values |
 |---|---|---|
-| `inspector.enabled` | `false` | Boolean |
-| `inspector.attach` | `manual` | `manual` or `on-demand` |
+| `inspector.enabled` | `true` | Boolean |
+| `inspector.attach` | `on-demand` | `manual` or `on-demand` |
 | `inspector.attach_timeout` | `10.0` | Positive seconds, at most 10 |
 | `inspector.request_timeout` | `2.0` | Positive seconds, at most 2 |
 | `inspector.query` | `agent` | `agent` or `postfilter` |
 | `inspector.redact_names` | `[]` | At most 32 nonempty names, each at most 128 Unicode characters |
 
 Redaction names from configuration layers are additive. There are no inspector environment
-variable overrides. Committing `enabled: true` and `attach: on-demand` in shared configuration
-authorizes managed queries, including headless tests, to attach when needed; it does not attach
-just because the application starts or UIA is queried. `manual` requires explicit attachment.
+variable overrides. The defaults authorize managed queries, including headless tests, to attach
+when needed; they do not attach just because the application starts or UIA is queried.
+Set `enabled: false` to disable inspection or `attach: manual` to require explicit attachment.
 Review that authorization with your team. Spy still requires workspace trust and confirmation.
 
 ## Spy and reading values

@@ -13,7 +13,7 @@ from wintestkit.uia import win32
 
 @pytest.fixture
 def setup_agent(tmp_path, monkeypatch):
-    cfg = replace(load_config(tmp_path), backend="auto", app=AppConfig(path=tmp_path / "app.exe"))
+    cfg = replace(load_config(tmp_path), app=AppConfig(path=tmp_path / "app.exe"))
     cfg = replace(cfg, inspector=replace(cfg.inspector, enabled=True))
     monkeypatch.setattr(doctor, "_app_pids", lambda cfg: ("app.exe", [123]))
     facts = SimpleNamespace(wpf_loaded=True, identity=SimpleNamespace(pid=123), runtime="net10")

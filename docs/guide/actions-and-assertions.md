@@ -11,7 +11,7 @@ Which actions exist depends on how the element is declared. A plain `Element` ha
 
 | Action | What it does | On |
 |---|---|---|
-| `click(mode=None)` | Click. In `pattern` mode (the default) it uses the control's Invoke, Toggle, SelectionItem or ExpandCollapse pattern and falls back to a mouse click; `mode="mouse"` always moves the mouse and clicks | `Button`, `CheckBox`, `RadioButton`, `ListItem` |
+| `click(mode=None)` | Click. In `pattern` mode it uses the control's Invoke, Toggle, SelectionItem or ExpandCollapse pattern and falls back to a mouse click; `mode="mouse"` (the default) moves the mouse and clicks | `Button`, `CheckBox`, `RadioButton`, `ListItem` |
 | `double_click()` / `right_click()` | Mouse input at the center of the element | `Button`, `CheckBox`, `RadioButton` |
 | `hover()` | Move the mouse over the element | every element |
 | `type(text, clear=True, keys=False)` | Enter text: set through the Value pattern when possible, otherwise typed on the keyboard. `clear=False` appends; `keys=True` always types key by key | `TextBox` |
@@ -51,10 +51,9 @@ def test_typing_and_keys(main: MainPage) -> None:
 
 ### Pattern or mouse input
 
-`pattern` input talks to the control through UI Automation. It works when another window covers
-the control, doesn't move the mouse and doesn't depend on screen coordinates, so it is the default. Use `mouse` when the application
-reacts to real mouse events (custom controls, drag-sensitive areas) or to reproduce what a user
-does exactly. Set it per call, or for the whole project with `input_mode = "mouse"`:
+`mouse` input is the default on both backends and reproduces real user input. `pattern`
+uses automation-peer actions on WPF and UI Automation patterns on UIA; it does not move the
+mouse. Opt out with `input_mode: pattern` in YAML or use `mode="pattern"` per call:
 
 Global mouse and keyboard fallbacks refuse input when the owning target window
 cannot be activated or no longer owns the foreground. Mouse targets must still
@@ -65,7 +64,7 @@ not make global input atomic against focus changes by Windows or another process
 ```python
 # pseudo-code
 def test_mouse_mode_and_nth(main: MainPage) -> None:
-    main.sign_in.click(mode="mouse")  # a real mouse click instead of the Invoke pattern
+    main.sign_in.click(mode="pattern")  # opt into the Invoke pattern
     expect(main.status).to_have_text("Invalid credentials")
     main.all_ok_buttons.nth(1).click()  # 0-based
     expect(main.status).to_have_text("B OK")

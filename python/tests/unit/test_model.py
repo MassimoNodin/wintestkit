@@ -298,12 +298,12 @@ def test_click_emits_a_step(
 
     monkeypatch.setattr(actions, "click", fake_click)
     page.sign_in.click()
-    assert seen["mode"] == "pattern"
+    assert seen["mode"] == "mouse"
     (record,) = runtime_setup
     assert record.action == "click"
     assert record.target == "MainPage.sign_in"
     assert record.locator == 'Button[name="Sign in"]'
-    assert record.args == {"mode": "pattern", "strategy": "invoke"}
+    assert record.args == {"mode": "mouse", "strategy": "invoke"}
     assert record.status == "passed"
 
 

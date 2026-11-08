@@ -1,7 +1,7 @@
 # WPF-tree-driven automation: migration plan
 
 Status: decisions D1–D7 made (§3); phases 0–2 done (phase 2 gate passed 2026-11-06,
-§6.3); phase 3 in progress. Planning date: 2026-10-29.
+§6.3); phase 3 implementation complete, gate pending owner sign-off. Planning date: 2026-10-29.
 Builds on: `wpf-dotnet-attribute-analyzer.md` (the *inspector plan*) and the implemented
 inspector on `master` (agent, protocol, Python client, managed locators, Spy panel).
 
@@ -44,7 +44,7 @@ actions; UIA remains for non-WPF windows, and for repositories that opt out with
 | D1 | **How actions are performed** | Both offered, real input is the default. `input_mode: mouse` (default): the agent reports the element's screen geometry and WinTestKit sends real mouse/keyboard input there. `input_mode: pattern`: the agent performs the automation-peer action (Invoke, Toggle, Value, …) inside the app. Same per-call `mode=` override as today |
 | D2 | **Direct writes and method calls** (TestComplete's `obj.IsChecked = True`, `obj.Method()`) | Allowed, opt-in: off by default, only for properties/methods on a repository allowlist, every use recorded in the report |
 | D3 | **Inspector plan amendment** | Approved: the read-only contract is amended (see §9); protocol 2.0 |
-| D4 | **Attach model** | Attach automatically when WinTestKit launches or attaches to a WPF app; one attach per app process |
+| D4 | **Attach model** | Partially delivered: on-demand attach by default at the phase 3 gate (owner, 2026-11-08); phase 7 retains launch-time attach and reattach on restart |
 | D5 | **Agent cannot load** (blocked by policy, unsupported runtime) | Fail. Test steps on WPF windows fail with the agent's error code (`blockedByPolicy`, `unsupportedTarget`, …); there is no silent fallback to UIA. Spy shows the blocked state and its fix instead of a UIA view |
 | D6 | **Virtualized items** | Search the items' data (`ItemsSource`/`Items`) first, then scroll only the single match into view to act on it |
 | D7 | **Default backend** | WPF-first becomes the default as soon as it works: at the end of phase 3 (find, waits and actions pass the parity suite), not after the real-suite gate |
@@ -230,11 +230,11 @@ that window is ~1.2 s, dominated by the UIA RuntimeId lookup that phase 2 remove
 
 Decisions:
 
-- **Backend selection.** `backend: uia | auto` (default `uia` until the phase 3 gate, D7).
+- **Backend selection.** `backend: uia | auto` (now default `auto` after the phase 3 implementation switch, D7).
   Under `auto` the router picks per top-level window: the WPF backend when the window's
   process is a WPF process, UIA otherwise. If a WPF window's agent is unavailable the step
-  fails with the agent error (D5); there is no fallback. Attach stays on the existing
-  `inspector.attach` modes until phase 7 (D4).
+  fails with the agent error (D5); there is no fallback. On-demand attach is the default
+  from the phase 3 gate; launch-time attach and restart reattach remain in phase 7 (D4).
 - **Depth (owner, 2026-10-31).** On the WPF backend `depth=` counts only ancestors that have
   an automation peer, so a locator's depth means the same on both backends. Protocol: Locator
   gains a required `depthMode: "tree" | "peers"`; `peers` counts depth in peer-bearing
@@ -319,15 +319,18 @@ UIA on both backends via `as_uia()`, per the §6.2 phase 2/3 split. The two bugs
 matrix (nested missing managed member and lost diagnostic on a final-poll deadline) are
 fixed with regression tests. The intermittent assertion-redaction failure seen once was not
 reproduced in later runs and remains an open observation. Per-backend timings exclude the
-shared message comparisons. The default stays `backend: uia` until the phase 3 gate (D7).
+shared message comparisons. The phase 3 implementation has since switched the default to `backend: auto` (D7).
 
 ### 6.4 Phase 3 design (2026-11-06)
 
+Owner decision (2026-11-08): enable the inspector and use on-demand attach by default
+with `backend: auto`. This pulls the essential first-use portion of D4 into the phase 3
+gate. Phase 7 retains launch-time attach, reattach on restart, and events.
+
 Decisions (owner, 2026-11-06):
 
-- **Input mode default.** `input_mode` defaults to `mouse` on both backends from the phase 3
-  gate, switched together with `backend: auto` (D1, D7). Until then the default stays
-  `pattern`; per-call `mode=` keeps overriding it.
+- **Input mode default.** `input_mode` now defaults to `mouse` on both backends, switched together with
+  `backend: auto` (D1, D7); per-call `mode=` keeps overriding it.
 - **Item selection.** `act.realizeItem` and the `virtualItems` feature (D6) move from phase 5
   into phase 3, so typed-control item selection on the WPF backend never goes through
   `as_uia()`. Phase 5 keeps only the TestComplete helpers and importer output.
@@ -357,7 +360,7 @@ Design:
   `unsupportedTarget`, ...) so a blocked machine is found before a run under `backend: auto`.
 - **Gate.** The parity suite covers every typed control in both input modes on both
   backends, actions on objects with no UIA peer, and selecting a row 5,000 items down
-  without realizing the others. Then the defaults switch and docs are updated.
+  without realizing the others. Defaults have switched and docs are updated; owner sign-off remains.
 
 Slices: P3a agent actions focus, bringIntoView, scrollIntoView, invoke, toggle, expand,
 collapse, select; P3b agent setValue, setRange, scroll and the Python client `act.*`
@@ -366,6 +369,9 @@ mouse mode on WPF geometry; P3f typed controls on WPF; P3g `wtk doctor` agent-bl
 P3h parity suite, default switch and docs.
 
 ### 6.5 Phase 3 parity results (2026-11-08)
+
+The default-config gate exercises a WPF action with no backend, input mode, or inspector
+settings, including default on-demand attachment (D4 partially delivered).
 
 The matrix records assertions in `test_wpf_query_gate_real.py`, not a gate verdict.
 Pass means the listed outcome is asserted for that configuration; the run results below
@@ -455,8 +461,7 @@ The filters match pytest node IDs, not all tests that exercise a backend. Each s
 those words in their IDs are omitted. The auto-filtered failures reported inability to
 activate the target window, refusing global input.
 
-Remaining work: P3h-2 switches defaults to `backend: auto` and `input_mode: mouse` and
-updates the docs; the owner must provide gate sign-off.
+Remaining work: owner gate sign-off.
 
 ## 7. Test strategy
 

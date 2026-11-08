@@ -84,7 +84,9 @@ def test_configuration_rejects_invalid_values(tmp_path: Path, key: str, value: A
 def test_defaults_and_disabled_mode_never_probe_or_create_registry(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    cfg = load_config(tmp_path)
+    defaults = load_config(tmp_path)
+    assert defaults.inspector.enabled and defaults.inspector.attach == "on-demand"
+    cfg = load_config(tmp_path, {"inspector.enabled": False, "inspector.attach": "manual"})
     assert not cfg.inspector.enabled and cfg.inspector.attach == "manual"
     monkeypatch.setattr(probe, "current_identity", _unexpected_probe)
     monkeypatch.setattr(sessions, "SessionRegistry", _unexpected_registry)
@@ -161,7 +163,14 @@ def test_manual_on_demand_failure_cache_explicit_retry_and_timeout(
     FakeRegistry.instances.clear()
     monkeypatch.setattr(sessions, "SessionRegistry", FakeRegistry)
     monkeypatch.setattr(probe, "current_identity", _identity)
-    cfg = load_config(tmp_path, {"inspector.enabled": True, "inspector.request_timeout": 0.25})
+    cfg = load_config(
+        tmp_path,
+        {
+            "inspector.enabled": True,
+            "inspector.attach": "manual",
+            "inspector.request_timeout": 0.25,
+        },
+    )
     with runtime.config_scope(cfg):
         with pytest.raises(InspectorUnavailableError, match="before using"):
             runtime.managed_client_for(42, deadline=time.monotonic() + 1, target_hwnd=None)
