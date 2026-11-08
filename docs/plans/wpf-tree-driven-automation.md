@@ -365,28 +365,77 @@ methods; P3c agent `act.realizeItem`; P3d pattern mode and reads on the WPF back
 mouse mode on WPF geometry; P3f typed controls on WPF; P3g `wtk doctor` agent-block check;
 P3h parity suite, default switch and docs.
 
-### 6.5 Phase 3 progress (2026-11-07)
+### 6.5 Phase 3 parity results (2026-11-08)
 
-The owned fixture exercises the following parity rows. UIA selection currently uses its
-selection pattern for either configured input mode; `auto` exercises the requested mouse or
-pattern path. Grid row/cell access remains on UIA as designed.
-DataGrid mouse selection clicks a safe row header when available; otherwise it uses
-`act.select` on the realized row, including when row headers are hidden.
+The matrix records assertions in `test_wpf_query_gate_real.py`, not a gate verdict.
+Pass means the listed outcome is asserted for that configuration; the run results below
+must be read separately. `n/a` means the operation is not input-mode-dependent and is
+exercised under both configured modes. `not covered` means this module does not assert
+that case. Each row names the specific operation or outcome tested, not every control API.
 
-| Parity row | UIA | auto |
-| --- | --- | --- |
-| Pattern-mode actions | Pass | Pass |
-| Mouse actions, including partly clipped elements | Pass | Pass |
-| Peerless mouse action | No UIA peer | Pass |
-| Typed-control selection, both modes | Pass | Pass |
-| Virtualized item 4,999, both modes | Pass | Pass |
+| Parity row | UIA pattern | UIA mouse | auto pattern | auto mouse |
+| --- | --- | --- | --- | --- |
+| Button: click and effect | Pass | Pass | Pass | Pass |
+| TextBox: type, clear and value | Pass | Pass | Pass | Pass |
+| CheckBox: check, uncheck, toggle | Pass | Pass | Pass | Pass |
+| RadioButton: select | Pass | Pass | Pass | Pass |
+| ComboBox: items and selection | Pass | Pass | Pass | Pass |
+| ListBox: items and selection | Pass | Pass | Pass | Pass |
+| ListItem: select | Pass | Pass | Pass | Pass |
+| DataGrid: access and selection | Pass | Pass | Pass | Pass |
+| TreeView: select | Pass | Pass | Pass | Pass |
+| TabControl: select | Pass | Pass | Pass | Pass |
+| Text: read | Pass | Pass | Pass | Pass |
+| click: effect | Pass | Pass | Pass | Pass |
+| double_click: effect | n/a | n/a | n/a | n/a |
+| right_click: context menu effect | n/a | n/a | n/a | n/a |
+| hover: effect | n/a | n/a | n/a | n/a |
+| focus: followed by keyboard input | n/a | n/a | n/a | n/a |
+| type and clear: value | Pass | Pass | Pass | Pass |
+| press: value | n/a | n/a | n/a | n/a |
+| ensure_visible | not covered | not covered | not covered | not covered |
+| expand/collapse: visibility | Pass | Pass | Pass | Pass |
+| context menu: choose item | Pass | Pass | Pass | Pass |
+| peerless element: mouse click | not covered | no UIA peer | not covered | Pass |
+| partly clipped: mouse click | not covered | Pass | not covered | Pass |
+| virtualized item 4,999: select | Pass | Pass | Pass | Pass |
+| doctor agent check | not covered | not covered | not covered | not covered |
+| disabled: click timeout message | Pass | Pass | Pass | Pass |
+| missing item: selection message | Pass | Pass | Pass | Pass |
+| read-only: typing outcome and text | Pass | Pass | Pass | Pass |
+| password: outcomes and redaction | Pass | Pass | Pass | Pass |
+| hidden in collapsed Expander: click | omitted by UIA | omitted by UIA | hidden timeout | hidden timeout |
+| hidden in collapsed Expander: type | Pass | Pass | Pass | Pass |
+| failing typed expectations: messages | Pass | Pass | Pass | Pass |
+
+UIA omits elements inside a collapsed Expander; auto finds them as hidden. The peerless
+element is addressable only on auto. DataGrid `row()`, `cell()`, `row_count()`,
+`column_count()` and `find_row()` still use the UIA Grid pattern on both backends. Grid
+row mouse selection clicks a safe row header when available, otherwise it uses
+`act.select`, as UIA does. UIA select uses the selection pattern in both input modes.
+DataGrid cell selection names still use provider conversion.
+
+`clickPoint` tries a bounded set of candidate points, so an irregular visible region can
+yield none. A WPF action that times out on a disabled control may spend up to 2 s on one
+diagnostic poll. Agent handles to unrooted objects can go stale before their first lookup.
 
 Median wall times over three selections (seconds, pattern/mouse) were: ListBox UIA
 0.260/0.288 and auto 0.193/0.296; DataGrid UIA 1.014/1.165 and auto 0.569/0.630.
 These are fixture measurements, including selection overhead, and vary with machine load.
 
-Remaining phase 3 work: P3g doctor agent-block check; P3h full parity matrix, default
-switch and documentation.
+Serial module runs from `python/` with `WTK_INSPECTOR_REAL=1` measured process wall time:
+
+- `-k uia`: 98.299 s, 23 passed and 71 deselected.
+- `-k auto`: 65.717 s, 16 passed, 7 failed and 71 deselected.
+- Full module: 369.459 s, 94 passed.
+
+The filters match pytest node IDs, not all tests that exercise a backend. Each selects
+23 parametrized or named cases and deselects 71; tests that loop over both backends without
+those words in their IDs are omitted. The auto-filtered failures reported inability to
+activate the target window, refusing global input.
+
+Remaining work: P3h-2 switches defaults to `backend: auto` and `input_mode: mouse` and
+updates the docs; the owner must provide gate sign-off.
 
 ## 7. Test strategy
 
