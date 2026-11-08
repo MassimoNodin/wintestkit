@@ -641,6 +641,23 @@ def bring_to_foreground(hwnd: int, timeout: float = 0.5) -> bool:
     AllowSetForegroundWindow(ASFW_ANY)
     SetForegroundWindow(hwnd)
     BringWindowToTop(hwnd)
+    # When another process owns the foreground, Windows can deny the request.
+    # Temporarily join its input queue so SetForegroundWindow can transfer focus.
+    foreground = GetForegroundWindow()
+    foreground_thread = GetWindowThreadProcessId(foreground, None) if foreground else 0
+    current_thread = GetCurrentThreadId()
+    attached = bool(
+        foreground_thread
+        and foreground_thread != current_thread
+        and AttachThreadInput(current_thread, foreground_thread, True)
+    )
+    try:
+        if attached:
+            SetForegroundWindow(hwnd)
+            BringWindowToTop(hwnd)
+    finally:
+        if attached:
+            AttachThreadInput(current_thread, foreground_thread, False)
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         if GetForegroundWindow() == hwnd:

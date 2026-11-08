@@ -221,17 +221,22 @@ def mouse(target, monkeypatch):
     return client, el, state, events
 
 
-@pytest.mark.parametrize("case", ["owner", "popup", "foreign", "activate", "denied", "hit"])
+@pytest.mark.parametrize(
+    "case", ["owner", "popup", "foreign", "activate", "denied", "hit", "popup_on_activate"]
+)
 def test_popup_mouse_safety(mouse, monkeypatch, case):
     _client, el, _state, events = mouse
     foreground = [200 if case != "popup" else 123]
-    if case in ("activate", "denied"):
+    if case in ("activate", "denied", "popup_on_activate"):
         foreground[0] = 300
     activated = []
 
     def activate(hwnd):
         activated.append(hwnd)
         if case == "denied":
+            return False
+        if case == "popup_on_activate":
+            foreground[0] = 123
             return False
         foreground[0] = hwnd
         return True
@@ -250,7 +255,7 @@ def test_popup_mouse_safety(mouse, monkeypatch, case):
     else:
         actions._wpf_mouse_click(el)
         assert len(events) == 1
-    assert activated == ([200] if case in ("activate", "denied") else [])
+    assert activated == ([200] if case in ("activate", "denied", "popup_on_activate") else [])
 
 
 def test_mouse_entry_points_and_pattern_fallback(mouse):
