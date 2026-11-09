@@ -589,6 +589,32 @@ class InspectorClient:
             ),
         )
 
+    def hit_test(
+        self, native_window_handle: int, x: float, y: float, *, timeout_ms: int, deadline: float
+    ) -> ObjectRef | None:
+        self._feature("hitTest")
+
+        def parse(value: object) -> ObjectRef:
+            reference = ObjectRef.from_json(_obj(value, "handle")["handle"])
+            self._object_ref(reference)
+            return reference
+
+        try:
+            result = self._request(
+                "hitTest",
+                {
+                    "nativeWindowHandle": native_window_handle,
+                    "point": {"x": x, "y": y},
+                    "timeoutMs": self._timed_params(timeout_ms, deadline),
+                },
+                deadline,
+            )
+        except InspectorError as error:
+            if error.code == "notFound":
+                return None
+            raise
+        return self._parse(parse, result)
+
     def state_get(self, handle: ObjectRef, *, timeout_ms: int, deadline: float) -> ElementState:
         self._feature("geometry")
         self._object_ref(handle)

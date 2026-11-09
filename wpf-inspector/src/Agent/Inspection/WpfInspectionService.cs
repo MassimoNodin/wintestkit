@@ -2,10 +2,14 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Threading;
+using System.Windows.Interop;
+using Visual = System.Windows.Media.Visual;
+using VisualTreeHelper = System.Windows.Media.VisualTreeHelper;
 using WinTestKit.Inspector.Agent.Contracts;
 using WinTestKit.Inspector.Agent.Actions;
 using WinTestKit.Inspector.Agent.Mapping;
@@ -17,7 +21,7 @@ using WinTestKit.Inspector.Protocol;
 
 namespace WinTestKit.Inspector.Agent.Inspection
 {
-    public sealed class WpfInspectionService : IInspectionService, IExactMappingCapability, IQueryInspectionService, IStateInspectionService, IWaitInspectionService, IActionInspectionService, IRealizeInspectionService
+    public sealed class WpfInspectionService : IInspectionService, IExactMappingCapability, IQueryInspectionService, IStateInspectionService, IWaitInspectionService, IActionInspectionService, IRealizeInspectionService, IHitTestInspectionService
     {
         private readonly DispatcherExecutor executor;
         private readonly ObjectRegistry registry;
@@ -44,6 +48,53 @@ namespace WinTestKit.Inspector.Agent.Inspection
         }
 
         public bool ExactMappingAvailable => mapper.IsAvailable;
+
+        [DllImport("user32.dll")]
+        private static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint processId);
+
+        public Task<Protocol.HitTestResult> HitTestAsync(long nativeWindowHandle, PointDto point, DateTime deadline, int timeoutMs, CancellationToken ct) => RunAsync(async token =>
+        {
+            IntPtr hwnd;
+            try { hwnd = new IntPtr(nativeWindowHandle); }
+            catch (OverflowException) { throw new ProtocolException(ErrorCodes.MappingFailed, "Invalid window handle."); }
+            if (GetWindowThreadProcessId(hwnd, out uint processId) == 0 || processId != (uint)Process.GetCurrentProcess().Id)
+                throw new ProtocolException(ErrorCodes.MappingFailed, "Invalid window handle.");
+            HwndSource? source = HwndSource.FromHwnd(hwnd);
+            if (source == null) throw new ProtocolException(ErrorCodes.MappingFailed, "Window is not a WPF source.");
+            DateTime end = DateTime.UtcNow.AddMilliseconds(timeoutMs);
+            if (deadline < end) end = deadline;
+            int remaining = (int)Math.Max(0, (end - DateTime.UtcNow).TotalMilliseconds);
+            if (remaining == 0) throw new ProtocolException(ErrorCodes.Timeout, "Request deadline elapsed.");
+            using (var timed = CancellationTokenSource.CreateLinkedTokenSource(token))
+            {
+                timed.CancelAfter(remaining);
+                try
+                {
+                    return await executor.ExecuteAsync(source.Dispatcher, () =>
+                    {
+                        Visual? root = source.RootVisual;
+                        if (root == null) throw new ProtocolException(ErrorCodes.MappingFailed, "Window has no WPF root.");
+                        Point local = root.PointFromScreen(new Point(point.X, point.Y));
+                        if (root is UIElement rootElement && !new Rect(rootElement.RenderSize).Contains(local))
+                            throw new ProtocolException(ErrorCodes.NotFound, "No hit.");
+                        DependencyObject? target = null;
+                        VisualTreeHelper.HitTest(root, candidate =>
+                            candidate is UIElement element && (!element.IsVisible || !element.IsHitTestVisible)
+                                ? System.Windows.Media.HitTestFilterBehavior.ContinueSkipSelfAndChildren
+                                : System.Windows.Media.HitTestFilterBehavior.Continue,
+                            result => { target = result.VisualHit; return System.Windows.Media.HitTestResultBehavior.Stop; },
+                            new System.Windows.Media.PointHitTestParameters(local));
+                        while (target != null && !(target is UIElement) && !(target is ContentElement))
+                            target = VisualTreeHelper.GetParent(target);
+                        if (target == null) throw new ProtocolException(ErrorCodes.NotFound, "No hit.");
+                        if (root is UIElement inputRoot && inputRoot.InputHitTest(local) is ContentElement content)
+                            target = content;
+                        return new Protocol.HitTestResult { Handle = registry.Register(target, source.Dispatcher, inspector.DescribeType(target.GetType())) };
+                    }, timed.Token).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (!token.IsCancellationRequested) { throw new ProtocolException(ErrorCodes.Timeout, "Request deadline elapsed."); }
+            }
+        }, ct);
 
         public Task<ActRealizeItemResult> RealizeItemAsync(ItemSearch search, DateTime deadline, int timeoutMs, CancellationToken ct) => RunAsync(async token =>
         {

@@ -255,6 +255,32 @@ public class RequestDispatcherTests
         Assert.Equal(StateService.Handle.ObjectId, ActResult.FromJson(response.Result!).Handle.ObjectId);
     }
 
+    [Fact]
+    public async Task HitTestRoutesParameters()
+    {
+        var service = new HitTestService();
+        var response = await Dispatch(new RequestDispatcher(Session, service), PipeMethods.HitTest,
+            new HitTestParams { NativeWindowHandle = 42, Point = new PointDto { X = 10, Y = 20 }, TimeoutMs = 500 }.ToJson());
+        Assert.Null(response.Error);
+        Assert.Equal(42, service.Window);
+        Assert.Equal(10, service.Point!.X);
+        Assert.Equal(20, service.Point.Y);
+        Assert.Equal(500, service.Timeout);
+        Assert.Equal(StateService.Handle.ObjectId, HitTestResult.FromJson(response.Result!).Handle.ObjectId);
+    }
+
+    private sealed class HitTestService : RecordingService, IHitTestInspectionService
+    {
+        public long Window { get; private set; }
+        public PointDto? Point { get; private set; }
+        public int Timeout { get; private set; }
+        public Task<HitTestResult> HitTestAsync(long nativeWindowHandle, PointDto point, DateTime deadline, int timeoutMs, CancellationToken ct)
+        {
+            Window = nativeWindowHandle; Point = point; Timeout = timeoutMs;
+            return Task.FromResult(new HitTestResult { Handle = StateService.Handle });
+        }
+    }
+
     private sealed class ActionService : RecordingService, IActionInspectionService
     {
         public string? Method { get; private set; }
