@@ -1525,13 +1525,31 @@ class Server:
 
             if not selected.is_alive():
                 raise RpcError(-32005, "unknown node id")
+            if method == "suggest.locator":
+                from wintestkit import runtime
+                from wintestkit.engine.suggest import WindowSelectedError, suggest_locator
+
+                wpf_ancestors: list[WpfElement] = []
+                with self._node_lock:
+                    parent_id = self._wpf_parents.get(params["nodeId"])
+                    seen = {params["nodeId"]}
+                    while parent_id and parent_id not in seen and len(seen) < 100:
+                        seen.add(parent_id)
+                        parent = self.nodes.get(parent_id)
+                        if isinstance(parent, WpfElement):
+                            wpf_ancestors.append(parent)
+                        parent_id = self._wpf_parents.get(parent_id)
+                try:
+                    assert self.cfg is not None
+                    with runtime.config_scope(self.cfg):
+                        return suggest_locator(
+                            selected, self._app(False), ancestors=tuple(wpf_ancestors)
+                        ).to_dict()
+                except WindowSelectedError as exc:
+                    raise RpcError(-32006, str(exc)) from exc
             try:
                 peer = selected.as_live().as_uia()
-            except NoUiaPeerError as exc:
-                if method == "suggest.locator":
-                    raise RpcError(
-                        -32006, "WPF locator suggestions for nodes without a UIA peer require P4e"
-                    ) from exc
+            except NoUiaPeerError:
                 return self._coverage().definitions_of(
                     self._app(False), params["nodeId"], selected.info()
                 )
@@ -1539,12 +1557,6 @@ class Server:
                 return self._coverage().definitions_of(
                     self._app(False), peer.runtime_id, peer.info()
                 )
-            from wintestkit.engine.suggest import WindowSelectedError, suggest_locator
-
-            try:
-                return suggest_locator(peer, self._app(False)).to_dict()
-            except WindowSelectedError as exc:
-                raise RpcError(-32006, str(exc)) from exc
         node = self._node(params["nodeId"])
         if method == "inspect.definitions":
             app = self._app(False)
