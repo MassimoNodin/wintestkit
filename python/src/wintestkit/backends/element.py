@@ -93,6 +93,12 @@ class WpfElement:
         self._state: ElementState | None = None
         self._uia: UIAElement | None = None
 
+    def release(self) -> None:
+        self._lease.finalizer()
+
+    def forget_release(self) -> None:
+        self._lease.finalizer.detach()
+
     def _get_identity(self) -> dict[str, str]:
         if self._identity is None:
             names = ("automation_id", "name", "class_name", "control_type")

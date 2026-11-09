@@ -270,3 +270,104 @@ def test_owned_fixture_server_and_cli(
         if target.poll() is None:
             target.terminate()
         target.wait(timeout=5)
+
+
+def test_spy_tree_peerless_and_large_page(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    runtime.reset()
+    monkeypatch.syspath_prepend(str(PAYLOAD))
+    (tmp_path / "wintestkit.yaml").write_text(
+        "inspector:\n  enabled: true\n  attach: manual\n", encoding="utf-8"
+    )
+    env = os.environ.copy()
+    env["DOTNET_ROOT"] = DOTNET
+    env["DOTNET_ROOT_X64"] = DOTNET
+    env["DOTNET_MULTILEVEL_LOOKUP"] = "0"
+    target = subprocess.Popen(
+        [str(FIXTURE / "WinTestKit.Fixture.exe"), "--scenario", "openLarge"],
+        cwd=FIXTURE,
+        env=env,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    try:
+        until = time.monotonic() + 15
+        windows: list[Any] = []
+        while time.monotonic() < until:
+            assert target.poll() is None
+            try:
+                windows = [
+                    element.from_handle(hwnd) for hwnd in win32.top_level_windows({target.pid})
+                ]
+                if len(windows) >= 2 and any(
+                    window.automation_id == "LargeWindow" for window in windows
+                ):
+                    break
+            except Exception:
+                pass
+            time.sleep(0.1)
+        large = next(window for window in windows if window.automation_id == "LargeWindow")
+        main_window = next(window for window in windows if window.automation_id != "LargeWindow")
+        output = io.BytesIO()
+        server = Server(output)
+        server.cfg = load_config(tmp_path)
+        server.loader = ModuleLoader(server.cfg)
+        for window in (main_window, large):
+            server.nodes[window.runtime_id] = window
+            server._wpf_windows.add(window.runtime_id)
+        _call(server, output, "attach", {"process": identify(target.pid).identity.to_json()})
+
+        def children(node_id: str, tree: str, page_token: str | None = None) -> dict[str, Any]:
+            output.seek(0)
+            output.truncate()
+            server.handle(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "inspect.children",
+                    "params": {
+                        "nodeId": node_id,
+                        "tree": tree,
+                        **({"pageToken": page_token} if page_token else {}),
+                    },
+                }
+            )
+            result = json.loads(output.getvalue())
+            assert "result" in result, result
+            assert isinstance(result["result"], dict), result
+            return result["result"]
+
+        for tree in ("visual", "logical"):
+            queue = [main_window.runtime_id]
+            found = False
+            for _ in range(250):
+                if not queue:
+                    break
+                for child in children(queue.pop(0), tree)["nodes"]:
+                    if child["identity"]["type"].endswith(".PeerlessMarker"):
+                        found = True
+                        break
+                    if child["hasChildren"]:
+                        queue.append(child["nodeId"])
+                if found:
+                    break
+            assert found, f"peerless element missing from {tree} tree"
+        queue = [large.runtime_id]
+        for _ in range(40):
+            node_id = queue.pop(0)
+            started = time.monotonic()
+            page = children(node_id, "logical")
+            items = page["nodes"]
+            elapsed = time.monotonic() - started
+            if len(items) == 200 and "nextPageToken" in page:
+                print(f"LARGE_PAGE_LOAD: {len(items)} children in {elapsed:.3f}s")
+                break
+            queue.extend(item["nodeId"] for item in items if item["hasChildren"])
+        else:
+            pytest.fail("Large fixture child page not found")
+        server._release_managed_objects()
+    finally:
+        runtime.reset()
+        if target.poll() is None:
+            target.terminate()
+        target.wait(timeout=5)

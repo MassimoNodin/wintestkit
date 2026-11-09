@@ -59,6 +59,13 @@
         },
         "hasChildren": {
           "type": "boolean"
+        },
+        "source": {"enum": ["wpf", "uia"]},
+        "identity": {
+          "type": "object",
+          "properties": {"type": {"type": "string"}, "xName": {"type": "string"}, "automationId": {"type": "string"}},
+          "required": ["type"],
+          "additionalProperties": false
         }
       },
       "required": ["nodeId", "info", "hasChildren"],
@@ -485,16 +492,21 @@
       "properties": {
         "nodeId": {
           "type": "string"
-        }
+        },
+        "tree": {"enum": ["visual", "logical"], "description": "Opt into the requested tree; omit for the legacy UIA array."},
+        "pageSize": {"type": "integer", "minimum": 1, "maximum": 200, "description": "Maximum children per page; defaults to 200."},
+        "pageToken": {"type": "string", "minLength": 1, "maxLength": 128, "description": "Continuation token from the preceding page."}
       },
       "required": ["nodeId"],
       "additionalProperties": false
     },
     "InspectChildrenResult": {
-      "type": "array",
-      "items": {
-        "$ref": "rpc.schema.json#/$defs/NodeInfo"
-      }
+      "anyOf": [
+        {"type": "array", "items": {"$ref": "rpc.schema.json#/$defs/NodeInfo"}},
+        {"type": "object", "properties": {"attachRequired": {"const": true}, "process": {"$ref": "common.schema.json#/$defs/ManagedProcessIdentity"}}, "required": ["attachRequired", "process"], "additionalProperties": false},
+        {"type": "object", "properties": {"blocked": {"type": "object", "properties": {"code": {"type": "string"}, "hint": {"type": "string"}}, "required": ["code", "hint"], "additionalProperties": false}}, "required": ["blocked"], "additionalProperties": false},
+        {"type": "object", "description": "One page of children when tree is supplied.", "properties": {"nodes": {"type": "array", "items": {"$ref": "rpc.schema.json#/$defs/NodeInfo"}}, "nextPageToken": {"type": "string", "minLength": 1, "maxLength": 128}}, "required": ["nodes"], "additionalProperties": false}
+      ]
     },
     "InspectPropertiesParams": {
       "type": "object",
