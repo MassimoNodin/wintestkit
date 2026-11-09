@@ -33,6 +33,17 @@ class DomNode {
   step = "";
   spellcheck = true;
   hidden = false;
+  tabIndex = 0;
+  selectionStart: number | null = null;
+  selectionEnd: number | null = null;
+  selectionDirection: "forward" | "backward" | "none" = "none";
+  focusOptions?: { preventScroll?: boolean };
+  setSelectionRange(start: number, end: number, direction: "forward" | "backward" | "none") {
+    this.selectionStart = start;
+    this.selectionEnd = end;
+    this.selectionDirection = direction;
+  }
+  onkeydown: ((event: { key: string; preventDefault: () => void }) => void) | null = null;
   scrolled = 0;
   scrollIntoView() {
     this.scrolled++;
@@ -75,7 +86,8 @@ class DomNode {
       if (name === "id") return this.idValue;
       return this.attrs[name] ?? null;
     };
-    this.focus = () => {
+    this.focus = (options) => {
+      this.focusOptions = options;
       if (!this.disabled) this.selection.current = this;
     };
     this.click = () => {
@@ -108,7 +120,7 @@ class DomNode {
   replaceChildren: (...kids: DomNode[]) => void;
   setAttribute: (name: string, value: string) => void;
   getAttribute: (name: string) => string | null;
-  focus: () => void;
+  focus: (options?: { preventScroll?: boolean }) => void;
   click: () => void;
   querySelector: (selector: string) => DomNode | null;
 }
@@ -309,6 +321,115 @@ describe("settings editor script", () => {
     view.emit(state("local", 9, { timeout: 21 }, { timeout: 21 }));
     expect(view.must("status").className).toBe("");
     expect(view.must("status").hidden).toBe(true);
+  });
+
+  it("preserves unfinished text and selection across repeated refreshes", () => {
+    const view = boot();
+    view.emit(state("local", 1, { "app.process": "Orders.exe" }));
+    const input = view.must("app.process");
+    input.focus();
+    input.value = "Orders.Debug.exe";
+    input.setSelectionRange(7, 12, "backward");
+    for (const version of [2, 3]) {
+      view.emit(state("local", version, { "app.process": "Orders.exe" }));
+      const refreshed = view.must("app.process");
+      expect(refreshed.value).toBe("Orders.Debug.exe");
+      expect(view.document.activeElement).toBe(refreshed);
+      expect(refreshed.focusOptions).toEqual({ preventScroll: true });
+      expect([refreshed.selectionStart, refreshed.selectionEnd, refreshed.selectionDirection])
+        .toEqual([7, 12, "backward"]);
+    }
+    expect(changes(view.posts)).toHaveLength(0);
+    view.must("app.process").onchange?.();
+    expect(changes(view.posts).at(-1)).toMatchObject({ version: 3, value: "Orders.Debug.exe" });
+  });
+
+  it("keeps typing performed while the preceding value is saving", () => {
+    const view = boot();
+    view.emit(state("local", 1, { "app.process": "Orders.exe" }));
+    const input = view.must("app.process");
+    input.focus();
+    input.value = "Debug.exe";
+    input.onchange?.();
+    input.value = "Debug.New.exe";
+    view.emit({ type: "committed", key: "app.process" });
+    view.emit(state("local", 2, { "app.process": "Debug.exe" }));
+    expect(view.must("app.process").value).toBe("Debug.New.exe");
+    view.must("app.process").onchange?.();
+    expect(changes(view.posts).at(-1)).toMatchObject({ version: 2, value: "Debug.New.exe" });
+  });
+
+  it("preserves numeric edits but accepts refreshed untouched values", () => {
+    const view = boot();
+    view.emit(state("local", 1, { timeout: 15 }));
+    view.must("timeout").focus();
+    view.must("timeout").value = "21";
+    view.emit(state("local", 2, { timeout: 15 }));
+    expect(view.must("timeout").value).toBe("21");
+    expect(view.must("timeout-slider").value).toBe("21");
+    view.must("timeout").onchange?.();
+    view.emit(state("local", 3, { timeout: 21 }));
+    view.emit(state("local", 4, { timeout: 30 }));
+    expect(view.must("timeout").value).toBe("30");
+  });
+
+  it("does not carry unfinished edits across scopes or into locked controls", () => {
+    const view = boot();
+    view.emit(state("local", 1, { "app.process": "Orders.exe" }));
+    view.must("app.process").focus();
+    view.must("app.process").value = "unfinished";
+    view.emit(state("shared", 2, { "app.process": "Shared.exe" }));
+    expect(view.must("app.process").value).toBe("Shared.exe");
+    view.must("app.process").value = "unfinished";
+    view.emit(state("shared", 3, {}));
+    expect(view.must("app.process").disabled).toBe(true);
+    expect(view.must("app.process").value).not.toBe("unfinished");
+  });
+
+  it.each([
+    ["ArrowRight", "input_mode-pattern", "input_mode-mouse", "input_mode", "mouse"],
+    ["ArrowDown", "input_mode-pattern", "input_mode-mouse", "input_mode", "mouse"],
+    ["ArrowLeft", "input_mode-pattern", "input_mode-mouse", "input_mode", "mouse"],
+    ["ArrowUp", "highlight_color-red", "highlight_color-white", "highlight_color", "#FFFFFF"],
+    ["End", "highlight_color-red", "highlight_color-white", "highlight_color", "#FFFFFF"],
+    ["Home", "highlight_color-white", "highlight_color-red", "highlight_color", "#FF0000"],
+  ])("supports %s navigation from %s", (key, source, target, field, value) => {
+    const view = boot();
+    view.emit(state("local", 1, { input_mode: "pattern", highlight_color: key === "Home" ? "#FFFFFF" : "#FF0000" }));
+    let prevented = false;
+    view.must(source).onkeydown?.({ key, preventDefault: () => { prevented = true; } });
+    expect(prevented).toBe(true);
+    expect(view.document.activeElement).toBe(view.must(target));
+    expect(view.must(target).tabIndex).toBe(0);
+    expect(changes(view.posts).at(-1)).toMatchObject({ key: field, value });
+    view.emit(state("local", 2, { [field]: value }));
+    expect(view.must(target).getAttribute("aria-checked")).toBe("true");
+    expect(view.must(target).tabIndex).toBe(0);
+  });
+
+  it("keeps one tab stop per radio group, including custom colors", () => {
+    const view = boot();
+    view.emit(state("local", 1, { input_mode: "mouse", highlight_color: "#123456" }));
+    expect(view.must("input_mode-mouse").tabIndex).toBe(0);
+    expect(view.must("input_mode-pattern").tabIndex).toBe(-1);
+    expect(view.must("highlight_color-red").tabIndex).toBe(0);
+    expect(view.must("highlight_color-orange").tabIndex).toBe(-1);
+    const count = view.posts.length;
+    view.must("input_mode-mouse").onkeydown?.({ key: "Tab", preventDefault: () => { throw new Error("Tab must remain native"); } });
+    expect(view.posts).toHaveLength(count);
+  });
+
+  it("does not activate radios while saving or locked", () => {
+    const view = boot();
+    view.emit(state("local", 1, { input_mode: "pattern" }));
+    view.must("input_mode-mouse").click();
+    const count = view.posts.length;
+    view.must("input_mode-mouse").onkeydown?.({ key: "ArrowLeft", preventDefault: () => {} });
+    expect(view.posts).toHaveLength(count);
+    view.emit(state("shared", 2, {}));
+    const lockedCount = view.posts.length;
+    view.must("input_mode-pattern").onkeydown?.({ key: "ArrowRight", preventDefault: () => {} });
+    expect(view.posts).toHaveLength(lockedCount);
   });
 
   it("restores focus for dotted fields, browse, and the shared executable link", () => {
