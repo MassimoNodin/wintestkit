@@ -107,6 +107,44 @@ def test_popup_mouse_safety(
     assert activated == ([200] if case in ("activate", "denied") else [])
 
 
+def test_popup_hit_waits_for_owned_window(target, monkeypatch):
+    control, calls = target
+    hits = iter((200, 101))
+    monkeypatch.setattr(win32, "WindowFromPoint", lambda point: next(hits))
+    monkeypatch.setattr(win32, "root_window", lambda hwnd: 200 if hwnd == 200 else 100)
+    monkeypatch.setattr(win32, "window_owner", lambda hwnd: 200 if hwnd == 100 else 0)
+    monkeypatch.setattr(win32, "GetForegroundWindow", lambda: 200)
+    monkeypatch.setattr(win32, "IsWindowVisible", lambda hwnd: True)
+    monkeypatch.setattr(actions.time, "sleep", lambda delay: None)
+    actions._validate_point(100, control.process_id, 10, 10)
+    assert calls == []
+
+
+def test_popup_hit_timeout_never_injects(target, monkeypatch):
+    control, calls = target
+    monkeypatch.setattr(win32, "WindowFromPoint", lambda point: 200)
+    monkeypatch.setattr(win32, "root_window", lambda hwnd: 200)
+    monkeypatch.setattr(win32, "window_owner", lambda hwnd: 200 if hwnd == 100 else 0)
+    monkeypatch.setattr(win32, "GetForegroundWindow", lambda: 200)
+    monkeypatch.setattr(win32, "IsWindowVisible", lambda hwnd: True)
+    monkeypatch.setattr(actions, "_STABLE_TIMEOUT", 0)
+    with pytest.raises(ActionError, match="refusing global input"):
+        actions._validate_point(100, control.process_id, 10, 10)
+    assert calls == []
+
+
+def test_popup_hit_rechecks_foreground(target, monkeypatch):
+    control, calls = target
+    monkeypatch.setattr(win32, "WindowFromPoint", lambda point: 200)
+    monkeypatch.setattr(win32, "root_window", lambda hwnd: 200)
+    monkeypatch.setattr(win32, "window_owner", lambda hwnd: 200 if hwnd == 100 else 0)
+    monkeypatch.setattr(win32, "GetForegroundWindow", lambda: 999)
+    monkeypatch.setattr(win32, "IsWindowVisible", lambda hwnd: True)
+    with pytest.raises(ActionError, match="refusing global input"):
+        actions._validate_point(100, control.process_id, 10, 10)
+    assert calls == []
+
+
 def test_keyboard_requires_control_focus(target: tuple[Any, list[str]]) -> None:
     control, calls = target
     control.has_keyboard_focus = False

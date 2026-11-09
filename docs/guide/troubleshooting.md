@@ -152,3 +152,8 @@ after an interrupted first run, reinstall `comtypes` in the environment.
   more detail.
 - Test output: captured stdout, stderr and logs of each test are in the HTML report and in the Test
   Explorer results.
+
+
+### Inspector request timing
+
+Set `WTK_INSPECTOR_TRACE` to a writable CSV file path before starting Python to append inspector request timings. Each headerless row contains the UTC completion timestamp, request method, duration in seconds, and outcome code. Request parameters, values, and response contents are never recorded. Tracing is disabled by default.

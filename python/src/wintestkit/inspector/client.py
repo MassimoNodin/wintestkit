@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import csv
 import math
+import os
 import threading
 import time
 from collections.abc import Callable, Sequence
 from contextlib import suppress
 from dataclasses import dataclass, replace
+from datetime import UTC, datetime
 from typing import Any, Literal, cast
 
 from wintestkit.errors import (
@@ -52,6 +55,8 @@ from wintestkit.inspector.models import object_value as _obj
 from wintestkit.inspector.models import runtime_id_value as _runtime_id
 from wintestkit.inspector.paths import ManagedPath, PathSegment
 from wintestkit.inspector.transport import ByteTransport, read_frame, write_frame
+
+_trace_lock = threading.Lock()
 
 
 def _error(code: str, details: object = None) -> InspectorError:
@@ -294,13 +299,25 @@ class InspectorClient:
                     self._abandoned.add(request_id)
                 else:
                     self._pending[request_id] = entry
+            if time.monotonic() >= deadline:
+                with self._lock:
+                    self._pending.pop(request_id, None)
+                    self._abandoned.discard(request_id)
+                raise InspectorDeadlineError("Inspector request deadline expired", code="timeout")
             try:
                 write_frame(
                     self._transport,
                     {"id": request_id, "method": method, "params": params},
                     deadline,
                 )
-            except (ValueError, TimeoutError, EOFError, OSError, UnicodeError) as error:
+            except TimeoutError as error:
+                self.invalidate(
+                    InspectorUnavailableError("Inspector pipe write failed", code="sessionStale")
+                )
+                raise InspectorDeadlineError(
+                    "Inspector pipe write timed out", code="timeout"
+                ) from error
+            except (ValueError, EOFError, OSError, UnicodeError) as error:
                 self.invalidate(
                     InspectorUnavailableError("Inspector pipe write failed", code="sessionStale")
                 )
@@ -319,20 +336,54 @@ class InspectorClient:
             )
 
     def _request(self, method: str, params: dict[str, object], deadline: float) -> object:
-        deadline = min(deadline, time.monotonic() + self._request_timeout)
-        entry = self._send(method, params, deadline)
-        if not entry.event.wait(max(0, deadline - time.monotonic())):
-            request_id = entry.request_id
-            with self._lock:
-                if self._pending.pop(request_id, None) is not None:
-                    self._abandoned.add(request_id)
-                    threading.Thread(target=self._cancel, args=(request_id,), daemon=True).start()
-                    raise InspectorDeadlineError(
-                        "Inspector request deadline expired", code="timeout"
+        start = time.monotonic()
+        trace_path = os.environ.get("WTK_INSPECTOR_TRACE")
+        outcome = "ok"
+        try:
+            deadline = min(deadline, start + self._request_timeout)
+            entry = self._send(method, params, deadline)
+            if not entry.event.wait(max(0, deadline - time.monotonic())):
+                request_id = entry.request_id
+                with self._lock:
+                    if self._pending.pop(request_id, None) is not None:
+                        self._abandoned.add(request_id)
+                        threading.Thread(
+                            target=self._cancel, args=(request_id,), daemon=True
+                        ).start()
+                        raise InspectorDeadlineError(
+                            "Inspector request deadline expired", code="timeout"
+                        )
+            if entry.error is not None:
+                raise entry.error
+            return entry.result
+        except InspectorDeadlineError as error:
+            outcome = error.code if error.code in ERROR_CODES else "timeout"
+            raise InspectorDeadlineError(
+                f"Inspector request {method} timed out "
+                f"(inspector.request_timeout={self._request_timeout:g}s)",
+                code=error.code,
+            ) from error
+        except InspectorError as error:
+            outcome = error.code if error.code in ERROR_CODES else "error"
+            raise
+        except Exception:
+            outcome = "error"
+            raise
+        finally:
+            if trace_path:
+                with (
+                    suppress(OSError, csv.Error),
+                    _trace_lock,
+                    open(trace_path, "a", encoding="utf-8", newline="") as trace,
+                ):
+                    csv.writer(trace).writerow(
+                        (
+                            datetime.now(UTC).isoformat(),
+                            method,
+                            f"{time.monotonic() - start:.6f}",
+                            outcome,
+                        )
                     )
-        if entry.error is not None:
-            raise entry.error
-        return entry.result
 
     def _parse(self, parser: Callable[[object], Any], value: object) -> Any:
         try:
