@@ -349,13 +349,15 @@ def test_spy_tree_peerless_and_large_page(tmp_path: Path, monkeypatch: pytest.Mo
                     if child["identity"]["type"].endswith(".PeerlessMarker"):
                         found_nodes["peerless"] = child["nodeId"]
                         found = True
+                    if child["identity"]["type"].endswith(".PeerlessClickTarget"):
+                        found_nodes["click_target"] = child["nodeId"]
                     if child["identity"].get("automationId") == "ParityPointer":
                         found_nodes["button"] = child["nodeId"]
-                    if found and "button" in found_nodes:
+                    if found and "button" in found_nodes and "click_target" in found_nodes:
                         break
                     if child["hasChildren"]:
                         queue.append(child["nodeId"])
-                if found and "button" in found_nodes:
+                if found and "button" in found_nodes and "click_target" in found_nodes:
                     break
             assert found, f"peerless element missing from {tree} tree"
         assert "button" in found_nodes
@@ -392,6 +394,64 @@ def test_spy_tree_peerless_and_large_page(tmp_path: Path, monkeypatch: pytest.Mo
                 },
             )
             assert members["items"]
+        # Exercise the picker's worker resolution directly, without installing global hooks.
+        from wintestkit.engine import actions
+        from wintestkit.engine.spy import SpySession
+
+        monkeypatch.setattr(SpySession, "start", lambda self: None)
+        output.seek(0)
+        output.truncate()
+        server.handle(
+            {"jsonrpc": "2.0", "id": 2, "method": "spy.start", "params": {"tree": "visual"}}
+        )
+        assert json.loads(output.getvalue())["result"] is None
+        picker = server.spy
+        assert picker is not None
+
+        def check_point(point: tuple[int, int], expected: str) -> None:
+            for pick in (False, True):
+                target = picker._element_at(*point, pick=pick)
+                assert target is not None and target.node["source"] == "wpf"
+                if pick:
+                    output.seek(0)
+                    output.truncate()
+                    picker._on_pick(target)
+                    notification = json.loads(output.getvalue())
+                    assert notification["method"] == "spy.picked"
+                    node_id = notification["params"]["node"]["nodeId"]
+                    response = server._wpf_properties(
+                        server.nodes[node_id], {"nodeId": node_id, "includeAncestors": True}
+                    )
+                    assert response["ancestors"]
+                    assert expected in str([*response["ancestors"], target.node])
+                else:
+                    output.seek(0)
+                    output.truncate()
+                    picker._on_hover(target)
+                    assert json.loads(output.getvalue())["params"]["node"]["source"] == "wpf"
+
+        for key, expected in (("button", "ParityPointer"), ("click_target", "PeerlessClickTarget")):
+            rect = server.nodes[found_nodes[key]].rect
+            assert rect is not None
+            check_point(rect.center, expected)
+        actions.right_click(server.nodes[found_nodes["button"]])
+        deadline = time.monotonic() + 5
+        menu_item = None
+        while time.monotonic() < deadline and menu_item is None:
+            for hwnd in win32.top_level_windows({target.pid}):
+                root = element.from_handle(hwnd)
+                candidates = [root, *root.children()]
+                while candidates:
+                    candidate = candidates.pop()
+                    if candidate.automation_id == "ParityContextItem":
+                        menu_item = candidate
+                        break
+                    candidates.extend(candidate.children())
+            if menu_item is None:
+                time.sleep(0.1)
+        assert menu_item is not None and menu_item.rect is not None
+        check_point(menu_item.rect.center, "ParityContextItem")
+        server.stop_spy()
         queue = [large.runtime_id]
         for _ in range(40):
             node_id = queue.pop(0)

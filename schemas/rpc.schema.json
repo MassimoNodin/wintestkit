@@ -729,6 +729,7 @@
       "type": "object",
       "properties": {
         "sessionId": {"type": "string", "minLength": 1},
+        "tree": {"enum": ["visual", "logical"]},
         "foregroundForProcessId": {
           "type": "integer",
           "minimum": 1,
@@ -754,6 +755,10 @@
       "type": "object",
       "properties": {
         "sessionId": {"type": "string", "minLength": 1},
+        "attachRequired": {"const": true},
+        "process": {"$ref": "common.schema.json#/$defs/ManagedProcessIdentity"},
+        "blocked": {"type": "object", "properties": {"code": {"type": "string"}, "hint": {"type": "string"}}, "required": ["code", "hint"], "additionalProperties": false},
+        "source": {"const": "uia"},
         "node": {
           "$ref": "rpc.schema.json#/$defs/NodeInfo"
         }
@@ -765,6 +770,10 @@
       "type": "object",
       "properties": {
         "sessionId": {"type": "string", "minLength": 1},
+        "attachRequired": {"const": true},
+        "process": {"$ref": "common.schema.json#/$defs/ManagedProcessIdentity"},
+        "blocked": {"type": "object", "properties": {"code": {"type": "string"}, "hint": {"type": "string"}}, "required": ["code", "hint"], "additionalProperties": false},
+        "source": {"const": "uia"},
         "node": {
           "$ref": "rpc.schema.json#/$defs/NodeInfo"
         },
