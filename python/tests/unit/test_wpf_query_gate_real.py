@@ -818,6 +818,7 @@ def test_hit_test_button_real(owned):
             deadline=time.monotonic() + 5,
         )
         assert hit is not None
+        hit = hit.handle
         assert (
             target.client.state_get(hit, timeout_ms=2000, deadline=time.monotonic() + 5).handle
             == hit
@@ -854,13 +855,46 @@ def test_hit_test_peerless_real(owned):
             bounds.x + bounds.width / 2,
             bounds.y + bounds.height / 2,
             timeout_ms=2000,
+            include_path=True,
             deadline=time.monotonic() + 5,
         )
+        assert hit is not None
+        assert hit.path is not None and hit.path[-1].object_ref == target.ref
+        hit = hit.handle
         assert hit == target.ref
         assert (
             target.client.state_get(hit, timeout_ms=2000, deadline=time.monotonic() + 5).handle
             == target.ref
         )
+
+
+def test_hit_test_context_menu_real(owned):
+    from wintestkit.backends import WpfElement
+    from wintestkit.model import Element, Page
+
+    scope, path = owned
+
+    class FixturePage(Page):
+        pointer = Element(automation_id="ParityPointer")
+
+    with runtime.config_scope(replace(config(path, "agent"), backend="auto")):
+        FixturePage(scope.app).pointer.right_click()
+        target = resolve(scope, Locator(automation_id="ParityContextItem"))
+        assert isinstance(target, WpfElement)
+        state = target.client.state_get(target.ref, timeout_ms=2000, deadline=time.monotonic() + 5)
+        assert state.bounds is not None and state.window_handle is not None
+        bounds = state.bounds
+        hit = target.client.hit_test(
+            state.window_handle,
+            bounds.x + bounds.width / 2,
+            bounds.y + bounds.height / 2,
+            timeout_ms=2000,
+            deadline=time.monotonic() + 5,
+            include_path=True,
+        )
+        assert hit is not None and hit.path
+        assert hit.path[-1].object_ref == hit.handle
+        assert any(node.object_ref == target.ref for node in hit.path)
 
 
 def test_popup_parity(owned):

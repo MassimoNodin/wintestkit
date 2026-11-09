@@ -3375,6 +3375,7 @@
     "HitTestParams": {
       "type": "object",
       "properties": {
+        "includePath": { "type": "boolean" },
         "nativeWindowHandle": {
           "type": "integer"
         },
@@ -3413,7 +3414,8 @@
       "properties": {
         "handle": {
           "$ref": "#/$defs/ObjectRef"
-        }
+        },
+        "path": { "type": "array", "maxItems": 256, "items": { "$ref": "#/$defs/ManagedNode" } }
       },
       "required": [
         "handle"

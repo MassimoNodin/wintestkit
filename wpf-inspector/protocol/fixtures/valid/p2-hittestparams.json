@@ -6,6 +6,7 @@
       "x": 1,
       "y": 2
     },
+    "includePath": true,
     "timeoutMs": 1000
   }
 }

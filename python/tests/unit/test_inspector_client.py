@@ -593,13 +593,24 @@ def test_hit_test_request_and_not_found() -> None:
     def handler(request: dict[str, Any]) -> object:
         if missing:
             return {"id": request["id"], "error": {"code": "notFound", "message": "missing"}}
-        return {"id": request["id"], "result": {"handle": reference.to_json()}}
+        result = {"handle": reference.to_json()}
+        if request["params"].get("includePath"):
+            result["path"] = [
+                {
+                    "object": reference.to_json(),
+                    "label": "Button",
+                    "hasVisualChildren": False,
+                    "hasLogicalChildren": False,
+                    "identity": {"xName": "target"},
+                }
+            ]
+        return {"id": request["id"], "result": result}
 
     transport = ScriptedTransport(handler)
     client = InspectorClient(transport, session())
     try:
         assert (
-            client.hit_test(123, 10.5, 20.5, timeout_ms=1000, deadline=time.monotonic() + 2)
+            client.hit_test(123, 10.5, 20.5, timeout_ms=1000, deadline=time.monotonic() + 2).handle
             == reference
         )
         assert transport.requests[0]["params"] == {
@@ -607,6 +618,12 @@ def test_hit_test_request_and_not_found() -> None:
             "point": {"x": 10.5, "y": 20.5},
             "timeoutMs": 1000,
         }
+        with_path = client.hit_test(
+            123, 10, 20, timeout_ms=1000, deadline=time.monotonic() + 2, include_path=True
+        )
+        assert with_path is not None and with_path.path is not None
+        assert with_path.path[0].identity.x_name == "target"
+        assert transport.requests[1]["params"]["includePath"] is True
         missing = True
         assert client.hit_test(123, 10, 20, timeout_ms=1000, deadline=time.monotonic() + 2) is None
     finally:
