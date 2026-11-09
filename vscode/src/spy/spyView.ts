@@ -947,7 +947,10 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
       const client = attempt.client;
       const sessionId = randomBytes(16).toString("hex");
       this.pickSession = sessionId;
-      await phase("Starting element picker", () => client.request("spy.start", { sessionId }));
+      await phase("Starting element picker", () => client.request("spy.start", {
+        sessionId,
+        foregroundForProcessId: process.pid,
+      }));
       if (
         token !== this.pickRevision ||
         this.client !== client ||

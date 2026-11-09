@@ -2992,6 +2992,10 @@ export interface Suggestion {
  */
 export interface SpyStartParams {
   sessionId?: string;
+  /**
+   * Remember the foreground window belonging to this process or an ancestor and reactivate it after an element is picked.
+   */
+  foregroundForProcessId?: number;
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
