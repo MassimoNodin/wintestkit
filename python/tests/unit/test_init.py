@@ -4,6 +4,7 @@ import tomllib
 from pathlib import Path
 
 import pytest
+import yaml
 
 from wintestkit.cli import main
 from wintestkit.commands.init import skill_files
@@ -14,6 +15,28 @@ def test_init_without_app_leaves_application_unconfigured(tmp_path: Path) -> Non
     assert main(["init", str(tmp_path)]) == 0
     assert load_config(tmp_path).app is None
     assert "YourApp.exe" not in (tmp_path / "wintestkit.local.yaml").read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("arguments", [[], ["--app", "C:/Apps/My App.exe"]])
+def test_init_leaves_all_repository_settings_unset(tmp_path: Path, arguments: list[str]) -> None:
+    assert main(["init", str(tmp_path), *arguments]) == 0
+    shared = yaml.safe_load((tmp_path / "wintestkit.yaml").read_text(encoding="utf-8"))
+    assert shared == {}
+    config = tomllib.loads((tmp_path / "pyproject.toml").read_text(encoding="utf-8"))
+    assert "wintestkit" not in config.get("tool", {})
+    loaded = load_config(tmp_path)
+    assert loaded.launch == "per-test"
+    assert loaded.timeout == 10.0
+    assert loaded.screenshots == "on-failure"
+
+
+@pytest.mark.parametrize("arguments", [[], ["--force"]])
+def test_init_preserves_existing_repository_settings(tmp_path: Path, arguments: list[str]) -> None:
+    shared = "# Team settings\ntimeout: 25\nscreenshots: off\nlaunch: per-session\n"
+    shared_path = tmp_path / "wintestkit.yaml"
+    shared_path.write_text(shared, encoding="utf-8")
+    assert main(["init", str(tmp_path), *arguments]) == 0
+    assert shared_path.read_text(encoding="utf-8") == shared
 
 
 def test_init_creates_a_valid_starter_project(tmp_path: Path) -> None:

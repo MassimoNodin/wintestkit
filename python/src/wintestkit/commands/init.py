@@ -103,12 +103,7 @@ def run(args: argparse.Namespace) -> int:
     ensure_local_ignores(root)
     _write(
         root / "wintestkit.yaml",
-        "# Shared project settings. Machine paths belong in wintestkit.local.yaml.\n"
-        + (
-            "{}\n"
-            if "wintestkit" in tool
-            else "launch: per-test\ntimeout: 10\nscreenshots: on-failure\n"
-        ),
+        "# Shared project settings. Machine paths belong in wintestkit.local.yaml.\n{}\n",
         force=False,
     )
     local = "# Machine-specific settings. Do not commit this file.\n" + (
