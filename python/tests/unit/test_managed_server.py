@@ -860,16 +860,14 @@ def test_wpf_coverage_definitions_and_suggestion(
     monkeypatch.setattr(
         suggest,
         "suggest_locator",
-        lambda element, app: SimpleNamespace(to_dict=lambda: {"code": "ok"}),
+        lambda element, app, **kwargs: SimpleNamespace(to_dict=lambda: {"code": "ok"}),
     )
     coverage = request(server, output, "inspect.coverage", {"nodeIds": ["wpf-node"]})["result"]
     assert ("wpf-node" in coverage["covered"]) is mapped
     definitions = request(server, output, "inspect.definitions", {"nodeId": "wpf-node"})["result"]
     assert bool(definitions["definitions"]) is mapped
     suggestion = request(server, output, "suggest.locator", {"nodeId": "wpf-node"})
-    assert ("result" in suggestion) is mapped
-    if not mapped:
-        assert "P4e" in suggestion["error"]["message"]
+    assert suggestion["result"]["code"] == "ok"
     node.forget_release()
 
 

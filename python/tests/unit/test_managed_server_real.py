@@ -361,6 +361,37 @@ def test_spy_tree_peerless_and_large_page(tmp_path: Path, monkeypatch: pytest.Mo
                     break
             assert found, f"peerless element missing from {tree} tree"
         assert "button" in found_nodes
+        # These RPC suggestions must also survive the public declaration syntax and resolver.
+        from wintestkit.app import App
+        from wintestkit.engine.resolve import Scope, resolve
+        from wintestkit.model import Element
+
+        app = App.attach(pid=target.pid)
+        server.app = app
+        for node_id in found_nodes.values():
+            output.seek(0)
+            output.truncate()
+            server.handle(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "suggest.locator",
+                    "params": {"nodeId": node_id},
+                }
+            )
+            response = json.loads(output.getvalue())
+            suggestion = response["result"]
+            assert suggestion["unique"], suggestion
+            namespace: dict[str, Any] = {"Element": Element}
+            for helper in suggestion["helpers"]:
+                namespace[helper["attributeName"]] = eval(helper["code"], namespace)
+            declaration = eval(suggestion["code"], namespace)
+            from wintestkit.engine.locator import WindowLocator
+
+            window = WindowLocator.from_dict(suggestion["window"]["locator"])
+            with runtime.config_scope(server.cfg):
+                resolved = resolve(Scope(app, window), declaration.locator())
+            assert resolved.same_as(server.nodes[node_id])
         for kind, node_id in found_nodes.items():
             output.seek(0)
             output.truncate()

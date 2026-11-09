@@ -8,7 +8,7 @@ import re
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any
 
-from wintestkit.backends.element import TargetElement, uia_of
+from wintestkit.backends.element import TargetElement, WpfElement, uia_of
 from wintestkit.engine.locator import Locator, Matcher, WindowLocator
 from wintestkit.engine.query import query_all
 from wintestkit.errors import WtkError
@@ -110,6 +110,16 @@ def render_element_code(loc: Locator, within_attr: str | None = None, kind: str 
         if value is not None:
             rendered = str(value) if isinstance(value, int) else _render_matcher(value)
             parts.append(f"{key}={rendered}")
+    if loc.where:
+        parts.append(
+            "where={"
+            + ", ".join(
+                f"{json.dumps(key, ensure_ascii=False)}: "
+                + (_render_matcher(value) if isinstance(value, (str, re.Pattern)) else repr(value))
+                for key, value in loc.where
+            )
+            + "}"
+        )
     if loc.within is not None:
         parts.append(f"within={within_attr or render_element_code(loc.within)}")
     if loc.window is not None:
@@ -247,11 +257,7 @@ def _top_window(element: UIAElement, app: App | None) -> UIAElement:
     raise WtkError("UI Automation ancestor chain exceeds 100 nodes")
 
 
-def suggest_locator(el: TargetElement, app: App | None = None) -> Suggestion:
-    el = uia_of(el)
-    top = _top_window(el, app)
-    if top.same_as(el):
-        raise WindowSelectedError("Select a window descendant to generate an element locator")
+def _window_locator(top: UIAElement, app: App | None) -> WindowLocator:
     window_locator = WindowLocator(title=top.name or None)
     windows = app.top_level_windows() if app is not None else [top]
     same_title = [window for window in windows if window.name == top.name]
@@ -261,6 +267,165 @@ def suggest_locator(el: TargetElement, app: App | None = None) -> Suggestion:
     if len(same_title) > 1 and len(same_class) > 1:
         position = next(index for index, window in enumerate(same_class) if window.same_as(top))
         window_locator = replace(window_locator, index=position)
+    return window_locator
+
+
+def _wpf_candidates(element: WpfElement) -> list[tuple[str, Locator]]:
+    from wintestkit.engine.managed import operation_deadline
+    from wintestkit.inspector.paths import PathSegment
+
+    candidates: list[tuple[str, Locator]] = []
+    automation_id = element.automation_id
+    if automation_id and not automation_id.isdecimal() and _usable_name(automation_id):
+        candidates.append(("automation_id", Locator(automation_id=automation_id)))
+    try:
+        values, _ = element.client.read(
+            element.ref.object_id,
+            element.ref.generation,
+            [(PathSegment("property", "Name"),)],
+            deadline=operation_deadline(2),
+        )
+        value = values[0].value
+        if value.status == "ok" and isinstance(value.scalar, str) and _usable_name(value.scalar):
+            candidates.append(("x_name", Locator(where=(("clr:Name", value.scalar),))))
+    except WtkError:
+        pass
+    candidates.append(
+        (
+            "type_name",
+            Locator(
+                name=element.name if _usable_name(element.name) else None,
+                where=(("type:FullName", element.ref.type.full_name),),
+            ),
+        )
+    )
+    return candidates
+
+
+def _suggest_wpf(
+    element: WpfElement, app: App | None, ancestors: tuple[WpfElement, ...]
+) -> Suggestion:
+    from wintestkit.engine.managed import query_budget
+    from wintestkit.engine.resolve import Scope, resolve
+    from wintestkit.engine.wpf_resolve import query, route
+    from wintestkit.uia.element import from_handle
+
+    if app is None:
+        from wintestkit.app import App
+
+        app = App.attach(pid=element.process_id)
+    hwnd = element.state().window_handle
+    if not hwnd:
+        raise WtkError("Cannot identify the WPF element's window")
+    top = _top_window(from_handle(hwnd), app)
+    window = _window_locator(top, app)
+
+    @query_budget()
+    def build() -> Suggestion:
+        root = route(top, force=True)
+        assert isinstance(root, WpfElement)
+        candidates = _wpf_candidates(element)
+        fallback_strategy, fallback = candidates[0]
+        count = 0
+
+        def verified(locator: Locator) -> tuple[bool, int]:
+            current = root
+            for link in locator.chain():
+                found = query(current, link, use_index=link.index is not None)
+                if not found.complete:
+                    return False, len(found)
+                if link.index is not None:
+                    if found.indexed:
+                        current = found[0]
+                    elif link.index < len(found):
+                        current = found[link.index]
+                    else:
+                        return False, len(found)
+                elif len(found) == 1:
+                    current = found[0]
+                else:
+                    return False, len(found)
+            if not current.same_as(element):
+                return False, 1
+            resolved = resolve(Scope(app, window), locator)
+            return isinstance(resolved, WpfElement) and resolved.same_as(element), 1
+
+        def result(
+            strategy: str,
+            locator: Locator,
+            unique: bool,
+            matches: int,
+            helpers: tuple[tuple[str, str, Locator], ...] = (),
+        ) -> Suggestion:
+            name = attribute_name_for(element.info())
+            return Suggestion(
+                locator,
+                render_element_code(locator, helpers[-1][0] if helpers else None),
+                name,
+                helpers,
+                unique,
+                matches,
+                strategy,
+                (render_window_code(window), window),
+            )
+
+        for strategy, locator in candidates:
+            try:
+                ok, matches = verified(locator)
+                if locator == fallback:
+                    count = matches
+                if ok:
+                    return result(strategy, locator, True, 1)
+            except Exception:
+                continue
+        for ancestor in ancestors:
+            try:
+                for _, parent_locator in _wpf_candidates(ancestor):
+                    parent_matches = query(root, parent_locator)
+                    if (
+                        not parent_matches.complete
+                        or len(parent_matches) != 1
+                        or not parent_matches[0].same_as(ancestor)
+                    ):
+                        continue
+                    helper_name = attribute_name_for(ancestor.info())
+                    if helper_name == attribute_name_for(element.info()):
+                        helper_name += "_scope"
+                    helpers = ((helper_name, render_element_code(parent_locator), parent_locator),)
+                    for _, locator in candidates:
+                        scoped = replace(locator, within=parent_locator)
+                        ok, _ = verified(scoped)
+                        if ok:
+                            return result("within", scoped, True, 1, helpers)
+            except Exception:
+                continue
+        base = candidates[-1][1]
+        try:
+            matches = query(root, base)
+            if matches.complete:
+                for position, match in enumerate(matches):
+                    if match.same_as(element):
+                        indexed = replace(base, index=position)
+                        ok, _ = verified(indexed)
+                        if ok:
+                            return result("index", indexed, True, 1)
+        except Exception:
+            pass
+        return result(fallback_strategy, fallback, False, count)
+
+    return build()
+
+
+def suggest_locator(
+    el: TargetElement, app: App | None = None, *, ancestors: tuple[WpfElement, ...] = ()
+) -> Suggestion:
+    if isinstance(el, WpfElement):
+        return _suggest_wpf(el, app, ancestors)
+    el = uia_of(el)
+    top = _top_window(el, app)
+    if top.same_as(el):
+        raise WindowSelectedError("Select a window descendant to generate an element locator")
+    window_locator = _window_locator(top, app)
     stable = _stable_locator(el, top, 0)
     if stable is not None:
         strategy, locator, helpers = stable
