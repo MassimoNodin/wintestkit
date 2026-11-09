@@ -1,7 +1,7 @@
 # WPF-tree-driven automation: migration plan
 
 Status: decisions D1–D7 made (§3); phases 0–3 done (phase 2 gate passed 2026-11-06,
-§6.3; phase 3 gate passed 2026-11-09, §6.5). Planning date: 2026-10-29.
+§6.3; phase 3 gate passed 2026-11-09, §6.5). Phase 4 in progress (§6.6). Planning date: 2026-10-29.
 Builds on: `wpf-dotnet-attribute-analyzer.md` (the *inspector plan*) and the implemented
 inspector on `master` (agent, protocol, Python client, managed locators, Spy panel).
 
@@ -484,6 +484,44 @@ stale before first lookup, and a timed-out action on a disabled control can take
 VS Code follow-ups remain: the settings model still states the old defaults in
 `vscode/src/settings/model.ts`, `files.ts`, and `media/settings/editor.js`, and the machine-health
 summary does not know the `wpf_agent` check.
+
+### 6.6 Phase 4 design (2026-11-09)
+
+Gate (owner, 2026-11-09): suggested locators round-trip on the WPF fixture, verified here. The
+owner checks real suite pages separately; that part of the gate stays open and does not block
+phase 5.
+
+Design:
+
+- **Nodes.** The server's node registry holds a `TargetElement`, so a node is either a
+  `UIAElement` or a `WpfElement`. A WPF node's id is derived from its session, object id and
+  generation and never collides with a runtime id. Nodes carry `source: "wpf" | "uia"`. Existing
+  callers of `inspect.*` keep their contracts; element lookups go through the router.
+- **Tree.** Top-level windows still come from `inspect.roots`. Under a WPF window,
+  `inspect.children` walks the agent tree, with `tree: "visual" | "logical"` (default `visual`,
+  the tree TestComplete users know). Other windows stay on UIA. Labels use the type name plus
+  `x:Name` or AutomationId.
+- **Blocked agent (D5).** A WPF window whose agent cannot load does not fall back to a UIA view:
+  the node reports the agent error code and its fix, as `wtk doctor` does.
+- **Picker.** The hook keeps the mouse work. For a point over a WPF window the worker resolves
+  the window, then calls the agent `hitTest`, so objects with no automation peer can be picked.
+  Highlight comes from `state.get` bounds through the unchanged overlay. Other windows keep
+  `ElementFromPoint`.
+- **Identity and properties.** Identity shows `ClrFullClassName`, `x:Name`, AutomationId, peer
+  Name and control type with a source badge. Managed member groups become the main view; UIA
+  properties move to a secondary group.
+- **Suggested locator.** On a WPF node, candidates are tried in the order AutomationId, `x:Name`,
+  CLR type plus peer Name, then ancestor-scoped forms, and an index only as a last resort. Each
+  is verified unique with `query.findAll`, and the result is checked by resolving it back to the
+  same object. A candidate that cannot be verified is not offered as unique.
+- **Attach.** One confirmation per process run, then automatic. A new process run asks again.
+- **Unchanged:** page tree, coverage, element captures and previews keep their contracts.
+
+Slices: P4a extension follow-ups from phase 3 (settings defaults, `wpf_agent` in the health
+summary); P4b agent `hitTest` and Python client; P4c server WPF nodes, tree and blocked state;
+P4d picker and highlight; P4e suggested locators with round-trip verification; P4f extension UI
+(tree, toggle, Identity, property groups, blocked state, attach); P4g live round trips, Spy tests
+and docs.
 
 ## 7. Test strategy
 
