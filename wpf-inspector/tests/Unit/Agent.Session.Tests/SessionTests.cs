@@ -229,6 +229,7 @@ public class SessionTests
         var bytes = (await FrameCodec.ReadFrameAsync(client, timeout.Token))!;
         var response = HelloResult.FromJson(ResponseEnvelope.FromJson(StrictJson.Parse(bytes, 0, bytes.Length)).Result!);
         Assert.Equal(available, response.Features.Contains(Features.ExactUiaMapping));
+        Assert.Contains(Features.HitTest, response.Features);
         Assert.Contains(Features.Query, response.Features);
         Assert.Contains(Features.Waits, response.Features);
         Assert.Contains(Features.Actions, response.Features);

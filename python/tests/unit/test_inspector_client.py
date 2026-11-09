@@ -584,6 +584,48 @@ def test_read_uia_path() -> None:
         client.close()
 
 
+def test_hit_test_request_and_not_found() -> None:
+    reference = ObjectRef(
+        "session", "object", 1, TypeInfo("Button", "Button", "app", "Button", ()), "dispatcher"
+    )
+    missing = False
+
+    def handler(request: dict[str, Any]) -> object:
+        if missing:
+            return {"id": request["id"], "error": {"code": "notFound", "message": "missing"}}
+        return {"id": request["id"], "result": {"handle": reference.to_json()}}
+
+    transport = ScriptedTransport(handler)
+    client = InspectorClient(transport, session())
+    try:
+        assert (
+            client.hit_test(123, 10.5, 20.5, timeout_ms=1000, deadline=time.monotonic() + 2)
+            == reference
+        )
+        assert transport.requests[0]["params"] == {
+            "nativeWindowHandle": 123,
+            "point": {"x": 10.5, "y": 20.5},
+            "timeoutMs": 1000,
+        }
+        missing = True
+        assert client.hit_test(123, 10, 20, timeout_ms=1000, deadline=time.monotonic() + 2) is None
+    finally:
+        client.close()
+
+
+def test_hit_test_requires_feature() -> None:
+    from dataclasses import replace
+
+    transport = ScriptedTransport(lambda request: {"id": request["id"], "result": {"closed": True}})
+    client = InspectorClient(transport, replace(session(), features=()))
+    try:
+        with pytest.raises(InspectorUnavailableError):
+            client.hit_test(1, 2, 3, timeout_ms=100, deadline=time.monotonic() + 1)
+        assert not transport.requests
+    finally:
+        client.close()
+
+
 def test_protocol2_query_and_state_requests() -> None:
     from pathlib import Path
 

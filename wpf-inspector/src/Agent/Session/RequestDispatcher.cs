@@ -154,6 +154,9 @@ namespace WinTestKit.Inspector.Agent.Session
                     var realize = ActRealizeItemParams.FromJson(request.Params);
                     return (await realizeService.RealizeItemAsync(realize.Search, deadline, realize.TimeoutMs, ct).ConfigureAwait(false)).ToJson();
                 case PipeMethods.HitTest:
+                    if (!(service is IHitTestInspectionService hitTestService)) throw new ProtocolException(ErrorCodes.UnsupportedTarget, "Feature not available.");
+                    var hitTest = HitTestParams.FromJson(request.Params);
+                    return (await hitTestService.HitTestAsync(hitTest.NativeWindowHandle, hitTest.Point, deadline, hitTest.TimeoutMs, ct).ConfigureAwait(false)).ToJson();
                 case PipeMethods.WriteSetProperty:
                 case PipeMethods.WriteCall:
                 case PipeMethods.EventsSubscribe:

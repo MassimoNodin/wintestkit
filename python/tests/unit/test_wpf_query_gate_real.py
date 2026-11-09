@@ -794,6 +794,75 @@ def test_parity_and_features(owned):
         assert resolve(scope, Locator(automation_id="ActionEffect")).name == "Clicked 2"
 
 
+def test_hit_test_button_real(owned):
+    from wintestkit.backends import WpfElement
+
+    scope, path = owned
+    with runtime.config_scope(replace(config(path, "agent"), backend="auto")):
+        target = resolve(
+            scope,
+            Locator(
+                automation_id="FancyAutomationId",
+                where=(("type:Is", "WinTestKit.Fixture.FancyButton"),),
+            ),
+        )
+        assert isinstance(target, WpfElement)
+        state = target.client.state_get(target.ref, timeout_ms=2000, deadline=time.monotonic() + 5)
+        assert state.bounds is not None and state.window_handle is not None
+        bounds = state.bounds
+        hit = target.client.hit_test(
+            state.window_handle,
+            bounds.x + bounds.width / 2,
+            bounds.y + bounds.height / 2,
+            timeout_ms=2000,
+            deadline=time.monotonic() + 5,
+        )
+        assert hit is not None
+        assert (
+            target.client.state_get(hit, timeout_ms=2000, deadline=time.monotonic() + 5).handle
+            == hit
+        )
+        pending = [target.ref]
+        found = False
+        while pending:
+            current = pending.pop()
+            if current == hit:
+                found = True
+                break
+            page = target.client.children(
+                current.object_id, current.generation, "visual", deadline=time.monotonic() + 5
+            )
+            assert page.complete
+            pending.extend(node.object_ref for node in page.items)
+        assert found
+
+
+def test_hit_test_peerless_real(owned):
+    from wintestkit.backends import WpfElement
+
+    scope, path = owned
+    with runtime.config_scope(replace(config(path, "agent"), backend="auto")):
+        target = resolve(
+            scope, Locator(where=(("type:Is", "WinTestKit.Fixture.PeerlessClickTarget"),))
+        )
+        assert isinstance(target, WpfElement)
+        state = target.client.state_get(target.ref, timeout_ms=2000, deadline=time.monotonic() + 5)
+        assert state.bounds is not None and state.window_handle is not None
+        bounds = state.bounds
+        hit = target.client.hit_test(
+            state.window_handle,
+            bounds.x + bounds.width / 2,
+            bounds.y + bounds.height / 2,
+            timeout_ms=2000,
+            deadline=time.monotonic() + 5,
+        )
+        assert hit == target.ref
+        assert (
+            target.client.state_get(hit, timeout_ms=2000, deadline=time.monotonic() + 5).handle
+            == target.ref
+        )
+
+
 def test_popup_parity(owned):
     scope, path = owned
     locator = Locator(
