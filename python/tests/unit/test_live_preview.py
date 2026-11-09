@@ -142,3 +142,21 @@ def test_an_unexpected_failure_becomes_a_reason(monkeypatch: pytest.MonkeyPatch)
     monkeypatch.setattr(screenshot, "capture_window_frame", broken)
     result = live_preview.capture_live_preview(Node(Rect(110, 55, 5, 5), hwnd=7))  # type: ignore[arg-type]
     assert "device lost" in result["reason"]
+
+
+def test_peerless_wpf_preview_uses_agent_window_and_bounds(
+    monkeypatch: pytest.MonkeyPatch, window_frame: list[int]
+) -> None:
+    from types import SimpleNamespace
+
+    from wintestkit.backends.element import WpfElement
+
+    element = object.__new__(WpfElement)
+    state = SimpleNamespace(
+        bounds=SimpleNamespace(x=110, y=55, width=10, height=5), window_handle=7
+    )
+    monkeypatch.setattr(WpfElement, "as_live", lambda self: self)
+    monkeypatch.setattr(WpfElement, "_get_state", lambda self: state)
+    result = live_preview.capture_live_preview(element)
+    assert window_frame == [1007]
+    assert (result["element"]["width"], result["element"]["height"]) == (10, 5)

@@ -8,11 +8,11 @@ from __future__ import annotations
 
 import base64
 from io import BytesIO
-from typing import Any
+from typing import Any, cast
 
 from PIL import Image, ImageDraw
 
-from wintestkit.backends.element import TargetElement, uia_of
+from wintestkit.backends.element import TargetElement, WpfElement
 from wintestkit.uia import screenshot, win32
 from wintestkit.uia.element import UIAElement
 
@@ -79,14 +79,14 @@ def capture_live_preview(element: TargetElement) -> dict[str, Any]:
     without being brought forward, so it may be covered; a minimized window cannot be rendered.
     """
     try:
-        return _capture(uia_of(element))
+        return _capture(element)
     except PreviewUnavailable as exc:
         return {"reason": str(exc)}
     except Exception as exc:
         return {"reason": f"The preview could not be captured: {exc}"}
 
 
-def _capture(element: UIAElement) -> dict[str, Any]:
+def _capture(element: TargetElement) -> dict[str, Any]:
     element = element.as_live()
     bounds = element.rect
     if bounds is None:
@@ -94,7 +94,13 @@ def _capture(element: UIAElement) -> dict[str, Any]:
             "This object has no on-screen rectangle. It may be hidden, collapsed, "
             "not laid out yet or in a minimized window."
         )
-    hwnd = _top_level_window(element)
+    if isinstance(element, WpfElement):
+        hwnd = element.state().window_handle
+        if not hwnd:
+            raise PreviewUnavailable("The object does not belong to a window that can be captured.")
+        hwnd = win32.root_window(hwnd)
+    else:
+        hwnd = _top_level_window(cast(UIAElement, element))
     frame = screenshot.capture_window_frame(hwnd)
     if frame is None:
         raise PreviewUnavailable(

@@ -1181,6 +1181,31 @@ class Server:
                 return self._wpf_children(
                     tree_node, params["tree"], params.get("pageSize", 200), params.get("pageToken")
                 )
+        from wintestkit.backends.element import WpfElement
+
+        with self._node_lock:
+            selected = self.nodes.get(params["nodeId"])
+        if isinstance(selected, WpfElement) and method in ("inspect.highlight", "inspect.preview"):
+            if not selected.is_alive():
+                raise RpcError(-32005, "unknown node id")
+            wpf_node = selected.as_live()
+            if method == "inspect.preview":
+                from wintestkit.live_preview import capture_live_preview
+
+                return capture_live_preview(wpf_node)
+            from wintestkit.uia import win32
+
+            state = wpf_node.state()
+            hwnd = state.window_handle
+            if (
+                params.get("bringToFront", False)
+                and hwnd
+                and (wpf_node.rect is not None or win32.IsIconic(hwnd))
+            ):
+                win32.raise_window(win32.root_window(hwnd))
+                wpf_node = wpf_node.as_live()
+            self._flash(wpf_node.rect, params)
+            return None
         node = self._node(params["nodeId"])
         if method == "inspect.definitions":
             app = self._app(False)

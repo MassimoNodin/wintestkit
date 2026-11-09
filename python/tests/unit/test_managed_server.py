@@ -629,3 +629,46 @@ def test_spy_auto_wpf_without_tree_uses_uia(
     result = rpc_request(server, output, "inspect.children", {"nodeId": root["nodeId"]})["result"]
     assert isinstance(result, list)
     assert all(child["source"] == "uia" for child in result)
+
+
+@pytest.mark.parametrize("peer", [True, False])
+def test_spy_wpf_geometry_routes(
+    managed_server: Any, monkeypatch: pytest.MonkeyPatch, peer: bool
+) -> None:
+    from wintestkit import live_preview
+    from wintestkit.backends.element import WpfElement
+    from wintestkit.uia import win32
+    from wintestkit.uia.element import Rect
+
+    server, output, client = managed_server
+    node = WpfElement(client, REF, 42)
+    server.nodes["wpf-node"] = node
+    state = SimpleNamespace(
+        bounds=SimpleNamespace(x=10, y=20, width=30, height=40),
+        window_handle=7,
+        uia_runtime_id=(1, 2) if peer else None,
+    )
+    monkeypatch.setattr(WpfElement, "is_alive", lambda self: True)
+    monkeypatch.setattr(WpfElement, "as_live", lambda self: self)
+    monkeypatch.setattr(WpfElement, "_get_state", lambda self: state)
+    flashed: list[Any] = []
+    raised: list[int] = []
+    monkeypatch.setattr(server, "_flash", lambda rect, params: flashed.append(rect))
+    monkeypatch.setattr(win32, "root_window", lambda hwnd: hwnd + 1)
+    monkeypatch.setattr(win32, "raise_window", lambda hwnd: raised.append(hwnd) or True)
+    monkeypatch.setattr(live_preview, "capture_live_preview", lambda element: {"reason": "test"})
+    assert (
+        request(server, output, "inspect.highlight", {"nodeId": "wpf-node", "bringToFront": True})[
+            "result"
+        ]
+        is None
+    )
+    assert flashed == [Rect(10, 20, 30, 40)]
+    assert raised == [8]
+    assert request(server, output, "inspect.preview", {"nodeId": "wpf-node"})["result"] == {
+        "reason": "test"
+    }
+    monkeypatch.setattr(WpfElement, "is_alive", lambda self: False)
+    for method in ("inspect.highlight", "inspect.preview"):
+        assert request(server, output, method, {"nodeId": "wpf-node"})["error"]["code"] == -32005
+    node.forget_release()
