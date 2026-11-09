@@ -14,6 +14,7 @@ from wintestkit import runtime
 from wintestkit.config import load_config
 from wintestkit.errors import InspectorUnavailableError
 from wintestkit.inspector import payload, probe
+from wintestkit.inspector.client import HitTestResult
 from wintestkit.inspector.models import (
     ManagedNode,
     Mapping,
@@ -473,6 +474,81 @@ def test_spy_wpf_children_identity_and_failures(
         for call in client.calls
     )
     assert result[0]["nodeId"] not in server.nodes
+
+
+def test_picker_agent_resolution(managed_server: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    from wintestkit.engine.spy import SpySession
+    from wintestkit.uia import element as uia_element
+    from wintestkit.uia import win32
+
+    server, output, client = managed_server
+    window = SimpleNamespace(process_id=42, framework_id="WPF")
+    monkeypatch.setattr(win32, "WindowFromPoint", lambda point: 321)
+    monkeypatch.setattr(win32, "root_window", lambda hwnd: 999)
+    monkeypatch.setattr(uia_element, "from_handle", lambda hwnd: window)
+    root = ObjectRef("session", "root", 1, TYPE, "dispatcher")
+    path = (
+        ManagedNode(root, "root", True, True),
+        ManagedNode(REF, "hit", False, False, identity=NodeIdentity("Peerless", None)),
+    )
+    calls: list[Any] = []
+
+    def hit_test(hwnd: int, x: int, y: int, **kwargs: Any) -> HitTestResult:
+        calls.append((hwnd, kwargs["include_path"]))
+        return HitTestResult(REF, path if kwargs["include_path"] else None)
+
+    client.hit_test = hit_test
+    client.state_get = lambda *a, **kw: SimpleNamespace(
+        bounds=SimpleNamespace(x=1, y=2, width=30, height=40, to_json=lambda: {}),
+        enabled=True,
+        offscreen=False,
+        focused=False,
+        visible=True,
+        uia_runtime_id=None,
+        window_handle=321,
+    )
+    fallback = SimpleNamespace()
+    hover = server._spy_resolve(fallback, 10, 20, False, "visual")
+    assert hover.node["source"] == "wpf" and hover.rect.width == 30
+    assert calls == [(321, False)]
+    picked = server._spy_resolve(fallback, 10, 20, True, "visual")
+    assert calls[-1] == (321, True)
+    assert picked.node["identity"]["xName"] == "Peerless"
+    monkeypatch.setattr(SpySession, "start", lambda self: None)
+    assert request(server, output, "spy.start", {"tree": "visual"})["result"] is None
+    assert server.spy is not None
+    output.seek(0)
+    output.truncate()
+    server.spy._on_hover(hover)
+    server.spy._on_pick(picked)
+    notifications = [json.loads(line) for line in output.getvalue().splitlines()]
+    assert [item["method"] for item in notifications] == ["spy.hover", "spy.picked"]
+    assert all(item["params"]["node"]["source"] == "wpf" for item in notifications)
+    result = request(
+        server,
+        output,
+        "inspect.properties",
+        {"nodeId": picked.node["nodeId"], "includeAncestors": True},
+    )["result"]
+    assert len(result["ancestors"]) == 1
+    client.hit_test = lambda *a, **kw: None
+    assert server._spy_resolve(fallback, 0, 0, False, "visual").extra == {"source": "uia"}
+
+    def fail(*args: Any, **kwargs: Any) -> Any:
+        raise RuntimeError("failed")
+
+    client.hit_test = fail
+    assert server._spy_resolve(fallback, 0, 0, True, "visual").extra == {"source": "uia"}
+    client.closed = True
+    assert server._spy_resolve(fallback, 0, 0, False, "visual").extra == {
+        "attachRequired": True,
+        "process": IDENTITY.to_json(),
+    }
+    client.session = Session("session", IDENTITY, "faulted", 2, 0, (), error="blockedByPolicy")
+    assert (
+        server._spy_resolve(fallback, 0, 0, False, "visual").extra["blocked"]["code"]
+        == "blockedByPolicy"
+    )
 
 
 def test_spy_wpf_attach_required_and_blocked(

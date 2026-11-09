@@ -68,7 +68,7 @@ _PARAMS: dict[str, tuple[set[str], set[str]]] = {
     "suggest.locator": ({"nodeId"}, set()),
     "inspect.definitions": ({"nodeId"}, set()),
     "inspect.coverage": ({"nodeIds"}, set()),
-    "spy.start": (set(), {"sessionId", "foregroundForProcessId"}),
+    "spy.start": (set(), {"sessionId", "foregroundForProcessId", "tree"}),
     "spy.stop": (set(), set()),
 }
 
@@ -115,6 +115,28 @@ class RpcError(Exception):
     def __init__(self, code: int, message: str, data: Any = None) -> None:
         super().__init__(message)
         self.code, self.message, self.data = code, message, data
+
+
+@dataclasses.dataclass
+class _SpyTarget:
+    element: Any
+    node: dict[str, Any] | None = None
+    extra: dict[str, Any] = dataclasses.field(default_factory=lambda: dict[str, Any]())
+
+    @property
+    def rect(self) -> Any:
+        return self.element.rect
+
+    def same_as(self, other: Any) -> bool:
+        if not isinstance(other, _SpyTarget) or self.extra != other.extra:
+            return False
+        if self.node is not None or other.node is not None:
+            return (
+                self.node is not None
+                and other.node is not None
+                and self.node["nodeId"] == other.node["nodeId"]
+            )
+        return bool(self.element.same_as(other.element))
 
 
 def _invalid_constant(value: str) -> Any:
@@ -642,6 +664,120 @@ class Server:
             if node is not None and self._wpf_enabled(cast("UIAElement", node)):
                 item["source"] = "wpf"
                 self._wpf_windows.add(node_id)
+
+    def _spy_resolve(self, element: Any, x: int, y: int, pick: bool, tree: str) -> _SpyTarget:
+        from wintestkit import runtime
+        from wintestkit.backends.element import WpfElement
+        from wintestkit.inspector.hints import inspector_error_hint
+        from wintestkit.inspector.models import ManagedNode
+        from wintestkit.inspector.probe import current_identity
+        from wintestkit.uia import element as uia_element
+        from wintestkit.uia import win32
+        from wintestkit.uia.element import ElementInfo
+
+        fallback = _SpyTarget(element)
+        try:
+            hwnd = int(win32.WindowFromPoint(win32.POINT(x, y)) or 0)
+            if not hwnd:
+                return fallback
+            window = uia_element.from_handle(win32.root_window(hwnd))
+            if not self._wpf_enabled(window):
+                return fallback
+            assert self.cfg is not None
+            identity = current_identity(window.process_id)
+            with runtime.config_scope(self.cfg):
+                registry = runtime.inspector_sessions()
+                client = registry.get(identity)
+                if client is None:
+                    status = registry.status(identity)
+                    if status.state == "faulted" and status.error:
+                        fallback.extra = {
+                            "blocked": {
+                                "code": status.error,
+                                "hint": inspector_error_hint(status.error),
+                            }
+                        }
+                    else:
+                        fallback.extra = {"attachRequired": True, "process": identity.to_json()}
+                    return fallback
+                deadline = time.monotonic() + self.cfg.inspector.request_timeout
+                hit = client.hit_test(
+                    hwnd,
+                    x,
+                    y,
+                    include_path=pick,
+                    timeout_ms=max(1, int(self.cfg.inspector.request_timeout * 1000)),
+                    deadline=deadline,
+                )
+                if hit is None:
+                    log.debug("WPF Spy hit test missed at %s, %s", x, y)
+                    fallback.extra = {"source": "uia"}
+                    return fallback
+                entries = hit.path if pick else (ManagedNode(hit.handle, "", False, False),)
+                if not entries or entries[-1].object_ref != hit.handle:
+                    raise ValueError("hit test returned an incomplete path")
+                with self._managed_lock:
+                    self._managed_clients[client.session.session_id] = client
+                parent_id: str | None = None
+                description: dict[str, Any] = {}
+                target: Any = None
+                for entry in entries:
+                    ref = entry.object_ref
+                    self._remember_managed(client.session.session_id, ref.to_json())
+                    node_id = "wpf:" + json.dumps(
+                        [ref.session_id, ref.object_id, ref.generation], separators=(",", ":")
+                    )
+                    identity_data = {"type": ref.type.full_name}
+                    if entry.identity is not None:
+                        if entry.identity.x_name:
+                            identity_data["xName"] = entry.identity.x_name
+                        if entry.identity.automation_id:
+                            identity_data["automationId"] = entry.identity.automation_id
+                    info = ElementInfo(
+                        identity_data.get("automationId", ""),
+                        identity_data.get("xName", ""),
+                        ref.type.name,
+                        ref.type.full_name,
+                        "WPF",
+                        window.process_id,
+                        None,
+                        True,
+                        False,
+                        False,
+                        node_id,
+                    )
+                    target = WpfElement(client, ref, window.process_id)
+                    description = {
+                        "nodeId": node_id,
+                        "info": info.to_dict(),
+                        "hasChildren": entry.has_visual_children
+                        if tree == "visual"
+                        else entry.has_logical_children,
+                        "source": "wpf",
+                        "identity": identity_data,
+                    }
+                    with self._node_lock:
+                        self.nodes[node_id] = target
+                        self.node_infos[node_id] = info
+                        self.nodes.move_to_end(node_id)
+                        if parent_id is not None:
+                            self._wpf_parents[node_id] = parent_id
+                        elif pick:
+                            self._wpf_parents.pop(node_id, None)
+                        self._wpf_descriptions[node_id] = description
+                        if len(self.nodes) > 5000:
+                            evicted, old = self.nodes.popitem(last=False)
+                            self.node_infos.pop(evicted, None)
+                            self._wpf_windows.discard(evicted)
+                            self._release_tree_node(old)
+                    parent_id = node_id
+                # Fetch geometry here so failures still fall back for this event.
+                _ = target.rect
+                return _SpyTarget(target, description)
+        except Exception:
+            log.debug("WPF Spy hit test failed", exc_info=True)
+            fallback.extra = {"source": "uia"}
+            return fallback
 
     def _wpf_children(
         self, node: TargetElement, tree: str, page_size: int, page_token: str | None, parent_id: str
@@ -1275,11 +1411,16 @@ class Server:
                 else None
             )
 
-            def publish(method: str, element: UIAElement, locate: bool = True) -> None:
+            def publish(method: str, element: Any, locate: bool = True) -> None:
                 with self._spy_lock:
                     if epoch != self._spy_epoch or self.spy is not session:
                         return
-                node = self._register(element, locate=locate)
+                target = element if isinstance(element, _SpyTarget) else _SpyTarget(element)
+                node = (
+                    target.node
+                    if target.node is not None
+                    else self._register(target.element, locate=locate)
+                )
                 with self._spy_lock:
                     if epoch == self._spy_epoch and self.spy is session:
                         if method == "spy.picked" and host_window is not None:
@@ -1287,7 +1428,7 @@ class Server:
                                 win32.bring_to_foreground(host_window)
                             except Exception:
                                 log.exception("Could not reactivate the element picker host window")
-                        self.notify(method, {"node": node, **session_params})
+                        self.notify(method, {"node": node, **session_params, **target.extra})
 
             def hover(element: UIAElement) -> None:
                 publish("spy.hover", element, locate=False)
@@ -1309,8 +1450,17 @@ class Server:
                     return None
                 if self.spy is None:
                     epoch = self._spy_epoch
+                    options: dict[str, Any] = {}
+                    if "tree" in params:
+
+                        def resolve(
+                            element: UIAElement, x: int, y: int, picked: bool
+                        ) -> _SpyTarget:
+                            return self._spy_resolve(element, x, y, picked, params["tree"])
+
+                        options["resolve"] = resolve
                     session = SpySession(
-                        hover, pick, cancel, None if pids is None else pids.__contains__
+                        hover, pick, cancel, None if pids is None else pids.__contains__, **options
                     )
                     self.spy = session
                     try:

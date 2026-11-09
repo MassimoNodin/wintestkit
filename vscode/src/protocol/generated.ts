@@ -2999,6 +2999,13 @@ export interface SpyCancelledNotification {
  */
 export interface SpyHoverNotification {
   sessionId?: string;
+  attachRequired?: true;
+  process?: ManagedProcessIdentity;
+  blocked?: {
+    code: string;
+    hint: string;
+  };
+  source?: "uia";
   node: NodeInfo;
 }
 /**
@@ -3007,6 +3014,13 @@ export interface SpyHoverNotification {
  */
 export interface SpyPickedNotification {
   sessionId?: string;
+  attachRequired?: true;
+  process?: ManagedProcessIdentity;
+  blocked?: {
+    code: string;
+    hint: string;
+  };
+  source?: "uia";
   node: NodeInfo;
   suggestion?: Suggestion;
 }
@@ -3037,6 +3051,7 @@ export interface Suggestion {
  */
 export interface SpyStartParams {
   sessionId?: string;
+  tree?: "visual" | "logical";
   /**
    * Remember the foreground window belonging to this process or an ancestor and reactivate it after an element is picked.
    */

@@ -27,6 +27,7 @@ class SpySession:
         on_cancel: Callable[[], None],
         process_filter: Callable[[int], bool] | None = None,
         throttle_ms: int = 60,
+        resolve: Callable[[UIAElement, int, int, bool], Any] | None = None,
     ) -> None:
         if throttle_ms <= 0:
             raise ValueError("throttle_ms must be positive")
@@ -34,6 +35,7 @@ class SpySession:
         self._on_pick = on_pick
         self._on_cancel = on_cancel
         self._process_filter = process_filter
+        self._resolve = resolve
         self._throttle = throttle_ms / 1000
         self._events: queue.SimpleQueue[tuple[str, int, int]] = queue.SimpleQueue()
         self._stop = threading.Event()
@@ -155,7 +157,7 @@ class SpySession:
         except Exception:
             log.exception("Spy callback failed")
 
-    def _element_at(self, horizontal: int, vertical: int) -> UIAElement | None:
+    def _element_at(self, horizontal: int, vertical: int, pick: bool = False) -> Any:
         element = from_point(horizontal, vertical)
         if element is None or element.process_id == os.getpid():
             return None
@@ -165,7 +167,7 @@ class SpySession:
             parent = element.parent()
             if parent is not None and parent.control_type == "Button":
                 element = parent
-        return element
+        return self._resolve(element, horizontal, vertical, pick) if self._resolve else element
 
     def _work(self) -> None:
         overlay: Overlay | None = None
@@ -192,8 +194,14 @@ class SpySession:
                     if kind == "cancel":
                         self._callback(self._on_cancel)
                     elif kind == "pick":
-                        element = self._element_at(horizontal, vertical)
+                        element = self._element_at(horizontal, vertical, True)
                         if element is not None:
+                            if self._resolve is not None:
+                                rect = element.rect
+                                if rect is not None:
+                                    overlay.show(rect)
+                                else:
+                                    overlay.hide()
                             self._callback(self._on_pick, element)
                     elif kind == "move":
                         pending = (horizontal, vertical)
