@@ -157,6 +157,7 @@ class Expectation:
         )
         args = {"expected": expected} if has_argument else {}
         latest: list[_Outcome] = []
+        classifier = actions.PasswordClassifier()
 
         def poll() -> bool | None:
             __tracebackhide__ = True
@@ -188,7 +189,7 @@ class Expectation:
                 if element is not None:
                     runtime.record_backend(element)
                     record.sensitive = True
-                    secret = secret or actions.is_password(element)
+                    secret = secret or classifier.is_password(element)
                     record.set_arguments(args, secret=secret)
                 outcome = evaluate(element)
             except InspectorDeadlineError:

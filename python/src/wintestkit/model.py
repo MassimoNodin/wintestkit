@@ -1157,6 +1157,7 @@ class _TextEntry(_Valued):
         """Type text; password controls and explicit secrets hide input and failure details."""
         __tracebackhide__ = True
         secret = secret or is_password_locator(self.locator)
+        classifier = actions.PasswordClassifier()
         args = {"text": text, "clear": clear, "keys": keys}
         with self.step("type", args, secret=True) as rec:
 
@@ -1164,7 +1165,7 @@ class _TextEntry(_Valued):
                 __tracebackhide__ = True
                 nonlocal secret
                 rec.sensitive = True
-                secret = secret or actions.is_password(el)
+                secret = secret or classifier.is_password(el)
                 rec.set_arguments(args, secret=secret)
                 return actions.type_text(el, text, clear=clear, keys=keys)
 
@@ -1179,13 +1180,14 @@ class _TextEntry(_Valued):
         """Press keys; use secret=True to hide sensitive input on non-password controls."""
         __tracebackhide__ = True
         secret = secret or is_password_locator(self.locator)
+        classifier = actions.PasswordClassifier()
         with self.step("press", {"keys": keys}, secret=True) as rec:
 
             def send(el: TargetElement) -> None:
                 __tracebackhide__ = True
                 nonlocal secret
                 rec.sensitive = True
-                secret = secret or actions.is_password(el)
+                secret = secret or classifier.is_password(el)
                 rec.set_arguments({"keys": keys}, secret=secret)
                 actions.press(el, keys)
 

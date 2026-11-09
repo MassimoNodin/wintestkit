@@ -114,6 +114,26 @@ def test_value_and_document_reads(target):
     assert actions.get_text(el) == "document"
 
 
+@pytest.mark.parametrize("status", ["unavailable", "redacted"])
+def test_password_classification_unavailable_fails_closed(target, monkeypatch, status):
+    client, el = target
+    monkeypatch.setattr(
+        client,
+        "read",
+        lambda *args, **kwargs: ([SimpleNamespace(value=SimpleNamespace(status=status))], "read"),
+    )
+    assert actions.is_password(el) is True
+
+
+def test_password_classifier_caches_per_wpf_identity(target, monkeypatch):
+    client, el = target
+    classifier = actions.PasswordClassifier()
+    assert classifier.is_password(el) is False
+    monkeypatch.setattr(client, "read", lambda *args, **kwargs: pytest.fail("unexpected reread"))
+    other_wrapper = WpfElement(client, el.ref, 42)
+    assert classifier.is_password(other_wrapper) is False
+
+
 def test_password_uses_keys_without_sending_value(target, monkeypatch, caplog):
     client, el = target
     client.values.update(supported_patterns="Value", is_password=True)
