@@ -93,6 +93,37 @@ afterEach(() => {
 });
 
 describe("element capture hovers", () => {
+  it("shares the saved crop, app context and age with the page-tree preview", async () => {
+    expect(await provider.treeCapture(file, "Login.submit")).toEqual({
+      qualname: "Login.submit", image: preview.cropDataUrl, width: 640, height: 200,
+      contextImage: preview.windowDataUrl,
+      message: "Captured by Check Element 25 minutes ago. Not a live image.",
+    });
+    expect(mocks.read).toHaveBeenCalledWith("C:/project", located.element.id);
+    expect(mocks.definitions).not.toHaveBeenCalled();
+  });
+  it("explains missing and unreadable tree captures", async () => {
+    mocks.read.mockResolvedValueOnce(undefined);
+    expect(await provider.treeCapture(file, "Login.submit")).toMatchObject({ message: expect.stringContaining("No saved element capture") });
+    mocks.read.mockRejectedValueOnce(new Error("Invalid manifest"));
+    expect(await provider.treeCapture(file, "Login.submit")).toMatchObject({ message: expect.stringContaining("Saved capture unavailable") });
+  });
+  it.each(["disabled", "untrusted", "unknown", "window"])("does not read a tree capture when %s", async (state) => {
+    if (state === "disabled") mocks.enabled = false;
+    if (state === "untrusted") mocks.trusted = false;
+    if (state === "unknown") mocks.byName.mockReturnValue(undefined);
+    if (state === "window") mocks.byName.mockReturnValue({ ...located, element: { ...located.element, kind: "window" } });
+    expect(await provider.treeCapture(file, "Login.submit")).toBeUndefined();
+    expect(mocks.read).not.toHaveBeenCalled();
+  });
+  it.each(["disabled", "untrusted"])("discards a tree capture if %s during the read", async (state) => {
+    mocks.read.mockImplementation(async () => {
+      if (state === "disabled") mocks.enabled = false;
+      else mocks.trusted = false;
+      return preview;
+    });
+    expect(await provider.treeCapture(file, "Login.submit")).toBeUndefined();
+  });
   it("registers only for Python files", () => {
     expect(mocks.register).toHaveBeenCalledWith({ language: "python", scheme: "file" }, provider);
   });

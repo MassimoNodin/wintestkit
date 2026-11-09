@@ -6,6 +6,7 @@
   type NavNode,
   type NavigationSection,
 } from "./navigationModel";
+import { CAPTURE_PREVIEW_MARKUP, CAPTURE_PREVIEW_SCRIPT, CAPTURE_PREVIEW_STYLE } from "./capturePreviewDocument";
 
 export function escapeText(value: string): string {
   return value
@@ -86,7 +87,8 @@ function renderItem(
     : "";
   return (
     `<div role="treeitem" class="item${rowClass(node.context.webviewSection)}${node.children.length ? "" : " leaf"}" data-id="${escapeAttribute(node.id)}" ` +
-    `aria-label="${escapeAttribute(accessible)}" title="${escapeAttribute(node.tooltip)}" ` +
+    `aria-label="${escapeAttribute(accessible)}" ` +
+    `title="${escapeAttribute(node.tooltip)}" ` +
     (node.children.length
       ? `aria-expanded="${open ? "true" : "false"}" `
       : "") +
@@ -105,6 +107,8 @@ function renderItem(
 
 /** The styles of the Pages & Flows part; the sidebar document around it owns the page layout. */
 export const NAVIGATION_STYLE = `
+${CAPTURE_PREVIEW_STYLE}
+#navigation { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; overflow: auto; }
 #segments {
   display: flex;
   flex: 0 0 auto;
@@ -313,6 +317,7 @@ const actions = ["highlight", "check", "checkPage", "run"];
 const named = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Home", "End", "Enter", " "]);
 const segments = document.getElementById("segments");
 const tree = document.getElementById("tree");
+${CAPTURE_PREVIEW_SCRIPT}
 const unusedTools = document.getElementById("unused-tools");
 const unusedScan = document.getElementById("unused-scan");
 const unusedToggle = document.getElementById("unused-toggle");
@@ -457,8 +462,9 @@ export function navigationMarkup(options: {
     );
   }).join("");
   return (
-    `<div id="segments" role="tablist" aria-label="Page Tree and Flows">${tabs}</div>\n` +
+    `<div id="navigation"><div id="segments" role="tablist" aria-label="Page Tree and Flows">${tabs}</div>\n` +
     `<div id="unused-tools" role="toolbar" aria-label="Unused definitions" hidden><button id="unused-scan" type="button" class="tool"><span class="codicon codicon-search" aria-hidden="true"></span><span class="tool-label">Find unused definitions</span></button><button id="unused-toggle" type="button" class="tool" aria-pressed="false" disabled><span class="codicon codicon-eye" aria-hidden="true"></span><span class="tool-label">Show unused</span><span id="unused-count" class="badge" hidden></span></button><button id="results-clear" type="button" class="tool" title="Forget the saved Check exists and Highlight results shown in the editor and tree. They are otherwise kept until the window reloads."><span class="codicon codicon-clear-all" aria-hidden="true"></span><span class="tool-label">Clear results</span></button></div>\n` +
-    `<div id="tree" role="tree" aria-label="${SECTION_LABEL[options.section]}" tabindex="0">${options.treeHtml}</div>`
+    `<div id="tree" role="tree" aria-label="${SECTION_LABEL[options.section]}" tabindex="0">${options.treeHtml}</div></div>` +
+    CAPTURE_PREVIEW_MARKUP
   );
 }

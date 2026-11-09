@@ -5,6 +5,15 @@ import { PreviewViewer } from "../spy/previewViewer";
 
 const openCommand = "wintestkit.openElementCapture";
 
+export interface ElementCapture {
+  qualname: string;
+  message: string;
+  image?: string;
+  contextImage?: string;
+  width?: number;
+  height?: number;
+}
+
 function captureAge(capturedAt: string): string {
   const elapsed = Math.max(0, Date.now() - Date.parse(capturedAt));
   if (!Number.isFinite(elapsed)) return "at an unknown time";
@@ -91,6 +100,28 @@ export class ElementPreviews implements vscode.HoverProvider, vscode.Disposable 
       contents.appendText("Saved capture unavailable. Run this element's Check exists CodeLens to capture it again.");
     }
     return new vscode.Hover(contents, range);
+  }
+
+  async treeCapture(file: string, qualname: string): Promise<ElementCapture | undefined> {
+    if (!this.enabled() || !vscode.workspace.isTrusted) return;
+    const located = this.discovery.elementByName(vscode.Uri.file(file), qualname);
+    if (!located || located.element.kind !== "element") return;
+    let capture: ElementCapture;
+    try {
+      const preview = await readObjectPreview(located.project.root.fsPath, located.element.id);
+      capture = preview ? {
+        qualname,
+        image: preview.cropDataUrl,
+        contextImage: preview.windowDataUrl,
+        width: preview.width,
+        height: preview.height,
+        message: "Captured by Check Element " + captureAge(preview.capturedAt) + ". Not a live image.",
+      } : { qualname, message: "No saved element capture. Run Check exists to capture it." };
+    } catch (error) {
+      this.log.error("Element capture unavailable: " + String(error));
+      capture = { qualname, message: "Saved capture unavailable. Run Check exists to capture it again." };
+    }
+    if (this.enabled() && vscode.workspace.isTrusted) return capture;
   }
 
   private async open(value: unknown): Promise<void> {

@@ -11,6 +11,7 @@ import type { DiscoveryResult } from "../../src/protocol/generated";
 import { flowKey, type FlowRuns } from "../../src/editor/flowRuns";
 import type { FlowStatus } from "../../src/editor/lensModel";
 import { actionsFor } from "../../src/views/navigationModel";
+import type { ElementPreviews } from "../../src/editor/elementPreviews";
 
 const mocks = vi.hoisted(() => ({
   providers: new Map<string, vscode.WebviewViewProvider>(),
@@ -164,7 +165,7 @@ function createTree(
     workspaceState: vscode.Memento;
     extensionUri: vscode.Uri;
   },
-  options: { result?: DiscoveryResult; unused?: unknown } = {},
+  options: { result?: DiscoveryResult; unused?: unknown; previews?: Pick<ElementPreviews, "treeCapture"> } = {},
 ) {
   const subscribe = () => ({ dispose: vi.fn() });
   const projects = {
@@ -196,6 +197,8 @@ function createTree(
     host,
     undefined,
     options.unused as UnusedDefinitions | undefined,
+    undefined,
+    options.previews,
   );
   trees.push(tree);
   return { tree, projects, checks, flows };
@@ -434,6 +437,64 @@ function bootClient() {
   };
 }
 describe("navigation view", () => {
+  it("resolves capture requests and open links from discovered tree IDs only", async () => {
+    const discovery = structuredClone(result);
+    discovery.pages[0].elements.push({
+      id: "Main.username", name: "username", qualname: "Main.username", kind: "element",
+      range, nameRange: range, locator: { name: "username" }, dynamic: false,
+    });
+    const capture = { qualname: "Main.username", message: "No saved element capture." };
+    const treeCapture = vi.fn(async () => capture);
+    const { tree } = createTree(hostFor(), { result: discovery, previews: { treeCapture } });
+    resolve(tree);
+    const node = tree.getChildren()[0].children[0];
+    tree.handleMessage({ type: "ready" });
+    expect(mocks.posted.at(-1)).toMatchObject({ type: "render", captureSelection: undefined });
+    tree.handleMessage({ type: "open", id: node.id });
+    expect(mocks.posted.at(-1)).toMatchObject({ captureSelection: { id: node.id, qualname: "Main.username" } });
+    tree.handleMessage({ type: "key", key: "Home" });
+    expect(mocks.posted.at(-1)).toMatchObject({ captureSelection: undefined });
+    tree.handleMessage({ type: "toggle", id: tree.getChildren()[0].id });
+    tree.handleMessage({ type: "key", key: "ArrowDown" });
+    expect(mocks.posted.at(-1)).toMatchObject({ captureSelection: { id: node.id, qualname: "Main.username" } });
+    tree.handleMessage({ type: "capturePreview", id: node.id, requestId: 3 });
+    await Promise.resolve();
+    expect(treeCapture).toHaveBeenCalledWith("/project/pages/main.py", "Main.username");
+    expect(mocks.posted.at(-1)).toEqual({ type: "capturePreview", id: node.id, requestId: 3, capture });
+    mocks.execute.mockResolvedValue(undefined);
+    tree.handleMessage({ type: "openCapture", id: node.id, view: "window" });
+    expect(mocks.execute).toHaveBeenCalledWith("wintestkit.openElementCapture", {
+      file: "/project/pages/main.py", qualname: "Main.username", view: "window",
+    });
+    treeCapture.mockClear();
+    mocks.execute.mockClear();
+    for (const id of ["unknown", tree.getChildren()[0].id]) {
+      tree.handleMessage({ type: "capturePreview", id, requestId: 4 });
+      tree.handleMessage({ type: "openCapture", id, view: "element" });
+    }
+    tree.handleMessage({ type: "capturePreview", id: node.id, requestId: "bad" });
+    tree.handleMessage({ type: "openCapture", id: node.id, view: "bad" });
+    expect(treeCapture).not.toHaveBeenCalled();
+    tree.handleMessage({ type: "select", section: "flows" });
+    expect(mocks.posted.at(-1)).toMatchObject({ captureSelection: undefined });
+    expect(mocks.execute).not.toHaveBeenCalled();
+  });
+  it("does not publish capture results after the tree is disposed", async () => {
+    const discovery = structuredClone(result);
+    discovery.pages[0].elements.push({
+      id: "Main.username", name: "username", qualname: "Main.username", kind: "element",
+      range, nameRange: range, locator: { name: "username" }, dynamic: false,
+    });
+    let finish!: (value: undefined) => void;
+    const treeCapture = vi.fn(() => new Promise<undefined>((resolve) => { finish = resolve; }));
+    const { tree } = createTree(hostFor(), { result: discovery, previews: { treeCapture } });
+    resolve(tree);
+    tree.handleMessage({ type: "capturePreview", id: tree.getChildren()[0].children[0].id, requestId: 1 });
+    tree.dispose();
+    finish(undefined);
+    await Promise.resolve();
+    expect(mocks.posted).toEqual([]);
+  });
   describe("unused definitions tools", () => {
     const element = (name: string, line: number) => ({
       id: "pages/main.py::Main." + name,
