@@ -57,6 +57,13 @@ namespace WinTestKit.Inspector.Agent.Session
         private static JsonObjectNode? SafeErrorDetails(ProtocolException error)
         {
             if (error.Code == ErrorCodes.ValueUnreadable) return error.Details;
+            if (error.Code == ErrorCodes.Timeout && error.Details != null &&
+                error.Details.TryGet("dispatcherBusy", out var busy) && busy is JsonBoolNode busyBoolean && busyBoolean.Value)
+            {
+                var details = new JsonObjectNode();
+                details.Add("dispatcherBusy", new JsonBoolNode(true));
+                return details;
+            }
             if (error.Code == ErrorCodes.LimitExceeded && error.Details != null &&
                 error.Details.TryGet("deadline", out var marker) && marker is JsonBoolNode boolean && boolean.Value)
             {

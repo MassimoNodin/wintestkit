@@ -36,6 +36,96 @@ FACTS = ProcessFacts(IDENTITY, "app.exe", "x64", "net10", True, 1, "S-1-1", "med
 TOKEN = "A" * 43 + "="
 
 
+@pytest.mark.parametrize("method", ["state.get", "act.invoke"])
+def test_dispatcher_busy_retries_until_success(method: str) -> None:
+    count = 0
+
+    def handler(request: dict[str, Any]) -> object:
+        nonlocal count
+        count += 1
+        if count == 1:
+            return {
+                "id": request["id"],
+                "error": {
+                    "code": "timeout",
+                    "message": "busy",
+                    "details": {"dispatcherBusy": True},
+                },
+            }
+        return {"id": request["id"], "result": {"ok": True}}
+
+    client = InspectorClient(ScriptedTransport(handler), session())
+    try:
+        assert client._request(method, {}, time.monotonic() + 1) == {"ok": True}
+        assert count == 2
+    finally:
+        client.close()
+
+
+@pytest.mark.parametrize(
+    "method,marked,retries",
+    [
+        ("state.get", True, True),
+        ("state.get", False, False),
+        ("act.invoke", False, False),
+        ("act.realizeItem", True, False),
+    ],
+)
+def test_dispatcher_busy_deadline_and_nonretryable(
+    method: str, marked: bool, retries: bool
+) -> None:
+    count = 0
+
+    def handler(request: dict[str, Any]) -> object:
+        nonlocal count
+        count += 1
+        return {
+            "id": request["id"],
+            "error": {
+                "code": "timeout",
+                "message": "timeout",
+                "details": {"dispatcherBusy": marked},
+            },
+        }
+
+    client = InspectorClient(ScriptedTransport(handler), session())
+    try:
+        with pytest.raises(InspectorDeadlineError) as exc:
+            client._request(method, {}, time.monotonic() + 0.13)
+        assert method in str(exc.value)
+        assert exc.value.busy is (marked and method != "act.realizeItem")
+        assert (count > 1) is retries
+        if marked and method != "act.realizeItem":
+            assert "UI thread stayed busy" in str(exc.value)
+    finally:
+        client.close()
+
+
+def test_dispatcher_busy_stops_after_session_invalidation(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = InspectorClient(
+        ScriptedTransport(
+            lambda request: {
+                "id": request["id"],
+                "error": {
+                    "code": "timeout",
+                    "message": "busy",
+                    "details": {"dispatcherBusy": True},
+                },
+            }
+        ),
+        session(),
+    )
+    original_sleep = time.sleep
+
+    def invalidate(delay: float) -> None:
+        client.invalidate(InspectorUnavailableError("closed", code="sessionStale"))
+        original_sleep(delay)
+
+    monkeypatch.setattr("wintestkit.inspector.client.time.sleep", invalidate)
+    with pytest.raises(InspectorUnavailableError):
+        client._request("state.get", {}, time.monotonic() + 1)
+
+
 def test_realize_item_wire_validation_and_gate() -> None:
     ref = ObjectRef(
         "session", "object", 1, TypeInfo("ListBox", "ListBox", "App", "ListBox", ()), "dispatcher"

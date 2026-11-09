@@ -342,6 +342,7 @@ public sealed class MainWindow : Window
             case "changeDataContext": DataContext = new ViewModel("fixture-" + ++generation); break;
             case "addDynamic": dynamicTree.Children.Add(Id(new Button { Content = "Dynamic " + value }, "Dynamic" + value)); break;
             case "clearDynamic": dynamicTree.Children.Clear(); break;
+            case "sleepDispatcher": Counts.Hit("dispatcher.sleeping"); Thread.Sleep(1000); break;
             case "blockDispatcher": Counts.Hit("dispatcher.blocked"); FixtureState.Hang.Wait(); Counts.Hit("dispatcher.released"); break;
             case "scrollRows": rows.ScrollIntoView(rows.Items[Math.Max(0, Math.Min(value, rows.Items.Count - 1))]); break;
             case "openSecondWindow":

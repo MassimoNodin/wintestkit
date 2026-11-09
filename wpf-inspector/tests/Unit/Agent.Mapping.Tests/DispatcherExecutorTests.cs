@@ -59,6 +59,7 @@ namespace WinTestKit.Inspector.Agent.Mapping.Tests
                 {
                     var error = await Assert.ThrowsAsync<ProtocolException>(() => executor.ExecuteAsync(ui.Dispatcher, () => { ran = true; return 0; }, CancellationToken.None));
                     Assert.Equal(ErrorCodes.Timeout, error.Code);
+                    Assert.True(((JsonBoolNode)error.Details!.Get("dispatcherBusy")).Value);
                 }
                 finally { unblock.Set(); await blocking; }
                 Assert.Equal(1, await executor.ExecuteAsync(ui.Dispatcher, () => 1, CancellationToken.None));
