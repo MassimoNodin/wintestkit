@@ -1,7 +1,7 @@
 # WPF-tree-driven automation: migration plan
 
-Status: decisions D1–D7 made (§3); phases 0–2 done (phase 2 gate passed 2026-11-06,
-§6.3); phase 3 implementation complete, gate pending owner sign-off. Planning date: 2026-10-29.
+Status: decisions D1–D7 made (§3); phases 0–3 done (phase 2 gate passed 2026-11-06,
+§6.3; phase 3 gate passed 2026-11-09, §6.5). Planning date: 2026-10-29.
 Builds on: `wpf-dotnet-attribute-analyzer.md` (the *inspector plan*) and the implemented
 inspector on `master` (agent, protocol, Python client, managed locators, Spy panel).
 
@@ -461,7 +461,29 @@ The filters match pytest node IDs, not all tests that exercise a backend. Each s
 those words in their IDs are omitted. The auto-filtered failures reported inability to
 activate the target window, refusing global input.
 
-Remaining work: owner gate sign-off.
+**Gate verdict (owner, 2026-11-09): passed.** Final verification at commit `e97a824` ran the
+full live suite twice serially, with 116/116 passing in each run, and CI was green. The parity
+matrix passes with the differences recorded above. Actions on peerless elements work in mouse
+mode, while pattern mode reports the pattern as unavailable. Item 4,999 of 5,000 is selected
+without realizing the others.
+
+`wtk doctor` block detection is partly proven: each block code and hint is unit-tested with
+fakes, and the live test covers the successful case. A real AppLocker or antivirus block has
+not been exercised. The real 27-page suite has not yet been run; that remains the phase 8 gate
+and is the largest remaining risk now that `backend: auto` is the default.
+
+Open items remain. What occupies the UI thread after `act.bringIntoView` on RichText is
+unmeasured, and occasional ~250 ms `release` timeouts are unexplained. One earlier
+`limitExceeded` deadline error in `test_auto_expect_missing_message_matches_uia` occurred before
+the final retry boundary change and has not recurred. The original `ensure_visible` timeout
+cause is likely the busy UI thread (decision 16), but is not proven. DataGrid `row()`, `cell()`,
+`row_count()`, `column_count()` and `find_row()` still use the UIA Grid pattern, and DataGrid
+cell selection names may be unavailable on some machines. Handles to unrooted objects can go
+stale before first lookup, and a timed-out action on a disabled control can take up to 2 s longer.
+
+VS Code follow-ups remain: the settings model still states the old defaults in
+`vscode/src/settings/model.ts`, `files.ts`, and `media/settings/editor.js`, and the machine-health
+summary does not know the `wpf_agent` check.
 
 ## 7. Test strategy
 
