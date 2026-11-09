@@ -426,3 +426,206 @@ def test_initialize_capability_requires_successful_payload_verification(
     output = io.BytesIO()
     result = request(Server(output), output, "initialize", {"root": str(tmp_path)})["result"]
     assert result["capabilities"]["managedInspector"] is valid
+
+
+@pytest.mark.parametrize("tree", ["visual", "logical"])
+def test_spy_wpf_children_identity_and_failures(
+    managed_server: Any, monkeypatch: pytest.MonkeyPatch, tree: str
+) -> None:
+    server, output, client = managed_server
+    refs = [
+        ObjectRef("session", name, 1, TYPE, "dispatcher")
+        for name in ("good", "peerless", "failed", "redacted")
+    ]
+    nodes = tuple(ManagedNode(ref, "label", True, False) for ref in refs)
+    monkeypatch.setattr(
+        client, "children", lambda *args, **kwargs: Page(nodes, True, "snapshot", ())
+    )
+
+    def read(object_id: str, generation: int, paths: Any, **kwargs: Any) -> Any:
+        if object_id == "failed":
+            raise InspectorUnavailableError("failed", code="readFailed")
+        statuses = ("ok", "unavailable" if object_id == "peerless" else "ok")
+        if object_id == "redacted":
+            statuses = ("redacted", "ok")
+        return tuple(
+            PathValue(path, Value(status, "string", "String", "String", scalar))
+            for path, status, scalar in zip(paths, statuses, ("Name", "Id"), strict=True)
+        ), "read"
+
+    monkeypatch.setattr(client, "read", read)
+    window = SimpleNamespace(process_id=42)
+    server.nodes["window"] = window
+    server._wpf_windows.add("window")
+    result = request(server, output, "inspect.children", {"nodeId": "window", "tree": tree})[
+        "result"
+    ]
+    result = result["nodes"]
+    assert [item["source"] for item in result] == ["wpf"] * 4
+    assert result[0]["identity"] == {"type": "Test.Window", "xName": "Name", "automationId": "Id"}
+    assert result[1]["identity"] == {"type": "Test.Window", "xName": "Name"}
+    assert result[2]["identity"] == result[3]["identity"] == {"type": "Test.Window"}
+    assert result[0]["hasChildren"] is (tree == "visual")
+    assert result[0]["nodeId"].startswith("wpf:")
+    with pytest.raises(Exception, match="does not yet support WPF"):
+        Server._node(server, result[0]["nodeId"])
+    server._release_managed_objects()
+    assert any(
+        call[0] == "release" and set(call[1]) >= {"good", "peerless", "failed", "redacted"}
+        for call in client.calls
+    )
+    assert result[0]["nodeId"] not in server.nodes
+
+
+def test_spy_wpf_attach_required_and_blocked(
+    managed_server: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    server, output, client = managed_server
+    server.nodes["window"] = SimpleNamespace(process_id=42)
+    server._wpf_windows.add("window")
+    registry = FakeRegistry(client)
+    monkeypatch.setattr(registry, "get", lambda identity: None)
+    monkeypatch.setattr(runtime, "inspector_sessions", lambda: registry)
+    assert request(server, output, "inspect.children", {"nodeId": "window", "tree": "visual"})[
+        "result"
+    ] == {
+        "attachRequired": True,
+        "process": IDENTITY.to_json(),
+    }
+    monkeypatch.setattr(
+        registry,
+        "status",
+        lambda identity: Session("session", IDENTITY, "faulted", 2, 0, (), error="blockedByPolicy"),
+    )
+    result = request(server, output, "inspect.children", {"nodeId": "window", "tree": "visual"})[
+        "result"
+    ]
+    assert result["blocked"]["code"] == "blockedByPolicy"
+    assert "Allow-list" in result["blocked"]["hint"]
+
+
+def test_spy_wpf_eviction_releases_handle(
+    managed_server: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from wintestkit.backends.element import WpfElement
+
+    server, output, client = managed_server
+    node = WpfElement(client, REF, 42)
+    server.nodes["old"] = node
+    server._managed_clients["session"] = client
+    server._remember_managed("session", REF.to_json())
+    for index in range(4999):
+        server.nodes[str(index)] = SimpleNamespace(process_id=42)
+    new_ref = ObjectRef("session", "new", 1, TYPE, "dispatcher")
+    monkeypatch.setattr(
+        client,
+        "children",
+        lambda *args, **kwargs: Page(
+            (ManagedNode(new_ref, "", False, False),), True, "snapshot", ()
+        ),
+    )
+    server.nodes["window"] = SimpleNamespace(process_id=42)
+    server._wpf_windows.add("window")
+    request(server, output, "inspect.children", {"nodeId": "window", "tree": "visual"})
+    assert "old" not in server.nodes
+    assert ("release", ["object"]) in client.calls
+    server._release_managed_objects()
+
+
+@pytest.mark.parametrize(
+    "backend,enabled,framework,expected",
+    [
+        ("auto", True, "WPF", "wpf"),
+        ("uia", True, "WPF", "uia"),
+        ("auto", False, "WPF", "uia"),
+        ("auto", True, "Win32", "uia"),
+    ],
+)
+def test_spy_root_source_and_uia_fallback(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    backend: str,
+    enabled: bool,
+    framework: str,
+    expected: str,
+) -> None:
+    from rpc_support import make_server
+    from rpc_support import request as rpc_request
+
+    server, output, _ = make_server(tmp_path, monkeypatch)
+    rpc_request(server, output, "initialize", {"root": str(tmp_path)})
+    server.cfg = load_config(tmp_path, {"backend": backend, "inspector.enabled": enabled})
+    assert server.app is not None
+    window = server.app.top_level_windows()[0]
+    window.framework_id = framework
+    root = rpc_request(server, output, "inspect.roots")["result"][0]
+    assert root["source"] == expected
+    if expected == "uia":
+        result = rpc_request(
+            server, output, "inspect.children", {"nodeId": root["nodeId"], "tree": "logical"}
+        )["result"]
+        assert result["nodes"][0]["source"] == "uia"
+
+
+def test_spy_wpf_pages(managed_server: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    from wintestkit.errors import InspectorError
+
+    server, output, client = managed_server
+    refs = [ObjectRef("session", str(i), 1, TYPE, "dispatcher") for i in range(3)]
+    calls: list[tuple[str | None, int]] = []
+    reads: list[str] = []
+
+    def children(
+        *args: Any, page_token: str | None = None, page_size: int = 200, **kwargs: Any
+    ) -> Page[Any]:
+        calls.append((page_token, page_size))
+        if page_token == "bad":
+            raise InspectorError("invalid page token", code="invalidPageToken")
+        selected = refs[:2] if page_token is None else refs[2:]
+        return Page(
+            tuple(ManagedNode(ref, "", False, False) for ref in selected),
+            page_token is not None,
+            "snapshot",
+            (),
+            "next" if page_token is None else None,
+        )
+
+    def read(object_id: str, *args: Any, **kwargs: Any) -> Any:
+        reads.append(object_id)
+        return (), "read"
+
+    monkeypatch.setattr(client, "children", children)
+    monkeypatch.setattr(client, "read", read)
+    server.nodes["window"] = SimpleNamespace(process_id=42)
+    server._wpf_windows.add("window")
+    params = {"nodeId": "window", "tree": "visual", "pageSize": 2}
+    first = request(server, output, "inspect.children", params)["result"]
+    assert len(first["nodes"]) == len(reads) == 2
+    assert first["nextPageToken"] == "next"
+    last = request(server, output, "inspect.children", {**params, "pageToken": "next"})["result"]
+    assert len(last["nodes"]) == 1 and "nextPageToken" not in last
+    assert len(reads) == 3 and calls == [(None, 2), ("next", 2)]
+    error = request(server, output, "inspect.children", {**params, "pageToken": "bad"})["error"]
+    assert error["data"]["code"] == "invalidPageToken"
+    server._release_managed_objects()
+
+
+def test_spy_auto_wpf_without_tree_uses_uia(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from rpc_support import make_server
+    from rpc_support import request as rpc_request
+
+    server, output, _ = make_server(tmp_path, monkeypatch)
+    rpc_request(server, output, "initialize", {"root": str(tmp_path)})
+    server.cfg = load_config(tmp_path, {"backend": "auto", "inspector.enabled": True})
+    assert server.app is not None
+    window = server.app.top_level_windows()[0]
+    window.framework_id = "WPF"
+    root = rpc_request(server, output, "inspect.roots")["result"][0]
+    monkeypatch.setattr(
+        runtime, "inspector_sessions", lambda: pytest.fail("unexpected attach or session lookup")
+    )
+    result = rpc_request(server, output, "inspect.children", {"nodeId": root["nodeId"]})["result"]
+    assert isinstance(result, list)
+    assert all(child["source"] == "uia" for child in result)

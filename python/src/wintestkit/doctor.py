@@ -16,6 +16,7 @@ from typing import Any, Literal
 
 from wintestkit.config import WtkConfig
 from wintestkit.errors import ConfigError
+from wintestkit.inspector.hints import inspector_error_hint
 
 Status = Literal["ok", "warn", "fail", "skip"]
 
@@ -507,25 +508,12 @@ def _check_wpf_agent(cfg: WtkConfig | None, *, launch: bool = False) -> Check:
             f"features={', '.join(session.features)}",
         )
     except InspectorError as error:
-        hints = {
-            "blockedByPolicy": "Allow-list the WinTestKit payload directory in your "
-            "security policy.",
-            "unsupportedTarget": "Use a supported WPF runtime and architecture with "
-            "native x64 Python.",
-            "agentVersionMismatch": "Match the agent payload version and restart the application.",
-            "payloadMismatch": "Reinstall the matching inspector payload.",
-            "timeout": "Check agent readiness and security policy, then increase "
-            "inspector.attach_timeout if needed.",
-        }
         return Check(
             check_id,
             title,
             "fail",
             f"{error.code}: {error}",
-            hints.get(
-                error.code,
-                "Check the inspector payload, target permissions, and application compatibility.",
-            ),
+            inspector_error_hint(error.code),
         )
     except Exception as error:
         return Check(

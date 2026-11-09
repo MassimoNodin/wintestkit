@@ -308,7 +308,22 @@ export type Features = (
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
  * via the `definition` "InspectChildrenResult".
  */
-export type InspectChildrenResult = NodeInfo[];
+export type InspectChildrenResult =
+  | NodeInfo[]
+  | {
+      attachRequired: true;
+      process: ManagedProcessIdentity;
+    }
+  | {
+      blocked: {
+        code: string;
+        hint: string;
+      };
+    }
+  | {
+      nodes: NodeInfo[];
+      nextPageToken?: string;
+    };
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
  * via the `definition` "InspectHighlightResult".
@@ -2090,6 +2105,18 @@ export interface InitializeResult {
  */
 export interface InspectChildrenParams {
   nodeId: string;
+  /**
+   * Opt into the requested tree; omit for the legacy UIA array.
+   */
+  tree?: "visual" | "logical";
+  /**
+   * Maximum children per page; defaults to 200.
+   */
+  pageSize?: number;
+  /**
+   * Continuation token from the preceding page.
+   */
+  pageToken?: string;
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
@@ -2099,6 +2126,16 @@ export interface NodeInfo {
   nodeId: string;
   info: ElementInfo;
   hasChildren: boolean;
+  source?: "wpf" | "uia";
+  identity?: {
+    type: string;
+    xName?: string;
+    automationId?: string;
+  };
+}
+export interface ManagedProcessIdentity {
+  pid: number;
+  creationTimeUtc: string;
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
@@ -2160,10 +2197,6 @@ export interface InspectHighlightParams {
  */
 export interface InspectManagedAttachParams {
   process: ManagedProcessIdentity;
-}
-export interface ManagedProcessIdentity {
-  pid: number;
-  creationTimeUtc: string;
 }
 export interface InspectManagedAttachResult {
   sessionId: Identifier;

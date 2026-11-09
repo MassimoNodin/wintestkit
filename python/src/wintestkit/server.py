@@ -23,6 +23,7 @@ from wintestkit.protocol import PROTOCOL_VERSION
 
 if TYPE_CHECKING:
     from wintestkit.app import App
+    from wintestkit.backends.element import TargetElement
     from wintestkit.config import WtkConfig
     from wintestkit.coverage import Coverage
     from wintestkit.engine.spy import SpySession
@@ -60,7 +61,7 @@ _PARAMS: dict[str, tuple[set[str], set[str]]] = {
     "inspect.managed.read": ({"sessionId", "objectId", "generation", "paths"}, set()),
     "inspect.managed.bindings": ({"sessionId", "objectId", "generation", "memberKeys"}, set()),
     "inspect.managed.release": ({"sessionId", "objectIds"}, set()),
-    "inspect.children": ({"nodeId"}, set()),
+    "inspect.children": ({"nodeId"}, {"tree", "pageSize", "pageToken"}),
     "inspect.properties": ({"nodeId"}, {"full", "includeAncestors", "include"}),
     "inspect.highlight": ({"nodeId"}, {"durationMs", "bringToFront"}),
     "inspect.preview": ({"nodeId"}, set()),
@@ -140,7 +141,8 @@ class Server:
         # Ownership is deliberately independent of the configured launch mode. The server can
         # attach to a process it did not start.
         self._owned_app_pids: set[int] | None = None
-        self.nodes: OrderedDict[str, UIAElement] = OrderedDict()
+        self.nodes: OrderedDict[str, TargetElement] = OrderedDict()
+        self._wpf_windows: set[str] = set()
         self.node_infos: dict[str, ElementInfo] = {}
         self.coverage: Coverage | None = None
         self.spy: SpySession | None = None
@@ -178,8 +180,14 @@ class Server:
         params = cast("dict[str, Any]", params)
         if not required <= params.keys() or params.keys() - required - optional:
             raise RpcError(-32602, "invalid params")
-        if method.startswith("inspect.managed."):
+        if method.startswith("inspect.managed.") or method == "inspect.children":
             self._managed_params(params)
+            if (
+                method == "inspect.children"
+                and "tree" not in params
+                and ("pageSize" in params or "pageToken" in params)
+            ):
+                raise RpcError(-32602, "paging requires tree")
             return params
         for key, value in params.items():
             if key == "durationMs":
@@ -196,6 +204,9 @@ class Server:
             elif key in ("full", "includeAncestors", "includeOtherApps", "bringToFront"):
                 if not isinstance(value, bool):
                     raise RpcError(-32602, f"{key} must be a boolean")
+            elif key == "tree":
+                if value not in ("visual", "logical"):
+                    raise RpcError(-32602, "tree must be visual or logical")
             elif key == "nodeIds":
                 if (
                     not isinstance(value, list)
@@ -450,7 +461,7 @@ class Server:
 
         info = element.info()
         if not info.runtime_id and not fallback_id and not locate:
-            return {"nodeId": "", "info": info.to_dict(), "hasChildren": False}
+            return {"nodeId": "", "info": info.to_dict(), "hasChildren": False, "source": "uia"}
         if not info.runtime_id:
             # Some providers (TeamViewer's custom-drawn content) return an empty runtime id. A node
             # needs a key, so its place under the parent stands in for it: stable between refreshes
@@ -465,12 +476,15 @@ class Server:
             self.node_infos[info.runtime_id] = info
             self.nodes.move_to_end(info.runtime_id)
             if len(self.nodes) > 5000:
-                evicted, _ = self.nodes.popitem(last=False)
+                evicted, old_node = self.nodes.popitem(last=False)
                 self.node_infos.pop(evicted, None)
+                self._wpf_windows.discard(evicted)
+                self._release_tree_node(old_node)
         return {
             "nodeId": info.runtime_id,
             "info": info.to_dict(),
             "hasChildren": element.find_first(TreeScope.Children) is not None,
+            "source": "uia",
         }
 
     def _node(self, node_id: str) -> UIAElement:
@@ -478,9 +492,166 @@ class Server:
             node = self.nodes.get(node_id)
             if node is not None:
                 self.nodes.move_to_end(node_id)
+        from wintestkit.backends.element import WpfElement
+
+        if isinstance(node, WpfElement):
+            raise RpcError(-32005, "unknown node id: method does not yet support WPF nodes")
         if node is None or not node.is_alive():
             raise RpcError(-32005, "unknown node id")
-        return node.as_live()
+        return cast("UIAElement", node.as_live())
+
+    def _release_tree_node(self, node: TargetElement) -> None:
+        from wintestkit.backends.element import WpfElement
+
+        if isinstance(node, WpfElement):
+            with self._managed_lock:
+                self._managed_objects.get(node.ref.session_id, {}).pop(node.ref.object_id, None)
+            node.release()
+
+    def _wpf_enabled(self, element: UIAElement) -> bool:
+        return bool(
+            self.cfg is not None
+            and self.cfg.backend == "auto"
+            and self.cfg.inspector.enabled
+            and element.framework_id == "WPF"
+        )
+
+    def _mark_roots(self, nodes: list[dict[str, Any]]) -> None:
+        for item in nodes:
+            node_id = item["nodeId"]
+            with self._node_lock:
+                node = self.nodes.get(node_id)
+            if node is not None and self._wpf_enabled(cast("UIAElement", node)):
+                item["source"] = "wpf"
+                self._wpf_windows.add(node_id)
+
+    def _wpf_children(
+        self, node: TargetElement, tree: str, page_size: int, page_token: str | None
+    ) -> Any:
+        from wintestkit import runtime
+        from wintestkit.backends.element import WpfElement
+        from wintestkit.errors import InspectorError
+        from wintestkit.inspector.hints import inspector_error_hint
+        from wintestkit.inspector.paths import PathSegment
+        from wintestkit.inspector.probe import current_identity
+        from wintestkit.uia.element import ElementInfo
+
+        assert self.cfg is not None
+        with runtime.config_scope(self.cfg):
+            if isinstance(node, WpfElement):
+                client, ref = node.client, node.ref
+                process_id = node.process_id
+            else:
+                process_id = node.process_id
+                identity = current_identity(process_id)
+                registry = runtime.inspector_sessions()
+                client = registry.get(identity)
+                if client is None:
+                    session = registry.status(identity)
+                    if session.state == "faulted" and session.error:
+                        return {
+                            "blocked": {
+                                "code": session.error,
+                                "hint": inspector_error_hint(session.error),
+                            }
+                        }
+                    return {"attachRequired": True, "process": identity.to_json()}
+                rid, hwnd = runtime.managed_element_identity(cast("UIAElement", node))
+                try:
+                    mapping = client.resolve(
+                        rid, hwnd, deadline=time.monotonic() + self.cfg.inspector.request_timeout
+                    )
+                    if mapping.status != "exact" or mapping.object_ref is None:
+                        raise RpcError(-32005, "unknown node id: WPF window mapping is not exact")
+                    ref = mapping.object_ref
+                except InspectorError as error:
+                    return {
+                        "blocked": {"code": error.code, "hint": inspector_error_hint(error.code)}
+                    }
+                self._remember_managed(client.session.session_id, ref.to_json())
+            with self._managed_lock:
+                self._managed_clients[client.session.session_id] = client
+            paths = [
+                (
+                    PathSegment(
+                        "property", "Name", declaring_type="System.Windows.FrameworkElement"
+                    ),
+                ),
+                (PathSegment("uia", "automation_id"),),
+            ]
+            output: list[dict[str, Any]] = []
+            page = client.children(
+                ref.object_id,
+                ref.generation,
+                cast("Any", tree),
+                page_size=page_size,
+                page_token=page_token,
+                deadline=time.monotonic() + self.cfg.inspector.request_timeout,
+            )
+            for child in page.items:
+                child_ref = child.object_ref
+                self._remember_managed(client.session.session_id, child_ref.to_json())
+                identity_data: dict[str, str] = {"type": child_ref.type.full_name}
+                try:
+                    values, _ = client.read(
+                        child_ref.object_id,
+                        child_ref.generation,
+                        paths,
+                        deadline=time.monotonic() + self.cfg.inspector.request_timeout,
+                    )
+                    if any(value.value.status == "redacted" for value in values):
+                        values = ()
+                    for key, value in zip(("xName", "automationId"), values, strict=False):
+                        if (
+                            value.value.status == "ok"
+                            and isinstance(value.value.scalar, str)
+                            and value.value.scalar
+                        ):
+                            identity_data[key] = value.value.scalar
+                except Exception:
+                    pass
+                node_id = "wpf:" + json.dumps(
+                    [child_ref.session_id, child_ref.object_id, child_ref.generation],
+                    separators=(",", ":"),
+                )
+                info = ElementInfo(
+                    identity_data.get("automationId", ""),
+                    identity_data.get("xName", ""),
+                    child_ref.type.name,
+                    child_ref.type.full_name,
+                    "WPF",
+                    process_id,
+                    None,
+                    True,
+                    False,
+                    False,
+                    node_id,
+                )
+                element = WpfElement(client, child_ref, process_id)
+                with self._node_lock:
+                    self.nodes[node_id] = element
+                    self.node_infos[node_id] = info
+                    self.nodes.move_to_end(node_id)
+                    if len(self.nodes) > 5000:
+                        evicted, evicted_node = self.nodes.popitem(last=False)
+                        self.node_infos.pop(evicted, None)
+                        self._wpf_windows.discard(evicted)
+                        self._release_tree_node(evicted_node)
+                output.append(
+                    {
+                        "nodeId": node_id,
+                        "info": info.to_dict(),
+                        "hasChildren": child.has_visual_children
+                        if tree == "visual"
+                        else child.has_logical_children,
+                        "source": "wpf",
+                        "identity": identity_data,
+                    }
+                )
+            result: dict[str, Any] = {"nodes": output}
+            if page.next_token is not None:
+                result["nextPageToken"] = page.next_token
+            return result
 
     def _remember_managed(self, session_id: str, value: Any) -> None:
         """Remember only handles actually returned by this authenticated session."""
@@ -521,6 +692,15 @@ class Server:
     def _release_managed_objects(self) -> None:
         """Invalidate server-held leases on refresh without detaching the session."""
         assert self.cfg is not None
+        from wintestkit.backends.element import WpfElement
+
+        with self._node_lock:
+            for node_id, node in list(self.nodes.items()):
+                if isinstance(node, WpfElement):
+                    node.forget_release()
+                    del self.nodes[node_id]
+                    self.node_infos.pop(node_id, None)
+            self._wpf_windows.clear()
         with self._managed_lock:
             objects, self._managed_objects = self._managed_objects, {}
             clients = dict(self._managed_clients)
@@ -664,6 +844,7 @@ class Server:
         errors: list[dict[str, Any]] | None = None,
         source_indices: list[int] | None = None,
         parent_id: str | None = None,
+        start_index: int = 0,
     ) -> list[dict[str, Any]]:
         nodes: list[dict[str, Any]] = []
         errors = list(errors or [])
@@ -671,7 +852,7 @@ class Server:
             if element is None:
                 continue
             try:
-                fallback_id = None if parent_id is None else f"{parent_id}~{index}"
+                fallback_id = None if parent_id is None else f"{parent_id}~{index + start_index}"
                 nodes.append(self._register(element, fallback_id))
             except Exception as exc:
                 errors.append(
@@ -842,6 +1023,13 @@ class Server:
             self._flash(rect, params)
             return result.to_dict()
         if method == "inspect.coverage":
+            from wintestkit.backends.element import WpfElement
+
+            with self._node_lock:
+                if any(
+                    isinstance(self.nodes.get(node_id), WpfElement) for node_id in params["nodeIds"]
+                ):
+                    raise RpcError(-32005, "unknown node id: method does not yet support WPF nodes")
             app = self._app(False)
             if app is None:
                 return {"covered": {}, "pending": []}
@@ -872,6 +1060,7 @@ class Server:
                         "then reopen the Spy tutorial.",
                     )
                 nodes = self._register_nodes([element.from_handle(hwnd)])
+                self._mark_roots(nodes)
                 return {"nodes": nodes, "status": status} if status is not None else nodes
             include_other = params.get("includeOtherApps", False)
             roots: list[UIAElement | None]
@@ -919,6 +1108,7 @@ class Server:
                 ],
                 source_indices=source_indices,
             )
+            self._mark_roots(nodes)
             return {"nodes": nodes, "status": status} if status is not None else nodes
         if method == "spy.start":
             from wintestkit.engine.spy import SpySession
@@ -979,6 +1169,18 @@ class Server:
                         self._spy_epoch += 1
                         raise
             return None
+        if method == "inspect.children":
+            from wintestkit.backends.element import WpfElement
+
+            with self._node_lock:
+                tree_node = self.nodes.get(params["nodeId"])
+            if "tree" in params and (
+                isinstance(tree_node, WpfElement)
+                or (tree_node is not None and params["nodeId"] in self._wpf_windows)
+            ):
+                return self._wpf_children(
+                    tree_node, params["tree"], params.get("pageSize", 200), params.get("pageToken")
+                )
         node = self._node(params["nodeId"])
         if method == "inspect.definitions":
             app = self._app(False)
@@ -993,7 +1195,27 @@ class Server:
                 children = node.find_all(TreeScope.Children, cached=True)
             except ElementEnumerationError as exc:
                 return self._register_nodes(exc.elements, exc.errors, parent_id=params["nodeId"])
-            return self._register_nodes(children, parent_id=params["nodeId"])
+            if "tree" not in params:
+                return self._register_nodes(children, parent_id=params["nodeId"])
+            from wintestkit.errors import InspectorError
+
+            token = params.get("pageToken")
+            if token is not None and (
+                not token.isascii() or not token.isdecimal() or token.startswith("0")
+            ):
+                raise InspectorError("invalid page token", code="invalidPageToken")
+            offset = int(token) if token is not None else 0
+            if token is not None and offset >= len(children):
+                raise InspectorError("invalid page token", code="invalidPageToken")
+            end = offset + params.get("pageSize", 200)
+            page_result: dict[str, Any] = {
+                "nodes": self._register_nodes(
+                    children[offset:end], parent_id=params["nodeId"], start_index=offset
+                )
+            }
+            if end < len(children):
+                page_result["nextPageToken"] = str(end)
+            return page_result
         if method == "inspect.highlight":
             # The outline is drawn on top of every window, so raising the window is opt-in.
             rect = (
