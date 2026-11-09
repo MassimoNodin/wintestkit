@@ -52,6 +52,27 @@ namespace WinTestKit.Inspector.Agent.Mapping.Tests
         }
 
         [Fact]
+        public async Task CancellationDuringSubscriptionStillRemovesHandler()
+        {
+            using (var ui = new DispatcherThread())
+            using (var cancellation = new CancellationTokenSource())
+            using (var subscriptions = new LayoutSubscriptions())
+            {
+                int attached = 0, removed = 0;
+                var executor = new DispatcherExecutor();
+                await Assert.ThrowsAnyAsync<OperationCanceledException>(() => executor.ExecuteAsync(ui.Dispatcher, () =>
+                {
+                    subscriptions.Track(() => { attached++; cancellation.Cancel(); }, () => removed++);
+                    return true;
+                }, cancellation.Token));
+                subscriptions.Dispose();
+                subscriptions.Track(() => attached++, () => removed++);
+                Assert.Equal(1, attached);
+                Assert.Equal(1, removed);
+            }
+        }
+
+        [Fact]
         public async Task TimeoutCancellationAndStaleScope()
         {
             using (var ui = new DispatcherThread())
