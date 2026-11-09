@@ -59,7 +59,10 @@ def _translate_wpf_error(exc: InspectorError, verb: str = "the request") -> None
             if isinstance(exc, InspectorDeadlineError):
                 raise exc
             raise InspectorDeadlineError(str(exc), code=exc.code) from exc
-        raise UIAError(f"The WPF inspector did not complete {verb} within its deadline") from exc
+        message = f"The WPF inspector did not complete {verb} within its deadline"
+        if "inspector.request_timeout=" in str(exc):
+            message = f"{message}: {exc}"
+        raise UIAError(message) from exc
 
 
 def _wpf_read(
@@ -152,11 +155,17 @@ def ensure_visible(el: TargetElement) -> None:
     """Scroll a virtualized or scrolled-away element into view."""
     __tracebackhide__ = True
     if isinstance(el, WpfElement):
-        if not el.as_live().is_offscreen:
-            return
-        _wpf_act(el, "scroll_into_view" if "ScrollItem" in _wpf_patterns(el) else "bring_into_view")
-        if el.as_live().is_offscreen:
-            raise ActionError(f"{_short(el)} is off-screen and cannot be scrolled into view")
+        try:
+            if not el.as_live().is_offscreen:
+                return
+            _wpf_act(
+                el, "scroll_into_view" if "ScrollItem" in _wpf_patterns(el) else "bring_into_view"
+            )
+            if el.as_live().is_offscreen:
+                raise ActionError(f"{_short(el)} is off-screen and cannot be scrolled into view")
+        except InspectorError as exc:
+            _translate_wpf_error(exc, "checking visibility")
+            raise
         return
     el = uia_of(el)
     if not el.is_offscreen:
@@ -360,9 +369,23 @@ def _validate_mouse_target(el: UIAElement, x: int, y: int) -> None:
 
 def _validate_point(hwnd: int, process_id: int, x: int, y: int) -> None:
     __tracebackhide__ = True
-    hit = win32.WindowFromPoint(win32.POINT(x, y))
-    if not hit or win32.root_window(hit) != hwnd or win32.window_pid(hit) != process_id:
-        raise ActionError("Target point belongs to another window; refusing global input")
+    deadline = operation_deadline(_STABLE_TIMEOUT)
+    while True:
+        hit = win32.WindowFromPoint(win32.POINT(x, y))
+        if hit and win32.root_window(hit) == hwnd and win32.window_pid(hit) == process_id:
+            _window_guard(hwnd, process_id)
+            return
+        remaining = deadline - time.monotonic()
+        if (
+            remaining <= 0
+            or not hit
+            or win32.window_pid(hit) != process_id
+            or win32.root_window(hit) != win32.window_owner(hwnd)
+            or not win32.IsWindowVisible(hwnd)
+        ):
+            raise ActionError("Target point belongs to another window; refusing global input")
+        _window_guard(hwnd, process_id)
+        time.sleep(min(waits.STABLE_INTERVAL, remaining))
 
 
 def click(el: TargetElement, *, mode: InputMode = "pattern", button: MouseButton = "left") -> str:

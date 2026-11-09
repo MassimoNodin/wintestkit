@@ -175,6 +175,35 @@ def test_deadline_propagates_in_polling_budget(target):
     assert exc.value is error
 
 
+@pytest.mark.parametrize("budgeted", [False, True])
+@pytest.mark.parametrize("fail_on_check", [1, 2])
+def test_ensure_visible_translates_state_deadlines(target, monkeypatch, budgeted, fail_on_check):
+    from contextlib import nullcontext
+
+    from wintestkit.engine.managed import query_budget
+    from wintestkit.errors import InspectorDeadlineError
+
+    _client, el = target
+    error = InspectorDeadlineError("deadline", code="timeout")
+    checks = 0
+
+    def state():
+        nonlocal checks
+        checks += 1
+        if checks == fail_on_check:
+            raise error
+        return SimpleNamespace(is_offscreen=True)
+
+    monkeypatch.setattr(el, "as_live", state)
+    context = query_budget() if budgeted else nullcontext()
+    with context, pytest.raises(InspectorDeadlineError if budgeted else UIAError) as raised:
+        actions.ensure_visible(el)
+    if budgeted:
+        assert raised.value is error
+    else:
+        assert "checking visibility" in str(raised.value)
+
+
 def test_agent_errors_are_not_retried_via_uia(target, monkeypatch):
     client, el = target
     monkeypatch.setattr(actions, "_short", lambda el: "target")

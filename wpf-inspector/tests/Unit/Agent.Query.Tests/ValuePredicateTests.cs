@@ -18,6 +18,9 @@ using Xunit;
 
 namespace WinTestKit.Inspector.Agent.Query.Tests
 {
+    [CollectionDefinition("Wpf windows", DisableParallelization = true)]
+    public sealed class WpfWindowsCollection { }
+
     [Collection("Wpf windows")]
     public sealed class ValuePredicateTests
     {

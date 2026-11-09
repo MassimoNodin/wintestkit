@@ -297,6 +297,61 @@ def test_hello_requires_correct_id_and_checks_features_per_operation() -> None:
         client.close()
 
 
+def test_trace_records_only_request_metadata(tmp_path, monkeypatch) -> None:
+    import csv
+
+    trace = tmp_path / "trace.csv"
+    monkeypatch.setenv("WTK_INSPECTOR_TRACE", str(trace))
+    transport = ScriptedTransport(lambda request: {"id": request["id"], "result": page()})
+    client = InspectorClient(transport, session())
+    try:
+        client._request("roots", {"private": "secret"}, time.monotonic() + 1)
+        with trace.open(newline="", encoding="utf-8") as stream:
+            rows = list(csv.reader(stream))
+        assert len(rows) == 1
+        assert rows[0][1] == "roots"
+        assert float(rows[0][2]) >= 0
+        assert rows[0][3] == "ok"
+        assert "secret" not in trace.read_text(encoding="utf-8")
+    finally:
+        client.close()
+
+
+def test_agent_timeout_is_named_and_traced(tmp_path, monkeypatch) -> None:
+    import csv
+
+    trace = tmp_path / "trace.csv"
+    monkeypatch.setenv("WTK_INSPECTOR_TRACE", str(trace))
+    transport = ScriptedTransport(
+        lambda request: {"id": request["id"], "error": {"code": "timeout", "message": "private"}}
+    )
+    client = InspectorClient(transport, session(), request_timeout=0.5)
+    try:
+        with pytest.raises(InspectorDeadlineError, match=r"roots.*inspector.request_timeout=0.5s"):
+            client._request("roots", {}, time.monotonic() + 1)
+        with trace.open(newline="", encoding="utf-8") as stream:
+            rows = list(csv.reader(stream))
+        assert rows[0][1] == "roots"
+        assert rows[0][3] == "timeout"
+        assert "private" not in trace.read_text(encoding="utf-8")
+    finally:
+        client.close()
+
+
+def test_pipe_write_timeout_is_a_deadline_and_invalidates_session() -> None:
+    class TimeoutTransport(ScriptedTransport):
+        def write(self, data: bytes, deadline: float) -> None:
+            raise TimeoutError("partial write possible")
+
+    client = InspectorClient(TimeoutTransport(lambda request: None), session(), request_timeout=0.5)
+    try:
+        with pytest.raises(InspectorDeadlineError, match=r"roots.*inspector.request_timeout=0.5s"):
+            client.roots(deadline=time.monotonic() + 1)
+        assert client.session.state == "faulted"
+    finally:
+        client.close()
+
+
 def test_timeout_cancels_and_discards_late_response() -> None:
     cancel = threading.Event()
 
@@ -316,6 +371,8 @@ def test_timeout_cancels_and_discards_late_response() -> None:
         with pytest.raises(InspectorDeadlineError) as error:
             client.roots(deadline=time.monotonic() + 1)
         assert error.value.code == "timeout"
+        assert "roots" in str(error.value)
+        assert "inspector.request_timeout=0.1s" in str(error.value)
         assert cancel.wait(1)
         transport.feed({"id": 2, "result": page()})
         assert client.roots(deadline=time.monotonic() + 1).complete
