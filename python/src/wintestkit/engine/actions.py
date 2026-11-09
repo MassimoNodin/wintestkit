@@ -66,7 +66,12 @@ def _translate_wpf_error(exc: InspectorError, verb: str = "the request") -> None
 
 
 def _wpf_read(
-    el: WpfElement, name: str, pattern: str | None = None, *, fail_closed: bool = False
+    el: WpfElement,
+    name: str,
+    pattern: str | None = None,
+    *,
+    fail_closed: bool = False,
+    independent_deadline: bool = False,
 ) -> object:
     __tracebackhide__ = True
     try:
@@ -74,7 +79,7 @@ def _wpf_read(
             el.ref.object_id,
             el.ref.generation,
             [(PathSegment("uia", name),)],
-            deadline=operation_deadline(2),
+            deadline=time.monotonic() + 2 if independent_deadline else operation_deadline(2),
         )
     except InspectorError as exc:
         _translate_wpf_error(exc, f"reading {name}")
@@ -469,12 +474,29 @@ def hover(el: TargetElement) -> None:
 def is_password(el: TargetElement) -> bool:
     __tracebackhide__ = True
     if isinstance(el, WpfElement):
-        return bool(_wpf_read(el, "is_password", fail_closed=True))
+        return bool(_wpf_read(el, "is_password", fail_closed=True, independent_deadline=True))
     try:
         el = uia_of(el)
     except NoUiaPeerError:
         return True
     return el.get_property("IsPassword") == 1 or el.class_name == "PasswordBox"
+
+
+class PasswordClassifier:
+    """Remember completed WPF classifications for one action or expectation."""
+
+    def __init__(self) -> None:
+        __tracebackhide__ = True
+        self._results: dict[tuple[object, str, str, int], bool] = {}
+
+    def is_password(self, el: TargetElement) -> bool:
+        __tracebackhide__ = True
+        if not isinstance(el, WpfElement):
+            return is_password(el)
+        key = (el.client, el.ref.session_id, el.ref.object_id, el.ref.generation)
+        if key not in self._results:
+            self._results[key] = is_password(el)
+        return self._results[key]
 
 
 def _can_set_value(el: UIAElement) -> bool:

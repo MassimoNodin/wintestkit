@@ -77,7 +77,7 @@ def test_password_classification_uses_agent_redaction(status, expected):
     assert actions.is_password(target) is expected
 
 
-def test_password_classification_honors_query_deadline(monkeypatch):
+def test_password_classification_has_independent_deadline(monkeypatch):
     client = Client()
     deadlines = []
 
@@ -90,7 +90,7 @@ def test_password_classification_honors_query_deadline(monkeypatch):
     monkeypatch.setattr(target, "as_uia", lambda: pytest.fail("UIA mapping was attempted"))
     with query_budget(time.monotonic() - 1):
         assert not actions.is_password(target)
-    assert deadlines[0] < time.monotonic()
+    assert 1.5 < deadlines[0] - time.monotonic() <= 2
 
 
 @pytest.fixture

@@ -143,6 +143,105 @@ def test_expect_inspector_deadline_at_budget_edge(page, world, steps, monkeypatc
     assert client.calls == 2
 
 
+@pytest.mark.parametrize("password", [False, True])
+def test_wpf_classification_survives_later_read_deadline(page, world, steps, monkeypatch, password):
+    from types import SimpleNamespace
+
+    from wintestkit.backends.element import WpfElement
+
+    clock = FakeTime()
+    monkeypatch.setattr(waits, "_clock", clock.clock)
+    monkeypatch.setattr(waits, "_sleep", clock.sleep)
+
+    class Client:
+        classifications = 0
+
+        def read(self, object_id, generation, paths, *, deadline):
+            self.classifications += 1
+            assert self.classifications == 1
+            return [SimpleNamespace(value=SimpleNamespace(status="ok", scalar=password))], "read"
+
+        def release(self, *args, **kwargs):
+            pass
+
+    client = Client()
+    element = WpfElement(client, SimpleNamespace(session_id="s", object_id="o", generation=1), 1)
+    monkeypatch.setattr(model, "resolve", lambda *args: element)
+    reads = 0
+
+    def get_value(el):
+        nonlocal reads
+        reads += 1
+        if reads == 2:
+            clock.now = 1.0
+            raise InspectorDeadlineError("later read deadline", code="timeout")
+        return "actual-password-value" if password else "ordinary"
+
+    monkeypatch.setattr(actions, "get_value", get_value)
+    with pytest.raises(AssertionError) as error:
+        expect(page.status, timeout=1).to_have_value("expected-password-value")
+    message = str(error.value)
+    assert ("details redacted" in message) is password
+    if password:
+        assert "password-value" not in message
+        assert "password-value" not in str(steps[-1].to_dict())
+    else:
+        assert 'Actual: "ordinary"' in message
+    assert client.classifications == 1
+
+
+def test_wpf_unanswered_classification_redacts(page, world, steps, monkeypatch):
+    from types import SimpleNamespace
+
+    from wintestkit.backends.element import WpfElement
+
+    clock = FakeTime()
+    monkeypatch.setattr(waits, "_clock", clock.clock)
+    monkeypatch.setattr(waits, "_sleep", clock.sleep)
+
+    class Client:
+        def read(self, object_id, generation, paths, *, deadline):
+            clock.now = 2.0
+            raise InspectorDeadlineError("classification deadline", code="timeout")
+
+        def release(self, *args, **kwargs):
+            pass
+
+    element = WpfElement(Client(), SimpleNamespace(session_id="s", object_id="o", generation=1), 1)
+    monkeypatch.setattr(model, "resolve", lambda *args: element)
+    with pytest.raises(AssertionError, match="details redacted") as error:
+        expect(page.status, timeout=1).to_have_value("private-value")
+    assert "private-value" not in str(error.value)
+    assert "private-value" not in str(steps[-1].to_dict())
+
+
+def test_wpf_classification_outlives_poll_budget(page, world, steps, monkeypatch):
+    import time
+    from types import SimpleNamespace
+
+    from wintestkit.backends.element import WpfElement
+
+    clock = FakeTime()
+    monkeypatch.setattr(waits, "_clock", clock.clock)
+    monkeypatch.setattr(waits, "_sleep", clock.sleep)
+
+    class Client:
+        def read(self, object_id, generation, paths, *, deadline):
+            assert 1.5 < deadline - time.monotonic() <= 2
+            clock.now = 1.0
+            return [SimpleNamespace(value=SimpleNamespace(status="ok", scalar=False))], "read"
+
+        def release(self, *args, **kwargs):
+            pass
+
+    element = WpfElement(Client(), SimpleNamespace(session_id="s", object_id="o", generation=1), 1)
+    monkeypatch.setattr(model, "resolve", lambda *args: element)
+    with pytest.raises(AssertionError) as error:
+        expect(page.status, timeout=1).to_have_value("different")
+    assert 'Actual: "v"' in str(error.value)
+    assert "details redacted" not in str(error.value)
+
+
 def test_expect_deadline_preserves_last_missing_diagnostic(page, world, steps, monkeypatch):
     clock = FakeTime()
     monkeypatch.setattr(waits, "_clock", clock.clock)

@@ -375,6 +375,52 @@ def test_id_only_password_and_explicit_secret_hide_input_and_provider_errors(
     assert runtime_setup[-1].status == "failed"
 
 
+@pytest.mark.parametrize("method", ["type", "press"])
+@pytest.mark.parametrize("password", [False, True])
+def test_text_action_keeps_wpf_classification_on_later_deadline(
+    page, recorder, monkeypatch, runtime_setup, method, password
+):
+    from types import SimpleNamespace
+
+    from wintestkit.backends.element import WpfElement
+
+    class Client:
+        reads = 0
+
+        def read(self, object_id, generation, paths, *, deadline):
+            self.reads += 1
+            return [SimpleNamespace(value=SimpleNamespace(status="ok", scalar=password))], "read"
+
+        def release(self, *args, **kwargs):
+            pass
+
+    client = Client()
+    element = WpfElement(client, SimpleNamespace(session_id="s", object_id="o", generation=1), 1)
+    calls = 0
+
+    def action(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise InspectorDeadlineError("later action deadline", code="timeout")
+        return "value"
+
+    def perform(self, timeout, operation):
+        operation(element)
+        return operation(element)
+
+    monkeypatch.setattr(model.BoundControl, "perform", perform)
+    monkeypatch.setattr(actions, "type_text" if method == "type" else "press", action)
+    expected = ActionError if password else InspectorDeadlineError
+    with pytest.raises(expected) as error:
+        getattr(page.status, method)("private-value")
+    assert ("details redacted" in str(error.value)) is password
+    if password:
+        assert "private-value" not in str(error.value)
+        assert "private-value" not in str(runtime_setup[-1].to_dict())
+    assert client.reads == 1
+
+
 def test_id_only_password_success_is_redacted(
     page: MainPage,
     recorder: Recorder,
