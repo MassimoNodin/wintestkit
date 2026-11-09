@@ -70,6 +70,7 @@ const MACHINE_CHECKS = new Set([
   "desktop_unlocked",
   "remote_session",
   "uia",
+  "wpf_agent",
 ]);
 
 const ok = (detail: string): StepResult => ({ state: "ok", detail });

@@ -1116,7 +1116,7 @@ describe("settings editor script", () => {
       state("local", 80, {
         timeout: 15,
         launch: "per-test",
-        input_mode: "pattern",
+        input_mode: "mouse",
         object_previews: true,
         replay_scope: "window",
         highlight_color: "#ff0000",
@@ -1143,9 +1143,23 @@ describe("settings editor script", () => {
     expect(view.find((node) => node.className.includes("overridden"))).toBeNull();
   });
 
+  it("displays defaults and enables or resets each setting", () => {
+    for (const [key, value] of [["backend", "auto"], ["input_mode", "mouse"], ["inspector.enabled", true], ["inspector.attach", "on-demand"]] as const) {
+      const view = boot();
+      view.emit(state("local", 80, {}));
+      if (typeof value === "string") expect(view.must(`${key}-${value}`).getAttribute("aria-checked")).toBe("true");
+      view.emit(state("shared", 81, {}));
+      view.must(`${key}-enable`).click();
+      expect(changes(view.posts).at(-1)).toMatchObject({ key, value, remove: false });
+      view.emit(state("shared", 82, { [key]: value }));
+      view.must(`${key}-repo`).click();
+      expect(changes(view.posts).at(-1)).toMatchObject({ key, remove: true });
+    }
+  });
+
   it("marks inspector settings modified against their defaults", () => {
     const view = boot();
-    view.emit(state("shared", 82, { "inspector.enabled": true, "inspector.attach": "manual", "inspector.attach_timeout": 5, "inspector.request_timeout": 1, "inspector.redact_names": ["secret"] }));
+    view.emit(state("shared", 82, { "inspector.enabled": false, "inspector.attach": "on-demand", "inspector.attach_timeout": 5, "inspector.request_timeout": 1, "inspector.redact_names": ["secret"] }));
     for (const key of ["inspector.enabled", "inspector.attach_timeout", "inspector.request_timeout", "inspector.redact_names"]) {
       expect(view.find((node) => node.className.includes("modified") && !!node.querySelector("[id='" + key + "']"))).not.toBeNull();
     }
@@ -1166,7 +1180,7 @@ describe("settings editor script", () => {
       state("shared", 83, {
         timeout: 15,
         launch: "per-test",
-        input_mode: "pattern",
+        input_mode: "mouse",
         "app.process": "Orders.exe",
       }),
     );
