@@ -400,22 +400,23 @@ def test_spy_tree_peerless_and_large_page(tmp_path: Path, monkeypatch: pytest.Mo
             items = page["nodes"]
             elapsed = time.monotonic() - started
             if len(items) == 200 and "nextPageToken" in page:
-                print(f"LARGE_PAGE_FRESH_FIRST: {len(items)} children in {elapsed:.3f}s")
-                started = time.monotonic()
-                later = children(node_id, "logical", page["nextPageToken"])
-                print(
-                    f"LARGE_PAGE_FRESH_LATER: {len(later['nodes'])} children in {time.monotonic() - started:.3f}s"
-                )
-                started = time.monotonic()
-                warm = children(node_id, "logical")
-                print(
-                    f"LARGE_PAGE_ATTACHED_FIRST: {len(warm['nodes'])} children in {time.monotonic() - started:.3f}s"
-                )
-                started = time.monotonic()
-                later = children(node_id, "logical", warm["nextPageToken"])
-                print(
-                    f"LARGE_PAGE_ATTACHED_LATER: {len(later['nodes'])} children in {time.monotonic() - started:.3f}s"
-                )
+                print(f"LARGE_PAGE_FIRST: {len(items)} children in {elapsed:.3f}s")
+                seen_ids: set[str] = set()
+                for page_index in range(4):
+                    if page_index:
+                        started = time.monotonic()
+                        page = children(node_id, "logical", page["nextPageToken"])
+                        items = page["nodes"]
+                        print(
+                            f"LARGE_PAGE_LATER_{page_index}: {len(items)} children in {time.monotonic() - started:.3f}s"
+                        )
+                    assert len(items) == 200
+                    for item in items:
+                        identity = item["identity"]
+                        assert identity["type"].endswith(".LargeButton"), identity
+                        assert identity.get("automationId", "").startswith("Large"), identity
+                        seen_ids.add(identity["automationId"])
+                assert len(seen_ids) == 800
                 break
             queue.extend(item["nodeId"] for item in items if item["hasChildren"])
         else:

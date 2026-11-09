@@ -61,6 +61,19 @@ namespace WinTestKit.Inspector.Agent.Inspection
                 target = null!; dispatcher = null!; return false;
             }
         }
+        internal bool TryGetWeak(string objectId, long generation, out object target)
+        {
+            lock (gate)
+            {
+                CheckDisposed();
+                Prune();
+                if (entries.TryGetValue(objectId, out Entry? entry) && entry.Reference.Generation == generation && entry.Target.Target is object value)
+                {
+                    target = value; return true;
+                }
+                target = null!; return false;
+            }
+        }
         public int Release(IEnumerable<string> objectIds)
         {
             lock (gate) { CheckDisposed(); int count = 0; foreach (string id in objectIds) if (entries.Remove(id)) count++; return count; }

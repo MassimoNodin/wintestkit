@@ -41,6 +41,7 @@ PARSERS: dict[str, Callable[[Any], Any]] = {
     "Member": Member.from_json,
     "MemberPage": lambda value: Page.from_json(value, Member.from_json),
     "ManagedNodePage": lambda value: Page.from_json(value, ManagedNode.from_json),
+    "ManagedNode": ManagedNode.from_json,
     "ObjectRef": ObjectRef.from_json,
     "Path": parse_path,
     "PathSegment": PathSegment.from_json,

@@ -158,6 +158,33 @@ namespace WinTestKit.Inspector.Agent.Mapping.Tests
         }
 
         [Fact]
+        public async Task ChildrenIdentityDoesNotLeasePages()
+        {
+            using (var window = new MappingWindow(600))
+            using (var service = new WpfInspectionService("identity", new WinTestKit.Inspector.Agent.Inspection.Members.ObjectInspector()))
+            {
+                await window.Thread.Dispatcher.InvokeAsync(() => window.Buttons[0].Name = "NamedButton").Task;
+                await window.Thread.Dispatcher.InvokeAsync(() => window.Panel.Children.Add(new Border { Name = "Peerless" })).Task;
+                ObjectRef panel = await PanelHandle(service, window);
+                string? token = null;
+                var nodes = new List<ManagedNodeDto>();
+                do
+                {
+                    var page = await service.ChildrenAsync(panel.ObjectId, panel.Generation, TreeKind.Logical, 200, token, None);
+                    nodes.AddRange(page.Items);
+                    token = page.NextToken;
+                } while (token != null);
+                Assert.Equal(601, nodes.Count);
+                Assert.Null(Assert.Single(nodes, node => node.Label == "Border").Identity);
+                Assert.Equal(600, nodes.Count(node => node.Identity?.AutomationId != null));
+                Assert.Contains(nodes, node => node.Identity?.XName == "NamedButton" && node.Identity.AutomationId == "selection-0");
+                var registry = (ObjectRegistry)typeof(WpfInspectionService).GetField("registry", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(service)!;
+                foreach (var node in nodes) Assert.True(registry.TryGetWeak(node.Object.ObjectId, node.Object.Generation, out _));
+                Assert.True(registry.TryGet(nodes[0].Object.ObjectId, nodes[0].Object.Generation, out _, out _));
+            }
+        }
+
+        [Fact]
         public async Task TokensRejectExpiredForeignOperationObjectTreeAndMalformedCursors()
         {
             DateTime now = DateTime.UtcNow;
