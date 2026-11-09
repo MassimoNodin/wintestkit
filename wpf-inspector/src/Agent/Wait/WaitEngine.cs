@@ -14,6 +14,36 @@ using WinTestKit.Inspector.Protocol;
 
 namespace WinTestKit.Inspector.Agent.Wait
 {
+    internal sealed class LayoutSubscriptions : IDisposable
+    {
+        private readonly object gate = new object();
+        private readonly List<Action> removals = new List<Action>();
+        private bool disposed;
+
+        internal void Track(Action subscribe, Action unsubscribe)
+        {
+            lock (gate)
+            {
+                if (disposed) return;
+                subscribe();
+                removals.Add(unsubscribe);
+            }
+        }
+
+        public void Dispose()
+        {
+            Action[] pending;
+            lock (gate)
+            {
+                if (disposed) return;
+                disposed = true;
+                pending = removals.ToArray();
+                removals.Clear();
+            }
+            foreach (Action remove in pending) remove();
+        }
+    }
+
     internal sealed class WaitEngine
     {
         private readonly QueryEngine query;
@@ -32,15 +62,22 @@ namespace WinTestKit.Inspector.Agent.Wait
             DateTime end = DateTime.UtcNow.AddMilliseconds(timeoutMs);
             if (deadline < end) end = deadline;
             var signal = new SemaphoreSlim(0, 1);
-            var roots = new List<(UIElement Element, Dispatcher Dispatcher)>();
+            var subscriptions = new LayoutSubscriptions();
             EventHandler changed = (sender, args) => { if (signal.CurrentCount == 0) { try { signal.Release(); } catch (SemaphoreFullException) { } } };
             try
             {
                 ObjectRef? scope = condition.Locator.Scope.Handle;
                 if (scope != null && registry.TryGet(scope.ObjectId, scope.Generation, out object scoped, out Dispatcher scopeDispatcher) && scoped is UIElement element)
                 {
-                    await executor.ExecuteAsync(scopeDispatcher, () => { element.LayoutUpdated += changed; return true; }, ct).ConfigureAwait(false);
-                    roots.Add((element, scopeDispatcher));
+                    await executor.ExecuteAsync(scopeDispatcher, () =>
+                    {
+                        subscriptions.Track(() => element.LayoutUpdated += changed, () =>
+                        {
+                            if (!scopeDispatcher.HasShutdownStarted)
+                                _ = scopeDispatcher.BeginInvoke(new Action(() => element.LayoutUpdated -= changed), DispatcherPriority.Send);
+                        });
+                        return true;
+                    }, ct).ConfigureAwait(false);
                 }
                 else if (scope == null)
                 {
@@ -50,13 +87,16 @@ namespace WinTestKit.Inspector.Agent.Wait
                     {
                         Dispatcher dispatcher = source.Dispatcher;
                         if (dispatcher.HasShutdownStarted || dispatcher.HasShutdownFinished) continue;
-                        UIElement? sourceRoot = await executor.ExecuteAsync(dispatcher, () =>
+                        await executor.ExecuteAsync(dispatcher, () =>
                         {
                             var visual = source.IsDisposed ? null : source.RootVisual as UIElement;
-                            if (visual != null) visual.LayoutUpdated += changed;
+                            if (visual != null) subscriptions.Track(() => visual.LayoutUpdated += changed, () =>
+                            {
+                                if (!dispatcher.HasShutdownStarted)
+                                    _ = dispatcher.BeginInvoke(new Action(() => visual.LayoutUpdated -= changed), DispatcherPriority.Send);
+                            });
                             return visual;
                         }, ct).ConfigureAwait(false);
-                        if (sourceRoot != null) roots.Add((sourceRoot, dispatcher));
                     }
                 }
                 ValuePredicate? predicate = condition.Kind == "propertyEquals" ? new ValuePredicate(new Predicate { Kind = "equals", Path = condition.Path, Value = condition.Value }, inspector, registry) : null;
@@ -94,9 +134,7 @@ namespace WinTestKit.Inspector.Agent.Wait
             }
             finally
             {
-                foreach (var root in roots)
-                    if (!root.Dispatcher.HasShutdownStarted)
-                        _ = root.Dispatcher.BeginInvoke(new Action(() => root.Element.LayoutUpdated -= changed), DispatcherPriority.Send);
+                subscriptions.Dispose();
             }
         }
     }
