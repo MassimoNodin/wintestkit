@@ -129,6 +129,67 @@ def test_session_id_must_be_nonempty(
     assert request(server, output, "spy.start", {"sessionId": value})["error"]["code"] == -32602
 
 
+@pytest.mark.parametrize("host_window", [123, None])
+def test_picker_reactivates_only_the_original_host_after_a_current_pick(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, host_window: int | None
+) -> None:
+    server, output, button = make_server(tmp_path, monkeypatch)
+    request(server, output, "initialize", {"root": str(tmp_path)})
+    monkeypatch.setattr(spy, "SpySession", CapturedSpy)
+    lookups: list[int] = []
+    activations: list[int] = []
+
+    def find_host(process_id: int) -> int | None:
+        lookups.append(process_id)
+        return host_window
+
+    monkeypatch.setattr(win32, "foreground_window_for_process", find_host)
+    monkeypatch.setattr(win32, "bring_to_foreground", activations.append)
+    request(server, output, "spy.start", {"foregroundForProcessId": 456})
+    first = server.spy
+    assert lookups == [456]
+    first.hover(button)
+    assert activations == []
+    first.pick(button)
+    assert activations == ([] if host_window is None else [host_window])
+    activations.clear()
+    first.cancel()
+    assert activations == []
+    request(server, output, "spy.start", {"foregroundForProcessId": 789})
+    first.pick(button)
+    assert activations == []
+    server.stop_spy()
+
+
+def test_picker_publishes_selection_even_if_host_activation_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    server, output, button = make_server(tmp_path, monkeypatch)
+    request(server, output, "initialize", {"root": str(tmp_path)})
+    monkeypatch.setattr(spy, "SpySession", CapturedSpy)
+    monkeypatch.setattr(win32, "foreground_window_for_process", lambda process_id: 123)
+
+    def fail_activation(hwnd: int) -> bool:
+        raise OSError("window closed")
+
+    monkeypatch.setattr(win32, "bring_to_foreground", fail_activation)
+    request(server, output, "spy.start", {"foregroundForProcessId": 456})
+    server.spy.pick(button)
+    messages = [json.loads(line) for line in output.getvalue().splitlines()]
+    assert [message["method"] for message in messages] == ["spy.picked"]
+    server.stop_spy()
+
+
+@pytest.mark.parametrize("value", [0, -1, True, "456", None, 1.5])
+def test_picker_host_process_must_be_a_positive_integer(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, value: Any
+) -> None:
+    server, output, _ = make_server(tmp_path, monkeypatch)
+    request(server, output, "initialize", {"root": str(tmp_path)})
+    result = request(server, output, "spy.start", {"foregroundForProcessId": value})
+    assert result["error"]["code"] == -32602
+
+
 def test_eof_stops_picker_before_waiting_without_cancelling_other_requests(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

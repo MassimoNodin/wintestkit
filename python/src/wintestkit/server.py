@@ -67,7 +67,7 @@ _PARAMS: dict[str, tuple[set[str], set[str]]] = {
     "suggest.locator": ({"nodeId"}, set()),
     "inspect.definitions": ({"nodeId"}, set()),
     "inspect.coverage": ({"nodeIds"}, set()),
-    "spy.start": (set(), {"sessionId"}),
+    "spy.start": (set(), {"sessionId", "foregroundForProcessId"}),
     "spy.stop": (set(), set()),
 }
 
@@ -922,11 +922,17 @@ class Server:
             return {"nodes": nodes, "status": status} if status is not None else nodes
         if method == "spy.start":
             from wintestkit.engine.spy import SpySession
+            from wintestkit.uia import win32
 
             app = self._app(False)
             pids = frozenset(app.pids) if app is not None else None
             epoch = self._spy_epoch
             session_params = {"sessionId": params["sessionId"]} if "sessionId" in params else {}
+            host_window = (
+                win32.foreground_window_for_process(params["foregroundForProcessId"])
+                if "foregroundForProcessId" in params
+                else None
+            )
 
             def publish(method: str, element: UIAElement, locate: bool = True) -> None:
                 with self._spy_lock:
@@ -935,6 +941,11 @@ class Server:
                 node = self._register(element, locate=locate)
                 with self._spy_lock:
                     if epoch == self._spy_epoch and self.spy is session:
+                        if method == "spy.picked" and host_window is not None:
+                            try:
+                                win32.bring_to_foreground(host_window)
+                            except Exception:
+                                log.exception("Could not reactivate the element picker host window")
                         self.notify(method, {"node": node, **session_params})
 
             def hover(element: UIAElement) -> None:

@@ -704,7 +704,14 @@
     },
     "SpyStartParams": {
       "type": "object",
-      "properties": {"sessionId": {"type": "string", "minLength": 1}},
+      "properties": {
+        "sessionId": {"type": "string", "minLength": 1},
+        "foregroundForProcessId": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Remember the foreground window belonging to this process or an ancestor and reactivate it after an element is picked."
+        }
+      },
       "required": [],
       "additionalProperties": false
     },

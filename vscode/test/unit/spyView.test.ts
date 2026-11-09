@@ -1369,6 +1369,10 @@ describe("Spy view bridge", () => {
       const fixture = await create();
       fixture.receive({ type: "pick" });
       await vi.waitFor(() => expect(latestSession()).toBeTypeOf("string"));
+      expect(mocks.request).toHaveBeenCalledWith("spy.start", {
+        sessionId: latestSession(),
+        foregroundForProcessId: process.pid,
+      });
       mocks.notifications.get("spy.picked")?.({ sessionId: latestSession(), node: { nodeId: "picked", info: { controlType: "Button", name: "Save" } } });
       await vi.waitFor(() => expect(fixture.sent.some((message) => message.type === "selected" && message.nodeId === "picked")).toBe(true));
       await new Promise((resolve) => setTimeout(resolve, 30));
