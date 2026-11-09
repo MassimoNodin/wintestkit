@@ -672,3 +672,69 @@ def test_spy_wpf_geometry_routes(
     for method in ("inspect.highlight", "inspect.preview"):
         assert request(server, output, method, {"nodeId": "wpf-node"})["error"]["code"] == -32005
     node.forget_release()
+
+
+@pytest.mark.parametrize("case", ["peer", "peerless", "password", "stale"])
+def test_wpf_properties_and_managed_resolve(
+    managed_server: Any, monkeypatch: pytest.MonkeyPatch, schema_registry: Registry[Any], case: str
+) -> None:
+    from wintestkit.backends.element import WpfElement
+
+    server, output, client = managed_server
+    server._managed_clients["session"] = client
+    node = WpfElement(client, REF, 42)
+    server.nodes["wpf-node"] = node
+    state = SimpleNamespace(
+        bounds=None,
+        window_handle=7,
+        uia_runtime_id=None if case == "peerless" else (1, 2),
+        enabled=True,
+        offscreen=False,
+        visible=True,
+        focused=False,
+    )
+    monkeypatch.setattr(WpfElement, "is_alive", lambda self: case != "stale")
+    monkeypatch.setattr(WpfElement, "as_live", lambda self: self)
+    monkeypatch.setattr(WpfElement, "state", lambda self: state)
+    monkeypatch.setattr(WpfElement, "_get_state", lambda self: state)
+    calls: list[str] = []
+
+    def get_property(name: str) -> Any:
+        calls.append(name)
+        if name == "IsPassword":
+            return case == "password"
+        if "Value" in name:
+            return "secret"
+        return "peer"
+
+    monkeypatch.setattr(
+        WpfElement, "as_uia", lambda self: SimpleNamespace(get_property=get_property)
+    )
+    params = {"nodeId": "wpf-node", "full": True, "include": ["ValueValue"]}
+    properties = request(server, output, "inspect.properties", params)
+    resolve = request(
+        server, output, "inspect.managed.resolve", {"sessionId": "session", "nodeId": "wpf-node"}
+    )
+    if case == "stale":
+        assert properties["error"]["code"] == resolve["error"]["code"] == -32005
+    else:
+        result = properties["result"]
+        assert result["source"] == "wpf"
+        assert result["properties"]["ClrFullClassName"] == "Test.Window"
+        assert result["uiaMapped"] == (case != "peerless")
+        assert ("uia" in result) == (case != "peerless")
+        assert resolve["result"]["object"] == REF.to_json()
+        assert not any(call[0] == "resolve" for call in client.calls)
+        for name, value in (
+            ("InspectPropertiesResult", result),
+            ("InspectManagedResolveResult", resolve["result"]),
+        ):
+            validator = Draft202012Validator(
+                {"$ref": f"https://wintestkit.dev/schemas/rpc.schema.json#/$defs/{name}"},
+                registry=schema_registry,
+            )
+            assert validator.is_valid(value), list(validator.iter_errors(value))
+        if case == "password":
+            assert "secret" not in json.dumps(result)
+            assert not any("value" in name.lower() for name in calls)
+    node.forget_release()
