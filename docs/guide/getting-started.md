@@ -13,8 +13,9 @@ It covers:
 Project initialization creates or extends `.gitignore` without replacing existing rules.
 It ignores `wintestkit.local.yaml`, `wintestkit.local.toml`, `.venv/`, `__pycache__/`,
 `.pytest_cache/`, `.ruff_cache/`, `wtk-report/` and `wtk-results/`.
-Rerunning initialization adds missing rules without duplicating them. Shared defaults live
-in `wintestkit.yaml`; `--app` writes the executable path to ignored `wintestkit.local.yaml`.
+Rerunning initialization adds missing rules without duplicating them. The new
+`wintestkit.yaml` starts empty, with no repository-level overrides; built-in defaults apply
+until you explicitly enable settings. `--app` writes the executable path to ignored `wintestkit.local.yaml`.
 Existing configuration is preserved. In VS Code, use the gear in **Test Target** to edit
 these YAML files with the configuration form.
 Ignore rules do not untrack files already committed to Git.
