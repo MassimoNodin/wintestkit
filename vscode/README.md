@@ -56,6 +56,10 @@ not stop them. Restart the target to unload the agent. Compatibility and release
   remembers the selected tab. Browse pages with their child pages and elements nested by `within`
   containers, and reusable flow functions grouped by file. Jump to definitions,
   highlight/check page elements, or run flows that only need `app` inline. Use the beaker action in the view header to open VS Code's Testing view and run or debug tests.
+  Select an element in **Page Tree** to see its most recent Check exists capture in the bottom-pinned
+  **Preview** section. Switch between **Element** and **In App context**, or open the image to zoom
+  and pan. Keyboard selection updates the preview too. Captures are not live; run Check exists again
+  to refresh them. Empty states distinguish no selection from an element without a saved check image.
 - **Spy.** Explore the live UI Automation tree. **Pick element** and **Refresh objects** stay in
   the Spy toolbar. Hold **Ctrl** and click a control, or press **Esc** to cancel. The Spy shows
   properties and supported patterns. **Generate suggested locator** (on request: it can take

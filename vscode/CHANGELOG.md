@@ -11,6 +11,15 @@ Unreleased changes must be moved to a dated candidate section before a release c
   attach confirmation and lazy managed member reads. Instrumentation executes target code;
   compatibility and release gates remain open.
 
+- Show the selected Page Tree element's last checked capture in a bottom-pinned Preview section,
+  replacing the floating image hover. Include Element / In App context views, image-viewer access,
+  capture age, and separate empty states for no selection and no saved check image.
+
+- Keep unfinished Configuration text and numeric edits, text selection, and focus in place when
+  background updates refresh the form, without carrying edits between User and Repository Settings.
+- Make Configuration option groups and highlight swatches keyboard navigable with arrow keys,
+  Home, and End, with a single tab stop per radio group.
+
 ## [0.1.1rc2] - 2026-10-23
 
 Second prerelease. Install the extension's pre-release channel together with

@@ -30,6 +30,7 @@ import type { UnusedDefinitions } from "./unusedDefinitions";
 import { annotateUnused, type UnusedLookup } from "./unusedAnnotation";
 import type { UnusedToolsState } from "./navigationDocument";
 import type { SetupMonitor } from "../setup/monitor";
+import type { ElementPreviews } from "../editor/elementPreviews";
 
 interface NavigationHost {
   globalState: vscode.Memento;
@@ -53,6 +54,7 @@ export class ElementsTree implements vscode.Disposable {
     private readonly reports?: Reports,
     private readonly unused?: UnusedDefinitions,
     private readonly setup?: SetupMonitor,
+    private readonly previews?: Pick<ElementPreviews, "treeCapture">,
   ) {
     this.session = new NavigationSession(
       readSection(host?.globalState.get(navigationSectionKey)),
@@ -152,6 +154,30 @@ export class ElementsTree implements vscode.Disposable {
       : buildProjectTree(discoveries);
   }
   private onMessage(value: unknown): void {
+    if (value && typeof value === "object") {
+      const data = value as Record<string, unknown>;
+      if (data.type === "capturePreview" || data.type === "openCapture") {
+        if (typeof data.id !== "string" || !this.previews) return;
+        const node = findNode(this.sectionNodes(), data.id);
+        if (node?.kind !== "element" || !node.file || !node.qualname) return;
+        if (data.type === "capturePreview") {
+          if (!Number.isSafeInteger(data.requestId)) return;
+          const view = this.view;
+          void this.previews.treeCapture(node.file, node.qualname).then((capture) => {
+            if (view && this.view === view && !this.disposed)
+              void view.webview.postMessage({ type: "capturePreview", id: data.id, requestId: data.requestId, capture });
+          }).catch(() => {
+            if (view && this.view === view && !this.disposed)
+              void view.webview.postMessage({ type: "capturePreview", id: data.id, requestId: data.requestId });
+          });
+        } else if (data.view === "element" || data.view === "window") {
+          this.showFailure(Promise.resolve(vscode.commands.executeCommand<void>("wintestkit.openElementCapture", {
+            file: node.file, qualname: node.qualname, view: data.view,
+          })));
+        }
+        return;
+      }
+    }
     if (value && typeof value === "object" && (value as { type?: unknown }).type === "unusedScan") {
       if (!this.unused || this.unused.scanning) return;
       void this.unused.scan().then((summary) => {
@@ -275,6 +301,7 @@ export class ElementsTree implements vscode.Disposable {
     html: string;
     reveal?: boolean;
     unused?: UnusedToolsState;
+    captureSelection?: { id: string; qualname: string };
   } {
     let source = this.sectionNodes();
     const unusedState = this.unusedState();
@@ -298,10 +325,15 @@ export class ElementsTree implements vscode.Disposable {
       },
     );
     this.session.prune(nodes);
+    const selectedId = this.session.focus[this.session.section];
+    const selected = selectedId ? findNode(source, selectedId) : undefined;
     const hasProject = this.projects.all.length > 0;
     const message = {
       type: "render" as const,
       section: this.session.section,
+      captureSelection: selected?.kind === "element" && selected.qualname
+        ? { id: selected.id, qualname: selected.qualname }
+        : undefined,
       html: renderBody({
         nodes,
         expanded: this.session.expanded[this.session.section],

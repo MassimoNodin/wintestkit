@@ -73,12 +73,12 @@ describe("sidebar layout", () => {
     expect(css).toMatch(/--pages-min:\s*\d+px/);
     expect(css).toMatch(/#test-target\s*{[^}]*max-height:\s*max\(\d+px,\s*calc\(100% - var\(--pages-min\)\)\)[^}]*overflow-y:\s*auto/);
   });
-  it("never shrinks Pages & Flows below that minimum", () => {
-    expect(css).toMatch(/#pages\s*{[^}]*min-height:\s*var\(--pages-min\)/);
+  it("lets the tree shrink while the preview stays pinned", () => {
+    expect(css).toMatch(/#pages\s*{[^}]*min-height:\s*0/);
   });
   it("keeps Test Target usable when both sections need more height than the sidebar", () => {
-    expect(css).toMatch(/#test-target\s*{[^}]*min-height:\s*120px/);
-    expect(css).toMatch(/body\s*{[^}]*overflow-y:\s*auto/);
+    expect(css).toMatch(/#test-target\s*{[^}]*min-height:\s*min\(120px, 20vh\)/);
+    expect(css).toMatch(/body\s*{[^}]*overflow-y:\s*hidden/);
   });
   it("gives Test Target the whole sidebar when it is the only part", () => {
     expect(css).toMatch(/body\.solo #test-target\s*{[^}]*max-height:\s*none/);

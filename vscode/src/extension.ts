@@ -200,6 +200,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
   const flows = new FlowRuns(projects, discovery, servers, log, (file, name) => checkAfterFlow.afterFlow(file, name));
   const lenses = new CodeLenses(projects, discovery, checks, flows);
   const unused = new UnusedDefinitions(projects, discovery);
+  const elementPreviews = new ElementPreviews(discovery, log, () => enablement.enabled);
   const elements = new ElementsTree(
     projects,
     discovery,
@@ -209,6 +210,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     reports,
     unused,
     setupMonitor,
+    elementPreviews,
   );
   context.subscriptions.push(
     elements,
@@ -237,7 +239,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     checks,
     new CheckDecorations(checks),
     new HighlightCommands(projects, discovery, servers, checks, log),
-    new ElementPreviews(discovery, log, () => enablement.enabled),
+    elementPreviews,
     new RelocationActions(checks),
   );
   context.subscriptions.push(servers, status, projects, discovery);
