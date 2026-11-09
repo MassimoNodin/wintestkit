@@ -10,6 +10,7 @@
   let hideTimer;
   let state;
   let busy = false;
+  const renderedValues = new WeakMap();
   const draft = new Set();
   let draftScope;
   const highlightColors = [
@@ -132,6 +133,8 @@
       if (!remove && field.kind === "boolean") value = raw === "true";
       if (!remove && field.kind === "list") value = JSON.parse(raw);
       busy = true;
+      const input = document.getElementById(field.key);
+      if (input && renderedValues.has(input)) renderedValues.set(input, raw);
       lastKey = field.key;
       lastValue = raw;
       status.hidden = true;
@@ -276,6 +279,7 @@
       input.placeholder =
         field.placeholder[state.scope === "local" ? "user" : "repository"];
     if (invalid.has(field.key) && !view.locked) markInvalid(input, field.key);
+    renderedValues.set(input, input.value);
     input.onchange = () => {
       const remove = !input.value.trim();
       if (remove && state.scope === "shared") return toggleRepository(field, true);
@@ -302,6 +306,7 @@
     input.value = String(view.value);
     input.disabled = view.locked;
     if (invalid.has(field.key) && !view.locked) markInvalid(input, field.key);
+    renderedValues.set(input, input.value);
     let range;
     if (config) {
       range = document.createElement("input");
@@ -329,6 +334,33 @@
     if (config) wrap.append(element("span", "unit", config.unit));
     return [wrap, input];
   }
+  function radioKeyboard(group) {
+    const buttons = Array.from(group.children).filter(
+      (button) => button.getAttribute("role") === "radio",
+    );
+    const selected = buttons.find(
+      (button) => button.getAttribute("aria-checked") === "true",
+    ) || buttons[0];
+    for (const button of buttons) {
+      button.tabIndex = button === selected ? 0 : -1;
+      button.onkeydown = (event) => {
+        const offset = {
+          ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1,
+        }[event.key];
+        if (offset === undefined && event.key !== "Home" && event.key !== "End") return;
+        event.preventDefault();
+        if (busy || button.disabled) return;
+        const index = buttons.indexOf(button);
+        const targetIndex = event.key === "Home" ? 0
+          : event.key === "End" ? buttons.length - 1
+          : (index + offset + buttons.length) % buttons.length;
+        const target = buttons[targetIndex];
+        for (const option of buttons) option.tabIndex = option === target ? 0 : -1;
+        target.focus();
+        target.click();
+      };
+    }
+  }
   function choiceControl(field, view) {
     const selected = String(view.value);
     const group = element("div", "segmented" + (view.explicit ? "" : " inherited"));
@@ -346,6 +378,7 @@
       };
       group.append(button);
     }
+    radioKeyboard(group);
     return [group, group];
   }
   function switchControl(field, view) {
@@ -378,6 +411,7 @@
       };
       wrap.append(swatch);
     }
+    radioKeyboard(wrap);
     const custom = document.createElement("input");
     custom.type = "color";
     custom.id = field.key;
@@ -658,12 +692,27 @@
       return section;
     });
   }
-  function render() {
-    const focused = document.activeElement?.id;
+  function render(preserveEdit = true) {
+    const active = document.activeElement;
+    const focused = active?.id;
+    const pending = preserveEdit && renderedValues.has(active)
+      && active.value !== renderedValues.get(active);
+    const selection = active?.type === "text"
+      ? [active.selectionStart, active.selectionEnd, active.selectionDirection]
+      : undefined;
     fields.className = "flaps";
     fields.replaceChildren(...groups());
-    if (focused && fields.querySelector("[id='" + focused + "']"))
-      document.getElementById(focused).focus();
+    const target = focused && fields.querySelector("[id='" + focused + "']");
+    if (target && !target.disabled) {
+      if (pending && renderedValues.has(target)) {
+        target.value = active.value;
+        const slider = document.getElementById(focused + "-slider");
+        if (slider) slider.value = active.value;
+      }
+      target.focus({ preventScroll: true });
+      if (preserveEdit && selection && typeof target.setSelectionRange === "function")
+        target.setSelectionRange(...selection);
+    }
   }
   // Brings a setting into view, as when another page sends you to it, and marks it for a moment.
   function reveal(key) {
@@ -690,6 +739,7 @@
       return;
     }
     if (message.type !== "state") return;
+    const sameScope = state?.scope === message.scope;
     state = message;
     if (draftScope !== state.scope) {
       draft.clear();
@@ -717,7 +767,7 @@
       if (!savingActive) startSaving();
     } else if (!state.dirty) endSaving();
     status.hidden = true;
-    render();
+    render(sameScope);
     if (typeof message.focus === "string") reveal(message.focus);
   });
   post({ type: "ready" });
