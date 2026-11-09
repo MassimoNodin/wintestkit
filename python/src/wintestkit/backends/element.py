@@ -127,6 +127,9 @@ class WpfElement:
             )
         return self._state
 
+    def state(self) -> ElementState:
+        return self._get_state()
+
     @property
     def automation_id(self) -> str:
         return self._get_identity()["automation_id"]
