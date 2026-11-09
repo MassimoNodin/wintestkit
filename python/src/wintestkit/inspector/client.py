@@ -56,6 +56,13 @@ from wintestkit.inspector.models import runtime_id_value as _runtime_id
 from wintestkit.inspector.paths import ManagedPath, PathSegment
 from wintestkit.inspector.transport import ByteTransport, read_frame, write_frame
 
+
+@dataclass(frozen=True)
+class HitTestResult:
+    handle: ObjectRef
+    path: tuple[ManagedNode, ...] | None = None
+
+
 _trace_lock = threading.Lock()
 
 
@@ -590,14 +597,25 @@ class InspectorClient:
         )
 
     def hit_test(
-        self, native_window_handle: int, x: float, y: float, *, timeout_ms: int, deadline: float
-    ) -> ObjectRef | None:
+        self,
+        native_window_handle: int,
+        x: float,
+        y: float,
+        *,
+        timeout_ms: int,
+        deadline: float,
+        include_path: bool = False,
+    ) -> HitTestResult | None:
         self._feature("hitTest")
 
-        def parse(value: object) -> ObjectRef:
-            reference = ObjectRef.from_json(_obj(value, "handle")["handle"])
+        def parse(value: object) -> HitTestResult:
+            data = _obj(value, "handle", "path")
+            reference = ObjectRef.from_json(data["handle"])
             self._object_ref(reference)
-            return reference
+            path = _array(data["path"], self._node, 256) if "path" in data else None
+            if include_path != (path is not None):
+                raise ValueError("Unexpected hit test path")
+            return HitTestResult(reference, path)
 
         try:
             result = self._request(
@@ -605,6 +623,7 @@ class InspectorClient:
                 {
                     "nativeWindowHandle": native_window_handle,
                     "point": {"x": x, "y": y},
+                    **({"includePath": True} if include_path else {}),
                     "timeoutMs": self._timed_params(timeout_ms, deadline),
                 },
                 deadline,

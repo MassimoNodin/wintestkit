@@ -52,7 +52,7 @@ namespace WinTestKit.Inspector.Agent.Inspection
         [DllImport("user32.dll")]
         private static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint processId);
 
-        public Task<Protocol.HitTestResult> HitTestAsync(long nativeWindowHandle, PointDto point, DateTime deadline, int timeoutMs, CancellationToken ct) => RunAsync(async token =>
+        public Task<Protocol.HitTestResult> HitTestAsync(long nativeWindowHandle, PointDto point, DateTime deadline, int timeoutMs, CancellationToken ct, bool includePath = false) => RunAsync(async token =>
         {
             IntPtr hwnd;
             try { hwnd = new IntPtr(nativeWindowHandle); }
@@ -89,7 +89,32 @@ namespace WinTestKit.Inspector.Agent.Inspection
                         if (target == null) throw new ProtocolException(ErrorCodes.NotFound, "No hit.");
                         if (root is UIElement inputRoot && inputRoot.InputHitTest(local) is ContentElement content)
                             target = content;
-                        return new Protocol.HitTestResult { Handle = registry.Register(target, source.Dispatcher, inspector.DescribeType(target.GetType())) };
+                        var hit = new Protocol.HitTestResult { Handle = registry.Register(target, source.Dispatcher, inspector.DescribeType(target.GetType())) };
+                        if (includePath)
+                        {
+                            var path = new List<ManagedNodeDto>();
+                            DependencyObject? current = target;
+                            while (current != null)
+                            {
+                                timed.Token.ThrowIfCancellationRequested();
+                                if (path.Count >= 256) throw new ProtocolException(ErrorCodes.LimitExceeded, "Hit test path limit reached.");
+                                AddNode(path, current);
+                                var identity = new NodeIdentityDto();
+                                if (current is FrameworkElement || current is FrameworkContentElement)
+                                {
+                                    string declaringType = current is FrameworkElement ? "System.Windows.FrameworkElement" : "System.Windows.FrameworkContentElement";
+                                    identity.XName = ReadIdentity(current, new PathSegment { Kind = "property", Name = "Name", DeclaringType = declaringType }, source.Dispatcher, timed.Token);
+                                }
+                                identity.AutomationId = ReadIdentity(current, new PathSegment { Kind = "uia", Name = "automation_id" }, source.Dispatcher, timed.Token);
+                                path[path.Count - 1].Identity = identity.XName != null || identity.AutomationId != null ? identity : null;
+                                if (ReferenceEquals(current, root)) break;
+                                current = current is Visual || current is System.Windows.Media.Media3D.Visual3D ? VisualTreeHelper.GetParent(current) : LogicalTreeHelper.GetParent(current);
+                            }
+                            if (current == null) throw new ProtocolException(ErrorCodes.MappingFailed, "Hit is not connected to the window root.");
+                            path.Reverse();
+                            hit.Path = path;
+                        }
+                        return hit;
                     }, timed.Token).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException) when (!token.IsCancellationRequested) { throw new ProtocolException(ErrorCodes.Timeout, "Request deadline elapsed."); }

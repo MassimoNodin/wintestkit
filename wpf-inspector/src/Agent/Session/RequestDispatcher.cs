@@ -156,7 +156,7 @@ namespace WinTestKit.Inspector.Agent.Session
                 case PipeMethods.HitTest:
                     if (!(service is IHitTestInspectionService hitTestService)) throw new ProtocolException(ErrorCodes.UnsupportedTarget, "Feature not available.");
                     var hitTest = HitTestParams.FromJson(request.Params);
-                    return (await hitTestService.HitTestAsync(hitTest.NativeWindowHandle, hitTest.Point, deadline, hitTest.TimeoutMs, ct).ConfigureAwait(false)).ToJson();
+                    return (await hitTestService.HitTestAsync(hitTest.NativeWindowHandle, hitTest.Point, deadline, hitTest.TimeoutMs, ct, hitTest.IncludePath).ConfigureAwait(false)).ToJson();
                 case PipeMethods.WriteSetProperty:
                 case PipeMethods.WriteCall:
                 case PipeMethods.EventsSubscribe:

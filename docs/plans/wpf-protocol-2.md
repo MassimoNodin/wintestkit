@@ -118,7 +118,7 @@ are exact; no implicit sessionId is needed beyond the ObjectRefs and authenticat
 | `act.scroll` | `{handle:ObjectRef,horizontal:ScrollAmount,vertical:ScrollAmount,timeoutMs}` | ActResult; ScrollAmount is `none`, `smallIncrement`, `smallDecrement`, `largeIncrement`, `largeDecrement` |
 | `act.realizeItem` | `{search:ItemSearch,timeoutMs}` | `{outcome:"performed"|"noChange",handle:ObjectRef,warning?:MatchWarning}`. Search data first, then ScrollIntoView and generate only the first match; never realize the other items. |
 | `wait.until` | `{condition:WaitCondition,timeoutMs}` | WaitResult. Recheck on relevant layout/property changes until deadline; timeout returns `satisfied:false`. Multiple matches use the first; the query warning is not included. |
-| `hitTest` | `{nativeWindowHandle:integer,point:{x:number,y:number},timeoutMs}` | `{handle:ObjectRef}` or `notFound`; point uses physical screen pixels. |
+| `hitTest` | `{nativeWindowHandle:integer,point:{x:number,y:number},timeoutMs,includePath?:boolean}` | `{handle:ObjectRef,path?:ManagedNode[]}` or `notFound`; point uses physical screen pixels. |
 | `write.setProperty` | `{handle:ObjectRef,memberKey:string,value:Scalar,timeoutMs}` | `{audit:WriteAudit}` |
 | `write.call` | `{handle:ObjectRef,memberKey:string,arguments:Scalar[],timeoutMs}` | `{audit:WriteAudit}`; at most 16 scalar arguments, no return value |
 | `events.subscribe` | `{kinds:EventKind[]}` | `{subscriptionId:string}`; 1–3 unique kinds |
@@ -259,3 +259,4 @@ explicit `backend: uia` keep the UIA backend.
 `ElementState.clickPoint` is a required nullable `{x, y}` in physical screen pixels. The dispatcher intersects the element bounds with ancestor viewport and clip bounds, tests the visible centre and a bounded set of alternatives against explicit clip geometry, visibility and WPF hit testing, and returns null when no safe point exists. `clipped` remains diagnostic; template parts retain their stricter fully-visible rectangle requirement.
 
 17. `children` entries optionally include `identity` containing only `xName` and `automationId`. Values are read on the dispatcher for the returned page, follow `read` redaction and protection, and are omitted on failure. Paging registers weak object references without acquiring leases.
+18. `hitTest` accepts optional `includePath`; when true it returns `path` in `children` entry form, from the HWND root visual to the hit element inclusive. The dispatcher walks visual parents with a 256-node limit, without acquiring leases for entries. The default omits the path and avoids its traversal. Popup paths stop at the popup HWND source root.

@@ -33,14 +33,14 @@ namespace WinTestKit.Inspector.Protocol
     }
     public sealed class HitTestParams
     {
-        public long NativeWindowHandle { get; set; } public PointDto Point { get; set; } = new PointDto(); public int TimeoutMs { get; set; }
-        public JsonObjectNode ToJson() { var o = new JsonObjectNode(); o.Add("nativeWindowHandle",JsonNumberNode.From(NativeWindowHandle)); o.Add("point",Point.ToJson()); o.Add("timeoutMs",JsonNumberNode.From(TimeoutMs)); FromJson(o); return o; }
-        public static HitTestParams FromJson(JsonNode n) { var o = DtoHelpers.Object(n,"nativeWindowHandle","point","timeoutMs"); return new HitTestParams { NativeWindowHandle = DtoHelpers.Integer(o.Get("nativeWindowHandle"),long.MinValue), Point = PointDto.FromJson(o.Get("point")), TimeoutMs = (int)DtoHelpers.Integer(o.Get("timeoutMs"),1,2000) }; }
+        public long NativeWindowHandle { get; set; } public PointDto Point { get; set; } = new PointDto(); public int TimeoutMs { get; set; } public bool IncludePath { get; set; }
+        public JsonObjectNode ToJson() { var o = new JsonObjectNode(); o.Add("nativeWindowHandle",JsonNumberNode.From(NativeWindowHandle)); o.Add("point",Point.ToJson()); o.Add("timeoutMs",JsonNumberNode.From(TimeoutMs)); if (IncludePath) o.Add("includePath",new JsonBoolNode(true)); FromJson(o); return o; }
+        public static HitTestParams FromJson(JsonNode n) { var o = DtoHelpers.Object(n,"nativeWindowHandle","point","timeoutMs","includePath"); return new HitTestParams { NativeWindowHandle = DtoHelpers.Integer(o.Get("nativeWindowHandle"),long.MinValue), Point = PointDto.FromJson(o.Get("point")), TimeoutMs = (int)DtoHelpers.Integer(o.Get("timeoutMs"),1,2000), IncludePath = o.TryGet("includePath",out var p) && DtoHelpers.Boolean(p) }; }
     }
     public sealed class HitTestResult
     {
-        public ObjectRef Handle { get; set; } = new ObjectRef();
-        public JsonObjectNode ToJson() { var o = new JsonObjectNode(); o.Add("handle",Handle.ToJson()); FromJson(o); return o; }
-        public static HitTestResult FromJson(JsonNode n) { var o = DtoHelpers.Object(n,"handle"); return new HitTestResult { Handle = ObjectRef.FromJson(o.Get("handle")) }; }
+        public ObjectRef Handle { get; set; } = new ObjectRef(); public IReadOnlyList<ManagedNodeDto>? Path { get; set; }
+        public JsonObjectNode ToJson() { var o = new JsonObjectNode(); o.Add("handle",Handle.ToJson()); if (Path != null) { var a = new JsonArrayNode(); foreach (var node in Path) a.Add(node.ToJson()); o.Add("path",a); } FromJson(o); return o; }
+        public static HitTestResult FromJson(JsonNode n) { var o = DtoHelpers.Object(n,"handle","path"); var x = new HitTestResult { Handle = ObjectRef.FromJson(o.Get("handle")) }; if (o.TryGet("path",out var p)) { var a = new List<ManagedNodeDto>(); foreach (var node in DtoHelpers.Array(p,256).Items) a.Add(ManagedNodeDto.FromJson(node)); x.Path = a; } return x; }
     }
 }

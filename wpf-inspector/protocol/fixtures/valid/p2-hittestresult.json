@@ -13,6 +13,10 @@
         "baseTypes": []
       },
       "dispatcherId": "d"
-    }
+    },
+    "path": [{
+      "object": {"sessionId":"s","objectId":"o","generation":1,"type":{"name":"T","fullName":"Example.T","assemblyName":"A","assemblyQualifiedName":"Example.T, A","baseTypes":[]},"dispatcherId":"d"},
+      "label":"T", "hasVisualChildren":false, "hasLogicalChildren":false, "identity":{"xName":"Target"}
+    }]
   }
 }

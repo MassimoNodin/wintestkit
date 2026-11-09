@@ -2051,6 +2051,7 @@ export interface HelloResult {
  * via the `definition` "HitTestParams".
  */
 export interface HitTestParams {
+  includePath?: boolean;
   nativeWindowHandle: number;
   point: {
     x: number;
@@ -2064,6 +2065,25 @@ export interface HitTestParams {
  */
 export interface HitTestResult {
   handle: ObjectRef;
+  /**
+   * @maxItems 256
+   */
+  path?: ManagedNode[];
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "ManagedNode".
+ */
+export interface ManagedNode {
+  object: ObjectRef;
+  label: string;
+  hasVisualChildren: boolean;
+  hasLogicalChildren: boolean;
+  runtimeId?: RuntimeId;
+  identity?: {
+    xName?: string;
+    automationId?: string;
+  };
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
@@ -2247,21 +2267,6 @@ export interface InspectManagedChildrenParams {
   tree: "visual" | "logical";
   pageSize?: number;
   pageToken?: string;
-}
-/**
- * This interface was referenced by `ProtocolContracts`'s JSON-Schema
- * via the `definition` "ManagedNode".
- */
-export interface ManagedNode {
-  object: ObjectRef;
-  label: string;
-  hasVisualChildren: boolean;
-  hasLogicalChildren: boolean;
-  runtimeId?: RuntimeId;
-  identity?: {
-    xName?: string;
-    automationId?: string;
-  };
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
