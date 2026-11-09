@@ -257,3 +257,5 @@ explicit `backend: uia` keep the UIA backend.
 ### Decision 14: safe physical click point
 
 `ElementState.clickPoint` is a required nullable `{x, y}` in physical screen pixels. The dispatcher intersects the element bounds with ancestor viewport and clip bounds, tests the visible centre and a bounded set of alternatives against explicit clip geometry, visibility and WPF hit testing, and returns null when no safe point exists. `clipped` remains diagnostic; template parts retain their stricter fully-visible rectangle requirement.
+
+17. `children` entries optionally include `identity` containing only `xName` and `automationId`. Values are read on the dispatcher for the returned page, follow `read` redaction and protection, and are omitted on failure. Paging registers weak object references without acquiring leases.

@@ -128,6 +128,28 @@ def test_bootstrap_requires_bounded_unicode_redaction_rules() -> None:
 @pytest.mark.parametrize(
     ("definition", "instance", "valid"),
     [
+        (
+            "ManagedNode",
+            {
+                "object": OBJECT,
+                "label": "T",
+                "hasVisualChildren": False,
+                "hasLogicalChildren": False,
+                "identity": {"xName": "name", "automationId": "id"},
+            },
+            True,
+        ),
+        (
+            "ManagedNode",
+            {
+                "object": OBJECT,
+                "label": "T",
+                "hasVisualChildren": False,
+                "hasLogicalChildren": False,
+                "identity": {"other": "id"},
+            },
+            False,
+        ),
         ("Value", VALUE, True),
         ("Value", {**VALUE, "kind": "null", "scalar": None}, True),
         ("Value", {**VALUE, "status": "truncated", "scalar": "a", "truncatedAt": 2}, True),

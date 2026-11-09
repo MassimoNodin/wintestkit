@@ -17,6 +17,7 @@ from wintestkit.inspector import payload, probe
 from wintestkit.inspector.models import (
     ManagedNode,
     Mapping,
+    NodeIdentity,
     ObjectRef,
     Page,
     PathValue,
@@ -437,21 +438,18 @@ def test_spy_wpf_children_identity_and_failures(
         ObjectRef("session", name, 1, TYPE, "dispatcher")
         for name in ("good", "peerless", "failed", "redacted")
     ]
-    nodes = tuple(ManagedNode(ref, "label", True, False) for ref in refs)
+    nodes = tuple(
+        ManagedNode(ref, "label", True, False, identity=identity)
+        for ref, identity in zip(
+            refs, (NodeIdentity("Name", "Id"), NodeIdentity("Name"), None, None), strict=True
+        )
+    )
     monkeypatch.setattr(
         client, "children", lambda *args, **kwargs: Page(nodes, True, "snapshot", ())
     )
 
-    def read(object_id: str, generation: int, paths: Any, **kwargs: Any) -> Any:
-        if object_id == "failed":
-            raise InspectorUnavailableError("failed", code="readFailed")
-        statuses = ("ok", "unavailable" if object_id == "peerless" else "ok")
-        if object_id == "redacted":
-            statuses = ("redacted", "ok")
-        return tuple(
-            PathValue(path, Value(status, "string", "String", "String", scalar))
-            for path, status, scalar in zip(paths, statuses, ("Name", "Id"), strict=True)
-        ), "read"
+    def read(*args: Any, **kwargs: Any) -> Any:
+        pytest.fail("children must not read each object")
 
     monkeypatch.setattr(client, "read", read)
     window = SimpleNamespace(process_id=42)
@@ -600,11 +598,11 @@ def test_spy_wpf_pages(managed_server: Any, monkeypatch: pytest.MonkeyPatch) -> 
     server._wpf_windows.add("window")
     params = {"nodeId": "window", "tree": "visual", "pageSize": 2}
     first = request(server, output, "inspect.children", params)["result"]
-    assert len(first["nodes"]) == len(reads) == 2
+    assert len(first["nodes"]) == 2 and not reads
     assert first["nextPageToken"] == "next"
     last = request(server, output, "inspect.children", {**params, "pageToken": "next"})["result"]
     assert len(last["nodes"]) == 1 and "nextPageToken" not in last
-    assert len(reads) == 3 and calls == [(None, 2), ("next", 2)]
+    assert not reads and calls == [(None, 2), ("next", 2)]
     error = request(server, output, "inspect.children", {**params, "pageToken": "bad"})["error"]
     assert error["data"]["code"] == "invalidPageToken"
     server._release_managed_objects()

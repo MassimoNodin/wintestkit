@@ -185,13 +185,19 @@ namespace WinTestKit.Inspector.Agent.Inspection
             if (tree != TreeKind.Visual && tree != TreeKind.Logical)
                 throw new ProtocolException(ErrorCodes.InvalidParams, "Unknown tree kind.");
             object target = GetObject(objectId, generation, out Dispatcher dispatcher);
-            if (pageToken != null) return Page<ManagedNodeDto>(objectId, generation, "children", tree, size, pageToken);
+            PageDto<ManagedNodeDto> page;
+            if (pageToken != null)
+            {
+                page = Page<ManagedNodeDto>(objectId, generation, "children", tree, size, pageToken);
+                return await AddPageIdentityAsync(page, dispatcher, token).ConfigureAwait(false);
+            }
             var nodes = new List<ManagedNodeDto>();
             if (target is DependencyObject dependencyObject)
                 await CollectNodesAsync(dispatcher, () => TreeWalker.EnumerateChildren(dependencyObject, tree),
                     nodes, new HashSet<object>(ReferenceComparer.Instance), walker.NewBudget(), token).ConfigureAwait(false);
             nodes.Sort(CompareNodes);
-            return NewPage(objectId, generation, "children", tree, nodes, Array.Empty<Diagnostic>(), size, token);
+            page = NewPage(objectId, generation, "children", tree, nodes, Array.Empty<Diagnostic>(), size, token);
+            return await AddPageIdentityAsync(page, dispatcher, token).ConfigureAwait(false);
         }, ct);
 
         public Task<PageDto<MemberInfo>> MembersAsync(string objectId, long generation, int? pageSize,
@@ -255,6 +261,46 @@ namespace WinTestKit.Inspector.Agent.Inspection
             if (!registry.TryGet(objectId, generation, out object target, out dispatcher))
                 throw new ProtocolException(ErrorCodes.ObjectStale, "Unknown or stale object handle.");
             return target;
+        }
+
+        private async Task<PageDto<ManagedNodeDto>> AddPageIdentityAsync(PageDto<ManagedNodeDto> page, Dispatcher dispatcher, CancellationToken ct)
+        {
+            int index = 0;
+            while (index < page.Items.Count)
+            {
+                await executor.ExecuteAsync(dispatcher, token =>
+                {
+                    Stopwatch slice = Stopwatch.StartNew();
+                    for (int count = 0; index < page.Items.Count && count < ProtocolLimits.TraversalSliceObjects &&
+                        slice.ElapsedMilliseconds < ProtocolLimits.TraversalSliceMs; count++, index++)
+                    {
+                        token.ThrowIfCancellationRequested();
+                        ManagedNodeDto node = page.Items[index];
+                        if (!registry.TryGetWeak(node.Object.ObjectId, node.Object.Generation, out object target)) continue;
+                        var identity = new NodeIdentityDto();
+                        if (target is FrameworkElement || target is FrameworkContentElement)
+                        {
+                            string declaringType = target is FrameworkElement ? "System.Windows.FrameworkElement" : "System.Windows.FrameworkContentElement";
+                            identity.XName = ReadIdentity(target, new PathSegment { Kind = "property", Name = "Name", DeclaringType = declaringType }, dispatcher, token);
+                        }
+                        identity.AutomationId = ReadIdentity(target, new PathSegment { Kind = "uia", Name = "automation_id" }, dispatcher, token);
+                        node.Identity = identity.XName != null || identity.AutomationId != null ? identity : null;
+                    }
+                    return true;
+                }, ct).ConfigureAwait(false);
+            }
+            return page;
+        }
+
+        private string? ReadIdentity(object target, PathSegment segment, Dispatcher dispatcher, CancellationToken ct)
+        {
+            try
+            {
+                ValueDto value = inspector.ReadPath(target, new[] { segment }, registry, dispatcher, ct);
+                return value.Status == ValueStatus.Ok && value.Scalar is JsonStringNode text && text.Value.Length != 0 ? text.Value : null;
+            }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception) { return null; }
         }
 
         private void AddNode(List<ManagedNodeDto> nodes, DependencyObject target)

@@ -1500,6 +1500,14 @@
         },
         "runtimeId": {
           "$ref": "#/$defs/RuntimeId"
+        },
+        "identity": {
+          "type": "object",
+          "properties": {
+            "xName": { "type": "string", "maxLength": 4096 },
+            "automationId": { "type": "string", "maxLength": 4096 }
+          },
+          "additionalProperties": false
         }
       },
       "required": [

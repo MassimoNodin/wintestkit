@@ -756,22 +756,40 @@ class Mapping(WireModel):
 
 
 @dataclass(frozen=True)
+class NodeIdentity(WireModel):
+    x_name: str | None = None
+    automation_id: str | None = None
+
+    @classmethod
+    def from_json(cls, value: object) -> NodeIdentity:
+        data = _obj(value, "", "xName automationId")
+        return cls(
+            _optional(data, "xName", lambda v: _str(v, 4096, empty=True)),
+            _optional(data, "automationId", lambda v: _str(v, 4096, empty=True)),
+        )
+
+
+@dataclass(frozen=True)
 class ManagedNode(WireModel):
     object_ref: ObjectRef
     label: str
     has_visual_children: bool
     has_logical_children: bool
     runtime_id: tuple[int, ...] | None = None
+    identity: NodeIdentity | None = None
 
     @classmethod
     def from_json(cls, value: object) -> ManagedNode:
-        data = _obj(value, "object label hasVisualChildren hasLogicalChildren", "runtimeId")
+        data = _obj(
+            value, "object label hasVisualChildren hasLogicalChildren", "runtimeId identity"
+        )
         return cls(
             ObjectRef.from_json(data["object"]),
             _str(data["label"], 1024, empty=True),
             _bool(data["hasVisualChildren"]),
             _bool(data["hasLogicalChildren"]),
             _optional(data, "runtimeId", _runtime_id),
+            _optional(data, "identity", NodeIdentity.from_json),
         )
 
 

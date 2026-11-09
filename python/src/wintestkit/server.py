@@ -650,7 +650,6 @@ class Server:
         from wintestkit.backends.element import WpfElement
         from wintestkit.errors import InspectorError
         from wintestkit.inspector.hints import inspector_error_hint
-        from wintestkit.inspector.paths import PathSegment
         from wintestkit.inspector.probe import current_identity
         from wintestkit.uia.element import ElementInfo
 
@@ -689,14 +688,6 @@ class Server:
                 self._remember_managed(client.session.session_id, ref.to_json())
             with self._managed_lock:
                 self._managed_clients[client.session.session_id] = client
-            paths = [
-                (
-                    PathSegment(
-                        "property", "Name", declaring_type="System.Windows.FrameworkElement"
-                    ),
-                ),
-                (PathSegment("uia", "automation_id"),),
-            ]
             output: list[dict[str, Any]] = []
             with self._node_lock:
                 parent_info = self.node_infos.get(parent_id)
@@ -719,24 +710,11 @@ class Server:
                 child_ref = child.object_ref
                 self._remember_managed(client.session.session_id, child_ref.to_json())
                 identity_data: dict[str, str] = {"type": child_ref.type.full_name}
-                try:
-                    values, _ = client.read(
-                        child_ref.object_id,
-                        child_ref.generation,
-                        paths,
-                        deadline=time.monotonic() + self.cfg.inspector.request_timeout,
-                    )
-                    if any(value.value.status == "redacted" for value in values):
-                        values = ()
-                    for key, value in zip(("xName", "automationId"), values, strict=False):
-                        if (
-                            value.value.status == "ok"
-                            and isinstance(value.value.scalar, str)
-                            and value.value.scalar
-                        ):
-                            identity_data[key] = value.value.scalar
-                except Exception:
-                    pass
+                if child.identity is not None:
+                    if child.identity.x_name:
+                        identity_data["xName"] = child.identity.x_name
+                    if child.identity.automation_id:
+                        identity_data["automationId"] = child.identity.automation_id
                 node_id = "wpf:" + json.dumps(
                     [child_ref.session_id, child_ref.object_id, child_ref.generation],
                     separators=(",", ":"),

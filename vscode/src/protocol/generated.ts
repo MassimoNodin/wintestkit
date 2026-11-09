@@ -2258,6 +2258,10 @@ export interface ManagedNode {
   hasVisualChildren: boolean;
   hasLogicalChildren: boolean;
   runtimeId?: RuntimeId;
+  identity?: {
+    xName?: string;
+    automationId?: string;
+  };
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
