@@ -45,6 +45,13 @@ describe("doctor output", () => {
     expect(result.detail).toContain("the desktop is locked");
     expect(result.detail).toContain("Unlock it");
   });
+  it("reports WPF agent failures and hints without failing skipped checks", async () => {
+    expect(machineResult([check("wpf_agent", "skip")]).state).toBe("ok");
+    expect(machineResult([check("wpf_agent", "warn")]).state).toBe("ok");
+    const health = await gatherHealth(probes({ doctor: async () => [check("wpf_agent", "fail", "agent failed", "Fix the agent")] }));
+    expect(health.machine).toEqual({ state: "broken", detail: "wpf_agent: agent failed. Fix the agent" });
+    expect(blockingStep(health)).toBe("machine");
+  });
   it("needs a chosen application, and a file that exists when it is one", () => {
     expect(appResult({}, []).state).toBe("pending");
     expect(appResult({ "app.path": "  " }, []).state).toBe("pending");

@@ -55,6 +55,14 @@ describe("configuration file resolution", () => {
     expect(config["app.path"]).toBe("C:/Apps/Local.exe");
     expect(config.launch).toBe("per-test");
   });
+  it("resolves the current backend, input and inspector defaults and overrides", async () => {
+    const defaults = { backend: "auto", input_mode: "mouse", "inspector.enabled": true, "inspector.attach": "on-demand" };
+    expect(await readConfiguration(root)).toMatchObject(defaults);
+    files.set("/project/wintestkit.yaml", "backend: uia\ninput_mode: pattern\ninspector:\n  enabled: false\n  attach: manual\n");
+    expect(await readConfiguration(root)).toMatchObject({ backend: "uia", input_mode: "pattern", "inspector.enabled": false, "inspector.attach": "manual" });
+    files.clear();
+    expect(await readConfiguration(root)).toMatchObject(defaults);
+  });
   it("previews an unsaved document without writing it", async () => {
     files.set("/project/wintestkit.yaml", "timeout: 10\n");
     const config = await readConfiguration(root, {

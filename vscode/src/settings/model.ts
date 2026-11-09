@@ -38,8 +38,8 @@ const same = (text: string): SettingDescription => ({
   repository: text,
 });
 export const settingFields: SettingField[] = [
-  { key: "inspector.enabled", label: "Enable managed inspector", kind: "boolean", description: same("Allow managed inspection of WPF applications."), default: false, group: "Debugging" },
-  { key: "inspector.attach", label: "Managed inspector attachment", kind: "select", description: same("Manual attachment or attachment on demand."), default: "manual", choices: ["manual", "on-demand"], group: "Debugging" },
+  { key: "inspector.enabled", label: "Enable managed inspector", kind: "boolean", description: same("Allow managed inspection of WPF applications; enabled by default."), default: true, group: "Debugging" },
+  { key: "inspector.attach", label: "Managed inspector attachment", kind: "select", description: same("On-demand attaches the managed inspector when needed; manual requires explicit attachment."), default: "on-demand", choices: ["manual", "on-demand"], group: "Debugging" },
   { key: "inspector.attach_timeout", label: "Inspector attach timeout (seconds)", kind: "number", description: same("Maximum time to wait for attachment, up to 10 seconds."), default: 10, minimum: 0, maximum: 10, group: "Debugging" },
   { key: "inspector.request_timeout", label: "Inspector request timeout (seconds)", kind: "number", description: same("Maximum time to wait for a request, up to 2 seconds."), default: 2, minimum: 0, maximum: 2, group: "Debugging" },
   { key: "inspector.redact_names", label: "Additional redacted names (JSON array)", kind: "list", description: same("Additional sensitive name substrings to redact."), default: [], group: "Debugging" },
@@ -137,11 +137,20 @@ export const settingFields: SettingField[] = [
     group: "Test runs",
   },
   {
+    key: "backend",
+    label: "Backend",
+    kind: "select",
+    description: same("Auto uses the in-process WPF agent for WPF windows and UI Automation elsewhere; UIA uses UI Automation everywhere."),
+    default: "auto",
+    choices: ["auto", "uia"],
+    group: "Test runs",
+  },
+  {
     key: "input_mode",
     label: "Input mode",
     kind: "select",
-    description: same("UI Automation patterns or simulated mouse input."),
-    default: "pattern",
+    description: same("Use simulated mouse input (default) or UI Automation patterns."),
+    default: "mouse",
     choices: ["pattern", "mouse"],
     group: "Test runs",
   },

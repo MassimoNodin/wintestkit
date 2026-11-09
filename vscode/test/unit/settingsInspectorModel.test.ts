@@ -9,6 +9,16 @@ describe("inspector settings", () => {
     }
     for (const scope of ["shared", "local"] as const) expect(updateSetting("", scope, "inspector.enabled", true, false)).toContain("enabled: true");
   });
+  it("exposes Python backend and inspector defaults", () => {
+    for (const [key, value] of [["backend", "auto"], ["input_mode", "mouse"], ["inspector.enabled", true], ["inspector.attach", "on-demand"]] as const) {
+      expect(settingFields.find((field) => field.key === key)?.default).toBe(value);
+    }
+    expect(settingFields.find((field) => field.key === "backend")?.choices).toEqual(["auto", "uia"]);
+    for (const scope of ["shared", "local"] as const) {
+      for (const backend of ["auto", "uia"]) expect(updateSetting("", scope, "backend", backend, false)).toContain(`backend: ${backend}`);
+      expect(() => updateSetting("", scope, "backend", "other", false)).toThrow();
+    }
+  });
   it("validates types, bounds and messages", () => {
     validateSettings({ inspector: { enabled: true, attach: "on-demand", attach_timeout: 10, request_timeout: 2, redact_names: ["x".repeat(128)] } });
     for (const [key, value, message] of [["enabled", 1, "true or false"], ["attach", "auto", "Invalid"], ["attach_timeout", 0, "positive number"], ["attach_timeout", 10.1, "positive number"], ["request_timeout", 0, "positive number"], ["request_timeout", 2.1, "positive number"], ["redact_names", [""], "at most 32"], ["redact_names", ["x".repeat(129)], "128 characters"], ["redact_names", Array(33).fill("x"), "at most 32"]] as const) {

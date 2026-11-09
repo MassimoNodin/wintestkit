@@ -7,6 +7,8 @@ Unreleased changes must be moved to a dated candidate section before a release c
 
 ## [Unreleased]
 
+- Align Configuration defaults with Python, expose backend selection, and report WPF agent doctor failures in setup health.
+
 - **Preview (unreleased):** Add opt-in managed WPF inspection to Spy, including explicit
   attach confirmation and lazy managed member reads. Instrumentation executes target code;
   compatibility and release gates remain open.
