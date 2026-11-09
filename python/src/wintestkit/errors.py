@@ -147,3 +147,7 @@ class InspectorLimitError(InspectorError):
 
 class InspectorDeadlineError(InspectorLimitError):
     """An inspector operation exhausted its deadline."""
+
+    def __init__(self, message: str, *, code: str, busy: bool = False) -> None:
+        super().__init__(message, code=code)
+        self.busy = busy

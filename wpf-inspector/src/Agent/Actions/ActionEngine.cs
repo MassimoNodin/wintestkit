@@ -30,7 +30,9 @@ namespace WinTestKit.Inspector.Agent.Actions
                     return new ActResult { Outcome = outcome, Handle = handle };
                 }
                 catch (OperationCanceledException) when (!ct.IsCancellationRequested) { throw ProtocolException.Deadline("Action deadline elapsed."); }
-                catch (ProtocolException error) when (error.Code == ErrorCodes.Timeout && DateTime.UtcNow >= end) { throw ProtocolException.Deadline("Action deadline elapsed."); }
+                catch (ProtocolException error) when (error.Code == ErrorCodes.Timeout && DateTime.UtcNow >= end &&
+                    (error.Details == null || !error.Details.TryGet("dispatcherBusy", out var marker) || !(marker is JsonBoolNode busy) || !busy.Value))
+                { throw ProtocolException.Deadline("Action deadline elapsed."); }
             }
             finally { timed.Dispose(); }
         }

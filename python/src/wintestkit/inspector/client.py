@@ -65,7 +65,13 @@ def _error(code: str, details: object = None) -> InspectorError:
         and isinstance(details, dict)
         and cast(dict[str, object], details).get("deadline") is True
     ):
-        return InspectorDeadlineError(f"Inspector request failed: {code}", code=code)
+        return InspectorDeadlineError(
+            f"Inspector request failed: {code}",
+            code=code,
+            busy=code == "timeout"
+            and isinstance(details, dict)
+            and cast(dict[str, object], details).get("dispatcherBusy") is True,
+        )
     if code == "valueUnreadable":
         status = (
             cast(dict[str, object], details).get("status") if isinstance(details, dict) else None
@@ -339,29 +345,87 @@ class InspectorClient:
         start = time.monotonic()
         trace_path = os.environ.get("WTK_INSPECTOR_TRACE")
         outcome = "ok"
+        retries = 0
+        retryable = (
+            method
+            in {
+                "roots",
+                "children",
+                "members",
+                "read",
+                "bindings",
+                "element.resolve",
+                "element.readBatch",
+                "state.get",
+                "wait.until",
+                "hitTest",
+            }
+            or method.startswith("query.")
+            or (method.startswith("act.") and method != "act.realizeItem")
+        )
         try:
             deadline = min(deadline, start + self._request_timeout)
-            entry = self._send(method, params, deadline)
-            if not entry.event.wait(max(0, deadline - time.monotonic())):
-                request_id = entry.request_id
-                with self._lock:
-                    if self._pending.pop(request_id, None) is not None:
-                        self._abandoned.add(request_id)
-                        threading.Thread(
-                            target=self._cancel, args=(request_id,), daemon=True
-                        ).start()
-                        raise InspectorDeadlineError(
-                            "Inspector request deadline expired", code="timeout"
-                        )
-            if entry.error is not None:
-                raise entry.error
-            return entry.result
+            while True:
+                entry = self._send(method, params, deadline)
+                if not entry.event.wait(max(0, deadline - time.monotonic())):
+                    request_id = entry.request_id
+                    with self._lock:
+                        if self._pending.pop(request_id, None) is not None:
+                            self._abandoned.add(request_id)
+                            threading.Thread(
+                                target=self._cancel, args=(request_id,), daemon=True
+                            ).start()
+                            raise InspectorDeadlineError(
+                                "Inspector request deadline expired", code="timeout"
+                            )
+                if (
+                    isinstance(entry.error, InspectorDeadlineError)
+                    and entry.error.busy
+                    and retryable
+                ):
+                    with self._lock:
+                        if self._closed:
+                            raise InspectorUnavailableError(
+                                "Inspector session is not ready", code="sessionStale"
+                            )
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0.05:
+                        if remaining > 0:
+                            time.sleep(remaining)
+                        with self._lock:
+                            if self._closed:
+                                raise InspectorUnavailableError(
+                                    "Inspector session is not ready", code="sessionStale"
+                                )
+                        raise entry.error
+                    retries += 1
+                    time.sleep(min(0.05, remaining))
+                    with self._lock:
+                        if self._closed:
+                            raise InspectorUnavailableError(
+                                "Inspector session is not ready", code="sessionStale"
+                            )
+                    if time.monotonic() >= deadline:
+                        raise entry.error
+                    continue
+                if (
+                    isinstance(entry.error, InspectorDeadlineError)
+                    and entry.error.busy
+                    and not retryable
+                ):
+                    raise InspectorDeadlineError(str(entry.error), code=entry.error.code)
+                if entry.error is not None:
+                    raise entry.error
+                return entry.result
         except InspectorDeadlineError as error:
             outcome = error.code if error.code in ERROR_CODES else "timeout"
             raise InspectorDeadlineError(
                 f"Inspector request {method} timed out "
-                f"(inspector.request_timeout={self._request_timeout:g}s)",
+                f"(budget={max(0, deadline - start):g}s, "
+                f"inspector.request_timeout={self._request_timeout:g}s)"
+                + ("; target's UI thread stayed busy" if error.busy else ""),
                 code=error.code,
+                busy=error.busy,
             ) from error
         except InspectorError as error:
             outcome = error.code if error.code in ERROR_CODES else "error"
@@ -381,7 +445,7 @@ class InspectorClient:
                             datetime.now(UTC).isoformat(),
                             method,
                             f"{time.monotonic() - start:.6f}",
-                            outcome,
+                            f"{outcome};retries={retries}" if retries else outcome,
                         )
                     )
 

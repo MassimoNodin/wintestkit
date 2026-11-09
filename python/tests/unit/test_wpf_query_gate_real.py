@@ -1426,6 +1426,26 @@ def test_background_window_mouse_and_keyboard(owned, backend):
         win32.DestroyWindow(hwnd)
 
 
+@pytest.mark.parametrize("backend", ["uia", "auto"])
+def test_busy_dispatcher_state_and_wait(owned, backend):
+    from wintestkit.engine.waits import wait_until
+
+    scope, path = owned
+    with runtime.config_scope(replace(config(path, "agent"), backend=backend)):
+        target = resolve(scope, Locator(automation_id="FixtureControl"))
+        pid = target.process_id
+        for attempt in range(2):
+            _fixture_scenario(pid, "sleepDispatcher", 0)
+            deadline = time.monotonic() + 2
+            while _control(pid).get("dispatcher.sleeping", 0) < attempt + 1:
+                assert time.monotonic() < deadline
+                time.sleep(0.01)
+            if attempt == 0:
+                assert target.is_enabled
+            else:
+                assert wait_until(lambda: target.is_enabled, 3, description="enabled")
+
+
 @pytest.mark.parametrize("mode", ["pattern", "mouse"])
 @pytest.mark.parametrize("backend", ["uia", "auto"])
 def test_ensure_visible_scrolled(owned, backend, mode):

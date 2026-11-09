@@ -292,6 +292,19 @@ def test_wait_preserves_real_inspector_failures_at_deadline(fake_time, error, ex
         wait_for_state(get, "visible", 1, "visible")
 
 
+def test_wait_retries_busy_deadline_and_preserves_normal_timeout(fake_time):
+    calls = 0
+
+    def poll():
+        nonlocal calls
+        calls += 1
+        raise InspectorDeadlineError("busy", code="timeout", busy=True)
+
+    with pytest.raises(WaitTimeoutError, match=r"Timed out after 0\.3s waiting for status"):
+        wait_until(poll, 0.3, description="status")
+    assert calls > 1
+
+
 def test_wait_propagates_deadline_before_outer_budget(fake_time):
     def get():
         raise InspectorDeadlineError("early", code="timeout")

@@ -175,7 +175,12 @@ namespace WinTestKit.Inspector.Agent.Inspection
             state.Unavailable.Cancel();
         }
         private static void Observe(Task task) { if (task.IsFaulted) _ = task.Exception; }
-        private static ProtocolException QueueTimeout() => new ProtocolException(ErrorCodes.Timeout, "Dispatcher queue wait timed out.");
+        private static ProtocolException QueueTimeout()
+        {
+            var details = new JsonObjectNode();
+            details.Add("dispatcherBusy", new JsonBoolNode(true));
+            return new ProtocolException(ErrorCodes.Timeout, "Dispatcher queue wait timed out.", details);
+        }
         private static ProtocolException Unavailable() => new ProtocolException(ErrorCodes.DispatcherUnavailable, "Dispatcher is unavailable.");
     }
 }

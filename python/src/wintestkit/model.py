@@ -931,8 +931,8 @@ class BoundControl(_BoundBase):
                     unmet[0] = "to be visible"
                     return None
                 return element
-            except InspectorDeadlineError:
-                deadline_exhausted = True
+            except InspectorDeadlineError as error:
+                deadline_exhausted = not error.busy
                 raise
 
         try:

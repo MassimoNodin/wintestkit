@@ -43,11 +43,12 @@ def wait_until[T](
         try:
             with query_budget(start + timeout):
                 result = fn()
-        except InspectorDeadlineError:
-            if _clock() < start + timeout - 0.001:
-                raise
-            waited = _clock() - start
-            break
+        except InspectorDeadlineError as error:
+            if not error.busy:
+                if _clock() < start + timeout - 0.001:
+                    raise
+                waited = _clock() - start
+                break
         except retry_on as exc:
             last_error = exc
         else:
