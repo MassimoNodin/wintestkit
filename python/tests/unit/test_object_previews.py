@@ -540,3 +540,29 @@ def test_window_frame_keeps_dwm_and_black_trim_offsets(monkeypatch):
     monkeypatch.setattr(screenshot, "_capture_pixels", capture_pixels)
     assert screenshot.capture_window_frame(42, 123) == (Rect(-97, 204, 4, 3), grey * 12)
     assert calls == [(Rect(-100, 200, 20, 20), 42, Rect(2, 3, 6, 5))]
+
+
+@pytest.mark.parametrize("mapped", [False, True])
+def test_wpf_capture_uses_agent_bounds_and_fails_closed_without_peer(preview, monkeypatch, mapped):
+    from wintestkit.backends.element import WpfElement
+    from wintestkit.errors import NoUiaPeerError
+
+    node = object.__new__(WpfElement)
+    bounds = Rect(-87, 213, 2, 2)
+    monkeypatch.setattr(WpfElement, "as_live", lambda self: self)
+    monkeypatch.setattr(WpfElement, "rect", property(lambda self: bounds))
+
+    def as_uia(self):
+        if not mapped:
+            raise NoUiaPeerError("no peer")
+        return preview.element
+
+    monkeypatch.setattr(WpfElement, "as_uia", as_uia)
+    object_previews.capture_bound(preview.bound, node)
+    manifest = preview.directory / "manifest.json"
+    assert manifest.exists() is mapped
+    if mapped:
+        data = json.loads(manifest.read_text(encoding="utf-8"))
+        assert (data["width"], data["height"]) == (2, 2)
+    else:
+        assert not preview.calls

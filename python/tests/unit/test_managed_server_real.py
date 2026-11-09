@@ -314,6 +314,7 @@ def test_spy_tree_peerless_and_large_page(tmp_path: Path, monkeypatch: pytest.Mo
         server.loader = ModuleLoader(server.cfg)
         for window in (main_window, large):
             server.nodes[window.runtime_id] = window
+            server.node_infos[window.runtime_id] = window.info()
             server._wpf_windows.add(window.runtime_id)
         _call(server, output, "attach", {"process": identify(target.pid).identity.to_json()})
 
@@ -366,11 +367,14 @@ def test_spy_tree_peerless_and_large_page(tmp_path: Path, monkeypatch: pytest.Mo
                     "jsonrpc": "2.0",
                     "id": 1,
                     "method": "inspect.properties",
-                    "params": {"nodeId": node_id},
+                    "params": {"nodeId": node_id, "includeAncestors": True},
                 }
             )
             response = json.loads(output.getvalue())
             assert response["result"]["source"] == "wpf", response
+            ancestors = response["result"]["ancestors"]
+            assert ancestors and ancestors[0]["nodeId"] == main_window.runtime_id
+            assert ancestors[-1]["nodeId"] == server._wpf_parents[node_id]
             assert response["result"]["uiaMapped"] is (kind == "button")
             node = server.nodes[node_id]
             mapping = _call(
@@ -396,7 +400,22 @@ def test_spy_tree_peerless_and_large_page(tmp_path: Path, monkeypatch: pytest.Mo
             items = page["nodes"]
             elapsed = time.monotonic() - started
             if len(items) == 200 and "nextPageToken" in page:
-                print(f"LARGE_PAGE_LOAD: {len(items)} children in {elapsed:.3f}s")
+                print(f"LARGE_PAGE_FRESH_FIRST: {len(items)} children in {elapsed:.3f}s")
+                started = time.monotonic()
+                later = children(node_id, "logical", page["nextPageToken"])
+                print(
+                    f"LARGE_PAGE_FRESH_LATER: {len(later['nodes'])} children in {time.monotonic() - started:.3f}s"
+                )
+                started = time.monotonic()
+                warm = children(node_id, "logical")
+                print(
+                    f"LARGE_PAGE_ATTACHED_FIRST: {len(warm['nodes'])} children in {time.monotonic() - started:.3f}s"
+                )
+                started = time.monotonic()
+                later = children(node_id, "logical", warm["nextPageToken"])
+                print(
+                    f"LARGE_PAGE_ATTACHED_LATER: {len(later['nodes'])} children in {time.monotonic() - started:.3f}s"
+                )
                 break
             queue.extend(item["nodeId"] for item in items if item["hasChildren"])
         else:
