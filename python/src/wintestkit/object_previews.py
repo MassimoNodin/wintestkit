@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING, cast
 from PIL import Image, ImageDraw
 
 from wintestkit import runtime
-from wintestkit.backends.element import TargetElement, uia_of
+from wintestkit.backends.element import TargetElement, WpfElement, uia_of
 from wintestkit.config import sync_object_previews_ignore
 from wintestkit.uia import screenshot, win32
 from wintestkit.uia.element import Rect, UIAElement
@@ -260,12 +260,12 @@ def capture_bound(bound: BoundControl, element: TargetElement) -> None:
     """Save an explicitly checked element; failures must never affect its result."""
     try:
         if runtime.get_config().object_previews:
-            _capture_bound(bound, uia_of(element))
+            _capture_bound(bound, element)
     except Exception:
         log.debug("Could not save object preview", exc_info=True)
 
 
-def _capture_bound(bound: BoundControl, element: UIAElement) -> None:
+def _capture_bound(bound: BoundControl, element: TargetElement) -> None:
     from wintestkit.model import Element, Elements, is_password_locator
 
     definition = bound.definition
@@ -292,7 +292,16 @@ def _capture_bound(bound: BoundControl, element: UIAElement) -> None:
     bounds = element.rect
     if bounds is None or not _contains(win32.virtual_screen_rect(), bounds):
         return
-    owner = _owning_window(element, bounds)
+    if isinstance(element, WpfElement):
+        from wintestkit.errors import NoUiaPeerError
+
+        try:
+            owner_element = uia_of(element)
+        except NoUiaPeerError:
+            return
+    else:
+        owner_element = uia_of(element)
+    owner = _owning_window(owner_element, bounds)
     if owner is None:
         return
     hwnd, window = owner
@@ -311,7 +320,7 @@ def _capture_bound(bound: BoundControl, element: UIAElement) -> None:
         window_bounds, pixels = frame
         if not _contains(window_bounds, bounds) or not any(pixels):
             return
-        owner = _owning_window(element, bounds)
+        owner = _owning_window(owner_element, bounds)
         if (
             element.rect != bounds
             or owner is None

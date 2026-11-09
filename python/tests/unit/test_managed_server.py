@@ -738,3 +738,114 @@ def test_wpf_properties_and_managed_resolve(
             assert "secret" not in json.dumps(result)
             assert not any("value" in name.lower() for name in calls)
     node.forget_release()
+
+
+@pytest.mark.parametrize("mapped", [False, True])
+def test_wpf_coverage_definitions_and_suggestion(
+    managed_server: Any, monkeypatch: pytest.MonkeyPatch, mapped: bool
+) -> None:
+    from wintestkit.backends.element import WpfElement
+    from wintestkit.engine import suggest
+    from wintestkit.errors import NoUiaPeerError
+    from wintestkit.uia.element import ElementInfo
+
+    server, output, client = managed_server
+    node = WpfElement(client, REF, 42)
+    server.nodes["wpf-node"] = node
+    info = ElementInfo("id", "name", "Button", "Button", "WPF", 42, None, True, False, False, "1.2")
+    server.node_infos["wpf-node"] = info
+    peer = SimpleNamespace(runtime_id="1.2", info=lambda: info)
+    monkeypatch.setattr(WpfElement, "is_alive", lambda self: True)
+    monkeypatch.setattr(WpfElement, "as_live", lambda self: self)
+    monkeypatch.setattr(WpfElement, "info", lambda self: info)
+
+    def as_uia(self: Any) -> Any:
+        if not mapped:
+            raise NoUiaPeerError("no peer")
+        return peer
+
+    monkeypatch.setattr(WpfElement, "as_uia", as_uia)
+    monkeypatch.setattr(server, "_app", lambda *args: object())
+
+    class FakeCoverage:
+        def covered_nodes(self, app: Any, nodes: Any) -> Any:
+            return {
+                "covered": {key: {"count": 1, "first": "Page.button"} for key in nodes},
+                "pending": [],
+            }
+
+        def definitions_of(self, app: Any, node_id: str, node_info: Any) -> Any:
+            return {
+                "definitions": [node_id] if node_id == "1.2" else [],
+                "errors": [],
+                "pageCount": 1,
+                "appRunning": True,
+            }
+
+    monkeypatch.setattr(server, "_coverage", lambda: FakeCoverage())
+    monkeypatch.setattr(
+        suggest,
+        "suggest_locator",
+        lambda element, app: SimpleNamespace(to_dict=lambda: {"code": "ok"}),
+    )
+    coverage = request(server, output, "inspect.coverage", {"nodeIds": ["wpf-node"]})["result"]
+    assert ("wpf-node" in coverage["covered"]) is mapped
+    definitions = request(server, output, "inspect.definitions", {"nodeId": "wpf-node"})["result"]
+    assert bool(definitions["definitions"]) is mapped
+    suggestion = request(server, output, "suggest.locator", {"nodeId": "wpf-node"})
+    assert ("result" in suggestion) is mapped
+    if not mapped:
+        assert "P4e" in suggestion["error"]["message"]
+    node.forget_release()
+
+
+def test_wpf_ancestors_use_walked_nodes(
+    managed_server: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from wintestkit.backends.element import WpfElement
+    from wintestkit.uia.element import ElementInfo
+
+    server, output, client = managed_server
+    root_info = ElementInfo(
+        "", "root", "Window", "Window", "WPF", 42, None, True, False, False, "root"
+    )
+    server.node_infos["root"] = root_info
+    server.nodes["root"] = SimpleNamespace(process_id=42)
+    server._wpf_windows.add("root")
+    refs = [ObjectRef("session", name, 1, TYPE, "dispatcher") for name in ("parent", "child")]
+
+    def children(object_id: str, *args: Any, **kwargs: Any) -> Any:
+        ref = refs[0] if object_id == REF.object_id else refs[1]
+        return Page((ManagedNode(ref, "Window", True, False),), True, "snapshot", ())
+
+    monkeypatch.setattr(client, "children", children)
+    monkeypatch.setattr(WpfElement, "is_alive", lambda self: True)
+    monkeypatch.setattr(WpfElement, "as_live", lambda self: self)
+    state = SimpleNamespace(
+        bounds=None,
+        window_handle=7,
+        uia_runtime_id=None,
+        enabled=True,
+        offscreen=False,
+        visible=True,
+        focused=False,
+    )
+    monkeypatch.setattr(WpfElement, "state", lambda self: state)
+    monkeypatch.setattr(WpfElement, "_get_state", lambda self: state)
+    parent = request(server, output, "inspect.children", {"nodeId": "root", "tree": "visual"})[
+        "result"
+    ]["nodes"][0]
+    child = request(
+        server, output, "inspect.children", {"nodeId": parent["nodeId"], "tree": "visual"}
+    )["result"]["nodes"][0]
+    result = request(
+        server, output, "inspect.properties", {"nodeId": child["nodeId"], "includeAncestors": True}
+    )["result"]
+    assert [item["nodeId"] for item in result["ancestors"]] == ["root", parent["nodeId"]]
+    assert (
+        request(server, output, "inspect.properties", {"nodeId": child["nodeId"]})["result"][
+            "ancestors"
+        ]
+        == []
+    )
+    server._release_managed_objects()

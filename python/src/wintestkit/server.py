@@ -144,6 +144,8 @@ class Server:
         self.nodes: OrderedDict[str, TargetElement] = OrderedDict()
         self._wpf_windows: set[str] = set()
         self.node_infos: dict[str, ElementInfo] = {}
+        self._wpf_parents: dict[str, str] = {}
+        self._wpf_descriptions: dict[str, dict[str, Any]] = {}
         self.coverage: Coverage | None = None
         self.spy: SpySession | None = None
         self._write_lock = threading.Lock()
@@ -568,6 +570,27 @@ class Server:
             "source": "wpf",
             "uiaMapped": bool(state.uia_runtime_id),
         }
+        if params.get("includeAncestors", False):
+            with self._node_lock:
+                parent_id = self._wpf_parents.get(params["nodeId"])
+                seen = {params["nodeId"]}
+                ancestors: list[dict[str, Any]] = []
+                while parent_id and parent_id not in seen and len(ancestors) < 100:
+                    seen.add(parent_id)
+                    description = self._wpf_descriptions.get(parent_id)
+                    if description is None:
+                        info = self.node_infos.get(parent_id)
+                        if info is None:
+                            break
+                        description = {
+                            "nodeId": parent_id,
+                            "info": info.to_dict(),
+                            "hasChildren": True,
+                            "source": "wpf",
+                        }
+                    ancestors.append(description)
+                    parent_id = self._wpf_parents.get(parent_id)
+                result["ancestors"] = list(reversed(ancestors))
         if state.uia_runtime_id:
             peer = node.as_uia()
             try:
@@ -621,7 +644,7 @@ class Server:
                 self._wpf_windows.add(node_id)
 
     def _wpf_children(
-        self, node: TargetElement, tree: str, page_size: int, page_token: str | None
+        self, node: TargetElement, tree: str, page_size: int, page_token: str | None, parent_id: str
     ) -> Any:
         from wintestkit import runtime
         from wintestkit.backends.element import WpfElement
@@ -675,6 +698,15 @@ class Server:
                 (PathSegment("uia", "automation_id"),),
             ]
             output: list[dict[str, Any]] = []
+            with self._node_lock:
+                parent_info = self.node_infos.get(parent_id)
+                if parent_info is not None and parent_id not in self._wpf_descriptions:
+                    self._wpf_descriptions[parent_id] = {
+                        "nodeId": parent_id,
+                        "info": parent_info.to_dict(),
+                        "hasChildren": True,
+                        "source": "wpf",
+                    }
             page = client.children(
                 ref.object_id,
                 ref.generation,
@@ -732,17 +764,19 @@ class Server:
                         self.node_infos.pop(evicted, None)
                         self._wpf_windows.discard(evicted)
                         self._release_tree_node(evicted_node)
-                output.append(
-                    {
-                        "nodeId": node_id,
-                        "info": info.to_dict(),
-                        "hasChildren": child.has_visual_children
-                        if tree == "visual"
-                        else child.has_logical_children,
-                        "source": "wpf",
-                        "identity": identity_data,
-                    }
-                )
+                description = {
+                    "nodeId": node_id,
+                    "info": info.to_dict(),
+                    "hasChildren": child.has_visual_children
+                    if tree == "visual"
+                    else child.has_logical_children,
+                    "source": "wpf",
+                    "identity": identity_data,
+                }
+                with self._node_lock:
+                    self._wpf_parents[node_id] = parent_id
+                    self._wpf_descriptions[node_id] = description
+                output.append(description)
             result: dict[str, Any] = {"nodes": output}
             if page.next_token is not None:
                 result["nextPageToken"] = page.next_token
@@ -796,6 +830,8 @@ class Server:
                     del self.nodes[node_id]
                     self.node_infos.pop(node_id, None)
             self._wpf_windows.clear()
+            self._wpf_parents.clear()
+            self._wpf_descriptions.clear()
         with self._managed_lock:
             objects, self._managed_objects = self._managed_objects, {}
             clients = dict(self._managed_clients)
@@ -1140,12 +1176,8 @@ class Server:
             return result.to_dict()
         if method == "inspect.coverage":
             from wintestkit.backends.element import WpfElement
+            from wintestkit.errors import NoUiaPeerError
 
-            with self._node_lock:
-                if any(
-                    isinstance(self.nodes.get(node_id), WpfElement) for node_id in params["nodeIds"]
-                ):
-                    raise RpcError(-32005, "unknown node id: method does not yet support WPF nodes")
             app = self._app(False)
             if app is None:
                 return {"covered": {}, "pending": []}
@@ -1155,7 +1187,32 @@ class Server:
                     for node_id in params["nodeIds"]
                     if node_id in self.node_infos
                 }
-            return self._coverage().covered_nodes(app, infos)
+                selected_nodes = {node_id: self.nodes.get(node_id) for node_id in infos}
+            aliases: dict[str, list[str]] = {
+                node_id: [node_id]
+                for node_id, selected_node in selected_nodes.items()
+                if not isinstance(selected_node, WpfElement)
+            }
+            for node_id, selected_node in selected_nodes.items():
+                if isinstance(selected_node, WpfElement):
+                    del infos[node_id]
+                    try:
+                        peer = selected_node.as_live().as_uia()
+                        info = peer.info()
+                        infos[info.runtime_id] = info
+                        aliases.setdefault(info.runtime_id, []).append(node_id)
+                    except NoUiaPeerError:
+                        continue
+            result = self._coverage().covered_nodes(app, infos)
+            result["covered"] = {
+                alias: value
+                for key, value in result["covered"].items()
+                for alias in aliases.get(key, [key])
+            }
+            result["pending"] = [
+                alias for key in result["pending"] for alias in aliases.get(key, [key])
+            ]
+            return result
         if method in ("inspect.roots", "inspect.refresh"):
             if method == "inspect.refresh":
                 self._release_managed_objects()
@@ -1295,7 +1352,11 @@ class Server:
                 or (tree_node is not None and params["nodeId"] in self._wpf_windows)
             ):
                 return self._wpf_children(
-                    tree_node, params["tree"], params.get("pageSize", 200), params.get("pageToken")
+                    tree_node,
+                    params["tree"],
+                    params.get("pageSize", 200),
+                    params.get("pageToken"),
+                    params["nodeId"],
                 )
         from wintestkit.backends.element import WpfElement
 
@@ -1328,6 +1389,34 @@ class Server:
                 wpf_node = wpf_node.as_live()
             self._flash(wpf_node.rect, params)
             return None
+        if isinstance(selected, WpfElement) and method in (
+            "inspect.definitions",
+            "suggest.locator",
+        ):
+            from wintestkit.errors import NoUiaPeerError
+
+            if not selected.is_alive():
+                raise RpcError(-32005, "unknown node id")
+            try:
+                peer = selected.as_live().as_uia()
+            except NoUiaPeerError as exc:
+                if method == "suggest.locator":
+                    raise RpcError(
+                        -32006, "WPF locator suggestions for nodes without a UIA peer require P4e"
+                    ) from exc
+                return self._coverage().definitions_of(
+                    self._app(False), params["nodeId"], selected.info()
+                )
+            if method == "inspect.definitions":
+                return self._coverage().definitions_of(
+                    self._app(False), peer.runtime_id, peer.info()
+                )
+            from wintestkit.engine.suggest import WindowSelectedError, suggest_locator
+
+            try:
+                return suggest_locator(peer, self._app(False)).to_dict()
+            except WindowSelectedError as exc:
+                raise RpcError(-32006, str(exc)) from exc
         node = self._node(params["nodeId"])
         if method == "inspect.definitions":
             app = self._app(False)
