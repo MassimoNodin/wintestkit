@@ -423,7 +423,19 @@ export type ManagedPath =
       PathSegment,
       PathSegment
     ];
-export type InspectManagedResolveResult = {
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "InspectManagedResolveResult".
+ */
+export type InspectManagedResolveResult =
+  | ManagedMapping
+  | {
+      status: "exact";
+      process: ManagedProcessIdentity;
+      object: ObjectRef;
+      source: "wpf";
+    };
+export type ManagedMapping = {
   status:
     | "exact"
     | "notFound"
@@ -511,18 +523,6 @@ export type ManagedInspectorNodePage = {
    */
   diagnostics: ManagedDiagnostic[];
   nextToken?: Identifier;
-};
-export type ManagedMapping = {
-  status:
-    | "exact"
-    | "notFound"
-    | "ambiguous"
-    | "unsupportedPeer"
-    | "stale"
-    | "limitExceeded";
-  process: ProcessIdentity;
-  runtimeId: RuntimeId;
-  object?: ObjectRef;
 };
 /**
  * nextToken is present iff further items exist; incomplete pages may instead indicate partial failure.
@@ -770,11 +770,6 @@ export type ManagedInspectorNodePage2 = InspectManagedChildrenResult1;
  * via the `definition` "InspectManagedMembersResult".
  */
 export type ManagedMemberPage2 = InspectManagedMembersResult1;
-/**
- * This interface was referenced by `ProtocolContracts`'s JSON-Schema
- * via the `definition` "InspectManagedResolveResult".
- */
-export type ManagedMapping2 = InspectManagedResolveResult1;
 /**
  * nextToken is present iff further items exist; incomplete pages may instead indicate partial failure.
  *
@@ -2509,6 +2504,14 @@ export interface InspectPropertiesParams {
  * via the `definition` "InspectPropertiesResult".
  */
 export interface InspectPropertiesResult {
+  source?: "wpf";
+  uiaMapped?: boolean;
+  uia?: {
+    properties: {
+      [k: string]: string;
+    };
+    inspection: InspectionProperty[];
+  };
   inspection?: InspectionProperty[];
   info: ElementInfo;
   properties: {
@@ -3427,18 +3430,6 @@ export interface InspectManagedMembersResult1 {
    */
   diagnostics: ManagedDiagnostic[];
   nextToken?: Identifier;
-}
-export interface InspectManagedResolveResult1 {
-  status:
-    | "exact"
-    | "notFound"
-    | "ambiguous"
-    | "unsupportedPeer"
-    | "stale"
-    | "limitExceeded";
-  process: ProcessIdentity;
-  runtimeId: RuntimeId;
-  object?: ObjectRef;
 }
 export interface InspectManagedRootsResult1 {
   /**

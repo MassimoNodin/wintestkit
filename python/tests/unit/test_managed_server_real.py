@@ -337,6 +337,7 @@ def test_spy_tree_peerless_and_large_page(tmp_path: Path, monkeypatch: pytest.Mo
             assert isinstance(result["result"], dict), result
             return result["result"]
 
+        found_nodes: dict[str, str] = {}
         for tree in ("visual", "logical"):
             queue = [main_window.runtime_id]
             found = False
@@ -345,13 +346,48 @@ def test_spy_tree_peerless_and_large_page(tmp_path: Path, monkeypatch: pytest.Mo
                     break
                 for child in children(queue.pop(0), tree)["nodes"]:
                     if child["identity"]["type"].endswith(".PeerlessMarker"):
+                        found_nodes["peerless"] = child["nodeId"]
                         found = True
+                    if child["identity"].get("automationId") == "ParityPointer":
+                        found_nodes["button"] = child["nodeId"]
+                    if found and "button" in found_nodes:
                         break
                     if child["hasChildren"]:
                         queue.append(child["nodeId"])
-                if found:
+                if found and "button" in found_nodes:
                     break
             assert found, f"peerless element missing from {tree} tree"
+        assert "button" in found_nodes
+        for kind, node_id in found_nodes.items():
+            output.seek(0)
+            output.truncate()
+            server.handle(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "inspect.properties",
+                    "params": {"nodeId": node_id},
+                }
+            )
+            response = json.loads(output.getvalue())
+            assert response["result"]["source"] == "wpf", response
+            assert response["result"]["uiaMapped"] is (kind == "button")
+            node = server.nodes[node_id]
+            mapping = _call(
+                server, output, "resolve", {"sessionId": node.ref.session_id, "nodeId": node_id}
+            )
+            obj = mapping["object"]
+            members = _call(
+                server,
+                output,
+                "members",
+                {
+                    "sessionId": obj["sessionId"],
+                    "objectId": obj["objectId"],
+                    "generation": obj["generation"],
+                },
+            )
+            assert members["items"]
         queue = [large.runtime_id]
         for _ in range(40):
             node_id = queue.pop(0)

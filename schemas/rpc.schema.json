@@ -11,7 +11,7 @@
     "InspectManagedDetachParams": {"type":"object","properties":{"sessionId":{"type":"string","minLength":1,"maxLength":128}},"required":["sessionId"],"additionalProperties":false},
     "InspectManagedDetachResult": {"type":"object","properties":{"detached":{"const":true}},"required":["detached"],"additionalProperties":false},
     "InspectManagedResolveParams": {"type":"object","properties":{"sessionId":{"type":"string","minLength":1,"maxLength":128},"nodeId":{"type":"string","minLength":1}},"required":["sessionId","nodeId"],"additionalProperties":false},
-    "InspectManagedResolveResult": {"$ref":"common.schema.json#/$defs/ManagedMapping"},
+    "InspectManagedResolveResult": {"anyOf":[{"$ref":"common.schema.json#/$defs/ManagedMapping"},{"type":"object","properties":{"status":{"const":"exact"},"process":{"$ref":"common.schema.json#/$defs/ManagedProcessIdentity"},"object":{"$ref":"../wpf-inspector/protocol/inspector.schema.json#/$defs/ObjectRef"},"source":{"const":"wpf"}},"required":["status","process","object","source"],"additionalProperties":false}]},
     "InspectManagedRootsParams": {"type":"object","properties":{"sessionId":{"type":"string","minLength":1,"maxLength":128},"pageSize":{"type":"integer","minimum":1,"maximum":200},"pageToken":{"type":"string","minLength":1,"maxLength":128}},"required":["sessionId"],"additionalProperties":false},
     "InspectManagedRootsResult": {"$ref":"common.schema.json#/$defs/ManagedInspectorNodePage"},
     "InspectManagedChildrenParams": {"type":"object","properties":{"sessionId":{"type":"string","minLength":1,"maxLength":128},"objectId":{"type":"string","minLength":1,"maxLength":128},"generation":{"type":"integer","minimum":1},"tree":{"enum":["visual","logical"]},"pageSize":{"type":"integer","minimum":1,"maximum":200},"pageToken":{"type":"string","minLength":1,"maxLength":128}},"required":["sessionId","objectId","generation","tree"],"additionalProperties":false},
@@ -535,6 +535,17 @@
     "InspectPropertiesResult": {
       "type": "object",
       "properties": {
+        "source": {"const": "wpf"},
+        "uiaMapped": {"type": "boolean"},
+        "uia": {
+          "type": "object",
+          "properties": {
+            "properties": {"type": "object", "additionalProperties": {"type": "string"}},
+            "inspection": {"type": "array", "items": {"$ref": "common.schema.json#/$defs/InspectionProperty"}}
+          },
+          "required": ["properties", "inspection"],
+          "additionalProperties": false
+        },
         "inspection": {
           "type": "array",
           "items": {"$ref": "common.schema.json#/$defs/InspectionProperty"}

@@ -508,6 +508,101 @@ class Server:
                 self._managed_objects.get(node.ref.session_id, {}).pop(node.ref.object_id, None)
             node.release()
 
+    def _wpf_properties(self, node: Any, params: dict[str, Any]) -> dict[str, Any]:
+        from wintestkit.engine.properties import SUPPORTED
+        from wintestkit.inspector.paths import PathSegment
+        from wintestkit.uia.constants import PROPERTY_IDS
+        from wintestkit.uia.element import ElementInfo, inspection_property
+
+        assert self.cfg is not None
+        paths = [
+            (PathSegment("property", "Name", declaring_type="System.Windows.FrameworkElement"),),
+            *((PathSegment("uia", name),) for name in ("automation_id", "name", "control_type")),
+        ]
+        values, _ = node.client.read(
+            node.ref.object_id,
+            node.ref.generation,
+            paths,
+            deadline=time.monotonic() + self.cfg.inspector.request_timeout,
+        )
+        identity = [
+            item.value.scalar
+            if item.value.status == "ok" and isinstance(item.value.scalar, str)
+            else ""
+            for item in values
+        ]
+        x_name, automation_id, peer_name, control_type = identity
+        state = node.state()
+        info = ElementInfo(
+            automation_id,
+            peer_name,
+            control_type,
+            node.ref.type.full_name,
+            "WPF",
+            node.process_id,
+            node.rect,
+            state.enabled,
+            state.offscreen,
+            state.focused,
+            params["nodeId"],
+        )
+        properties = {
+            "ClrFullClassName": node.ref.type.full_name,
+            "x:Name": x_name,
+            "AutomationId": automation_id,
+            "Name": peer_name,
+            "ControlType": control_type,
+            "Bounds": str(state.bounds.to_json() if state.bounds is not None else ""),
+            "Visible": str(state.visible),
+            "IsEnabled": str(state.enabled),
+            "HasKeyboardFocus": str(state.focused),
+            "ProcessId": str(node.process_id),
+            "WindowHandle": str(state.window_handle or 0),
+        }
+        inspection = [inspection_property(name, value) for name, value in properties.items()]
+        result: dict[str, Any] = {
+            "info": info.to_dict(),
+            "properties": properties,
+            "inspection": inspection,
+            "ancestors": [],
+            "source": "wpf",
+            "uiaMapped": bool(state.uia_runtime_id),
+        }
+        if state.uia_runtime_id:
+            peer = node.as_uia()
+            try:
+                password = (
+                    bool(peer.get_property("IsPassword")) or node.ref.type.name == "PasswordBox"
+                )
+            except Exception:
+                password = True
+            names = (
+                list(PROPERTY_IDS)
+                if params.get("full", False)
+                else [spec.uia_name for spec in SUPPORTED.values()]
+            )
+            names.extend(params.get("include", ()))
+            uia_properties: dict[str, str] = {}
+            uia_inspection: list[dict[str, Any]] = []
+            for name in dict.fromkeys(names):
+                if name not in PROPERTY_IDS:
+                    continue
+                if password and ("value" in name.lower() or name in ("Name", "HelpText")):
+                    continue
+                try:
+                    description = inspection_property(name, peer.get_property(name))
+                    uia_properties[name] = _summarize(description)
+                except Exception as exc:
+                    description = {
+                        "name": name,
+                        "typeName": "UIA",
+                        "kind": "unavailable",
+                        "status": str(exc)[:512],
+                    }
+                uia_inspection.append(description)
+            result["uia"] = {"properties": uia_properties, "inspection": uia_inspection}
+        return result
+
     def _wpf_enabled(self, element: UIAElement) -> bool:
         return bool(
             self.cfg is not None
@@ -761,13 +856,34 @@ class Server:
             client = self._managed_client(session_id)
             deadline = time.monotonic() + self.cfg.inspector.request_timeout
             if method == "inspect.managed.resolve":
-                node = self._node(params["nodeId"])
+                from wintestkit.backends.element import WpfElement
+
+                with self._node_lock:
+                    selected = self.nodes.get(params["nodeId"])
+                if isinstance(selected, WpfElement):
+                    if not selected.is_alive():
+                        raise RpcError(-32005, "unknown node id")
+                    if selected.ref.session_id != session_id:
+                        raise InspectorUnavailableError(
+                            "Selected element belongs to another session", code="objectStale"
+                        )
+                    node = selected
+                else:
+                    node = self._node(params["nodeId"])
                 if current_identity(node.process_id) != client.session.process:
                     raise InspectorUnavailableError(
                         "Selected element belongs to another process identity", code="processReused"
                     )
-                runtime_id, hwnd = runtime.managed_element_identity(node)
-                result = client.resolve(runtime_id, hwnd, deadline=deadline).to_json()
+                if isinstance(node, WpfElement):
+                    result = {
+                        "status": "exact",
+                        "process": client.session.process.to_json(),
+                        "object": node.ref.to_json(),
+                        "source": "wpf",
+                    }
+                else:
+                    runtime_id, hwnd = runtime.managed_element_identity(node)
+                    result = client.resolve(runtime_id, hwnd, deadline=deadline).to_json()
             elif method == "inspect.managed.roots":
                 result = client.roots(
                     page_size=params.get("pageSize"),
@@ -1185,10 +1301,16 @@ class Server:
 
         with self._node_lock:
             selected = self.nodes.get(params["nodeId"])
-        if isinstance(selected, WpfElement) and method in ("inspect.highlight", "inspect.preview"):
+        if isinstance(selected, WpfElement) and method in (
+            "inspect.highlight",
+            "inspect.preview",
+            "inspect.properties",
+        ):
             if not selected.is_alive():
                 raise RpcError(-32005, "unknown node id")
             wpf_node = selected.as_live()
+            if method == "inspect.properties":
+                return self._wpf_properties(wpf_node, params)
             if method == "inspect.preview":
                 from wintestkit.live_preview import capture_live_preview
 
