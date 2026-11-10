@@ -95,3 +95,11 @@ def test_depth_and_managed_wildcard_translation():
     assert to_locator("WPFControlName", "x").depth is None
     with pytest.raises(ValueError, match="depth"):
         to_locator("WPFControlName", "x", depth=0)
+
+
+def test_unicode_wildcard_strict_end():
+    locator = to_locator("WPFControlText", "café?")
+    assert isinstance(locator.name, re.Pattern)
+    assert locator.name.search("café!")
+    assert not locator.name.search("café!\n")
+    assert translate(locator, (), None).predicates[0].pattern == r"^café.\z"

@@ -42,7 +42,7 @@ namespace WinTestKit.Inspector.Agent.Query.Tests
         [InlineData("a{2,1}")]
         [InlineData("a{10001}")]
         [InlineData("a**")]
-        [InlineData("é")]
+        [InlineData("[é]")]
         [InlineData("[z-a]")]
         public void RejectsUnsupportedGrammar(string pattern)
         {
@@ -66,6 +66,25 @@ namespace WinTestKit.Inspector.Agent.Query.Tests
             Assert.True(new QueryRegex("^b$", new[] { "multiline" }).IsMatch("a\nb\nc", 50));
             Assert.False(new QueryRegex("a.b", Array.Empty<string>()).IsMatch("a\nb", 50));
             Assert.True(new QueryRegex("a.b", new[] { "singleline" }).IsMatch("a\nb", 50));
+        }
+
+        // The same table is exercised against Python re.search in test_wpf_query.py.
+        [Theory]
+        [InlineData("é", "café", false, true)]
+        [InlineData("é", "É", true, false)]
+        [InlineData("é", "é", true, true)]
+        [InlineData("☃", "☃", true, true)]
+        [InlineData("😀+", "😀😀", false, true)]
+        [InlineData(@"^.\z", "😀", false, true)]
+        [InlineData(@"^[^a]\z", "😀", false, true)]
+        [InlineData(@"b\z", "ab\n", false, false)]
+        [InlineData("b$", "ab\n", false, true)]
+        [InlineData(@"^café.*\z", "café noir", false, true)]
+        [InlineData(@"^café.*\z", "café\n", false, false)]
+        public void SharedReferenceCases(string pattern, string input, bool ignoreCase, bool expected)
+        {
+            var flags = ignoreCase ? new[] { "ignoreCase" } : Array.Empty<string>();
+            Assert.Equal(expected, new QueryRegex(pattern, flags).IsMatch(input, 50));
         }
 
         [Fact]

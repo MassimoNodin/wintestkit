@@ -1089,14 +1089,23 @@ def _scalar(value: object) -> str | bool | int | float:
 def _regex_pattern(value: object) -> str:
     pattern = _str(value, 1024, empty=True)
     index = 0
+    in_class = False
     while index < len(pattern):
         char = pattern[index]
-        if ord(char) > 127:
-            raise ValueError("Regex literals must be ASCII")
+        if 0xD800 <= ord(char) <= 0xDFFF or (in_class and ord(char) > 127):
+            raise ValueError("Invalid regex literal or non-ASCII character class")
         if char == "\\":
             index += 1
-            if index == len(pattern) or pattern[index] not in r"\.^$|?*+()[]{}-":
+            if (
+                index == len(pattern)
+                or pattern[index] not in r"\.^$|?*+()[]{}-z"
+                or (in_class and pattern[index] == "z")
+            ):
                 raise ValueError("Unsupported regex escape")
+        elif char == "[":
+            in_class = True
+        elif char == "]":
+            in_class = False
         elif char == "(" and pattern[index + 1 : index + 2] == "?":
             if pattern[index + 1 : index + 3] != "?:":
                 raise ValueError("Unsupported regex group")
@@ -1114,7 +1123,10 @@ def _regex_pattern(value: object) -> str:
             index = end
         index += 1
     try:
-        re.compile(pattern, re.ASCII)
+        re.compile(
+            re.sub(r"\\\\.|\\z", lambda m: r"\Z" if m.group() == r"\z" else m.group(), pattern),
+            re.ASCII,
+        )
     except re.error as error:
         raise ValueError("Invalid regex") from error
     return pattern

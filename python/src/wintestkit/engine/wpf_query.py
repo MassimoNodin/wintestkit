@@ -35,14 +35,20 @@ def predicate(path: tuple[PathSegment, ...], value: object) -> Predicate:
             )
             if value.flags & bit
         )
-        # The DTO validator checks ASCII, escapes, groups and numeric bounds. Python's
+        if value.flags & re.IGNORECASE and any(ord(c) > 127 and c.isalpha() for c in value.pattern):
+            raise UnsupportedQuery("ignoreCase regex contains a non-ASCII letter")
+        # Python uses \Z for the strict end anchor; the wire grammar uses \z.
+        pattern = re.sub(
+            r"\\\\.|\\Z", lambda m: r"\z" if m.group() == r"\Z" else m.group(), value.pattern
+        )
+        # The DTO validator checks literals, escapes, groups and numeric bounds. Python's
         # parser also rejects malformed nesting; these extra checks enforce agent grammar.
         try:
             result = Predicate.from_json(
                 {
                     "kind": "regex",
                     "path": [p.to_json() for p in path],
-                    "pattern": value.pattern,
+                    "pattern": pattern,
                     "flags": list(flags),
                 }
             )

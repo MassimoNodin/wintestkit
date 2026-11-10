@@ -65,7 +65,7 @@ def test_protocol2_fixtures(name: str, valid: bool, fixture: dict) -> None:
             model.from_json(fixture["instance"])
 
 
-@pytest.mark.parametrize("pattern", [r"\d", "(?=x)", "a{10001}", "a{3,2}", "[", "\u00e9"])
+@pytest.mark.parametrize("pattern", [r"\d", "(?=x)", "a{10001}", "a{3,2}", "[", "[\u00e9]"])
 def test_rejects_unsupported_regex(pattern: str) -> None:
     with pytest.raises(ValueError):
         models.Predicate.from_json(
