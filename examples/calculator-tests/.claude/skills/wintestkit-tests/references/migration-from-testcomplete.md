@@ -74,6 +74,21 @@ the namespace or add an index to hide ambiguity.
    `wtk run`.
 10. **Finish.** Run the pre-finish checklist in SKILL.md.
 
+## Find helpers and imported mappings
+
+Use `find_child(parent, props, values, depth=1)` for a lazy first match,
+`find_all_children(parent, props, values, depth=1)` for a snapshot, and
+`find(parent, props, values, depth=...)` for descendant searches. Use `strict=True` on
+`find_child` when ambiguity should fail. Property names use the shared TestComplete mapping;
+`*` and `?` are whole-value wildcards. Depth counts WPF automation-peer levels, which can
+differ from TestComplete's visual tree. Verify AutomationId and text in Spy.
+
+The importer emits parent-scoped `Element` declarations with `within=` and `depth=1`, or
+unlimited/default depth for extended find. It assumes nested mapped items and accepts either
+an `extendedFind="True"` attribute or an `ExtendedFind` property. Unmappable properties and
+unmappable parent chains are marked `# TODO`; review them before use. Full managed class names
+require `--managed-class-names` and the inspector, or a configured property alias.
+
 ## Things that differ
 
 - Strict matching: TestComplete may resolve to the first of several matches; WinTestKit fails.
