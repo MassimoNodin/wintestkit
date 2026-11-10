@@ -798,6 +798,7 @@
   let picking = false;
   let selected;
   let suggestion;
+  let selectedWpf = false;
   // The preview shows either the object alone (the default) or its window with the object
   // outlined; the choice stays while the selection changes.
   let previewMode = "element";
@@ -1295,11 +1296,14 @@
     element("badge").dataset.quality =
       value.unique && value.strategy !== "index" ? "unique" : "warning";
     element("badge").textContent =
-      value.strategy === "index"
+      selectedWpf && !value.unique
+        ? "Uniqueness not verified"
+        : value.strategy === "index"
         ? "Index-based · fragile"
         : value.unique
           ? "Unique locator"
           : "Ambiguous · " + value.matchCount + " matches";
+    element("copy-label").textContent = selectedWpf && !value.unique ? "Copy locator (unverified)" : "Copy locator";
     element("badge").title = "Strategy: " + value.strategy;
   };
   const focusSelected = (nodeId) => {
@@ -1642,6 +1646,15 @@
       fullPropertiesLoading = false;
       detailsError = "";
       const info = message.properties.info;
+      const isWpf = message.properties.source === "wpf";
+      selectedWpf = isWpf;
+      element("identity-source").textContent = isWpf ? "WPF" : "UIA";
+      for (const id of ["uia-state-group", "uia-geometry-group", "uia-automation-group", "pinned-group"]) element(id).hidden = isWpf;
+      element("uia-all-group").hidden = isWpf;
+      element("wpf-uia-group").hidden = !isWpf;
+      element("wpf-uia-group").open = false;
+      element("wpf-uia-empty").hidden = !!message.properties.uiaMapped;
+      table("wpf-uia-properties", message.properties.uiaMapped ? message.properties.uia?.properties || {} : {});
       element("selection-name").textContent =
         info.name || info.automationId || info.controlType;
       element("selection-type").textContent = [
@@ -1653,12 +1666,29 @@
       setIcon(element("selection-icon"), info.controlType);
       selectionIcon(message.nodeId);
       highlightable = !!info.rect;
-      table("properties", {
+      table("properties", isWpf ? {
+        "CLR full class name": message.properties.properties.ClrFullClassName,
+        "x:Name": message.properties.properties["x:Name"],
+        "Automation ID": message.properties.properties.AutomationId,
+        "Peer Name": message.properties.properties.Name,
+        "Control type": message.properties.properties.ControlType,
+      } : {
         Name: info.name,
         "Control type": info.controlType,
         "Automation ID": info.automationId,
         Class: info.className,
       });
+      if (isWpf) for (const row of element("properties").rows) {
+        const value = row.cells[1].textContent;
+        if (value && value !== "—") {
+          const button = document.createElement("button");
+          button.className = "secondary";
+          button.textContent = "Copy";
+          button.setAttribute("aria-label", "Copy " + row.cells[0].textContent);
+          button.addEventListener("click", () => post("copy", { text: value }));
+          row.cells[1].append(" ", button);
+        }
+      }
       table("state-properties", {
         Enabled: info.isEnabled,
         Offscreen: info.isOffscreen,
@@ -1677,6 +1707,7 @@
           : "Not loaded",
       });
       showProperties(message.properties);
+      if (isWpf) element("pinned-group").hidden = true;
       // A locator the user already asked for keeps its spinner while the details arrive.
       if (message.suggestion || !locatorBusy) renderSuggestion(message.suggestion);
       renderStatus();

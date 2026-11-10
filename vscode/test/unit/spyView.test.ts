@@ -182,6 +182,23 @@ describe("Spy view bridge", () => {
     expect(mocks.request).toHaveBeenCalledWith("inspect.children", { nodeId: "wpf", tree: "visual", pageToken: "next" });
     fixture.provider.dispose();
   });
+  it("passes the selected WPF tree mode to the picker", async () => {
+    const fixture = await create(undefined, undefined, { get: () => "logical", update: vi.fn() });
+    fixture.receive({ type: "pick" });
+    await vi.waitFor(() => expect(mocks.request).toHaveBeenCalledWith("spy.start", expect.objectContaining({ tree: "logical" })));
+    fixture.provider.dispose();
+  });
+  it("shows a blocked pick on its window instead of inspecting the UIA fallback", async () => {
+    const root = { nodeId: "window", hasChildren: true, info: { name: "App", controlType: "Window", processId: 123 } };
+    mocks.request.mockImplementation(async (method: string) => method === "inspect.roots" ? [root] : {});
+    const fixture = await create();
+    fixture.receive({ type: "pick" });
+    await vi.waitFor(() => expect(latestSession()).toBeTypeOf("string"));
+    mocks.notifications.get("spy.picked")?.({ sessionId: latestSession(), node: root, blocked: { code: "policy", hint: "Enable it" } });
+    await vi.waitFor(() => expect(fixture.sent).toContainEqual(expect.objectContaining({ type: "children", nodeId: "window", blocked: { code: "policy", hint: "Enable it" } })));
+    expect(mocks.request.mock.calls.some(([method]) => method === "inspect.properties")).toBe(false);
+    fixture.provider.dispose();
+  });
   const latestSession = (): string | undefined => {
     const call = [...mocks.request.mock.calls].reverse().find((entry) => entry[0] === "spy.start");
     return (call?.[1] as { sessionId?: string } | undefined)?.sessionId;
@@ -1406,6 +1423,7 @@ describe("Spy view bridge", () => {
       await vi.waitFor(() => expect(latestSession()).toBeTypeOf("string"));
       expect(mocks.request).toHaveBeenCalledWith("spy.start", {
         sessionId: latestSession(),
+        tree: "visual",
         foregroundForProcessId: process.pid,
       });
       mocks.notifications.get("spy.picked")?.({ sessionId: latestSession(), node: { nodeId: "picked", info: { controlType: "Button", name: "Save" } } });

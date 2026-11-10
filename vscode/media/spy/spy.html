@@ -233,7 +233,7 @@
                                         class="codicon codicon-copy"
                                         aria-hidden="true"
                                     ></span
-                                    >Copy locator</button
+                                    ><span id="copy-label">Copy locator</span></button
                                 ><button id="add" disabled>
                                     <span
                                         class="codicon codicon-add"
@@ -271,24 +271,24 @@
                             </p>
                             <div id="property-groups" hidden>
                                 <section class="property-group">
-                                    <h3>Identity</h3>
+                                    <h3>Identity <span id="identity-source" class="source-badge"></span></h3>
                                     <table>
                                         <tbody id="properties"></tbody>
                                     </table>
                                 </section>
-                                <section class="property-group">
+                                <section id="uia-state-group" class="property-group">
                                     <h3>State</h3>
                                     <table>
                                         <tbody id="state-properties"></tbody>
                                     </table>
                                 </section>
-                                <section class="property-group">
+                                <section id="uia-geometry-group" class="property-group">
                                     <h3>Geometry</h3>
                                     <table>
                                         <tbody id="geometry-properties"></tbody>
                                     </table>
                                 </section>
-                                <section class="property-group">
+                                <section id="uia-automation-group" class="property-group">
                                     <h3>Automation</h3>
                                     <table>
                                         <tbody
@@ -296,6 +296,11 @@
                                         ></tbody>
                                     </table>
                                 </section>
+                                <details id="wpf-uia-group" class="property-group" hidden>
+                                    <summary>UI Automation</summary>
+                                    <p id="wpf-uia-empty" class="muted">No UI Automation peer</p>
+                                    <table><tbody id="wpf-uia-properties"></tbody></table>
+                                </details>
                                 <section
                                     id="pinned-group"
                                     class="property-group"
@@ -312,7 +317,7 @@
                                         <tbody id="pinned-properties"></tbody>
                                     </table>
                                 </section>
-                                <section
+                                <div id="uia-all-group"><section
                                     id="all-properties-section"
                                     class="property-group"
                                     aria-label="All properties"
@@ -343,7 +348,7 @@
                                         </colgroup>
                                         <tbody id="all-properties"></tbody>
                                     </table>
-                                </section>
+                                </section></div>
                             </div>
                             <section id="managed-panel" class="property-group" hidden aria-label="Managed inspection">
                                 <h3>Managed inspection <span id="managed-state"></span></h3>

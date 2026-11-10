@@ -98,6 +98,7 @@ export class ManagedInspector {
       if (identityKey(facts.process) !== identityKey(process)) return false;
       if (!await confirmProcess(facts)) return false;
       const result = await this.client.request<InspectManagedAttachResult>("inspect.managed.attach", { process });
+      if (result.state === "ready") { this.session = result; this.state = "ready"; }
       return result.state === "ready";
     } catch { return false; }
   }
