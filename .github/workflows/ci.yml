@@ -117,7 +117,7 @@ jobs:
         run: |
           $projects = @('wpf-inspector/WinTestKit.Inspector.sln', 'wpf-inspector/tests/Unit/Agent.Session.Tests/Agent.Session.Tests.csproj', 'wpf-inspector/tests/Unit/Agent.Mapping.Tests/Agent.Mapping.Tests.csproj', 'wpf-inspector/tests/Unit/Agent.Members.Tests/Agent.Members.Tests.csproj')
           foreach ($project in $projects) {
-            dotnet test $project -c Release --filter Category=Unit --logger trx --results-directory "${{ github.workspace }}/inspector-results/$([IO.Path]::GetFileNameWithoutExtension($project))"
+            dotnet test $project -c Release -m:1 -p:TestTfmsInParallel=false --filter Category=Unit --logger trx --results-directory "${{ github.workspace }}/inspector-results/$([IO.Path]::GetFileNameWithoutExtension($project))"
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }
       - name: Check package
