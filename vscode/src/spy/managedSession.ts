@@ -5,6 +5,26 @@ import type { JsonRpcClient } from "../server/jsonrpc";
 export type ManagedState = "not enabled" | "not installed" | "unsupported target" | "blocked by policy" | "restart required" | "attach failed" | "mapping unavailable" | "detached (idle)" | "ready" | "not attached to this process";
 export const MANAGED_INSTALL_HINT = 'pip install "wintestkit[inspector]" or uv pip install "wintestkit[inspector]"';
 const confirmed = new Set<string>();
+const identityKey = (process: { pid: number; creationTimeUtc: string }) => `${process.pid}:${process.creationTimeUtc}`;
+export function isManagedProcessConfirmed(process: { pid: number; creationTimeUtc: string }): boolean {
+  return confirmed.has(identityKey(process));
+}
+const confirmations = new Map<string, Promise<boolean>>();
+async function confirmProcess(facts: InspectManagedIdentifyResult): Promise<boolean> {
+  const identity = identityKey(facts.process);
+  if (confirmed.has(identity)) return true;
+  let pending = confirmations.get(identity);
+  if (!pending) {
+    pending = (async () => {
+      const answer = await vscode.window.showWarningMessage(`Attach managed inspector to ${facts.executable}\nPID: ${facts.process.pid}\nRuntime: ${facts.runtime ?? "unknown"}\nArchitecture: ${facts.architecture}\n\nThis loads and executes code in the target process. Reading getters can hang the application; timeouts cannot safely stop a running getter.`, { modal: true }, "Attach");
+      if (answer !== "Attach") return false;
+      confirmed.add(identity);
+      return true;
+    })();
+    confirmations.set(identity, pending);
+  }
+  try { return await pending; } finally { if (confirmations.get(identity) === pending) confirmations.delete(identity); }
+}
 export function managedErrorState(error: unknown): ManagedState {
   const data = (error as { data?: { code?: string } })?.data;
   switch (data?.code) {
@@ -63,18 +83,23 @@ export class ManagedInspector {
     try {
       const facts = await this.client.request<InspectManagedIdentifyResult>("inspect.managed.identify", { nodeId: node });
       if (!this.current(seq, node, oldSession)) return;
-      const identity = `${facts.process.pid}:${facts.process.creationTimeUtc}`;
-      if (!confirmed.has(identity)) {
-        const answer = await vscode.window.showWarningMessage(`Attach managed inspector to ${facts.executable}\nPID: ${facts.process.pid}\nRuntime: ${facts.runtime ?? "unknown"}\nArchitecture: ${facts.architecture}\n\nThis loads and executes code in the target process. Reading getters can hang the application; timeouts cannot safely stop a running getter.`, { modal: true }, "Attach");
-        if (!this.current(seq, node, oldSession) || answer !== "Attach") return;
-        confirmed.add(identity);
-      }
+      if (!await confirmProcess(facts) || !this.current(seq, node, oldSession)) return;
       const session = await this.client.request<InspectManagedAttachResult>("inspect.managed.attach", { process: facts.process });
       if (!this.current(seq, node, oldSession)) { await this.client.request("inspect.managed.detach", { sessionId: session.sessionId }).catch(() => {}); return; }
       this.session = session; this.state = session.state === "ready" ? "ready" : "attach failed";
       if (oldSession && oldSession !== session.sessionId) await this.client.request("inspect.managed.detach", { sessionId: oldSession }).catch(() => {});
       return session;
     } catch (error) { if (this.current(seq, node, oldSession)) this.state = managedErrorState(error); return; }
+  }
+  async attachTree(nodeId: string, process: { pid: number; creationTimeUtc: string }): Promise<boolean> {
+    if (!this.visible || !vscode.workspace.isTrusted) return false;
+    try {
+      const facts = await this.client.request<InspectManagedIdentifyResult>("inspect.managed.identify", { nodeId });
+      if (identityKey(facts.process) !== identityKey(process)) return false;
+      if (!await confirmProcess(facts)) return false;
+      const result = await this.client.request<InspectManagedAttachResult>("inspect.managed.attach", { process });
+      return result.state === "ready";
+    } catch { return false; }
   }
   async detach(): Promise<void> {
     const session = this.session; this.invalidate();

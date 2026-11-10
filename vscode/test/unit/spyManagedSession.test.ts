@@ -34,6 +34,19 @@ describe("managed Spy host", () => {
     request.mockImplementationOnce(async () => ({ ...facts, process: { ...facts.process, creationTimeUtc: "two" } }));
     await inspector.attach(); expect(mock.warning).toHaveBeenCalledTimes(prompts + 1);
   });
+  it("confirms tree attachment once per process run", async () => {
+    const process = { pid: 87002, creationTimeUtc: "first" };
+    const request = vi.fn(async (method: string) => method.endsWith("identify") ? { ...facts, process } : { ...session, process });
+    const inspector = new ManagedInspector({ request } as unknown as JsonRpcClient, initialized(true));
+    mock.trusted = true; mock.warning.mockReset().mockResolvedValue("Attach");
+    const attached = await Promise.all([inspector.attachTree("window1", process), inspector.attachTree("window2", process)]);
+    expect(attached).toEqual([true, true]);
+    expect(mock.warning).toHaveBeenCalledTimes(1);
+    process.creationTimeUtc = "second";
+    expect(await inspector.attachTree("window3", process)).toBe(true);
+    expect(mock.warning).toHaveBeenCalledTimes(2);
+    expect(request).toHaveBeenCalledWith("inspect.managed.attach", { process });
+  });
   it("releases selection handles and discards a late response", async () => {
     const { inspector, request } = setup(); mock.trusted = true; mock.warning.mockResolvedValue("Attach"); await inspector.select("n"); await inspector.attach();
     request.mockImplementationOnce(async () => facts).mockImplementationOnce(async () => ({ status: "exact", object: { objectId: "o", generation: 1 } })); await inspector.resolve("n");

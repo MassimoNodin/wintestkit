@@ -766,7 +766,8 @@
       let any = false;
       let lastVisible;
       for (const item of parent.children) {
-        const entry = nodes.get(item.firstElementChild.dataset.nodeId);
+        const entry = nodes.get(item.firstElementChild?.dataset.nodeId);
+        if (!entry) { item.hidden = !!query; continue; }
         const childMatch = visit(entry.children);
         item.hidden =
           !!query &&
@@ -1112,11 +1113,16 @@
     }
     filter();
   };
-  const renderNodes = (parent, values) => {
-    for (const row of parent.querySelectorAll(".node"))
-      nodes.delete(row.dataset.nodeId);
-    parent.replaceChildren();
-    values.forEach((node, index) => {
+  const renderNodes = (parent, values, append = false) => {
+    if (!append) {
+      for (const row of parent.querySelectorAll(".node")) nodes.delete(row.dataset.nodeId);
+      parent.replaceChildren();
+    } else {
+      parent.querySelector(":scope > .tree-message")?.remove();
+    }
+    const offset = append ? parent.children.length : 0;
+    values.forEach((node, pageIndex) => {
+      const index = offset + pageIndex;
       const item = document.createElement("li");
       item.setAttribute("role", "none");
       const row = document.createElement("div");
@@ -1129,13 +1135,14 @@
         parent.id === "tree" &&
         !!appState?.appPids?.includes(node.info.processId);
       const name =
+        (node.source === "wpf" && node.identity ? [node.identity.type.split(".").pop().split("+").pop(), node.identity.xName || node.identity.automationId].filter(Boolean).join("  ") : "") ||
         node.info.name ||
         (selectedApp && appState.appName) ||
         node.info.automationId ||
         node.info.controlType;
-      row.setAttribute("aria-label", name + ", " + node.info.controlType);
+      row.setAttribute("aria-label", name + ", " + node.info.controlType + (node.source ? ", " + node.source.toUpperCase() : ""));
       row.setAttribute("aria-posinset", String(index + 1));
-      row.setAttribute("aria-setsize", String(values.length));
+      row.setAttribute("aria-setsize", String(offset + values.length));
       row.setAttribute("aria-selected", String(node.nodeId === selected));
       row.tabIndex = node.nodeId === selected || (!selected && !nodes.size) ? 0 : -1;
       const parentRow = parent.closest("li")?.querySelector(":scope > .node");
@@ -1147,7 +1154,7 @@
       row.title = [
         name,
         node.info.controlType,
-        node.info.className,
+        node.identity?.type || node.info.className,
         node.info.automationId,
       ]
         .filter(Boolean)
@@ -1188,6 +1195,13 @@
       metadata.className = "metadata";
       metadata.textContent = node.info.controlType;
       row.append(toggle, label, metadata);
+      if (node.source) {
+        const badge = document.createElement("span");
+        badge.className = "source-badge";
+        badge.textContent = node.source.toUpperCase();
+        badge.setAttribute("aria-hidden", "true");
+        row.append(badge);
+      }
       const children = document.createElement("ul");
       children.setAttribute("role", "group");
       children.hidden = true;
@@ -1300,6 +1314,7 @@
     post(picking ? "stopPick" : "pick"),
   );
   element("refresh").addEventListener("click", () => post("refresh"));
+  element("tree-mode").addEventListener("change", () => post("treeMode", { tree: element("tree-mode").value }));
   element("search").addEventListener("input", filter);
   element("clear-filter").addEventListener("click", () => {
     element("search").value = "";
@@ -1467,6 +1482,7 @@
       selectionIcon(selected);
     } else if (message.type === "state") {
       appState = message;
+      if (message.tree) element("tree-mode").value = message.tree;
       if (Array.isArray(message.shownProperties)) {
         const names = message.shownProperties.filter((name) => typeof name === "string" && PINNABLE.test(name));
         if (JSON.stringify(names) !== JSON.stringify(shownProperties)) {
@@ -1523,19 +1539,55 @@
       locatorState("idle");
       highlightable = true;
       renderHighlight();
+    } else if (message.type === "treeModeChanged") {
+      const capture = (entry) => [...entry.children.children].map((item) => nodes.get(item.firstElementChild?.dataset.nodeId)).filter((child) => child?.open).map((child) => ({ key: JSON.stringify(child.node.identity || child.node.info), children: capture(child) }));
+      for (const entry of [...nodes.values()].filter((item) => item.root && item.node.source === "wpf" && item.open)) {
+        entry.restore = capture(entry);
+        entry.loaded = false;
+        entry.loading = false;
+        expand(entry.node.nodeId);
+      }
     } else if (message.type === "children") {
       const entry = nodes.get(message.nodeId);
       if (entry) {
-        renderNodes(entry.children, message.nodes);
+        renderNodes(entry.children, message.nodes, message.append);
+        const previousMessage = entry.children.querySelector(":scope > .tree-message");
+        previousMessage?.remove();
+        if (message.nextPageToken || message.attachRequired || message.blocked) {
+          const item = document.createElement("li");
+          item.className = "tree-message";
+          item.setAttribute("role", "none");
+          if (message.attachRequired || message.blocked) {
+            const description = document.createElement("span");
+            description.textContent = message.attachRequired ? "Attach the WPF inspector to see this window's WPF tree" : `${message.blocked.code}: ${message.blocked.hint} Run wtk doctor --agent.`;
+            item.append(description);
+          }
+          if (message.nextPageToken || message.attachRequired) {
+            const button = document.createElement("button");
+            button.textContent = message.attachRequired ? "Attach" : "Load more";
+            button.addEventListener("click", () => { button.disabled = true; post(message.attachRequired ? "treeAttach" : "treeMore", message.attachRequired ? { nodeId: message.nodeId } : { nodeId: message.nodeId, pageToken: message.nextPageToken }); });
+            item.append(button);
+          }
+          entry.children.append(item);
+        }
         entry.loaded = true;
         entry.loading = false;
         if (message.expanded) entry.open = true;
         entry.row.removeAttribute("aria-busy");
-        if (!message.nodes.length) {
+        if (!message.append && !message.nodes.length && !message.nextPageToken && !message.attachRequired && !message.blocked) {
           entry.node.hasChildren = false;
           entry.open = false;
           entry.toggle.disabled = true;
           entry.row.removeAttribute("aria-expanded");
+        }
+        if (entry.restore) {
+          const remaining = [];
+          for (const saved of entry.restore) {
+            const child = [...entry.children.children].map((item) => nodes.get(item.firstElementChild?.dataset.nodeId)).find((item) => item && JSON.stringify(item.node.identity || item.node.info) === saved.key);
+            if (child) { child.restore = saved.children; expand(child.node.nodeId); } else remaining.push(saved);
+          }
+          entry.restore = message.nextPageToken ? remaining : undefined;
+          if (remaining.length && message.nextPageToken) post("treeMore", { nodeId: message.nodeId, pageToken: message.nextPageToken });
         }
         filter();
       }

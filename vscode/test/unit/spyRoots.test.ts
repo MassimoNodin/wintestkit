@@ -44,15 +44,15 @@ class FakeNode {
   }
 }
 
-const render = (appState: unknown, info: Record<string, unknown>, root = true) => {
-  const start = script.indexOf("  const renderNodes = (parent, values) => {");
+const render = (appState: unknown, info: Record<string, unknown>, root = true, extra: Record<string, unknown> = {}) => {
+  const start = script.indexOf("  const renderNodes = (parent, values, append = false) => {");
   const stop = script.indexOf("  const table = (id, values) => {", start);
   const tree = new FakeNode("tree");
   const parent = root ? tree : new FakeNode("children");
-  const nodes = new Map<string, { label: FakeNode; text: FakeNode }>();
+  const nodes = new Map<string, { label: FakeNode; text: FakeNode; row: FakeNode }>();
   runInNewContext(script.slice(start, stop) + "\nrenderNodes(parent, values);", {
     parent,
-    values: [{ nodeId: "1", hasChildren: false, info }],
+    values: [{ nodeId: "1", hasChildren: false, info, ...extra }],
     nodes,
     appState,
     selected: undefined,
@@ -72,6 +72,46 @@ const render = (appState: unknown, info: Record<string, unknown>, root = true) =
 
 const window = { name: "", automationId: "", controlType: "Window", className: "MainWindowFull", processId: 7 };
 
+describe("Spy child response rows", () => {
+  class ChildNode {
+    children: ChildNode[] = []; parent?: ChildNode; className = ""; textContent = ""; disabled = false;
+    dataset: Record<string, string> = {}; events: Record<string, () => void> = {};
+    append(...children: ChildNode[]) { for (const child of children) { child.parent = this; this.children.push(child); } }
+    setAttribute() {} removeAttribute() {}
+    addEventListener(name: string, callback: () => void) { this.events[name] = callback; }
+    querySelector() { return this.children.find((child) => child.className === "tree-message"); }
+    remove() { if (this.parent) this.parent.children = this.parent.children.filter((child) => child !== this); }
+  }
+  const setup = () => {
+    const start = script.indexOf('    } else if (message.type === "children") {') + '    } else if (message.type === "children") {'.length;
+    const stop = script.indexOf('    } else if (message.type === "suggestion")', start);
+    const children = new ChildNode();
+    const entry = { children, row: new ChildNode(), toggle: new ChildNode(), node: { hasChildren: true }, open: true, loaded: false, loading: false };
+    const sent: unknown[] = []; const rendered: string[] = [];
+    const context = { nodes: new Map([["parent", entry]]), document: { createElement: () => new ChildNode() }, post: (type: string, data: unknown) => sent.push({ type, ...(data as object) }), filter: () => {}, expand: () => {}, renderNodes: (_parent: ChildNode, values: string[], append: boolean) => { if (!append) rendered.length = 0; rendered.push(...values); } };
+    const receive = (message: object) => runInNewContext('(function(message) {' + script.slice(start, stop) + '})', context)(message);
+    return { receive, children, sent, rendered };
+  };
+  it("appends pages and removes the load-more action on the last page", () => {
+    const view = setup();
+    view.receive({ nodeId: "parent", nodes: ["first"], nextPageToken: "next" });
+    const button = view.children.children[0].children[0];
+    expect(button.textContent).toBe("Load more"); button.events.click();
+    expect(view.sent).toEqual([{ type: "treeMore", nodeId: "parent", pageToken: "next" }]);
+    view.receive({ nodeId: "parent", nodes: ["second"], append: true });
+    expect(view.rendered).toEqual(["first", "second"]); expect(view.children.children).toHaveLength(0);
+  });
+  it("renders attach and blocked guidance inline", () => {
+    const view = setup();
+    view.receive({ nodeId: "parent", nodes: [], attachRequired: true });
+    const row = view.children.children[0];
+    expect(row.children[0].textContent).toContain("Attach the WPF inspector");
+    row.children[1].events.click(); expect(view.sent).toEqual([{ type: "treeAttach", nodeId: "parent" }]);
+    view.receive({ nodeId: "parent", nodes: [], blocked: { code: "blockedByPolicy", hint: "Enable the agent" } });
+    expect(view.children.children[0].children[0].textContent).toContain("blockedByPolicy: Enable the agent Run wtk doctor --agent");
+  });
+});
+
 describe("Spy root rows for the selected application", () => {
   it("names a window without a title after the application and marks it", () => {
     const entry = render({ appName: "TeamViewer", appPids: [7] }, window);
@@ -79,6 +119,18 @@ describe("Spy root rows for the selected application", () => {
     expect(entry.label.find("app-marker")?.title).toBe("Selected application: TeamViewer");
   });
 
+  it("labels WPF identities and exposes their full type and source", () => {
+    const named = render(undefined, window, false, { source: "wpf", identity: { type: "System.Windows.Controls.Button", xName: "SaveButton", automationId: "other" } });
+    expect(named.text.textContent).toBe("Button  SaveButton");
+    expect(named.row.title).toContain("System.Windows.Controls.Button");
+    expect(named.row.attributes.get("aria-label")).toContain("WPF");
+    expect(named.row.find("source-badge")?.textContent).toBe("WPF");
+    const automation = render(undefined, window, false, { source: "wpf", identity: { type: "Demo.Button", automationId: "save" } });
+    expect(automation.text.textContent).toBe("Button  save");
+    const uia = render(undefined, { ...window, name: "Main" }, true, { source: "uia" });
+    expect(uia.text.textContent).toBe("Main");
+    expect(uia.row.find("source-badge")?.textContent).toBe("UIA");
+  });
   it("keeps a window's own title and still marks it", () => {
     const entry = render({ appName: "TeamViewer", appPids: [7] }, { ...window, name: "Main" });
     expect(entry.text.textContent).toBe("Main");
@@ -98,7 +150,7 @@ describe("Spy root rows for the selected application", () => {
 
 describe("the route to a selected row", () => {
   const rows = () => {
-    const start = script.indexOf("  const renderNodes = (parent, values) => {");
+    const start = script.indexOf("  const renderNodes = (parent, values, append = false) => {");
     const stop = script.indexOf("  const table = (id, values) => {", start);
     const routeStart = script.indexOf("  // The route from a root window down to a row");
     const routeStop = script.indexOf("  const choose = (nodeId) => {", routeStart);
