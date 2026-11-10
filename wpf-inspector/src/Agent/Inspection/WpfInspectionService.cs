@@ -321,6 +321,7 @@ namespace WinTestKit.Inspector.Agent.Inspection
         {
             try
             {
+                if (segment.Kind != "uia" && inspector is ObjectInspector && RedactionPolicy.IsProtectedIdentity(target)) return null;
                 ValueDto value = inspector.ReadPath(target, new[] { segment }, registry, dispatcher, ct);
                 return value.Status == ValueStatus.Ok && value.Scalar is JsonStringNode text && text.Value.Length != 0 ? text.Value : null;
             }

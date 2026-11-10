@@ -63,6 +63,50 @@ namespace WinTestKit.Inspector.Agent.Members.Tests
             });
         }
 
+        private sealed class ShadowName : FrameworkElement
+        {
+            public new string Name => "hidden";
+        }
+
+        private sealed class ShadowVisible : FrameworkElement
+        {
+            public new bool IsVisible => true;
+        }
+
+        [Trait("Category", "Unit")]
+        [Fact] public void ProtectedAllowlistRequiresExactDeclarationAndSingleSegment()
+        {
+            Sta(() =>
+            {
+                foreach (var target in new FrameworkElement[] { new PasswordBox(), new NoPeer() })
+                {
+                    var reader = new Reader(target);
+                    foreach (string name in new[] { "Name", "IsVisible", "IsEnabled", "IsFocused", "IsKeyboardFocused", "IsKeyboardFocusWithin", "IsMouseOver", "IsHitTestVisible", "Visibility", "Opacity", "Width", "Height", "ActualWidth", "ActualHeight" })
+                    {
+                        Declaration declaration = ReflectionCatalog.Get(target.GetType()).Single(item => item.Name == name && item.Property != null);
+                        Assert.True(RedactionPolicy.IsAllowedOnProtected(new[] { Property(name) }, declaration));
+                        Assert.Equal(ValueStatus.Ok, reader.Read(Property(name)).Status);
+                    }
+                    foreach (string name in new[] { "Name", "FullName", "AssemblyName", "AssemblyQualifiedName" })
+                        Assert.Equal(ValueStatus.Ok, reader.Read(new PathSegment { Kind = "type", Name = name }).Status);
+                    Assert.Equal(ValueStatus.Redacted, reader.Read(new PathSegment { Kind = "type", Name = "BaseTypes" }).Status);
+                    Assert.Equal(ValueStatus.Redacted, reader.Read(Property("Tag")).Status);
+                    Assert.Equal(ValueStatus.Redacted, reader.Read(Property("Name"), Property("Length")).Status);
+                    Assert.Equal(ValueStatus.Redacted, new Reader(target, "Name").Read(Property("Name")).Status);
+                    Assert.Equal(ValueStatus.Ok, reader.Read(Dependency(UIElement.IsEnabledProperty)).Status);
+                }
+                var password = new Reader(new PasswordBox());
+                Assert.Equal(ValueStatus.Redacted, password.Read(Property("Password")).Status);
+                Assert.Equal(ValueStatus.Redacted, password.Read(Property("SecurePassword")).Status);
+                Declaration shadow = ReflectionCatalog.Get(typeof(ShadowName)).Single(item => item.Name == "Name" && item.DeclaringType == typeof(ShadowName));
+                Assert.False(RedactionPolicy.IsAllowedOnProtected(new[] { Property("Name") }, shadow));
+                Declaration shadowVisible = ReflectionCatalog.Get(typeof(ShadowVisible)).Single(item => item.Name == "IsVisible" && item.DeclaringType == typeof(ShadowVisible));
+                Assert.False(RedactionPolicy.IsAllowedOnProtected(new[] { Property("IsVisible") }, shadowVisible));
+                Assert.Equal(ValueStatus.Redacted, new Reader(new ShadowVisible()).Read(new PathSegment { Kind = "property", Name = "IsVisible", DeclaringType = typeof(ShadowVisible).FullName }).Status);
+                Assert.Equal(ValueStatus.Redacted, new Reader(new ShadowName()).Read(new PathSegment { Kind = "property", Name = "Name", DeclaringType = typeof(ShadowName).FullName }).Status);
+            });
+        }
+
         [Fact] public void MissingPeerFailsClosed()
         {
             Sta(() =>

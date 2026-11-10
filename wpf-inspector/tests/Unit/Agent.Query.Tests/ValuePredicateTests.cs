@@ -125,6 +125,62 @@ namespace WinTestKit.Inspector.Agent.Query.Tests
         }
         [Trait("Category", "Unit")]
         [Fact]
+        public void QueryAcrossProtectedElementsReadsIsVisible()
+        {
+            OnSta(() =>
+            {
+                var executor = new DispatcherExecutor();
+                using (var registry = new ObjectRegistry("protected-query", executor))
+                {
+                    var panel = new StackPanel();
+                    panel.Children.Add(new PasswordBox());
+                    panel.Children.Add(new PeerlessElement());
+                    var window = new Window { Content = panel };
+                    var handle = registry.Register(window, window.Dispatcher, TypeInfoBuilder.Build(window.GetType()));
+                    var locator = new Locator { Scope = new Scope { Kind = "window", Handle = handle }, Tree = "logical", DepthMode = "tree", Depth = 10, Limit = 20, Predicates = new[] { Equal("IsVisible", new JsonBoolNode(false)) } };
+                    var task = new QueryEngine(executor, registry).FindAllAsync(locator, DateTime.UtcNow.AddSeconds(60), CancellationToken.None);
+                    var frame = new DispatcherFrame(); task.ContinueWith(_ => frame.Continue = false, TaskScheduler.Default); Dispatcher.PushFrame(frame);
+                    Assert.True(task.GetAwaiter().GetResult().Complete);
+                    GC.KeepAlive(window);
+                }
+            });
+        }
+
+        private sealed class PeerlessElement : FrameworkElement { }
+
+        [Trait("Category", "Unit")]
+        [Fact]
+        public void ProtectedPredicatesAllowSafeIdentityOnly()
+        {
+            WithPredicate((inspector, registry, context) =>
+            {
+                foreach (var target in new FrameworkElement[] { new PasswordBox(), new PeerlessElement() })
+                {
+                    bool Match(Predicate predicate) => PredicateFactory.Create(predicate, inspector, registry).Matches(target, context);
+                    target.Width = 40; target.Height = 30;
+                    foreach (string name in new[] { "Name", "IsVisible", "IsEnabled", "IsFocused", "IsKeyboardFocused", "IsKeyboardFocusWithin", "IsMouseOver", "IsHitTestVisible", "Visibility", "Opacity", "Width", "Height", "ActualWidth", "ActualHeight" })
+                    {
+                        ValueDto value = inspector.ReadPath(target, new[] { Segment(name) }, registry, target.Dispatcher, CancellationToken.None);
+                        Assert.Equal("ok", value.Status);
+                        Assert.NotNull(value.Scalar);
+                        Assert.True(Match(Equal(name, value.Scalar!)));
+                    }
+                    Assert.True(Match(new Predicate { Kind = "assignableTo", FullName = typeof(FrameworkElement).FullName }));
+                    var nested = new Predicate { Kind = "equals", Path = new[] { Segment("Name"), Segment("Length") }, Value = new JsonNumberNode("0") };
+                    Assert.Equal(ErrorCodes.ValueUnreadable, Assert.Throws<ProtocolException>(() => Match(nested)).Code);
+                    var restricted = new ObjectInspector(new[] { "Name" });
+                    Assert.Equal(ErrorCodes.ValueUnreadable, Assert.Throws<ProtocolException>(() => PredicateFactory.Create(Equal("Name", new JsonStringNode("")), restricted, registry).Matches(target, context)).Code);
+                    Assert.True(Match(Equal("FullName", new JsonStringNode(target.GetType().FullName!), "type")));
+                    Assert.Equal(ErrorCodes.ValueUnreadable, Assert.Throws<ProtocolException>(() => Match(Equal("Tag", new JsonStringNode("x")))).Code);
+                }
+                var password = new PasswordBox();
+                foreach (string name in new[] { "Password", "SecurePassword" })
+                    Assert.Equal(ErrorCodes.ValueUnreadable, Assert.Throws<ProtocolException>(() => PredicateFactory.Create(Equal(name, new JsonStringNode("x")), inspector, registry).Matches(password, context)).Code);
+            });
+        }
+
+        [Trait("Category", "Unit")]
+        [Fact]
         public void ScalarEqualityAndRegexUseReaderValues()
         {
             WithPredicate((inspector, registry, context) =>

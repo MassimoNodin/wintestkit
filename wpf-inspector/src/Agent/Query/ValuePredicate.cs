@@ -40,7 +40,7 @@ namespace WinTestKit.Inspector.Agent.Query
             if (path.Count == 1 && path[0].Kind == "type" && path[0].Name == "FullName" && regex == null)
             {
                 if (!(expected is JsonStringNode typeName) || target.GetType().FullName != typeName.Value) return false;
-                if (inspector.IsPathRedacted(path) || RedactionPolicy.IsProtectedIdentity(target)) throw Unreadable("redacted");
+                if (inspector.IsPathRedacted(path) || RedactionPolicy.IsProtectedIdentity(target) && !RedactionPolicy.IsAllowedOnProtected(path, null)) throw Unreadable("redacted");
                 return true;
             }
             PathSegment first = path[0];
@@ -76,7 +76,7 @@ namespace WinTestKit.Inspector.Agent.Query
                 if (found.Length == 1 && path.Count == 1 && !(target is System.ComponentModel.ICustomTypeDescriptor))
                 {
                     Declaration d = found[0];
-                    if (inspector.IsPathRedacted(path) || RedactionPolicy.IsPasswordIdentity(d.DeclaringType, d.Name) || RedactionPolicy.IsProtectedIdentity(target))
+                    if (inspector.IsPathRedacted(path) || RedactionPolicy.IsPasswordIdentity(d.DeclaringType, d.Name) || RedactionPolicy.IsProtectedIdentity(target) && !RedactionPolicy.IsAllowedOnProtected(path, d))
                         throw Unreadable("redacted");
                     MethodInfo? getter = d.Property?.GetGetMethod(true);
                     if (d.Property != null && (getter == null || !getter.IsPublic || d.Property.GetIndexParameters().Length != 0) || d.Field != null && !d.Field.IsPublic)

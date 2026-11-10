@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Windows;
 using System.Windows.Automation.Peers;
 using System.Windows.Controls;
+using WinTestKit.Inspector.Protocol;
 
 namespace WinTestKit.Inspector.Agent.Inspection.Members
 {
@@ -40,6 +41,20 @@ namespace WinTestKit.Inspector.Agent.Inspection.Members
         }
         internal static bool IsPasswordIdentity(Type declaringType, string name) =>
             declaringType == typeof(PasswordBox) && (name == "Password" || name == "SecurePassword");
+
+        internal static bool IsAllowedOnProtected(IReadOnlyList<PathSegment> path, Declaration? declaration)
+        {
+            if (path.Count != 1) return false;
+            PathSegment segment = path[0];
+            if (segment.Kind == "type") return segment.Name == "Name" || segment.Name == "FullName" || segment.Name == "AssemblyName" || segment.Name == "AssemblyQualifiedName";
+            if (Array.IndexOf(new[] { "Name", "IsVisible", "IsEnabled", "IsFocused", "IsKeyboardFocused", "IsKeyboardFocusWithin", "IsMouseOver", "IsHitTestVisible", "Visibility", "Opacity", "Width", "Height", "ActualWidth", "ActualHeight" }, segment.Name) < 0) return false;
+            Type[] owners = { typeof(DependencyObject), typeof(UIElement), typeof(FrameworkElement), typeof(ContentElement), typeof(FrameworkContentElement) };
+            if (segment.Kind == "property") return declaration?.Property != null && declaration.Name == segment.Name && Array.IndexOf(owners, declaration.DeclaringType) >= 0;
+            if (segment.Kind == "dependency")
+                foreach (Type owner in owners)
+                    if (segment.OwnerType == Declaration.TypeName(owner) && segment.OwnerAssembly == Declaration.AssemblyName(owner)) return true;
+            return false;
+        }
 
         internal static bool IsProtectedIdentity(object target)
         {
