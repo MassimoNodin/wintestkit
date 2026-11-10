@@ -124,7 +124,7 @@ namespace WinTestKit.Inspector.Agent.Inspection.Members
                 catch (Exception) { return new ValueDto { Status = "exception", Kind = "unavailable", FailedSegment = 0 }; }
                 return PeerIdentity.Read(root, first.Name, registry, dispatcher);
             }
-            if (RedactionPolicy.IsProtectedIdentity(root)) return new ValueDto { Status = "redacted", Kind = "unavailable", RedactionRule = "identity" };
+            if (RedactionPolicy.IsProtectedIdentity(root) && path[0].Kind == "type" && !RedactionPolicy.IsAllowedOnProtected(path, null)) return new ValueDto { Status = "redacted", Kind = "unavailable", RedactionRule = "identity" };
             if (path[0].Kind == "type")
             {
                 TypeInfoDto t = DescribeType(root.GetType());
@@ -138,9 +138,19 @@ namespace WinTestKit.Inspector.Agent.Inspection.Members
             for (int i = 0; i < path.Count; i++)
             {
                 ct.ThrowIfCancellationRequested();
-                if (RedactionPolicy.IsProtectedIdentity(current!)) return new ValueDto { Status = "redacted", Kind = "unavailable", RedactionRule = "identity" };
+                bool protectedIdentity = RedactionPolicy.IsProtectedIdentity(current!);
+                if (protectedIdentity && (path.Count != 1 || (path[0].Kind != "property" && path[0].Kind != "dependency"))) return new ValueDto { Status = "redacted", Kind = "unavailable", RedactionRule = "identity" };
                 dependencySource = null;
                 PathSegment segment = path[i];
+                if (protectedIdentity)
+                {
+                    Declaration[] candidates = ReflectionCatalog.Get(current!.GetType()).Where(item => item.Name == segment.Name && item.Property != null &&
+                        (segment.MemberKey == null || segment.MemberKey == item.Key) &&
+                        (segment.DeclaringType == null || segment.DeclaringType == Declaration.TypeName(item.DeclaringType))).ToArray();
+                    if (segment.Kind == "property" && (candidates.Length != 1 || !RedactionPolicy.IsAllowedOnProtected(path, candidates[0])) ||
+                        segment.Kind == "dependency" && !RedactionPolicy.IsAllowedOnProtected(path, null))
+                        return new ValueDto { Status = "redacted", Kind = "unavailable", RedactionRule = "identity" };
+                }
                 var diagnostics = new List<Diagnostic>();
                 IReadOnlyList<MemberInfo> catalog = GetMembers(current!, diagnostics);
                 IEnumerable<MemberInfo> matches = catalog.Where(row => row.Name == segment.Name && ((segment.Kind == "property" && row.Category == "clrProperty") || (segment.Kind == "field" && row.Category == "clrField") || (segment.Kind == "dependency" && (row.Category == "dependencyProperty" || row.Category == "attachedProperty"))));
@@ -152,6 +162,7 @@ namespace WinTestKit.Inspector.Agent.Inspection.Members
                 if (found.Length != 1) throw new ProtocolException(ErrorCodes.MemberAmbiguous, "Member is ambiguous");
                 MemberInfo selected = found[0];
                 Declaration? declaration = ReflectionCatalog.Get(current!.GetType()).FirstOrDefault(d => d.Key == selected.MemberKey);
+                if (protectedIdentity && !RedactionPolicy.IsAllowedOnProtected(path, declaration)) return new ValueDto { Status = "redacted", Kind = "unavailable", RedactionRule = "identity" };
                 if (declaration != null && RedactionPolicy.IsPasswordIdentity(declaration.DeclaringType, declaration.Name)) return new ValueDto { Status = "redacted", Kind = "unavailable", RedactionRule = "identity" };
                 if (!selected.Readable) return new ValueDto { Status = selected.Reason == "unsupportedType" ? "unsupported" : "notReadable", Kind = "unavailable", DeclaredType = selected.DeclaredType };
                 try
