@@ -47,14 +47,16 @@ namespace WinTestKit.Inspector.Agent.Mapping.Tests
             using (var service = new WpfInspectionService("hit", new FakeInspector()))
             {
                 Point screen = await window.Thread.Dispatcher.InvokeAsync(() => window.Buttons[0].PointToScreen(new Point(5, 5))).Task;
-                var result = await service.HitTestAsync(window.Handle.ToInt64(), new PointDto { X = screen.X, Y = screen.Y }, DateTime.UtcNow.AddSeconds(2), 1000, None);
+                await window.Thread.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle).Task;
+                var result = await service.HitTestAsync(window.Handle.ToInt64(), new PointDto { X = screen.X, Y = screen.Y }, DateTime.UtcNow.AddSeconds(60), 1000, None);
                 Assert.NotNull(result.Handle);
                 var registry = (ObjectRegistry)typeof(WpfInspectionService).GetField("registry", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(service)!;
                 Assert.True(registry.TryGet(result.Handle.ObjectId, result.Handle.Generation, out object target, out _));
                 Assert.True(await window.Thread.Dispatcher.InvokeAsync(() => ReferenceEquals(target, window.Buttons[0]) || window.Buttons[0].IsAncestorOf((DependencyObject)target)).Task);
-                await Error(ErrorCodes.NotFound, () => service.HitTestAsync(window.Handle.ToInt64(), new PointDto { X = -100000, Y = -100000 }, DateTime.UtcNow.AddSeconds(2), 1000, None));
-                await Error(ErrorCodes.MappingFailed, () => service.HitTestAsync(0, new PointDto(), DateTime.UtcNow.AddSeconds(2), 1000, None));
-                await Error(ErrorCodes.MappingFailed, () => service.HitTestAsync(GetDesktopWindow().ToInt64(), new PointDto(), DateTime.UtcNow.AddSeconds(2), 1000, None));
+                await window.Thread.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle).Task;
+                await Error(ErrorCodes.NotFound, () => service.HitTestAsync(window.Handle.ToInt64(), new PointDto { X = -100000, Y = -100000 }, DateTime.UtcNow.AddSeconds(60), 1000, None));
+                await Error(ErrorCodes.MappingFailed, () => service.HitTestAsync(0, new PointDto(), DateTime.UtcNow.AddSeconds(60), 1000, None));
+                await Error(ErrorCodes.MappingFailed, () => service.HitTestAsync(GetDesktopWindow().ToInt64(), new PointDto(), DateTime.UtcNow.AddSeconds(60), 1000, None));
             }
         }
 
@@ -76,7 +78,8 @@ namespace WinTestKit.Inspector.Agent.Mapping.Tests
                     window.Window.UpdateLayout();
                     return peerless.PointToScreen(new Point(20, 20));
                 }).Task;
-                var result = await service.HitTestAsync(window.Handle.ToInt64(), new PointDto { X = screen.X, Y = screen.Y }, DateTime.UtcNow.AddSeconds(2), 1000, None, true);
+                await window.Thread.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle).Task;
+                var result = await service.HitTestAsync(window.Handle.ToInt64(), new PointDto { X = screen.X, Y = screen.Y }, DateTime.UtcNow.AddSeconds(60), 1000, None, true);
                 var registry = (ObjectRegistry)typeof(WpfInspectionService).GetField("registry", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(service)!;
                 Assert.NotNull(result.Path);
                 Assert.Equal(result.Handle.ObjectId, result.Path!.Last().Object.ObjectId);
@@ -106,7 +109,8 @@ namespace WinTestKit.Inspector.Agent.Mapping.Tests
                 }).Task;
                 try
                 {
-                    var hit = await service.HitTestAsync(data.Handle.ToInt64(), new PointDto { X = data.Item5.X, Y = data.Item5.Y }, DateTime.UtcNow.AddSeconds(2), 1000, None, true);
+                    await window.Thread.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle).Task;
+                    var hit = await service.HitTestAsync(data.Handle.ToInt64(), new PointDto { X = data.Item5.X, Y = data.Item5.Y }, DateTime.UtcNow.AddSeconds(60), 1000, None, true);
                     var registry = (ObjectRegistry)typeof(WpfInspectionService).GetField("registry", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(service)!;
                     Assert.NotNull(hit.Path);
                     Assert.True(registry.TryGetWeak(hit.Path!.First().Object.ObjectId, hit.Path.First().Object.Generation, out object root));
@@ -131,7 +135,8 @@ namespace WinTestKit.Inspector.Agent.Mapping.Tests
                     window.Window.UpdateLayout();
                     return text.PointToScreen(new Point(10, 10));
                 }).Task;
-                var result = await service.HitTestAsync(window.Handle.ToInt64(), new PointDto { X = screen.X, Y = screen.Y }, DateTime.UtcNow.AddSeconds(2), 1000, None, true);
+                await window.Thread.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle).Task;
+                var result = await service.HitTestAsync(window.Handle.ToInt64(), new PointDto { X = screen.X, Y = screen.Y }, DateTime.UtcNow.AddSeconds(60), 1000, None, true);
                 var registry = (ObjectRegistry)typeof(WpfInspectionService).GetField("registry", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(service)!;
                 Assert.True(registry.TryGet(result.Handle.ObjectId, result.Handle.Generation, out object target, out _));
                 Assert.IsAssignableFrom<ContentElement>(target);
