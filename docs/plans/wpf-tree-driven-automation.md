@@ -1,7 +1,7 @@
 # WPF-tree-driven automation: migration plan
 
 Status: decisions D1–D7 made (§3); phases 0–3 done (phase 2 gate passed 2026-11-06,
-§6.3; phase 3 gate passed 2026-11-09, §6.5). Phase 4 in progress (§6.6). Planning date: 2026-10-29.
+§6.3; phase 3 gate passed 2026-11-09, §6.5). Phase 4 done (fixture gate passed 2026-11-10, §6.6); phase 5 in progress (§6.7). Planning date: 2026-10-29.
 Builds on: `wpf-dotnet-attribute-analyzer.md` (the *inspector plan*) and the implemented
 inspector on `master` (agent, protocol, Python client, managed locators, Spy panel).
 
@@ -542,6 +542,38 @@ and docs.
 - Observed 200-child pages on a 5,000-child parent take about 0.7–1.2 seconds. Saved previews
   are skipped for peerless elements. System DPI scaling was not exercised; a 150% layout
   transform was. A real AppLocker or antivirus block was not exercised.
+
+**Gate verdict (owner, 2026-11-10): fixture part passed.** Suggested locators round-trip on
+the fixture as listed above. The real-suite page checks stay open for the owner and do not
+block phase 5.
+
+### 6.7 Phase 5 design (2026-11-10)
+
+Scope: TestComplete helpers and importer output (virtualization moved to phase 3).
+
+Design:
+
+- **Property names.** One shared map turns TestComplete property names into locator keys:
+  `WPFControlName` to `x:Name` (`clr:Name`), `ClrFullClassName` to `type:FullName`,
+  `ClrClassName` to the short type name, `WPFControlText` to the element's text,
+  `WPFControlOrdinalNo` to an index, `Visible` and `Enabled` to state conditions. Any other
+  name becomes a managed `clr:` path, since TestComplete exposes .NET members directly. Names
+  that cannot be mapped are an error, not a silent drop.
+- **Wildcards.** `*` and `?` in string values become anchored regexes through the shared
+  regex subset; other characters are matched literally.
+- **Helpers.** `find_child(parent, props, values, depth=1)`, `find_all_children(parent, props,
+  values, depth=1)` and `find(parent, props, values, depth=...)` follow TestComplete's
+  argument order and depth meaning. `find_child` returns a lazy element for the first match
+  in tree order, so a missing element fails when used, with the normal diagnostic, and
+  `.exists()` works; `strict=True` keeps WinTestKit's ambiguity error. `find_all_children`
+  returns a snapshot list. They work on both backends.
+- **Importer.** The NameMapping importer maps properties through the same table, converts
+  wildcards, and turns extended find into a descendant search with the matching depth.
+- **Gate samples.** A set of TestComplete-style `FindChild`, `FindAllChildren` and `Find`
+  calls with their migrated WinTestKit form, run against the fixture on both backends.
+
+Slices: P5a property map and wildcard translation; P5b helpers; P5c importer output; P5d
+gate samples, docs and the test-writing skill's migration reference.
 
 ## 7. Test strategy
 
