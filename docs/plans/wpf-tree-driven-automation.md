@@ -575,6 +575,18 @@ Design:
 Slices: P5a property map and wildcard translation; P5b helpers; P5c importer output; P5d
 gate samples, docs and the test-writing skill's migration reference.
 
+### 6.8 Phase 5 results
+
+The live migration sample file records the original and migrated forms. In the targeted
+fixture run, the first 13 samples passed on both `auto` and `uia`: name, scoped class,
+two properties, star, question mark, depth-one miss, deep lookup, count, parent-inclusive
+Find, text, ordinal, visibility/enabled, and managed DataContext. The peerless class
+lookup failed on both with `InspectorReadError: Inspector value unreadable: redacted`;
+the UIA expected difference therefore remains unverified. A separate targeted run of
+the generated NameMapping page resolved the hierarchy and wildcard on `auto`, including
+the depth-one negative case. The XML extended-find spellings remain unconfirmed.
+The phase 5 gate is ready for owner sign-off only if every sample passes on `auto`.
+
 ## 7. Test strategy
 
 - **Parity suite**: run the same locator, wait, action and typed-control tests under

@@ -33,11 +33,44 @@ pytest instead of a proprietary IDE and project format.
   matches. WinTestKit fails when a locator matches more than one element, so ambiguous mappings
   surface at the line that is wrong. Expect to add `within=` scopes while migrating.
 - **UI Automation discovery.** There is no image-based or OCR recognition. Controls a screen reader can't
-  see can't be tested; for WPF that is rare.
+  see cannot be found by the UIA backend. The WPF backend can find peerless elements.
 - **No recorder.** Use the Spy to build pages and write tests in Python; the editor
   completes element names from your pages.
 - **Code review and version control.** Pages and tests are plain Python files that diff, review
   and merge like any other code.
+
+## Migrating FindChild
+
+The originals below are TestComplete JavaScript-style calls; `p` is the fixture page and
+`group` is its mapped group. The WinTestKit examples use `page` and `page.group`.
+Import `find_child`, `find_all_children`, and `find` from `wintestkit.testcomplete`.
+
+| TestComplete call | WinTestKit call |
+| --- | --- |
+| `p.FindChild("WPFControlName", "FancyAutomationId", 20)` | `find_child(page, "WPFControlName", "FancyAutomationId", 20)` |
+| `group.FindChild("ClrFullClassName", "System.Windows.Controls.Button", 20)` | `find_child(page.group, "ClrFullClassName", "System.Windows.Controls.Button", 20)` |
+| `p.FindChild(["WPFControlName", "ClrFullClassName"], ["FancyAutomationId", "*FancyButton"], 20)` | `find_child(page, ["WPFControlName", "ClrFullClassName"], ["FancyAutomationId", "*FancyButton"], 20)` |
+| `p.FindChild("WPFControlName", "Fancy*Id", 20)` | `find_child(page, "WPFControlName", "Fancy*Id", 20)` |
+| `p.FindChild("WPFControlName", "FancyAutomationI?", 20)` | `find_child(page, "WPFControlName", "FancyAutomationI?", 20)` |
+| `p.FindChild("WPFControlName", "NestedButton", 1)` | `find_child(page, "WPFControlName", "NestedButton", 1)` |
+| `p.FindChild("WPFControlName", "NestedButton", 20)` | `find_child(page, "WPFControlName", "NestedButton", 20)` |
+| `p.FindAllChildren("WPFControlName", "Duplicate", 20).length` | `find_all_children(page, "WPFControlName", "Duplicate", 20)` |
+| `group.Find("WPFControlName", "ParityGroup", 1)` | `find(page.group, "WPFControlName", "ParityGroup", 1)` |
+| `p.FindChild("WPFControlText", "Fancy action", 20)` | `find_child(page, "WPFControlText", "Fancy action", 20)` |
+| `p.FindChild(["WPFControlName", "WPFControlOrdinalNo"], ["Duplicate", 2], 20)` | `find_child(page, ["WPFControlName", "WPFControlOrdinalNo"], ["Duplicate", 2], 20)` |
+| `p.FindChild(["WPFControlName", "Visible", "Enabled"], ["FancyAutomationId", true, true], 20)` | `find_child(page, ["WPFControlName", "Visible", "Enabled"], ["FancyAutomationId", True, True], 20)` |
+| `p.FindChild(["WPFControlName", "DataContext.Label"], ["FancyAutomationId", "fixture"], 20)` | `find_child(page, ["WPFControlName", "DataContext.Label"], ["FancyAutomationId", "fixture"], 20)` |
+| `p.FindChild("ClrFullClassName", "WinTestKit.Fixture.PeerlessMarker", 20)` | `find_child(page, "ClrFullClassName", "WinTestKit.Fixture.PeerlessMarker", 20)` |
+
+The depth-one nested lookup deliberately does not find the deeper button. Depth counts
+automation-peer levels, not arbitrary WPF visual-tree levels; `None` means unlimited.
+`WPFControlText` matches the peer Name, which need not be the actual control text.
+`WPFControlOrdinalNo` is one-based and maps to a zero-based index over matches.
+`find_all_children` returns indexed, re-resolving results: later tree reordering can
+change their identities. `find` includes a bound parent, but rootless pages and scopes
+start at the window descendants and cannot include the window itself. Managed properties
+require inspector access, and UIA cannot discover elements without automation peers.
+The NameMapping extended-find XML spellings accepted below are unconfirmed.
 
 ## NameMapping importer
 
