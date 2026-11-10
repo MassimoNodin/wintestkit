@@ -32,7 +32,7 @@ def _matcher(value: Any) -> Any:
     pattern = "".join(
         ".*" if c == "*" else "." if c == "?" else "\\" + c if c in special else c for c in value
     )
-    return re.compile(f"^{pattern}$", re.DOTALL)
+    return re.compile(rf"^{pattern}\Z", re.DOTALL)
 
 
 def to_locator(props: str | Sequence[str], values: Any, *, depth: int | None = None) -> Locator:
@@ -51,10 +51,7 @@ def to_locator(props: str | Sequence[str], values: Any, *, depth: int | None = N
     children; on WPF it counts automation-peer levels, not TestComplete's
     visual-tree levels. None leaves the library default in place.
 
-    Wildcard regexes use the shared agent grammar. The agent only accepts ASCII
-    regex literals, so non-ASCII wildcard patterns require UIA/postfilter. The
-    shared grammar's ``$`` also matches before a final newline, unlike an exact
-    whole-value match.
+    Wildcard regexes use strict whole-value matching, including for Unicode text.
     """
     if isinstance(props, str):
         names = [props]

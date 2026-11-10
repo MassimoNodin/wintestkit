@@ -60,7 +60,7 @@ def test_translation_all_kinds():
     assert result.predicates[3].value == "Button"
 
 
-@pytest.mark.parametrize("pattern", [r"\d", "(?=x)", "a{10001}", "é", "a++"])
+@pytest.mark.parametrize("pattern", [r"\d", "(?=x)", "a{10001}", "[é]", "a++"])
 def test_regex_rejected(pattern):
     with pytest.raises(UnsupportedQuery):
         wire(Locator(name=re.compile(pattern), where=(("clr:X", 1),)))
@@ -71,6 +71,34 @@ def test_regex_accepted(pattern):
     assert (
         wire(Locator(name=re.compile(pattern), where=(("clr:X", 1),))).predicates[0].kind == "regex"
     )
+
+
+@pytest.mark.parametrize(
+    "pattern,text,ignore_case,expected",
+    [
+        ("é", "café", False, True),
+        ("é", "É", True, False),
+        ("é", "é", True, True),
+        ("☃", "☃", True, True),
+        ("😀+", "😀😀", False, True),
+        (r"^.\Z", "😀", False, True),
+        (r"^[^a]\Z", "😀", False, True),
+        (r"b\Z", "ab\n", False, False),
+        ("b$", "ab\n", False, True),
+        (r"^café.*\Z", "café noir", False, True),
+        (r"^café.*\Z", "café\n", False, False),
+    ],
+)
+def test_shared_reference_cases(pattern, text, ignore_case, expected):
+    # The agent runs the same table; ASCII flag models its case-folding contract.
+    compiled = re.compile(pattern, re.ASCII | (re.I if ignore_case else 0))
+    assert bool(compiled.search(text)) is expected
+    if ignore_case and any(ord(c) > 127 and c.isalpha() for c in pattern):
+        with pytest.raises(UnsupportedQuery, match="non-ASCII letter"):
+            wire(Locator(name=re.compile(pattern, re.I)))
+    else:
+        result = wire(Locator(name=re.compile(pattern, re.I if ignore_case else 0)))
+        assert result.predicates[0].pattern == pattern.replace(r"\Z", r"\z")
 
 
 def test_fallbacks_and_type_is_validation():

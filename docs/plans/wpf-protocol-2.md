@@ -51,13 +51,15 @@ type and dispatcherId. Handles are session-bound and stale handles fail `objectS
   `{kind:"assignableTo",fullName:string}`. Scalar is a JSON string, boolean or finite
   number; equality is type-aware and never coerces booleans to numbers. Regex pattern is at
   most 1,024 characters, flags are a unique subset of `ignoreCase`, `multiline`, `singleline`;
-  Matching uses Python `re.search` semantics on this shared subset: ASCII literals, escaped
-  regex metacharacters, `.`, `^`, `$`, ASCII character classes and ranges (including negation),
+  Matching uses Python `re.search` semantics on this shared subset: Unicode scalar literals, escaped
+  regex metacharacters, `.`, `^`, `$`, `\z`, ASCII character classes and ranges (including negation),
   groups `(...)` and `(?:...)`, alternation `|`, quantifiers `*`, `+`, `?`, `{m}`,
   `{m,}`, `{m,n}` and lazy forms. Bounds are decimal integers at most 10000, with m ≤ n.
   Input may be Unicode; `ignoreCase` uses ASCII-only folding, `multiline` changes anchors at
   newline boundaries, `singleline` makes dot match newline, and `$` also matches before a
-  final newline. Inline flags, shorthand classes, lookaround, backreferences, named groups,
+  final newline. `\z` matches only the strict end of input (Python `\Z`). Non-ASCII literals
+  compare exactly even with `ignoreCase`; the Python locator translator rejects an ignore-case
+  pattern containing a non-ASCII letter because Python would fold it differently. Inline flags, shorthand classes, lookaround, backreferences, named groups,
   Unicode categories and other constructs, malformed patterns and flags fail `invalidParams`.
   Validate before matching and implement equivalent anchor and case behavior. `assignableTo` implements `type:Is` using already loaded type
   metadata, never loading a type. Exact type matching uses equality on `type:FullName`.
@@ -260,3 +262,4 @@ explicit `backend: uia` keep the UIA backend.
 
 17. `children` entries optionally include `identity` containing only `xName` and `automationId`. Values are read on the dispatcher for the returned page, follow `read` redaction and protection, and are omitted on failure. Paging registers weak object references without acquiring leases.
 18. `hitTest` accepts optional `includePath`; when true it returns `path` in `children` entry form, from the HWND root visual to the hit element inclusive. The dispatcher walks visual parents with a 256-node limit, without acquiring leases for entries. The default omits the path and avoids its traversal. Popup paths stop at the popup HWND source root.
+19. Regex literals may be Unicode scalar values; case folding remains ASCII-only. Add `\z` as the strict end-of-input anchor, corresponding to Python `\Z`. Python translation rejects ignore-case patterns containing non-ASCII letters, and TestComplete wildcards use strict whole-value anchors.

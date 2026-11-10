@@ -85,10 +85,18 @@ namespace WinTestKit.Inspector.Agent.Query
                         result.Append(')');
                     }
                     else if (c == '[') CharacterClass();
+                    else if (c == '\\' && pos < source.Length && source[pos] == 'z')
+                    { pos++; result.Append(@"\z"); quantifiable = false; }
                     else if (c == '\\') Literal(Escape());
-                    else if (c == '.' || c == '^' || c == '$') { result.Append(c); quantifiable = c == '.'; }
+                    else if (c == '.') result.Append(@"(?:[\uD800-\uDBFF][\uDC00-\uDFFF]|(?![\uD800-\uDFFF]).)");
+                    else if (c == '^' || c == '$') { result.Append(c); quantifiable = false; }
                     else if (c == '*' || c == '+' || c == '?' || c == '{' || c == '}' || c == ']') throw Invalid();
-                    else { CheckAscii(c); Literal(c); }
+                    else if (char.IsHighSurrogate(c))
+                    {
+                        if (pos >= source.Length || !char.IsLowSurrogate(source[pos])) throw Invalid();
+                        result.Append("(?:").Append(Regex.Escape(source.Substring(pos - 1, 2))).Append(')'); pos++;
+                    }
+                    else { if (char.IsLowSurrogate(c)) throw Invalid(); Literal(c); }
                     if (pos < source.Length && IsQuantifier(source[pos]))
                     {
                         if (!quantifiable) throw Invalid();
@@ -144,9 +152,11 @@ namespace WinTestKit.Inspector.Agent.Query
                     else Add(chars, first);
                 }
                 if (!any || pos >= source.Length || source[pos++] != ']') throw Invalid();
+                if (negated) result.Append(@"(?:[\uD800-\uDBFF][\uDC00-\uDFFF]|(?![\uD800-\uDFFF])");
                 result.Append(negated ? "[^" : "[");
                 foreach (char ch in chars) result.Append("\\u").Append(((int)ch).ToString("X4", CultureInfo.InvariantCulture));
                 result.Append(']');
+                if (negated) result.Append(')');
             }
             private char ClassChar()
             {
