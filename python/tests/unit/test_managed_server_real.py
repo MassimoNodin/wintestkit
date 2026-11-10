@@ -380,6 +380,7 @@ def test_spy_tree_peerless_and_large_page(tmp_path: Path, monkeypatch: pytest.Mo
                 }
             )
             response = json.loads(output.getvalue())
+            assert "result" in response, response
             suggestion = response["result"]
             assert suggestion["unique"], suggestion
             namespace: dict[str, Any] = {"Element": Element}
@@ -461,6 +462,7 @@ def test_spy_tree_peerless_and_large_page(tmp_path: Path, monkeypatch: pytest.Mo
                     picker._on_hover(target)
                     assert json.loads(output.getvalue())["params"]["node"]["source"] == "wpf"
 
+        win32.raise_window(main_window.native_window_handle)
         for key, expected in (("button", "ParityPointer"), ("click_target", "PeerlessClickTarget")):
             rect = server.nodes[found_nodes[key]].rect
             assert rect is not None

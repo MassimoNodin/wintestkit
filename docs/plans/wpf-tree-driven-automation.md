@@ -523,6 +523,19 @@ P4d picker and highlight; P4e suggested locators with round-trip verification; P
 (tree, toggle, Identity, property groups, blocked state, attach); P4g live round trips, Spy tests
 and docs.
 
+#### Phase 4 results
+
+- `python/tests/unit/test_managed_server_real.py` exercises the fixture tree, peerless
+  selection, picker and popup, large pages, and server suggestion round trips for the named
+  button and peerless targets. `python/tests/unit/test_wpf_suggest.py` covers candidate
+  ordering and verification with a fake agent tree; extension unit and DOM tests cover Spy.
+- Additional live round trips for an `x:Name`-only element, separately scoped duplicates,
+  and a realized virtualized item remain to be implemented. The fixture gate is not yet
+  ready for owner sign-off; the real-suite page checks also remain open.
+- Observed 200-child pages on a 5,000-child parent take about 0.7–1.2 seconds. Saved previews
+  are skipped for peerless elements. System DPI scaling was not exercised; a 150% layout
+  transform was. A real AppLocker or antivirus block was not exercised.
+
 ## 7. Test strategy
 
 - **Parity suite**: run the same locator, wait, action and typed-control tests under
