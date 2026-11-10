@@ -183,8 +183,55 @@ namespace WinTestKit.Inspector.Agent.Mapping.Tests
                     Assert.Equal(7, await executor.ExecuteAsync(other.Dispatcher, () => 7, CancellationToken.None));
                 }
                 finally { unblock.Set(); await finished.Task; }
-                Assert.Equal(ErrorCodes.DispatcherUnavailable,
-                    (await Assert.ThrowsAsync<ProtocolException>(() => executor.ExecuteAsync(ui.Dispatcher, () => 0, CancellationToken.None))).Code);
+                await ui.Dispatcher.InvokeAsync(() => { }).Task;
+                var recoveryDeadline = DateTime.UtcNow.AddSeconds(2);
+                while (true)
+                {
+                    try
+                    {
+                        Assert.Equal(1, await executor.ExecuteAsync(ui.Dispatcher, () => 1, CancellationToken.None));
+                        break;
+                    }
+                    catch (ProtocolException error) when (error.Code == ErrorCodes.DispatcherUnavailable && DateTime.UtcNow < recoveryDeadline)
+                    {
+                        await Task.Delay(10);
+                    }
+                }
+            }
+        }
+
+        [Fact]
+        public async Task CooperativeCancellationDoesNotPermanentlyQuarantineDispatcher()
+        {
+            using (var ui = new DispatcherThread())
+            using (var cancellation = new CancellationTokenSource())
+            {
+                var executor = new DispatcherExecutor();
+                var started = Signal();
+                Task<int> operation = executor.ExecuteAsync(ui.Dispatcher, token =>
+                {
+                    started.SetResult(true);
+                    token.WaitHandle.WaitOne();
+                    token.ThrowIfCancellationRequested();
+                    return 0;
+                }, cancellation.Token);
+                await started.Task;
+                cancellation.Cancel();
+                await Assert.ThrowsAnyAsync<OperationCanceledException>(() => operation);
+                await ui.Dispatcher.InvokeAsync(() => { }).Task;
+                var deadline = DateTime.UtcNow.AddSeconds(2);
+                while (true)
+                {
+                    try
+                    {
+                        Assert.Equal(42, await executor.ExecuteAsync(ui.Dispatcher, () => 42, CancellationToken.None));
+                        break;
+                    }
+                    catch (ProtocolException error) when (error.Code == ErrorCodes.DispatcherUnavailable && DateTime.UtcNow < deadline)
+                    {
+                        await Task.Delay(10);
+                    }
+                }
             }
         }
 
