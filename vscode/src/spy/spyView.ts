@@ -1,5 +1,5 @@
 import { ManagedPanel } from "./managedPanel";
-import { ManagedInspector } from "./managedSession";
+import { isManagedProcessConfirmed, ManagedInspector } from "./managedSession";
 import { randomBytes } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import * as vscode from "vscode";
@@ -9,6 +9,8 @@ import { JsonRpcClient, RpcError } from "../server/jsonrpc";
 import type {
   AppStatusResult,
   DefinitionMatch,
+  InspectChildrenResult,
+  ManagedProcessIdentity,
   InspectCoverageResult,
   InspectDefinitionsResult,
   InspectPropertiesResult,
@@ -60,6 +62,9 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
   private loaded = false;
   private appPids: number[] = [];
   private showOtherApps = true;
+  private tree: "visual" | "logical" = "visual";
+  private treeProcesses = new Map<string, ManagedProcessIdentity>();
+  private treeTokens = new Map<string, string>();
   private revision = 0;
   private scopeRevision = 0;
   private selection = 0;
@@ -96,6 +101,7 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
     private readonly setup?: SetupMonitor,
     private readonly memory?: vscode.Memento,
   ) {
+    this.tree = this.memory?.get<string>("wintestkit.spy.tree") === "logical" ? "logical" : "visual";
     this.subscriptions = [
       ...(setup ? [setup.onDidChange(() => this.syncTour())] : []),
       // Keep the tree when the panel tab is hidden: a recreated webview would reload everything.
@@ -434,6 +440,7 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
       hasProject: !!this.currentProject(),
       showOtherApps: this.showOtherApps,
       bringToFront: this.bringToFront(),
+      tree: this.tree,
       shownProperties: this.shownProperties(),
     });
     void vscode.commands.executeCommand(
@@ -991,10 +998,45 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
       data.errors.map((entry) => String(entry.index) + ": " + String(entry.message)).join("; ") });
     return data.nodes;
   }
+  private async childrenPage(client: JsonRpcClient, nodeId: string, pageToken?: string, autoAttach = true): Promise<InspectChildrenResult> {
+    let result = await client.request<InspectChildrenResult>("inspect.children", { nodeId, tree: this.tree, ...(pageToken ? { pageToken } : {}) });
+    if (!Array.isArray(result) && "attachRequired" in result) {
+      this.treeProcesses.set(nodeId, result.process);
+      if (autoAttach && isManagedProcessConfirmed(result.process) && await this.managedInspector?.attachTree(nodeId, result.process)) {
+        result = await client.request<InspectChildrenResult>("inspect.children", { nodeId, tree: this.tree, ...(pageToken ? { pageToken } : {}) });
+      }
+    }
+    return result;
+  }
+  private async showChildren(client: JsonRpcClient, nodeId: string, pageToken?: string, autoAttach = true): Promise<void> {
+    const revision = this.revision, mode = this.tree;
+    const result = await this.childrenPage(client, nodeId, pageToken, autoAttach);
+    if (client !== this.client || revision !== this.revision || mode !== this.tree) return;
+    const nodes = Array.isArray(result) ? result : "nodes" in result ? result.nodes : [];
+    const nextPageToken = !Array.isArray(result) && "nodes" in result ? result.nextPageToken : undefined;
+    if (nextPageToken) this.treeTokens.set(nodeId, nextPageToken); else this.treeTokens.delete(nodeId);
+    this.post({ type: "children", nodeId, nodes, append: !!pageToken, nextPageToken,
+      attachRequired: !Array.isArray(result) && "attachRequired" in result,
+      blocked: !Array.isArray(result) && "blocked" in result ? result.blocked : undefined });
+    this.trackNodes(client, nodes);
+  }
   private async enumerate(client: JsonRpcClient, method: string, params?: { nodeId?: string; includeOtherApps?: boolean; foregroundForProcessId?: number }): Promise<NodeInfo[]> {
     const revision = this.revision;
     try {
-      return await (params ? client.request<NodeInfo[]>(method, params) : client.request<NodeInfo[]>(method));
+      if (method !== "inspect.children" || !params?.nodeId) return await (params ? client.request<NodeInfo[]>(method, params) : client.request<NodeInfo[]>(method));
+      const nodes: NodeInfo[] = [];
+      let token: string | undefined;
+      do {
+        const result = await this.childrenPage(client, params.nodeId, token);
+        if (Array.isArray(result)) return [...nodes, ...result];
+        if (!("nodes" in result)) {
+          this.post({ type: "children", nodeId: params.nodeId, nodes: [], expanded: true, attachRequired: "attachRequired" in result, blocked: "blocked" in result ? result.blocked : undefined });
+          throw new Error("WPF tree is not available");
+        }
+        nodes.push(...result.nodes);
+        token = result.nextPageToken;
+      } while (token);
+      return nodes;
     } catch (error) {
       const nodes = this.partialNodes(error, params?.nodeId, !this.disposed && client === this.client && revision === this.revision);
       if (nodes) return nodes;
@@ -1082,6 +1124,30 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
       this.invalidateScope();
       return this.refresh();
     }
+    if (message.type === "treeMode") {
+      if (message.tree === this.tree) return;
+      this.tree = message.tree;
+      this.treeTokens.clear();
+      this.treeProcesses.clear();
+      await this.memory?.update("wintestkit.spy.tree", this.tree);
+      this.state();
+      this.post({ type: "treeModeChanged" });
+      return;
+    }
+    if (message.type === "treeAttach" || message.type === "treeMore") {
+      const client = this.client;
+      if (!client) return;
+      if (message.type === "treeAttach") {
+        const process = this.treeProcesses.get(message.nodeId);
+        if (process) {
+          await this.managedInspector?.attachTree(message.nodeId, process);
+          await this.showChildren(client, message.nodeId, undefined, false);
+        }
+      } else if (this.treeTokens.get(message.nodeId) === message.pageToken) {
+        await this.showChildren(client, message.nodeId, message.pageToken);
+      }
+      return;
+    }
     if (message.type === "bringToFront") {
       await vscode.workspace
         .getConfiguration("wintestkit.spy")
@@ -1167,19 +1233,7 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
         )
           return;
         if (message.type === "expand") {
-          const scopeRevision = this.scopeRevision;
-          const treeRevision = this.revision;
-          const nodes = await phase("Reading child controls", () =>
-            this.enumerate(client, "inspect.children", { nodeId }),
-          );
-          if (
-            this.client === client &&
-            scopeRevision === this.scopeRevision &&
-            treeRevision === this.revision
-          ) {
-            this.post({ type: "children", nodeId, nodes });
-            this.trackNodes(client, nodes);
-          }
+          await phase("Reading child controls", () => this.showChildren(client, nodeId));
         } else if (message.type === "highlight") {
           await phase("Highlighting control", () =>
             client.request("inspect.highlight", {

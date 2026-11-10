@@ -71,6 +71,13 @@ not stop them. Restart the target to unload the agent. Compatibility and release
 
 ### Spy object browser
 
+The Spy displays the WPF visual tree for WPF windows and UI Automation for other windows. Use
+**WPF tree** to switch between visual and logical trees; the choice is remembered per workspace.
+WPF nodes show their type and `x:Name` (or AutomationId), with WPF/UIA source badges. Large trees
+load in pages via **Load more**. When required, select **Attach** and confirm instrumentation; the
+confirmation is remembered for that process run. A blocked inspector shows its error and guidance;
+run `wtk doctor --agent` for diagnostics rather than falling back to UI Automation.
+
 The Spy uses control-type icons, chevrons and dotted branch guides to make the live
 hierarchy easier to navigate. A wide view places the object tree beside the inspector;
 a narrow view stacks them vertically. Drag the divider, or focus it and use the

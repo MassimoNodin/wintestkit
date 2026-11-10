@@ -25,6 +25,9 @@ export type ManagedRequest =
 
 export type SpyRequest =
   | ManagedRequest
+  | { type: "treeMode"; tree: "visual" | "logical" }
+  | { type: "treeAttach"; nodeId: string }
+  | { type: "treeMore"; nodeId: string; pageToken: string }
   | { type: "tour"; action: (typeof SPY_TOUR_ACTIONS)[number] }
   | {
       type: "pick" | "stopPick" | "refresh" | "addToPage" | "chooseApp";
@@ -49,6 +52,7 @@ export type SpyRequest =
   | { type: "openPreview"; view: "element" | "window"; dataUrl: string }
   | { type: "openDefinition"; id: string };
 export type SpyResponse =
+  | { type: "treeModeChanged" }
   | { type: "objectPreview"; nodeId: string; preview?: PreviewImages; reason?: string }
   | { type: "selectionRestored"; nodeId: string }
   | { type: "enumerationIncomplete"; message: string; nodeId?: string }
@@ -78,11 +82,12 @@ export type SpyResponse =
       hasProject: boolean;
       showOtherApps: boolean;
       bringToFront: boolean;
+      tree?: "visual" | "logical";
       /** Properties the user pinned to the default list (a user setting). */
       shownProperties?: string[];
     }
   | { type: "roots"; nodes: NodeInfo[] }
-  | { type: "children"; nodeId: string; nodes: NodeInfo[]; expanded?: boolean }
+  | { type: "children"; nodeId: string; nodes: NodeInfo[]; expanded?: boolean; append?: boolean; nextPageToken?: string; attachRequired?: boolean; blocked?: { code: string; hint: string } }
   | {
       type: "selected";
       nodeId: string;
@@ -126,6 +131,11 @@ export type SpyResponse =
 export function parseSpyRequest(value: unknown): SpyRequest | undefined {
   if (!value || typeof value !== "object") return;
   const message = value as Record<string, unknown>;
+  if (message.type === "treeMode" && (message.tree === "visual" || message.tree === "logical")) return { type: "treeMode", tree: message.tree };
+  if ((message.type === "treeAttach" || message.type === "treeMore") && typeof message.nodeId === "string" && message.nodeId.length > 0 && message.nodeId.length <= 512) {
+    if (message.type === "treeAttach") return { type: "treeAttach", nodeId: message.nodeId };
+    if (typeof message.pageToken === "string" && message.pageToken.length > 0 && message.pageToken.length <= 128) return { type: "treeMore", nodeId: message.nodeId, pageToken: message.pageToken };
+  }
   if (typeof message.type === "string" && message.type.startsWith("managed")) return parseManagedRequest(message);
   if (message.type === "tour")
     return SPY_TOUR_ACTIONS.includes(message.action as (typeof SPY_TOUR_ACTIONS)[number])

@@ -508,6 +508,11 @@ ul {
 .control-icon[data-kind="action"] {
     color: var(--vscode-symbolIcon-methodForeground, #9a78bd);
 }
+.tree-mode-label { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.tree-mode-label select { color: var(--vscode-foreground); background: var(--vscode-dropdown-background); border: 1px solid var(--vscode-dropdown-border); }
+.source-badge { font-size: 10px; color: var(--vscode-descriptionForeground); border: 1px solid var(--vscode-panel-border); border-radius: 3px; padding: 0 3px; margin-inline: 4px; }
+.tree-message { padding: 4px 8px 4px 24px; color: var(--vscode-descriptionForeground); }
+.tree-message button { margin-left: 8px; }
 .metadata {
     padding-right: 10px;
     color: var(--muted);

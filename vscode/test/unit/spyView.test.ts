@@ -147,6 +147,41 @@ describe("Spy view bridge", () => {
     mocks.projectListeners.splice(0);
     mocks.previews.mockReset().mockResolvedValue(undefined);
   });
+  it("uses and persists the WPF tree mode and handles paged, UIA, and blocked responses", async () => {
+    const update = vi.fn(async () => {});
+    const memory = { get: () => undefined, update };
+    const first = { nodeId: "a", info: { controlType: "Button", name: "A" }, hasChildren: false, source: "wpf", identity: { type: "Demo.Button", xName: "A" } };
+    const second = { ...first, nodeId: "b" };
+    mocks.request.mockImplementation(async (method: string, params?: { nodeId?: string; pageToken?: string }) => {
+      if (method === "inspect.children") {
+        if (params?.nodeId === "blocked") return { blocked: { code: "policy", hint: "Enable it" } };
+        if (params?.nodeId === "attach") return { attachRequired: true, process: { pid: 42, creationTimeUtc: "start" } };
+        if (params?.nodeId === "uia") return [first];
+        return params?.pageToken ? { nodes: [second] } : { nodes: [first], nextPageToken: "next" };
+      }
+      if (method === "inspect.refresh") return { nodes: [], status: { running: false } };
+      return {};
+    });
+    const fixture = await create(undefined, undefined, memory);
+    await fixture.provider.refresh();
+    fixture.receive({ type: "expand", nodeId: "wpf" });
+    await vi.waitFor(() => expect(fixture.sent).toContainEqual(expect.objectContaining({ type: "children", nodeId: "wpf", nextPageToken: "next", nodes: [first] })));
+    fixture.receive({ type: "treeMore", nodeId: "wpf", pageToken: "next" });
+    await vi.waitFor(() => expect(fixture.sent).toContainEqual(expect.objectContaining({ type: "children", nodeId: "wpf", append: true, nodes: [second], nextPageToken: undefined })));
+    fixture.receive({ type: "expand", nodeId: "uia" });
+    fixture.receive({ type: "expand", nodeId: "blocked" });
+    fixture.receive({ type: "expand", nodeId: "attach" });
+    await vi.waitFor(() => expect(fixture.sent).toContainEqual(expect.objectContaining({ type: "children", nodeId: "attach", attachRequired: true })));
+    await vi.waitFor(() => expect(fixture.sent).toContainEqual(expect.objectContaining({ type: "children", nodeId: "blocked", blocked: { code: "policy", hint: "Enable it" } })));
+    await vi.waitFor(() => expect(fixture.sent).toContainEqual(expect.objectContaining({ type: "children", nodeId: "uia", nodes: [first] })));
+    fixture.receive({ type: "treeMode", tree: "logical" });
+    await vi.waitFor(() => expect(update).toHaveBeenCalledWith("wintestkit.spy.tree", "logical"));
+    expect(fixture.sent).toContainEqual({ type: "treeModeChanged" });
+    fixture.receive({ type: "expand", nodeId: "wpf" });
+    await vi.waitFor(() => expect(mocks.request).toHaveBeenCalledWith("inspect.children", { nodeId: "wpf", tree: "logical" }));
+    expect(mocks.request).toHaveBeenCalledWith("inspect.children", { nodeId: "wpf", tree: "visual", pageToken: "next" });
+    fixture.provider.dispose();
+  });
   const latestSession = (): string | undefined => {
     const call = [...mocks.request.mock.calls].reverse().find((entry) => entry[0] === "spy.start");
     return (call?.[1] as { sessionId?: string } | undefined)?.sessionId;
@@ -2139,7 +2174,7 @@ describe("Spy view bridge", () => {
     fixture.receive({ type: "expand", nodeId: "root" });
     await vi.waitFor(() =>
       expect(mocks.request).toHaveBeenCalledWith("inspect.children", {
-        nodeId: "root",
+        nodeId: "root", tree: "visual",
       }),
     );
     fixture.receive({ type: "pick" });
