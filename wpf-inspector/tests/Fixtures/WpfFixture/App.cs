@@ -179,6 +179,15 @@ public sealed class PeerlessClickTarget : FrameworkElement
     protected override AutomationPeer? OnCreateAutomationPeer() => null;
     protected override void OnRender(System.Windows.Media.DrawingContext dc) { dc.DrawRectangle(System.Windows.Media.Brushes.LightBlue, null, new Rect(RenderSize)); }
 }
+public sealed class NameOnlyButton : Button
+{
+    protected override AutomationPeer OnCreateAutomationPeer() => new NameOnlyPeer(this);
+}
+public sealed class NameOnlyPeer : ButtonAutomationPeer
+{
+    public NameOnlyPeer(Button owner) : base(owner) { }
+    protected override string GetAutomationIdCore() => string.Empty;
+}
 public sealed class PeerlessMarker : FrameworkElement { public string Marker => "peerless"; }
 public sealed class PeerControl : Button { protected override AutomationPeer OnCreateAutomationPeer() => new FixturePeer(this); }
 public sealed class GuardedControl : Button
@@ -305,6 +314,10 @@ public sealed class MainWindow : Window
         var text = Id(new TextBlock(), "ContentElement"); text.Inlines.Add(new Hyperlink(new Run("Hyperlink"))); panel.Children.Add(text);
         panel.Children.Add(Id(new ChildHost { Width = 100, Height = 25 }, "NativeHost"));
         panel.Children.Add(Id(new RichTextBox { Height = 80, Document = new FlowDocument(new Paragraph(new Run("Flow document fixture"))) }, "RichText"));
+        panel.Children.Add(new NameOnlyButton { Name = "OnlyXName", Content = "Name-only target" });
+        var suggestionLeft = Id(new GroupBox { Content = new Button { Content = "Scoped suggestion" } }, "SuggestionLeft");
+        var suggestionRight = Id(new GroupBox { Content = new Button { Content = "Scoped suggestion" } }, "SuggestionRight");
+        panel.Children.Add(suggestionLeft); panel.Children.Add(suggestionRight);
     }
     private static T Id<T>(T control, string id) where T : DependencyObject { AutomationProperties.SetAutomationId(control, id); return control; }
     public void Scenario(string name, int value)

@@ -361,14 +361,63 @@ def test_spy_tree_peerless_and_large_page(tmp_path: Path, monkeypatch: pytest.Mo
                     break
             assert found, f"peerless element missing from {tree} tree"
         assert "button" in found_nodes
+        queue = [main_window.runtime_id]
+        containers: dict[str, str] = {}
+        while queue and len(containers) < 4:
+            for child in children(queue.pop(0), "logical")["nodes"]:
+                identity = child["identity"]
+                if identity.get("xName") == "OnlyXName":
+                    assert not identity.get("automationId")
+                    found_nodes["x_name"] = child["nodeId"]
+                    containers["x_name"] = child["nodeId"]
+                if identity.get("automationId") in (
+                    "SuggestionLeft",
+                    "SuggestionRight",
+                    "ParityList",
+                ):
+                    containers[identity["automationId"]] = child["nodeId"]
+                if child["hasChildren"]:
+                    queue.append(child["nodeId"])
+        assert len(containers) == 4, containers
+        for container in ("SuggestionLeft", "SuggestionRight"):
+            scoped_children = children(containers[container], "logical")["nodes"]
+            found_nodes[container] = next(
+                child["nodeId"]
+                for child in scoped_children
+                if child["identity"]["type"] == "System.Windows.Controls.Button"
+            )
+        queue = [containers["ParityList"]]
+        virtualizing_panel = False
+        while queue and "virtual_item" not in found_nodes:
+            for child in children(queue.pop(0), "visual")["nodes"]:
+                if child["identity"]["type"] == "System.Windows.Controls.VirtualizingStackPanel":
+                    virtualizing_panel = True
+                if child["identity"]["type"] == "System.Windows.Controls.ListBoxItem":
+                    found_nodes["virtual_item"] = child["nodeId"]
+                    break
+                if child["hasChildren"]:
+                    queue.append(child["nodeId"])
+        assert "virtual_item" in found_nodes, "ListBox item was not realized"
+        assert virtualizing_panel, "ListBox item was not found in a virtualizing panel"
         # These RPC suggestions must also survive the public declaration syntax and resolver.
         from wintestkit.app import App
+        from wintestkit.engine.locator import Locator
         from wintestkit.engine.resolve import Scope, resolve
+        from wintestkit.engine.wpf_resolve import query, route
         from wintestkit.model import Element
 
         app = App.attach(pid=target.pid)
         server.app = app
-        for node_id in found_nodes.values():
+        with runtime.config_scope(server.cfg):
+            root = route(main_window, force=True)
+            duplicates = query(
+                root,
+                Locator(
+                    name="Scoped suggestion", where=(("type:Is", "System.Windows.Controls.Button"),)
+                ),
+            )
+            assert duplicates.complete and len(duplicates) == 2
+        for kind, node_id in found_nodes.items():
             output.seek(0)
             output.truncate()
             server.handle(
@@ -383,6 +432,10 @@ def test_spy_tree_peerless_and_large_page(tmp_path: Path, monkeypatch: pytest.Mo
             assert "result" in response, response
             suggestion = response["result"]
             assert suggestion["unique"], suggestion
+            if kind in ("SuggestionLeft", "SuggestionRight"):
+                assert suggestion["strategy"] == "within", suggestion
+            if kind == "x_name":
+                assert suggestion["strategy"] == "x_name", suggestion
             namespace: dict[str, Any] = {"Element": Element}
             for helper in suggestion["helpers"]:
                 namespace[helper["attributeName"]] = eval(helper["code"], namespace)
@@ -393,7 +446,8 @@ def test_spy_tree_peerless_and_large_page(tmp_path: Path, monkeypatch: pytest.Mo
             with runtime.config_scope(server.cfg):
                 resolved = resolve(Scope(app, window), declaration.locator())
             assert resolved.same_as(server.nodes[node_id])
-        for kind, node_id in found_nodes.items():
+        for kind in ("peerless", "click_target", "button"):
+            node_id = found_nodes[kind]
             output.seek(0)
             output.truncate()
             server.handle(

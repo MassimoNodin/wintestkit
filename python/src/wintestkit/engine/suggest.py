@@ -287,7 +287,14 @@ def _wpf_candidates(element: WpfElement) -> list[tuple[str, Locator]]:
         )
         value = values[0].value
         if value.status == "ok" and isinstance(value.scalar, str) and _usable_name(value.scalar):
-            candidates.append(("x_name", Locator(where=(("clr:Name", value.scalar),))))
+            candidates.append(
+                (
+                    "x_name",
+                    Locator(
+                        where=(("type:Is", element.ref.type.full_name), ("clr:Name", value.scalar))
+                    ),
+                )
+            )
     except WtkError:
         pass
     candidates.append(
