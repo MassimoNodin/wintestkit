@@ -1,15 +1,25 @@
 """Translate TestComplete property lists into WinTestKit locators.
 
-This module provides property conversion only; it does not perform a search.
+The search helpers use the same lazy locators as page objects.
 """
 
 from __future__ import annotations
 
 import re
 from collections.abc import Sequence
+from dataclasses import replace
 from typing import Any, cast
 
+from wintestkit import model
 from wintestkit.engine.locator import Locator
+from wintestkit.engine.resolve import Scope, resolve_all
+from wintestkit.model import (
+    BoundControl,
+    BoundElement,
+    BoundElements,
+    Elements,
+    PageObject,
+)
 
 # TestComplete property (lowercase) -> locator field or qualified where key.
 PROPERTY_MAP = {
@@ -93,3 +103,99 @@ def to_locator(props: str | Sequence[str], values: Any, *, depth: int | None = N
         else:
             fields[target] = value
     return Locator(**fields, where=tuple(where.items()))
+
+
+def _search(parent: BoundControl | PageObject | Scope, locator: Locator) -> BoundElements:
+    if isinstance(parent, BoundControl):
+        page = parent.page
+        root = parent.locator
+    elif isinstance(parent, PageObject):
+        page = parent
+        definition = cast(Any, parent)._effective_root()
+        root = (
+            cast(Any, model)._element_locator(parent, definition)
+            if definition is not None
+            else None
+        )
+    else:
+        page = PageObject(parent.app)
+        root = None
+        locator = replace(locator, window=parent.window)
+    if root is not None:
+        locator = replace(locator, within=replace(root, window=None), window=root.window)
+    definition = Elements(automation_id="__testcomplete_search__")
+    return BoundElements(page, definition, locator)
+
+
+def find_child(
+    parent: BoundControl | PageObject | Scope,
+    props: str | Sequence[str],
+    values: Any,
+    depth: int | None = 1,
+    *,
+    strict: bool = False,
+) -> BoundElement:
+    """Find a descendant lazily; depth 1 means direct children, None unlimited.
+
+    By default the first match in tree order wins; strict requires one match.
+    An explicit WPFControlOrdinalNo takes precedence over the default first match.
+    """
+    locator = to_locator(props, values, depth=depth)
+    result = _search(parent, locator)
+    if not strict and locator.index is None:
+        locator = locator.with_index(0)
+    return BoundElement(
+        result.page, result.definition, replace(result.locator, index=locator.index)
+    )
+
+
+def find_all_children(
+    parent: BoundControl | PageObject | Scope,
+    props: str | Sequence[str],
+    values: Any,
+    depth: int | None = 1,
+) -> list[BoundElement]:
+    """Snapshot matching descendants as indexed, re-resolving bound elements.
+
+    Changes in tree order after this call can change what an index identifies.
+    """
+    result = _search(parent, to_locator(props, values, depth=depth))
+    return [result.nth(index) for index in range(len(result.resolve_all()))]
+
+
+class _FindElement(BoundElement):
+    def __init__(self, parent: BoundControl, descendant: BoundElement, locator: Locator) -> None:
+        super().__init__(descendant.page, descendant.definition, descendant.locator)
+        self.parent = parent
+        self.match_locator = locator
+
+    def resolve_once(self) -> Any:
+        target = self.parent.resolve_once()
+        locator = replace(
+            self.match_locator, depth=None, index=None, window=self.parent.locator.window
+        )
+        candidates = resolve_all(cast(Any, model)._scope(self.parent.page), locator)
+        if any(cast(Any, target).same_as(candidate) for candidate in candidates):
+            return target
+        return super().resolve_once()
+
+
+def find(
+    parent: BoundControl | PageObject | Scope,
+    props: str | Sequence[str],
+    values: Any,
+    depth: int | None = 1,
+) -> BoundElement:
+    """Find the parent or its descendants, defaulting to TestComplete's depth 1.
+
+    A bound parent is included. A Page or Scope without an element root starts at
+    its window; the window itself cannot be included by the descendant resolver.
+    """
+    child = find_child(parent, props, values, depth)
+    if isinstance(parent, PageObject):
+        root = cast(Any, parent)._effective_root()
+        if root is not None:
+            parent = BoundElement(parent, root, cast(Any, model)._element_locator(parent, root))
+    if isinstance(parent, BoundControl):
+        return _FindElement(parent, child, to_locator(props, values, depth=depth))
+    return child

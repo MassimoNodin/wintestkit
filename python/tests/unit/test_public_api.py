@@ -45,6 +45,9 @@ EXPECTED = {
     "__version__",
     "errors",
     "expect",
+    "find",
+    "find_all_children",
+    "find_child",
     "load_config",
 }
 

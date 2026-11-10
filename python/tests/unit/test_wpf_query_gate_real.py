@@ -1586,3 +1586,28 @@ def test_ensure_visible_virtual_items_cached(owned, backend, mode):
         target = offscreen[0]
         ensure_visible(target)
         assert not target.as_live().is_offscreen
+
+
+@pytest.mark.parametrize("backend", ["uia", "auto"])
+def test_testcomplete_find_helpers(owned, backend):
+    from wintestkit.expect import expect
+    from wintestkit.model import Element, Page
+    from wintestkit.testcomplete import find_all_children, find_child
+
+    scope, path = owned
+
+    class FixturePage(Page):
+        effect = Element(automation_id="ActionEffect")
+
+    page = FixturePage(scope.app)
+    with runtime.config_scope(replace(config(path, "agent"), backend=backend)):
+        resolve(scope, Locator(automation_id="FancyAutomationId"))
+        assert find_child(page, "WPFControlName", "FancyAutomationId", 20).exists(timeout=5)
+        assert find_child(
+            page, ["WPFControlName", "ClrFullClassName"], ["FancyAutomationId", "*Button"], 20
+        ).exists(timeout=5)
+        assert not find_child(page, "WPFControlName", "NestedButton", 1).exists(timeout=5)
+        assert find_child(page, "WPFControlName", "NestedButton", 20).exists(timeout=5)
+        assert len(find_all_children(page, "WPFControlName", "Duplicate", 20)) == 2
+        find_child(page, "WPFControlName", "FancyAutomationId", 20).click()
+        expect(page.effect, timeout=5).to_have_text("Clicked 1")

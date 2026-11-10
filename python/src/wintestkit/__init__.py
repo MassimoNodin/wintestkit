@@ -44,6 +44,9 @@ if TYPE_CHECKING:
     from wintestkit.model import Page as Page
     from wintestkit.model import PageObject as PageObject
     from wintestkit.model import Window as Window
+    from wintestkit.testcomplete import find as find
+    from wintestkit.testcomplete import find_all_children as find_all_children
+    from wintestkit.testcomplete import find_child as find_child
 
 __all__ = [
     "App",
@@ -82,6 +85,9 @@ __all__ = [
     "__version__",
     "errors",
     "expect",
+    "find",
+    "find_all_children",
+    "find_child",
     "load_config",
 ]
 
@@ -122,6 +128,9 @@ _LAZY: dict[str, tuple[str, str]] = {
     "Window": ("wintestkit.model", "Window"),
     "WtkConfig": ("wintestkit.config", "WtkConfig"),
     "expect": ("wintestkit.expect", "expect"),
+    "find": ("wintestkit.testcomplete", "find"),
+    "find_all_children": ("wintestkit.testcomplete", "find_all_children"),
+    "find_child": ("wintestkit.testcomplete", "find_child"),
     "load_config": ("wintestkit.config", "load_config"),
 }
 

@@ -103,3 +103,46 @@ def test_unicode_wildcard_strict_end():
     assert locator.name.search("café!")
     assert not locator.name.search("café!\n")
     assert translate(locator, (), None).predicates[0].pattern == r"^café.\z"
+
+
+@pytest.fixture
+def helper_tree(monkeypatch):
+    from fakes import FakeApp, FakeElement
+
+    from wintestkit import runtime
+    from wintestkit.engine import query
+    from wintestkit.model import Element, Page
+
+    monkeypatch.setenv("WTK_BACKEND", "uia")
+    runtime.reset()
+    monkeypatch.setattr(query, "make_condition", lambda **props: props)
+    first = FakeElement("Button", "First", automation_id="Match1", class_name="Button")
+    second = FakeElement("Button", "Second", automation_id="Match2", class_name="Button")
+    group = FakeElement("Group", "Group", automation_id="Group", children=[first, second])
+    app = FakeApp([FakeElement("Window", "Demo", children=[group])])
+
+    class TestPage(Page):
+        container = Element(automation_id="Group")
+
+    yield TestPage(app), group, first, second
+    runtime.reset()
+
+
+def test_find_helpers_lazy_depth_and_order(helper_tree):
+    from wintestkit.errors import AmbiguousElementError, ElementNotFoundError
+    from wintestkit.testcomplete import find, find_all_children, find_child
+
+    page, group, first, second = helper_tree
+    assert find_child(page.container, "WPFControlName", "Match*", 1).resolve_once() is first
+    assert [
+        item.resolve_once() for item in find_all_children(page.container, "ClrClassName", "Button")
+    ] == [first, second]
+    missing = find_child(page, "WPFControlName", "Match1", 1)
+    assert not missing.exists()
+    with pytest.raises(ElementNotFoundError, match="out of range"):
+        missing.resolve_once()
+    assert find_child(page, "WPFControlName", "Match1", 2).resolve_once() is first
+    with pytest.raises(AmbiguousElementError):
+        find_child(page.container, "ClrClassName", "Button", strict=True).resolve_once()
+    assert find(page.container, "WPFControlName", "Group").resolve_once() is group
+    assert find(page.container, "WPFControlName", "Match2").resolve_once() is second
