@@ -526,12 +526,19 @@ and docs.
 #### Phase 4 results
 
 - `python/tests/unit/test_managed_server_real.py` exercises the fixture tree, peerless
-  selection, picker and popup, large pages, and server suggestion round trips for the named
-  button and peerless targets. `python/tests/unit/test_wpf_suggest.py` covers candidate
-  ordering and verification with a fake agent tree; extension unit and DOM tests cover Spy.
-- Additional live round trips for an `x:Name`-only element, separately scoped duplicates,
-  and a realized virtualized item remain to be implemented. The fixture gate is not yet
-  ready for owner sign-off; the real-suite page checks also remain open.
+  selection, picker and popup, and large pages. Server suggestions round-trip for the
+  AutomationId button, both peerless targets, the no-AutomationId `x:Name` target, each
+  of the two same-name buttons via a scoped locator, and a realized ListBox item in a
+  `VirtualizingStackPanel`. The duplicate query returns two matches; unit coverage checks
+  that an unresolved ambiguous candidate is not reported unique. `test_wpf_suggest.py`
+  also covers candidate ordering and verification with a fake agent tree.
+- All fixture round trips passed; the full owned live suite passed twice (120 tests each).
+  The fixture part of the gate is ready for the owner's sign-off. The real-suite page
+  checks remain open.
+- On pre-phase-4 commit `3dfe44b`, the extension integration suite had 6 passing and 3
+  failing: Calculator discovery and configuration editor timed out after 60 seconds,
+  and delayed-report preview failed `the report opened once it was written`. The
+  Calculator and delayed-report failures therefore reproduce before phase 4.
 - Observed 200-child pages on a 5,000-child parent take about 0.7–1.2 seconds. Saved previews
   are skipped for peerless elements. System DPI scaling was not exercised; a 150% layout
   transform was. A real AppLocker or antivirus block was not exercised.

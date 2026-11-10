@@ -32,7 +32,7 @@ def test_wpf_candidates_and_rendering() -> None:
     )
     candidates = suggest._wpf_candidates(node)
     assert [strategy for strategy, _ in candidates] == ["automation_id", "x_name", "type_name"]
-    assert candidates[1][1].where == (("clr:Name", "SaveName"),)
+    assert candidates[1][1].where == (("type:Is", "Demo.Button"), ("clr:Name", "SaveName"))
     assert candidates[2][1].where == (("type:Is", "Demo.Button"),)
     for _, locator in candidates:
         assert eval(suggest.render_element_code(locator), {"Element": Locator}) == locator
@@ -94,6 +94,8 @@ def test_wpf_selection(monkeypatch: pytest.MonkeyPatch, mode: str, expected: str
     result = suggest.suggest_locator(target, app, ancestors=(parent,) if mode == "scoped" else ())
     assert result.strategy == expected
     assert result.unique is (mode != "mismatch")
+    if mode == "mismatch":
+        assert result.match_count == 2
     if result.helpers:
         helper = result.helpers[-1]
         assert eval(result.code, {"Element": Locator, helper[0]: helper[2]}) == result.locator
