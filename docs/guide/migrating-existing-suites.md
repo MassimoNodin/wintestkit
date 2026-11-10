@@ -41,16 +41,22 @@ pytest instead of a proprietary IDE and project format.
 
 ## NameMapping importer
 
-Run `wtk import-namemapping NameMapping.xml pages/imported.py`. The command generates a flat,
-editable `Page` skeleton. It does not migrate aliases, parent-chain behavior, actions, or tests.
-Existing output is preserved; pass `--force` to replace it explicitly.
+Run `wtk import-namemapping NameMapping.xml pages/imported.py`. The command generates an editable
+`Page` skeleton, preserving mapped parent relationships with `within=`. Direct searches use
+`depth=1`; extended searches use the default descendant depth. It assumes children are nested
+`Item`, `Node`, or `MappedObject` elements (possibly inside containers), and accepts the
+unverified flag forms `extendedFind="True"` on the object or an `ExtendedFind` property.
+It does not migrate actions or tests. Existing output is preserved; pass `--force` to replace it.
 
 `WPFControlName` becomes `automation_id` (verify that it is exposed as UIA AutomationId in Spy).
 `ClrFullClassName` is retained as `where={"ClrFullClassName": ...}`. Configure
 the managed alias described below when the inspector is enabled, or use
 `property_aliases: {ClrFullClassName: ItemStatus}` only if the application exposes the full
-name through UIA ItemStatus. The importer does not read CLR properties by itself. Review and
-validate every generated locator against the live app before using it.
+name through UIA ItemStatus. Other properties use the same mapping as `to_locator`: text, short class name, ordinal, visible,
+and enabled become corresponding locator fields or managed conditions; unknown valid names become
+`clr:` paths. `*` and `?` become compiled whole-value patterns. Unmappable properties appear as
+`# TODO` comments; an unmappable parent and its descendants require manual reconstruction.
+Review and validate every generated locator against the live app before using it.
 
 ## Managed class names (preview)
 
