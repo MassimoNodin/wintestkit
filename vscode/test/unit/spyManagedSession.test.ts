@@ -47,6 +47,26 @@ describe("managed Spy host", () => {
     expect(mock.warning).toHaveBeenCalledTimes(2);
     expect(request).toHaveBeenCalledWith("inspect.managed.attach", { process });
   });
+  it("reuses a tree session for WPF selection without attaching again", async () => {
+    const process = { pid: 88900, creationTimeUtc: "run" };
+    const request = vi.fn(async (method: string) => method.endsWith("identify") ? { ...facts, process } : method.endsWith("attach") ? { ...session, process } : { status: "exact", object: { objectId: "wpf", generation: 1 } });
+    const inspector = new ManagedInspector({ request } as unknown as JsonRpcClient, initialized(true));
+    mock.trusted = true; mock.warning.mockReset().mockResolvedValue("Attach");
+    expect(await inspector.attachTree("window", process)).toBe(true);
+    await inspector.select("wpf"); expect(await inspector.resolve("wpf")).toMatchObject({ status: "exact" });
+    await inspector.attach(); await inspector.attachTree("window", process);
+    expect(request.mock.calls.filter(([method]) => method.endsWith("attach"))).toHaveLength(1);
+    expect(mock.warning).toHaveBeenCalledTimes(1);
+  });
+  it("adopts an existing server session for a WPF node", async () => {
+    const process = { pid: 88901, creationTimeUtc: "run" };
+    const request = vi.fn(async (method: string) => method.endsWith("identify") ? { ...facts, process } : method.endsWith("status") ? { ...session, process } : { status: "exact" });
+    const inspector = new ManagedInspector({ request } as unknown as JsonRpcClient, initialized(true));
+    mock.warning.mockClear(); await inspector.select("wpf"); await inspector.reuseTreeSession("wpf");
+    expect(inspector.sessionInfo?.sessionId).toBe("s"); expect(await inspector.resolve("wpf")).toMatchObject({ status: "exact" });
+    expect(request.mock.calls.some(([method]) => method.endsWith("attach"))).toBe(false);
+    expect(mock.warning).not.toHaveBeenCalled();
+  });
   it("releases selection handles and discards a late response", async () => {
     const { inspector, request } = setup(); mock.trusted = true; mock.warning.mockResolvedValue("Attach"); await inspector.select("n"); await inspector.attach();
     request.mockImplementationOnce(async () => facts).mockImplementationOnce(async () => ({ status: "exact", object: { objectId: "o", generation: 1 } })); await inspector.resolve("n");

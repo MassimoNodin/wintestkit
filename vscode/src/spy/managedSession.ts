@@ -83,6 +83,7 @@ export class ManagedInspector {
     try {
       const facts = await this.client.request<InspectManagedIdentifyResult>("inspect.managed.identify", { nodeId: node });
       if (!this.current(seq, node, oldSession)) return;
+      if (this.session?.state === "ready" && identityKey(this.session.process) === identityKey(facts.process)) { this.state = "ready"; return this.session; }
       if (!await confirmProcess(facts) || !this.current(seq, node, oldSession)) return;
       const session = await this.client.request<InspectManagedAttachResult>("inspect.managed.attach", { process: facts.process });
       if (!this.current(seq, node, oldSession)) { await this.client.request("inspect.managed.detach", { sessionId: session.sessionId }).catch(() => {}); return; }
@@ -93,14 +94,27 @@ export class ManagedInspector {
   }
   async attachTree(nodeId: string, process: { pid: number; creationTimeUtc: string }): Promise<boolean> {
     if (!this.visible || !vscode.workspace.isTrusted) return false;
+    if (this.session?.state === "ready" && identityKey(this.session.process) === identityKey(process)) return true;
     try {
       const facts = await this.client.request<InspectManagedIdentifyResult>("inspect.managed.identify", { nodeId });
       if (identityKey(facts.process) !== identityKey(process)) return false;
       if (!await confirmProcess(facts)) return false;
       const result = await this.client.request<InspectManagedAttachResult>("inspect.managed.attach", { process });
-      if (result.state === "ready") { this.session = result; this.state = "ready"; }
+      if (result.state === "ready") { this.session = { ...result, process: { ...result.process } }; this.state = "ready"; }
       return result.state === "ready";
     } catch { return false; }
+  }
+  async reuseTreeSession(nodeId: string): Promise<void> {
+    if (!this.visible || nodeId !== this.nodeId) return;
+    const sequence = this.sequence, oldSession = this.session?.sessionId;
+    try {
+      const facts = await this.client.request<InspectManagedIdentifyResult>("inspect.managed.identify", { nodeId });
+      if (!this.current(sequence, nodeId, oldSession)) return;
+      if (this.session?.state === "ready" && identityKey(this.session.process) === identityKey(facts.process)) return;
+      const session = await this.client.request<InspectManagedAttachResult>("inspect.managed.status", { process: facts.process });
+      if (!this.current(sequence, nodeId, oldSession)) return;
+      if (session.state === "ready" && identityKey(session.process) === identityKey(facts.process)) { this.session = session; this.state = "ready"; }
+    } catch (error) { if (this.current(sequence, nodeId, oldSession)) this.state = managedErrorState(error); }
   }
   async detach(): Promise<void> {
     const session = this.session; this.invalidate();

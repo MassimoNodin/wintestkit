@@ -60,7 +60,7 @@
       container.append(box); if (row.children) { const children = managedNode("div", ""); children.className = "managed-children"; row.children.forEach((child) => renderRow(child, children, row.id)); if (row.page && !row.page.complete) { children.append(managedNode("p", "Partial list")); if (row.page.nextToken) children.append(managedButton("Load more", () => post("managedLoadMore", { group: row.id }))); } container.append(children); }
     };
     for (const [title, categories] of groups) {
-      const group = document.createElement("details"); group.open = title === "Managed type"; group.append(managedNode("summary", title));
+      const group = document.createElement("details"); group.open = selectedWpf || title === "Managed type"; group.append(managedNode("summary", title));
       if (title === "Managed type") { const type = data.object.type; group.append(managedNode("p", `Full name: ${type.fullName}; assembly: ${type.assemblyName}; base types: ${type.baseTypes.join(", ")}`)); }
       if (title === "Bindings") for (const binding of data.bindings || []) group.append(managedNode("div", `${binding.memberKey}: ${binding.kind}; ${binding.status}; ${binding.path || ""}`));
       else data.rows.filter((row) => categories.includes(row.member.category)).forEach((row) => renderRow(row, group));
@@ -1648,12 +1648,16 @@
       const info = message.properties.info;
       const isWpf = message.properties.source === "wpf";
       selectedWpf = isWpf;
+      const groups = element("property-groups"), managed = element("managed-panel");
+      if (isWpf) groups.insertBefore(managed, element("wpf-uia-group"));
+      else groups.parentElement.insertBefore(managed, groups.nextSibling);
+      renderManaged();
       element("identity-source").textContent = isWpf ? "WPF" : "UIA";
       for (const id of ["uia-state-group", "uia-geometry-group", "uia-automation-group", "pinned-group"]) element(id).hidden = isWpf;
       element("uia-all-group").hidden = isWpf;
-      element("wpf-uia-group").hidden = !isWpf;
+      element("wpf-uia-group").hidden = !isWpf || !message.properties.uiaMapped;
       element("wpf-uia-group").open = false;
-      element("wpf-uia-empty").hidden = !!message.properties.uiaMapped;
+      element("wpf-uia-empty").hidden = !isWpf || !!message.properties.uiaMapped;
       table("wpf-uia-properties", message.properties.uiaMapped ? message.properties.uia?.properties || {} : {});
       element("selection-name").textContent =
         info.name || info.automationId || info.controlType;
