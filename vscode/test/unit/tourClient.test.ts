@@ -8,9 +8,15 @@ class Node {
   className = "";
   dataset: Record<string, string> = {};
   children: Node[] = [];
+  parentElement?: Node;
+  get rows(): Node[] { return this.children; }
+  get cells(): Node[] { return this.children; }
+  get nextSibling(): Node | undefined { const siblings = this.parentElement?.children ?? []; return siblings[siblings.indexOf(this) + 1]; }
+  insertBefore(node: Node, before?: Node) { if (node.parentElement) node.parentElement.children = node.parentElement.children.filter((child) => child !== node); node.parentElement = this; const index = before ? this.children.indexOf(before) : -1; this.children.splice(index < 0 ? this.children.length : index, 0, node); }
   inert = false;
   disabled = false;
   hidden = false;
+  open = false;
   value = "";
   textContent = "";
   src = "";
@@ -44,8 +50,8 @@ class Node {
       this.className = [...names].join(" ");
     },
   };
-  append(...nodes: Node[]) {
-    this.children.push(...nodes);
+  append(...nodes: (Node | string)[]) {
+    for (const node of nodes) if (typeof node !== "string") this.insertBefore(node);
   }
   replaceChildren() {
     this.children = [];
@@ -86,6 +92,7 @@ function client(file: "setup" | "spy", viewport: { width?: number } = {}) {
     return nodes.get(id)!;
   };
   const body = new Node();
+  const scroll = new Node(); scroll.append(element("property-groups"), element("managed-panel")); element("property-groups").append(element("wpf-uia-group"), element("wpf-uia-empty"));
   let receive = (event: { data: unknown }) => {
     void event;
   };
@@ -211,6 +218,26 @@ describe("introduction clients", () => {
       expect(spy.element(id).classList.contains("tutorial-spotlight")).toBe(false);
   });
 
+  it("renders WPF identity and managed groups before a collapsed UIA peer", () => {
+    const fixture = client("spy");
+    const info = { name: "Save", controlType: "Button" };
+    const properties = { source: "wpf", info, properties: { ClrFullClassName: "Demo.Button", "x:Name": "Save", AutomationId: "save", Name: "Save", ControlType: "Button" }, ancestors: [], uiaMapped: true, uia: { properties: { Name: "Peer" } } };
+    fixture.send({ type: "managedPanel", sequence: 1, visible: true, state: "ready", object: { type: { fullName: "Demo.Button", assemblyName: "Demo", baseTypes: [] } }, rows: [] });
+    fixture.send({ type: "selected", nodeId: "wpf", properties });
+    expect(fixture.element("identity-source").textContent).toBe("WPF");
+    expect(fixture.element("properties").children.map((row) => row.cells[0].textContent)).toEqual(["CLR full class name", "x:Name", "Automation ID", "Peer Name", "Control type"]);
+    expect(fixture.element("property-groups").children.indexOf(fixture.element("managed-panel"))).toBeLessThan(fixture.element("property-groups").children.indexOf(fixture.element("wpf-uia-group")));
+    expect(fixture.element("managed-groups").children.every((group) => group.open)).toBe(true);
+    expect(fixture.element("wpf-uia-group").hidden).toBe(false);
+    expect(fixture.element("wpf-uia-group").open).toBe(false);
+    fixture.send({ type: "selected", nodeId: "other", properties: { ...properties, uiaMapped: false } });
+    expect(fixture.element("wpf-uia-group").hidden).toBe(true);
+    expect(fixture.element("wpf-uia-empty").hidden).toBe(false);
+    fixture.send({ type: "selected", nodeId: "uia", properties: { info, properties: {}, ancestors: [] } });
+    expect(fixture.element("identity-source").textContent).toBe("UIA");
+    expect(fixture.element("uia-state-group").hidden).toBe(false);
+    expect(fixture.element("managed-panel").parentElement).toBe(fixture.element("property-groups").parentElement);
+  });
   it("highlights the selection summary and Highlight without lighting Properties", () => {
     const spy = client("spy");
     spy.send({ type: "selected", nodeId: "pane", properties: { info: { name: "VS Code", controlType: "Pane" }, properties: {} } });

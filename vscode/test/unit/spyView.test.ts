@@ -28,7 +28,7 @@ const mocks = vi.hoisted(() => ({
   >,
   showPreview: vi.fn<(view: string, dataUrl: string) => Promise<void>>(() => Promise.resolve()),
   disposeViewer: vi.fn(),
-  warning: vi.fn<(message: string) => Promise<undefined>>(() => Promise.resolve(undefined)),
+  warning: vi.fn<(message: string) => Promise<string | undefined>>(() => Promise.resolve(undefined)),
   shownProperties: [] as unknown,
   providerRegistrations: [] as unknown[][],
   projectListeners: [] as Array<() => void>,
@@ -63,6 +63,7 @@ vi.mock("vscode", () => ({
     ) {}
   },
   workspace: {
+    isTrusted: true,
     getConfiguration: () => ({
       get: (key: string, fallback: boolean) =>
         key === "bringWindowToFront"
@@ -182,6 +183,45 @@ describe("Spy view bridge", () => {
     expect(mocks.request).toHaveBeenCalledWith("inspect.children", { nodeId: "wpf", tree: "visual", pageToken: "next" });
     fixture.provider.dispose();
   });
+  it.each([true, false])("reveals a picked WPF node across pages (found: %s)", async (found) => {
+    const root = { nodeId: "root", hasChildren: true, info: { name: "App", controlType: "Window" } };
+    const picked = { nodeId: "picked", info: { name: "Save", controlType: "Button" }, source: "wpf" };
+    mocks.request.mockImplementation(async (method: string, params?: { pageToken?: string }) => {
+      if (method === "inspect.roots") return [root];
+      if (method === "inspect.properties") return { source: "wpf", info: picked.info, properties: {}, ancestors: [root] };
+      if (method === "inspect.children") return params?.pageToken ? { nodes: found ? [picked] : [] } : { nodes: [], nextPageToken: "page2" };
+      return {};
+    });
+    const fixture = await create(); fixture.receive({ type: "pick" });
+    await vi.waitFor(() => expect(latestSession()).toBeTypeOf("string"));
+    mocks.notifications.get("spy.picked")?.({ sessionId: latestSession(), node: picked });
+    await vi.waitFor(() => expect(fixture.sent).toContainEqual(expect.objectContaining({ type: "selected", nodeId: "picked" })));
+    expect(mocks.request).toHaveBeenCalledWith("inspect.children", { nodeId: "root", tree: "visual", pageToken: "page2" });
+    expect(fixture.sent.some((message) => message.type === "error" && String(message.message).includes("not found"))).toBe(!found);
+    fixture.provider.dispose();
+  });
+  it("attaches on pick once per process run and resumes picking", async () => {
+    const root = { nodeId: "window", hasChildren: true, info: { name: "App", controlType: "Window", processId: 90211 } };
+    let process = { pid: 90211, creationTimeUtc: "first" };
+    mocks.warning.mockResolvedValue("Attach");
+    mocks.request.mockImplementation(async (method: string) => {
+      if (method === "inspect.roots") return [root];
+      if (method === "inspect.managed.identify") return { process, executable: "App.exe", architecture: "x64", wpfLoaded: true };
+      if (method === "inspect.managed.attach") return { sessionId: process.creationTimeUtc, process, state: "ready" };
+      return {};
+    });
+    const fixture = await create(undefined, undefined, undefined, true);
+    fixture.receive({ type: "pick" });
+    for (let index = 0; index < 3; index++) {
+      await vi.waitFor(() => expect(mocks.request.mock.calls.filter(([method]) => method === "spy.start").length).toBe(index + 1));
+      mocks.notifications.get("spy.picked")?.({ sessionId: latestSession(), node: root, attachRequired: true, process });
+      await vi.waitFor(() => expect(mocks.request.mock.calls.filter(([method]) => method === "spy.start").length).toBe(index + 2));
+      if (index === 1) process = { ...process, creationTimeUtc: "second" };
+    }
+    expect(mocks.warning).toHaveBeenCalledTimes(2);
+    expect(mocks.request.mock.calls.filter(([method]) => method === "inspect.managed.attach")).toHaveLength(2);
+    fixture.provider.dispose();
+  });
   it("passes the selected WPF tree mode to the picker", async () => {
     const fixture = await create(undefined, undefined, { get: () => "logical", update: vi.fn() });
     fixture.receive({ type: "pick" });
@@ -207,6 +247,7 @@ describe("Spy view bridge", () => {
     connect?: () => Promise<unknown>,
     setup?: SetupMonitor,
     memory?: unknown,
+    managed = false,
   ) => {
     const project = {
       root: { fsPath: "C:/demo", toString: () => "demo" },
@@ -239,7 +280,7 @@ describe("Spy view bridge", () => {
         },
       } as unknown as Projects,
       {
-        get: connect || (() => Promise.resolve({ client, initialized: { config: { app: { process: "Demo.exe" } } } })),
+        get: connect || (() => Promise.resolve({ client, initialized: { config: { app: { process: "Demo.exe" } }, capabilities: { managedInspector: managed } } })),
         state: () => serverState,
         onDidChange: (callback: (value: typeof project) => void) => {
           serverChanged = () => callback(project);

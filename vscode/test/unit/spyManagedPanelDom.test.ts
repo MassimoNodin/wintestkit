@@ -21,7 +21,7 @@ function setup() {
   const document = { getElementById: element, createElement: (tag: string) => new Node(tag), querySelectorAll: () => element("managed-groups").all().filter((node) => node.className === "managed-check" && node.checked && !node.disabled) };
   const script = readFileSync("media/spy/spy.js", "utf8");
   const start = script.indexOf("  // Managed inspection"); const end = script.indexOf("  let tutorialView;", start);
-  runInNewContext(`const element = document.getElementById; const post = (type, values = {}) => messages.push({ type, ...values });\n` + script.slice(start, end), { document, messages, window: { addEventListener: (_name: string, listener: typeof receive) => { receive = listener; } } });
+  runInNewContext(`let selectedWpf = false; const element = document.getElementById; const post = (type, values = {}) => messages.push({ type, ...values });\n` + script.slice(start, end), { document, messages, window: { addEventListener: (_name: string, listener: typeof receive) => { receive = listener; } } });
   const send = (data: object) => receive({ data: { type: "managedPanel", sequence: 1, visible: true, state: "ready", ...data } });
   return { element, messages, send };
 }

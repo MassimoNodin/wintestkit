@@ -669,16 +669,31 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
               pickedPath = ancestors.length
                 ? [...ancestors.map((ancestor) => segmentOf(ancestor.info)), segmentOf(picked.node.info)]
                 : undefined;
-              for (const ancestor of ancestors) {
+              if (properties.source === "wpf" && !ancestors.length && !roots.some((root) => root.nodeId === picked.node.nodeId)) {
+                this.post({ type: "error", message: "Picked WPF node was not found in the tree." });
+              }
+              for (const [index, ancestor] of ancestors.entries()) {
                 if (!this.sameReveal(client, treeRevision, selection))
                   return false;
                 const nodes = await phase(
                   "Loading " +
                     (ancestor.info.name || ancestor.info.controlType),
-                  () =>
-                    this.enumerate(client, "inspect.children", {
-                      nodeId: ancestor.nodeId,
-                    }),
+                  async () => {
+                    if (properties.source !== "wpf") return this.enumerate(client, "inspect.children", { nodeId: ancestor.nodeId });
+                    const target = ancestors[index + 1]?.nodeId ?? picked.node.nodeId;
+                    const nodes: NodeInfo[] = [];
+                    let token: string | undefined;
+                    for (let page = 0; page < 20; page++) {
+                      const result = await this.childrenPage(client, ancestor.nodeId, token);
+                      if (Array.isArray(result)) { nodes.push(...result); break; }
+                      if (!("nodes" in result)) break;
+                      nodes.push(...result.nodes);
+                      token = result.nextPageToken;
+                      if (nodes.some((node) => node.nodeId === target) || !token) break;
+                    }
+                    if (!nodes.some((node) => node.nodeId === target)) this.post({ type: "error", message: "Picked WPF node was not found in the tree." });
+                    return nodes;
+                  },
                 );
                 if (!this.sameReveal(client, treeRevision, selection))
                   return false;
@@ -693,7 +708,7 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
             return;
           this.suggestion = picked.suggestion;
           this.selectedNodeId = picked.node.nodeId;
-          this.managedPanel?.select(picked.node.nodeId);
+          this.managedPanel?.select(picked.node.nodeId, properties.source === "wpf");
           if (pickedPath) this.rememberSelection(pickedPath);
           this.post({
             type: "picked",
@@ -1305,6 +1320,7 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
             client !== this.client
           )
             return;
+          if (properties.source === "wpf") this.managedPanel?.select(nodeId, true);
           this.post({ type: "selected", nodeId, properties });
           this.loadSelectionDetails(client, nodeId, selection);
         }
