@@ -21,13 +21,19 @@ from wintestkit import Element, Page
 
 
 class ImportedPage(Page):
-    Address = Element(automation_id='Address', where={'ClrFullClassName': 'Acme.AddressBox'})
+    Address = Element(
+        automation_id="Address",
+        where={
+            "ClrFullClassName": "Acme.AddressBox",
+        },
+        depth=1,
+    )
 '''
     assert convert(source) == expected
     managed = expected.replace(
         "ClrFullClassName requires a verified application-specific UIA property alias.",
         "Managed class names require the WPF inspector.",
-    ).replace("'ClrFullClassName'", "'type:FullName'")
+    ).replace('"ClrFullClassName"', '"type:FullName"')
     assert convert(source, managed_class_names=True) == managed
     target = tmp_path / "page.py"
     assert main(["import-namemapping", str(source), str(target), "--managed-class-names"]) == 0
