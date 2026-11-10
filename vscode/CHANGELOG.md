@@ -7,6 +7,8 @@ Unreleased changes must be moved to a dated candidate section before a release c
 
 ## [Unreleased]
 
+- Use WPF hit testing for Spy picking and display WPF identity, managed properties and locator verification status.
+
 - Show paged WPF visual or logical trees in Spy, with source badges, inline attach and blocked-agent guidance.
 
 - Align Configuration defaults with Python, expose backend selection, and report WPF agent doctor failures in setup health.

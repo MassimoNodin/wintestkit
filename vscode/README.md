@@ -76,7 +76,15 @@ The Spy displays the WPF visual tree for WPF windows and UI Automation for other
 WPF nodes show their type and `x:Name` (or AutomationId), with WPF/UIA source badges. Large trees
 load in pages via **Load more**. When required, select **Attach** and confirm instrumentation; the
 confirmation is remembered for that process run. A blocked inspector shows its error and guidance;
-run `wtk doctor --agent` for diagnostics rather than falling back to UI Automation.
+run `wtk doctor --agent` for diagnostics rather than falling back to UI Automation. The picker
+uses the selected WPF tree mode. If attachment is required on a pick, confirm it and pick again;
+Spy restarts the picker after a successful attachment. Picked nodes are revealed through their
+ancestors, loading additional pages as necessary.
+
+WPF Identity includes the CLR class, `x:Name`, AutomationId, peer name and control type. Managed
+members are the primary property view; mapped UI Automation properties appear in a collapsed
+secondary group. Suggested locators that could not be verified unique remain copyable and are
+labelled unverified.
 
 The Spy uses control-type icons, chevrons and dotted branch guides to make the live
 hierarchy easier to navigate. A wide view places the object tree beside the inspector;

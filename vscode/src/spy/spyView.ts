@@ -602,6 +602,30 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
         void this.safe(async () => {
           if (!this.currentPick(client, value)) return;
           const picked = value as Omit<SpyPickedNotification, "suggestion"> & { suggestion?: Suggestion };
+          if (picked.blocked || picked.attachRequired) {
+            await this.stopPick();
+            const roots = await this.requestRoots(client);
+            if (client !== this.client || this.disposed) return;
+            const revision = ++this.revision;
+            this.post({ type: "roots", nodes: roots });
+            this.trackNodes(client, roots, true);
+            this.deferIcons(client, roots, revision);
+            const windowNode = roots.find((root) => root.nodeId === picked.node.nodeId || root.info.processId === picked.node.info.processId);
+            if (windowNode && picked.blocked) {
+              this.post({ type: "children", nodeId: windowNode.nodeId, nodes: [], expanded: true, blocked: picked.blocked });
+            } else if (windowNode && picked.process) {
+              this.treeProcesses.set(windowNode.nodeId, picked.process);
+              if (await this.managedInspector?.attachTree(windowNode.nodeId, picked.process)) {
+                if (client === this.client && revision === this.revision) {
+                  this.post({ type: "error", message: "Inspector attached. Pick the element again to select its WPF node." });
+                  await this.startPick();
+                }
+              } else if (client === this.client && revision === this.revision) {
+                this.post({ type: "children", nodeId: windowNode.nodeId, nodes: [], expanded: true, attachRequired: true });
+              }
+            }
+            return;
+          }
           const selection = ++this.selection;
           void this.managedInspector?.select(picked.node.nodeId);
           let treeRevision = this.revision;
@@ -956,6 +980,7 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
       this.pickSession = sessionId;
       await phase("Starting element picker", () => client.request("spy.start", {
         sessionId,
+        tree: this.tree,
         foregroundForProcessId: process.pid,
       }));
       if (
