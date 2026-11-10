@@ -16,7 +16,7 @@ namespace WinTestKit.Inspector.Agent.Inspection
         {
             internal readonly SemaphoreSlim Admission = new SemaphoreSlim(1, 1);
             internal readonly string Id = Guid.NewGuid().ToString("N");
-            internal readonly CancellationTokenSource Unavailable = new CancellationTokenSource();
+            internal CancellationTokenSource Unavailable = new CancellationTokenSource();
             internal bool Unresponsive;
         }
         private readonly object gate = new object();
@@ -39,15 +39,20 @@ namespace WinTestKit.Inspector.Agent.Inspection
             ct.ThrowIfCancellationRequested();
             Stopwatch elapsed = Stopwatch.StartNew();
             State state = GetState(dispatcher);
-            lock (gate) if (state.Unresponsive) throw Unavailable();
-            using (var admissionCancellation = CancellationTokenSource.CreateLinkedTokenSource(ct, state.Unavailable.Token))
+            CancellationToken unavailable;
+            lock (gate)
+            {
+                if (state.Unresponsive) throw Unavailable();
+                unavailable = state.Unavailable.Token;
+            }
+            using (var admissionCancellation = CancellationTokenSource.CreateLinkedTokenSource(ct, unavailable))
             {
                 try
                 {
                     if (!await state.Admission.WaitAsync(ProtocolLimits.DispatcherQueueWaitMs, admissionCancellation.Token).ConfigureAwait(false))
                         throw QueueTimeout();
                 }
-                catch (OperationCanceledException) when (state.Unavailable.IsCancellationRequested) { throw Unavailable(); }
+                catch (OperationCanceledException) when (unavailable.IsCancellationRequested) { throw Unavailable(); }
             }
             bool release = true;
             var workCancellation = CancellationTokenSource.CreateLinkedTokenSource(ct);
@@ -82,7 +87,12 @@ namespace WinTestKit.Inspector.Agent.Inspection
                     {
                         Observe(task);
                         workCancellation.Dispose();
-                        state.Admission.Release();
+                        lock (gate)
+                        {
+                            state.Unavailable = new CancellationTokenSource();
+                            state.Unresponsive = false;
+                            state.Admission.Release();
+                        }
                     }, CancellationToken.None,
                         TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
                     ct.ThrowIfCancellationRequested();
@@ -92,13 +102,11 @@ namespace WinTestKit.Inspector.Agent.Inspection
                 try { result = await operation.Task.ConfigureAwait(false); }
                 catch (OperationCanceledException) when (elapsed.ElapsedMilliseconds >= ProtocolLimits.RequestTimeoutMs)
                 {
-                    MarkUnresponsive(state);
                     ct.ThrowIfCancellationRequested();
                     throw Unavailable();
                 }
                 if (elapsed.ElapsedMilliseconds >= ProtocolLimits.RequestTimeoutMs)
                 {
-                    MarkUnresponsive(state);
                     throw Unavailable();
                 }
                 ct.ThrowIfCancellationRequested();
