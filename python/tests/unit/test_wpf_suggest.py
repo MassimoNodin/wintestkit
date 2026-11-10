@@ -33,6 +33,7 @@ def test_wpf_candidates_and_rendering() -> None:
     candidates = suggest._wpf_candidates(node)
     assert [strategy for strategy, _ in candidates] == ["automation_id", "x_name", "type_name"]
     assert candidates[1][1].where == (("clr:Name", "SaveName"),)
+    assert candidates[2][1].where == (("type:Is", "Demo.Button"),)
     for _, locator in candidates:
         assert eval(suggest.render_element_code(locator), {"Element": Locator}) == locator
 

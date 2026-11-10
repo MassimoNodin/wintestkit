@@ -66,9 +66,13 @@ Review that authorization with your team. Spy still requires workspace trust and
 
 ## Spy and reading values
 
-In VS Code Spy, select a target element, trust the workspace, then attach in the managed
-panel. Confirm the displayed executable, PID, runtime, architecture and execution warning.
-Confirmation is remembered for that process identity. The panel may show:
+In VS Code Spy, trust the workspace and attach to the target process when prompted. Confirm
+the displayed executable, PID, runtime, architecture and execution warning. Confirmation is
+remembered for that process run; a new run asks again. WPF windows use the WPF tree, with a
+visual/logical toggle and paged children (**Load more**). Labels combine the type and available
+`x:Name` or AutomationId, and a badge identifies the source. The picker can select peerless
+WPF elements and popup content. If attachment is blocked, Spy shows the error and its fix
+instead of silently switching to UI Automation. The panel may show:
 
 | State | What to do |
 |---|---|
@@ -83,6 +87,8 @@ Confirmation is remembered for that process identity. The panel may show:
 | `ready` | Select an element and inspect it. |
 | `not attached to this process` | Attach to the selected element's process. |
 
+The Identity pane shows the CLR class, `x:Name`, AutomationId, peer name and control type.
+Managed groups are the main properties view; UI Automation properties are a separate group.
 The panel groups managed type, CLR properties, CLR fields, dependency/attached properties,
 and bindings. Member listing is lazy: explicitly read or expand a readable member to fetch
 its value. Reading visible values prompts about the risk. Value statuses are `ok`, `notRead`,

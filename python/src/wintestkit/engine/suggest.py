@@ -295,7 +295,7 @@ def _wpf_candidates(element: WpfElement) -> list[tuple[str, Locator]]:
             "type_name",
             Locator(
                 name=element.name if _usable_name(element.name) else None,
-                where=(("type:FullName", element.ref.type.full_name),),
+                where=(("type:Is", element.ref.type.full_name),),
             ),
         )
     )

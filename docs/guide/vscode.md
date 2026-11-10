@@ -195,15 +195,21 @@ adapt the example locators when testing a different application. If the VS Code 
 its expected content pane cannot be identified, the guide explains why instead of choosing
 another object.
 
-The **Spy** view, below Explorer, explores the live UI Automation tree of the application.
+The **Spy** view, below Explorer, explores the live WPF tree for WPF windows and the UI
+Automation tree for other windows. WPF inspection requires an enabled inspector, a trusted
+workspace and confirmation once per process run. If the agent is blocked, Spy shows the error
+and its fix rather than silently falling back to UI Automation. See [Managed inspection](managed-inspection.md).
 
 - Expand windows and controls lazily. Selecting a control inspects it without highlighting.
+  For WPF, switch between the visual and logical trees; labels show the type and available
+  `x:Name` or AutomationId, with a source badge. Use **Load more** for paged children.
   Use the **Highlight** button in the top-right corner to draw its outline above every
   window. The pin button after **Collapse all** (off by default; setting
   `wintestkit.spy.bringWindowToFront`) also brings the control's window to the front, without
   taking keyboard focus from VS Code when using **Highlight**.
 - The toolbar starts with **Pick element**, **Refresh objects**, **Collapse all** and the pin button. **Pick
   element** (or `wtk spy` in a terminal): hold **Ctrl** and click a control in the application.
+  The WPF picker also finds elements without automation peers and popup content.
   **Esc** cancels. **Refresh objects** reloads the tree. **Pick element** and **Refresh objects**
   stay in the Spy toolbar.
 - While the application is running, a button at the right end of the toolbar switches the tree
@@ -214,16 +220,17 @@ The **Spy** view, below Explorer, explores the live UI Automation tree of the ap
   made only when you press **Generate suggested locator**, because it searches the whole window
   for each candidate and can take 20 seconds or more in a large application. A spinner shows
   while it runs, during which Spy cannot do anything else. The result is marked unique, or not
-  unique with the number of matches. If it fails, the button changes to **Try again**.
-- **All properties** is one list, sorted alphabetically by name. A property that holds nested
+  unique with the number of matches. WPF suggestions are checked for uniqueness and resolved
+  back to the selected object. If it fails, the button changes to **Try again**.
+- For WPF, **Identity** shows the CLR class, `x:Name`, AutomationId, peer name and control type;
+  managed member groups are the main view, with UI Automation in a separate group.
+  For UI Automation, **All properties** is one list, sorted alphabetically by name. A property that holds nested
   values, such as `RuntimeId`, `BoundingRectangle` or an element list like `ControllerFor`,
   shows an arrow and a count; click the arrow to open them in place. Nested rows are indented,
   tinted and marked with an arrow, and hovering a row shows its full path (for example
   `ControllerFor › 0 › BoundingRectangle`). Nesting can go several levels deep: a list of
   elements, each element, and the arrays inside it. Opening is remembered only for the
-  selected object. These are external UI Automation values, not arbitrary .NET members: opaque
-  CLR properties such as WPF `BorderThickness` or brush internals require application-side
-  support and are not reflected.
+  selected object. UI Automation values are external values, not arbitrary .NET members.
 - To always see a property, click the pin beside it in **All properties**. Pinned properties
   appear in a **Pinned** group for every object you select, in the order you pinned them; click
   the pin again, in either list, to remove one. The list is the user setting
