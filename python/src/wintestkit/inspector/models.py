@@ -1048,14 +1048,25 @@ class AllowEntry(WireModel):
 
 
 @dataclass(frozen=True)
+class PropertyAllowEntry(WireModel):
+    type_full_name: str
+    member_name: str
+
+    @classmethod
+    def from_json(cls, value: object) -> PropertyAllowEntry:
+        data = _obj(value, "typeFullName memberName")
+        return cls(_key(data["typeFullName"]), _key(data["memberName"]))
+
+
+@dataclass(frozen=True)
 class WriteAllowlist(WireModel):
-    properties: tuple[AllowEntry, ...]
+    properties: tuple[PropertyAllowEntry, ...]
     methods: tuple[AllowEntry, ...]
 
     @classmethod
     def from_json(cls, value: object) -> WriteAllowlist:
         data = _obj(value, "properties methods")
-        properties = _array(data["properties"], AllowEntry.from_json, 128)
+        properties = _array(data["properties"], PropertyAllowEntry.from_json, 128)
         methods = _array(data["methods"], AllowEntry.from_json, 128)
         if len(set(properties)) != len(properties) or len(set(methods)) != len(methods):
             raise ValueError("Duplicate allowlist entry")

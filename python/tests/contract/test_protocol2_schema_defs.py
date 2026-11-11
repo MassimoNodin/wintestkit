@@ -65,6 +65,18 @@ def valid(name, value):
     ).is_valid(value)
 
 
+def test_property_allowlist_wire_shape():
+    from wintestkit.inspector.models import WriteAllowlist
+
+    value = {"properties": [{"typeFullName": "Example.Control", "memberName": "Text"}], "methods": [{"typeFullName": "Example.Control", "memberKey": "Refresh()"}]}
+    assert valid("WriteAllowlist", value)
+    assert WriteAllowlist.from_json(value).to_json() == value
+    old = {"properties": [{"typeFullName": "Example.Control", "memberKey": "Text"}], "methods": []}
+    assert not valid("WriteAllowlist", old)
+    with pytest.raises(ValueError):
+        WriteAllowlist.from_json(old)
+
+
 def test_schema_definitions_and_version():
     Draft202012Validator.check_schema(DOCUMENT)
     names = [
@@ -80,6 +92,7 @@ def test_schema_definitions_and_version():
         "MatchWarning",
         "WriteAudit",
         "AllowEntry",
+        "PropertyAllowEntry",
         "EventsNotification",
     ]
     methods = [

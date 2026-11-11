@@ -12,18 +12,18 @@ public class DtoTests
     [Fact]
     public void WriteAllowlistValidatesBoundsAndOverloads()
     {
-        var properties = new[] { new AllowEntry("Example.Type", "Name") };
+        var properties = new[] { new PropertyAllowEntry("Example.Type", "Name") };
         var methods = new[] { new AllowEntry("Example.Type", "Refresh(System.Boolean)"), new AllowEntry("Example.Type", "Reset()") };
         var allowlist = WriteAllowlist.FromJson(new WriteAllowlist(properties, methods).ToJson());
         Assert.Single(allowlist.Properties);
         Assert.Equal(2, allowlist.Methods.Count);
-        properties[0] = new AllowEntry("Other", "Other");
+        properties[0] = new PropertyAllowEntry("Other", "Other");
         Assert.Equal("Example.Type", allowlist.Properties[0].TypeFullName);
-        Assert.Throws<ProtocolException>(() => new WriteAllowlist(Array.Empty<AllowEntry>(), new[] { new AllowEntry("T", "Refresh( System.Boolean)") }).ToJson());
-        Assert.Throws<ProtocolException>(() => new WriteAllowlist(Array.Empty<AllowEntry>(), new[] { new AllowEntry("T", "Refresh") }).ToJson());
-        Assert.Throws<ProtocolException>(() => new WriteAllowlist(new[] { new AllowEntry("T", "*") }, Array.Empty<AllowEntry>()).ToJson());
-        Assert.Throws<ProtocolException>(() => new WriteAllowlist(new[] { new AllowEntry("T", "Name"), new AllowEntry("T", "Name") }, Array.Empty<AllowEntry>()).ToJson());
-        Assert.Throws<ProtocolException>(() => new WriteAllowlist(System.Linq.Enumerable.Repeat(new AllowEntry("T", "Name"), 129), Array.Empty<AllowEntry>()).ToJson());
+        Assert.Throws<ProtocolException>(() => new WriteAllowlist(Array.Empty<PropertyAllowEntry>(), new[] { new AllowEntry("T", "Refresh( System.Boolean)") }).ToJson());
+        Assert.Throws<ProtocolException>(() => new WriteAllowlist(Array.Empty<PropertyAllowEntry>(), new[] { new AllowEntry("T", "Refresh") }).ToJson());
+        Assert.Throws<ProtocolException>(() => new WriteAllowlist(new[] { new PropertyAllowEntry("T", "*") }, Array.Empty<AllowEntry>()).ToJson());
+        Assert.Throws<ProtocolException>(() => new WriteAllowlist(new[] { new PropertyAllowEntry("T", "Name"), new PropertyAllowEntry("T", "Name") }, Array.Empty<AllowEntry>()).ToJson());
+        Assert.Throws<ProtocolException>(() => new WriteAllowlist(System.Linq.Enumerable.Repeat(new PropertyAllowEntry("T", "Name"), 129), Array.Empty<AllowEntry>()).ToJson());
         Assert.Throws<ProtocolException>(() => WriteAllowlist.FromJson(new JsonObjectNode()));
     }
 

@@ -2986,13 +2986,22 @@
       "additionalProperties": false,
       "description": "Exact runtime type and public instance member; method keys specify exact CLR parameter types with no whitespace."
     },
+    "PropertyAllowEntry": {
+      "type": "object",
+      "properties": {
+        "typeFullName": { "$ref": "#/$defs/Key" },
+        "memberName": { "$ref": "#/$defs/Key" }
+      },
+      "required": ["typeFullName", "memberName"],
+      "additionalProperties": false
+    },
     "WriteAllowlist": {
       "type": "object",
       "properties": {
         "properties": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/AllowEntry"
+            "$ref": "#/$defs/PropertyAllowEntry"
           },
           "maxItems": 128,
           "uniqueItems": true
