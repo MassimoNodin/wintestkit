@@ -1,7 +1,7 @@
 # WPF-tree-driven automation: migration plan
 
 Status: decisions D1–D7 made (§3); phases 0–3 done (phase 2 gate passed 2026-11-06,
-§6.3; phase 3 gate passed 2026-11-09, §6.5). Phase 4 done (fixture gate passed 2026-11-10, §6.6); phase 5 in progress (§6.7). Planning date: 2026-10-29.
+§6.3; phase 3 gate passed 2026-11-09, §6.5). Phase 4 done (fixture gate passed 2026-11-10, §6.6); phase 5 done (gate passed 2026-11-11, §6.8); phase 6 in progress (§6.9). Planning date: 2026-10-29.
 Builds on: `wpf-dotnet-attribute-analyzer.md` (the *inspector plan*) and the implemented
 inspector on `master` (agent, protocol, Python client, managed locators, Spy panel).
 
@@ -585,6 +585,37 @@ element without an automation peer. The generated NameMapping round trip passes 
 `auto`, including the hierarchy, wildcard and depth-one negative case. The full live
 suite passed 125/125. The XML extended-find spellings remain unconfirmed.
 The phase 5 gate is ready for owner sign-off.
+
+**Gate verdict (owner, 2026-11-11): passed.** All 14 migrated samples pass on `auto`, the
+peerless sample is a verified UIA difference, and the NameMapping round trip passes. The
+extended-find XML spelling stays unconfirmed until a real NameMapping export is checked.
+
+### 6.9 Phase 6 design (2026-11-11)
+
+Scope: optional writes and calls (D2), off by default, allowlisted and audited. The wire
+contract is fixed in wpf-protocol-2.md (`write.setProperty`, `write.call`, `WriteAudit`,
+`writeDenied`, `writeRateExceeded`, exact scalar types, 10 attempts per second).
+
+Design:
+
+- **Config.** `inspector.writes.allow` lists entries as strings: `Namespace.Type.Property`
+  for a property, `Namespace.Type.Method(System.String,System.Int64)` for one exact method
+  overload. Entries match the exact runtime type, never a base type. The list is empty by
+  default, so writes are off. It reaches the agent only through the protected bootstrap.
+- **Agent.** `write.setProperty` (dependency properties via `SetCurrentValue`, CLR setters
+  otherwise) and `write.call` (public instance methods, scalar arguments, no return value)
+  run on the owning Dispatcher, serialized like actions. Anything not on the allowlist is
+  `writeDenied`. Every attempt, including denied, failed and timed-out ones, produces an
+  audit record without values. Protected identities and redacted members are always denied.
+- **Python.** `element.set_property(name, value)` and `element.call(name, *args)` on bound
+  elements, WPF backend only; on UIA they fail with a clear error.
+- **Report.** Every audit record goes into the step record, the HTML report and `wtk report`.
+- **Security review.** A written review of the allowlist parsing, bootstrap transport,
+  enforcement points, rate limit, audit completeness and redaction, recorded in this plan.
+
+Slices: P6a agent writes, allowlist enforcement, rate limit and audit; P6b config,
+bootstrap, client and element API; P6c report audit, docs, live tests and the security
+review.
 
 ## 7. Test strategy
 
