@@ -954,6 +954,7 @@ export interface ProtocolContracts {
   Predicate?: Predicate;
   PreviewImage?: PreviewImage;
   ProcessIdentity?: ProcessIdentity;
+  PropertyAllowEntry?: PropertyAllowEntry;
   QueryFindAllParams?: QueryFindAllParams;
   QueryFindAllResult?: QueryFindAllResult;
   QueryFindParams?: QueryFindParams;
@@ -1362,11 +1363,19 @@ export interface WriteAllowlist {
   /**
    * @maxItems 128
    */
-  properties: AllowEntry[];
+  properties: PropertyAllowEntry[];
   /**
    * @maxItems 128
    */
   methods: AllowEntry[];
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "PropertyAllowEntry".
+ */
+export interface PropertyAllowEntry {
+  typeFullName: Key;
+  memberName: Key;
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
