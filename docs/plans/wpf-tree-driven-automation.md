@@ -1,7 +1,7 @@
 # WPF-tree-driven automation: migration plan
 
 Status: decisions D1–D7 made (§3); phases 0–3 done (phase 2 gate passed 2026-11-06,
-§6.3; phase 3 gate passed 2026-11-09, §6.5). Phase 4 done (fixture gate passed 2026-11-10, §6.6); phase 5 done (gate passed 2026-11-11, §6.8); phase 6 done (gate passed 2026-11-11, §6.11); phase 7 in progress. Planning date: 2026-10-29.
+§6.3; phase 3 gate passed 2026-11-09, §6.5). Phase 4 done (fixture gate passed 2026-11-10, §6.6); phase 5 done (gate passed 2026-11-11, §6.8); phase 6 done (gate passed 2026-11-11, §6.11); phase 7 in progress (§6.12). Planning date: 2026-10-29.
 Builds on: `wpf-dotnet-attribute-analyzer.md` (the *inspector plan*) and the implemented
 inspector on `master` (agent, protocol, Python client, managed locators, Spy panel).
 
@@ -662,6 +662,37 @@ identified in the review was fixed with a redacted fallback and a regression tes
 **Gate verdict (owner, 2026-11-11): passed.** Writes are off by default, the allowlist is
 enforced, every attempt is audited in reports, and the security review is recorded in §6.10
 with its residual risks.
+
+### 6.12 Phase 7 design (2026-11-11)
+
+Owner decisions (2026-11-11): the CI desktop job runs on a self-hosted runner on the owner's
+machine, registered by the owner and running interactively in a logged-in desktop session;
+release signing is deferred, so payloads stay labelled as unsigned development builds and
+signing becomes its own task once a code-signing certificate exists.
+
+Design:
+
+- **Attach on launch (D4).** A new `inspector.attach: on-launch` mode, and the default, attaches
+  as soon as the first WPF window of a launched or attached process appears, so a blocked agent
+  fails the first step instead of a later one. `on-demand` and `manual` stay available. When the
+  process restarts, the runtime reattaches to the new process run; at app close it detaches.
+- **Events.** The agent implements `events.subscribe` / `events.unsubscribe` for `windowOpened`,
+  `windowClosed` and `treeChanged`, bounded and coalesced. Python uses them to wait for windows
+  and tree changes instead of polling where a session exists, keeping polling as the fallback
+  for UIA windows.
+- **Stress.** 100 attach/detach cycles and 100 launch/close cycles without growth in listeners,
+  handles, threads, leases or memory, plus a sustained action run; thresholds are written into
+  the tests.
+- **Six-cell matrix.** The fixture runs on .NET 10, .NET 8 and .NET Framework 4.8, each x64 and
+  x86, with a live smoke subset per cell, as the inspector plan's release gates require.
+- **CI desktop job.** A workflow job on the self-hosted runner wakes the display, runs the live
+  suite and the six-cell smoke, and publishes results. Setup instructions live in the docs.
+- **Release gates, except signing.** Reproducible package, `check_release.py` lockstep, and a
+  clean-environment install smoke test.
+
+Slices: P7a attach on launch, reattach and detach; P7b agent events; P7c Python event waits;
+P7d stress tests; P7e six-cell matrix; P7f CI desktop job and runner setup docs; P7g release
+gates except signing.
 
 ## 7. Test strategy
 
