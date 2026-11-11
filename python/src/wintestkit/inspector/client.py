@@ -1103,3 +1103,5 @@ class InspectorClient:
                 InspectorUnavailableError("Inspector session detached", code="notAttached"),
                 "detached",
             )
+            if threading.current_thread() is not self._reader:
+                self._reader.join(timeout=2.0)

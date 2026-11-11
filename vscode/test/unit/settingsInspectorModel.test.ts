@@ -10,7 +10,7 @@ describe("inspector settings", () => {
     for (const scope of ["shared", "local"] as const) expect(updateSetting("", scope, "inspector.enabled", true, false)).toContain("enabled: true");
   });
   it("exposes Python backend and inspector defaults", () => {
-    for (const [key, value] of [["backend", "auto"], ["input_mode", "mouse"], ["inspector.enabled", true], ["inspector.attach", "on-demand"]] as const) {
+    for (const [key, value] of [["backend", "auto"], ["input_mode", "mouse"], ["inspector.enabled", true], ["inspector.attach", "on-launch"]] as const) {
       expect(settingFields.find((field) => field.key === key)?.default).toBe(value);
     }
     expect(settingFields.find((field) => field.key === "backend")?.choices).toEqual(["auto", "uia"]);

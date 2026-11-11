@@ -85,7 +85,7 @@ def test_defaults_and_disabled_mode_never_probe_or_create_registry(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     defaults = load_config(tmp_path)
-    assert defaults.inspector.enabled and defaults.inspector.attach == "on-demand"
+    assert defaults.inspector.enabled and defaults.inspector.attach == "on-launch"
     cfg = load_config(tmp_path, {"inspector.enabled": False, "inspector.attach": "manual"})
     assert not cfg.inspector.enabled and cfg.inspector.attach == "manual"
     monkeypatch.setattr(probe, "current_identity", _unexpected_probe)

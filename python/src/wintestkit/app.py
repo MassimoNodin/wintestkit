@@ -51,6 +51,9 @@ class App:
         self._pinned_pid = pinned_pid
         self._by_name = by_name
         self._baseline = baseline
+        self._known_pids: set[int] = set()
+        self._inspector_identities: set[Any] = set()
+        self._startup_complete = False
 
     # -- construction ---------------------------------------------------------------------------
 
@@ -95,7 +98,10 @@ class App:
         try:
             app._wait_for_startup(startup_timeout, progress)
         except BaseException:
-            if owned_only and popen.poll() is None:
+            from wintestkit import runtime
+
+            runtime.detach_inspector_pids([popen.pid])
+            if popen.poll() is None:
                 popen.terminate()
                 try:
                     popen.wait(timeout=5)
@@ -133,6 +139,7 @@ class App:
             found.add(self._pinned_pid)
         if self._popen is not None and self._popen.poll() is None:
             found.add(self._popen.pid)
+        self._known_pids.update(found)
         return sorted(found)
 
     def is_running(self) -> bool:
@@ -170,6 +177,15 @@ class App:
                 try:
                     window = element.from_handle(hwnd)
                     if window.control_type == "Window":
+                        if self._startup_complete:
+                            from wintestkit.inspector.probe import current_identity
+
+                            if (
+                                not self._inspector_identities
+                                or current_identity(window.process_id)
+                                not in self._inspector_identities
+                            ):
+                                self._attach_window(window, time.monotonic() + max(timeout, 10.0))
                         return window
                 except UIAError:
                     continue
@@ -194,6 +210,7 @@ class App:
     def close(self, timeout: float = 10.0) -> None:
         """Ask every window to close (owned ones first), then kill if it does not exit."""
         __tracebackhide__ = True
+        self.detach_inspector()
         windows = self.top_level_windows()
         windows.sort(key=lambda w: 0 if win32.window_owner(w.native_window_handle) else 1)
         for window in windows:
@@ -205,6 +222,16 @@ class App:
         if not self.wait_for_exit(timeout):
             log.warning("%s did not exit within %.1fs; killing it", self.process_name, timeout)
             self.kill()
+
+    def detach_inspector(self) -> None:
+        """Release inspector sessions without closing the application."""
+        __tracebackhide__ = True
+        from wintestkit import runtime
+
+        runtime.detach_inspector_pids(set(self.pids) | self._known_pids)
+        for identity in self._inspector_identities:
+            runtime.detach_inspector(identity)
+        self._inspector_identities.clear()
 
     def kill(self) -> None:
         """Forcefully terminate every process of the application (and their children)."""
@@ -246,7 +273,8 @@ class App:
             progress("window")
         while True:
             try:
-                self.main_window()
+                window = self.main_window()
+                self._attach_window(window, deadline)
                 return
             except AppNotRunningError:
                 code = self._popen.poll()
@@ -261,6 +289,17 @@ class App:
                     f"{self.process_name} did not show a window within {startup_timeout:g}s"
                 )
             time.sleep(_POLL_INTERVAL)
+
+    def _attach_window(self, window: UIAElement, deadline: float) -> None:
+        __tracebackhide__ = True
+        from wintestkit import runtime
+
+        identity = runtime.attach_on_launch(window, deadline=deadline)
+        self._startup_complete = True
+        if identity is not None:
+            for old in self._inspector_identities - {identity}:
+                runtime.detach_inspector(old)
+            self._inspector_identities = {identity}
 
     @staticmethod
     def _wait_for_input_idle(pid: int, timeout: float) -> None:

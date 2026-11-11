@@ -41,6 +41,12 @@ class FakeApp:
         self.log.append(f"close {self.name}")
         self.running = False
 
+    def _attach_window(self, window: Any, deadline: float) -> None:
+        pass
+
+    def detach_inspector(self) -> None:
+        pass
+
 
 @pytest.fixture
 def fake_apps(monkeypatch: pytest.MonkeyPatch) -> list[str]:

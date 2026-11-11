@@ -57,7 +57,7 @@ backend: auto
 input_mode: mouse
 inspector:
   enabled: true
-  attach: on-demand
+  attach: on-launch
 screenshots: on-failure
 report_dir: wtk-report
 python_paths: ["."]
@@ -68,7 +68,9 @@ app:
 ```
 
 `backend: auto` selects the WPF tree for WPF windows and UI Automation for other windows.
-WPF resolution attaches the enabled inspector on demand by default; install `wintestkit[inspector]`
+The enabled inspector attaches when the first WPF window appears by default; set
+`inspector.attach: on-demand` to attach on the first managed query, or `manual` to attach
+explicitly. Install `wintestkit[inspector]`
 or select `backend: uia` to opt out. Agent failures never silently fall
 back to UI Automation. Security software blocking the agent causes WPF tests to fail until
 the agent is allow-listed; run `wtk doctor --agent` to diagnose it. Set `backend: uia` to

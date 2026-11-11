@@ -362,6 +362,7 @@ class SessionRegistry:
     def close_all(self) -> None:
         with self._lock:
             entries = tuple(self._entries.values())
+            self._entries.clear()
             for entry in entries:
                 entry.cancel.set()
         for entry in entries:
@@ -369,3 +370,16 @@ class SessionRegistry:
                 entry.client.close()
             elif not entry.done.is_set():
                 entry.done.wait(10.0)
+
+    def remove(self, identity: ProcessIdentity) -> None:
+        """Cancel and release one process run, including its registry entry."""
+        with self._lock:
+            entry = self._entries.pop(identity, None)
+            if entry is None:
+                return
+            entry.cancel.set()
+            client = entry.client
+        if client is not None:
+            client.close()
+        elif not entry.done.is_set():
+            entry.done.wait(10.0)

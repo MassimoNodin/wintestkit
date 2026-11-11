@@ -130,6 +130,9 @@ class InspectorError(WtkError):
         self.code = code
         self.audit = audit
 
+    def to_dict(self) -> dict[str, Any]:
+        return {**super().to_dict(), "code": self.code}
+
 
 class InspectorUnavailableError(InspectorError):
     """The inspector cannot attach or is unavailable."""

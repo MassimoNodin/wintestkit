@@ -42,7 +42,7 @@ Configure shared defaults in `wintestkit.yaml` and machine-specific overrides in
 ```yaml
 inspector:
   enabled: true
-  attach: on-demand
+  attach: on-launch
   attach_timeout: 10.0
   request_timeout: 2.0
   query: agent
@@ -52,16 +52,16 @@ inspector:
 | Key | Default | Allowed values |
 |---|---|---|
 | `inspector.enabled` | `true` | Boolean |
-| `inspector.attach` | `on-demand` | `manual` or `on-demand` |
+| `inspector.attach` | `on-launch` | `manual`, `on-demand`, or `on-launch` |
 | `inspector.attach_timeout` | `10.0` | Positive seconds, at most 10 |
 | `inspector.request_timeout` | `2.0` | Positive seconds, at most 2 |
 | `inspector.query` | `agent` | `agent` or `postfilter` |
 | `inspector.redact_names` | `[]` | At most 32 nonempty names, each at most 128 Unicode characters |
 
 Redaction names from configuration layers are additive. There are no inspector environment
-variable overrides. The defaults authorize managed queries, including headless tests, to attach
-when needed; they do not attach just because the application starts or UIA is queried.
-Set `enabled: false` to disable inspection or `attach: manual` to require explicit attachment.
+variable overrides. By default, the inspector attaches after the first WPF window appears.
+Set `attach: on-demand` to attach on the first managed query, `enabled: false` to disable
+inspection, or `attach: manual` to require explicit attachment.
 Review that authorization with your team. Spy still requires workspace trust and confirmation.
 
 ## Spy and reading values
