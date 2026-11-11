@@ -25,10 +25,59 @@ from wintestkit.targets import ModuleLoader
 from wintestkit.uia import com, element, win32
 from wintestkit.uia.constants import TreeScope
 
+pytest_plugins = ("test_wpf_query_gate_real",)
+
 pytestmark = pytest.mark.skipif(
     os.name != "nt" or os.environ.get("WTK_INSPECTOR_REAL") != "1",
     reason="requires explicitly enabled owned Windows fixture",
 )
+
+
+def test_event_hooks_real(owned: Any) -> None:
+    from test_wpf_query_gate_real import _fixture_scenario, config
+
+    scope, path = owned
+    with runtime.config_scope(config(path, "agent")):
+        root = scope.app.main_window()
+        client = runtime.managed_client_for(
+            root.process_id, deadline=time.monotonic() + 10, target_hwnd=root.native_window_handle
+        )
+        stream = client.subscribe(
+            ["windowOpened", "windowClosed", "treeChanged"], deadline=time.monotonic() + 10
+        )
+
+        def next_kind(kind: str) -> Any:
+            deadline = time.monotonic() + 60
+            while True:
+                event = stream.events.get(timeout=max(0.01, deadline - time.monotonic()))
+                if event.kind == kind:
+                    return event
+
+        def scenario(name: str, value: int = 0) -> None:
+            deadline = time.monotonic() + 10
+            while True:
+                try:
+                    _fixture_scenario(root.process_id, name, value)
+                    return
+                except AssertionError:
+                    if time.monotonic() >= deadline:
+                        raise
+                    time.sleep(0.05)
+
+        try:
+            # Let the initial root snapshot settle before opening the second dispatcher.
+            time.sleep(0.5)
+            while not stream.events.empty():
+                stream.events.get_nowait()
+            scenario("openSecondWindow")
+            opened = next_kind("windowOpened")
+            scenario("closeWindow")
+            closed = next_kind("windowClosed")
+            assert opened.handle is not None and closed.handle == opened.handle
+            scenario("addDynamic", 73)
+            assert next_kind("treeChanged").handle is not None
+        finally:
+            client.unsubscribe(stream.subscription_id, deadline=time.monotonic() + 10)
 
 
 def _fixture_counters(pid: int) -> dict[str, object]:

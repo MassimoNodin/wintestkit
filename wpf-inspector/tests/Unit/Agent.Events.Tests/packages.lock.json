@@ -111,6 +111,12 @@
           "xunit.extensibility.core": "[2.9.3]"
         }
       },
+      "WinTestKit.Inspector.Agent": {
+        "type": "Project",
+        "dependencies": {
+          "WinTestKit.Inspector.Protocol": "[1.0.0, )"
+        }
+      },
       "WinTestKit.Inspector.Protocol": {
         "type": "Project"
       }
@@ -214,6 +220,12 @@
         "contentHash": "yMb6vMESlSrE3Wfj7V6cjQ3S4TXdXpRqYeNEI3zsX31uTsGMJjEw6oD5F5u1cHnMptjhEECnmZSsPxB6ChZHDQ==",
         "dependencies": {
           "xunit.extensibility.core": "[2.9.3]"
+        }
+      },
+      "WinTestKit.Inspector.Agent": {
+        "type": "Project",
+        "dependencies": {
+          "WinTestKit.Inspector.Protocol": "[1.0.0, )"
         }
       },
       "WinTestKit.Inspector.Protocol": {
