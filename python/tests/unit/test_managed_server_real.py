@@ -33,6 +33,91 @@ pytestmark = pytest.mark.skipif(
 )
 
 
+def test_event_wait_measurement_real(owned: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    import statistics
+    import threading
+
+    from test_wpf_query_gate_real import _fixture_scenario, config
+
+    from wintestkit.engine import waits
+    from wintestkit.engine.locator import Locator
+    from wintestkit.engine.resolve import resolve_all
+    from wintestkit.errors import WaitTimeoutError
+    from wintestkit.model import BoundWindow, Window
+
+    scope, path = owned
+    with runtime.config_scope(config(path, "agent")):
+        root = scope.app.main_window()
+        client = runtime.managed_client_for(
+            root.process_id, deadline=time.monotonic() + 10, target_hwnd=root.native_window_handle
+        )
+        registry = runtime.inspector_sessions()
+        assert "events" in client.session.features
+        window = BoundWindow(SimpleNamespace(app=scope.app), Window(automation_id="SecondWindow"))
+        latencies = {}
+        counts = {}
+        original_request = client._request
+        requests = [0]
+
+        def counted(*args: Any, **kwargs: Any) -> Any:
+            requests[0] += 1
+            return original_request(*args, **kwargs)
+
+        monkeypatch.setattr(client, "_request", counted)
+
+        def scenario(name: str) -> None:
+            deadline = time.monotonic() + 10
+            while True:
+                try:
+                    _fixture_scenario(root.process_id, name, 0)
+                    return
+                except AssertionError:
+                    if time.monotonic() >= deadline:
+                        raise
+                    time.sleep(0.05)
+
+        for enabled in (True, False):
+            with monkeypatch.context() as change:
+                if not enabled:
+                    change.setattr(registry, "event_waiter", lambda client: None)
+                samples = []
+                for _ in range(5):
+                    opened = [0.0]
+
+                    def open_window(opened: list[float] = opened) -> None:
+                        opened[0] = time.monotonic()
+                        scenario("openSecondWindow")
+
+                    timer = threading.Timer(0.25, open_window)
+                    timer.start()
+                    try:
+                        window.resolve(timeout=10)
+                        samples.append(time.monotonic() - opened[0])
+                    finally:
+                        timer.join()
+                    scenario("closeWindow")
+                    deadline = time.monotonic() + 10
+                    while len(scope.app.top_level_windows()) > 1 and time.monotonic() < deadline:
+                        time.sleep(0.05)
+                latencies[enabled] = statistics.median(samples)
+                requests[0] = 0
+                with pytest.raises(WaitTimeoutError):
+                    waits.wait_until(
+                        lambda: resolve_all(scope, Locator(automation_id="never-appears")) or None,
+                        5,
+                        description="missing item",
+                    )
+                counts[enabled] = requests[0]
+        print(
+            f"event wait measurement: latency events={latencies[True]:.3f}s "
+            f"polling={latencies[False]:.3f}s; requests events={counts[True]} "
+            f"polling={counts[False]}",
+            flush=True,
+        )
+        assert latencies[True] <= latencies[False]
+        assert counts[True] < counts[False]
+
+
 def test_event_hooks_real(owned: Any) -> None:
     from test_wpf_query_gate_real import _fixture_scenario, config
 

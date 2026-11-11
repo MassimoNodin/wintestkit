@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable
+from contextvars import ContextVar
 from typing import Literal
 
 from wintestkit.backends.element import TargetElement
@@ -18,6 +19,19 @@ _clock: Callable[[], float] = time.monotonic
 _sleep: Callable[[float], None] = time.sleep
 
 State = Literal["attached", "detached", "visible", "hidden", "enabled", "disabled", "stable"]
+_waker: ContextVar[list[Callable[[float], object]] | None] = ContextVar("wait_waker", default=None)
+
+
+def set_waker(waker: Callable[[float], object]) -> None:
+    __tracebackhide__ = True
+    current = _waker.get()
+    if current is not None:
+        current[:] = [waker]
+
+
+def wants_waker() -> bool:
+    __tracebackhide__ = True
+    return _waker.get() is not None and _clock is time.monotonic and _sleep is time.sleep
 
 
 def wait_until[T](
@@ -40,9 +54,14 @@ def wait_until[T](
     start = _clock()
     last_error: BaseException | None = None
     while True:
+        wakers: list[Callable[[float], object]] = []
+        token = _waker.set(wakers)
         try:
-            with query_budget(start + timeout):
-                result = fn()
+            try:
+                with query_budget(start + timeout):
+                    result = fn()
+            finally:
+                _waker.reset(token)
         except InspectorDeadlineError as error:
             if not error.busy:
                 if _clock() < start + timeout - 0.001:
@@ -58,7 +77,11 @@ def wait_until[T](
         waited = _clock() - start
         if waited >= timeout:
             break
-        _sleep(min(interval, max(timeout - waited, 0.0)))
+        remaining = max(timeout - waited, 0.0)
+        if wakers and _clock is time.monotonic and _sleep is time.sleep:
+            wakers[-1](remaining)
+        else:
+            _sleep(min(interval, remaining))
         waited = _clock() - start
         if waited >= timeout:
             break

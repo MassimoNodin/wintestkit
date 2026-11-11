@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any, cast
 from wintestkit.errors import InspectorError, InspectorUnavailableError
 from wintestkit.inspector import bootstrap, launcher, probe
 from wintestkit.inspector.client import InspectorClient
+from wintestkit.inspector.event_waiter import EventWaiter
 from wintestkit.inspector.models import ProcessFacts, ProcessIdentity, Session
 from wintestkit.inspector.pipe import WindowsPipe
 
@@ -34,6 +35,7 @@ class _Entry:
     cancel: threading.Event = field(default_factory=threading.Event)
     client: InspectorClient | None = None
     error: InspectorError | None = None
+    waiter: EventWaiter | None = None
 
 
 def _remaining(deadline: float, cancelled: threading.Event) -> None:
@@ -298,6 +300,11 @@ class SessionRegistry:
             if self._entries.get(identity) is entry:
                 entry.session = client.session
                 entry.client = None
+                waiter, entry.waiter = entry.waiter, None
+            else:
+                waiter = None
+        if waiter is not None:
+            waiter.close()
 
     def get(self, identity: ProcessIdentity) -> InspectorClient | None:
         with self._lock:
@@ -318,6 +325,30 @@ class SessionRegistry:
             client.invalidate(error, "exited" if error.code == "processExited" else "faulted")
             return None
         return client
+
+    def event_waiter(self, client: InspectorClient) -> EventWaiter | None:
+        if "events" not in client.session.features:
+            return None
+        with self._lock:
+            entry = next((item for item in self._entries.values() if item.client is client), None)
+            if entry is None or client.session.state != "ready":
+                return None
+            if entry.waiter is None:
+                entry.waiter = EventWaiter(client, {"treeChanged", "windowOpened", "windowClosed"})
+            return entry.waiter
+
+    def event_waiter_for_pids(self, pids: set[int]) -> EventWaiter | None:
+        with self._lock:
+            clients = [
+                entry.client
+                for identity, entry in self._entries.items()
+                if identity.pid in pids and entry.client is not None
+            ]
+        for client in clients:
+            waiter = self.event_waiter(client)
+            if waiter is not None:
+                return waiter
+        return None
 
     def status(self, identity: ProcessIdentity) -> Session:
         self.get(identity)
@@ -354,6 +385,8 @@ class SessionRegistry:
             client = entry.client
             if client is not None:
                 entry.session = replace(client.session, state="detaching")
+        if entry.waiter is not None:
+            entry.waiter.close()
         if client is not None:
             client.close()
         elif not entry.done.is_set():
@@ -366,6 +399,8 @@ class SessionRegistry:
             for entry in entries:
                 entry.cancel.set()
         for entry in entries:
+            if entry.waiter is not None:
+                entry.waiter.close()
             if entry.client is not None:
                 entry.client.close()
             elif not entry.done.is_set():
@@ -379,6 +414,8 @@ class SessionRegistry:
                 return
             entry.cancel.set()
             client = entry.client
+        if entry.waiter is not None:
+            entry.waiter.close()
         if client is not None:
             client.close()
         elif not entry.done.is_set():
