@@ -237,6 +237,7 @@ def test_launch_close_stress(tmp_path, monkeypatch):
 
 class StressPage(Page):
     button = Element(automation_id="FancyAutomationId")
+    noop_button = Element(automation_id="NestedButton")
     source = TextBox(automation_id="BindingSource")
 
 
@@ -267,7 +268,7 @@ def test_sustained_actions_stress(owned):
             elif operation == 1:
                 assert query(scope).is_enabled
             elif operation == 2:
-                page.button.click(mode="pattern")
+                page.noop_button.click(mode="pattern")
             elif operation == 3:
                 page.button.click(mode="mouse")
             elif operation == 4:
