@@ -16,8 +16,9 @@ import inspect
 import os
 import re
 import time
-from collections.abc import Callable, Iterator, Mapping
-from contextlib import AbstractContextManager
+from collections.abc import Callable, Generator, Iterator, Mapping
+from contextlib import AbstractContextManager, contextmanager
+from datetime import UTC, datetime
 from types import FrameType
 from typing import (
     TYPE_CHECKING,
@@ -1035,10 +1036,32 @@ class BoundControl(_BoundBase):
             raise
         runtime.record_audit(audit)
 
+    @contextmanager
+    def _write_step(self, action: str, operation: str) -> Generator[None]:
+        __tracebackhide__ = True
+        from wintestkit.inspector.models import WriteAudit
+
+        with self.step(action) as record:
+            try:
+                yield
+            except Exception:
+                if not record.audits:
+                    runtime.record_audit(
+                        WriteAudit(
+                            operation,
+                            "<unknown>",
+                            "identity",
+                            "failed",
+                            datetime.now(UTC).isoformat(),
+                            "clientFailure",
+                        )
+                    )
+                raise
+
     def set_property(self, name: str, value: Any) -> None:
         """Set an explicitly allowlisted property on a WPF element."""
         __tracebackhide__ = True
-        with self.step("set_property"):
+        with self._write_step("set_property", "setProperty"):
             element = self._write_target()
             deadline = operation_deadline(runtime.get_config().inspector.request_timeout)
             candidates: list[Member] = []
@@ -1069,7 +1092,7 @@ class BoundControl(_BoundBase):
     def call(self, name: str, *args: Any) -> None:
         """Call an explicitly allowlisted WPF method overload."""
         __tracebackhide__ = True
-        with self.step("call"):
+        with self._write_step("call", "call"):
             element = self._write_target()
             type_names = {
                 str: "System.String",

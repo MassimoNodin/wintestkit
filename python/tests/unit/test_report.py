@@ -198,3 +198,32 @@ def test_regenerating_a_report_keeps_the_ui_trees(tmp_path: Path) -> None:
     args = argparse.Namespace(directory=str(tmp_path), root=str(tmp_path), open_browser=False)
     assert report_command.run(args) == 0
     assert 'Window \\"App\\"' in (tmp_path / "index.html").read_text(encoding="utf-8")
+
+
+def test_write_audits_in_report_and_command(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    audit = {
+        "operation": "setProperty",
+        "typeFullName": "Example.Control",
+        "memberKey": "identity",
+        "outcome": "denied",
+        "reason": "redacted",
+        "timestampUtc": "2026-11-11T00:00:00Z",
+    }
+    results = {
+        "version": 1,
+        "tests": [{"name": "example", "steps": [{"action": "write", "audits": [audit]}]}],
+    }
+    write_report(tmp_path, results)
+    html = (tmp_path / "index.html").read_text(encoding="utf-8")
+    assert '"memberKey": "identity"' in html
+    assert "audit.memberKey" in html and "audit.reason" in html
+    assert "writes: ${counts('performed')} performed" in html
+    assert main(["report", str(tmp_path)]) == 0
+    output = capsys.readouterr().out
+    assert "1 writes: 0 performed, 1 denied, 0 failed" in output
+    assert (
+        "setProperty | Example.Control | identity | denied | redacted | 2026-11-11T00:00:00Z"
+        in output
+    )

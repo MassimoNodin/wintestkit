@@ -617,6 +617,48 @@ Slices: P6a agent writes, allowlist enforcement, rate limit and audit; P6b confi
 bootstrap, client and element API; P6c report audit, docs, live tests and the security
 review.
 
+### 6.10 Phase 6 security review (2026-11-11)
+
+- **Policy and layering:** `python/src/wintestkit/inspector/write_policy.py` validates exact
+  names, uniqueness and entry limits; `config.py` rejects local allowlists and limits overrides.
+  Shared repository configuration supplies the policy. Result: local config cannot grant writes.
+- **Bootstrap:** `python/src/wintestkit/inspector/bootstrap.py` creates and verifies a protected,
+  user-SID-only ACL and a 30-second expiry. `Agent/Session/BootstrapReader.cs` rejects reparse
+  points, consumes the file, and checks expiry and target process identity. The same user and
+  privileged administrators can still access or change the material.
+- **Enforcement:** `Agent/Writes/WriteEngine.cs` compares the exact runtime type, resolves property
+  declarations and dependency-property wrappers, and denies ambiguous, protected and redacted
+  members. It accepts only exact scalar types and rejects static, generic, ref/out and params
+  methods. Inherited members require an entry naming the actual runtime type.
+- **Rate:** `Agent/Session/RequestDispatcher.cs` counts attempts before scheduling or parsing;
+  its rolling one-second queue admits ten, including attempts denied for other reasons.
+- **Audits and deadlines:** dispatcher error handling supplies an audit for early agent failures;
+  `WriteEngine.cs` supplies one at the deadline even if target code remains running. Python's
+  `model.py` now supplies a redacted `clientFailure` audit when failure precedes or loses the
+  agent response. Its outcome cannot prove whether a lost-response operation took effect.
+- **Values and exceptions:** writes omit values from step arguments and agent audits. The
+  dispatcher emits generic errors and `WriteEngine.cs` records only the target exception type,
+  not its message. Report rendering uses audit fields rather than values. These protections do
+  not prevent target application code itself from logging data or embedding it in exception
+  type names, or arbitrary application output from appearing elsewhere in a report.
+- **Residual risks:** an allowed method can have arbitrary side effects, a setter or method can
+  hang the target UI thread or complete after a timeout, and a local administrator or anyone
+  able to edit the shared repository policy can grant access. Audit recording requires a live
+  test step and cannot guarantee persistence after process termination.
+
+### 6.11 Phase 6 results
+
+The owned-fixture live gate passed 128 tests on 2026-11-11. The write checks cover default
+denial, allowed dependency and CLR properties and method calls, adjacent and protected-member
+denials, local configuration rejection, rate limiting, audit recording and value-free reports.
+The gate (off by default, allowlist enforced, audit in reports and security review) is ready for
+the owner's sign-off.
+
+Open item: a lost response or timeout cannot establish whether target code eventually performed
+the operation; the recorded failure must not be treated as proof of no side effects. Target code
+can also log its own inputs, outside the audit's control. The missing client-side failure audit
+identified in the review was fixed with a redacted fallback and a regression test.
+
 ## 7. Test strategy
 
 - **Parity suite**: run the same locator, wait, action and typed-control tests under

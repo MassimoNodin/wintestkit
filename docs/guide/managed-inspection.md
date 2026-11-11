@@ -173,7 +173,7 @@ requires `--managed`. `--json` emits JSON. Inspection may expose sensitive data:
 | `limitExceeded` | Narrow the locator or request fewer paths. |
 | `cancelled` | Retry if the operation is still needed. |
 | `internalError` | Collect non-sensitive diagnostics and report the failure. |
-# Opt-in write policy
+## Writes and method calls
 
 Managed writes and method calls are denied by default. To permit specific members, add
 an allowlist to the repository's `wintestkit.yaml` (or the shared `pyproject.toml`):
@@ -197,3 +197,15 @@ the old session when the configured policy changes.
 Allowlisting grants permission, not a guarantee that a member is writable: the agent
 still checks the member, protected identities, redaction rules, and rate limits. Write
 attempts are audited without argument or property values. Use the narrowest list possible.
+
+Use `backend: auto` and a WPF element, for example `page.editor.set_property("IsModified", True)`
+or `page.editor.call("SetTitle", "Draft")`. Supported values are exactly strings, booleans,
+signed 64-bit integers and finite doubles; method signatures name their exact CLR types.
+Dependency properties, including CLR wrappers of dependency properties, use
+`SetCurrentValue` to preserve bindings; ordinary CLR properties use their public setter.
+Protected identities (including password controls), redacted names, static, generic,
+ref/out and params methods, and unsupported types are denied even if listed. The agent
+admits at most 10 write attempts per rolling second per session; denied attempts count too.
+The HTML report and `wtk report` show each step's audit and a write summary, without values.
+A client failure without an agent audit is recorded as `clientFailure` with an unknown type
+and redacted member; the outcome of a request whose response was lost may be unknown.
