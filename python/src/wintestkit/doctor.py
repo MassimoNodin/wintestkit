@@ -489,7 +489,9 @@ def _check_wpf_agent(cfg: WtkConfig | None, *, launch: bool = False) -> Check:
         if facts is None:
             return Check(check_id, title, "skip", "not a WPF application; the UIA backend is used")
         registry = SessionRegistry(
-            request_timeout=cfg.inspector.request_timeout, redact_names=cfg.inspector.redact_names
+            request_timeout=cfg.inspector.request_timeout,
+            redact_names=cfg.inspector.redact_names,
+            writes_allow=cfg.inspector.writes_allow,
         )
         client = registry.attach(
             facts.identity,

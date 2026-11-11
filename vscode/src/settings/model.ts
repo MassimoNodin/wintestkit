@@ -43,6 +43,7 @@ export const settingFields: SettingField[] = [
   { key: "inspector.attach_timeout", label: "Inspector attach timeout (seconds)", kind: "number", description: same("Maximum time to wait for attachment, up to 10 seconds."), default: 10, minimum: 0, maximum: 10, group: "Debugging" },
   { key: "inspector.request_timeout", label: "Inspector request timeout (seconds)", kind: "number", description: same("Maximum time to wait for a request, up to 2 seconds."), default: 2, minimum: 0, maximum: 2, group: "Debugging" },
   { key: "inspector.redact_names", label: "Additional redacted names (JSON array)", kind: "list", description: same("Additional sensitive name substrings to redact."), default: [], group: "Debugging" },
+  { key: "inspector.writes.allow", label: "Allowed managed writes (JSON array)", kind: "list", description: same("Repository-only allowlist of exact runtime type members: Namespace.Type.Property or Namespace.Type.Method(System.String,System.Int64). An empty list denies all writes; protected and redacted members remain denied."), default: [], repositoryOnly: true, group: "Debugging" },
   {
     key: "app.path",
     label: "Application executable",
@@ -309,8 +310,12 @@ export function flattenSettings(
       typeof entry === "object" &&
       !Array.isArray(entry)
     )
-      for (const [name, setting] of Object.entries(entry))
-        flat[key + "." + name] = setting;
+      for (const [name, setting] of Object.entries(entry)) {
+        if (key === "inspector" && name === "writes" && setting && Object.getPrototypeOf(setting) === Object.prototype) {
+          for (const [writeKey, writeSetting] of Object.entries(setting))
+            flat["inspector.writes." + writeKey] = writeSetting;
+        } else flat[key + "." + name] = setting;
+      }
     else flat[key] = entry;
   }
   return flat;
@@ -415,8 +420,13 @@ export function updateSetting(
   const parent = key.split(".")[0];
   if (!remove && key.includes(".") && !document.has(parent))
     document.set(parent, document.createNode({}));
+  if (!remove && key === "inspector.writes.allow" && !document.hasIn(["inspector", "writes"]))
+    document.setIn(["inspector", "writes"], document.createNode({}));
   if (remove) document.deleteIn(key.split("."));
   else document.setIn(key.split("."), value);
+  const writes = document.getIn(["inspector", "writes"], true);
+  if (isMap(writes) && writes.items.length === 0)
+    document.deleteIn(["inspector", "writes"]);
   if (
     isMap(document.get("app", true)) &&
     (document.get("app", true) as { items: unknown[] }).items.length === 0

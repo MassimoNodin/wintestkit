@@ -94,7 +94,9 @@ def _managed(elements: list[UIAElement], cfg: WtkConfig, keys: list[str]) -> lis
     with runtime.config_scope(cfg):
         runtime.require_managed()
         registry = SessionRegistry(
-            request_timeout=cfg.inspector.request_timeout, redact_names=cfg.inspector.redact_names
+            request_timeout=cfg.inspector.request_timeout,
+            redact_names=cfg.inspector.redact_names,
+            writes_allow=cfg.inspector.writes_allow,
         )
         try:
             results: list[dict[str, Any]] = []

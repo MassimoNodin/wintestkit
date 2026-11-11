@@ -148,6 +148,7 @@ class InspectorConfig:
     attach_timeout: float = 10.0
     request_timeout: float = 2.0
     redact_names: tuple[str, ...] = ()
+    writes_allow: tuple[str, ...] = ()
     query: Literal["agent", "postfilter"] = "agent"
 
 
@@ -352,6 +353,14 @@ def _flatten(table: Mapping[str, Any]) -> dict[str, Any]:
             if not isinstance(value, Mapping):
                 raise _fail(key, f"expected a table, got {value!r}")
             for app_key, app_value in cast("Mapping[str, Any]", value).items():
+                if key == "inspector" and app_key == "writes":
+                    if not isinstance(app_value, Mapping):
+                        raise _fail("inspector.writes", "expected a table containing only allow")
+                    writes = cast("Mapping[str, Any]", app_value)
+                    if set(writes) != {"allow"}:
+                        raise _fail("inspector.writes", "expected a table containing only allow")
+                    flat["inspector.writes.allow"] = writes["allow"]
+                    continue
                 if app_key not in (_APP_KEYS if key == "app" else _INSPECTOR_KEYS):
                     raise _fail(f"{key}.{app_key}", "unknown key")
                 flat[f"{key}.{app_key}"] = app_value
@@ -501,6 +510,7 @@ def _build_inspector(values: Mapping[str, Any]) -> InspectorConfig:
         attach_timeout=timeout("attach_timeout", 10.0),
         request_timeout=timeout("request_timeout", 2.0),
         redact_names=tuple(dict.fromkeys(names)),
+        writes_allow=_write_allow(values.get("inspector.writes.allow", [])),
         query=cast(
             "Literal['agent', 'postfilter']",
             _enum(
@@ -508,6 +518,15 @@ def _build_inspector(values: Mapping[str, Any]) -> InspectorConfig:
             ),
         ),
     )
+
+
+def _write_allow(value: object) -> tuple[str, ...]:
+    from wintestkit.inspector.write_policy import parse_write_allowlist
+
+    try:
+        return parse_write_allowlist(value)[0]
+    except ValueError as error:
+        raise _fail("inspector.writes.allow", str(error)) from error
 
 
 def load_config(start: Path | None = None, overrides: Mapping[str, Any] | None = None) -> WtkConfig:
@@ -531,8 +550,14 @@ def load_config(start: Path | None = None, overrides: Mapping[str, Any] | None =
         _layer(values, shared)
         repository = {**_flatten(table), **shared}
         local_toml = _read_pyproject(root / "wintestkit.local.toml") or {}
-        _layer(values, _flatten(_wtk_table(local_toml) or {}))
-        _layer(values, _flatten(_read_yaml(root / "wintestkit.local.yaml")))
+        local_layers = (
+            _flatten(_wtk_table(local_toml) or {}),
+            _flatten(_read_yaml(root / "wintestkit.local.yaml")),
+        )
+        for local in local_layers:
+            if "inspector.writes.allow" in local:
+                raise _fail("inspector.writes.allow", "must be configured in the repository")
+            _layer(values, local)
     values.update(_environment_values(os.environ))
     if overrides:
         _check_override_keys(overrides)
