@@ -4,7 +4,8 @@ import time
 from dataclasses import replace
 
 import pytest
-from test_inspector_owned_integration import DOTNET, FIXTURE, PAYLOAD
+from live_dotnet import live_dotnet_root
+from test_inspector_owned_integration import FIXTURE, PAYLOAD
 
 from wintestkit import doctor
 from wintestkit.config import AppConfig, load_config
@@ -21,7 +22,7 @@ pytestmark = pytest.mark.skipif(
 def test_doctor_agent_real(tmp_path, monkeypatch):
     monkeypatch.syspath_prepend(str(PAYLOAD))
     env = os.environ.copy()
-    env["DOTNET_ROOT_X64"] = DOTNET
+    env["DOTNET_ROOT_X64"] = live_dotnet_root()
     env["DOTNET_MULTILEVEL_LOOKUP"] = "0"
     target = subprocess.Popen(
         [str(FIXTURE / "WinTestKit.Fixture.exe")],

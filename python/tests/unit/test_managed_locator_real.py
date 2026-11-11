@@ -6,7 +6,8 @@ import subprocess
 import time
 
 import pytest
-from test_inspector_owned_integration import DOTNET, FIXTURE, PAYLOAD, _control, _hashes
+from live_dotnet import live_dotnet_root
+from test_inspector_owned_integration import FIXTURE, PAYLOAD, _control, _hashes
 from test_managed_server_real import _fixture_counters
 
 from wintestkit import runtime
@@ -37,7 +38,7 @@ def test_owned_fixture_managed_locator(tmp_path, monkeypatch):
     )
     before = _hashes()
     environment = os.environ.copy()
-    environment["DOTNET_ROOT_X64"] = DOTNET
+    environment["DOTNET_ROOT_X64"] = live_dotnet_root()
     environment["DOTNET_MULTILEVEL_LOOKUP"] = "0"
     target = subprocess.Popen(
         [str(FIXTURE / "WinTestKit.Fixture.exe")],

@@ -11,8 +11,9 @@ from typing import Any
 
 import pytest
 from jsonschema import Draft202012Validator
+from live_dotnet import live_dotnet_root
 from referencing import Registry, Resource
-from test_inspector_owned_integration import DOTNET, FIXTURE, PAYLOAD, ROOT, _control, _hashes  # pyright: ignore[reportPrivateUsage]
+from test_inspector_owned_integration import FIXTURE, PAYLOAD, ROOT, _control, _hashes  # pyright: ignore[reportPrivateUsage]
 
 from wintestkit import runtime
 from wintestkit.cli import main
@@ -212,8 +213,8 @@ def test_owned_fixture_server_and_cli(
     )
     before = _hashes()
     env = os.environ.copy()
-    env["DOTNET_ROOT"] = DOTNET
-    env["DOTNET_ROOT_X64"] = DOTNET
+    env["DOTNET_ROOT"] = live_dotnet_root()
+    env["DOTNET_ROOT_X64"] = live_dotnet_root()
     env["DOTNET_MULTILEVEL_LOOKUP"] = "0"
     target = subprocess.Popen(
         [str(FIXTURE / "WinTestKit.Fixture.exe")],
@@ -413,8 +414,8 @@ def test_spy_tree_peerless_and_large_page(tmp_path: Path, monkeypatch: pytest.Mo
         "inspector:\n  enabled: true\n  attach: manual\n", encoding="utf-8"
     )
     env = os.environ.copy()
-    env["DOTNET_ROOT"] = DOTNET
-    env["DOTNET_ROOT_X64"] = DOTNET
+    env["DOTNET_ROOT"] = live_dotnet_root()
+    env["DOTNET_ROOT_X64"] = live_dotnet_root()
     env["DOTNET_MULTILEVEL_LOOKUP"] = "0"
     target = subprocess.Popen(
         [str(FIXTURE / "WinTestKit.Fixture.exe"), "--scenario", "openLarge"],

@@ -14,8 +14,9 @@ from ctypes import wintypes
 from dataclasses import replace
 
 import pytest
+from live_dotnet import live_dotnet_root
 from stress_growth import check_growth
-from test_inspector_owned_integration import DOTNET, FIXTURE, PAYLOAD
+from test_inspector_owned_integration import FIXTURE, PAYLOAD
 from test_wpf_query_gate_real import config
 
 from wintestkit import runtime
@@ -236,7 +237,7 @@ def test_launch_close_stress(tmp_path, monkeypatch):
             app = App.launch(
                 FIXTURE / "WinTestKit.Fixture.exe",
                 cwd=FIXTURE,
-                env={"DOTNET_ROOT_X64": DOTNET, "DOTNET_MULTILEVEL_LOOKUP": "0"},
+                env={"DOTNET_ROOT_X64": live_dotnet_root(), "DOTNET_MULTILEVEL_LOOKUP": "0"},
                 owned_only=True,
             )
             pid = app.pids[0]
