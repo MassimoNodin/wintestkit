@@ -5,6 +5,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using WinTestKit.Inspector.Agent.Contracts;
+using WinTestKit.Inspector.Agent.Events;
 using WinTestKit.Inspector.Agent.Inspection.Members;
 using WinTestKit.Inspector.Protocol;
 
@@ -27,6 +28,9 @@ namespace WinTestKit.Inspector.Agent.Session
         private readonly IRequestScheduler scheduler;
         private readonly Queue<long> writeAttempts = new Queue<long>();
         private readonly RedactionPolicy redaction;
+        internal SubscriptionStore Subscriptions { get; } = new SubscriptionStore();
+
+        internal void Publish(string kind, ObjectRef? handle) => Subscriptions.Publish(kind, handle);
 
         public RequestDispatcher(string sessionId, IInspectionService service, IRequestScheduler? scheduler = null, IEnumerable<string>? redactNames = null)
         {
@@ -222,8 +226,9 @@ namespace WinTestKit.Inspector.Agent.Session
                     if (!(service is IWriteInspectionService callService)) throw new ProtocolException(ErrorCodes.UnsupportedTarget, "Feature not available.");
                     return new WriteCallResult { Audit = await callService.WriteAsync("call", call.Handle, call.MemberKey, call.Arguments, deadline, call.TimeoutMs, ct).ConfigureAwait(false) }.ToJson();
                 case PipeMethods.EventsSubscribe:
+                    return new EventsSubscription { SubscriptionId = Subscriptions.Subscribe(EventsSubscribeParams.FromJson(request.Params).Kinds) }.ToJson();
                 case PipeMethods.EventsUnsubscribe:
-                    throw new ProtocolException(ErrorCodes.UnsupportedTarget, "Feature not available.");
+                    return new EventsUnsubscribeResult { Unsubscribed = Subscriptions.Unsubscribe(EventsSubscription.FromJson(request.Params).SubscriptionId) }.ToJson();
                 default:
                     throw new ProtocolException(ErrorCodes.InvalidParams, "Unknown method.");
             }
