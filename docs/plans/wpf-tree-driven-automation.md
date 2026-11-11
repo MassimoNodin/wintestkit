@@ -694,6 +694,16 @@ Slices: P7a attach on launch, reattach and detach; P7b agent events; P7c Python 
 P7d stress tests; P7e six-cell matrix; P7f CI desktop job and runner setup docs; P7g release
 gates except signing.
 
+P7d results: the attach test measured 400 cycles at 20-cycle checkpoints; sustained
+actions were sampled every 100 cycles. Growth uses the median of three endpoint samples,
+with recorded-series unit tests. The launch thread gate counts named WinTestKit threads.
+No product leak was found; pattern clicks use the no-op `NestedButton`.
+
+P7e results: two live smoke runs passed all six cells: net48 x86 and x64
+(`4.0.30319.42000`), net8 x86 (`8.0.6`) and x64 (`8.0.20`), and net10 x86
+(`10.0.15`) and x64 (`10.0.11`). The manifest cell list matches the six cells;
+its `verified` flags remain false pending the full P7g release gates.
+
 ## 7. Test strategy
 
 - **Parity suite**: run the same locator, wait, action and typed-control tests under

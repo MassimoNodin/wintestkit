@@ -13,6 +13,39 @@ $root = Split-Path $PSScriptRoot -Parent
 $dotnet = Resolve-InspectorDotnet -DotnetRoot $DotnetRoot -InspectorRoot (Join-Path $root 'wpf-inspector')
 Push-Location (Join-Path $root 'wpf-inspector')
 try {
+if ($Suite -eq 'Matrix') {
+    if (-not $PayloadRoot) { $PayloadRoot = Join-Path $root 'inspector-payload/src/wintestkit_inspector/payload' }
+    $manifest = Get-Content -Raw -LiteralPath (Join-Path $PayloadRoot 'manifest.json') | ConvertFrom-Json
+    $expected = @('net48/x86','net48/x64','net8/x86','net8/x64','net10/x86','net10/x64') | Sort-Object
+    $actual = @($manifest.cells | ForEach-Object { "$($_.runtime)/$($_.architecture)" } | Sort-Object)
+    $matches = ($actual.Count -eq 6 -and (Compare-Object $expected $actual).Count -eq 0)
+    Write-Host "Manifest six-cell list matches: $matches (verified flags unchanged)"
+    $oldReal = $env:WTK_INSPECTOR_REAL
+    $env:WTK_INSPECTOR_REAL = '1'
+    $rows = @()
+    try {
+        foreach ($r in @('net48','net8','net10')) {
+            foreach ($a in @('x86','x64')) {
+                if (($Runtime -and $Runtime -ne $r) -or ($Architecture -and $Architecture -ne $a)) { continue }
+                $watch = [Diagnostics.Stopwatch]::StartNew()
+                $previousPreference = $ErrorActionPreference
+                $ErrorActionPreference = 'Continue'
+                try {
+                    $output = & uv run --directory (Join-Path $root 'python') pytest -q -s "tests/unit/test_inspector_matrix_real.py::test_matrix_cell[$a-$r]" 2>&1
+                    $code = $LASTEXITCODE
+                } finally { $ErrorActionPreference = $previousPreference }
+                $watch.Stop()
+                $output | ForEach-Object { Write-Host $_ }
+                $hello = @($output | Where-Object { "$_" -match '^MATRIX_HELLO ' })
+                $version = if ($hello.Count -eq 1) { ("$($hello[0])" -split '\s+')[-1] } else { '-' }
+                $rows += [pscustomobject]@{ Runtime=$r; Architecture=$a; Result=$(if ($code -eq 0 -and $hello.Count -eq 1) {'PASS'} else {'FAIL'}); HelloVersion=$version; Seconds=[math]::Round($watch.Elapsed.TotalSeconds, 2) }
+            }
+        }
+    } finally { $env:WTK_INSPECTOR_REAL = $oldReal }
+    $rows | Format-Table -AutoSize | Out-Host
+    if (@($rows | Where-Object Result -eq 'FAIL').Count -or -not $matches) { throw 'Matrix failed or manifest cell list does not match.' }
+    return
+}
 if ($Suite -eq 'Package') {
     if (-not $PayloadRoot) { $PayloadRoot = Join-Path $root 'inspector-payload/src/wintestkit_inspector/payload' }
     $PayloadRoot = [IO.Path]::GetFullPath($PayloadRoot)
