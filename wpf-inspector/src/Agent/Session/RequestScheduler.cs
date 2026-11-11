@@ -12,6 +12,7 @@ namespace WinTestKit.Inspector.Agent.Session
         {
             public long Id;
             public bool IsWait;
+            public bool IsWrite;
             public Func<CancellationToken, Task<JsonNode>> Operation = null!;
             public readonly CancellationTokenSource Cancellation = new CancellationTokenSource();
             public readonly TaskCompletionSource<JsonNode> Completion = new TaskCompletionSource<JsonNode>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -32,7 +33,7 @@ namespace WinTestKit.Inspector.Agent.Session
 
         public Task<JsonNode> ExecuteAsync(RequestEnvelope request, Func<CancellationToken, Task<JsonNode>> operation, CancellationToken ct)
         {
-            var work = new Work { Id = request.Id, Operation = operation, IsWait = request.Method == PipeMethods.WaitUntil };
+            var work = new Work { Id = request.Id, Operation = operation, IsWait = request.Method == PipeMethods.WaitUntil, IsWrite = request.Method == PipeMethods.WriteSetProperty || request.Method == PipeMethods.WriteCall };
             lock (gate)
             {
                 if (disposed || ct.IsCancellationRequested) return Task.FromCanceled<JsonNode>(new CancellationToken(true));
@@ -66,7 +67,7 @@ namespace WinTestKit.Inspector.Agent.Session
         {
             using (var registration = ct.Register(() => Finish(work.Id, ErrorCodes.Cancelled)))
             {
-                var delay = Task.Delay(timeout + (work.IsWait ? 50 : 0));
+                var delay = Task.Delay(timeout + (work.IsWait || work.IsWrite ? 50 : 0));
                 if (await Task.WhenAny(work.Completion.Task, delay).ConfigureAwait(false) == delay)
                     Finish(work.Id, ErrorCodes.Timeout);
             }

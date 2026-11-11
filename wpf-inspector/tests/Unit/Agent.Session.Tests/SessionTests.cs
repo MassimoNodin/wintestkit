@@ -233,6 +233,7 @@ public class SessionTests
         Assert.Contains(Features.Query, response.Features);
         Assert.Contains(Features.Waits, response.Features);
         Assert.Contains(Features.Actions, response.Features);
+        Assert.Contains(Features.Writes, response.Features);
         await FrameCodec.WriteFrameAsync(client, StrictJson.Serialize(new RequestEnvelope { Id = 2, Method = PipeMethods.Close }.ToJson()), timeout.Token);
         await FrameCodec.ReadFrameAsync(client, timeout.Token);
         await serving.WaitAsync(timeout.Token);
@@ -330,6 +331,30 @@ public class SessionTests
         await serving.WaitAsync(timeout.Token);
         server.Dispose();
         Assert.Null(await FrameCodec.ReadFrameAsync(client, timeout.Token));
+    }
+
+    [Trait("Category", "Unit")]
+    [Fact]
+    public async Task PipeAuditsNonObjectWriteParameters()
+    {
+        var settings = Settings();
+        using var server = new PipeServer(settings, new RequestDispatcher(settings.SessionId, new FakeService()), new Verifier(true), false, () => { });
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        var serving = server.RunAsync(timeout.Token);
+        using var client = new NamedPipeClientStream(".", settings.PipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
+        await client.ConnectAsync(timeout.Token);
+        await Send(client, new RequestEnvelope { Id = 1, Method = PipeMethods.Hello, Params = new HelloParams { ProtocolMajor = 2, ProtocolMinor = 0, SessionId = settings.SessionId, Token = settings.Token, Process = settings.Process }.ToJson() }, timeout.Token);
+        Assert.NotNull(await FrameCodec.ReadFrameAsync(client, timeout.Token));
+        var request = new JsonObjectNode(); request.Add("id", JsonNumberNode.From(2)); request.Add("method", new JsonStringNode(PipeMethods.WriteCall)); request.Add("params", new JsonStringNode("private-test-value"));
+        await FrameCodec.WriteFrameAsync(client, StrictJson.Serialize(request), timeout.Token);
+        var bytes = await FrameCodec.ReadFrameAsync(client, timeout.Token);
+        var response = ResponseEnvelope.FromJson(StrictJson.Parse(bytes!, 0, bytes!.Length));
+        Assert.Equal(ErrorCodes.InvalidParams, response.Error!.Code);
+        Assert.Equal("<unknown>", WriteAudit.FromJson(response.Error.Details!.Get("audit")).MemberKey);
+        Assert.DoesNotContain("private-test-value", System.Text.Encoding.UTF8.GetString(bytes));
+        await Send(client, new RequestEnvelope { Id = 3, Method = PipeMethods.Close }, timeout.Token);
+        Assert.NotNull(await FrameCodec.ReadFrameAsync(client, timeout.Token));
+        await serving.WaitAsync(timeout.Token);
     }
 
     [Trait("Category", "Unit")]

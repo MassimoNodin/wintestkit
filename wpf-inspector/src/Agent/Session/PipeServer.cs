@@ -86,7 +86,7 @@ namespace WinTestKit.Inspector.Agent.Session
             }
             catch (Exception error) when (error is ProtocolException || error is FormatException || error is ArgumentException) { return; }
             var result = new HelloResult { AgentVersion = typeof(PipeServer).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "", Tfm = Tfm, Architecture = Environment.Is64BitProcess ? "x64" : "x86", RuntimeVersion = Environment.Version.ToString(), Process = settings.Process,
-                Features = production ? (exactMappingAvailable ? new[] { Features.TypeMetadata, Features.ClrMembers, Features.DependencyProperties, Features.Bindings, Features.ExactUiaMapping, Features.BatchReads, Features.Query, Features.Geometry, Features.Waits, Features.Actions, Features.VirtualItems, Features.HitTest } : new[] { Features.TypeMetadata, Features.ClrMembers, Features.DependencyProperties, Features.Bindings, Features.BatchReads, Features.Query, Features.Geometry, Features.Waits, Features.Actions, Features.VirtualItems, Features.HitTest }) : Array.Empty<string>() };
+                Features = production ? (exactMappingAvailable ? new[] { Features.TypeMetadata, Features.ClrMembers, Features.DependencyProperties, Features.Bindings, Features.ExactUiaMapping, Features.BatchReads, Features.Query, Features.Geometry, Features.Waits, Features.Actions, Features.VirtualItems, Features.HitTest, Features.Writes } : new[] { Features.TypeMetadata, Features.ClrMembers, Features.DependencyProperties, Features.Bindings, Features.BatchReads, Features.Query, Features.Geometry, Features.Waits, Features.Actions, Features.VirtualItems, Features.HitTest, Features.Writes }) : Array.Empty<string>() };
             await SendAsync(new ResponseEnvelope { Id = request.Id, Result = result.ToJson() }, ct).ConfigureAwait(false);
             activity();
             long lastId = request.Id;
@@ -150,8 +150,14 @@ namespace WinTestKit.Inspector.Agent.Session
             if (!(node is JsonObjectNode input) || !input.TryGet("method", out var methodNode) || !(methodNode is JsonStringNode method))
                 return RequestEnvelope.FromJson(node);
             var normalized = new JsonObjectNode();
+            bool write = method.Value == PipeMethods.WriteSetProperty || method.Value == PipeMethods.WriteCall;
+            bool hasParams = false;
             foreach (var member in input.Members)
-                normalized.Add(member.Key, member.Key == "method" ? new JsonStringNode(PipeMethods.Close) : member.Value);
+            {
+                if (member.Key == "params") hasParams = true;
+                normalized.Add(member.Key, member.Key == "method" ? new JsonStringNode(PipeMethods.Close) : write && member.Key == "params" && !(member.Value is JsonObjectNode) ? new JsonObjectNode() : member.Value);
+            }
+            if (write && !hasParams) normalized.Add("params", new JsonObjectNode());
             var request = RequestEnvelope.FromJson(normalized);
             if (string.IsNullOrEmpty(method.Value) || method.Value.Length > ProtocolLimits.MaxIdentifierLength)
                 throw new ProtocolException(ErrorCodes.InvalidParams, "Invalid method.");

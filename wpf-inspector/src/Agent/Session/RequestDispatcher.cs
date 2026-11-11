@@ -1,8 +1,11 @@
 using System;
+using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using WinTestKit.Inspector.Agent.Contracts;
+using WinTestKit.Inspector.Agent.Inspection.Members;
 using WinTestKit.Inspector.Protocol;
 
 namespace WinTestKit.Inspector.Agent.Session
@@ -22,12 +25,15 @@ namespace WinTestKit.Inspector.Agent.Session
         private readonly string sessionId;
         private readonly IInspectionService service;
         private readonly IRequestScheduler scheduler;
+        private readonly Queue<long> writeAttempts = new Queue<long>();
+        private readonly RedactionPolicy redaction;
 
-        public RequestDispatcher(string sessionId, IInspectionService service, IRequestScheduler? scheduler = null)
+        public RequestDispatcher(string sessionId, IInspectionService service, IRequestScheduler? scheduler = null, IEnumerable<string>? redactNames = null)
         {
             this.sessionId = sessionId;
             this.service = service;
             this.scheduler = scheduler ?? new RequestScheduler(ProtocolLimits.RequestTimeoutMs);
+            redaction = new RedactionPolicy(redactNames ?? Array.Empty<string>());
         }
 
         public async Task<ResponseEnvelope> HandleAsync(RequestEnvelope request, CancellationToken ct)
@@ -35,6 +41,8 @@ namespace WinTestKit.Inspector.Agent.Session
             var deadline = DateTime.UtcNow.AddMilliseconds((scheduler as RequestScheduler)?.TimeoutMs ?? ProtocolLimits.RequestTimeoutMs);
             try
             {
+                if (IsWrite(request.Method) && !AdmitWriteAttempt())
+                    throw new ProtocolException(ErrorCodes.WriteRateExceeded, "Write rate exceeded.");
                 JsonNode result;
                 if (request.Method == PipeMethods.Cancel && scheduler is RequestScheduler concrete)
                     result = new CancelResult { Accepted = concrete.Cancel(CancelParams.FromJson(request.Params).RequestId) }.ToJson();
@@ -46,16 +54,64 @@ namespace WinTestKit.Inspector.Agent.Session
             }
             catch (ProtocolException error)
             {
-                return new ResponseEnvelope { Id = request.Id, Error = new ErrorInfo { Code = error.Code, Message = "Request failed.", Details = SafeErrorDetails(error) } };
+                return new ResponseEnvelope { Id = request.Id, Error = new ErrorInfo { Code = error.Code, Message = "Request failed.", Details = IsWrite(request.Method) ? WriteErrorDetails(request, error) : SafeErrorDetails(error, request.Method) } };
+            }
+            catch (OperationCanceledException)
+            {
+                var error = new ProtocolException(ErrorCodes.Cancelled, "Request cancelled.");
+                return new ResponseEnvelope { Id = request.Id, Error = new ErrorInfo { Code = error.Code, Message = "Request failed.", Details = IsWrite(request.Method) ? WriteErrorDetails(request, error) : null } };
             }
             catch (Exception)
             {
-                return new ResponseEnvelope { Id = request.Id, Error = new ErrorInfo { Code = ErrorCodes.InternalError, Message = "Request failed." } };
+                return new ResponseEnvelope { Id = request.Id, Error = new ErrorInfo { Code = ErrorCodes.InternalError, Message = "Request failed.", Details = IsWrite(request.Method) ? WriteErrorDetails(request, new ProtocolException(ErrorCodes.InternalError, "Request failed.")) : null } };
             }
         }
 
-        private static JsonObjectNode? SafeErrorDetails(ProtocolException error)
+        private static bool IsWrite(string method) => method == PipeMethods.WriteCall || method == PipeMethods.WriteSetProperty;
+
+        private bool AdmitWriteAttempt()
         {
+            lock (writeAttempts)
+            {
+                long now = Stopwatch.GetTimestamp();
+                while (writeAttempts.Count > 0 && now - writeAttempts.Peek() >= Stopwatch.Frequency) writeAttempts.Dequeue();
+                bool admitted = writeAttempts.Count < 10;
+                writeAttempts.Enqueue(now);
+                if (writeAttempts.Count > 10) writeAttempts.Dequeue();
+                return admitted;
+            }
+        }
+
+        private JsonObjectNode WriteErrorDetails(RequestEnvelope request, ProtocolException error)
+        {
+            var existing = SafeErrorDetails(error, request.Method);
+            if (existing != null && existing.TryGet("audit", out _)) return existing;
+            string typeName = "<unknown>";
+            string memberKey = "<unknown>";
+            if (request.Params is JsonObjectNode parameters && parameters.TryGet("handle", out var handle))
+            {
+                try { var name = ObjectRef.FromJson(handle).Type.FullName; if (!string.IsNullOrEmpty(name)) typeName = name; }
+                catch (ProtocolException) { }
+            }
+            if (request.Params is JsonObjectNode input && input.TryGet("memberKey", out var member) && member is JsonStringNode key && key.Value.Length > 0 && key.Value.Length <= ProtocolLimits.MaxKeyLength)
+            {
+                string name = key.Value;
+                if (request.Method == PipeMethods.WriteCall) { int index = name.IndexOf('('); if (index >= 0) name = name.Substring(0, index); }
+                else { var parts = name.Split('|'); if (parts.Length > 3) name = parts[3]; }
+                memberKey = redaction.Match(name) ?? key.Value;
+            }
+            string reason = error.Code == ErrorCodes.WriteRateExceeded ? "rateLimited" : error.Code == ErrorCodes.Busy ? "admission" : error.Code;
+            var audit = new WriteAudit { Operation = request.Method == PipeMethods.WriteCall ? "call" : "setProperty", TypeFullName = typeName, MemberKey = memberKey, Outcome = error.Code == ErrorCodes.WriteRateExceeded || error.Code == ErrorCodes.WriteDenied || error.Code == ErrorCodes.Busy ? "denied" : "failed", TimestampUtc = DateTime.UtcNow.ToString("O"), Reason = reason };
+            var details = new JsonObjectNode(); details.Add("audit", audit.ToJson()); return details;
+        }
+
+        private static JsonObjectNode? SafeErrorDetails(ProtocolException error, string method)
+        {
+            if ((method == PipeMethods.WriteCall || method == PipeMethods.WriteSetProperty) && error.Details != null && error.Details.TryGet("audit", out var audit))
+            {
+                try { var safe = new JsonObjectNode(); safe.Add("audit", WriteAudit.FromJson(audit).ToJson()); return safe; }
+                catch (ProtocolException) { return null; }
+            }
             if (error.Code == ErrorCodes.ValueUnreadable) return error.Details;
             if (error.Code == ErrorCodes.Timeout && error.Details != null &&
                 error.Details.TryGet("dispatcherBusy", out var busy) && busy is JsonBoolNode busyBoolean && busyBoolean.Value)
@@ -158,7 +214,13 @@ namespace WinTestKit.Inspector.Agent.Session
                     var hitTest = HitTestParams.FromJson(request.Params);
                     return (await hitTestService.HitTestAsync(hitTest.NativeWindowHandle, hitTest.Point, deadline, hitTest.TimeoutMs, ct, hitTest.IncludePath).ConfigureAwait(false)).ToJson();
                 case PipeMethods.WriteSetProperty:
+                    var set = WriteSetPropertyParams.FromJson(request.Params, false);
+                    if (!(service is IWriteInspectionService setService)) throw new ProtocolException(ErrorCodes.UnsupportedTarget, "Feature not available.");
+                    return new WriteSetPropertyResult { Audit = await setService.WriteAsync("setProperty", set.Handle, set.MemberKey, new[] { set.Value }, deadline, set.TimeoutMs, ct).ConfigureAwait(false) }.ToJson();
                 case PipeMethods.WriteCall:
+                    var call = WriteCallParams.FromJson(request.Params, false);
+                    if (!(service is IWriteInspectionService callService)) throw new ProtocolException(ErrorCodes.UnsupportedTarget, "Feature not available.");
+                    return new WriteCallResult { Audit = await callService.WriteAsync("call", call.Handle, call.MemberKey, call.Arguments, deadline, call.TimeoutMs, ct).ConfigureAwait(false) }.ToJson();
                 case PipeMethods.EventsSubscribe:
                 case PipeMethods.EventsUnsubscribe:
                     throw new ProtocolException(ErrorCodes.UnsupportedTarget, "Feature not available.");

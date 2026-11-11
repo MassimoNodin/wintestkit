@@ -16,12 +16,13 @@ using WinTestKit.Inspector.Agent.Mapping;
 using WinTestKit.Inspector.Agent.Query;
 using WinTestKit.Inspector.Agent.State;
 using WinTestKit.Inspector.Agent.Wait;
+using WinTestKit.Inspector.Agent.Writes;
 using WinTestKit.Inspector.Agent.Inspection.Members;
 using WinTestKit.Inspector.Protocol;
 
 namespace WinTestKit.Inspector.Agent.Inspection
 {
-    public sealed class WpfInspectionService : IInspectionService, IExactMappingCapability, IQueryInspectionService, IStateInspectionService, IWaitInspectionService, IActionInspectionService, IRealizeInspectionService, IHitTestInspectionService
+    public sealed class WpfInspectionService : IInspectionService, IExactMappingCapability, IQueryInspectionService, IStateInspectionService, IWaitInspectionService, IActionInspectionService, IRealizeInspectionService, IHitTestInspectionService, IWriteInspectionService
     {
         private readonly DispatcherExecutor executor;
         private readonly ObjectRegistry registry;
@@ -31,11 +32,12 @@ namespace WinTestKit.Inspector.Agent.Inspection
         private readonly IObjectInspector inspector;
         private readonly TreeWalker walker;
         private readonly QueryEngine query;
+        private readonly WriteEngine writes;
         private readonly CancellationTokenSource lifetime = new CancellationTokenSource();
         private int disposed;
 
         internal WpfInspectionService(string sessionId, IObjectInspector inspector,
-            PageSnapshotStore? snapshots = null, IPeerRuntimeIdAdapter? adapter = null)
+            PageSnapshotStore? snapshots = null, IPeerRuntimeIdAdapter? adapter = null, WriteAllowlist? allowlist = null, IReadOnlyList<string>? redactNames = null)
         {
             this.inspector = inspector ?? throw new ArgumentNullException(nameof(inspector));
             executor = new DispatcherExecutor();
@@ -45,9 +47,19 @@ namespace WinTestKit.Inspector.Agent.Inspection
             walker = new TreeWalker(executor);
             mapper = new ElementMapper(executor, this.adapter, registry, walker);
             query = new QueryEngine(executor, registry, inspector as ObjectInspector);
+            writes = new WriteEngine(executor, allowlist ?? new WriteAllowlist(), redactNames ?? Array.Empty<string>());
         }
 
         public bool ExactMappingAvailable => mapper.IsAvailable;
+
+        public Task<WriteAudit> WriteAsync(string operation, ObjectRef handle, string memberKey, IReadOnlyList<JsonNode> values, DateTime deadline, int timeoutMs, CancellationToken ct) => RunAsync(async token =>
+        {
+            object target = GetObject(handle.ObjectId, handle.Generation, out Dispatcher dispatcher);
+            ObjectRef actual = registry.Register(target, dispatcher, inspector.DescribeType(target.GetType()));
+            if (actual.SessionId != handle.SessionId || actual.DispatcherId != handle.DispatcherId)
+                throw new ProtocolException(ErrorCodes.ObjectStale, "Unknown or stale object handle.");
+            return await writes.ExecuteAsync(dispatcher, target, operation, memberKey, values, deadline, timeoutMs, token).ConfigureAwait(false);
+        }, ct);
 
         [DllImport("user32.dll")]
         private static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint processId);

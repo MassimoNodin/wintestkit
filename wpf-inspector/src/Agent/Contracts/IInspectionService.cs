@@ -47,6 +47,16 @@ namespace WinTestKit.Inspector.Agent.Contracts
         Task<ActResult> ActAsync(string method, ObjectRef handle, DateTime deadline, int timeoutMs, CancellationToken ct, object? parameters = null);
     }
 
+    public interface IWriteInspectionService
+    {
+        Task<WriteAudit> WriteAsync(string operation, ObjectRef handle, string memberKey, IReadOnlyList<JsonNode> values, DateTime deadline, int timeoutMs, CancellationToken ct);
+    }
+
+    public interface IWriteInspectionServiceFactory
+    {
+        IInspectionService Create(string sessionId, IReadOnlyList<string> redactNames, WriteAllowlist allowlist);
+    }
+
     public interface IRealizeInspectionService
     {
         Task<ActRealizeItemResult> RealizeItemAsync(ItemSearch search, DateTime deadline, int timeoutMs, CancellationToken ct);

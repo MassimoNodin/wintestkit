@@ -30,7 +30,7 @@ public class RequestDispatcherTests
         var request = new RequestEnvelope { Id = 42, Method = method, Params = new JsonObjectNode() };
         request = RequestEnvelope.FromJson(request.ToJson());
         var response = await new RequestDispatcher(Session, new RecordingService()).HandleAsync(request, CancellationToken.None);
-        Assert.Equal(ErrorCodes.UnsupportedTarget, response.Error!.Code);
+        Assert.Equal(method == PipeMethods.WriteCall || method == PipeMethods.WriteSetProperty ? ErrorCodes.InvalidParams : ErrorCodes.UnsupportedTarget, response.Error!.Code);
     }
 
     [Fact]
@@ -270,6 +270,77 @@ public class RequestDispatcherTests
         Assert.Equal(StateService.Handle.ObjectId, HitTestResult.FromJson(response.Result!).Handle.ObjectId);
     }
 
+    [Fact]
+    public async Task WritesRouteAndPreserveOnlyAuditErrorDetails()
+    {
+        var service = new WriteService(); var dispatcher = new RequestDispatcher(Session, service);
+        var set = new WriteSetPropertyParams { Handle = StateService.Handle, MemberKey = "Text", Value = new JsonStringNode("private"), TimeoutMs = 500 };
+        var response = await Dispatch(dispatcher, PipeMethods.WriteSetProperty, set.ToJson());
+        Assert.Equal("setProperty", service.Operation); Assert.Equal("performed", WriteSetPropertyResult.FromJson(response.Result!).Audit.Outcome);
+        service.Fail = true;
+        var call = new WriteCallParams { Handle = StateService.Handle, MemberKey = "Reset()", TimeoutMs = 500 };
+        response = await Dispatch(dispatcher, PipeMethods.WriteCall, call.ToJson());
+        Assert.Equal("call", service.Operation); Assert.Equal(ErrorCodes.WriteDenied, response.Error!.Code);
+        Assert.Equal("denied", WriteAudit.FromJson(response.Error.Details!.Get("audit")).Outcome);
+        Assert.False(response.Error.Details.TryGet("secret", out _));
+    }
+    [Fact]
+    public async Task EarlyWriteFailuresAreAuditedAndCountedBeforeAdmission()
+    {
+        var service = new WriteService { ErrorCode = ErrorCodes.ObjectStale };
+        var scheduler = new RejectingScheduler();
+        var dispatcher = new RequestDispatcher(Session, service, scheduler, new[] { "CustomerMarker" });
+        var handle = new ObjectRef { SessionId = Session, ObjectId = "stale", Generation = 1, DispatcherId = "dispatcher", Type = new TypeInfoDto { FullName = "Example.Target" } };
+        var valid = new WriteCallParams { Handle = handle, MemberKey = "Reset()", TimeoutMs = 2000 }.ToJson();
+        var stale = await Dispatch(dispatcher, PipeMethods.WriteCall, valid);
+        Assert.Equal(ErrorCodes.ObjectStale, stale.Error!.Code);
+        Assert.Equal("Example.Target", WriteAudit.FromJson(stale.Error.Details!.Get("audit")).TypeFullName);
+        Assert.Equal("Reset()", WriteAudit.FromJson(stale.Error.Details!.Get("audit")).MemberKey);
+        var malformed = new JsonObjectNode(); malformed.Add("value", new JsonStringNode("private-test-value"));
+        var invalid = await Dispatch(dispatcher, PipeMethods.WriteCall, malformed);
+        Assert.Equal(ErrorCodes.InvalidParams, invalid.Error!.Code);
+        Assert.Equal("<unknown>", WriteAudit.FromJson(invalid.Error.Details!.Get("audit")).MemberKey);
+        scheduler.Reject = true;
+        for (int i = 0; i < 8; i++)
+        {
+            var rejectedParams = new WriteCallParams { Handle = handle, MemberKey = "CustomerMarker()", TimeoutMs = 2000 }.ToJson();
+            var rejected = await Dispatch(dispatcher, PipeMethods.WriteCall, rejectedParams);
+            Assert.Equal(ErrorCodes.Busy, rejected.Error!.Code);
+            Assert.Equal("admission", WriteAudit.FromJson(rejected.Error.Details!.Get("audit")).Reason);
+            Assert.Equal("CustomerMarker", WriteAudit.FromJson(rejected.Error.Details.Get("audit")).MemberKey);
+            Assert.Single(rejected.Error.Details.Members);
+        }
+        var rate = await Dispatch(dispatcher, PipeMethods.WriteCall, valid);
+        Assert.Equal(ErrorCodes.WriteRateExceeded, rate.Error!.Code);
+        Assert.Equal("rateLimited", WriteAudit.FromJson(rate.Error.Details!.Get("audit")).Reason);
+        foreach (var response in new[] { stale, invalid, rate })
+        {
+            Assert.Single(response.Error!.Details!.Members);
+            Assert.DoesNotContain("private-test-value", System.Text.Encoding.UTF8.GetString(StrictJson.Serialize(response.ToJson())));
+        }
+    }
+
+    private sealed class RejectingScheduler : IRequestScheduler
+    {
+        public bool Reject { get; set; }
+        public Task<JsonNode> ExecuteAsync(RequestEnvelope request, Func<CancellationToken, Task<JsonNode>> operation, CancellationToken ct) =>
+            Reject ? Task.FromException<JsonNode>(new ProtocolException(ErrorCodes.Busy, "Queue full")) : operation(ct);
+    }
+
+    private sealed class WriteService : RecordingService, IWriteInspectionService
+    {
+        public string? Operation { get; private set; }
+        public bool Fail { get; set; }
+        public string? ErrorCode { get; set; }
+        public Task<WriteAudit> WriteAsync(string operation, ObjectRef handle, string memberKey, IReadOnlyList<JsonNode> values, DateTime deadline, int timeoutMs, CancellationToken ct)
+        {
+            if (ErrorCode != null) throw new ProtocolException(ErrorCode, "failed");
+            Operation = operation;
+            var audit = new WriteAudit { Operation = operation, TypeFullName = "Example", MemberKey = memberKey, Outcome = Fail ? "denied" : "performed", TimestampUtc = DateTime.UtcNow.ToString("O") };
+            if (Fail) { var details = new JsonObjectNode(); details.Add("audit", audit.ToJson()); details.Add("secret", new JsonStringNode("private")); throw new ProtocolException(ErrorCodes.WriteDenied, "private", details); }
+            return Task.FromResult(audit);
+        }
+    }
     private sealed class HitTestService : RecordingService, IHitTestInspectionService
     {
         public long Window { get; private set; }
