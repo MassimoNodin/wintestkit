@@ -18,6 +18,8 @@ namespace WinTestKit.Inspector.Agent.Session
         private PipeServer? pipe;
         private IInspectionService? service;
         private RequestScheduler? scheduler;
+        private RequestDispatcher? dispatcher;
+        internal void Publish(string kind, ObjectRef? handle) => dispatcher?.Publish(kind, handle);
         private int disposed;
         public string State { get; private set; } = SessionState.Detached;
 
@@ -43,7 +45,8 @@ namespace WinTestKit.Inspector.Agent.Session
                         var redactNames = new List<string>(settings.RedactNames).AsReadOnly();
                         service = factory is IWriteInspectionServiceFactory writes ? writes.Create(settings.SessionId, redactNames, settings.WriteAllowlist) : factory.Create(settings.SessionId, redactNames);
                         scheduler = new RequestScheduler(settings.RequestTimeoutMs);
-                        pipe = new PipeServer(settings, new RequestDispatcher(settings.SessionId, service, scheduler, redactNames), verifier, factory.GetType().FullName == "WinTestKit.Inspector.Agent.Inspection.WpfInspectionServiceFactory", ResetIdle, (service as IExactMappingCapability)?.ExactMappingAvailable == true);
+                        dispatcher = new RequestDispatcher(settings.SessionId, service, scheduler, redactNames);
+                        pipe = new PipeServer(settings, dispatcher, verifier, factory.GetType().FullName == "WinTestKit.Inspector.Agent.Inspection.WpfInspectionServiceFactory", ResetIdle, (service as IExactMappingCapability)?.ExactMappingAvailable == true);
                         timer = new Timer(_ => { cancellation.Cancel(); pipe?.Dispose(); }, null, Math.Min(ProtocolLimits.IdleSessionMs, settings.IdleTimeoutMs), Timeout.Infinite);
                     }
                     State = SessionState.Ready;

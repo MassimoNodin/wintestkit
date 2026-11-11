@@ -19,6 +19,55 @@ namespace WinTestKit.Inspector.Agent.Session.Tests;
 
 public class SessionTests
 {
+    [Trait("Category", "Unit")]
+    [Fact]
+    public async Task EventFramesStayOrderedAndSurviveConcurrentResponsesAndOverflow()
+    {
+        var settings = Settings();
+        var dispatcher = new RequestDispatcher(settings.SessionId, new FakeService());
+        using var server = new PipeServer(settings, dispatcher, new Verifier(true), false, () => { });
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        var serving = server.RunAsync(timeout.Token);
+        using var client = new NamedPipeClientStream(".", settings.PipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
+        await client.ConnectAsync(timeout.Token);
+        await Send(client, new RequestEnvelope { Id = 1, Method = PipeMethods.Hello, Params = new HelloParams { ProtocolMajor = 2, ProtocolMinor = 0, SessionId = settings.SessionId, Token = settings.Token, Process = settings.Process }.ToJson() }, timeout.Token);
+        Assert.NotNull(await FrameCodec.ReadFrameAsync(client, timeout.Token));
+        await Send(client, new RequestEnvelope { Id = 2, Method = PipeMethods.EventsSubscribe, Params = new EventsSubscribeParams { Kinds = new[] { EventKind.TreeChanged } }.ToJson() }, timeout.Token);
+        var data = (await FrameCodec.ReadFrameAsync(client, timeout.Token))!;
+        var id = EventsSubscription.FromJson(ResponseEnvelope.FromJson(StrictJson.Parse(data, 0, data.Length)).Result!).SubscriptionId;
+        var publish = typeof(RequestDispatcher).GetMethod("Publish", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        var handle = new ObjectRef { SessionId = settings.SessionId, ObjectId = "object", Generation = 1, DispatcherId = "dispatcher", Type = new TypeInfoDto { FullName = "Example.Target" } };
+        void Publish() => publish.Invoke(dispatcher, new object?[] { EventKind.TreeChanged, handle });
+        await Task.Run(() => { for (int i = 0; i < 3; i++) Publish(); }, timeout.Token);
+        for (int i = 1; i <= 3; i++)
+        {
+            data = (await FrameCodec.ReadFrameAsync(client, timeout.Token))!;
+            var item = EventsNotification.FromJson(StrictJson.Parse(data, 0, data.Length)).Params;
+            Assert.Equal(id, item.SubscriptionId); Assert.Equal(i, item.Sequence); Assert.Equal(EventKind.TreeChanged, item.Kind); Assert.Equal("object", item.Handle!.ObjectId);
+        }
+        var publishing = Task.Run(() => { for (int i = 0; i < 300; i++) Publish(); }, timeout.Token);
+        for (int i = 0; i < 300; i++) await Send(client, new RequestEnvelope { Id = i + 3, Method = PipeMethods.Roots, Params = new RootsParams { SessionId = settings.SessionId }.ToJson() }, timeout.Token);
+        await publishing;
+        int events = 0, responses = 0;
+        while (events < 300 || responses < 300)
+        {
+            data = (await FrameCodec.ReadFrameAsync(client, timeout.Token))!;
+            var node = (JsonObjectNode)StrictJson.Parse(data, 0, data.Length);
+            if (node.TryGet("method", out _)) { var item = EventsNotification.FromJson(node).Params; Assert.Equal(++events + 3, item.Sequence); }
+            else { Assert.Null(ResponseEnvelope.FromJson(node).Error); responses++; }
+        }
+        var writer = (SemaphoreSlim)typeof(PipeServer).GetField("writer", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(server)!;
+        await writer.WaitAsync(timeout.Token);
+        try { await Task.Run(() => { for (int i = 0; i < 1100; i++) Publish(); }, timeout.Token).WaitAsync(timeout.Token); }
+        finally { writer.Release(); }
+        EventsEventParams overflow;
+        do { data = (await FrameCodec.ReadFrameAsync(client, timeout.Token))!; overflow = EventsNotification.FromJson(StrictJson.Parse(data, 0, data.Length)).Params; } while (overflow.Kind != EventKind.Overflow);
+        Assert.Equal(id, overflow.SubscriptionId); Assert.True(overflow.Sequence > 304); Assert.Null(overflow.Handle);
+        client.Dispose();
+        await serving.WaitAsync(timeout.Token);
+        var store = (WinTestKit.Inspector.Agent.Events.SubscriptionStore)typeof(RequestDispatcher).GetProperty("Subscriptions", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(dispatcher)!;
+        Assert.False(store.Wants(EventKind.TreeChanged));
+    }
     private static BootstrapSettings Settings()
     {
         using var process = Process.GetCurrentProcess();
@@ -234,7 +283,11 @@ public class SessionTests
         Assert.Contains(Features.Waits, response.Features);
         Assert.Contains(Features.Actions, response.Features);
         Assert.Contains(Features.Writes, response.Features);
-        await FrameCodec.WriteFrameAsync(client, StrictJson.Serialize(new RequestEnvelope { Id = 2, Method = PipeMethods.Close }.ToJson()), timeout.Token);
+        Assert.DoesNotContain(Features.Events, response.Features);
+        await Send(client, new RequestEnvelope { Id = 2, Method = PipeMethods.EventsSubscribe, Params = new EventsSubscribeParams { Kinds = new[] { EventKind.TreeChanged } }.ToJson() }, timeout.Token);
+        var denied = (await FrameCodec.ReadFrameAsync(client, timeout.Token))!;
+        Assert.Equal(ErrorCodes.UnsupportedTarget, ResponseEnvelope.FromJson(StrictJson.Parse(denied, 0, denied.Length)).Error!.Code);
+        await FrameCodec.WriteFrameAsync(client, StrictJson.Serialize(new RequestEnvelope { Id = 3, Method = PipeMethods.Close }.ToJson()), timeout.Token);
         await FrameCodec.ReadFrameAsync(client, timeout.Token);
         await serving.WaitAsync(timeout.Token);
     }

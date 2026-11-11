@@ -17,6 +17,23 @@ public class RequestDispatcherTests
     private static readonly IReadOnlyList<IReadOnlyList<PathSegment>> Paths = new[] { new[] { new PathSegment { Kind = SegmentKind.Type, Name = "Name" } } };
     private static Task<ResponseEnvelope> Dispatch(RequestDispatcher dispatcher, string method, JsonObjectNode parameters) => dispatcher.HandleAsync(new RequestEnvelope { Id = 42, Method = method, Params = parameters }, CancellationToken.None);
 
+    [Fact]
+    public async Task EventSubscriptionsValidateAndRoute()
+    {
+        var dispatcher = new RequestDispatcher(Session, new RecordingService());
+        foreach (var json in new[] { "{\"kinds\":[]}", "{\"kinds\":[\"overflow\"]}", "{\"kinds\":[\"treeChanged\",\"treeChanged\"]}", "{\"kinds\":[\"treeChanged\",\"windowOpened\",\"windowClosed\",\"other\"]}", "{}" })
+        {
+            var bytes = System.Text.Encoding.UTF8.GetBytes(json);
+            var response = await Dispatch(dispatcher, PipeMethods.EventsSubscribe, (JsonObjectNode)StrictJson.Parse(bytes, 0, bytes.Length));
+            Assert.Equal(ErrorCodes.InvalidParams, response.Error!.Code);
+        }
+        var subscribed = await Dispatch(dispatcher, PipeMethods.EventsSubscribe, new EventsSubscribeParams { Kinds = new[] { EventKind.TreeChanged } }.ToJson());
+        var id = EventsSubscription.FromJson(subscribed.Result!).SubscriptionId;
+        Assert.True(EventsUnsubscribeResult.FromJson((await Dispatch(dispatcher, PipeMethods.EventsUnsubscribe, new EventsSubscription { SubscriptionId = id }.ToJson())).Result!).Unsubscribed);
+        Assert.False(EventsUnsubscribeResult.FromJson((await Dispatch(dispatcher, PipeMethods.EventsUnsubscribe, new EventsSubscription { SubscriptionId = id }.ToJson())).Result!).Unsubscribed);
+        Assert.Equal(ErrorCodes.InvalidParams, (await Dispatch(dispatcher, PipeMethods.EventsUnsubscribe, new JsonObjectNode())).Error!.Code);
+    }
+
     [Theory]
     [InlineData(PipeMethods.QueryFind)][InlineData(PipeMethods.QueryFindAll)][InlineData(PipeMethods.StateGet)]
     [InlineData(PipeMethods.ActFocus)][InlineData(PipeMethods.ActBringIntoView)][InlineData(PipeMethods.ActInvoke)]
@@ -24,7 +41,7 @@ public class RequestDispatcherTests
     [InlineData(PipeMethods.ActSelect)][InlineData(PipeMethods.ActScrollIntoView)][InlineData(PipeMethods.ActSetValue)]
     [InlineData(PipeMethods.ActSetRange)][InlineData(PipeMethods.ActScroll)][InlineData(PipeMethods.ActRealizeItem)]
     [InlineData(PipeMethods.WaitUntil)][InlineData(PipeMethods.HitTest)][InlineData(PipeMethods.WriteSetProperty)]
-    [InlineData(PipeMethods.WriteCall)][InlineData(PipeMethods.EventsSubscribe)][InlineData(PipeMethods.EventsUnsubscribe)]
+    [InlineData(PipeMethods.WriteCall)]
     public async Task Protocol2MethodsAreRecognizedButUnavailable(string method)
     {
         var request = new RequestEnvelope { Id = 42, Method = method, Params = new JsonObjectNode() };

@@ -11,6 +11,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Win32.SafeHandles;
+using WinTestKit.Inspector.Agent.Events;
 using WinTestKit.Inspector.Protocol;
 
 namespace WinTestKit.Inspector.Agent.Session
@@ -49,10 +50,13 @@ namespace WinTestKit.Inspector.Agent.Session
         private readonly NamedPipeServerStream pipe;
         private readonly Action activity;
         private readonly SemaphoreSlim writer = new SemaphoreSlim(1, 1);
+        private readonly SemaphoreSlim notifications = new SemaphoreSlim(0, 1);
+        private readonly SubscriptionStore? subscriptions;
 
         public PipeServer(BootstrapSettings settings, ISessionRequestHandler handler, IClientIdentityVerifier verifier, bool production, Action activity, bool exactMappingAvailable = false)
         {
             this.settings = settings; this.handler = handler; this.verifier = verifier; this.production = production; this.activity = activity; this.exactMappingAvailable = exactMappingAvailable;
+            subscriptions = (handler as RequestDispatcher)?.Subscriptions;
             string expectedName = "WinTestKit.Inspector." + settings.Process.Pid + "." + settings.SessionId;
             if (!string.Equals(settings.PipeName, expectedName, StringComparison.Ordinal)) throw new InvalidDataException("Invalid pipe name.");
             var sid = new SecurityIdentifier(settings.ClientSid);
@@ -91,6 +95,10 @@ namespace WinTestKit.Inspector.Agent.Session
             activity();
             long lastId = request.Id;
             using (var session = CancellationTokenSource.CreateLinkedTokenSource(ct))
+            {
+            Action signal = () => { try { notifications.Release(); } catch (SemaphoreFullException) { } };
+            if (subscriptions != null) subscriptions.Available += signal;
+            var notificationPump = DrainNotificationsAsync(session.Token);
             try
             {
               while (!session.IsCancellationRequested)
@@ -121,14 +129,39 @@ namespace WinTestKit.Inspector.Agent.Session
                 else _ = HandleAndSendAsync(request, session.Token);
               }
             }
-            finally { session.Cancel(); }
+            finally
+            {
+                session.Cancel();
+                if (subscriptions != null) { subscriptions.Available -= signal; subscriptions.Clear(); }
+                try { await notificationPump.ConfigureAwait(false); }
+                catch (Exception error) when (error is OperationCanceledException || error is ObjectDisposedException || error is IOException) { }
+            }
+            }
+        }
+
+        private async Task DrainNotificationsAsync(CancellationToken ct)
+        {
+            if (subscriptions == null) return;
+            while (true)
+            {
+                await notifications.WaitAsync(ct).ConfigureAwait(false);
+                EventsEventParams? item;
+                while ((item = subscriptions.Take()) != null)
+                {
+                    var bytes = StrictJson.Serialize(new EventsNotification { Params = item }.ToJson());
+                    await writer.WaitAsync(ct).ConfigureAwait(false);
+                    try { ct.ThrowIfCancellationRequested(); await FrameCodec.WriteFrameAsync(pipe, bytes, ct).ConfigureAwait(false); }
+                    finally { writer.Release(); }
+                    subscriptions.Delivered(item);
+                }
+            }
         }
 
         private async Task HandleAndSendAsync(RequestEnvelope request, CancellationToken ct)
         {
             try
             {
-                var response = !production && (request.Method == PipeMethods.QueryFind || request.Method == PipeMethods.QueryFindAll || request.Method == PipeMethods.StateGet || request.Method == PipeMethods.WaitUntil)
+                var response = (production && (request.Method == PipeMethods.EventsSubscribe || request.Method == PipeMethods.EventsUnsubscribe)) || (!production && (request.Method == PipeMethods.QueryFind || request.Method == PipeMethods.QueryFindAll || request.Method == PipeMethods.StateGet || request.Method == PipeMethods.WaitUntil))
                     ? new ResponseEnvelope { Id = request.Id, Error = new ErrorInfo { Code = ErrorCodes.UnsupportedTarget, Message = "Request failed." } }
                     : await handler.HandleAsync(request, ct).ConfigureAwait(false);
                 await SendAsync(response, ct).ConfigureAwait(false);
