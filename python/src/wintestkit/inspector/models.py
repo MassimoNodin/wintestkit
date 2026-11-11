@@ -1097,6 +1097,9 @@ def _scalar(value: object) -> str | bool | int | float:
     raise ValueError("Invalid scalar")
 
 
+scalar_value = _scalar
+
+
 def _regex_pattern(value: object) -> str:
     pattern = _str(value, 1024, empty=True)
     index = 0
@@ -1479,6 +1482,8 @@ class WriteAudit(WireModel):
     @classmethod
     def from_json(cls, value: object) -> WriteAudit:
         d = _obj(value, "operation typeFullName memberKey outcome timestampUtc", "reason")
+        if d.get("reason") == "timeout" and d["outcome"] != "failed":
+            raise ValueError("Invalid timeout audit")
         return cls(
             _choice(d["operation"], {"setProperty", "call"}),
             _key(d["typeFullName"]),

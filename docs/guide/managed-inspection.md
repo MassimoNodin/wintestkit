@@ -173,3 +173,27 @@ requires `--managed`. `--json` emits JSON. Inspection may expose sensitive data:
 | `limitExceeded` | Narrow the locator or request fewer paths. |
 | `cancelled` | Retry if the operation is still needed. |
 | `internalError` | Collect non-sensitive diagnostics and report the failure. |
+# Opt-in write policy
+
+Managed writes and method calls are denied by default. To permit specific members, add
+an allowlist to the repository's `wintestkit.yaml` (or the shared `pyproject.toml`):
+
+```yaml
+inspector:
+  writes:
+    allow:
+      - MyApp.Views.Editor.IsModified
+      - MyApp.Views.Editor.SetTitle(System.String)
+      - MyApp.Views.Editor.Reset()
+```
+
+Use the exact runtime type and property name, or the exact method signature with fully
+qualified parameter types and no spaces. Properties inherited by that runtime type may
+be listed. Wildcards, generic and array signatures, duplicate entries, and more than
+128 properties or 128 methods are rejected. Local configuration cannot enable or replace
+this repository policy. Policy changes require a new inspector session; the runtime closes
+the old session when the configured policy changes.
+
+Allowlisting grants permission, not a guarantee that a member is writable: the agent
+still checks the member, protected identities, redaction rules, and rate limits. Write
+attempts are audited without argument or property values. Use the narrowest list possible.

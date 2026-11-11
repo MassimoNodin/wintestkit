@@ -22,7 +22,7 @@ from wintestkit.errors import ActionError
 
 if TYPE_CHECKING:
     from wintestkit.inspector.client import InspectorClient
-    from wintestkit.inspector.models import ProcessIdentity
+    from wintestkit.inspector.models import ProcessIdentity, WriteAudit
     from wintestkit.inspector.sessions import SessionRegistry
     from wintestkit.uia.element import UIAElement
 
@@ -50,6 +50,7 @@ class StepRecord:
     error: dict[str, Any] | None = None
     screenshot: str | None = None
     backend: Literal["uia", "wpf"] | None = None
+    audits: list[dict[str, Any]] = field(default_factory=lambda: [])
     sensitive: bool = field(default=False, repr=False)
 
     def set_arguments(self, args: Mapping[str, Any], *, secret: bool) -> None:
@@ -73,6 +74,8 @@ class StepRecord:
         }
         if self.backend is not None:
             data["backend"] = self.backend
+        if self.audits:
+            data["audits"] = self.audits
         if self.error is not None:
             data["error"] = self.error
         if self.screenshot is not None:
@@ -81,6 +84,13 @@ class StepRecord:
 
 
 _current_step: ContextVar[StepRecord | None] = ContextVar("wtk_step", default=None)
+
+
+def record_audit(audit: WriteAudit) -> None:
+    __tracebackhide__ = True
+    record = _current_step.get()
+    if record is not None:
+        record.audits.append(audit.to_json())
 
 
 def record_backend(element: object) -> None:
@@ -103,6 +113,7 @@ _seq = 0
 _inspector_registry: SessionRegistry | None = None
 _inspector_request_timeout: float | None = None
 _inspector_redact_names: tuple[str, ...] | None = None
+_inspector_writes_allow: tuple[str, ...] | None = None
 _inspector_failures: dict[ProcessIdentity, Exception] = {}
 _inspector_attempted: set[ProcessIdentity] = set()
 _inspector_attached: set[ProcessIdentity] = set()
@@ -118,23 +129,28 @@ def inspector_sessions() -> SessionRegistry:
         _inspector_registry, \
         _inspector_request_timeout, \
         _inspector_redact_names, \
+        _inspector_writes_allow, \
         _inspector_epoch
     config = get_config().inspector
-    timeout, names = config.request_timeout, config.redact_names
+    timeout, names, writes = config.request_timeout, config.redact_names, config.writes_allow
     old = None
     with _inspector_lock:
         if (
             _inspector_registry is None
             or _inspector_request_timeout != timeout
             or _inspector_redact_names != names
+            or _inspector_writes_allow != writes
         ):
             from wintestkit.inspector.sessions import SessionRegistry
 
             old = _inspector_registry
-            policy_changed = _inspector_redact_names != names
-            _inspector_registry = SessionRegistry(request_timeout=timeout, redact_names=names)
+            policy_changed = _inspector_redact_names != names or _inspector_writes_allow != writes
+            _inspector_registry = SessionRegistry(
+                request_timeout=timeout, redact_names=names, writes_allow=writes
+            )
             _inspector_request_timeout = timeout
             _inspector_redact_names = names
+            _inspector_writes_allow = writes
             _inspector_epoch += 1
             if policy_changed:
                 _inspector_failures.clear()
@@ -292,11 +308,13 @@ def close_inspector_sessions() -> None:
         _inspector_registry, \
         _inspector_request_timeout, \
         _inspector_redact_names, \
+        _inspector_writes_allow, \
         _inspector_epoch
     with _inspector_lock:
         registry, _inspector_registry = _inspector_registry, None
         _inspector_request_timeout = None
         _inspector_redact_names = None
+        _inspector_writes_allow = None
         _inspector_epoch += 1
         _inspector_failures.clear()
         _inspector_attempted.clear()

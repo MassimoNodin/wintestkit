@@ -47,7 +47,7 @@ from wintestkit.engine.locator import (
     WindowLocator,
     match_value,
 )
-from wintestkit.engine.managed import diagnostic_query_budget, query_budget
+from wintestkit.engine.managed import diagnostic_query_budget, operation_deadline, query_budget
 from wintestkit.engine.properties import WhereValue, normalize_where
 from wintestkit.engine.resolve import Scope, resolve, resolve_all, resolve_window, wait_link
 from wintestkit.engine.waits import State
@@ -62,6 +62,7 @@ from wintestkit.errors import (
     UIAError,
     WaitTimeoutError,
     WindowNotFoundError,
+    WriteDeniedError,
     WtkError,
 )
 from wintestkit.uia import patterns
@@ -86,6 +87,7 @@ if TYPE_CHECKING:
     from typing_extensions import TypeVar as _DefaultedTypeVar
 
     from wintestkit import controls as _controls
+    from wintestkit.inspector.models import Member
 
     B = _DefaultedTypeVar("B", bound="BoundControl", covariant=True, default="BoundElement")
 else:
@@ -993,6 +995,94 @@ class BoundControl(_BoundBase):
         """
         __tracebackhide__ = True
         return runtime.step(action, self.qualname, self.locator.describe(), args, secret=secret)
+
+    def _write_target(self) -> WpfElement:
+        __tracebackhide__ = True
+        if runtime.get_config().backend == "uia":
+            raise ActionError("Writes require the WPF backend")
+        element = self.resolve()
+        if not isinstance(element, WpfElement):
+            raise ActionError("Writes require the WPF backend and a WPF element")
+        return element
+
+    def _write(
+        self,
+        element: WpfElement,
+        name: str,
+        key: str,
+        values: tuple[Any, ...],
+        *,
+        property_write: bool,
+        deadline: float,
+    ) -> None:
+        __tracebackhide__ = True
+        try:
+            if property_write:
+                audit = element.client.write_set_property(
+                    element.ref, key, values[0], timeout_ms=2000, deadline=deadline
+                )
+            else:
+                audit = element.client.write_call(
+                    element.ref, key, values, timeout_ms=2000, deadline=deadline
+                )
+        except InspectorError as error:
+            if error.audit is not None:
+                runtime.record_audit(error.audit)
+            if isinstance(error, WriteDeniedError):
+                entry = f"{element.ref.type.full_name}.{name}"
+                error.message = f"Write denied; add {entry} to inspector.writes.allow"
+                error.args = (error.message,)
+            raise
+        runtime.record_audit(audit)
+
+    def set_property(self, name: str, value: Any) -> None:
+        """Set an explicitly allowlisted property on a WPF element."""
+        __tracebackhide__ = True
+        with self.step("set_property"):
+            element = self._write_target()
+            deadline = operation_deadline(runtime.get_config().inspector.request_timeout)
+            candidates: list[Member] = []
+            token = None
+            while True:
+                page = element.client.members(
+                    element.ref.object_id,
+                    element.ref.generation,
+                    page_token=token,
+                    deadline=deadline,
+                )
+                candidates.extend(
+                    member
+                    for member in page.items
+                    if member.name == name
+                    and member.category in {"dependencyProperty", "clrProperty"}
+                )
+                if page.next_token is None:
+                    break
+                token = page.next_token
+            if not candidates:
+                raise ActionError(f"WPF property {name!r} was not found in the members catalog")
+            key = min(
+                candidates, key=lambda member: member.category != "dependencyProperty"
+            ).member_key
+            self._write(element, name, key, (value,), property_write=True, deadline=deadline)
+
+    def call(self, name: str, *args: Any) -> None:
+        """Call an explicitly allowlisted WPF method overload."""
+        __tracebackhide__ = True
+        with self.step("call"):
+            element = self._write_target()
+            type_names = {
+                str: "System.String",
+                bool: "System.Boolean",
+                int: "System.Int64",
+                float: "System.Double",
+            }
+            try:
+                key = f"{name}({','.join(type_names[type(arg)] for arg in args)})"
+            except KeyError:
+                raise InspectorError("Invalid write argument type", code="invalidParams") from None
+            deadline = operation_deadline(runtime.get_config().inspector.request_timeout)
+            self._write(element, key, key, args, property_write=False, deadline=deadline)
 
     # -- actions every control has --------------------------------------------------------------
 

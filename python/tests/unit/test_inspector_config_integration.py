@@ -133,9 +133,16 @@ def test_additive_redaction_total_is_bounded(tmp_path: Path) -> None:
 class FakeRegistry:
     instances: ClassVar[list["FakeRegistry"]] = []
 
-    def __init__(self, *, request_timeout: float, redact_names: tuple[str, ...] = ()) -> None:
+    def __init__(
+        self,
+        *,
+        request_timeout: float,
+        redact_names: tuple[str, ...] = (),
+        writes_allow: tuple[str, ...] = (),
+    ) -> None:
         self.timeout = request_timeout
         self.redact_names = redact_names
+        self.writes_allow = writes_allow
         self.attempts = 0
         self.fail = True
         self.client: Any = None

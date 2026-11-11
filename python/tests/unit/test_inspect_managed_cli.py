@@ -21,7 +21,13 @@ class CliRegistry:
     failure: BaseException | None = None
     fail_operation = "attach"
 
-    def __init__(self, *, request_timeout: float, redact_names: tuple[str, ...] = ()) -> None:
+    def __init__(
+        self,
+        *,
+        request_timeout: float,
+        redact_names: tuple[str, ...] = (),
+        writes_allow: tuple[str, ...] = (),
+    ) -> None:
         self.redact_names = redact_names
         self.timeout = request_timeout
         self.client = FakeClient()

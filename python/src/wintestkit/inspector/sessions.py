@@ -123,14 +123,17 @@ class SessionRegistry:
         *,
         request_timeout: float = 2.0,
         redact_names: tuple[str, ...] = (),
+        writes_allow: tuple[str, ...] = (),
     ) -> None:
         if not 0 < request_timeout <= 2:
             raise ValueError("Request timeout must be between zero and two seconds")
         self._payload_loader = payload_loader
         self._request_timeout = request_timeout
         from wintestkit.inspector.redaction import validate_redact_names
+        from wintestkit.inspector.write_policy import parse_write_allowlist
 
         self._redact_names = validate_redact_names(redact_names)
+        self._writes_allow = parse_write_allowlist(writes_allow)[0]
         self._lock = threading.RLock()
         self._entries: dict[ProcessIdentity, _Entry] = {}
 
@@ -224,6 +227,7 @@ class SessionRegistry:
             payload.inspector_version,
             request_timeout_ms=max(1, int(self._request_timeout * 1000)),
             redact_names=self._redact_names,
+            writes_allow=self._writes_allow,
         )
         process = None
         client = None

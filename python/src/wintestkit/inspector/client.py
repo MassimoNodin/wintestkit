@@ -19,6 +19,8 @@ from wintestkit.errors import (
     InspectorLimitError,
     InspectorReadError,
     InspectorUnavailableError,
+    WriteDeniedError,
+    WriteRateExceededError,
 )
 from wintestkit.inspector.models import (
     ERROR_CODES,
@@ -43,6 +45,7 @@ from wintestkit.inspector.models import (
     Value,
     WaitCondition,
     WaitResult,
+    WriteAudit,
     parse_path,
 )
 from wintestkit.inspector.models import array_value as _array
@@ -53,6 +56,7 @@ from wintestkit.inspector.models import integer_value as _int
 from wintestkit.inspector.models import key_value as _key
 from wintestkit.inspector.models import object_value as _obj
 from wintestkit.inspector.models import runtime_id_value as _runtime_id
+from wintestkit.inspector.models import scalar_value as _scalar
 from wintestkit.inspector.paths import ManagedPath, PathSegment
 from wintestkit.inspector.transport import ByteTransport, read_frame, write_frame
 
@@ -66,7 +70,18 @@ class HitTestResult:
 _trace_lock = threading.Lock()
 
 
+def _write_scalar(value: object) -> str | bool | int | float:
+    scalar = _scalar(value)
+    if type(scalar) is int and not -(2**63) <= scalar <= 2**63 - 1:
+        raise ValueError("Invalid write integer")
+    return scalar
+
+
 def _error(code: str, details: object = None) -> InspectorError:
+    if code == "writeDenied":
+        return WriteDeniedError("Inspector request failed: writeDenied", code=code)
+    if code == "writeRateExceeded":
+        return WriteRateExceededError("Inspector request failed: writeRateExceeded", code=code)
     if code == "timeout" or (
         code == "limitExceeded"
         and isinstance(details, dict)
@@ -120,7 +135,11 @@ def _response(value: object) -> tuple[int, object, InspectorError | None]:
         raise ValueError("Invalid error message")
     if "details" in error and not isinstance(error["details"], dict):
         raise ValueError("Invalid error details")
-    return request_id, None, _error(code, error.get("details"))
+    details = error.get("details")
+    result = _error(code, details)
+    if isinstance(details, dict) and "audit" in details:
+        result.audit = WriteAudit.from_json(cast(dict[str, object], details)["audit"])
+    return request_id, None, result
 
 
 @dataclass
@@ -420,20 +439,23 @@ class InspectorClient:
                     and entry.error.busy
                     and not retryable
                 ):
-                    raise InspectorDeadlineError(str(entry.error), code=entry.error.code)
+                    entry.error.busy = False
+                    raise entry.error
                 if entry.error is not None:
                     raise entry.error
                 return entry.result
         except InspectorDeadlineError as error:
             outcome = error.code if error.code in ERROR_CODES else "timeout"
-            raise InspectorDeadlineError(
+            wrapped = InspectorDeadlineError(
                 f"Inspector request {method} timed out "
                 f"(budget={max(0, deadline - start):g}s, "
                 f"inspector.request_timeout={self._request_timeout:g}s)"
                 + ("; target's UI thread stayed busy" if error.busy else ""),
                 code=error.code,
                 busy=error.busy,
-            ) from error
+            )
+            wrapped.audit = error.audit
+            raise wrapped from error
         except InspectorError as error:
             outcome = error.code if error.code in ERROR_CODES else "error"
             raise
@@ -683,6 +705,79 @@ class InspectorClient:
                 {"handle": handle, **params, "timeoutMs": self._timed_params(timeout_ms, deadline)},
                 deadline,
             ),
+        )
+
+    def _write(
+        self,
+        method: str,
+        ref: ObjectRef,
+        member_key: str,
+        params: dict[str, object],
+        timeout_ms: int,
+        deadline: float,
+    ) -> WriteAudit:
+        self._feature("writes")
+        try:
+            self._object_ref(ref)
+            handle = ObjectRef.from_json(ref.to_json()).to_json()
+            member = _key(member_key)
+        except (ValueError, TypeError, AttributeError) as error:
+            raise InspectorError("Invalid write target", code="invalidParams") from error
+
+        def parse(value: object) -> WriteAudit:
+            audit = WriteAudit.from_json(_obj(value, "audit")["audit"])
+            if audit.operation != method.removeprefix("write.") or audit.outcome != "performed":
+                raise ValueError("Invalid write audit")
+            return audit
+
+        return self._parse(
+            parse,
+            self._request(
+                method,
+                {
+                    "handle": handle,
+                    "memberKey": member,
+                    **params,
+                    "timeoutMs": self._timed_params(timeout_ms, deadline),
+                },
+                deadline,
+            ),
+        )
+
+    def write_set_property(
+        self,
+        ref: ObjectRef,
+        member_key: str,
+        value: object,
+        *,
+        timeout_ms: int,
+        deadline: float,
+    ) -> WriteAudit:
+        try:
+            scalar = _write_scalar(value)
+        except (ValueError, TypeError, OverflowError) as error:
+            raise InspectorError("Invalid write value", code="invalidParams") from error
+        return self._write(
+            "write.setProperty", ref, member_key, {"value": scalar}, timeout_ms, deadline
+        )
+
+    def write_call(
+        self,
+        ref: ObjectRef,
+        member_key: str,
+        arguments: Sequence[object],
+        *,
+        timeout_ms: int,
+        deadline: float,
+    ) -> WriteAudit:
+        try:
+            if not isinstance(arguments, (list, tuple)) or len(arguments) > 16:
+                raise ValueError("Invalid arguments")
+            values = [_write_scalar(value) for value in arguments]
+        except (ValueError, TypeError, OverflowError) as error:
+            raise InspectorError("Invalid write arguments", code="invalidParams") from error
+        return self._write(
+            "write.call", ref, member_key, {"arguments": values}, timeout_ms, deadline
         )
 
     def act_realize_item(

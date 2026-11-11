@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from wintestkit.engine.diagnose import Diagnostic
+    from wintestkit.inspector.models import WriteAudit
 
 
 class WtkError(Exception):
@@ -124,9 +125,10 @@ class ElementTypeError(ActionError):
 class InspectorError(WtkError):
     """A managed inspector operation failed with a protocol error code."""
 
-    def __init__(self, message: str, *, code: str) -> None:
+    def __init__(self, message: str, *, code: str, audit: WriteAudit | None = None) -> None:
         super().__init__(message)
         self.code = code
+        self.audit = audit
 
 
 class InspectorUnavailableError(InspectorError):
@@ -145,9 +147,19 @@ class InspectorLimitError(InspectorError):
     """An inspector resource limit was reached."""
 
 
+class WriteDeniedError(InspectorError):
+    """The inspector denied a write operation."""
+
+
+class WriteRateExceededError(InspectorLimitError):
+    """The inspector write rate limit was exceeded."""
+
+
 class InspectorDeadlineError(InspectorLimitError):
     """An inspector operation exhausted its deadline."""
 
-    def __init__(self, message: str, *, code: str, busy: bool = False) -> None:
-        super().__init__(message, code=code)
+    def __init__(
+        self, message: str, *, code: str, busy: bool = False, audit: WriteAudit | None = None
+    ) -> None:
+        super().__init__(message, code=code, audit=audit)
         self.busy = busy

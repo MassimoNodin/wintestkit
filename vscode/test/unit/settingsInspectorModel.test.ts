@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { settingFields, updateSetting, validateSettings } from "../../src/settings/model";
+import { flattenSettings, parseSettings, settingFields, updateSetting, validateSettings } from "../../src/settings/model";
 
 describe("inspector settings", () => {
   it("exposes all five keys in both scopes", () => {
@@ -18,6 +18,23 @@ describe("inspector settings", () => {
       for (const backend of ["auto", "uia"]) expect(updateSetting("", scope, "backend", backend, false)).toContain(`backend: ${backend}`);
       expect(() => updateSetting("", scope, "backend", "other", false)).toThrow();
     }
+  });
+  it("exposes a repository-only, empty-by-default write allowlist", () => {
+    const field = settingFields.find((item) => item.key === "inspector.writes.allow");
+    expect(field).toMatchObject({ kind: "list", default: [], repositoryOnly: true, group: "Debugging" });
+    expect(field?.description.repository).toContain("exact runtime type");
+    expect(field?.description.repository).toContain("empty list denies all writes");
+    expect(() => updateSetting("", "local", "inspector.writes.allow", [], false)).toThrow("Repository Settings");
+  });
+  it("round-trips nested write permissions without losing other inspector settings", () => {
+    const entries = ["Example.View.Title", "Example.View.Update(System.String,System.Int64)"];
+    const edited = updateSetting("inspector:\n  enabled: true\n", "shared", "inspector.writes.allow", entries, false);
+    const parsed = parseSettings(edited).toJS();
+    expect(parsed).toEqual({ inspector: { enabled: true, writes: { allow: entries } } });
+    expect(flattenSettings(parsed)["inspector.writes.allow"]).toEqual(entries);
+    expect(parseSettings(updateSetting(edited, "shared", "inspector.writes.allow", null, true)).toJS()).toEqual({ inspector: { enabled: true } });
+    expect(() => validateSettings({ inspector: { writes: { allow: [1] } } })).toThrow("JSON array of strings");
+    expect(() => validateSettings({ inspector: { writes: { other: [] } } })).toThrow("Unknown setting");
   });
   it("validates types, bounds and messages", () => {
     validateSettings({ inspector: { enabled: true, attach: "on-demand", attach_timeout: 10, request_timeout: 2, redact_names: ["x".repeat(128)] } });
