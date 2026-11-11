@@ -76,5 +76,6 @@ pythonpath = ["tests", "tests/unit", "tests/integration"]
 markers = [
     "integration: needs an interactive Windows desktop",
     "slow: takes more than 5 seconds",
+    "stress: opt-in long-running resource stress tests",
 ]
 addopts = "-p no:wintestkit --import-mode=importlib"
