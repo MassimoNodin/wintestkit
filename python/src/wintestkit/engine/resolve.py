@@ -33,6 +33,7 @@ from wintestkit.engine.wpf_resolve import route
 from wintestkit.errors import (
     AmbiguousElementError,
     ElementNotFoundError,
+    InspectorDeadlineError,
     InspectorLimitError,
     LocatorError,
     NoUiaPeerError,
@@ -253,11 +254,16 @@ def wait_link(scope: Scope, locator: Locator, state: str) -> tuple[bool, TargetE
     wire = replace(translate(link, tuple(constraints), root.ref), index=link.index)
     # Outer links and implicit popup search must be revisited at the polling cadence.
     chunk_ms = 100 if len(links) > 1 or (locator.window is None and scope.window is None) else 2000
-    result = root.client.wait_until(
-        WaitCondition("exists" if state == "attached" else state, wire),
-        timeout_ms=max(1, min(chunk_ms, int((remaining - 0.15) * 1000))),
-        deadline=deadline,
-    )
+    try:
+        result = root.client.wait_until(
+            WaitCondition("exists" if state == "attached" else state, wire),
+            timeout_ms=max(1, min(chunk_ms, int((remaining - 0.15) * 1000))),
+            deadline=deadline,
+        )
+    except InspectorDeadlineError as error:
+        if error.code != "limitExceeded" or error.busy or time.monotonic() >= deadline:
+            raise
+        return True, resolve(scope, locator)
     if result.satisfied and result.handle is not None:
         # Normal resolution enforces ambiguity, popup and index semantics.
         resolved = _resolve_link(scope, root, link, searched_in, locator, len(links) == 1, window)

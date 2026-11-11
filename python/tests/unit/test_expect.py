@@ -263,6 +263,52 @@ def test_expect_deadline_preserves_last_missing_diagnostic(page, world, steps, m
     assert calls == 2
 
 
+def test_agent_wait_chunk_deadline_preserves_missing_message(page, world, steps, monkeypatch):
+    import importlib
+    from types import SimpleNamespace
+
+    from wintestkit.backends.element import WpfElement
+
+    resolver = importlib.import_module("wintestkit.engine.resolve")
+    expectation = importlib.import_module("wintestkit.expect")
+    clock = FakeTime()
+    monkeypatch.setattr(waits, "_clock", clock.clock)
+    monkeypatch.setattr(waits, "_sleep", clock.sleep)
+    monkeypatch.setattr(resolver, "time", SimpleNamespace(monotonic=clock.clock))
+    calls = []
+
+    class Client:
+        session = SimpleNamespace(features=["waits"])
+
+        def wait_until(self, condition, *, timeout_ms, deadline):
+            calls.append(timeout_ms)
+            clock.now += timeout_ms / 1000
+            raise InspectorDeadlineError("traversal deadline", code="limitExceeded")
+
+        def release(self, *args, **kwargs):
+            pass
+
+    element = WpfElement(Client(), SimpleNamespace(session_id="s", object_id="o", generation=1), 1)
+    window = SimpleNamespace(info=lambda: SimpleNamespace(short=lambda: "window"))
+    monkeypatch.setattr(resolver, "resolve_window", lambda *args: window)
+    monkeypatch.setattr(resolver, "route", lambda *args: element)
+
+    def missing(*args, **kwargs):
+        raise not_found()
+
+    monkeypatch.setattr(resolver, "resolve", missing)
+    monkeypatch.setattr(model, "resolve", missing)
+    monkeypatch.setattr(expectation, "wait_link", lambda *args: (False, None))
+    with pytest.raises(AssertionError) as uia:
+        expect(page.status, timeout=1).to_exist()
+    clock.now = 0
+    monkeypatch.setattr(expectation, "wait_link", resolver.wait_link)
+    with pytest.raises(AssertionError) as auto:
+        expect(page.status, timeout=1).to_exist()
+    assert calls
+    assert str(auto.value) == str(uia.value)
+
+
 def test_expect_inspector_real_error_propagates(page, world, steps):
     world.error = InspectorError("blocked", code="blockedByPolicy")
     with pytest.raises(InspectorError, match="blocked"):
