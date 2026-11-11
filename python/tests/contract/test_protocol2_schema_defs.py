@@ -68,7 +68,10 @@ def valid(name, value):
 def test_property_allowlist_wire_shape():
     from wintestkit.inspector.models import WriteAllowlist
 
-    value = {"properties": [{"typeFullName": "Example.Control", "memberName": "Text"}], "methods": [{"typeFullName": "Example.Control", "memberKey": "Refresh()"}]}
+    value = {
+        "properties": [{"typeFullName": "Example.Control", "memberName": "Text"}],
+        "methods": [{"typeFullName": "Example.Control", "memberKey": "Refresh()"}],
+    }
     assert valid("WriteAllowlist", value)
     assert WriteAllowlist.from_json(value).to_json() == value
     old = {"properties": [{"typeFullName": "Example.Control", "memberKey": "Text"}], "methods": []}
