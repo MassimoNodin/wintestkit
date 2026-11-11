@@ -147,17 +147,27 @@ rescan. Sequence gaps indicate dropped notifications. Subscriptions are session-
 removed on detach or disconnect; after reconnect Python resubscribes and rescans. Python uses
 window open/close events rather than polling to detect windows.
 
+### Decision 21: property allowlist resolution
+
+Bootstrap property entries contain the exact runtime type full name and property name, rather than
+an assembly-qualified member key. Methods retain exact overload keys. Resolution and ambiguity
+checks occur on the owning Dispatcher, with inherited properties permitted for the exact runtime type.
+
 ## Writes, ordering and safety
 
 Protocol 2 bootstrap extends the existing bootstrap with required
-`writeAllowlist:{properties:AllowEntry[],methods:AllowEntry[]}`. Each `AllowEntry` is
-`{typeFullName:string,memberKey:string}`; exact runtime type and exact public instance member
-identity must both match. Both arrays default to empty at configuration translation, contain
+`writeAllowlist:{properties:PropertyAllowEntry[],methods:AllowEntry[]}`. Property entries are
+`{typeFullName:string,memberName:string}`; method entries remain `{typeFullName:string,memberKey:string}`.
+Both match the exact runtime type. The agent resolves each property name on the owning Dispatcher,
+including inherited declarations; the requested member key must identify the resolved member.
+A dependency property and its CLR wrapper are one member and either key writes via SetCurrentValue.
+Missing writable members are denied with `notFound`; unrelated same-name members are denied with
+`ambiguous`. Both arrays default to empty at configuration translation, contain
 at most 128 unique entries each, and are serialized even when empty. No wildcards, overload
 inference, static members, dynamic type loading, arbitrary code, scripting, or arbitrary
 payloads. Set a dependency property with SetCurrentValue; CLR properties require a public
 setter. Calls accept only public instance methods and scalar arguments. A member must resolve
-uniquely. Property keys are exact public property names. Method keys follow
+uniquely. Property entries contain exact public property names. Method keys follow
 `MethodName "(" [ TypeName ( "," TypeName )* ] ")"`: exact CLR metadata names, full CLR type
 names, and no whitespace (for example `Refresh(System.Boolean)` or `Reset()`). Generic, array,
 nullable, by-reference and other types outside the table cannot match. Null/None is forbidden;

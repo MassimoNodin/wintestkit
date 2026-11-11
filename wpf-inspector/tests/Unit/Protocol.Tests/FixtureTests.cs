@@ -74,6 +74,7 @@ public class FixtureTests
         ["EventsUnsubscribeResult"] = n => EventsUnsubscribeResult.FromJson(n),
         ["EventsNotification"] = n => EventsNotification.FromJson(n),
         ["AllowEntry"] = n => AllowEntry.FromJson(n),
+        ["PropertyAllowEntry"] = n => PropertyAllowEntry.FromJson(n),
         ["ResolveParams"] = n => ResolveParams.FromJson(n),
         ["CandidateRequest"] = n => CandidateRequestDto.FromJson(n),
         ["ReadBatchParams"] = n => ReadBatchParams.FromJson(n),

@@ -20,8 +20,8 @@
       "account"
     ],
     "writeAllowlist": {
-      "properties": [],
-      "methods": []
+      "properties": [{"typeFullName": "Example.Control", "memberName": "Text"}],
+      "methods": [{"typeFullName": "Example.Control", "memberKey": "Refresh()"}]
     }
   }
 }

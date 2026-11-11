@@ -1,0 +1,4 @@
+{
+  "schema": "PropertyAllowEntry",
+  "instance": {"typeFullName": "Example.Control", "memberName": "Text"}
+}

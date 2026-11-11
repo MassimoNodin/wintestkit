@@ -46,9 +46,34 @@ namespace WinTestKit.Inspector.Agent.Writes
                         if (rule != null) throw Error(ErrorCodes.WriteDenied, Audit("denied", "redacted"));
                         if (RedactionPolicy.IsProtectedIdentity(target)) { auditKey = "identity"; throw Error(ErrorCodes.WriteDenied, Audit("denied", "protectedIdentity")); }
                         auditKey = key;
-                        if (!(operation == "call" ? allowlist.Methods : allowlist.Properties).Any(e => e.TypeFullName == typeName && e.MemberKey == key))
-                            throw Error(ErrorCodes.WriteDenied, Audit("denied", "notAllowlisted"));
-                        try { Perform(target, operation, key, values); }
+                        string resolvedKey = key;
+                        if (operation == "call")
+                        {
+                            if (!allowlist.Methods.Any(e => e.TypeFullName == typeName && e.MemberKey == key))
+                                throw Error(ErrorCodes.WriteDenied, Audit("denied", "notAllowlisted"));
+                        }
+                        else
+                        {
+                            if (!allowlist.Properties.Any(e => e.TypeFullName == typeName && e.MemberName == name))
+                                throw Error(ErrorCodes.WriteDenied, Audit("denied", "notAllowlisted"));
+                            var declarations = ReflectionCatalog.Get(target.GetType()).Where(d => d.Property != null && d.Name == name).ToArray();
+                            var dependencies = target is DependencyObject dep ? DependencyCatalog.Discover(dep, _ => { }).Where(d => d.Property.Name == name).ToArray() : Array.Empty<DependencyEntry>();
+                            if (declarations.Length > 1 || dependencies.Length > 1)
+                                throw Error(ErrorCodes.WriteDenied, Audit("denied", "ambiguous"));
+                            var declaration = declarations.FirstOrDefault();
+                            var dependency = dependencies.FirstOrDefault();
+                            if (declaration != null && dependency != null && (dependency.Descriptor == null || dependency.Descriptor.IsAttached || declaration.ValueType != dependency.Property.PropertyType || !declaration.DeclaringType.IsAssignableFrom(target.GetType()) || !dependency.Property.OwnerType.IsAssignableFrom(declaration.DeclaringType)))
+                                throw Error(ErrorCodes.WriteDenied, Audit("denied", "ambiguous"));
+                            var setter = declaration?.Property?.GetSetMethod(true);
+                            if (dependency != null ? dependency.Property.ReadOnly : setter == null || !setter.IsPublic || setter.IsStatic || declaration!.Property!.GetIndexParameters().Length != 0)
+                                throw Error(ErrorCodes.WriteDenied, Audit("denied", "notFound"));
+                            if (key != declaration?.Key && key != dependency?.Key)
+                                throw Error(ErrorCodes.WriteDenied, Audit("denied", "notAllowlisted"));
+                            if (declaration != null && RedactionPolicy.IsPasswordIdentity(declaration.DeclaringType, name))
+                                throw Error(ErrorCodes.WriteDenied, Audit("denied", "redacted"));
+                            if (dependency != null && !dependency.Property.ReadOnly) resolvedKey = dependency.Key;
+                        }
+                        try { Perform(target, operation, resolvedKey, values); }
                         catch (ProtocolException e) { throw Error(e.Code, Audit(e.Code == ErrorCodes.WriteDenied ? "denied" : "failed", e.Code)); }
                         catch (Exception e)
                         {
