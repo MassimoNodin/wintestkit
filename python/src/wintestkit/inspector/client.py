@@ -8,6 +8,7 @@ import os
 import queue
 import threading
 import time
+from collections import deque
 from collections.abc import Callable, Sequence
 from contextlib import suppress
 from dataclasses import dataclass, replace
@@ -162,16 +163,35 @@ class EventSubscription:
         self.events: queue.Queue[EventsEventParams] = queue.Queue()
         self.closed = threading.Event()
         self._sequence = 0
+        self._event_lock = threading.Lock()
+        self._rescans: deque[tuple[bool, bool]] = deque()
         self.sequence_gap = False
         self.overflow = False
 
     def receive(self, event: EventsEventParams) -> None:
-        if event.sequence != self._sequence + 1:
-            self.sequence_gap = True
-        self._sequence = event.sequence
-        if event.kind == "overflow":
-            self.overflow = True
-        self.events.put_nowait(event)
+        with self._event_lock:
+            gap = event.sequence != self._sequence + 1
+            overflow = event.kind == "overflow"
+            self._sequence = event.sequence
+            if gap or overflow:
+                self._rescans.append((gap, overflow))
+                self.sequence_gap |= gap
+                self.overflow |= overflow
+            self.events.put_nowait(event)
+
+    def consume_rescan(self) -> bool:
+        with self._event_lock:
+            if not self._rescans:
+                return False
+            self._rescans.popleft()
+            self.sequence_gap = any(gap for gap, _ in self._rescans)
+            self.overflow = any(overflow for _, overflow in self._rescans)
+            while True:
+                try:
+                    self.events.get_nowait()
+                except queue.Empty:
+                    break
+            return True
 
 
 class InspectorClient:
