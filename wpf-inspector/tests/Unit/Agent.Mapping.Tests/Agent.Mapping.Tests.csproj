@@ -16,6 +16,7 @@
     <Compile Include="../../../src/Agent/Query/**/*.cs" LinkBase="Query" />
     <Compile Include="../../../src/Agent/State/**/*.cs" LinkBase="State" />
     <Compile Include="../../../src/Agent/Wait/**/*.cs" LinkBase="Wait" />
+    <Compile Include="../../../src/Agent/Writes/**/*.cs" LinkBase="Writes" />
     <Reference Include="UIAutomationClient" Condition="'$(TargetFramework)' == 'net48'" />
     <Reference Include="UIAutomationTypes" Condition="'$(TargetFramework)' == 'net48'" />
     <Compile Include="../../../src/Agent/Inspection/DispatcherExecutor.cs" LinkBase="Inspection" />

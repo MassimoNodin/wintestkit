@@ -180,6 +180,13 @@ even if target code remains hung; never replace it with a late outcome. Successf
 return it; errors include it as `details.audit`; Python records every audit in the report.
 Redaction applies to returned data and diagnostics; a redacted member identifier in audit is
 represented by the applicable redaction rule, never the member name.
+Property member keys use the catalog formats, for example
+`clrProperty|PresentationFramework|System.Windows.Controls.TextBox|Text|` and
+`dependencyProperty|<assembly>|<ownerType>|<name>`. Method keys identify the exact
+overload, for example `Refresh(System.Boolean,System.Int64)` and `Reset()`.
+When an audit cannot safely identify a type or member before dispatch, it uses the
+schema-valid key `<unknown>`; for a stale handle, the type in the ObjectRef is used
+when available. Attempt counting begins before scheduler admission and handle resolution.
 
 Use the linked foundational limits and scheduling except where specified here. Query traversal has a 10,000-object/2,000 ms budget,
 200 objects or 10 ms per Dispatcher slice, and at most 200 returned matches. Regex matches

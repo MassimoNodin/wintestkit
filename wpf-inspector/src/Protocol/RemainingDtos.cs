@@ -81,13 +81,15 @@ namespace WinTestKit.Inspector.Protocol
     {
         public ObjectRef Handle { get; set; } = new ObjectRef(); public string MemberKey { get; set; } = ""; public JsonNode Value { get; set; } = JsonNullNode.Instance; public int TimeoutMs { get; set; }
         public JsonObjectNode ToJson() { var o = new JsonObjectNode(); o.Add("handle",Handle.ToJson()); DtoHelpers.Add(o,"memberKey",MemberKey); o.Add("value",Value); o.Add("timeoutMs",JsonNumberNode.From(TimeoutMs)); FromJson(o); return o; }
-        public static WriteSetPropertyParams FromJson(JsonNode n) { var o = DtoHelpers.Object(n,"handle","memberKey","value","timeoutMs"); var x = new WriteSetPropertyParams { Handle = ObjectRef.FromJson(o.Get("handle")), MemberKey = RemainingHelpers.Key(o,false), Value = o.Get("value"), TimeoutMs = RemainingHelpers.Timeout(o) }; RemainingHelpers.WriteScalar(x.Value); return x; }
+        public static WriteSetPropertyParams FromJson(JsonNode n) => FromJson(n, true);
+        public static WriteSetPropertyParams FromJson(JsonNode n, bool validateScalar) { var o = DtoHelpers.Object(n,"handle","memberKey","value","timeoutMs"); var x = new WriteSetPropertyParams { Handle = ObjectRef.FromJson(o.Get("handle")), MemberKey = validateScalar ? RemainingHelpers.Key(o,false) : DtoHelpers.Required(o,"memberKey",1024), Value = o.Get("value"), TimeoutMs = RemainingHelpers.Timeout(o) }; if (validateScalar) RemainingHelpers.WriteScalar(x.Value); return x; }
     }
     public sealed class WriteCallParams
     {
         public ObjectRef Handle { get; set; } = new ObjectRef(); public string MemberKey { get; set; } = ""; public IReadOnlyList<JsonNode> Arguments { get; set; } = new List<JsonNode>(); public int TimeoutMs { get; set; }
         public JsonObjectNode ToJson() { var o = new JsonObjectNode(); o.Add("handle",Handle.ToJson()); DtoHelpers.Add(o,"memberKey",MemberKey); var a = new JsonArrayNode(); foreach (var v in Arguments) a.Add(v); o.Add("arguments",a); o.Add("timeoutMs",JsonNumberNode.From(TimeoutMs)); FromJson(o); return o; }
-        public static WriteCallParams FromJson(JsonNode n) { var o = DtoHelpers.Object(n,"handle","memberKey","arguments","timeoutMs"); var a = new List<JsonNode>(); foreach (var v in DtoHelpers.Array(o.Get("arguments"),16).Items) { RemainingHelpers.WriteScalar(v); a.Add(v); } return new WriteCallParams { Handle = ObjectRef.FromJson(o.Get("handle")), MemberKey = RemainingHelpers.Key(o,true), Arguments = a, TimeoutMs = RemainingHelpers.Timeout(o) }; }
+        public static WriteCallParams FromJson(JsonNode n) => FromJson(n, true);
+        public static WriteCallParams FromJson(JsonNode n, bool validateScalar) { var o = DtoHelpers.Object(n,"handle","memberKey","arguments","timeoutMs"); var a = new List<JsonNode>(); foreach (var v in DtoHelpers.Array(o.Get("arguments"), validateScalar ? 16 : int.MaxValue).Items) { if (validateScalar) RemainingHelpers.WriteScalar(v); a.Add(v); } return new WriteCallParams { Handle = ObjectRef.FromJson(o.Get("handle")), MemberKey = validateScalar ? RemainingHelpers.Key(o,true) : DtoHelpers.Required(o,"memberKey",1024), Arguments = a, TimeoutMs = RemainingHelpers.Timeout(o) }; }
     }
     public sealed class WriteCallResult
     {
