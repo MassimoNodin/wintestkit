@@ -1,7 +1,7 @@
 # WPF-tree-driven automation: migration plan
 
 Status: decisions D1–D7 made (§3); phases 0–3 done (phase 2 gate passed 2026-11-06,
-§6.3; phase 3 gate passed 2026-11-09, §6.5). Phase 4 done (fixture gate passed 2026-11-10, §6.6); phase 5 done (gate passed 2026-11-11, §6.8); phase 6 in progress (§6.9). Planning date: 2026-10-29.
+§6.3; phase 3 gate passed 2026-11-09, §6.5). Phase 4 done (fixture gate passed 2026-11-10, §6.6); phase 5 done (gate passed 2026-11-11, §6.8); phase 6 done (gate passed 2026-11-11, §6.11); phase 7 in progress. Planning date: 2026-10-29.
 Builds on: `wpf-dotnet-attribute-analyzer.md` (the *inspector plan*) and the implemented
 inspector on `master` (agent, protocol, Python client, managed locators, Spy panel).
 
@@ -658,6 +658,10 @@ Open item: a lost response or timeout cannot establish whether target code event
 the operation; the recorded failure must not be treated as proof of no side effects. Target code
 can also log its own inputs, outside the audit's control. The missing client-side failure audit
 identified in the review was fixed with a redacted fallback and a regression test.
+
+**Gate verdict (owner, 2026-11-11): passed.** Writes are off by default, the allowlist is
+enforced, every attempt is audited in reports, and the security review is recorded in §6.10
+with its residual risks.
 
 ## 7. Test strategy
 
