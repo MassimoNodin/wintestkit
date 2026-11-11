@@ -37,6 +37,28 @@ def run(args: argparse.Namespace) -> int:
     except (OSError, ValueError) as exc:
         raise common.CommandError(f"cannot regenerate report: {exc}", common.EXIT_USAGE) from exc
     print(f"Report: {target.resolve()}")
+    audits = [
+        (test, step, audit)
+        for test in results.get("tests", [])
+        for step in test.get("steps", [])
+        for audit in step.get("audits", [])
+    ]
+    if audits:
+        counts = {
+            outcome: sum(audit.get("outcome") == outcome for _, _, audit in audits)
+            for outcome in ("performed", "denied", "failed")
+        }
+        print(
+            f"{len(audits)} writes: {counts['performed']} performed, "
+            f"{counts['denied']} denied, {counts['failed']} failed"
+        )
+        for test, step, audit in audits:
+            fields = ("operation", "typeFullName", "memberKey", "outcome", "reason", "timestampUtc")
+            detail = " | ".join(str(audit.get(key, "")) for key in fields)
+            print(
+                f"  {test.get('name', test.get('id', 'Test'))} / "
+                f"{step.get('name', step.get('action', 'Step'))}: {detail}"
+            )
     if args.open_browser:
         os.startfile(target.resolve())
     return common.EXIT_OK

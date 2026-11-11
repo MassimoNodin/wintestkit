@@ -413,7 +413,9 @@ function select(id){if(st.sel!==id){const prevDefault=defaultPanel(cur());st.sel
 /* ---------- header ---------- */
 function renderHeader(){
   const c={passed:0,failed:0,skipped:0};TESTS.forEach(t=>c[t.status]++);
-  $('#runinfo').textContent=`Run ${longDate(RUN.started)} \u00b7 ${fmt(RUN.duration)}`;
+  const audits=TESTS.flatMap(test=>test.steps.flatMap(step=>step.audits||[]));
+  const counts=outcome=>audits.filter(audit=>audit.outcome===outcome).length;
+  $('#runinfo').textContent=`Run ${longDate(RUN.started)} \u00b7 ${fmt(RUN.duration)}`+(audits.length?` \u00b7 ${audits.length} writes: ${counts('performed')} performed, ${counts('denied')} denied, ${counts('failed')} failed`:'');
   const box=$('#counts');box.replaceChildren(
     ...['passed','failed','skipped'].map(k=>el('div',{class:'count'},svg(ICON[k]),el('div',{},el('small',{text:k[0].toUpperCase()+k.slice(1)}),el('b',{text:c[k]})))),
     el('div',{class:'count total'},el('div',{},el('small',{text:'Total'}),el('b',{text:TESTS.length}))))}
@@ -457,7 +459,7 @@ function renderMain(){
  }
  if(test.status==='skipped')main.append(el('div',{class:'card'},el('h3',{text:'Skipped'}),el('div',{class:'skipbox',text:test.skip})));
  const body=el('tbody');
- test.steps.forEach((step,index)=>body.append(el('tr',{class:step.status+(step.shot?' click':''),tabindex:step.shot?'0':null,onclick:step.shot?()=>openReplay(index):null,onkeydown:step.shot?event=>{if(event.key==='Enter')openReplay(index)}:null},el('td',{class:'n',text:index+1}),el('td',{class:'st'},svg(ICON[step.status])),el('td',{},step.name,step.loc?el('span',{class:'stepsub',text:step.loc}):null),el('td',{class:'d',text:step.status==='not_run'?'Not run':fmt(step.dur)}))));
+ test.steps.forEach((step,index)=>body.append(el('tr',{class:step.status+(step.shot?' click':''),tabindex:step.shot?'0':null,onclick:step.shot?()=>openReplay(index):null,onkeydown:step.shot?event=>{if(event.key==='Enter')openReplay(index)}:null},el('td',{class:'n',text:index+1}),el('td',{class:'st'},svg(ICON[step.status])),el('td',{},step.name,step.loc?el('span',{class:'stepsub',text:step.loc}):null,...(step.audits||[]).map(audit=>el('span',{class:'stepsub',text:[audit.operation,audit.typeFullName,audit.memberKey,audit.outcome,audit.reason||'',audit.timestampUtc].join(' | ')}))),el('td',{class:'d',text:step.status==='not_run'?'Not run':fmt(step.dur)}))));
  main.append(el('div',{class:'card'},el('h3',{text:'Test Steps'}),test.steps.length?el('table',{},el('thead',{},el('tr',{},...['#','Status','Step','Duration'].map(label=>el('th',{text:label})))),body):el('div',{class:'passnote',text:'No steps were recorded.'})));
 }
 function diagView(test,panel){

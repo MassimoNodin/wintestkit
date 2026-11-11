@@ -60,6 +60,8 @@ public sealed class FixtureControl : MiddleControl, ICustomTypeDescriptor
     public string DefaultValue { get => (string)GetValue(DefaultValueProperty); set => SetValue(DefaultValueProperty, value); }
     public string LocalValue { get => (string)GetValue(LocalValueProperty); set => SetValue(LocalValueProperty, value); }
     public double CoercedValue { get => (double)GetValue(CoercedValueProperty); set => SetValue(CoercedValueProperty, value); }
+    public string WritableText { get; set; } = "initial";
+    public void RecordWrite(string value, long number) { Counts.Hit("RecordWrite"); }
     public string PublicField = "public field";
     private string PrivateField = "private field";
     public string WriteOnly { set { Counts.Hit("WriteOnly.set"); PrivateField = value; } }

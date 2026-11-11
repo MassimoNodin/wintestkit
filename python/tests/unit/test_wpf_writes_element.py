@@ -7,7 +7,7 @@ import pytest
 
 from wintestkit import runtime
 from wintestkit.backends.element import WpfElement
-from wintestkit.errors import ActionError, WriteDeniedError
+from wintestkit.errors import ActionError, InspectorError, WriteDeniedError
 from wintestkit.inspector.models import WriteAudit
 from wintestkit.model import BoundControl
 
@@ -113,3 +113,14 @@ def test_denial_records_audit_and_suggests_entry(setup_write, monkeypatch):
         bound.call("Submit", "private")
     assert records[-1].audits == [audit.to_json()]
     assert "private" not in str(records[-1].to_dict())
+
+
+def test_pre_request_failure_is_audited_without_values(setup_write):
+    bound, _, _, records, _ = setup_write
+    with pytest.raises(InspectorError, match="Invalid write argument type"):
+        bound.call("SecretMethod", {"sensitive": "private-value"})
+    audit = records[-1].audits[0]
+    assert audit["outcome"] == "failed"
+    assert audit["reason"] == "clientFailure"
+    assert audit["memberKey"] == "identity"
+    assert "private-value" not in str(records[-1].to_dict())
