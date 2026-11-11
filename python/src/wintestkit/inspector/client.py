@@ -5,6 +5,7 @@ from __future__ import annotations
 import csv
 import math
 import os
+import queue
 import threading
 import time
 from collections.abc import Callable, Sequence
@@ -28,6 +29,8 @@ from wintestkit.inspector.models import (
     BindingInfo,
     CandidateResult,
     ElementState,
+    EventsEventParams,
+    EventsNotification,
     HelloResult,
     ItemMatch,
     Locator,
@@ -148,6 +151,27 @@ class _Pending:
     result: object = None
     error: InspectorError | None = None
     request_id: int = 0
+    method: str = ""
+
+
+class EventSubscription:
+    """A session-scoped stream. A sequence gap or overflow requires a rescan."""
+
+    def __init__(self, subscription_id: str) -> None:
+        self.subscription_id = subscription_id
+        self.events: queue.Queue[EventsEventParams] = queue.Queue()
+        self.closed = threading.Event()
+        self._sequence = 0
+        self.sequence_gap = False
+        self.overflow = False
+
+    def receive(self, event: EventsEventParams) -> None:
+        if event.sequence != self._sequence + 1:
+            self.sequence_gap = True
+        self._sequence = event.sequence
+        if event.kind == "overflow":
+            self.overflow = True
+        self.events.put_nowait(event)
 
 
 class InspectorClient:
@@ -168,6 +192,7 @@ class InspectorClient:
         self._lock = threading.RLock()
         self._write_lock = threading.Lock()
         self._pending: dict[int, _Pending] = {}
+        self._subscriptions: dict[str, EventSubscription] = {}
         self._abandoned: set[int] = set()
         self._next_id = 2
         self._closed = False
@@ -270,6 +295,9 @@ class InspectorClient:
             self.session = replace(self.session, state=state, error=error.code)
             pending = tuple(self._pending.values())
             self._pending.clear()
+            for subscription in self._subscriptions.values():
+                subscription.closed.set()
+            self._subscriptions.clear()
             for entry in pending:
                 entry.error = error
                 entry.event.set()
@@ -280,9 +308,17 @@ class InspectorClient:
     def _read_responses(self) -> None:
         try:
             while True:
-                request_id, result, error = _response(
-                    read_frame(self._transport, time.monotonic() + 301)
-                )
+                frame: object = read_frame(self._transport, time.monotonic() + 301)
+                if isinstance(frame, dict) and "id" not in frame:
+                    notification = EventsNotification.from_json(
+                        cast(dict[str, object], frame)
+                    ).params
+                    with self._lock:
+                        subscription = self._subscriptions.get(notification.subscription_id)
+                        if subscription is not None:
+                            subscription.receive(notification)
+                    continue
+                request_id, result, error = _response(cast(object, frame))
                 with self._lock:
                     if request_id in self._abandoned:
                         self._abandoned.remove(request_id)
@@ -290,6 +326,12 @@ class InspectorClient:
                     pending = self._pending.pop(request_id, None)
                     if pending is None:
                         raise ValueError("Response ID is not outstanding")
+                    if pending.method == "events.subscribe" and error is None:
+                        data = _obj(result, "subscriptionId")
+                        subscription_id = _identifier(data["subscriptionId"])
+                        if subscription_id in self._subscriptions:
+                            raise ValueError("Duplicate subscription ID")
+                        self._subscriptions[subscription_id] = EventSubscription(subscription_id)
                     pending.result = result
                     pending.error = error
                     pending.event.set()
@@ -316,7 +358,7 @@ class InspectorClient:
         remaining = deadline - time.monotonic()
         if remaining <= 0 or not self._write_lock.acquire(timeout=max(0, remaining)):
             raise InspectorDeadlineError("Inspector request deadline expired", code="timeout")
-        entry = _Pending(threading.Event())
+        entry = _Pending(threading.Event(), method=method)
         try:
             with self._lock:
                 if self._closed:
@@ -494,6 +536,38 @@ class InspectorClient:
             raise InspectorUnavailableError(
                 "Inspector agent does not support this operation", code="unsupportedTarget"
             )
+
+    def subscribe(self, kinds: Sequence[str], *, deadline: float) -> EventSubscription:
+        self._feature("events")
+        selected = tuple(kinds)
+        if (
+            not 1 <= len(selected) <= 3
+            or len(set(selected)) != len(selected)
+            or not set(selected) <= {"windowOpened", "windowClosed", "treeChanged"}
+        ):
+            raise ValueError("Invalid event kinds")
+        result = self._request("events.subscribe", {"kinds": list(selected)}, deadline)
+        subscription_id = self._parse(
+            lambda value: _identifier(_obj(value, "subscriptionId")["subscriptionId"]), result
+        )
+        with self._lock:
+            subscription = self._subscriptions.get(subscription_id)
+            if subscription is None:
+                raise InspectorUnavailableError("Inspector session closed", code="sessionStale")
+            return subscription
+
+    def unsubscribe(self, subscription_id: str, *, deadline: float) -> bool:
+        self._feature("events")
+        subscription_id = _identifier(subscription_id)
+        result = self._request("events.unsubscribe", {"subscriptionId": subscription_id}, deadline)
+        unsubscribed = self._parse(
+            lambda value: _bool(_obj(value, "unsubscribed")["unsubscribed"]), result
+        )
+        with self._lock:
+            subscription = self._subscriptions.pop(subscription_id, None)
+            if subscription is not None:
+                subscription.closed.set()
+        return bool(unsubscribed)
 
     def _path_features(self, paths: Sequence[Sequence[PathSegment]]) -> None:
         for path in paths:

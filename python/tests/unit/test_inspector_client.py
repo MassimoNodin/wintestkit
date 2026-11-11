@@ -336,6 +336,53 @@ def session() -> Session:
     return Session("session", IDENTITY, "ready", 2, 0, tuple(FEATURES), "10.0.11", "x64", "1")
 
 
+def test_event_subscriptions_route_and_close() -> None:
+    def handler(request: dict[str, Any]) -> object:
+        if request["method"] == "events.subscribe":
+            return {"id": request["id"], "result": {"subscriptionId": "sub"}}
+        if request["method"] == "events.unsubscribe":
+            return {"id": request["id"], "result": {"unsubscribed": True}}
+        return {"id": request["id"], "result": {"closed": True}}
+
+    transport = ScriptedTransport(handler)
+    client = InspectorClient(transport, session())
+    subscription = client.subscribe(["treeChanged"], deadline=time.monotonic() + 1)
+    for sequence, kind in [(1, "treeChanged"), (3, "overflow")]:
+        transport.feed(
+            {
+                "method": "events.event",
+                "params": {"subscriptionId": "sub", "sequence": sequence, "kind": kind},
+            }
+        )
+    assert subscription.events.get(timeout=1).sequence == 1
+    assert subscription.events.get(timeout=1).kind == "overflow"
+    assert subscription.sequence_gap and subscription.overflow
+    assert client.unsubscribe("sub", deadline=time.monotonic() + 1)
+    assert subscription.closed.is_set()
+    client.close()
+
+
+def test_event_immediately_after_subscribe_response_and_session_close() -> None:
+    def handler(request: dict[str, Any]) -> object | None:
+        if request["method"] == "events.subscribe":
+            transport.feed({"id": request["id"], "result": {"subscriptionId": "sub"}})
+            transport.feed(
+                {
+                    "method": "events.event",
+                    "params": {"subscriptionId": "sub", "sequence": 1, "kind": "treeChanged"},
+                }
+            )
+            return None
+        return {"id": request["id"], "result": {"closed": True}}
+
+    transport = ScriptedTransport(handler)
+    client = InspectorClient(transport, session())
+    subscription = client.subscribe(["treeChanged"], deadline=time.monotonic() + 1)
+    assert subscription.events.get(timeout=1).sequence == 1
+    client.close()
+    assert subscription.closed.is_set()
+
+
 def page() -> dict[str, object]:
     return {"items": [], "complete": True, "snapshotId": "snapshot", "diagnostics": []}
 
