@@ -60,6 +60,7 @@ inspector:
 
 Redaction names from configuration layers are additive. There are no inspector environment
 variable overrides. By default, the inspector attaches after the first WPF window appears.
+If the application restarts itself, the new process is attached the next time a test touches its window, rather than when its first window appears.
 Set `attach: on-demand` to attach on the first managed query, `enabled: false` to disable
 inspection, or `attach: manual` to require explicit attachment.
 Review that authorization with your team. Spy still requires workspace trust and confirmation.

@@ -12,6 +12,7 @@ from wintestkit.engine.managed import query_budget
 from wintestkit.errors import (
     AmbiguousElementError,
     ElementNotFoundError,
+    InspectorDeadlineError,
     InspectorLimitError,
     InspectorMappingError,
     InspectorUnavailableError,
@@ -526,3 +527,28 @@ def test_agent_wait_chunks_until_satisfied(setup, monkeypatch):
     assert isinstance(result, WpfElement)
     assert chunks[:2] == [2000, 2000]
     assert all(1 <= chunk <= 2000 for chunk in chunks)
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        InspectorDeadlineError("request timeout", code="timeout"),
+        InspectorDeadlineError("busy", code="limitExceeded", busy=True),
+        InspectorLimitError("candidate cap", code="limitExceeded"),
+    ],
+)
+def test_agent_wait_preserves_non_chunk_failures(setup, monkeypatch, error):
+    resolver = importlib.import_module("wintestkit.engine.resolve")
+    _, client, window = setup
+    client.session.features.append("waits")
+    window.info = lambda: SimpleNamespace(short=lambda: "window")
+    monkeypatch.setattr(resolver, "resolve_window", lambda *args: window)
+
+    def fail(*args, **kwargs):
+        raise error
+
+    client.wait_until = fail
+    scope = resolver.Scope(SimpleNamespace(), window=SimpleNamespace())
+    with query_budget(time.monotonic() + 5), pytest.raises(type(error)) as raised:
+        resolver.wait_link(scope, Locator(automation_id="id"), "attached")
+    assert raised.value is error
