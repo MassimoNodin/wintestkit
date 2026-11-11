@@ -461,7 +461,10 @@ class InspectorClient:
                         if self._pending.pop(request_id, None) is not None:
                             self._abandoned.add(request_id)
                             threading.Thread(
-                                target=self._cancel, args=(request_id,), daemon=True
+                                target=self._cancel,
+                                args=(request_id,),
+                                name="WinTestKit inspector cancel",
+                                daemon=True,
                             ).start()
                             raise InspectorDeadlineError(
                                 "Inspector request deadline expired", code="timeout"
