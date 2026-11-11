@@ -267,6 +267,60 @@ def managed_client_for(pid: int, *, deadline: float, target_hwnd: int | None) ->
     return _attach_managed(identity, deadline=deadline, target_hwnd=target_hwnd, explicit=False)
 
 
+def attach_on_launch(window: UIAElement, *, deadline: float) -> ProcessIdentity | None:
+    """Attach to a WPF window when launch-time inspection is enabled."""
+    __tracebackhide__ = True
+    config = get_config().inspector
+    if not config.enabled or config.attach != "on-launch":
+        return None
+    from wintestkit.errors import InspectorError, InspectorUnavailableError
+    from wintestkit.inspector import probe
+    from wintestkit.inspector.hints import inspector_error_hint
+
+    facts = probe.identify(window.process_id)
+    if not facts.wpf_loaded:
+        return None
+    started = time.perf_counter()
+    try:
+        _attach_managed(
+            facts.identity,
+            deadline=deadline,
+            target_hwnd=window.native_window_handle,
+            explicit=False,
+        )
+    except InspectorError as exc:
+        raise InspectorUnavailableError(
+            f"{exc} ({exc.code}). {inspector_error_hint(exc.code)} Run wtk doctor --agent.",
+            code=exc.code,
+        ) from exc
+    finally:
+        record = _current_step.get()
+        if record is not None:
+            record.args["attach_seconds"] = time.perf_counter() - started
+    return facts.identity
+
+
+def detach_inspector(identity: ProcessIdentity) -> None:
+    """Release the resources and cached attachment state for one process run."""
+    __tracebackhide__ = True
+    with _inspector_lock:
+        registry = _inspector_registry
+        _inspector_failures.pop(identity, None)
+        _inspector_attempted.discard(identity)
+        _inspector_identity_locks.pop(identity, None)
+    if registry is not None:
+        registry.remove(identity)
+
+
+def detach_inspector_pids(pids: Iterable[int]) -> None:
+    __tracebackhide__ = True
+    wanted = set(pids)
+    with _inspector_lock:
+        identities = {identity for identity in _inspector_attempted if identity.pid in wanted}
+    for identity in identities:
+        detach_inspector(identity)
+
+
 def managed_element_identity(element: UIAElement) -> tuple[tuple[int, ...], int | None]:
     """Use the actual UIA runtime ID and pass an HWND only for its own element."""
     __tracebackhide__ = True

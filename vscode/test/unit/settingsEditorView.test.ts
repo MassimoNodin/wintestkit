@@ -1144,7 +1144,7 @@ describe("settings editor script", () => {
   });
 
   it("displays defaults and enables or resets each setting", () => {
-    for (const [key, value] of [["backend", "auto"], ["input_mode", "mouse"], ["inspector.enabled", true], ["inspector.attach", "on-demand"]] as const) {
+    for (const [key, value] of [["backend", "auto"], ["input_mode", "mouse"], ["inspector.enabled", true], ["inspector.attach", "on-launch"]] as const) {
       const view = boot();
       view.emit(state("local", 80, {}));
       if (typeof value === "string") expect(view.must(`${key}-${value}`).getAttribute("aria-checked")).toBe("true");
@@ -1159,7 +1159,7 @@ describe("settings editor script", () => {
 
   it("marks inspector settings modified against their defaults", () => {
     const view = boot();
-    view.emit(state("shared", 82, { "inspector.enabled": false, "inspector.attach": "on-demand", "inspector.attach_timeout": 5, "inspector.request_timeout": 1, "inspector.redact_names": ["secret"] }));
+    view.emit(state("shared", 82, { "inspector.enabled": false, "inspector.attach": "on-launch", "inspector.attach_timeout": 5, "inspector.request_timeout": 1, "inspector.redact_names": ["secret"] }));
     for (const key of ["inspector.enabled", "inspector.attach_timeout", "inspector.request_timeout", "inspector.redact_names"]) {
       expect(view.find((node) => node.className.includes("modified") && !!node.querySelector("[id='" + key + "']"))).not.toBeNull();
     }

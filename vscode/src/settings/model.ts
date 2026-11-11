@@ -39,7 +39,7 @@ const same = (text: string): SettingDescription => ({
 });
 export const settingFields: SettingField[] = [
   { key: "inspector.enabled", label: "Enable managed inspector", kind: "boolean", description: same("Allow managed inspection of WPF applications; enabled by default."), default: true, group: "Debugging" },
-  { key: "inspector.attach", label: "Managed inspector attachment", kind: "select", description: same("On-demand attaches the managed inspector when needed; manual requires explicit attachment."), default: "on-demand", choices: ["manual", "on-demand"], group: "Debugging" },
+  { key: "inspector.attach", label: "Managed inspector attachment", kind: "select", description: same("On-launch attaches after the first WPF window; on-demand attaches when needed; manual requires explicit attachment."), default: "on-launch", choices: ["manual", "on-demand", "on-launch"], group: "Debugging" },
   { key: "inspector.attach_timeout", label: "Inspector attach timeout (seconds)", kind: "number", description: same("Maximum time to wait for attachment, up to 10 seconds."), default: 10, minimum: 0, maximum: 10, group: "Debugging" },
   { key: "inspector.request_timeout", label: "Inspector request timeout (seconds)", kind: "number", description: same("Maximum time to wait for a request, up to 2 seconds."), default: 2, minimum: 0, maximum: 2, group: "Debugging" },
   { key: "inspector.redact_names", label: "Additional redacted names (JSON array)", kind: "list", description: same("Additional sensitive name substrings to redact."), default: [], group: "Debugging" },

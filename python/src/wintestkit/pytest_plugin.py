@@ -653,7 +653,10 @@ def app(request: pytest.FixtureRequest) -> Generator[App, None, None]:
             except AppNotRunningError:
                 raise _AttachNotRunning(config.app.process_name) from None
             _verify_started(attached, config)
-        yield attached
+        try:
+            yield attached
+        finally:
+            attached.detach_inspector()
     else:
         with runtime.step("app.start", name, _app_path(config)):
             launched = launch_app(config)
@@ -678,7 +681,11 @@ def _app_path(config: WtkConfig) -> str:
 def _verify_started(app: App, config: WtkConfig) -> None:
     """The application is running and has shown its main window."""
     __tracebackhide__ = True
-    app.main_window(timeout=config.app.startup_timeout if config.app else 10.0)
+    timeout = config.app.startup_timeout if config.app else 10.0
+    deadline = time.monotonic() + timeout
+    window = app.main_window(timeout=timeout)
+    if not app.launched:
+        app._attach_window(window, deadline)  # pyright: ignore[reportPrivateUsage]
 
 
 class _AttachNotRunning(AttachNotRunningError, pytest.fail.Exception):

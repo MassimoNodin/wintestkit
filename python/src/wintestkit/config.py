@@ -144,7 +144,7 @@ class AppConfig:
 @dataclass(frozen=True)
 class InspectorConfig:
     enabled: bool = True
-    attach: Literal["manual", "on-demand"] = "on-demand"
+    attach: Literal["manual", "on-demand", "on-launch"] = "on-launch"
     attach_timeout: float = 10.0
     request_timeout: float = 2.0
     redact_names: tuple[str, ...] = ()
@@ -500,11 +500,11 @@ def _build_inspector(values: Mapping[str, Any]) -> InspectorConfig:
     return InspectorConfig(
         enabled=_boolean("inspector.enabled", values.get("inspector.enabled", True)),
         attach=cast(
-            "Literal['manual', 'on-demand']",
+            "Literal['manual', 'on-demand', 'on-launch']",
             _enum(
                 "inspector.attach",
-                values.get("inspector.attach", "on-demand"),
-                ("manual", "on-demand"),
+                values.get("inspector.attach", "on-launch"),
+                ("manual", "on-demand", "on-launch"),
             ),
         ),
         attach_timeout=timeout("attach_timeout", 10.0),
