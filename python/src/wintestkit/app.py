@@ -164,6 +164,20 @@ class App:
                 continue  # the window closed while enumerating
         return windows
 
+    def _wait_for_window_change(self, deadline: float) -> None:
+        __tracebackhide__ = True
+        from wintestkit import runtime
+
+        waiter = runtime.inspector_sessions().event_waiter_for_pids(set(self.pids))
+        if waiter is None:
+            time.sleep(_POLL_INTERVAL)
+        else:
+            waiter.wait(
+                max(0.0, deadline - time.monotonic()),
+                fallback=0.5,
+                matches=lambda event: event.kind in {"windowOpened", "windowClosed"},
+            )
+
     def main_window(self, timeout: float = 0.0) -> UIAElement:
         """The first unowned top-level ``Window`` in z-order; polls up to ``timeout`` seconds."""
         __tracebackhide__ = True
@@ -191,7 +205,7 @@ class App:
                     continue
             if time.monotonic() >= deadline:
                 break
-            time.sleep(_POLL_INTERVAL)
+            self._wait_for_window_change(deadline)
         windows = self.top_level_windows()
         raise WindowNotFoundError(diagnose_window(self, WindowLocator(), [], windows))
 
@@ -288,7 +302,7 @@ class App:
                 raise AppError(
                     f"{self.process_name} did not show a window within {startup_timeout:g}s"
                 )
-            time.sleep(_POLL_INTERVAL)
+            self._wait_for_window_change(deadline)
 
     def _attach_window(self, window: UIAElement, deadline: float) -> None:
         __tracebackhide__ = True

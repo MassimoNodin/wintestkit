@@ -775,6 +775,16 @@ class BoundWindow(_BoundBase):
 
     def resolve_once(self) -> UIAElement:
         __tracebackhide__ = True
+        if waits.wants_waker():
+            waiter = runtime.inspector_sessions().event_waiter_for_pids(set(self.page.app.pids))
+            if waiter is not None:
+                waits.set_waker(
+                    lambda remaining: waiter.wait(
+                        remaining,
+                        fallback=0.5,
+                        matches=lambda event: event.kind in {"windowOpened", "windowClosed"},
+                    )
+                )
         element = resolve_window(self.page.app, self.locator)
         runtime.record_backend(element)
         return element

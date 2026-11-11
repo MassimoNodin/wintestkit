@@ -56,6 +56,25 @@ def route(window: UIAElement, *, force: bool = False) -> UIAElement | WpfElement
         mapping = client.resolve(rid, hwnd, deadline=deadline)
         if mapping.status != "exact" or mapping.object_ref is None:
             raise InspectorMappingError(f"Window mapping is {mapping.status}", code=mapping.status)
+        from wintestkit.engine.waits import set_waker, wants_waker
+
+        waiter = (
+            runtime.inspector_sessions().event_waiter(client)
+            if wants_waker() and "events" in client.session.features
+            else None
+        )
+        if waiter is not None:
+            window_ref = mapping.object_ref
+            set_waker(
+                lambda remaining: waiter.wait(
+                    remaining,
+                    fallback=0.5,
+                    matches=lambda event: (
+                        event.kind in {"windowOpened", "windowClosed"}
+                        or (event.kind == "treeChanged" and event.handle == window_ref)
+                    ),
+                )
+            )
         return WpfElement(client, mapping.object_ref, window.process_id)
     except InspectorError as error:
         raise type(error)(
