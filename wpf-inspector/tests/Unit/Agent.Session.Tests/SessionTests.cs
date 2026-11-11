@@ -283,10 +283,10 @@ public class SessionTests
         Assert.Contains(Features.Waits, response.Features);
         Assert.Contains(Features.Actions, response.Features);
         Assert.Contains(Features.Writes, response.Features);
-        Assert.DoesNotContain(Features.Events, response.Features);
+        Assert.Contains(Features.Events, response.Features);
         await Send(client, new RequestEnvelope { Id = 2, Method = PipeMethods.EventsSubscribe, Params = new EventsSubscribeParams { Kinds = new[] { EventKind.TreeChanged } }.ToJson() }, timeout.Token);
-        var denied = (await FrameCodec.ReadFrameAsync(client, timeout.Token))!;
-        Assert.Equal(ErrorCodes.UnsupportedTarget, ResponseEnvelope.FromJson(StrictJson.Parse(denied, 0, denied.Length)).Error!.Code);
+        var subscribed = (await FrameCodec.ReadFrameAsync(client, timeout.Token))!;
+        Assert.NotNull(ResponseEnvelope.FromJson(StrictJson.Parse(subscribed, 0, subscribed.Length)).Result);
         await FrameCodec.WriteFrameAsync(client, StrictJson.Serialize(new RequestEnvelope { Id = 3, Method = PipeMethods.Close }.ToJson()), timeout.Token);
         await FrameCodec.ReadFrameAsync(client, timeout.Token);
         await serving.WaitAsync(timeout.Token);

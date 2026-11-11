@@ -38,6 +38,7 @@ namespace WinTestKit.Inspector.Agent.Session
             this.service = service;
             this.scheduler = scheduler ?? new RequestScheduler(ProtocolLimits.RequestTimeoutMs);
             redaction = new RedactionPolicy(redactNames ?? Array.Empty<string>());
+            (service as IEventInspectionService)?.SetEventSubscriptions(Subscriptions);
         }
 
         public async Task<ResponseEnvelope> HandleAsync(RequestEnvelope request, CancellationToken ct)

@@ -22,7 +22,7 @@ using WinTestKit.Inspector.Protocol;
 
 namespace WinTestKit.Inspector.Agent.Inspection
 {
-    public sealed class WpfInspectionService : IInspectionService, IExactMappingCapability, IQueryInspectionService, IStateInspectionService, IWaitInspectionService, IActionInspectionService, IRealizeInspectionService, IHitTestInspectionService, IWriteInspectionService
+    public sealed class WpfInspectionService : IInspectionService, IExactMappingCapability, IQueryInspectionService, IStateInspectionService, IWaitInspectionService, IActionInspectionService, IRealizeInspectionService, IHitTestInspectionService, IWriteInspectionService, Events.IEventInspectionService
     {
         private readonly DispatcherExecutor executor;
         private readonly ObjectRegistry registry;
@@ -35,6 +35,12 @@ namespace WinTestKit.Inspector.Agent.Inspection
         private readonly WriteEngine writes;
         private readonly CancellationTokenSource lifetime = new CancellationTokenSource();
         private int disposed;
+        private Events.WpfEventHooks? eventHooks;
+
+        public void SetEventSubscriptions(Events.SubscriptionStore subscriptions)
+        {
+            eventHooks = new Events.WpfEventHooks(subscriptions, executor, registry, inspector);
+        }
 
         internal WpfInspectionService(string sessionId, IObjectInspector inspector,
             PageSnapshotStore? snapshots = null, IPeerRuntimeIdAdapter? adapter = null, WriteAllowlist? allowlist = null, IReadOnlyList<string>? redactNames = null)
@@ -510,6 +516,7 @@ namespace WinTestKit.Inspector.Agent.Inspection
         public void Dispose()
         {
             if (Interlocked.Exchange(ref disposed, 1) != 0) return;
+            eventHooks?.Dispose();
             lock (lifetime) { lifetime.Cancel(); lifetime.Dispose(); }
             mapper.Invalidate();
             snapshots.Dispose();

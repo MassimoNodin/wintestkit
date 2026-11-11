@@ -19,6 +19,7 @@ namespace WinTestKit.Inspector.Agent.Events
         private readonly object gate = new object();
         private readonly Dictionary<string, Subscription> subscriptions = new Dictionary<string, Subscription>(StringComparer.Ordinal);
         public event Action? Available;
+        public event Action? Changed;
 
         public string Subscribe(IReadOnlyList<string> kinds)
         {
@@ -26,11 +27,12 @@ namespace WinTestKit.Inspector.Agent.Events
             new EventsSubscribeParams { Kinds = kinds }.ToJson();
             string id = Guid.NewGuid().ToString("N");
             lock (gate) subscriptions.Add(id, new Subscription(kinds));
+            Changed?.Invoke();
             return id;
         }
 
-        public bool Unsubscribe(string id) { lock (gate) return subscriptions.Remove(id); }
-        public void Clear() { lock (gate) subscriptions.Clear(); }
+        public bool Unsubscribe(string id) { bool removed; lock (gate) removed = subscriptions.Remove(id); if (removed) Changed?.Invoke(); return removed; }
+        public void Clear() { lock (gate) subscriptions.Clear(); Changed?.Invoke(); }
         public bool Wants(string kind)
         {
             lock (gate) { foreach (var subscription in subscriptions.Values) if (subscription.Kinds.Contains(kind)) return true; return false; }
