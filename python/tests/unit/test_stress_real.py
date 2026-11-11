@@ -8,11 +8,13 @@ subscriptions. Query p95 at the end must be at most twice the starting p95.
 import ctypes
 import os
 import statistics
+import threading
 import time
 from ctypes import wintypes
 from dataclasses import replace
 
 import pytest
+from stress_growth import check_growth
 from test_inspector_owned_integration import DOTNET, FIXTURE, PAYLOAD
 from test_wpf_query_gate_real import config
 
@@ -122,37 +124,56 @@ def sample_floor(pids):
     }
 
 
-def check_growth(label, checkpoints, handles=20, period=100):
-    positions = list(checkpoints)
-    span = positions[-1] - positions[0]
-    center = statistics.mean(positions)
-    denominator = sum((position - center) ** 2 for position in positions)
-    failures = []
-    for key, limit, overall in (
-        ("handles", handles, handles * span / period),
-        ("threads", 1, 2),
-        ("private", 20 * 1024 * 1024, 20 * 1024 * 1024),
-    ):
-        values = [checkpoints[position][key] for position in positions]
-        mean = statistics.mean(values)
-        slope = (
-            sum(
-                (position - center) * (value - mean)
-                for position, value in zip(positions, values, strict=True)
-            )
-            / denominator
-        )
-        projection = slope * (period if key == "handles" else span)
-        growth = values[-1] - values[0]
-        print(
-            f"{label} {key}: checkpoints={list(zip(positions, values, strict=True))}, slope={slope:.6f}, projection={projection:.2f}, growth={growth}",
-            flush=True,
-        )
-        if projection > limit or growth > overall:
-            failures.append(
-                f"{label} {key}: projection {projection:.2f}/{limit}, growth {growth}/{overall}"
-            )
-    return failures
+def native_thread_starts():
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    ntdll = ctypes.WinDLL("ntdll")
+    psapi = ctypes.WinDLL("psapi", use_last_error=True)
+    kernel.CreateToolhelp32Snapshot.restype = wintypes.HANDLE
+    kernel.OpenThread.restype = wintypes.HANDLE
+    kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel.Thread32First.argtypes = [wintypes.HANDLE, ctypes.POINTER(ThreadEntry)]
+    kernel.Thread32Next.argtypes = [wintypes.HANDLE, ctypes.POINTER(ThreadEntry)]
+    ntdll.NtQueryInformationThread.argtypes = [
+        wintypes.HANDLE,
+        wintypes.ULONG,
+        ctypes.c_void_p,
+        wintypes.ULONG,
+        ctypes.c_void_p,
+    ]
+    psapi.GetMappedFileNameW.argtypes = [
+        wintypes.HANDLE,
+        ctypes.c_void_p,
+        wintypes.LPWSTR,
+        wintypes.DWORD,
+    ]
+    snapshot = kernel.CreateToolhelp32Snapshot(4, 0)
+    assert snapshot != ctypes.c_void_p(-1).value
+    threads = []
+    try:
+        entry = ThreadEntry()
+        entry.size = ctypes.sizeof(entry)
+        present = kernel.Thread32First(snapshot, ctypes.byref(entry))
+        while present:
+            if entry.owner_pid == os.getpid():
+                handle = kernel.OpenThread(0x40, False, entry.thread_id)
+                if handle:
+                    try:
+                        address = ctypes.c_void_p()
+                        status = ntdll.NtQueryInformationThread(
+                            handle, 9, ctypes.byref(address), ctypes.sizeof(address), None
+                        )
+                        module = ctypes.create_unicode_buffer(1024)
+                        if status == 0:
+                            psapi.GetMappedFileNameW(
+                                kernel.GetCurrentProcess(), address, module, 1024
+                            )
+                        threads.append((entry.thread_id, module.value, hex(address.value or 0)))
+                    finally:
+                        kernel.CloseHandle(handle)
+            present = kernel.Thread32Next(snapshot, ctypes.byref(entry))
+    finally:
+        kernel.CloseHandle(snapshot)
+    return threads
 
 
 def query(scope):
@@ -178,9 +199,9 @@ def cycle(scope):
 @pytest.mark.parametrize(
     "cycles",
     [
-        100,
+        400,
         pytest.param(
-            300,
+            1000,
             marks=pytest.mark.skipif(
                 os.environ.get("WTK_STRESS_LONG") != "1", reason="requires WTK_STRESS_LONG=1"
             ),
@@ -195,7 +216,7 @@ def test_attach_detach_stress(owned, cycles):
         checkpoints = {"target": {}, "python": {}}
         pids = {"target": scope.app.pids[0], "python": os.getpid()}
         for index in range(cycles + 1):
-            if index % (cycles // 5) == 0:
+            if index % 20 == 0:
                 for label, sample in sample_floor(pids).items():
                     checkpoints[label][index] = sample
             if index < cycles:
@@ -227,8 +248,22 @@ def test_launch_close_stress(tmp_path, monkeypatch):
                 app.close()
             assert pid not in app.pids
             assert not runtime.inspector_sessions()._entries  # pyright: ignore[reportPrivateUsage]
+            assert not any(
+                thread.name == "WinTestKit inspector pipe" for thread in threading.enumerate()
+            )
             if index >= 4 and (index - 4) % 20 == 0:
-                checkpoints["python"][index - 4] = sample_floor({"python": os.getpid()})["python"]
+                sample = sample_floor({"python": os.getpid()})["python"]
+                threads = threading.enumerate()
+                print(
+                    f"launch checkpoint {index - 4}: native_count={sample['threads']} "
+                    f"native_starts={native_thread_starts()} "
+                    f"python={[(thread.name, thread.ident, thread.native_id, thread.daemon, repr(getattr(thread, '_target', None))) for thread in threads]}",
+                    flush=True,
+                )
+                sample["threads"] = sum(
+                    thread.name.startswith(("WinTestKit ", "wtk-")) for thread in threads
+                )
+                checkpoints["python"][index - 4] = sample
         failures = check_growth("launch target", checkpoints["target"], handles=10)
         failures += check_growth("launch python", checkpoints["python"])
         assert not failures, "\n".join(failures)
@@ -286,7 +321,7 @@ def test_sustained_actions_stress(owned):
             checkpoints[label][0] = sample
         for index in range(1000):
             perform(index % 6)
-            if index % 200 == 199:
+            if index % 100 == 99:
                 for label, sample in sample_floor(pids).items():
                     checkpoints[label][index + 1] = sample
         assert len(client._subscriptions) == 1  # pyright: ignore[reportPrivateUsage]
