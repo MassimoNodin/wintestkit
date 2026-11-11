@@ -7,7 +7,8 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
-from test_inspector_owned_integration import DOTNET, PAYLOAD, ROOT, _control
+from live_dotnet import live_dotnet_root
+from test_inspector_owned_integration import PAYLOAD, ROOT, _control
 from test_wpf_query_gate_real import _fixture_scenario, config
 
 from wintestkit import runtime
@@ -46,7 +47,7 @@ def test_matrix_cell(runtime_name, architecture, tmp_path, monkeypatch):
     dotnet = Path(
         os.environ.get(
             f"WTK_MATRIX_DOTNET_ROOT_{architecture.upper()}",
-            DOTNET
+            live_dotnet_root()
             if architecture == "x64" and runtime_name == "net10"
             else r"C:\Program Files\dotnet"
             if architecture == "x64"

@@ -11,6 +11,7 @@ import time
 from pathlib import Path
 
 import pytest
+from live_dotnet import live_dotnet_root
 
 from wintestkit.errors import InspectorUnavailableError
 from wintestkit.inspector import bootstrap, launcher
@@ -24,7 +25,6 @@ from wintestkit.inspector.sessions import SessionRegistry
 ROOT = Path(__file__).resolve().parents[3]
 FIXTURE = ROOT / "wpf-inspector/tests/Fixtures/WpfFixture/bin/cells/net10.0-windows-x64"
 PAYLOAD = ROOT / "inspector-payload/src"
-DOTNET = r"C:\Users\massi\AppData\Local\wintestkit-dev\dotnet"
 
 pytestmark = pytest.mark.skipif(
     os.name != "nt" or os.environ.get("WTK_INSPECTOR_REAL") != "1",
@@ -72,7 +72,7 @@ def test_owned_net10_x64_attach_read_detach(monkeypatch: pytest.MonkeyPatch) -> 
     monkeypatch.syspath_prepend(str(PAYLOAD))
     before = _hashes()
     environment = os.environ.copy()
-    environment["DOTNET_ROOT_X64"] = DOTNET
+    environment["DOTNET_ROOT_X64"] = live_dotnet_root()
     environment["DOTNET_MULTILEVEL_LOOKUP"] = "0"
     target = subprocess.Popen(
         [str(FIXTURE / "WinTestKit.Fixture.exe")],
@@ -163,7 +163,7 @@ def test_owned_net10_x64_rejects_hello_mismatch(
     monkeypatch.syspath_prepend(str(PAYLOAD))
     before = _hashes()
     environment = os.environ.copy()
-    environment["DOTNET_ROOT_X64"] = DOTNET
+    environment["DOTNET_ROOT_X64"] = live_dotnet_root()
     environment["DOTNET_MULTILEVEL_LOOKUP"] = "0"
     target = subprocess.Popen(
         [str(FIXTURE / "WinTestKit.Fixture.exe")],

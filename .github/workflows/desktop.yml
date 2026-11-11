@@ -1,0 +1,101 @@
+name: Desktop CI
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+    inputs:
+      stress:
+        description: Run the opt-in stress tests
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: wintestkit-desktop
+  cancel-in-progress: false
+
+jobs:
+  desktop:
+    if: github.repository == 'MassimoNodin/wintestkit' && github.event_name != 'pull_request' && github.ref == 'refs/heads/master'
+    runs-on: [self-hosted, windows, wintestkit-desktop]
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Prepare desktop
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force desktop-results | Out-Null
+          (Get-Date).ToUniversalTime().ToString('o') | Set-Content desktop-results/start-time.txt
+          ./scripts/wake_display.ps1
+          $holder = Start-Process powershell.exe -ArgumentList @('-NoProfile', '-File', '"' + "$env:GITHUB_WORKSPACE\scripts\wake_display.ps1" + '"', '-Hold') -WindowStyle Hidden -PassThru
+          $holder.Id | Set-Content desktop-results/wake-pid.txt
+          Start-Sleep -Seconds 2
+          if ($holder.HasExited) { throw 'Display wake process failed to start.' }
+      - name: Resolve SDK
+        shell: pwsh
+        run: |
+          . ./scripts/resolve_dotnet.ps1
+          $dotnet = Resolve-InspectorDotnet -InspectorRoot "$env:GITHUB_WORKSPACE\wpf-inspector"
+          "DOTNET_ROOT=$(Split-Path $dotnet -Parent)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Build and verify inspector payload
+        shell: pwsh
+        run: |
+          ./scripts/build_inspector.ps1 -Configuration Release -LockedRestore
+          ./scripts/check_inspector.ps1 -Suite Package
+          uv sync --directory python --extra inspector --reinstall-package wintestkit-inspector
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Run live suite
+        shell: pwsh
+        env:
+          WTK_INSPECTOR_REAL: '1'
+        run: |
+          $files = @(Get-ChildItem python/tests/unit/*_real.py | Where-Object Name -NotIn @('test_inspector_matrix_real.py', 'test_stress_real.py') | ForEach-Object { $_.FullName })
+          $files += "$env:GITHUB_WORKSPACE/python/tests/unit/test_inspector_owned_integration.py"
+          uv run --directory python pytest -q -rf $files tests/integration --junitxml="$env:GITHUB_WORKSPACE/desktop-results/live.xml" 2>&1 | Tee-Object -FilePath desktop-results/live.log
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Run six-cell matrix
+        shell: pwsh
+        run: ./scripts/check_inspector.ps1 -Suite Matrix 2>&1 | Tee-Object -FilePath desktop-results/matrix.log
+      - name: Run stress tests
+        if: github.event_name == 'workflow_dispatch' && inputs.stress
+        shell: pwsh
+        env:
+          WTK_INSPECTOR_REAL: '1'
+          WTK_STRESS: '1'
+        run: |
+          uv run --directory python pytest -q -rf tests/unit/test_stress_real.py --junitxml="$env:GITHUB_WORKSPACE/desktop-results/stress.xml" 2>&1 | Tee-Object -FilePath desktop-results/stress.log
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Clean up desktop processes
+        if: always()
+        shell: pwsh
+        run: |
+          if (Test-Path desktop-results/wake-pid.txt) {
+            $wakeId = [int](Get-Content desktop-results/wake-pid.txt)
+            Stop-Process -Id $wakeId -ErrorAction SilentlyContinue
+          }
+          if (Test-Path desktop-results/start-time.txt) {
+            $started = [datetime]::Parse((Get-Content desktop-results/start-time.txt)).ToUniversalTime()
+            $workspace = [IO.Path]::GetFullPath($env:GITHUB_WORKSPACE).TrimEnd('\') + '\'
+            Get-CimInstance Win32_Process | Where-Object {
+              $_.ExecutablePath -and $_.ExecutablePath.StartsWith($workspace, [StringComparison]::OrdinalIgnoreCase) -and
+              $_.Name -match '^(WinTestKit\.Fixture|Snoop\.InjectorLauncher\.(x86|x64))\.exe$' -and
+              $_.CreationDate.ToUniversalTime() -ge $started
+            } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+          }
+      - name: Summarize desktop run
+        if: always()
+        shell: pwsh
+        run: |
+          "## Desktop CI`n`nJob result: ${{ job.status }}. See the desktop-results artifact for test reports and logs." | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+      - name: Upload desktop results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: desktop-results
+          path: desktop-results/
+          if-no-files-found: warn

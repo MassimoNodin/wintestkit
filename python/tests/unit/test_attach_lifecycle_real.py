@@ -6,6 +6,7 @@ import threading
 from pathlib import Path
 
 import pytest
+from live_dotnet import live_dotnet_root
 
 from wintestkit import runtime
 from wintestkit.app import App
@@ -14,7 +15,6 @@ from wintestkit.inspector.pipe import WindowsPipe
 
 ROOT = Path(__file__).resolve().parents[3]
 FIXTURE = ROOT / "wpf-inspector/tests/Fixtures/WpfFixture/bin/cells/net10.0-windows-x64"
-DOTNET = r"C:\Users\massi\AppData\Local\wintestkit-dev\dotnet"
 pytestmark = pytest.mark.skipif(
     os.name != "nt" or os.environ.get("WTK_INSPECTOR_REAL") != "1",
     reason="requires explicitly enabled owned Windows fixture",
@@ -48,7 +48,7 @@ def test_launch_close_cycles(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
             app = App.launch(
                 FIXTURE / "WinTestKit.Fixture.exe",
                 cwd=FIXTURE,
-                env={"DOTNET_ROOT_X64": DOTNET, "DOTNET_MULTILEVEL_LOOKUP": "0"},
+                env={"DOTNET_ROOT_X64": live_dotnet_root(), "DOTNET_MULTILEVEL_LOOKUP": "0"},
                 owned_only=True,
             )
             try:

@@ -215,6 +215,24 @@ def test_prerelease_bump_check_and_return_to_stable(version_workspace: Path) -> 
     )
 
 
+def test_desktop_workflow_is_restricted_to_trusted_events() -> None:
+    import yaml
+
+    root = Path(__file__).resolve().parents[3]
+    workflow = yaml.safe_load((root / ".github/workflows/desktop.yml").read_text())
+    triggers = workflow[True]  # PyYAML treats the YAML 1.1 key "on" as a boolean.
+    assert set(triggers) == {"push", "workflow_dispatch"}
+    assert triggers["push"]["branches"] == ["master"]
+    assert workflow["permissions"] == {"contents": "read"}
+    job = workflow["jobs"]["desktop"]
+    assert job["if"] == (
+        "github.repository == 'MassimoNodin/wintestkit' && github.event_name != 'pull_request'"
+        " && github.ref == 'refs/heads/master'"
+    )
+    assert job["runs-on"] == ["self-hosted", "windows", "wintestkit-desktop"]
+    assert workflow["concurrency"]["cancel-in-progress"] is False
+
+
 def test_workflows_withhold_public_vsix_by_default() -> None:
     import yaml
 

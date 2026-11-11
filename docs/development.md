@@ -127,6 +127,46 @@ The [CI workflow](../.github/workflows/ci.yml) checks Python lint, formatting, t
 non-desktop tests, smoke-tests the wheel, and checks and packages the extension. It does
 not build an example app or run desktop suites.
 
+### Desktop CI runner
+
+The separate [desktop workflow](../.github/workflows/desktop.yml) runs on pushes to
+`master` and by manual dispatch on `master`; it never runs on pull requests. It wakes and checks the
+display, builds the unsigned inspector payload, runs the live tests and six-cell matrix,
+and uploads reports. Manual dispatch can optionally enable the stress tests. Hosted CI
+does not wait for this runner.
+
+On the Windows runner install Visual Studio C++ build tools, the SDK pinned by
+`wpf-inspector/global.json`, .NET 8 and 10 Desktop Runtimes in **both x86 and x64**,
+the .NET Framework 4.8 Developer Pack (including its SDK tools), Python 3.12, uv, and
+PowerShell 7 (`pwsh`). Put `uv`, `pwsh`, and the SDK's `dotnet.exe` on the runner's
+PATH. Alternatively set `DOTNET_ROOT` for the runner process to the SDK directory;
+it must contain the required x64 runtimes as well. If runtimes are installed elsewhere,
+set `WTK_MATRIX_DOTNET_ROOT_X86` and `WTK_MATRIX_DOTNET_ROOT_X64` to their respective
+runtime roots before launching the runner. The .NET Framework 4.8 runtime must also be present.
+For local live tests, the x64 .NET 10 runtime root is selected from `DOTNET_ROOT`,
+the directory of `dotnet.exe` on PATH (the SDK resolver default),
+`%LOCALAPPDATA%\wintestkit-dev\dotnet`, then `C:\Program Files\dotnet`.
+The first root containing both .NET 10 Core and Windows Desktop runtimes is used.
+
+In the repository's GitHub **Settings → Actions → Runners**, choose **New self-hosted
+runner**, select Windows, and follow GitHub's download and `config.cmd` instructions.
+Register it for this repository with the custom label `wintestkit-desktop`; GitHub adds
+the `self-hosted` and `windows` labels automatically. Log into the Windows desktop and
+start `run.cmd` from that session, **not as a Windows service**. Leave the session
+logged in and unlocked, prevent screen lock and system/display sleep during runs, keep
+the display connected and on, and leave the desktop free for the tests. The preflight
+fails if the session is inaccessible or the capture is black. The wake helper is not a
+substitute for those Windows power and lock settings. To remove the runner, stop it and
+run `config.cmd remove` from its installation directory.
+
+**Security:** A self-hosted runner in a public repository executes workflow code on a
+personal machine, with access to that account and its files. This workflow accepts only
+trusted pushes to `master` and manual dispatch, never PR code or fork-triggered workflow
+runs; protect `master` and restrict who can dispatch workflows. In repository Actions
+settings, require approval for all outside collaborators' fork workflows as an additional
+precaution. Use a dedicated non-admin Windows account if possible, keep its credentials and
+files separate, and review workflow changes before merging. No secrets are used by this job.
+
 Shared [JSON schemas](../schemas/README.md) define the Python/editor contracts. Run
 `npm run gen:types` in `vscode/` after changing schemas and commit the generated types.
 

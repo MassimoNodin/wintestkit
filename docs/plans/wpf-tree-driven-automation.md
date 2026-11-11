@@ -704,6 +704,11 @@ P7e results: two live smoke runs passed all six cells: net48 x86 and x64
 (`10.0.15`) and x64 (`10.0.11`). The manifest cell list matches the six cells;
 its `verified` flags remain false pending the full P7g release gates.
 
+P7f results: added a restricted self-hosted desktop workflow, interactive display preflight
+and wake helper, live and six-cell runs, optional manual stress, cleanup and result artifacts,
+with runner setup and security guidance. The first real CI run awaits the owner's runner
+registration; signing remains deferred.
+
 ## 7. Test strategy
 
 - **Parity suite**: run the same locator, wait, action and typed-control tests under
