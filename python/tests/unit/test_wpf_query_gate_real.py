@@ -1561,6 +1561,40 @@ def test_ensure_visible_virtual_items_cached(owned, backend, mode):
         assert not target.as_live().is_offscreen
 
 
+def test_xname_lookup_probe(owned):
+    from wintestkit.engine.suggest import suggest_locator
+    from wintestkit.model import Element, Page
+    from wintestkit.testcomplete import find_child, to_locator
+
+    scope, path = owned
+
+    class FixturePage(Page):
+        by_id = Element(automation_id="OnlyXName")
+        by_name = Element(where={"clr:Name": "OnlyXName"})
+
+    page = FixturePage(scope.app)
+    with runtime.config_scope(replace(config(path, "agent"), backend="auto")):
+        target = resolve(scope, Locator(where=(("clr:Name", "OnlyXName"),)))
+        suggestion = suggest_locator(target, scope.app)
+        print("XNAME SUGGESTION", suggestion.strategy, suggestion.code)
+        cases = [
+            ("Element automation_id", lambda: page.by_id.resolve(timeout=2)),
+            ("Element clr:Name", lambda: page.by_name.resolve(timeout=2)),
+            ("to_locator", lambda: resolve(scope, to_locator("WPFControlName", "OnlyXName"))),
+            (
+                "find_child",
+                lambda: find_child(page, "WPFControlName", "OnlyXName", 20).resolve(timeout=2),
+            ),
+            ("Spy suggestion", lambda: resolve(scope, suggestion.locator)),
+        ]
+        assert suggestion.strategy == "x_name"
+        for label, operation in cases:
+            start = time.monotonic()
+            found = operation()
+            assert found.same_as(target), label
+            print(f"XNAME {label}: {time.monotonic() - start:.3f}s success")
+
+
 @pytest.mark.parametrize("backend", ["uia", "auto"])
 def test_testcomplete_find_helpers(owned, backend):
     from wintestkit.expect import expect

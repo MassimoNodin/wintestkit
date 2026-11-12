@@ -98,7 +98,7 @@ Managed keys fail under `backend: uia`; keep secrets out of `where`. Reads run a
 
 | TestComplete | WinTestKit |
 |---|---|
-| `WPFControlName` | usually `automation_id` (WPF's `x:Name`). Verify in Spy; if the control has no AutomationId, use `name` + `control_type` |
+| `WPFControlName` | `automation_id`: peer ID or, with `backend: auto`, `x:Name` when the ID is empty. For peerless elements use `where={"clr:Name": "..."}` |
 | `ClrFullClassName` | `where={"type:FullName": "My.App.Views.AddressBox"}`; use `type:Is` to include derived types. `class_name` is only the short peer class name. |
 | `WPFControlText` / `Content` / `Caption` | `name` |
 | ordinal / index properties | `index` (0-based; check the base) |

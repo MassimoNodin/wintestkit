@@ -28,7 +28,9 @@ not the full CLR type. Do not place secrets in locators.
 `wintestkit.testcomplete` provides `to_locator`, `find_child`, `find_all_children` and
 `find`. `ClrFullClassName` maps to `type:FullName`, `WPFControlName` to `automation_id`,
 and other property paths such as `DataContext.Status` to managed properties. The helper
-accepts `*` and `?` wildcards; ordinary `where` strings are exact.
+accepts `*` and `?` wildcards; ordinary `where` strings are exact. With `backend: auto`,
+`automation_id` falls back to `x:Name` when a peer returns an empty ID. UIA-only matching
+uses the provider's ID; use `clr:Name` with the WPF backend for peerless objects.
 
 ```python
 # pseudo-code

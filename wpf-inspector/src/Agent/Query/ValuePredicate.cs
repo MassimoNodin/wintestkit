@@ -105,6 +105,16 @@ namespace WinTestKit.Inspector.Agent.Query
                 try { value = inspector.ReadPath(target, path, registry, dispatcher, cancellation.Token); }
                 catch (ProtocolException error) when (error.Code == ErrorCodes.MemberNotFound) { return false; }
                 if (path[0].Kind == "uia" && value.Status == "unavailable") return false;
+                if (path.Count == 1 && path[0].Kind == "uia" && path[0].Name == "automation_id" &&
+                    value.Status == "ok" && value.Kind == "string" && value.Scalar is JsonStringNode id && id.Value.Length == 0 &&
+                    (target is FrameworkElement || target is FrameworkContentElement))
+                {
+                    var namePath = new[] { new PathSegment { Kind = "property", Name = "Name" } };
+                    if (inspector.IsPathRedacted(namePath) || RedactionPolicy.IsProtectedIdentity(target) && !RedactionPolicy.IsAllowedOnProtected(namePath, null))
+                        throw Unreadable("redacted");
+                    string name = target is FrameworkElement frameworkElement ? frameworkElement.Name : ((FrameworkContentElement)target).Name;
+                    value = new ValueDto { Status = "ok", Kind = "string", Scalar = new JsonStringNode(name) };
+                }
                 return value != null && MatchesValue(value, context);
             }
         }

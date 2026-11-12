@@ -38,6 +38,15 @@ namespace WinTestKit.Inspector.Agent.Query.Tests
             public string SecretValue => "not disclosed";
             public string LongValue => new string('a', 4000) + "!";
         }
+        private sealed class EmptyIdButton : Button
+        {
+            protected override AutomationPeer OnCreateAutomationPeer() => new EmptyIdPeer(this);
+        }
+        private sealed class EmptyIdPeer : ButtonAutomationPeer
+        {
+            internal EmptyIdPeer(Button owner) : base(owner) { }
+            protected override string GetAutomationIdCore() => string.Empty;
+        }
         private sealed class ProtectedButton : Button
         {
             protected override AutomationPeer OnCreateAutomationPeer() => new ProtectedPeer(this);
@@ -245,9 +254,17 @@ namespace WinTestKit.Inspector.Agent.Query.Tests
                 Assert.True(Match(button, "automation_id", "Named"));
                 AutomationProperties.SetAutomationId(button, "explicit");
                 Assert.True(Match(button, "automation_id", "explicit"));
+                Assert.False(Match(button, "automation_id", "Named"));
                 Assert.True(Match(button, "class_name", "Button"));
                 Assert.True(Match(button, "name", "Caption"));
                 Assert.True(Match(button, "control_type", "Button"));
+                var emptyId = new EmptyIdButton { Name = "OnlyXName" };
+                Assert.True(Match(emptyId, "automation_id", "OnlyXName"));
+                Assert.False(Match(emptyId, "automation_id", "other"));
+                var redactedName = PredicateFactory.Create(Equal("automation_id", new JsonStringNode("OnlyXName"), "uia"), new ObjectInspector(new[] { "Name" }), registry);
+                Assert.Equal(ErrorCodes.ValueUnreadable, Assert.Throws<ProtocolException>(() => redactedName.Matches(emptyId, context)).Code);
+                var emptyIdRegex = new Predicate { Kind = "regex", Path = new[] { Segment("automation_id", "uia") }, Pattern = "^OnlyXName$", Flags = Array.Empty<string>() };
+                Assert.True(PredicateFactory.Create(emptyIdRegex, inspector, registry).Matches(emptyId, context));
                 var border = new Border { Name = "BorderName" };
                 Assert.False(Match(border, "automation_id", "BorderName"));
                 Assert.False(Match(border, "class_name", "Border"));

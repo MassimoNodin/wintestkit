@@ -61,6 +61,27 @@ def demo() -> Demo:
     return Demo()
 
 
+def test_window_uses_managed_name_only_when_peer_id_is_empty(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from types import SimpleNamespace
+
+    from wintestkit.backends.element import WpfElement
+    from wintestkit.engine import resolve as resolver
+
+    window = FakeElement("Window", "Name-only window")
+    app = FakeApp([window])
+    root = object.__new__(WpfElement)
+    monkeypatch.setattr(resolver.runtime, "get_config", lambda: SimpleNamespace(backend="auto"))
+    monkeypatch.setattr(resolver, "route", lambda _window: root)
+    monkeypatch.setattr(resolver, "identity_value", lambda _root, _name: "NamedWindow")
+    assert resolve_window(app, WindowLocator(automation_id="NamedWindow")) is window
+    window.automation_id = "ExplicitId"
+    assert resolve_window(app, WindowLocator(automation_id="ExplicitId")) is window
+    with pytest.raises(WindowNotFoundError):
+        resolve_window(app, WindowLocator(automation_id="NamedWindow"))
+
+
 def test_unique_match(demo: Demo) -> None:
     assert resolve(demo.scope, Locator(control_type="Button", name="Sign in")) is demo.sign_in
 

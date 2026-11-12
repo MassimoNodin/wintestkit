@@ -19,6 +19,7 @@ from wintestkit.errors import (
     InspectorError,
     InspectorLimitError,
     InspectorMappingError,
+    InspectorReadError,
     NoUiaPeerError,
 )
 from wintestkit.inspector.paths import PathSegment
@@ -95,6 +96,26 @@ def matches_root(root: WpfElement, conditions: list[ManagedCondition]) -> bool:
     return root.ref in result.matches
 
 
+def identity_value(element: WpfElement, name: str) -> str | None:
+    value = getattr(element, name)
+    if name != "automation_id" or value:
+        return value
+    values, _ = element.client.read(
+        element.ref.object_id,
+        element.ref.generation,
+        [(PathSegment("uia", "automation_id"),), (PathSegment("property", "Name"),)],
+        deadline=locator_deadline(),
+    )
+    if values[0].value.status == "unavailable":
+        return None
+    result = values[1].value
+    if result.status == "ok" and isinstance(result.scalar, str):
+        return result.scalar
+    if result.status in {"unavailable", "nullIntermediate"}:
+        return ""
+    raise InspectorReadError(f"Cannot read WPF Name: {result.status}", code="readFailed")
+
+
 def query(root: WpfElement, locator: Locator, *, use_index: bool = False) -> QueryMatches:
     constraints = resolve_where(locator.where, locator.describe_link(), locator.taken())
     pushed: list[Condition | ManagedCondition] = []
@@ -132,7 +153,8 @@ def query(root: WpfElement, locator: Locator, *, use_index: bool = False) -> Que
 
     def accepts(element: WpfElement) -> bool:
         if not all(
-            match_value(value, getattr(element, name)) for name, value in identities.items()
+            (actual := identity_value(element, name)) is not None and match_value(value, actual)
+            for name, value in identities.items()
         ):
             return False
         try:

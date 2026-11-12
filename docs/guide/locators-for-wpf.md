@@ -20,9 +20,11 @@ order = Element(where={"type:Is": "Company.Views.OrderView",
 address = Element(where={"type:FullName": re.compile(r"^Company\.Controls\..*Box$")})
 ```
 
-`automation_id` uses AutomationId, falling back to `x:Name` on WPF. TestComplete's
-`WPFControlName` helper maps to that field, so an explicit AutomationId can differ from
-`x:Name`. `type:FullName` is the CLR type including namespace; `type:Is` also matches
+With `backend: auto`, `automation_id` uses the peer's AutomationId, falling back to `x:Name`
+when the peer returns an empty ID. With `backend: uia`, it uses only the ID exposed by UIA;
+a custom peer may suppress WPF's usual name fallback. TestComplete's `WPFControlName`
+helper maps to this field. For peerless objects, use `where={"clr:Name": "..."}` instead.
+An explicit AutomationId can differ from `x:Name`. `type:FullName` is the CLR type including namespace; `type:Is` also matches
 derived types. See [TestComplete helpers](property-matching.md#testcomplete-helpers) for
 `ClrFullClassName`, `*` and `?` wildcards.
 

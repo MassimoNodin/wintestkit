@@ -10,6 +10,12 @@ def test_fancy_action(app: App) -> None:
     expect(page.effect).to_have_text("Clicked 1")
 
 
+def test_name_only(app: App) -> None:
+    page = FixturePage(app)
+    expect(page.name_only).to_exist()
+    expect(find_child(page, "WPFControlName", "OnlyXName", depth=20)).to_exist()
+
+
 def test_mounted_boxes(app: App) -> None:
     page = FixturePage(app)
     expect(page.left.suggestion).to_exist()

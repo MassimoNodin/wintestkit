@@ -15,6 +15,7 @@ class FixturePage(Page):
         where={"type:Is": "WinTestKit.Fixture.FancyButton", "clr:DataContext.Label": "fixture"},
     )
     effect = Element(automation_id="ActionEffect")
+    name_only = Element(automation_id="OnlyXName")
 
     def run_fancy_action(self) -> None:
         self.fancy.click()
