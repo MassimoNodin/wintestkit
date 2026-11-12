@@ -38,6 +38,27 @@ def config_with_app(tmp_path: Path, app_exists: bool = True) -> doctor.WtkConfig
     return load_config(tmp_path)
 
 
+def test_agent_diagnostic_launch_does_not_auto_attach(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from wintestkit import runtime
+    from wintestkit.app import App
+
+    cfg = config_with_app(tmp_path)
+    assert cfg.inspector.attach == "on-launch"
+    seen = []
+
+    def launch(*args: object, **kwargs: object) -> None:
+        seen.append(runtime.get_config().inspector.attach)
+        raise RuntimeError("stop after launch probe")
+
+    monkeypatch.setattr(App, "launch", launch)
+    check = doctor._check_wpf_agent(cfg, launch=True)
+    assert seen == ["manual"]
+    assert "stop after launch probe" in check.detail
+    assert runtime.get_config().inspector.attach == "on-launch"
+
+
 def test_all_checks_ok_on_a_healthy_machine(tmp_path: Path) -> None:
     cfg = config_with_app(tmp_path)
     checks = by_id(run_checks(cfg))

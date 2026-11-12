@@ -10,7 +10,7 @@ import subprocess
 import sys
 import time
 from ctypes import wintypes
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Literal
 
@@ -457,19 +457,24 @@ def _check_wpf_agent(cfg: WtkConfig | None, *, launch: bool = False) -> Check:
                     "no application path configured",
                     "Configure app.path before using --agent.",
                 )
+            from wintestkit import runtime
             from wintestkit.app import App
 
             settings = cfg.app
             assert settings.path is not None
-            app = App.launch(
-                settings.path,
-                args=settings.args,
-                cwd=settings.cwd,
-                env=settings.env,
-                process=settings.process,
-                startup_timeout=min(settings.startup_timeout, 30.0),
-                owned_only=True,
-            )
+            # Doctor owns a separate diagnostic registry below. Avoid opening a
+            # second, automatic session during launch of its owned fixture.
+            launch_cfg = replace(cfg, inspector=replace(cfg.inspector, attach="manual"))
+            with runtime.config_scope(launch_cfg):
+                app = App.launch(
+                    settings.path,
+                    args=settings.args,
+                    cwd=settings.cwd,
+                    env=settings.env,
+                    process=settings.process,
+                    startup_timeout=min(settings.startup_timeout, 30.0),
+                    owned_only=True,
+                )
             pids = app.pids
         deadline = time.monotonic() + min(cfg.app.startup_timeout, 30.0) if app and cfg.app else 0
         while True:

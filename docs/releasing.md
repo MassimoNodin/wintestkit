@@ -218,9 +218,17 @@ through Actions artifacts and GitHub Release assets, including artifact uploads 
 The core `wintestkit` wheel is platform-independent; `wintestkit-inspector` is a separate
 Windows x64 payload wheel. Their versions and the core `inspector` extra pin move in lockstep
 via `scripts/bump_version.py`. Run `python scripts/check_release.py inspector` and the core
-wheel check before release. Build the payload with `./scripts/build_inspector.ps1 -Configuration
-Release -LockedRestore`, then run `./scripts/check_inspector.ps1 -Suite Package -RequireSigned`
-and build the inspector wheel with `uv build --directory inspector-payload --wheel`.
+wheel check (`./scripts/check_wheel.ps1`) before release. Run
+`./scripts/check_inspector_reproducible.ps1` to force two unsigned Release rebuilds and compare
+all staged files, the inspector wheel, and the core sdist and wheel. It fixes
+`SOURCE_DATE_EPOCH` for distribution builds; the comparison applies to the same checkout,
+toolchain and source state. Run `./scripts/check_inspector_install.ps1` twice in an interactive,
+awake desktop session with the published net10 x64 fixture and matching runtime available.
+It prepares a dependency wheelhouse, then installs both local wheels without an index in a fresh
+temporary environment, checks doctor and the agent, queries and clicks the fixture, and cleans up.
+Build the release payload with `./scripts/build_inspector.ps1 -Configuration Release
+-LockedRestore`, then run `./scripts/check_inspector.ps1 -Suite Package -RequireSigned` and build
+the inspector wheel with `uv build --directory inspector-payload --wheel`.
 
 Set `WTK_SIGN_CERT_THUMBPRINT` to the release signing certificate thumbprint for the build;
 Authenticode signatures are required for release executables and DLLs. The owner must approve

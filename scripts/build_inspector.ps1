@@ -1,6 +1,7 @@
 param(
     [ValidateSet('Debug', 'Release')][string]$Configuration = 'Release',
     [switch]$LockedRestore,
+    [switch]$Rebuild,
     [switch]$Sign,
     [string]$DotnetRoot,
     [string]$MSBuildPath
@@ -51,6 +52,8 @@ foreach ($header in @('metahost.h', 'mscoree.h')) {
 }
 Write-Host "Verified $($lock.files.Count) pinned Snoop files; CLR hosting headers: $sdkInclude"
 $env:CL = "/I`"$sdkInclude`" $env:CL"
+$oldLink = $env:LINK
+$env:LINK = "/Brepro $env:LINK"
 
 Push-Location (Join-Path $root 'wpf-inspector')
 try {
@@ -61,13 +64,16 @@ try {
         if ($LockedRestore) { $restoreArgs += '--locked-mode' }
         & $dotnet @restoreArgs
         if ($LASTEXITCODE -ne 0) { Write-Warning "Restore failed: $project"; $failed = $true; continue }
-        & $dotnet build $project -c $Configuration --no-restore
+        $buildArgs = @('build', $project, '-c', $Configuration, '--no-restore')
+        if ($Rebuild) { $buildArgs += '--no-incremental' }
+        & $dotnet @buildArgs
         if ($LASTEXITCODE -ne 0) { Write-Warning "Build failed: $project"; $failed = $true }
     }
     foreach ($arch in @('Win32', 'x64')) {
         $out = Join-Path $root "wpf-inspector/artifacts/launcher/$Configuration/$arch/"
         $obj = Join-Path $root "wpf-inspector/artifacts/launcher/obj/$Configuration/$arch/"
-        & $msbuild (Join-Path $root 'wpf-inspector/third_party/snoop/Snoop.GenericInjector/Snoop.GenericInjector.vcxproj') /t:Build "/p:Configuration=$Configuration" "/p:Platform=$arch" /p:RootBuild=False /p:WindowsTargetPlatformVersion=10.0 "/p:OutDir=$out" "/p:IntDir=$obj" /v:minimal
+        $target = if ($Rebuild) { '/t:Rebuild' } else { '/t:Build' }
+        & $msbuild (Join-Path $root 'wpf-inspector/third_party/snoop/Snoop.GenericInjector/Snoop.GenericInjector.vcxproj') $target "/p:Configuration=$Configuration" "/p:Platform=$arch" /p:RootBuild=False /p:WindowsTargetPlatformVersion=10.0 "/p:OutDir=$out" "/p:IntDir=$obj" /v:minimal
         if ($LASTEXITCODE -ne 0) { Write-Warning "Native build failed: $arch"; $failed = $true }
     }
     if ($failed) { throw 'Protocol, Agent, or native injector build failed; launcher build was not started.' }
@@ -95,7 +101,9 @@ try {
         if ($LockedRestore) { $restoreArgs += '--locked-mode' }
         & $dotnet @restoreArgs
         if ($LASTEXITCODE -ne 0) { Write-Warning "Launcher restore failed: $($target.Managed)"; $failed = $true; continue }
-        & $dotnet build $launcherProject -c $Configuration --no-restore "-p:PlatformTarget=$($target.Managed)" "-p:OutputPath=$out"
+        $buildArgs = @('build', $launcherProject, '-c', $Configuration, '--no-restore', "-p:PlatformTarget=$($target.Managed)", "-p:OutputPath=$out")
+        if ($Rebuild) { $buildArgs += '--no-incremental' }
+        & $dotnet @buildArgs
         if ($LASTEXITCODE -ne 0) { Write-Warning "Launcher build failed: $($target.Managed)"; $failed = $true; continue }
         $launcherExe = Join-Path $out "Snoop.InjectorLauncher.$($target.Managed).exe"
         if (-not (Test-Path -LiteralPath $launcherExe -PathType Leaf)) { Write-Warning "Launcher output missing: $launcherExe"; $failed = $true }
@@ -189,4 +197,4 @@ try {
     }
     [IO.File]::WriteAllText((Join-Path $payload 'manifest.json'), ($manifest | ConvertTo-Json -Depth 8) + "`n", (New-Object Text.UTF8Encoding($false)))
     Write-Host "Staged $($files.Count) files in $payload (signed=$([bool]$Sign); compatibility cells unverified)."
-} finally { Pop-Location }
+} finally { $env:LINK = $oldLink; Pop-Location }
