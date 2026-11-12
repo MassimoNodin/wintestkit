@@ -1,8 +1,8 @@
 # WinTestKit for VS Code
 
 Write, run and debug UI tests for **Windows WPF applications** in Python. WinTestKit uses
-Microsoft UI Automation to find controls, so tests work against the real application without
-image matching. This extension is the editor side of the
+an injected agent to find WPF controls in the WPF tree by default, and UI Automation for
+non-WPF windows. This extension is the editor side of the
 [`wintestkit`](https://pypi.org/project/wintestkit/) Python package.
 
 The extension is in a public **pre-release** (0.1): install it from the Marketplace and
@@ -26,13 +26,12 @@ def test_sign_in(app):
     expect(main.status).to_have_text("Welcome, admin")
 ```
 
-## Managed inspection (preview)
+## WPF inspection
 
-**Preview:** Unreleased managed WPF inspection is optional and not zero-impact. Install
-`wintestkit[inspector]` in the selected Python environment and enable the inspector in project
-configuration. In a trusted workspace, select an element in Spy and confirm attachment before
-reading managed members. Getters execute application code and can hang the target; timeouts do
-not stop them. Restart the target to unload the agent. Compatibility and release gates remain open.
+Install `wintestkit[inspector]` in the selected Python environment for the default WPF backend.
+In a trusted workspace, select an element in Spy and confirm attachment before reading managed
+members. Injection is not zero-impact: getters execute application code and can hang the target;
+timeouts do not stop them. Restart the target to unload the agent.
 
 ## Features
 
@@ -60,7 +59,7 @@ not stop them. Restart the target to unload the agent. Compatibility and release
   **Preview** section. Switch between **Element** and **In App context**, or open the image to zoom
   and pan. Keyboard selection updates the preview too. Captures are not live; run Check exists again
   to refresh them. Empty states distinguish no selection from an element without a saved check image.
-- **Spy.** Explore the live UI Automation tree. **Pick element** and **Refresh objects** stay in
+- **Spy.** Explore the live WPF or UI Automation tree. **Pick element** and **Refresh objects** stay in
   the Spy toolbar. Hold **Ctrl** and click a control, or press **Esc** to cancel. The Spy shows
   properties and supported patterns. **Generate suggested locator** (on request: it can take
   20 seconds or more in large apps) makes a locator, and **Add to page…** inserts it into a page

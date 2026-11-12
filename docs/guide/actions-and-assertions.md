@@ -73,6 +73,7 @@ def test_mouse_mode_and_nth(main: MainPage) -> None:
 ## Auto-waiting
 
 WinTestKit waits for the application so tests don't need sleeps.
+On WPF, supported waits use agent-side events to recheck conditions; other cases can poll.
 
 | Call | Waits until | Then |
 |---|---|---|

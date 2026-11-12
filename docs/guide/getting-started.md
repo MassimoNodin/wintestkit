@@ -1,6 +1,9 @@
 # Getting started
 
 The [repository README](../../README.md) is the step-by-step installation and first-test guide.
+Install `wintestkit[inspector]` for the default WPF backend. `backend: auto` attaches an
+agent to WPF applications and uses UI Automation for non-WPF windows; see
+[managed inspection](managed-inspection.md) for compatibility and security.
 It covers:
 
 1. Preparing Windows, Python and your application.
