@@ -14,7 +14,7 @@ scripts or keyword tests. Output: pages, components, flows, tests.
 | A leaf (button, edit, ...) | a typed element on the page or component |
 | Alias | the attribute name (`customer.address.street`) |
 | `WPFControlName` | `automation_id` (usually; verify in Spy) |
-| `ClrFullClassName` | `where={"ClrFullClassName": ...}` with a configured UIA alias; see below |
+| `ClrFullClassName` | `where={"type:FullName": ...}`; `type:Is` includes derived types |
 | `WPFControlText`, `Content`, `Caption` | `name` |
 | ordinal number | `index` (0-based; avoid) |
 | mapped parent chain | the component root; never a `within=` chain |
@@ -29,26 +29,11 @@ scripts or keyword tests. Output: pages, components, flows, tests.
 
 ## ClrFullClassName
 
-**Preview:** If the repository enables the inspector and attachment is authorized, prefer
-`wtk import-namemapping NameMapping.xml pages/imported.py --managed-class-names`, or configure
-`property_aliases: {ClrFullClassName: 'type:FullName'}`. Verify the key and value in Spy;
-never invent managed paths or put secrets in `where`. Prefer UIA when sufficient. The
-following ItemStatus approach is the fallback when managed inspection is unavailable.
-
-Do not translate a full .NET name directly to `class_name=`: UIA `ClassName` is commonly only a
-short name. Preserve namespace identity by exposing the full name in an existing UIA property
-(for example `ItemStatus` in a test build), then configure:
-
-```yaml
-property_aliases:
-  ClrFullClassName: ItemStatus
-```
-
-Declare `Element(where={"ClrFullClassName": "Acme.Views.AddressBox"})`, or use a compiled regex
-for a pattern. This fallback alias renames a UIA property; it does not read .NET properties.
-Verify the value in Spy or `wtk inspect` before migrating. If the application cannot expose it,
-use a verified short `class_name` and scope to a distinct component/container; never silently drop
-the namespace or add an index to hide ambiguity.
+Use `where={"type:FullName": "Acme.Views.AddressBox"}` to preserve the namespace, or
+`type:Is` to include derived types. With `backend: auto`, WPF uses the managed tree; qualified
+keys fail under `backend: uia`. Confirm paths in Spy and never put secrets in `where`.
+Use `wtk import-namemapping NameMapping.xml pages/imported.py --managed-class-names` for
+managed class-name keys in generated skeletons.
 
 ## Procedure
 
@@ -57,9 +42,9 @@ the namespace or add an index to hide ambiguity.
    user control. Note which windows are dialogs.
 2. **Environment.** `wtk init --app C:/path/App.exe`, set `launch`, `wtk doctor`.
 3. **Per window.** Open the window in the running app. Run `wtk inspect --depth 8` and `wtk spy`
-   to read the real UIA tree. Create `pages/<window>.py` with the `Page` and its `window`.
+   to read the WPF tree. Create `pages/<window>.py` with the `Page` and its `window`.
 4. **Per box.** Create `pages/components/<box>.py`: `root` from the box's mapping node (with the
-   properties UIA really exposes), members from its leaves with typed elements. Mount it on the
+   properties Spy actually shows), members from its leaves with typed elements. Mount it on the
    page(s). Do not keep intermediate container nodes; keep a container only when it is a box.
 5. **Green per page.** `wtk check pages/<window>.py` with the window open. Fix every red line by
    comparing with the closest candidates in the message. Do not migrate tests until this page is
@@ -87,13 +72,13 @@ The importer emits parent-scoped `Element` declarations with `within=` and `dept
 unlimited/default depth for extended find. It assumes nested mapped items and accepts either
 an `extendedFind="True"` attribute or an `ExtendedFind` property. Unmappable properties and
 unmappable parent chains are marked `# TODO`; review them before use. Full managed class names
-require `--managed-class-names` and the inspector, or a configured property alias.
+are emitted as qualified keys with `--managed-class-names`; review the generated skeleton.
 
 ## Things that differ
 
 - Strict matching: TestComplete may resolve to the first of several matches; WinTestKit fails.
   Expect to add roots or properties while migrating.
-- UI Automation only: no image or OCR recognition.
+- WPF uses the managed tree under `backend: auto`; other windows use UIA. There is no image or OCR recognition.
 - Pattern input is the default for clicks and typing; mouse input only when the app needs real
   mouse events (`click(mode="mouse")`).
 - There is no recorder: use the Spy and write Python.

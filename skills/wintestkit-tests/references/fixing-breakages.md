@@ -3,6 +3,9 @@
 The common breakage is a box that moved to another window. Start with `wtk check <file>` (or the
 failing test's message), not with the test.
 
+Relocation diagnostics search all application windows and report candidates; they never change a
+locator or self-heal. Open the relevant window and state before checking, and verify any suggestion.
+
 ## Read the diagnostic
 
 ```text

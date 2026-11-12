@@ -9,16 +9,21 @@ pytest instead of a proprietary IDE and project format.
 |---|---|
 | Project suite / project | A folder with `pyproject.toml` containing `[tool.wintestkit]` |
 | Tested Applications | `[tool.wintestkit.app]` (`path`, `args`, `cwd`, `env`) and the launch mode |
-| NameMapping | `Page` classes with `Element` attributes |
-| Aliases | Page attribute names (`main.sign_in`) |
-| Mapping criteria (properties) | `automation_id`, `name`, `control_type`, `class_name`, `index` |
-| Mapped object hierarchy | `within=` |
-| Conditional / extended find | Regular expressions in `name=` and friends, `Elements(...).filter()` |
+| NameMapping / Aliases | A `Page` per window and reusable `Page` components per movable box; page and component attributes name the controls |
+| `FindChild`, `FindAllChildren`, `Find` | `wintestkit.testcomplete.find_child`, `find_all_children`, `find`, or declared locators |
+| `ClrFullClassName` | `where={"type:FullName": "Namespace.Type"}`; `type:Is` includes derived types |
+| `WPFControlName` | `automation_id`: AutomationId, falling back to `x:Name` on WPF |
+| `WPFControlText` | `name` (peer Name, not necessarily actual text) |
+| `Visible` / `Enabled` | `clr:IsVisible` / `clr:IsEnabled` via helpers or `where` |
+| `ObjectIdentifier` | No direct equivalent: inspect and choose stable properties, not an invented ID |
+| Wildcards | Helpers translate `*` and `?` to whole-value patterns; locators accept compiled regexes |
+| Extended find / depth | `depth` (automation-peer levels); extended find uses descendant search |
+| Direct property writes / method calls | Prefer UI actions; managed writes and calls are opt-in with an allowlist and audit (see [managed inspection](managed-inspection.md#writes-and-method-calls)) |
 | Object Spy / Object Browser | The Spy (`wtk spy` or the VS Code Spy view) and `wtk inspect` |
 | Highlight on screen | `wtk highlight` or the **Highlight** CodeLens |
 | Keyword tests / script routines | pytest test functions |
 | Checkpoints (property, region) | `expect(...)` assertions |
-| `WaitProperty`, `WaitChild`, `Exists` | Automatic waiting in actions and `expect`; `wait_for()`, `exists()` |
+| `aqObject` / `aqUtils` waits, `WaitProperty`, `WaitChild`, `Exists` | Automatic waiting in actions and `expect`; `wait_for()`, `exists()` |
 | Auto-wait timeout | `timeout` setting, per-element `timeout=`, per-call `timeout=` |
 | Event handlers (`OnUnexpectedWindow`, …) | pytest fixtures (setup and teardown) |
 | Test items / execution plan | Test files, folders and pytest markers (`wtk run -m smoke`) |
@@ -81,7 +86,7 @@ Run `wtk import-namemapping NameMapping.xml pages/imported.py`. The command gene
 unverified flag forms `extendedFind="True"` on the object or an `ExtendedFind` property.
 It does not migrate actions or tests. Existing output is preserved; pass `--force` to replace it.
 
-`WPFControlName` becomes `automation_id` (verify that it is exposed as UIA AutomationId in Spy).
+`WPFControlName` becomes `automation_id` (verify the AutomationId or WPF x:Name fallback in Spy).
 `ClrFullClassName` is retained as `where={"ClrFullClassName": ...}`. Configure
 the managed alias described below when the inspector is enabled, or use
 `property_aliases: {ClrFullClassName: ItemStatus}` only if the application exposes the full
@@ -109,9 +114,7 @@ A keyword test that signs in and checks the welcome text becomes a page and a te
 ```python
 # pseudo-code
 def test_invalid_login(main: MainPage) -> None:
-    main.username.type("admin")
-    main.password.type("wrong")
-    main.sign_in.click()
+    main.sign_in_as("admin", "wrong")
     expect(main.status).to_have_text("Invalid credentials")
 ```
 
@@ -132,11 +135,17 @@ A data-driven loop over a table becomes a parametrized test:
 
 ## Suggested order
 
-1. Configure shared settings in `wintestkit.yaml` and the application path in
-   `wintestkit.local.yaml`, then check the machine with `wtk doctor`.
-2. Translate the NameMapping for one window into a `Page` (or generate a starter skeleton with
-   `wtk import-namemapping`), using the Spy to confirm each locator. Run **Check All Elements**
-   in VS Code (or `wtk check`) until it is green.
-3. Move the tests that use that window, replacing checkpoints with `expect` and removing explicit
-   waits.
-4. Repeat per window, then switch CI from TestExecute to `wtk run` ([CI](ci.md)).
+1. Inventory windows and reusable boxes. Set `backend: auto` in shared `wintestkit.yaml`, put
+   machine-specific paths in `wintestkit.local.yaml`, and run `wtk doctor`.
+2. Import a starter with `wtk import-namemapping NameMapping.xml pages/imported.py --managed-class-names`.
+   Inspect each window in Spy and split the skeleton into a `Page` per window and a component per
+   movable box. Each component owns its `root`; mount it on multiple pages, using per-mount `root=`
+   or `window=` overrides when necessary.
+3. Open each relevant application state and run `wtk check pages/<window>.py`. Fix red results
+   before migrating that page's tests. Relocation diagnostics search all windows and suggest moves;
+   they never self-heal or change locators.
+4. Rewrite repeated scripts as page/component intent methods and cross-window flows. Tests call
+   those methods and use element paths only in `expect` assertions. Replace checkpoints with `expect`.
+5. Repeat page by page. Compare with `backend: uia` where useful, but managed keys require
+   `backend: auto` for WPF and cannot be compared directly under UIA. Run the suite and migrate CI
+   to `wtk run` ([CI](ci.md)). Security software must allow the authorized agent attachment.

@@ -5,8 +5,8 @@ description: Write, migrate or fix WinTestKit (pytest-based WPF / Windows UI Aut
 
 # Writing WinTestKit tests
 
-WinTestKit drives a Windows application through UI Automation (UIA) with pytest. The design goal of
-this skill is that **a box that moves to another window is fixed by changing one line**. Follow the
+WinTestKit drives WPF through its managed tree and other Windows apps through UI Automation (UIA)
+with pytest when `backend: auto` is selected. The design goal of this skill is that **a box that moves to another window is fixed by changing one line**. Follow the
 structure below exactly; do not invent API. Longer material: [API cheat sheet](references/api.md),
 [TestComplete migration](references/migration-from-testcomplete.md),
 [fixing breakages](references/fixing-breakages.md). A complete reference implementation is the
@@ -91,15 +91,15 @@ self-healing). Choose, in this order:
 Confirm every locator in the Spy (`wtk spy`, Ctrl+Click) or with `wtk inspect` (see below); never
 guess from the TestComplete mapping alone.
 
-**Managed inspection (preview):** Prefer UIA; use qualified managed keys only when enabled and
-authorized, and only for paths seen in Spy. Never put secrets in `where`. Reads can hang; timeouts cannot stop getters.
+With `backend: auto`, use observed WPF `type:FullName`, `type:Is` and managed paths.
+Managed keys fail under `backend: uia`; keep secrets out of `where`. Reads run application code; timeouts cannot stop getters.
 
 ### Mapping from TestComplete properties
 
 | TestComplete | WinTestKit |
 |---|---|
 | `WPFControlName` | usually `automation_id` (WPF's `x:Name`). Verify in Spy; if the control has no AutomationId, use `name` + `control_type` |
-| `ClrFullClassName` | `class_name` is **only the short type name** in UIA (`AddressBox`, not `My.App.Views.AddressBox`). If the namespace was needed to disambiguate, solve it with the **component root**, `within=` or `index=`, and say so in a comment |
+| `ClrFullClassName` | `where={"type:FullName": "My.App.Views.AddressBox"}`; use `type:Is` to include derived types. `class_name` is only the short peer class name. |
 | `WPFControlText` / `Content` / `Caption` | `name` |
 | ordinal / index properties | `index` (0-based; check the base) |
 | the deep mapped parent chain | **not copied**. The component root replaces it |
@@ -254,7 +254,7 @@ Short form:
 ## Verifying and fixing
 
 ```powershell
-wtk inspect --depth 8            # UIA tree of the running app (ids, names, classes, nesting)
+wtk inspect --depth 8            # tree of the running app (ids, names, classes, nesting)
 wtk inspect --at 640,480         # the element at a screen point and its ancestors
 wtk check pages/customer.py      # resolve every element of every page in the file now
 wtk check pages/customer.py::CustomerPage
