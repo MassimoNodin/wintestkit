@@ -144,6 +144,42 @@ def test_background_capture_failure_is_best_effort(tmp_path: Path) -> None:
     assert not replay._thread.is_alive()
 
 
+def test_stop_waits_for_first_inflight_frame(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    entered = threading.Event()
+    release = threading.Event()
+
+    def capture() -> tuple[int, int, bytes]:
+        entered.set()
+        assert release.wait(2)
+        return (1, 1, b"\xff\x00\x00")
+
+    replay = ReplayRecorder(tmp_path, tmp_path, capture=capture)
+    replay.start()
+    assert entered.wait(2)
+    initial_sample_done = getattr(replay, "_initial_sample_done", None)
+    if initial_sample_done is None:
+        original_join = replay._thread.join
+
+        def release_then_join(timeout: float | None = None) -> None:
+            release.set()
+            original_join(timeout)
+
+        monkeypatch.setattr(replay._thread, "join", release_then_join)
+    else:
+        original_wait = initial_sample_done.wait
+
+        def release_then_wait(timeout: float | None = None) -> bool:
+            release.set()
+            return original_wait(timeout)
+
+        monkeypatch.setattr(initial_sample_done, "wait", release_then_wait)
+    result = replay.stop()
+    assert len(result["frames"]) == 1
+    assert "error" not in result
+
+
 def test_background_capture_continues_between_actions(tmp_path: Path) -> None:
     captured = threading.Event()
     samples = 0

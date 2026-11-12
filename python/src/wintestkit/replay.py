@@ -59,6 +59,7 @@ class ReplayRecorder:
         self._capture = capture or self._capture_window
         self._stop = threading.Event()
         self._wake = threading.Event()
+        self._initial_sample_done = threading.Event()
         self._thread = threading.Thread(target=self._run, name="wtk-replay", daemon=True)
         self._result: dict[str, Any] | None = None
 
@@ -124,6 +125,8 @@ class ReplayRecorder:
                 if self.error is None:
                     log.warning("replay capture failed: %s", exc)
                 self.error = f"Screenshot capture failed: {exc}"
+            finally:
+                self._initial_sample_done.set()
             now = time.monotonic()
             due = max(due + self.interval, now)
             self._wake.wait(due - now)
@@ -131,11 +134,14 @@ class ReplayRecorder:
     def stop(self, *, discard: bool = False) -> dict[str, Any]:
         if self._result is not None:
             return self._result
-        duration = max(0.0, time.monotonic() - self.started)
+        deadline = time.monotonic() + 2
+        if not discard and self._thread.ident is not None:
+            self._initial_sample_done.wait(timeout=max(0.0, deadline - time.monotonic()))
         self._stop.set()
         self._wake.set()
         if self._thread.ident is not None:
-            self._thread.join(timeout=2)
+            self._thread.join(timeout=max(0.0, deadline - time.monotonic()))
+        duration = max(0.0, time.monotonic() - self.started)
         result: dict[str, Any] = {
             "startedAt": self.started_at,
             "duration": duration,
@@ -146,7 +152,11 @@ class ReplayRecorder:
         if self._thread.is_alive():
             error = "Screenshot capture did not stop within two seconds; recording is incomplete."
         if not self.frames and error is None:
-            error = "No visible application window was available for recording."
+            error = (
+                "No visible application window was available for recording."
+                if self.scope == "window"
+                else "No desktop frame was available for recording."
+            )
         if error:
             result["error"] = error
         if discard:
