@@ -26,10 +26,10 @@ from wintestkit.engine.locator import ItemSelector, Locator, WindowLocator, matc
 from wintestkit.engine.managed import diagnostic_query_budget, locator_deadline, query_budget
 from wintestkit.engine.properties import Condition, read, resolve_where
 from wintestkit.engine.properties import matches as matches_property
-from wintestkit.engine.query import filter_managed, query_all
+from wintestkit.engine.query import query_all, reject_managed
 from wintestkit.engine.wpf_query import UnsupportedQuery, translate
+from wintestkit.engine.wpf_resolve import matches_root, route
 from wintestkit.engine.wpf_resolve import query as wpf_query
-from wintestkit.engine.wpf_resolve import route
 from wintestkit.errors import (
     AmbiguousElementError,
     ElementNotFoundError,
@@ -85,16 +85,27 @@ def resolve_window(app: App, wl: WindowLocator | None) -> UIAElement:
         and (wl.automation_id is None or match_value(wl.automation_id, w.automation_id))
         and all(matches_property(c, read(w, c.spec)) for c in uia)
     ]
-    if managed and matches:
-        matches = filter_managed(matches, managed, None)
+    managed_types: dict[int, str] = {}
+    if managed:
+        if runtime.get_config().backend == "uia":
+            reject_managed(managed[0], matches[0] if matches else None)
+        filtered: list[UIAElement] = []
+        for window in matches:
+            if window.framework_id == "WPF":
+                root = route(window)
+                assert isinstance(root, WpfElement)
+                managed_types[id(window)] = root.ref.type.full_name
+                if matches_root(root, managed):
+                    filtered.append(window)
+        matches = filtered
     if wl.index is not None:
         if wl.index < len(matches):
             return matches[wl.index]
-        raise WindowNotFoundError(diagnose_window(source, wl, [], candidates))
+        raise WindowNotFoundError(diagnose_window(source, wl, [], candidates, managed_types))
     if len(matches) == 1:
         return matches[0]
     if not matches:
-        raise WindowNotFoundError(diagnose_window(source, wl, [], candidates))
+        raise WindowNotFoundError(diagnose_window(source, wl, [], candidates, managed_types))
     raise AmbiguousElementError(diagnose_window(source, wl, matches, candidates))
 
 

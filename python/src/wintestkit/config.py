@@ -100,7 +100,6 @@ _INSPECTOR_KEYS = {
     "attach_timeout",
     "request_timeout",
     "redact_names",
-    "query",
 }
 
 _ENV_VARS = {
@@ -149,7 +148,6 @@ class InspectorConfig:
     request_timeout: float = 2.0
     redact_names: tuple[str, ...] = ()
     writes_allow: tuple[str, ...] = ()
-    query: Literal["agent", "postfilter"] = "agent"
 
 
 @dataclass(frozen=True)
@@ -511,12 +509,6 @@ def _build_inspector(values: Mapping[str, Any]) -> InspectorConfig:
         request_timeout=timeout("request_timeout", 2.0),
         redact_names=tuple(dict.fromkeys(names)),
         writes_allow=_write_allow(values.get("inspector.writes.allow", [])),
-        query=cast(
-            "Literal['agent', 'postfilter']",
-            _enum(
-                "inspector.query", values.get("inspector.query", "agent"), ("agent", "postfilter")
-            ),
-        ),
     )
 
 

@@ -13,10 +13,11 @@ from test_managed_server_real import _fixture_counters
 from wintestkit import runtime
 from wintestkit.app import App
 from wintestkit.config import load_config
-from wintestkit.engine.locator import Locator
-from wintestkit.engine.resolve import Scope, resolve
+from wintestkit.engine.locator import Locator, WindowLocator
+from wintestkit.engine.resolve import Scope, resolve, resolve_window
 from wintestkit.errors import InspectorReadError, InspectorUnavailableError
 from wintestkit.inspector.probe import identify
+from wintestkit.model import Page, Window
 from wintestkit.uia import win32
 
 pytestmark = pytest.mark.skipif(
@@ -31,6 +32,7 @@ def test_owned_fixture_managed_locator(tmp_path, monkeypatch):
     cfg = load_config(
         tmp_path,
         {
+            "backend": "auto",
             "inspector.enabled": True,
             "inspector.attach": "on-demand",
             "property_aliases": {"ClrFullClassName": "type:FullName"},
@@ -41,7 +43,7 @@ def test_owned_fixture_managed_locator(tmp_path, monkeypatch):
     environment["DOTNET_ROOT_X64"] = live_dotnet_root()
     environment["DOTNET_MULTILEVEL_LOOKUP"] = "0"
     target = subprocess.Popen(
-        [str(FIXTURE / "WinTestKit.Fixture.exe")],
+        [str(FIXTURE / "WinTestKit.Fixture.exe"), "--scenario", "openSecondWindow"],
         cwd=FIXTURE,
         env=environment,
         stdin=subprocess.DEVNULL,
@@ -62,7 +64,37 @@ def test_owned_fixture_managed_locator(tmp_path, monkeypatch):
             assert time.monotonic() < until, "owned fixture did not become ready"
             time.sleep(0.1)
         scope = Scope(App.attach(pid=target.pid))
+        until = time.monotonic() + 10
+        while not any(w.automation_id == "SecondWindow" for w in scope.app.top_level_windows()):
+            assert time.monotonic() < until, "second fixture window did not open"
+            time.sleep(0.1)
         with runtime.config_scope(cfg):
+            for where in (
+                (("type:FullName", "WinTestKit.Fixture.MainWindow"),),
+                (("ClrFullClassName", re.compile(r"Fixture\.MainWindow$")),),
+                (("clr:Title", "WinTestKit WPF Fixture"),),
+            ):
+                assert resolve_window(scope.app, WindowLocator(where=where)).name == (
+                    "WinTestKit WPF Fixture"
+                )
+            assert (
+                resolve_window(
+                    scope.app,
+                    WindowLocator(
+                        automation_id="SecondWindow", where=(("type:Is", "System.Windows.Window"),)
+                    ),
+                ).automation_id
+                == "SecondWindow"
+            )
+
+            class FixturePage(Page):
+                window = Window(where={"type:FullName": "WinTestKit.Fixture.MainWindow"})
+
+            assert FixturePage(scope.app).window.title == "WinTestKit WPF Fixture"
+            scope = Scope(
+                scope.app,
+                WindowLocator(where=(("type:FullName", "WinTestKit.Fixture.MainWindow"),)),
+            )
             locator = Locator(
                 automation_id="FixtureControl",
                 where=(

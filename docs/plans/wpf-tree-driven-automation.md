@@ -1,7 +1,7 @@
 # WPF-tree-driven automation: migration plan
 
 Status: decisions D1–D7 made (§3); phases 0–3 done (phase 2 gate passed 2026-11-06,
-§6.3; phase 3 gate passed 2026-11-09, §6.5). Phase 4 done (fixture gate passed 2026-11-10, §6.6); phase 5 done (gate passed 2026-11-11, §6.8); phase 6 done (gate passed 2026-11-11, §6.11); phase 7 in progress (§6.12). Planning date: 2026-10-29.
+§6.3; phase 3 gate passed 2026-11-09, §6.5). Phase 4 done (fixture gate passed 2026-11-10, §6.6); phase 5 done (gate passed 2026-11-11, §6.8); phase 6 done (gate passed 2026-11-11, §6.11); phase 7 done (gate passed 2026-11-12, §6.12); phase 8 in progress (§6.13). Planning date: 2026-10-29.
 Builds on: `wpf-dotnet-attribute-analyzer.md` (the *inspector plan*) and the implemented
 inspector on `master` (agent, protocol, Python client, managed locators, Spy panel).
 
@@ -48,6 +48,7 @@ actions; UIA remains for non-WPF windows, and for repositories that opt out with
 | D5 | **Agent cannot load** (blocked by policy, unsupported runtime) | Fail. Test steps on WPF windows fail with the agent's error code (`blockedByPolicy`, `unsupportedTarget`, …); there is no silent fallback to UIA. Spy shows the blocked state and its fix instead of a UIA view |
 | D6 | **Virtualized items** | Search the items' data (`ItemsSource`/`Items`) first, then scroll only the single match into view to act on it |
 | D7 | **Default backend** | WPF-first becomes the default as soon as it works: at the end of phase 3 (find, waits and actions pass the parity suite), not after the real-suite gate |
+| D8 | **Managed post-filter path** | Removed: `inspector.query` and UIA-candidate post-filtering are deleted; `clr:`/`type:Is` and other managed keys require the WPF backend (`backend: auto` on a WPF window) and fail with a clear error under `backend: uia` or on non-WPF windows |
 
 Consequence of D5 + D7: once WPF-first is the default, a machine where security software
 blocks the agent fails every WPF test until an allow rule is added. `backend: uia` remains an
@@ -213,7 +214,7 @@ Each phase is separately shippable behind configuration; none changes UIA-only b
 | 5 | TestComplete helpers + importer output (virtualization moved to phase 3, §6.4) | Migrated `FindChild` samples pass |
 | 6 | Optional writes/calls (D2) with allowlist and audit | Off by default; allowlist enforced; audit in reports; security review |
 | 7 | Auto-attach on launch, events, stress (100 cycles), six-cell matrix, CI desktop job | Inspector-plan release gates plus new action/stress gates |
-| 8 | Docs, skill, migration guide; deprecate the managed post-filter path | Real 27-page suite runs on `auto` with no regressions versus UIA |
+| 8 | Docs, skill, migration guide; remove the managed post-filter path | Real 27-page suite runs on `auto` with no regressions versus UIA |
 
 Phase 1 alone delivers the biggest TestComplete-like gain (true WPF-tree `FindChild`) while
 actions stay on proven UIA.
@@ -665,6 +666,10 @@ with its residual risks.
 
 ### 6.12 Phase 7 design (2026-11-11)
 
+**Gate verdict (owner, 2026-11-12): passed.** Attach on launch, events, stress without product leaks, six-cell smoke, desktop CI green on the owner's runner (first green run 88ace6f: 145 live tests and six cells), and release checks except signing; manifest cells remain unverified and signing is deferred.
+
+Desktop CI follow-ups covered Windows PowerShell 5.1, SDK lookup and `publish_fixtures.ps1`; replay first-frame fix landed in 7deab7e.
+
 Owner decisions (2026-11-11): the CI desktop job runs on a self-hosted runner on the owner's
 machine, registered by the owner and running interactively in a logged-in desktop session;
 release signing is deferred, so payloads stay labelled as unsigned development builds and
@@ -706,8 +711,8 @@ its `verified` flags remain false pending the full P7g release gates.
 
 P7f results: added a restricted self-hosted desktop workflow, interactive display preflight
 and wake helper, live and six-cell runs, optional manual stress, cleanup and result artifacts,
-with runner setup and security guidance. The first real CI run awaits the owner's runner
-registration; signing remains deferred.
+with runner setup and security guidance. The owner's runner completed the first green CI run;
+signing remains deferred.
 
 P7g results: forced unsigned Release rebuilds match for the payload, manifest, inspector
 wheel, and core sdist and wheel after enabling the native linker's reproducible mode.
@@ -720,6 +725,24 @@ descriptor, nested-value, binding, timeout/redaction and dependency-conflict gat
 required machine-readable compatibility results. Wrong-user/session security, reliable
 independent UIA evidence, and owner inventory approval also remain open. Signing remains
 deferred.
+
+### 6.13 Phase 8 design (2026-11-12)
+
+Scope: WPF-first docs, skill and migration guide; remove the managed post-filter path (D8);
+and provide a real-suite comparison aid. Gate: the owner's real 27-page suite runs on `auto`
+with no regressions versus UIA.
+
+- **P8a:** Remove the managed post-filter path.
+- **P8b:** Rewrite `docs/guide/*` for WPF-first.
+- **P8c:** Migration guide from TestComplete, `skills/wintestkit-tests` and synced copies, plus examples.
+- **P8d:** Compare two result runs (`auto` vs `uia`) and provide the owner's runbook.
+
+P8a removes managed UIA post-filtering while retaining managed window selectors: `auto` maps
+each eligible WPF window to its root and runs the shared agent predicates at depth zero; `uia`
+rejects managed keys. Non-WPF windows do not match. Window ordering and indexes remain unchanged.
+Verification: 2,817 unit/contract tests passed (141 skipped); the live query gate and managed
+locator suite passed twice (115 each), and the expanded two-window managed locator case passed
+twice. Ruff, Pyright and skill synchronization passed.
 
 ## 7. Test strategy
 

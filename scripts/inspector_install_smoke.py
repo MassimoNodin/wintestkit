@@ -28,7 +28,6 @@ cfg = load_config(
         "backend": "auto",
         "inspector.enabled": True,
         "inspector.attach": "on-launch",
-        "inspector.query": "agent",
     },
 )
 app = None

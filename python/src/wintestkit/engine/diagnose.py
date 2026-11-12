@@ -244,6 +244,7 @@ def diagnose_window(
     wl: WindowLocator,
     matches: Sequence[UIAElement],
     candidates: Sequence[UIAElement] | None = None,
+    managed_types: Mapping[int, str] | None = None,
 ) -> Diagnostic:
     """Explain a window resolution failure.
 
@@ -275,7 +276,14 @@ def diagnose_window(
             match_count=len(matches),
             candidates=shown,
         )
-    titles = ", ".join(_window_label(w) for w in examined) or "none"
+    titles = (
+        ", ".join(
+            _window_label(w)
+            + (f" [{managed_types[id(w)]}]" if managed_types and id(w) in managed_types else "")
+            for w in examined
+        )
+        or "none"
+    )
     scored: list[tuple[int, Candidate]] = []
     for window in examined:
         info = window.info()

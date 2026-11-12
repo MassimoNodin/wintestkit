@@ -17,14 +17,13 @@ from wintestkit.config import load_config
 from wintestkit.engine.actions import click
 from wintestkit.engine.locator import Locator, WindowLocator
 from wintestkit.engine.properties import resolve_where
-from wintestkit.engine.query import query_all
 from wintestkit.engine.resolve import Scope, resolve, resolve_all
 from wintestkit.engine.wpf_query import translate
 from wintestkit.errors import (
     AmbiguousElementError,
     InspectorError,
-    InspectorLimitError,
     InspectorUnavailableError,
+    InvalidLocatorError,
 )
 from wintestkit.inspector.models import Scope as WireScope
 from wintestkit.inspector.probe import identify
@@ -84,9 +83,7 @@ def owned(tmp_path, monkeypatch, request):
 
 
 def config(path, mode):
-    return load_config(
-        path, {"inspector.enabled": True, "inspector.attach": "on-demand", "inspector.query": mode}
-    )
+    return load_config(path, {"inspector.enabled": True, "inspector.attach": "on-demand"})
 
 
 def test_virtual_items_realization(owned):
@@ -155,9 +152,10 @@ def test_phase2_backend_parity(owned, backend, monkeypatch):
             Locator(class_name="Button", automation_id="FancyAutomationId"),
             Locator(control_type="Button", automation_id="FancyAutomationId"),
             Locator(automation_id=re.compile("^FancyAutomationId$")),
-            Locator(automation_id="FancyAutomationId", where=(("clr:Tag", "fancy"),)),
             Locator(automation_id="NestedButton", within=Locator(automation_id="ParityGroup")),
         ]
+        if backend == "auto":
+            cases.append(Locator(automation_id="FancyAutomationId", where=(("clr:Tag", "fancy"),)))
         cases.extend(
             [
                 Locator(automation_id=re.compile("Fancy(?=AutomationId)")),
@@ -681,6 +679,10 @@ def test_phase2_predicates_backend_parity(owned, backend):
     with runtime.config_scope(replace(config(path, "agent"), backend=backend)):
         for key, value in predicates:
             locator = Locator(automation_id="FixtureControl", where=((key, value),))
+            if backend == "uia" and ":" in key:
+                with pytest.raises(InvalidLocatorError, match="backend: auto"):
+                    resolve_all(scope, locator)
+                continue
             assert len(resolve_all(scope, locator)) == 1, key
 
 
@@ -764,17 +766,14 @@ def test_parity_and_features(owned):
         ),
     ]
     for locator in cases:
-        results = []
-        for mode in ("agent", "postfilter"):
-            with runtime.config_scope(replace(config(path, mode), backend="uia")):
-                if locator.index is not None:
-                    found = [resolve(scope, locator)]
-                else:
-                    found = resolve_all(scope, locator)
-                results.append([element.runtime_id for element in found])
-        print("PARITY", locator.describe(), results)
-        assert results[0] == results[1] and results[0]
-    with runtime.config_scope(replace(config(path, "agent"), backend="uia")):
+        with runtime.config_scope(replace(config(path, "agent"), backend="auto")):
+            found = (
+                [resolve(scope, locator)]
+                if locator.index is not None
+                else resolve_all(scope, locator)
+            )
+            assert found
+    with runtime.config_scope(replace(config(path, "agent"), backend="auto")):
         fancy = resolve(
             scope,
             Locator(
@@ -786,7 +785,7 @@ def test_parity_and_features(owned):
         assert not resolve_all(
             scope, Locator(automation_id="FancyXName", where=(("clr:Tag", "fancy"),))
         )
-        assert not resolve_all(
+        assert resolve_all(
             scope, Locator(where=(("type:Is", "WinTestKit.Fixture.PeerlessMarker"),))
         )
         assert click(fancy) == "invoke"
@@ -903,12 +902,8 @@ def test_popup_parity(owned):
     locator = Locator(
         automation_id="PopupContent", where=(("type:FullName", "System.Windows.Controls.Button"),)
     )
-    results = []
-    for mode in ("agent", "postfilter"):
-        with runtime.config_scope(config(path, mode)):
-            results.append([element.runtime_id for element in resolve_all(scope, locator)])
-    print("PARITY popup", results)
-    assert results[0] == results[1] and results[0]
+    with runtime.config_scope(config(path, "agent")):
+        assert resolve_all(scope, locator)
 
 
 def test_large_latency(owned):
@@ -957,42 +952,7 @@ def test_large_latency(owned):
             assert median <= 100
 
 
-def test_large_end_to_end(owned):
-    scope, path = owned
-    large = WindowLocator(automation_id="LargeWindow")
-    unique = Locator(
-        control_type="Button",
-        where=(("clr:Group", "shared"), ("clr:Key", "Large 1499")),
-        window=large,
-    )
-    root = next(w for w in scope.app.top_level_windows() if w.automation_id == "LargeWindow")
-    measurements = {}
-    for mode in ("postfilter", "agent"):
-        with runtime.config_scope(config(path, mode)):
-            for label, locator in (
-                ("unique", unique),
-                ("missing", replace(unique, where=(("clr:Group", "absent"),))),
-            ):
-                samples = []
-                outcomes = []
-                for _ in range(10 if mode == "agent" else 3):
-                    start = time.perf_counter()
-                    try:
-                        outcomes.append(str(len(query_all(root, locator))))
-                    except InspectorError as error:
-                        outcomes.append(error.code)
-                    samples.append((time.perf_counter() - start) * 1000)
-                measurements[(mode, label)] = outcomes
-                print(
-                    f"QUERY_ALL {mode} {label} median={statistics.median(samples):.2f}ms p95={max(samples):.2f}ms outcomes={outcomes}",
-                    flush=True,
-                )
-
-    assert measurements[("agent", "unique")] == ["1"] * 10
-    assert measurements[("agent", "missing")] == ["0"] * 10
-
-
-def test_large_cap(owned):
+def test_large_wpf_query_has_no_uia_candidate_cap(owned):
     scope, path = owned
     large = WindowLocator(automation_id="LargeWindow")
     shared = Locator(
@@ -1001,11 +961,7 @@ def test_large_cap(owned):
         window=large,
     )
     unique = replace(shared, where=(*shared.where, ("clr:Key", "Large 1499")))
-    with runtime.config_scope(replace(config(path, "postfilter"), backend="uia")):
-        with pytest.raises(InspectorLimitError) as exc:
-            resolve_all(scope, shared)
-        assert exc.value.code == "limitExceeded"
-    with runtime.config_scope(replace(config(path, "agent"), backend="uia")):
+    with runtime.config_scope(replace(config(path, "agent"), backend="auto")):
         assert resolve(scope, unique).automation_id == "Large1499"
         with pytest.raises(AmbiguousElementError):
             resolve(scope, shared)
@@ -1226,6 +1182,12 @@ def test_phase2_predicate_edges(owned, backend):
     ]
     with runtime.config_scope(replace(config(path, "agent"), backend=backend)):
         for key, value in matches:
+            if backend == "uia" and ":" in key:
+                with pytest.raises(InvalidLocatorError, match="backend: auto"):
+                    resolve_all(
+                        scope, Locator(automation_id="FixtureControl", where=((key, value),))
+                    )
+                continue
             assert (
                 len(
                     resolve_all(
@@ -1235,14 +1197,21 @@ def test_phase2_predicate_edges(owned, backend):
                 == 1
             )
         for key, value in misses:
+            if backend == "uia" and ":" in key:
+                with pytest.raises(InvalidLocatorError, match="backend: auto"):
+                    resolve_all(
+                        scope, Locator(automation_id="FixtureControl", where=((key, value),))
+                    )
+                continue
             assert not resolve_all(
                 scope, Locator(automation_id="FixtureControl", where=((key, value),))
             )
-        with pytest.raises(InspectorError) as error:
-            resolve_all(
-                scope, Locator(automation_id="FixtureControl", where=(("clr:Throwing", "x"),))
-            )
-        assert error.value.code == "exception"
+        if backend == "auto":
+            with pytest.raises(InspectorError) as error:
+                resolve_all(
+                    scope, Locator(automation_id="FixtureControl", where=(("clr:Throwing", "x"),))
+                )
+            assert error.value.code == "exception"
 
 
 def _fixture_scenario(pid, name, value):
@@ -1446,8 +1415,11 @@ def test_peerless_mouse_click(owned, monkeypatch, mode):
 
     scope, path = owned
     locator = Locator(where=(("type:Is", "WinTestKit.Fixture.PeerlessClickTarget"),))
-    with runtime.config_scope(replace(config(path, "agent"), backend="uia")):
-        assert not resolve_all(scope, locator)
+    with (
+        runtime.config_scope(replace(config(path, "agent"), backend="uia")),
+        pytest.raises(InvalidLocatorError, match="backend: auto"),
+    ):
+        resolve_all(scope, locator)
     with runtime.config_scope(replace(config(path, "agent"), backend="auto")):
         target = resolve(scope, locator)
         assert target.runtime_id.startswith("wpf:")
@@ -1604,9 +1576,10 @@ def test_testcomplete_find_helpers(owned, backend):
     with runtime.config_scope(replace(config(path, "agent"), backend=backend)):
         resolve(scope, Locator(automation_id="FancyAutomationId"))
         assert find_child(page, "WPFControlName", "FancyAutomationId", 20).exists(timeout=5)
-        assert find_child(
-            page, ["WPFControlName", "ClrFullClassName"], ["FancyAutomationId", "*Button"], 20
-        ).exists(timeout=5)
+        if backend == "auto":
+            assert find_child(
+                page, ["WPFControlName", "ClrFullClassName"], ["FancyAutomationId", "*Button"], 20
+            ).exists(timeout=5)
         assert not find_child(page, "WPFControlName", "NestedButton", 1).exists(timeout=5)
         assert find_child(page, "WPFControlName", "NestedButton", 20).exists(timeout=5)
         assert len(find_all_children(page, "WPFControlName", "Duplicate", 20)) == 2

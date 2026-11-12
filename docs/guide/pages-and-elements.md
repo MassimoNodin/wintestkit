@@ -29,7 +29,9 @@ The `page` fixture is a shortcut: `page(MainPage)` is `MainPage(app)`.
 ## `Window`
 
 `window = Window(...)` says which top-level window the page's elements are searched in. Its
-options are `title`, `class_name`, `automation_id`, `process` and `index`. Without a `window`,
+options are `title`, `class_name`, `automation_id`, `process`, `index` and `where`. For WPF
+windows on `backend: auto`, `where` can identify the managed window root, for example
+`Window(where={"type:FullName": "My.App.Views.CustomerWindow"})`. Without a `window`,
 elements are searched in the application's main window.
 
 A page for a native message box matches the Win32 dialog class:
