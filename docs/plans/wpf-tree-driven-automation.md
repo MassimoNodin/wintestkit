@@ -709,6 +709,18 @@ and wake helper, live and six-cell runs, optional manual stress, cleanup and res
 with runner setup and security guidance. The first real CI run awaits the owner's runner
 registration; signing remains deferred.
 
+P7g results: forced unsigned Release rebuilds match for the payload, manifest, inspector
+wheel, and core sdist and wheel after enabling the native linker's reproducible mode.
+Lockstep and compatibility checks pass; release notes still require a selected, dated
+candidate and moving Unreleased entries. Two fresh offline wheel installations passed
+doctor, agent diagnostics, on-launch WPF query and click, and session cleanup. Doctor's
+own launch now suppresses automatic attachment so its diagnostic session can attach.
+All six cells remain unverified: the smoke does not establish each cell's full identity,
+descriptor, nested-value, binding, timeout/redaction and dependency-conflict gate or the
+required machine-readable compatibility results. Wrong-user/session security, reliable
+independent UIA evidence, and owner inventory approval also remain open. Signing remains
+deferred.
+
 ## 7. Test strategy
 
 - **Parity suite**: run the same locator, wait, action and typed-control tests under
