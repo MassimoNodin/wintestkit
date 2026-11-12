@@ -49,6 +49,10 @@ jobs:
           ./scripts/check_inspector.ps1 -Suite Package
           uv sync --directory python --extra inspector --reinstall-package wintestkit-inspector
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Publish live test artifacts
+        run: |
+          ./scripts/publish_fixtures.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Run live suite
         env:
           WTK_INSPECTOR_REAL: '1'
