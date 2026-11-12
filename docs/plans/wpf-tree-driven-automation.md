@@ -747,6 +747,12 @@ owner to execute; fixture results are not a substitute for that gate. The WPF fi
 had four expected UIA managed-key failures and one pass; auto passed all five, with zero
 regressions.
 
+**Gate verdict (owner, 2026-11-13): passed on fixture evidence.** No WinTestKit version of the
+real suite exists yet; it is still in TestComplete. The owner closed phase 8 on the fixture
+dry run and green CI and Desktop CI at `dab9d57`. The real-suite UIA-versus-auto comparison
+moves into the owner's migration: run `wtk compare --baseline-uia` per the runbook as pages are
+migrated, and treat each regression as a bug against this plan.
+
 P8a removes managed UIA post-filtering while retaining managed window selectors: `auto` maps
 each eligible WPF window to its root and runs the shared agent predicates at depth zero; `uia`
 rejects managed keys. Non-WPF windows do not match. Window ordering and indexes remain unchanged.
