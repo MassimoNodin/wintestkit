@@ -182,7 +182,7 @@ Shared [JSON schemas](../schemas/README.md) define the Python/editor contracts. 
 `wpf-inspector/global.json` (10.0.400, latest patch roll-forward). Native loader builds need
 the .NET Framework 4.8 Developer Pack as well as the Windows build toolchain.
 
-From the repository root, run `scripts/build_inspector.ps1` and
+From the repository root, run `scripts/build_inspector.ps1`, `scripts/publish_fixtures.ps1`, and
 `scripts/check_inspector.ps1 -Suite Unit` (also `Security`, `Integration`, `Matrix`, `Stress`,
 or `Package` as appropriate). Matrix and live integration require suitable runtimes,
 architectures and an interactive desktop; packaging alone does not verify them. The owned

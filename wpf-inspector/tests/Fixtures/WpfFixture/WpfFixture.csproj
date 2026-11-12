@@ -1,6 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType><TargetFrameworks>net48;net8.0-windows;net10.0-windows</TargetFrameworks>
+    <RuntimeIdentifiers>win-x86;win-x64</RuntimeIdentifiers>
     <UseWPF>true</UseWPF><AssemblyName>WinTestKit.Fixture</AssemblyName><RootNamespace>WinTestKit.Fixture</RootNamespace>
     <SelfContained>false</SelfContained><PublishTrimmed>false</PublishTrimmed><PublishSingleFile>false</PublishSingleFile>
     <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects><GenerateBindingRedirectsOutputType>true</GenerateBindingRedirectsOutputType>
