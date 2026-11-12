@@ -1,12 +1,30 @@
 # Locators for WPF
 
-## Managed inspection (preview)
+## Start with the WPF tree
 
-**Preview:** Prefer UIA locators. The optional, unreleased [managed inspector](managed-inspection.md)
-can filter on qualified managed keys observed in Spy when enabled and authorized; reads execute
-application code. Narrow UIA candidates first and never include secrets in `where`.
+With `backend: auto` (the default), WPF locators search the WPF tree, including peerless
+objects. Non-WPF windows use UI Automation (UIA). Managed keys require the WPF backend;
+they fail clearly with `backend: uia` or on non-WPF windows. Use Spy to inspect values.
+Managed getters can execute application code; do not put secrets in locators. See
+[managed inspection](managed-inspection.md) and [property matching](property-matching.md).
 
-For additional UIA properties and TestComplete aliases, see [property matching](property-matching.md).
+```python
+# pseudo-code
+import re
+from wintestkit import Element, Window
+
+window = Window(where={"type:FullName": "Company.Views.OrdersWindow"})
+save = Element(automation_id="SaveButton")
+order = Element(where={"type:Is": "Company.Views.OrderView",
+                       "clr:DataContext.Status": "Ready"})
+address = Element(where={"type:FullName": re.compile(r"^Company\.Controls\..*Box$")})
+```
+
+`automation_id` uses AutomationId, falling back to `x:Name` on WPF. TestComplete's
+`WPFControlName` helper maps to that field, so an explicit AutomationId can differ from
+`x:Name`. `type:FullName` is the CLR type including namespace; `type:Is` also matches
+derived types. See [TestComplete helpers](property-matching.md#testcomplete-helpers) for
+`ClrFullClassName`, `*` and `?` wildcards.
 
 ## Strict matching
 
@@ -116,9 +134,8 @@ def test_select_a_color_by_index_and_by_pattern(main: MainPage) -> None:
 
 ## Virtualized lists and grids
 
-WPF only creates UI elements for the rows that are visible. Items that were never scrolled into
-view do not exist in the UI tree, so an `Element` locator cannot find them. Ask the container
-instead:
+WPF virtualizes rows. For item selection the WPF backend searches item data first and realizes
+the single match when needed, rather than realizing every row. Ask the container:
 
 - `select(item)` on a list, combo box, tree, tab or grid finds the item by name, index or regular
   expression, realizing it if necessary.

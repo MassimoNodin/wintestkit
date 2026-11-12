@@ -2,17 +2,18 @@
 
 WinTestKit automates UI tests for **Windows WPF applications**. You describe your application's
 windows and controls as Python classes, write tests with pytest, and run them from the command
-line, from CI or from VS Code. Controls are found with Microsoft UI Automation, the same
-accessibility API screen readers use, so there is no image matching and nothing to add to the
-application under test.
+line, from CI or from VS Code. The default `backend: auto` uses an injected agent to find
+and act on WPF objects in the WPF tree, including objects without UI Automation peers.
+Non-WPF windows use UI Automation; `backend: uia` explicitly opts out of the WPF backend.
+No application source changes or image matching are required.
 
 | Page | What it covers |
 |---|---|
 | [Getting started](getting-started.md) | Install, create a project, write and run the first test |
 | [Pages and elements](pages-and-elements.md) | `Page`, `Window`, `Element`, `Elements`, `within`, organizing pages |
 | [Locators for WPF](locators-for-wpf.md) | Strict matching, diagnostics, locator strategies, lists, grids, dialogs |
-| [Property matching](property-matching.md) | Custom UIA properties, `where={...}`, property aliases |
-| [Managed inspection](managed-inspection.md) | Preview: opt-in WPF managed metadata and locators |
+| [Property matching](property-matching.md) | WPF properties, `where={...}`, TestComplete helpers |
+| [Managed inspection](managed-inspection.md) | Agent attachment, managed properties, security and writes |
 | [Actions and assertions](actions-and-assertions.md) | Every action, auto-waiting, `expect`, timeouts |
 | [Running tests](running-tests.md) | `wtk run`, launch modes, fixtures, reports, JUnit, exit codes |
 | [VS Code](vscode.md) | CodeLens, Test Explorer, debugging, Explorer (Pages, Flows, Tests), Spy |

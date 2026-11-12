@@ -1,23 +1,15 @@
 # Managed inspection
 
-Managed `where` keys also work on `Window` selectors with `backend: auto`: they match the WPF
-window root after the UIA window filters. Non-WPF windows do not match managed conditions.
-
-> **Preview:** This feature is not yet released; compatibility and release gates remain open.
-
-The optional WPF inspector complements UI Automation (UIA) with managed type, member,
-dependency-property and binding information. It instruments the running process using the
-Snoop loader; it requires no application changes, but is **not zero-impact**. Prefer UIA
-locators where possible. Only attach to applications you are authorized to instrument.
+The WPF backend uses an injected agent to search and act on the WPF tree and inspect managed
+type, member, dependency-property and binding information. Managed `where` keys also work on
+`Window` selectors. They require a WPF window with `backend: auto`; the UIA backend rejects
+them. Injection requires no application changes, but is **not zero-impact**. Only attach to
+applications you are authorized to instrument.
 
 ## Compatibility
 
-The intended framework-dependent WPF cells are .NET Framework 4.8, .NET 8 and .NET 10,
-each on x86 and x64. **No cell is marked verified in the compatibility manifest.** Partial
-owned-fixture integration checks exercised .NET 10 x64 attachment, mapping, reads, redaction
-and locators; they do not establish the complete matrix or release gates. Other fixture UIA
-checks are also partial, and the test machine lacked the .NET 10 x86 runtime. See the
-[verification notes](../plans/wpf-inspector-implementation-brief.md#s8-managed-locator-verification-2026-10-29).
+Framework-dependent WPF targets include .NET Framework 4.8, .NET 8 and .NET 10 on x86
+and x64. Check `wtk doctor --agent` on the actual machine and target.
 
 Unsupported targets include ARM64, non-WPF, NativeAOT, trimmed, self-contained or
 single-file applications, multiple WPF runtimes or AppDomains in one process, different
@@ -48,7 +40,6 @@ inspector:
   attach: on-launch
   attach_timeout: 10.0
   request_timeout: 2.0
-  query: agent
   redact_names: [account]
 ```
 
@@ -62,7 +53,7 @@ inspector:
 
 Redaction names from configuration layers are additive. There are no inspector environment
 variable overrides. By default, the inspector attaches after the first WPF window appears.
-If the application restarts itself, the new process is attached the next time a test touches its window, rather than when its first window appears.
+If the application restarts itself, the new process is attached when a test touches its window.
 Set `attach: on-demand` to attach on the first managed query, `enabled: false` to disable
 inspection, or `attach: manual` to require explicit attachment.
 Review that authorization with your team. Spy still requires workspace trust and confirmation.
@@ -112,6 +103,8 @@ Built-in case-insensitive name rules include `password`, `passwd`, `pwd`, `secre
 additional protection. Add application-specific names with `redact_names`. Matching names
 may over-redact benign values, while name-based rules cannot identify every secret. Do not
 put secrets in locator `where` clauses, logs, or test data merely because redaction exists.
+Non-secret type identity and permitted base members of protected controls remain available;
+redaction does not hide every property of a sensitive control.
 
 ## Managed locators
 

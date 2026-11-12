@@ -1,98 +1,60 @@
-# Match UI Automation properties
+# Match properties
 
-## Managed inspection (preview)
-
-**Preview:** The optional, unreleased [managed inspector](managed-inspection.md) adds qualified
-`type:`, `clr:`, `field:` and `dp:` keys to `where`. Prefer UIA properties; use only paths
-observed in Spy, and never put secrets in `where`. Managed reads execute target code and may hang.
-The inspector must be enabled and attachment authorized. Managed locators use the WPF
-backend on WPF windows (`backend: auto`); managed keys are unavailable with `backend: uia`.
-Managed keys in the window selector itself are not supported; select the WPF window with UIA
-properties and use managed keys on elements inside it.
-
-Use `where={...}` on `Element`, typed elements, `Elements` and `Window`. Every entry must
-match, alongside the usual `name=`, `automation_id=`, `class_name=` and scoping options.
-Strings are exact; compiled regular expressions use `re.search`. Boolean and numeric properties
-need actual booleans and numbers, not their string representations.
+Use `where` on `Element`, typed elements, `Elements` and `Window`. All conditions must
+match, together with the other locator fields. On WPF, managed paths search the WPF tree
+directly, including peerless objects. Use Spy to inspect paths and values before matching.
 
 ```python
 # pseudo-code
 import re
-from wintestkit import Button, Element, Window
+from wintestkit import Element, Window
 
-save = Button(where={"HelpText": "Save", "IsEnabled": True})
-address = Element(where={"ItemStatus": re.compile(r"\.AddressBox$")})
-dialog = Window(where={"FrameworkId": "WPF", "ItemStatus": "Company.Views.AddressDialog"})
+window = Window(where={"type:FullName": "Company.Views.OrdersWindow"})
+address = Element(where={"type:FullName": "Company.Controls.AddressBox"})
+ready = Element(where={"clr:DataContext.Status": "Ready", "clr:IsEnabled": True})
+order = Element(where={"clr:DataContext.Number": re.compile(r"^ORD-")})
 ```
 
-Property names are case-sensitive UIA names, such as `HelpText`, `ItemStatus`, `ItemType`,
-`IsPassword`, `HasKeyboardFocus`, `ProcessId` and `GridRowCount`. `Value` is shorthand for
-`ValueValue`. `ControlType` accepts a control type name (such as `"Button"`) or a regex.
-Scalar properties in WinTestKit's UIA property registry are supported; element references, arrays,
-points and rectangles are not `where` matchers. A provider must actually expose the property.
-Unknown names, invalid types and duplicate properties produce errors rather than silent fallbacks.
-Do not specify the same property through both a keyword and `where`, or through two aliases.
+Strings match exactly; compiled regular expressions use `re.search`. Use actual booleans
+and numbers for scalar values. `type:Is` matches the named full type or a derived type.
+Managed paths can read application getters: see [security and path syntax](managed-inspection.md#managed-locators).
+Managed conditions require a WPF window with `backend: auto`; `backend: uia` and non-WPF
+windows reject them. UIA properties such as `HelpText`, `ItemStatus` and `IsEnabled` are
+also available where the backend exposes them. `class_name` is a short peer class name,
+not the full CLR type. Do not place secrets in locators.
 
-## TestComplete property names
+## TestComplete helpers
 
-Aliases can rename a UIA property or, in the managed inspection preview, a qualified managed key;
-they do not make private .NET properties readable.
-Put shared aliases in `wintestkit.yaml`:
+`wintestkit.testcomplete` provides `to_locator`, `find_child`, `find_all_children` and
+`find`. `ClrFullClassName` maps to `type:FullName`, `WPFControlName` to `automation_id`,
+and other property paths such as `DataContext.Status` to managed properties. The helper
+accepts `*` and `?` wildcards; ordinary `where` strings are exact.
+
+```python
+# pseudo-code
+from wintestkit.testcomplete import find, find_all_children, find_child, to_locator
+
+locator = to_locator("ClrFullClassName", "Company.Controls.*")
+button = find_child(page, "WPFControlName", "Save*", depth=20, strict=True)
+matches = find_all_children(page, "DataContext.Status", "Ready", depth=20)
+parent_or_child = find(page.editor, "WPFControlName", "Editor", depth=1)
+```
+
+Supply your own bound `page`. `find_child` defaults to the first match; `strict=True`
+requires one. `find_all_children` returns indexed, re-resolving elements, so later tree
+reordering can change their identities. Depth counts automation-peer levels. The
+[migration guide](migrating-from-testcomplete.md) covers the NameMapping importer and
+helper semantics.
+
+## Property aliases
+
+Shared `property_aliases` can rename a UIA property or a qualified managed key. For example:
 
 ```yaml
 property_aliases:
-  ClrFullClassName: ItemStatus
+  OrderStatus: clr:DataContext.Status
 ```
 
-Then `Element(where={"ClrFullClassName": "Company.Controls.AddressBox"})` matches the control's
-`ItemStatus`. The application must first expose that full type name there. Aliases merge across
-project TOML, shared YAML, local TOML, local YAML and overrides; later definitions win per alias.
-An alias cannot shadow a real UIA property, and alias chains are not supported.
-
-## Expose full WPF type names in test builds
-
-Install this helper before creating any windows, for example from `App.OnStartup`. Define the
-`UITEST` compilation symbol only in the build used for automation, then call
-`TestAutomationProperties.Install()`. The loaded-event handler also covers controls loaded later,
-including realized virtualized controls; it does not create unrealized controls.
-
-```csharp
-using System;
-using System.Windows;
-using System.Windows.Automation;
-
-internal static class TestAutomationProperties
-{
-    public static void Install()
-    {
-#if UITEST
-        EventManager.RegisterClassHandler(typeof(FrameworkElement), FrameworkElement.LoadedEvent,
-            new RoutedEventHandler((sender, args) =>
-            {
-                if (sender is FrameworkElement control && ReferenceEquals(args.Source, control)
-                    && string.IsNullOrEmpty(AutomationProperties.GetItemStatus(control)))
-                    AutomationProperties.SetItemStatus(control,
-                        control.GetType().FullName ?? control.GetType().Name);
-            }), true);
-#endif
-    }
-}
-```
-
-Do not overwrite meaningful accessibility metadata. This helper preserves an existing `ItemStatus`;
-if your app uses that property, expose the test identifier through another suitable property or a
-custom automation peer and change the alias. Custom peers may override the attached property's
-value, so verify the actual UIA result. This app-side sample has not been exercised against a WPF
-application in this development environment.
-
-## Inspect before matching
-
-```powershell
-wtk inspect --depth 8
-wtk inspect --at 400,300 --json
-```
-
-Text and JSON inspection include `HelpText`, `ItemStatus`, `ItemType` and configured alias
-values when readable. Spy shows these on selection; its full-properties view reads the remaining
-UIA properties. Confirm values rather than guessing from a TestComplete NameMapping. For example,
-`ClrFullClassName` is not the same as UIA `ClassName`, which is commonly only a short name.
+Then `Element(where={"OrderStatus": "Ready"})` uses that path. Aliases merge across
+configuration layers; later definitions win. They cannot shadow real UIA properties or
+form alias chains. See [configuration](running-tests.md#configuration).

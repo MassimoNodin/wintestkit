@@ -1,8 +1,8 @@
 # VS Code
 
-## Managed inspection (preview)
+## WPF inspection
 
-**Preview:** The unreleased Spy managed panel requires an enabled inspector, a trusted workspace
+The WPF Spy requires an enabled inspector, a trusted workspace
 and explicit attachment confirmation. Reads can execute target code. See [managed inspection](managed-inspection.md)
 for installation, states and risks.
 

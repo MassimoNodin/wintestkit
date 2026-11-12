@@ -1,6 +1,6 @@
 # Running UI tests in CI
 
-UI Automation needs a real, **interactive, unlocked desktop**: the build agent must run inside a
+UI tests need a real, **interactive, unlocked desktop**: the build agent must run inside a
 logged-on user session, not as a Windows service, and the session must never lock. Most CI
 failures of UI tests come from the machine setup, not the tests. Make `wtk doctor` the first step
 of every pipeline so a bad machine fails in seconds with a clear reason.
@@ -60,7 +60,7 @@ jobs:
       - uses: astral-sh/setup-uv@v6
       - run: uv sync --locked
       - name: Check environment
-        run: uv run wtk doctor
+        run: uv run wtk doctor --agent
       - name: Run UI tests
         run: uv run wtk run --junit junit.xml
       - name: Upload report
@@ -86,7 +86,7 @@ steps:
   - checkout: self
   - script: pip install uv && uv sync --locked
     displayName: Install dependencies
-  - script: uv run wtk doctor
+  - script: uv run wtk doctor --agent
     displayName: Check environment
   - script: uv run wtk run --junit junit.xml
     displayName: Run UI tests
@@ -120,3 +120,4 @@ The repository CI checks the Python package and extension without building an ex
 running the legacy app-dependent suites. For your own UI tests, use a self-hosted Windows
 runner with your application installed and an interactive, unlocked session. Keep your UI
 pipeline separate from checks that do not require a desktop.
+For this repository's self-hosted desktop runner, see [development](../development.md).

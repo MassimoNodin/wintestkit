@@ -1,8 +1,9 @@
 # WinTestKit
 
-UI test automation for Windows WPF applications using Microsoft UI Automation and pytest.
+UI test automation for Windows WPF applications using the WPF tree and pytest.
 
-The package includes a UI Automation engine, page/element model, pytest integration,
+The default backend uses an injected WPF agent and uses UI Automation for non-WPF windows;
+`backend: uia` opts out. The package includes a page/element model, pytest integration,
 static discovery, environment checks, and target-based highlighting and page checks.
 
 ## Installation

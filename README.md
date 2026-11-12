@@ -3,7 +3,8 @@
 # WinTestKit
 
 Write and run UI tests for **Windows WPF applications** with Python, pytest and VS Code.
-WinTestKit finds controls through Microsoft UI Automation, not image matching. You describe
+By default WinTestKit uses an injected agent to find WPF controls in the WPF tree; non-WPF
+windows use Microsoft UI Automation. You describe
 windows and controls in reusable page classes, interact with them, and assert their state.
 You do not need to modify the application under test.
 
@@ -157,7 +158,7 @@ Choose the most stable property the control exposes, in this order:
 1. `automation_id`: stable and language-independent.
 2. `control_type` with `name`: the visible label. It changes with the UI language and wording.
 3. `class_name`: the short WPF type (`TextBox`, `ComboBox`). Useful for unlabeled inputs.
-4. `where={...}`: any other UI Automation property, such as `HelpText`, `ItemStatus` or `IsEnabled`.
+4. `where={...}`: managed WPF paths such as `type:FullName` and `clr:DataContext.Status`, or supported UIA properties.
 5. `within=`: scope the search to a uniquely identifiable container.
 6. `index=`: the n-th of several matches. Use it last, because it breaks when controls are reordered.
 
@@ -209,22 +210,15 @@ A typed element such as `Button` does not add a `control_type` filter to its loc
 control exactly as `Element` would, then checks that the match fits the type. Add
 `control_type=` yourself when you want to filter on it.
 
-`class_name` is the short UIA class name (`TextBox`), not the full .NET type. UI Automation does
-not expose the full CLR type name. To match on it, have your test build copy
-`GetType().FullName` into `ItemStatus`, then match that property. You can alias a TestComplete-style
-name in `wintestkit.yaml`:
-
-```yaml
-property_aliases:
-  ClrFullClassName: ItemStatus
-```
+`class_name` is the short peer class name (`TextBox`), not the full .NET type. On the
+default WPF backend, match the full CLR type directly, including its namespace:
 
 ```python
-Element(where={"ClrFullClassName": "Company.Controls.AddressBox"})
+Element(where={"type:FullName": "Company.Controls.AddressBox"})
 ```
 
-An alias only renames a real UIA property. The app must expose the value first. See
-[property matching](docs/guide/property-matching.md) for the C# helper and the full rules.
+See [property matching](docs/guide/property-matching.md) for managed paths, aliases and
+TestComplete helpers. Managed keys require a WPF window and `backend: auto`.
 Confirm values with `wtk inspect --at 400,300 --json` or Spy before matching.
 
 With the application open, verify the locators:

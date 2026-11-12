@@ -52,7 +52,7 @@ and can be passed to `expect` (`expect(dialog.window).not_.to_exist()`).
 
 ## `Element`
 
-An element is found by its UI Automation properties (a plain `Element` offers every action; see
+An element is found by its locator in the WPF tree or, for a UIA window, by UI Automation properties (a plain `Element` offers every action; see
 [Typed elements](#typed-elements) for declarations that offer only what a control supports):
 
 | Option | Matches |
@@ -142,7 +142,7 @@ the Page Tree, `wtk unused`, saved-object images and the found-in-another-window
 cover them; declare the child on the page when you want those. A grid row or cell
 (`grid.row(2)`) cannot be searched for children.
 
-"Direct child" means a direct child in the **UI Automation tree**, which is not always the XAML
+"Direct child" means a direct automation-peer level (also on the WPF backend), which is not always the XAML
 tree: WPF layout containers are often not exposed. Check with `wtk inspect` before relying on it.
 Custom element types have no child method; use `MyType(..., within=panel, depth=1)`.
 

@@ -91,10 +91,9 @@ and enabled become corresponding locator fields or managed conditions; unknown v
 `# TODO` comments; an unmappable parent and its descendants require manual reconstruction.
 Review and validate every generated locator against the live app before using it.
 
-## Managed class names (preview)
+## Managed class names
 
-**Preview:** When the unreleased [managed inspector](managed-inspection.md) is available and
-enabled, prefer `wtk import-namemapping NameMapping.xml pages/imported.py --managed-class-names`
+With the [WPF backend](managed-inspection.md), use `wtk import-namemapping NameMapping.xml pages/imported.py --managed-class-names`
 to generate qualified managed class-name keys. Alternatively configure
 `property_aliases: {ClrFullClassName: 'type:FullName'}` in `wintestkit.yaml`. Both require
 authorized attachment. Confirm values in Spy; use the ItemStatus alias above as a fallback.
