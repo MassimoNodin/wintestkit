@@ -1,22 +1,37 @@
 function Resolve-InspectorDotnet {
     param([string]$DotnetRoot, [string]$InspectorRoot)
+    $candidates = @()
     if ($DotnetRoot) {
-        $sdkRoot = $DotnetRoot
-    } elseif ($env:DOTNET_ROOT) {
-        $sdkRoot = $env:DOTNET_ROOT
+        $candidates += $DotnetRoot
     } else {
+        if ($env:DOTNET_ROOT) { $candidates += $env:DOTNET_ROOT }
         $command = Get-Command dotnet.exe -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
-        if (-not $command) { throw 'Cannot find dotnet SDK: specify -DotnetRoot, set DOTNET_ROOT, or add dotnet to PATH.' }
-        $sdkRoot = Split-Path $command.Source -Parent
+        if ($command) { $candidates += (Split-Path $command.Source -Parent) }
+        if ($env:LOCALAPPDATA) { $candidates += (Join-Path $env:LOCALAPPDATA 'wintestkit-dev\dotnet') }
     }
-    $sdkRoot = [IO.Path]::GetFullPath($sdkRoot)
-    $dotnet = Join-Path $sdkRoot 'dotnet.exe'
-    if (-not (Test-Path -LiteralPath $dotnet -PathType Leaf)) { throw "Cannot find dotnet SDK executable: $dotnet" }
-    $env:DOTNET_ROOT = $sdkRoot
+    $tried = @()
     Push-Location $InspectorRoot
     try {
-        & $dotnet --version | Out-Host
-        if ($LASTEXITCODE -ne 0) { throw "The dotnet SDK at $sdkRoot does not satisfy $InspectorRoot/global.json." }
+        foreach ($candidate in $candidates) {
+            $sdkRoot = [IO.Path]::GetFullPath($candidate)
+            $dotnet = Join-Path $sdkRoot 'dotnet.exe'
+            $tried += $dotnet
+            if (-not (Test-Path -LiteralPath $dotnet -PathType Leaf)) { continue }
+            $previousPreference = $ErrorActionPreference
+            $ErrorActionPreference = 'Continue'
+            try {
+                $output = & $dotnet --version 2>&1
+                $exitCode = $LASTEXITCODE
+            } catch {
+                $exitCode = -1
+            } finally { $ErrorActionPreference = $previousPreference }
+            if ($exitCode -eq 0) {
+                $env:DOTNET_ROOT = $sdkRoot
+                return $dotnet
+            }
+        }
     } finally { Pop-Location }
-    return $dotnet
+    $globalJson = Join-Path $InspectorRoot 'global.json'
+    $requirement = Get-Content -Raw -LiteralPath $globalJson
+    throw "Cannot find a compatible dotnet SDK. Candidates tried: $($tried -join ', '). Requirement in ${globalJson}: $requirement"
 }
