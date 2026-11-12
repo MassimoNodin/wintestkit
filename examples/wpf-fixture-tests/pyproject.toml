@@ -1,0 +1,25 @@
+[project]
+name = "wpf-fixture-tests"
+version = "0.0.0"
+requires-python = ">=3.12"
+dependencies = ["wintestkit[inspector]", "pytest>=8.3"]
+
+[tool.uv]
+package = false
+
+[tool.uv.sources]
+wintestkit = { path = "../../python", editable = true }
+wintestkit-inspector = { path = "../../inspector-payload" }
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+
+[tool.wintestkit]
+backend = "auto"
+launch = "per-test"
+timeout = 15.0
+
+[tool.wintestkit.app]
+path = "../../wpf-inspector/tests/Fixtures/WpfFixture/bin/cells/net10.0-windows-x64/WinTestKit.Fixture.exe"
+args = ["--scenario", "openVirtualItems"]

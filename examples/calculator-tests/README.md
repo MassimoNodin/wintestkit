@@ -1,5 +1,7 @@
 # Windows Calculator tests
 
+Calculator is a UWP/Win32 app, so `backend: auto` routes it through UI Automation (UIA).
+
 A small WinTestKit project showing page inheritance, reusable navigation flows,
 pytest fixtures and parametrized scenarios. No application source or binaries are included.
 
