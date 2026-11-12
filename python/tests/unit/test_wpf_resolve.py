@@ -9,6 +9,7 @@ from wintestkit.backends import WpfElement
 from wintestkit.engine import actions, wpf_resolve
 from wintestkit.engine.locator import ItemSelector, Locator
 from wintestkit.engine.managed import query_budget
+from wintestkit.engine.properties import resolve_where
 from wintestkit.errors import (
     AmbiguousElementError,
     ElementNotFoundError,
@@ -129,6 +130,24 @@ def test_routing_and_failures(setup, monkeypatch):
     monkeypatch.setattr(wpf_resolve.runtime, "managed_client_for", fail)
     with pytest.raises(InspectorUnavailableError, match=r"blockedByPolicy.*backend: uia"):
         wpf_resolve.route(window)
+
+
+def test_window_root_query_uses_shared_predicates_and_depth_zero(setup):
+    _, client, window = setup
+    root = wpf_resolve.route(window)
+    conditions = resolve_where(
+        (("type:Is", "Demo.Base"), ("clr:Title", re.compile("^X"))), "window"
+    )
+    client.matches = (root.ref,)
+    assert wpf_resolve.matches_root(root, conditions)
+    wire = client.locators[-1]
+    assert wire.depth == 0 and wire.scope.handle == root.ref
+    assert [p.kind for p in wire.predicates] == ["assignableTo", "regex"]
+    client.matches = ()
+    assert not wpf_resolve.matches_root(root, conditions)
+    client.complete = False
+    with pytest.raises(InspectorDeadlineError):
+        wpf_resolve.matches_root(root, conditions)
 
 
 @pytest.mark.parametrize("code", ["notAttached", "blockedByPolicy", "unsupportedTarget"])

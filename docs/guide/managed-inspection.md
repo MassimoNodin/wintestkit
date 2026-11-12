@@ -1,5 +1,8 @@
 # Managed inspection
 
+Managed `where` keys also work on `Window` selectors with `backend: auto`: they match the WPF
+window root after the UIA window filters. Non-WPF windows do not match managed conditions.
+
 > **Preview:** This feature is not yet released; compatibility and release gates remain open.
 
 The optional WPF inspector complements UI Automation (UIA) with managed type, member,
@@ -55,7 +58,6 @@ inspector:
 | `inspector.attach` | `on-launch` | `manual`, `on-demand`, or `on-launch` |
 | `inspector.attach_timeout` | `10.0` | Positive seconds, at most 10 |
 | `inspector.request_timeout` | `2.0` | Positive seconds, at most 2 |
-| `inspector.query` | `agent` | `agent` or `postfilter` |
 | `inspector.redact_names` | `[]` | At most 32 nonempty names, each at most 128 Unicode characters |
 
 Redaction names from configuration layers are additive. There are no inspector environment
@@ -134,12 +136,11 @@ escape literal slashes as `\/` and backslashes as `\\` in those segments. Paths 
 most eight segments and 1,024 UTF-8 bytes; whitespace, indexers and method calls are not
 supported. Do not guess paths or dependency owners.
 
-Agent queries search the combined WPF tree, then map results to UIA peers in traversal order.
-Matches without a UIA peer are skipped. The agent returns at most 200 matches: if traversal
+Agent queries search the combined WPF tree, including elements without UIA peers.
+The agent returns at most 200 matches: if traversal
 is incomplete with fewer than 200, the query raises a limit error; 200 incomplete matches
-are returned because ambiguity is already evident. Unsupported locators fall back to the
-UIA postfilter, which is capped at 1,000 candidates. Set `inspector.query: postfilter` to
-force that path. Equality and regular expressions use the
+are returned because ambiguity is already evident. Managed keys require `backend: auto` and a WPF window; they are not supported by the UIA
+backend. Equality and regular expressions use the
 normal `where` matching rules; managed scalar comparison distinguishes booleans from numbers
 and supports enum names or integer values. Redacted, unsupported or ambiguous values cannot
 be treated as ordinary matches. See [property matching](property-matching.md).

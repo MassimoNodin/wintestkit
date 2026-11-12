@@ -6,7 +6,9 @@
 `type:`, `clr:`, `field:` and `dp:` keys to `where`. Prefer UIA properties; use only paths
 observed in Spy, and never put secrets in `where`. Managed reads execute target code and may hang.
 The inspector must be enabled and attachment authorized. Managed locators use the WPF
-agent when supported; the UIA postfilter fallback is capped at 1,000 candidates.
+backend on WPF windows (`backend: auto`); managed keys are unavailable with `backend: uia`.
+Managed keys in the window selector itself are not supported; select the WPF window with UIA
+properties and use managed keys on elements inside it.
 
 Use `where={...}` on `Element`, typed elements, `Elements` and `Window`. Every entry must
 match, alongside the usual `name=`, `automation_id=`, `class_name=` and scoping options.

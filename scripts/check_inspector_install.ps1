@@ -24,7 +24,7 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Offline wheel installation failed.' }
     & uv pip check --python $python
     if ($LASTEXITCODE -ne 0) { throw 'Installed dependencies invalid.' }
-    $yaml = "backend: auto`ninspector:`n  enabled: true`n  attach: on-launch`n  query: agent`napp:`n  path: '$($fixture.Replace("'", "''"))'`n  cwd: '$($fixture.Substring(0, $fixture.LastIndexOf('\')).Replace("'", "''"))'`n"
+    $yaml = "backend: auto`ninspector:`n  enabled: true`n  attach: on-launch`napp:`n  path: '$($fixture.Replace("'", "''"))'`n  cwd: '$($fixture.Substring(0, $fixture.LastIndexOf('\')).Replace("'", "''"))'`n"
     [IO.File]::WriteAllText((Join-Path $cwd 'wintestkit.yaml'), $yaml)
     Push-Location $cwd
     try {

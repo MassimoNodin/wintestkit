@@ -84,6 +84,17 @@ def route(window: UIAElement, *, force: bool = False) -> UIAElement | WpfElement
         ) from error
 
 
+def matches_root(root: WpfElement, conditions: list[ManagedCondition]) -> bool:
+    """Evaluate the same agent predicates as element locators, on the window itself."""
+    wire = replace(translate(Locator(index=0), tuple(conditions), root.ref), depth=0)
+    deadline = locator_deadline()
+    timeout = max(1, min(2000, int((deadline - time.monotonic()) * 1000)))
+    result = root.client.query_find_all(wire, timeout_ms=timeout, deadline=deadline)
+    if not result.complete:
+        raise InspectorDeadlineError("WPF query exhausted its budget", code="limitExceeded")
+    return root.ref in result.matches
+
+
 def query(root: WpfElement, locator: Locator, *, use_index: bool = False) -> QueryMatches:
     constraints = resolve_where(locator.where, locator.describe_link(), locator.taken())
     pushed: list[Condition | ManagedCondition] = []
