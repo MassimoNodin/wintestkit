@@ -322,6 +322,36 @@ prior passing run of the same test and target and is a structural text diff, not
 visual assertion. There may be no useful diff when a test has no `app` fixture or the UIA tree is
 unavailable.
 
+## Comparing UIA and auto runs
+
+For the Phase 8 gate, run from the suite project directory with identical tests and configuration.
+Use an unlocked, awake display and keep the desktop free; ensure security software permits the
+inspector agent, and check prerequisites with `uv run wtk doctor --agent`. Keep both reports
+outside the test tree or in separate directories: a run replaces owned files in its report directory.
+In PowerShell:
+
+```powershell
+$env:WTK_BACKEND = "uia"
+uv run wtk run --report .wtk-uia --replay retain-on-failure
+$env:WTK_BACKEND = "auto"
+uv run wtk run --report .wtk-auto --replay retain-on-failure
+Remove-Item Env:WTK_BACKEND
+uv run wtk compare .wtk-uia/results.json .wtk-auto/results.json --baseline-uia
+```
+
+`WTK_BACKEND` overrides local and shared configuration for each process. Preserve any prior value
+and restore it instead of removing it if needed. A failing UIA run is expected when tests use
+`clr:*` or `type:*` managed keys. `--baseline-uia` marks the specific D8 InvalidLocatorError as
+**expected under uia**; these baseline failures are not auto regressions. Fixes can include them.
+Regressions are baseline passes that fail or error in auto and yield exit code 1. Still-failing,
+only-in-one, and other outcome changes need review too: a passing exit code alone does not prove
+suite parity. Durations show each matched test and wall-clock total; `SLOWDOWN` means at least
+50% and one second slower, not necessarily a regression. Use `--json` for machine-readable output.
+
+For a regression, share both `results.json` files, the auto HTML report (`uv run wtk report
+.wtk-auto`), and its failure replay and artifacts. Use `wtk check` and Spy to inspect the failing
+locator and include the relevant output. Review evidence for sensitive data before sharing it.
+
 ## JUnit XML
 
 `wtk run --junit junit.xml` (pytest's `--junitxml`) writes JUnit XML for CI systems.
