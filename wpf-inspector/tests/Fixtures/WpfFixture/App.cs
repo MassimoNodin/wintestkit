@@ -287,7 +287,7 @@ public sealed class MainWindow : Window
         var columnOnlyGrid = Id(new DataGrid { AutoGenerateColumns = false, CanUserAddRows = false, Height = 95, HeadersVisibility = DataGridHeadersVisibility.Column, ItemsSource = new[] { "Column Alpha", "Column Beta" } }, "ParityColumnOnlyGrid");
         columnOnlyGrid.Columns.Add(new DataGridTextColumn { Header = "Name", Binding = new Binding(".") });
         panel.Children.Add(columnOnlyGrid);
-        panel.Children.Add(new PeerlessMarker());
+        panel.Children.Add(new PeerlessMarker { Name = "PeerlessMarkerName" });
         var group = Id(new GroupBox { Header = "Parity group" }, "ParityGroup");
         group.Content = Id(new Button { Content = "Nested", Tag = "nested" }, "NestedButton");
         panel.Children.Add(group);

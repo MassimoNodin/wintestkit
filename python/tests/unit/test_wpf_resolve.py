@@ -148,7 +148,7 @@ def test_unsupported_regex_automation_id_uses_xname(setup):
     assert len(result) == 1
 
 
-def test_identity_fallback_does_not_treat_peerless_name_as_id(setup):
+def test_identity_fallback_treats_peerless_name_as_id(setup):
     _, client, window = setup
     root = wpf_resolve.route(window)
 
@@ -163,7 +163,61 @@ def test_identity_fallback_does_not_treat_peerless_name_as_id(setup):
         ), "read"
 
     client.read = read
+    assert wpf_resolve.query(root, Locator(automation_id=re.compile("Only(?=XName)")))
+
+
+def test_peerless_non_framework_protected_name_is_skipped(setup):
+    _, client, window = setup
+    root = wpf_resolve.route(window)
+    client.read = lambda object_id, generation, paths, **kwargs: (
+        tuple(
+            SimpleNamespace(value=SimpleNamespace(status=status, scalar=value))
+            for status, value in (
+                [("unavailable", None)] * 4
+                if len(paths) == 4
+                else [("unavailable", None), ("redacted", None)]
+            )
+        ),
+        "read",
+    )
     assert not wpf_resolve.query(root, Locator(automation_id=re.compile("Only(?=XName)")))
+
+
+def test_local_regex_limit_is_not_silent(setup):
+    _, client, window = setup
+    root = wpf_resolve.route(window)
+    client.matches = tuple(ref(str(index)) for index in range(200))
+    client.complete = False
+    with pytest.raises(InspectorLimitError, match="200 candidates"):
+        wpf_resolve.query(root, Locator(automation_id=re.compile("missing(?=id)")))
+
+
+def test_wpf_id_hint_searches_other_windows(setup, monkeypatch):
+    _, client, _ = setup
+    resolver = importlib.import_module("wintestkit.engine.resolve")
+    root = WpfElement(client, ref("root"), 42)
+    first = SimpleNamespace(name="First")
+    other = SimpleNamespace(name="Second")
+    first.same_as = lambda candidate: candidate is first
+    other.same_as = lambda candidate: candidate is other
+    scope = resolver.Scope(SimpleNamespace(top_level_windows=lambda: [other]))
+    monkeypatch.setattr(resolver, "route", lambda window: WpfElement(client, ref(window.name), 42))
+    monkeypatch.setattr(
+        resolver,
+        "wpf_query",
+        lambda managed, locator: (
+            [WpfElement(client, ref("child"), 42)] if managed.ref.object_id == "Second" else []
+        ),
+    )
+    client.read = lambda *args, **kwargs: (
+        tuple(
+            SimpleNamespace(value=SimpleNamespace(status=status, scalar=value))
+            for status, value in [("unavailable", None), ("ok", "PeerlessName")]
+        ),
+        "read",
+    )
+    hint = resolver._wpf_id_hint(scope, root, first, "PeerlessNamu")
+    assert hint == 'did you mean automation_id="PeerlessName" in window "Second"?'
 
 
 def test_window_root_query_uses_shared_predicates_and_depth_zero(setup):

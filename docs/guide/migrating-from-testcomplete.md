@@ -12,7 +12,7 @@ pytest instead of a proprietary IDE and project format.
 | NameMapping / Aliases | A `Page` per window and reusable `Page` components per movable box; page and component attributes name the controls |
 | `FindChild`, `FindAllChildren`, `Find` | `wintestkit.testcomplete.find_child`, `find_all_children`, `find`, or declared locators |
 | `ClrFullClassName` | `where={"type:FullName": "Namespace.Type"}`; `type:Is` includes derived types |
-| `WPFControlName` | `automation_id`: peer AutomationId, falling back to `x:Name` with the WPF backend |
+| `WPFControlName` | `automation_id`: peer or peerless attached AutomationId, falling back to `x:Name` with the WPF backend |
 | `WPFControlText` | `name` (peer Name, not necessarily actual text) |
 | `Visible` / `Enabled` | `clr:IsVisible` / `clr:IsEnabled` via helpers or `where` |
 | `ObjectIdentifier` | No direct equivalent: inspect and choose stable properties, not an invented ID |

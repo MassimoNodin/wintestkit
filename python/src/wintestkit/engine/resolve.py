@@ -6,8 +6,10 @@ resolves again so elements are never stale.
 
 from __future__ import annotations
 
+import re
 import time
 from dataclasses import dataclass, replace
+from difflib import SequenceMatcher
 from typing import cast
 
 from wintestkit import runtime
@@ -38,6 +40,7 @@ from wintestkit.errors import (
     LocatorError,
     NoUiaPeerError,
     WindowNotFoundError,
+    WtkError,
 )
 from wintestkit.inspector.models import WaitCondition
 from wintestkit.uia import patterns
@@ -190,6 +193,89 @@ def _match_link(
     return matches
 
 
+def _wpf_id_hint(
+    scope: Scope, root: WpfElement, window_root: UIAElement, expected: str
+) -> str | None:
+    __tracebackhide__ = True
+    from wintestkit.engine import diagnose, relocate
+    from wintestkit.inspector.paths import PathSegment
+
+    if diagnose.diagnostics_are_quiet():
+        return None
+    deadline = relocate.new_deadline()
+    best: tuple[float, str, str, bool] | None = None
+    try:
+        windows = [
+            window_root,
+            *(
+                window
+                for window in scope.app.top_level_windows()[: relocate.MAX_WINDOWS]
+                if not window.same_as(window_root)
+            ),
+        ]
+        with diagnostic_query_budget(), query_budget(deadline):
+            seen: set[str] = set()
+            for window in windows:
+                if time.monotonic() >= deadline:
+                    break
+                try:
+                    managed = route(window)
+                except WtkError:
+                    continue
+                if not isinstance(managed, WpfElement):
+                    continue
+                width = max(2, len(expected) // 3)
+                fragments = [
+                    expected[start : start + width] for start in range(0, len(expected), width)
+                ]
+                pattern = re.compile(
+                    "|".join(re.escape(fragment) for fragment in fragments if fragment),
+                    re.IGNORECASE,
+                )
+                candidates = wpf_query(managed, Locator(automation_id=pattern))
+                candidates.extend(wpf_query(managed, Locator(where=(("clr:Name", pattern),))))
+                for element in candidates:
+                    if time.monotonic() >= deadline:
+                        break
+                    values, _ = element.client.read(
+                        element.ref.object_id,
+                        element.ref.generation,
+                        [
+                            (PathSegment("uia", "automation_id"),),
+                            (PathSegment("property", "Name"),),
+                        ],
+                        deadline=deadline,
+                    )
+                    if values[0].value.status not in {"ok", "unavailable"}:
+                        continue
+                    for position, item in enumerate(values):
+                        value = item.value
+                        if value.status != "ok" or not isinstance(value.scalar, str):
+                            continue
+                        candidate = value.scalar
+                        if not candidate or candidate in seen:
+                            continue
+                        seen.add(candidate)
+                        score = SequenceMatcher(None, expected.lower(), candidate.lower()).ratio()
+                        if score >= 0.6 and (best is None or score > best[0]):
+                            best = (
+                                score,
+                                candidate,
+                                window.name,
+                                position == 1
+                                and values[0].value.status == "ok"
+                                and bool(values[0].value.scalar)
+                                and values[0].value.scalar != candidate,
+                            )
+    except WtkError:
+        pass
+    if best is None:
+        return None
+    location = f" in window {quote(best[2])}" if best[2] else ""
+    key = "clr:Name" if best[3] else "automation_id"
+    return f"did you mean {key}={quote(best[1])}{location}?"
+
+
 def _resolve_link(
     scope: Scope,
     root: TargetElement,
@@ -216,7 +302,12 @@ def _resolve_link(
             diagnostic_root = uia_of(root)
         except NoUiaPeerError:
             diagnostic_root = window_root
-        raise ElementNotFoundError(diagnose_not_found(diagnostic_root, link, searched_in, full))
+        diagnostic = diagnose_not_found(diagnostic_root, link, searched_in, full)
+        if isinstance(root, WpfElement) and isinstance(link.automation_id, str):
+            hint = _wpf_id_hint(scope, root, window_root, link.automation_id)
+            if hint:
+                diagnostic = replace(diagnostic, hint=hint)
+        raise ElementNotFoundError(diagnostic)
     raise AmbiguousElementError(diagnose_ambiguous(matches, link, searched_in, full))
 
 

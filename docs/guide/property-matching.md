@@ -29,8 +29,7 @@ not the full CLR type. Do not place secrets in locators.
 `find`. `ClrFullClassName` maps to `type:FullName`, `WPFControlName` to `automation_id`,
 and other property paths such as `DataContext.Status` to managed properties. The helper
 accepts `*` and `?` wildcards; ordinary `where` strings are exact. With `backend: auto`,
-`automation_id` falls back to `x:Name` when a peer returns an empty ID. UIA-only matching
-uses the provider's ID; use `clr:Name` with the WPF backend for peerless objects.
+`automation_id` uses the peer AutomationId, or the attached AutomationId for peerless elements, then falls back to `x:Name` when empty. UIA-only matching uses the provider's ID.
 
 ```python
 # pseudo-code

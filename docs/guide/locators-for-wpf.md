@@ -20,10 +20,7 @@ order = Element(where={"type:Is": "Company.Views.OrderView",
 address = Element(where={"type:FullName": re.compile(r"^Company\.Controls\..*Box$")})
 ```
 
-With `backend: auto`, `automation_id` uses the peer's AutomationId, falling back to `x:Name`
-when the peer returns an empty ID. With `backend: uia`, it uses only the ID exposed by UIA;
-a custom peer may suppress WPF's usual name fallback. TestComplete's `WPFControlName`
-helper maps to this field. For peerless objects, use `where={"clr:Name": "..."}` instead.
+With `backend: auto`, `automation_id` uses the peer's AutomationId, or the attached AutomationId on a peerless element, falling back to `x:Name` when empty. With `backend: uia`, it uses only the ID exposed by UIA; a custom peer may suppress WPF's usual name fallback. TestComplete's `WPFControlName` helper maps to this field. If one element's ID equals another's name, the locator is ambiguous.
 An explicit AutomationId can differ from `x:Name`. `type:FullName` is the CLR type including namespace; `type:Is` also matches
 derived types. See [TestComplete helpers](property-matching.md#testcomplete-helpers) for
 `ClrFullClassName`, `*` and `?` wildcards.
@@ -70,8 +67,8 @@ show the same diagnostic without running a test.
 
 Prefer, in this order:
 
-1. **`automation_id`**: stable and language-independent. WPF sets it from `x:Name` only for some
-   controls; many applications have none, which is why the rest of this list exists.
+1. **`automation_id`**: stable and language-independent. On the WPF backend this also matches
+   `x:Name` when no AutomationId is set, including on peerless elements.
 2. **`name`** with **`control_type`**: the visible label (`Button "Sign in"`). It changes with the
    UI language and wording.
 3. **`class_name`**: the WPF type (`TextBox`, `PasswordBox`, `ComboBox`). Useful for unlabeled

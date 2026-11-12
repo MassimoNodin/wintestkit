@@ -33,6 +33,11 @@ MAX_RELOCATIONS = 5
 _quiet: ContextVar[bool] = ContextVar("wintestkit_quiet_diagnostics", default=False)
 
 
+def diagnostics_are_quiet() -> bool:
+    __tracebackhide__ = True
+    return _quiet.get()
+
+
 @contextmanager
 def quiet_diagnostics() -> Generator[None]:
     """Skip the expensive "closest candidates" scans of not-found diagnostics.
@@ -195,7 +200,7 @@ class Diagnostic:
         """The "found elsewhere" explanation (empty unless a relocation search found something)."""
         __tracebackhide__ = True
         if not self.relocations:
-            return []
+            return [f"  hint: {self.hint}"] if self.hint else []
         lines: list[str] = []
         roots: dict[str, list[str]] = {}
         for found in self.relocations:

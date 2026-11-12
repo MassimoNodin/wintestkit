@@ -89,6 +89,32 @@ namespace WinTestKit.Inspector.Agent.Query.Tests
         }
         [Trait("Category", "Unit")]
         [Fact]
+        public async Task AutomationIdCollisionWithPeerlessNameReturnsBoth()
+        {
+            using (var ui = new Ui())
+            {
+                var executor = new DispatcherExecutor();
+                using (var registry = new ObjectRegistry("session", executor))
+                {
+                    var root = await ui.Dispatcher.InvokeAsync(() =>
+                    {
+                        var panel = new StackPanel();
+                        var button = new Button();
+                        System.Windows.Automation.AutomationProperties.SetAutomationId(button, "Collision");
+                        panel.Children.Add(button);
+                        panel.Children.Add(new Border { Name = "Collision" });
+                        return panel;
+                    }).Task;
+                    var locator = Scope(Register(registry, root));
+                    locator.Predicates = new[] { new Predicate { Kind = "equals", Path = new[] { new PathSegment { Kind = "uia", Name = "automation_id" } }, Value = new JsonStringNode("Collision") } };
+                    var result = await new QueryEngine(executor, registry).FindAllAsync(locator, Deadline, CancellationToken.None);
+                    Assert.True(result.Complete);
+                    Assert.Equal(2, result.Count);
+                }
+            }
+        }
+        [Trait("Category", "Unit")]
+        [Fact]
         public async Task PeerDepthSkipsPeerlessContainers()
         {
             using (var ui = new Ui())

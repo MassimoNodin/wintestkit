@@ -93,7 +93,7 @@ namespace WinTestKit.Inspector.Agent.Query
                 entry.Property.Name == first.Name && Declaration.TypeName(entry.Property.OwnerType) == first.OwnerType &&
                 Declaration.AssemblyName(entry.Property.OwnerType) == first.OwnerAssembly &&
                 (first.MemberKey == null || entry.Key == first.MemberKey)))) return false;
-            if (first.Kind == "uia")
+            if (first.Kind == "uia" && first.Name != "automation_id")
             {
                 try { if (!(target is DependencyObject element) || PeerIdentity.GetPeer(element) == null) return false; }
                 catch (Exception) { throw Unreadable("exception"); }
@@ -104,17 +104,17 @@ namespace WinTestKit.Inspector.Agent.Query
                 ValueDto? value;
                 try { value = inspector.ReadPath(target, path, registry, dispatcher, cancellation.Token); }
                 catch (ProtocolException error) when (error.Code == ErrorCodes.MemberNotFound) { return false; }
-                if (path[0].Kind == "uia" && value.Status == "unavailable") return false;
                 if (path.Count == 1 && path[0].Kind == "uia" && path[0].Name == "automation_id" &&
-                    value.Status == "ok" && value.Kind == "string" && value.Scalar is JsonStringNode id && id.Value.Length == 0 &&
+                    (value.Status == "unavailable" || value.Status == "ok" && value.Kind == "string" && value.Scalar is JsonStringNode id && id.Value.Length == 0) &&
                     (target is FrameworkElement || target is FrameworkContentElement))
                 {
                     var namePath = new[] { new PathSegment { Kind = "property", Name = "Name" } };
-                    if (inspector.IsPathRedacted(namePath) || RedactionPolicy.IsProtectedIdentity(target) && !RedactionPolicy.IsAllowedOnProtected(namePath, null))
+                    if (inspector.IsPathRedacted(namePath))
                         throw Unreadable("redacted");
                     string name = target is FrameworkElement frameworkElement ? frameworkElement.Name : ((FrameworkContentElement)target).Name;
                     value = new ValueDto { Status = "ok", Kind = "string", Scalar = new JsonStringNode(name) };
                 }
+                if (path[0].Kind == "uia" && value.Status == "unavailable") return false;
                 return value != null && MatchesValue(value, context);
             }
         }

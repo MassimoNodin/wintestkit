@@ -158,7 +158,7 @@ def test_phase2_backend_parity(owned, backend, monkeypatch):
             cases.append(Locator(automation_id="FancyAutomationId", where=(("clr:Tag", "fancy"),)))
         cases.extend(
             [
-                Locator(automation_id=re.compile("Fancy(?=AutomationId)")),
+                Locator(automation_id=re.compile("Fancy(?=AutomationId)"), class_name="Button"),
                 Locator(automation_id="FancyAutomationId", where=(("Name", "Fancy action"),)),
                 Locator(automation_id="FancyAutomationId", where=(("IsEnabled", True),)),
                 Locator(automation_id="FancyAutomationId", depth=20),
@@ -1593,6 +1593,19 @@ def test_xname_lookup_probe(owned):
             found = operation()
             assert found.same_as(target), label
             print(f"XNAME {label}: {time.monotonic() - start:.3f}s success")
+
+
+def test_peerless_name_and_not_found_hint(owned):
+    from wintestkit.errors import ElementNotFoundError
+    from wintestkit.testcomplete import to_locator
+
+    scope, path = owned
+    with runtime.config_scope(replace(config(path, "agent"), backend="auto")):
+        named = resolve(scope, Locator(automation_id="PeerlessMarkerName"))
+        assert resolve(scope, to_locator("WPFControlName", "PeerlessMarkerName")).same_as(named)
+        with pytest.raises(ElementNotFoundError) as error:
+            resolve(scope, Locator(automation_id="PeerlessMarkerNamu"))
+        assert 'did you mean automation_id="PeerlessMarkerName"' in error.value.diagnostic.format()
 
 
 @pytest.mark.parametrize("backend", ["uia", "auto"])
