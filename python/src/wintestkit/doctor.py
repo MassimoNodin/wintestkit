@@ -498,11 +498,24 @@ def _check_wpf_agent(cfg: WtkConfig | None, *, launch: bool = False) -> Check:
             redact_names=cfg.inspector.redact_names,
             writes_allow=cfg.inspector.writes_allow,
         )
-        client = registry.attach(
-            facts.identity,
-            target_hwnd=None,
-            deadline=time.monotonic() + cfg.inspector.attach_timeout,
-        )
+        try:
+            client = registry.attach(
+                facts.identity,
+                target_hwnd=None,
+                deadline=time.monotonic() + cfg.inspector.attach_timeout,
+            )
+        except InspectorError as error:
+            if error.code != "alreadyAttached" or app is not None:
+                raise
+            runtime_detail = f", runtime={facts.runtime}" if facts.runtime else ""
+            return Check(
+                check_id,
+                title,
+                "ok",
+                f"agent already attached to PID {facts.identity.pid} by another WinTestKit "
+                f"session (test run, Spy or the VS Code extension){runtime_detail}, "
+                f"architecture={facts.architecture}",
+            )
         session = client.session
         tfm = {"net48": "net48", "net8": "net8.0-windows", "net10": "net10.0-windows"}.get(
             facts.runtime or "", str(facts.runtime)

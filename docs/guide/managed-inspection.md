@@ -159,7 +159,8 @@ requires `--managed`. `--json` emits JSON. Inspection may expose sensitive data:
 | `authenticationFailed` | Retry attachment; investigate local session security if it persists. |
 | `payloadMissing`, `payloadMismatch` | Install or repair the matching inspector payload. |
 | `agentVersionMismatch` | Restart the target after upgrading, then attach again. |
-| `alreadyAttached`, `notAttached` | Detach or explicitly attach as appropriate. |
+| `alreadyAttached` | Another WinTestKit session owns the agent; close that session or restart the application. |
+| `notAttached` | Explicitly attach to the target. |
 | `attachFailed` | Check target compatibility, permissions and `wtk doctor`. |
 | `processExited`, `processReused`, `sessionStale`, `objectStale` | Reselect the live process or element and reattach. |
 | `mappingFailed` | Select a UIA element with a supported, unambiguous peer. |

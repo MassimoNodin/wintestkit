@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 _HINTS = {
+    "alreadyAttached": "Another WinTestKit session owns the agent for this process; "
+    "close that session or restart the application.",
     "blockedByPolicy": "Allow-list the WinTestKit payload directory in your security policy.",
     "unsupportedTarget": "Use a supported WPF runtime and architecture with native x64 Python.",
     "agentVersionMismatch": "Match the agent payload version and restart the application.",

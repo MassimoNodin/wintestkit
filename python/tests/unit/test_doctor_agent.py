@@ -8,6 +8,7 @@ from wintestkit.app import App
 from wintestkit.config import AppConfig, load_config
 from wintestkit.errors import InspectorUnavailableError
 from wintestkit.inspector import probe, sessions
+from wintestkit.inspector.hints import inspector_error_hint
 from wintestkit.uia import win32
 
 
@@ -16,7 +17,9 @@ def setup_agent(tmp_path, monkeypatch):
     cfg = replace(load_config(tmp_path), app=AppConfig(path=tmp_path / "app.exe"))
     cfg = replace(cfg, inspector=replace(cfg.inspector, enabled=True))
     monkeypatch.setattr(doctor, "_app_pids", lambda cfg: ("app.exe", [123]))
-    facts = SimpleNamespace(wpf_loaded=True, identity=SimpleNamespace(pid=123), runtime="net10")
+    facts = SimpleNamespace(
+        wpf_loaded=True, identity=SimpleNamespace(pid=123), runtime="net10", architecture="x64"
+    )
     monkeypatch.setattr(probe, "identify", lambda pid: facts)
     state = SimpleNamespace(agent_version="1.2", architecture="x64", features=("query", "state"))
     registry = SimpleNamespace(
@@ -87,6 +90,29 @@ def test_config_skips(setup_agent):
     )
 
 
+def test_existing_agent_is_ok_without_detaching(setup_agent):
+    cfg, _, registry = setup_agent
+    closed = []
+
+    def fail(*args, **kwargs):
+        raise InspectorUnavailableError("An inspector is already attached", code="alreadyAttached")
+
+    registry.attach = fail
+    registry.close_all = lambda: closed.append(True)
+    check = doctor._check_wpf_agent(cfg, launch=True)
+    assert check.status == "ok"
+    assert "agent already attached to PID 123" in check.detail
+    assert "another WinTestKit session" in check.detail
+    assert "runtime=net10" in check.detail and "architecture=x64" in check.detail
+    assert closed == [True]  # Only the empty diagnostic registry is closed.
+
+
+def test_already_attached_hint():
+    hint = inspector_error_hint("alreadyAttached")
+    assert "Another WinTestKit session owns the agent" in hint
+    assert "close that session or restart the application" in hint
+
+
 def test_quick_never_attaches(setup_agent, monkeypatch):
     cfg, _, _ = setup_agent
     monkeypatch.setattr(doctor, "_check_wpf_agent", lambda *args, **kwargs: pytest.fail("attached"))
@@ -125,3 +151,21 @@ def test_launch_failure(setup_agent, monkeypatch):
     monkeypatch.setattr(App, "launch", fail)
     check = doctor._check_wpf_agent(cfg, launch=True)
     assert check.status == "fail" and "window" in check.detail
+
+
+def test_launched_app_already_attached_fails(setup_agent, monkeypatch):
+    cfg, _, registry = setup_agent
+    monkeypatch.setattr(doctor, "_app_pids", lambda cfg: ("app.exe", []))
+    process = SimpleNamespace(poll=lambda: None, terminate=lambda: None, wait=lambda **kwargs: None)
+    monkeypatch.setattr(
+        App, "launch", lambda *args, **kwargs: SimpleNamespace(pids=[123], _popen=process)
+    )
+    monkeypatch.setattr(win32, "top_level_windows", lambda pids: [1])
+
+    def fail(*args, **kwargs):
+        raise InspectorUnavailableError("An inspector is already attached", code="alreadyAttached")
+
+    registry.attach = fail
+    check = doctor._check_wpf_agent(cfg, launch=True)
+    assert check.status == "fail" and "alreadyAttached" in check.detail
+    assert check.hint == inspector_error_hint("alreadyAttached")

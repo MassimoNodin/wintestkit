@@ -13,7 +13,7 @@ unlocked, especially on unattended runners. See [CI](ci.md).
 
 ## Start with `wtk doctor`
 
-With the defaults `backend: auto`, `inspector.enabled: true`, and `inspector.attach: on-launch`, doctor checks the WPF agent on a running configured application using an authenticated hello, without reading application values. It reports the agent version, target framework, architecture and advertised features, or the error and a suggested fix. If the application is stopped, the check is skipped; `wtk doctor --agent` starts the configured application, checks it, and closes only that launched process. A missing WPF window fails the check. UIA-only and disabled-inspector configurations skip it. Quick pre-run checks never attach or launch.
+With the defaults `backend: auto`, `inspector.enabled: true`, and `inspector.attach: on-launch`, doctor checks the WPF agent on a running configured application using an authenticated hello, without reading application values. It reports the agent version, target framework, architecture and advertised features, or the error and a suggested fix. If another WinTestKit session already owns the agent on a running application, doctor reports a pass with the PID, runtime and architecture it can identify; it does not connect to or detach that session. To attach a separate session, close the existing session or restart the application. If the application is stopped, the check is skipped; `wtk doctor --agent` starts the configured application, checks it, and closes only that launched process. An already attached agent on that newly launched application or a missing WPF window fails the check. UIA-only and disabled-inspector configurations skip it. Quick pre-run checks never attach or launch.
 
 ```powershell
 wtk doctor
