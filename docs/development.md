@@ -138,13 +138,16 @@ does not wait for this runner.
 On the Windows runner install Visual Studio C++ build tools, the SDK pinned by
 `wpf-inspector/global.json`, .NET 8 and 10 Desktop Runtimes in **both x86 and x64**,
 the .NET Framework 4.8 Developer Pack (including its SDK tools), Python 3.12, uv, and
-Windows PowerShell 5.1 (`powershell.exe`). Put `uv` and the SDK's `dotnet.exe` on the runner's
-PATH. Alternatively set `DOTNET_ROOT` for the runner process to the SDK directory;
-it must contain the required x64 runtimes as well. If runtimes are installed elsewhere,
+Windows PowerShell 5.1 (`powershell.exe`). Put `uv` on the runner's PATH. The SDK resolver
+checks an explicit `-DotnetRoot` exclusively when supplied; otherwise it tries `DOTNET_ROOT`,
+`dotnet.exe` on PATH, then `%LOCALAPPDATA%\wintestkit-dev\dotnet`, selecting the first SDK
+that satisfies `global.json`. The recommended per-user SDK location is
+`%LOCALAPPDATA%\wintestkit-dev\dotnet`; it must contain the required x64 runtimes as well.
+If runtimes are installed elsewhere,
 set `WTK_MATRIX_DOTNET_ROOT_X86` and `WTK_MATRIX_DOTNET_ROOT_X64` to their respective
 runtime roots before launching the runner. The .NET Framework 4.8 runtime must also be present.
 For local live tests, the x64 .NET 10 runtime root is selected from `DOTNET_ROOT`,
-the directory of `dotnet.exe` on PATH (the SDK resolver default),
+the directory of `dotnet.exe` on PATH,
 `%LOCALAPPDATA%\wintestkit-dev\dotnet`, then `C:\Program Files\dotnet`.
 The first root containing both .NET 10 Core and Windows Desktop runtimes is used.
 
