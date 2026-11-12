@@ -3,13 +3,58 @@
 from __future__ import annotations
 
 import copy
+import json
+import math
 import os
 import platform
 import shutil
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from wintestkit import __version__
+
+
+def load_results(path: Path, *, for_comparison: bool = False) -> dict[str, Any]:
+    """Read version 1 persisted results, validating fields used by consumers."""
+    data: Any = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise ValueError("expected version 1 results object")
+    data = cast("dict[str, Any]", data)
+    if data.get("version") != 1:
+        raise ValueError("expected version 1 results object")
+    if not for_comparison:
+        return data
+    tests: Any = data.get("tests")
+    if not isinstance(tests, list) or not _duration(data.get("duration")):
+        raise ValueError("invalid results tests or duration")
+    seen: set[str] = set()
+    for item in cast("list[Any]", tests):
+        if not isinstance(item, dict):
+            raise ValueError("invalid test result")
+        test = cast("dict[str, Any]", item)
+        node_id: Any = test.get("id")
+        if (
+            not isinstance(node_id, str)
+            or node_id in seen
+            or test.get("outcome") not in ("passed", "failed", "error", "skipped")
+            or not _duration(test.get("duration"))
+        ):
+            raise ValueError("invalid or duplicate test result")
+        seen.add(node_id)
+        error: Any = test.get("error")
+        if error is not None:
+            if not isinstance(error, dict):
+                raise ValueError("invalid error information")
+            error = cast("dict[str, Any]", error)
+            if not isinstance(error.get("type"), str) or not isinstance(error.get("message"), str):
+                raise ValueError("invalid error information")
+        if "message" in test and not isinstance(test["message"], str):
+            raise ValueError("invalid test message")
+    return data
+
+
+def _duration(value: Any) -> bool:
+    return type(value) in (int, float) and math.isfinite(value) and value >= 0
 
 
 def environment() -> dict[str, Any]:

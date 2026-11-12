@@ -3,14 +3,14 @@
 from __future__ import annotations
 
 import argparse
-import json
 import os
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 from wintestkit.commands import common
 from wintestkit.config import load_config
 from wintestkit.report.html import render
+from wintestkit.report.results import load_results
 
 
 def add_parser(subparsers: Any) -> None:
@@ -26,12 +26,7 @@ def run(args: argparse.Namespace) -> int:
     if not directory.is_absolute():
         directory = root / directory
     try:
-        loaded: Any = json.loads((directory / "results.json").read_text(encoding="utf-8"))
-        if not isinstance(loaded, dict):
-            raise ValueError("expected a JSON object")
-        results = cast("dict[str, Any]", loaded)
-        if results.get("version") != 1:
-            raise ValueError("expected version 1 results")
+        results = load_results(directory / "results.json")
         target = directory / "index.html"
         target.write_text(render(results, directory), encoding="utf-8")
     except (OSError, ValueError) as exc:

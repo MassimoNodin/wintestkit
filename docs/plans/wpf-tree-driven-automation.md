@@ -741,6 +741,12 @@ with no regressions versus UIA.
 - **P8c:** Migration guide from TestComplete, `skills/wintestkit-tests` and synced copies, plus examples.
 - **P8d:** Compare two result runs (`auto` vs `uia`) and provide the owner's runbook.
 
+**P8d results:** The comparison aid and owner runbook distinguish expected UIA managed-key
+failures from auto regressions and flag timing changes. The real 27-page gate remains for the
+owner to execute; fixture results are not a substitute for that gate. The WPF fixture dry run
+had four expected UIA managed-key failures and one pass; auto passed all five, with zero
+regressions.
+
 P8a removes managed UIA post-filtering while retaining managed window selectors: `auto` maps
 each eligible WPF window to its root and runs the shared agent predicates at depth zero; `uia`
 rejects managed keys. Non-WPF windows do not match. Window ordering and indexes remain unchanged.
