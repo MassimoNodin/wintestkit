@@ -132,6 +132,40 @@ def test_routing_and_failures(setup, monkeypatch):
         wpf_resolve.route(window)
 
 
+def test_unsupported_regex_automation_id_uses_xname(setup):
+    _, client, window = setup
+    root = wpf_resolve.route(window)
+    client.read = lambda object_id, generation, paths, **kwargs: (
+        tuple(
+            SimpleNamespace(value=SimpleNamespace(status="ok", scalar=value))
+            for value in (
+                ["", "caption", "Button", "Button"] if len(paths) == 4 else ["", "OnlyXName"]
+            )
+        ),
+        "read",
+    )
+    result = wpf_resolve.query(root, Locator(automation_id=re.compile("Only(?=XName)")))
+    assert len(result) == 1
+
+
+def test_identity_fallback_does_not_treat_peerless_name_as_id(setup):
+    _, client, window = setup
+    root = wpf_resolve.route(window)
+
+    def read(object_id, generation, paths, **kwargs):
+        if len(paths) == 4:
+            values = [("unavailable", None)] * 4
+        else:
+            values = [("unavailable", None), ("ok", "OnlyXName")]
+        return tuple(
+            SimpleNamespace(value=SimpleNamespace(status=status, scalar=value))
+            for status, value in values
+        ), "read"
+
+    client.read = read
+    assert not wpf_resolve.query(root, Locator(automation_id=re.compile("Only(?=XName)")))
+
+
 def test_window_root_query_uses_shared_predicates_and_depth_zero(setup):
     _, client, window = setup
     root = wpf_resolve.route(window)

@@ -28,7 +28,7 @@ from wintestkit.engine.properties import Condition, read, resolve_where
 from wintestkit.engine.properties import matches as matches_property
 from wintestkit.engine.query import query_all, reject_managed
 from wintestkit.engine.wpf_query import UnsupportedQuery, translate
-from wintestkit.engine.wpf_resolve import matches_root, route
+from wintestkit.engine.wpf_resolve import identity_value, matches_root, route
 from wintestkit.engine.wpf_resolve import query as wpf_query
 from wintestkit.errors import (
     AmbiguousElementError,
@@ -77,12 +77,28 @@ def resolve_window(app: App, wl: WindowLocator | None) -> UIAElement:
         return source.main_window()
 
     candidates = source.top_level_windows()
+
+    def window_id_matches(window: UIAElement) -> bool:
+        __tracebackhide__ = True
+        if wl.automation_id is None:
+            return True
+        identifier = window.automation_id
+        if (
+            not identifier
+            and window.framework_id == "WPF"
+            and runtime.get_config().backend == "auto"
+        ):
+            root = route(window)
+            if isinstance(root, WpfElement):
+                identifier = identity_value(root, "automation_id")
+        return identifier is not None and match_value(wl.automation_id, identifier)
+
     matches = [
         w
         for w in candidates
         if (wl.title is None or match_value(wl.title, w.name))
         and (wl.class_name is None or match_value(wl.class_name, w.class_name))
-        and (wl.automation_id is None or match_value(wl.automation_id, w.automation_id))
+        and window_id_matches(w)
         and all(matches_property(c, read(w, c.spec)) for c in uia)
     ]
     managed_types: dict[int, str] = {}

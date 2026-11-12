@@ -16,4 +16,4 @@ def test_wpf_example_collects() -> None:
         check=False,
     )
     assert result.returncode == 0, result.stdout + result.stderr
-    assert "4 tests collected" in result.stdout
+    assert "5 tests collected" in result.stdout
