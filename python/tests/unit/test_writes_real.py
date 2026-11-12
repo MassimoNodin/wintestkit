@@ -31,7 +31,7 @@ class FixturePage(Page):
 def configure(path, allow):
     entries = "\n".join(f"      - '{entry}'" for entry in allow)
     path.joinpath("wintestkit.yaml").write_text(
-        "inspector:\n  enabled: true\n  attach: on-demand\n  query: agent\n"
+        "inspector:\n  enabled: true\n  attach: on-demand\n"
         + ("  writes:\n    allow:\n" + entries + "\n" if allow else ""),
         encoding="utf-8",
     )

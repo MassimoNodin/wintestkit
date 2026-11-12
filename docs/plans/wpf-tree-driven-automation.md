@@ -578,6 +578,8 @@ gate samples, docs and the test-writing skill's migration reference.
 
 ### 6.8 Phase 5 results
 
+The P5d UIA migration gate now expects D8 errors for managed-key samples and still runs UIA-only samples; auto remains unchanged.
+
 The live migration sample file records the original and migrated forms. After protocol
 decision 20 (commit `7c67073`), protected elements allow type identity and an allowlist
 of WPF base-class members. All 14 samples pass on `auto`; on `uia`, the other 13 pass
@@ -727,6 +729,8 @@ independent UIA evidence, and owner inventory approval also remain open. Signing
 deferred.
 
 ### 6.13 Phase 8 design (2026-11-12)
+
+The P5d migration gate verifies D8 rejection of managed keys under UIA while continuing to exercise UIA-only samples.
 
 Scope: WPF-first docs, skill and migration guide; remove the managed post-filter path (D8);
 and provide a real-suite comparison aid. Gate: the owner's real 27-page suite runs on `auto`

@@ -9,6 +9,7 @@ from test_wpf_query_gate_real import config
 from wintestkit import runtime
 from wintestkit.engine.locator import Locator
 from wintestkit.engine.resolve import resolve, resolve_all
+from wintestkit.errors import InvalidLocatorError
 from wintestkit.model import Element, Page
 from wintestkit.name_mapping import convert
 from wintestkit.testcomplete import find, find_all_children, find_child
@@ -116,6 +117,24 @@ def test_migration_samples(owned, backend, record_property):
                 scope, Locator(where=(("type:Is", "WinTestKit.Fixture.PeerlessMarker"),))
             )
         for original, expression, target in SAMPLES:
+            if backend == "uia" and (
+                any(
+                    key in expression
+                    for key in ("ClrFullClassName", "DataContext.Label", '"Visible"')
+                )
+            ):
+                with pytest.raises(InvalidLocatorError, match="requires the WPF backend"):
+                    eval(
+                        expression,
+                        {
+                            "find_child": find_child,
+                            "find_all_children": find_all_children,
+                            "find": find,
+                            "page": page,
+                        },
+                    ).resolve_once()
+                record_property(original, "expected D8 error: managed key requires WPF")
+                continue
             result = eval(
                 expression,
                 {
@@ -125,10 +144,7 @@ def test_migration_samples(owned, backend, record_property):
                     "page": page,
                 },
             )
-            if target == "peerless" and backend == "uia":
-                assert not result.exists(timeout=1)
-                record_property(original, "expected difference: no UIA peer")
-            elif target == "missing":
+            if target == "missing":
                 assert not result.exists(timeout=1)
                 record_property(original, "pass")
             elif target == "duplicates":
