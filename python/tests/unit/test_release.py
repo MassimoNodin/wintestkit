@@ -230,6 +230,8 @@ def test_desktop_workflow_is_restricted_to_trusted_events() -> None:
         " && github.ref == 'refs/heads/master'"
     )
     assert job["runs-on"] == ["self-hosted", "windows", "wintestkit-desktop"]
+    assert job["defaults"]["run"]["shell"] == "powershell"
+    assert all(step.get("shell") != "pwsh" for step in job["steps"])
     assert workflow["concurrency"]["cancel-in-progress"] is False
 
 

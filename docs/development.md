@@ -138,7 +138,7 @@ does not wait for this runner.
 On the Windows runner install Visual Studio C++ build tools, the SDK pinned by
 `wpf-inspector/global.json`, .NET 8 and 10 Desktop Runtimes in **both x86 and x64**,
 the .NET Framework 4.8 Developer Pack (including its SDK tools), Python 3.12, uv, and
-PowerShell 7 (`pwsh`). Put `uv`, `pwsh`, and the SDK's `dotnet.exe` on the runner's
+Windows PowerShell 5.1 (`powershell.exe`). Put `uv` and the SDK's `dotnet.exe` on the runner's
 PATH. Alternatively set `DOTNET_ROOT` for the runner process to the SDK directory;
 it must contain the required x64 runtimes as well. If runtimes are installed elsewhere,
 set `WTK_MATRIX_DOTNET_ROOT_X86` and `WTK_MATRIX_DOTNET_ROOT_X64` to their respective
