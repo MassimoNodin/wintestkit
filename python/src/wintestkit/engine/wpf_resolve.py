@@ -106,9 +106,23 @@ def identity_value(element: WpfElement, name: str) -> str | None:
         [(PathSegment("uia", "automation_id"),), (PathSegment("property", "Name"),)],
         deadline=locator_deadline(),
     )
-    if values[0].value.status == "unavailable":
-        return None
+    identity = values[0].value
+    if identity.status == "ok" and isinstance(identity.scalar, str) and identity.scalar:
+        return identity.scalar
+    if identity.status not in {"ok", "unavailable"}:
+        raise InspectorReadError(
+            f"Cannot read WPF AutomationId: {identity.status}", code="readFailed"
+        )
     result = values[1].value
+    framework_types = {"System.Windows.FrameworkElement", "System.Windows.FrameworkContentElement"}
+    if (
+        identity.status == "unavailable"
+        and result.status == "redacted"
+        and not framework_types.intersection(
+            (element.ref.type.full_name, *element.ref.type.base_types)
+        )
+    ):
+        return None
     if result.status == "ok" and isinstance(result.scalar, str):
         return result.scalar
     if result.status in {"unavailable", "nullIntermediate"}:
@@ -147,6 +161,11 @@ def query(root: WpfElement, locator: Locator, *, use_index: bool = False) -> Que
     result = root.client.query_find_all(wire, timeout_ms=timeout, deadline=deadline)
     if not result.complete and len(result.matches) < wire.limit:
         raise InspectorDeadlineError("WPF query exhausted its budget", code="limitExceeded")
+    if (local or identities) and not result.complete and (not use_index or locator.index is None):
+        raise InspectorLimitError(
+            "WPF query exceeded 200 candidates for local filtering; narrow the locator",
+            code="limitExceeded",
+        )
     elements = [
         WpfElement(root.client, ref, root.process_id) for ref in result.matches if ref != root.ref
     ]

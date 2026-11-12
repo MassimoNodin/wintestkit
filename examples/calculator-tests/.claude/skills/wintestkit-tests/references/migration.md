@@ -13,7 +13,7 @@ scripts or keyword tests. Output: pages, components, flows, tests.
 | A user control / group / region node, or a box used in several windows | one component (`Page` with `root`), mounted per use |
 | A leaf (button, edit, ...) | a typed element on the page or component |
 | Alias | the attribute name (`customer.address.street`) |
-| `WPFControlName` | `automation_id` (peer ID, or `x:Name` when empty with `backend: auto`); use `clr:Name` for peerless elements |
+| `WPFControlName` | `automation_id` (peer or peerless attached ID, or `x:Name` when empty with `backend: auto`) |
 | `ClrFullClassName` | `where={"type:FullName": ...}`; `type:Is` includes derived types |
 | `WPFControlText`, `Content`, `Caption` | `name` |
 | ordinal number | `index` (0-based; avoid) |

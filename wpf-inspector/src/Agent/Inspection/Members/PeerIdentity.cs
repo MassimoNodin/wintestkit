@@ -139,7 +139,15 @@ namespace WinTestKit.Inspector.Agent.Inspection.Members
             try
             {
                 AutomationPeer? peer = target is DependencyObject dependency ? GetPeer(dependency) : null;
-                if (peer == null) return new ValueDto { Status = "unavailable", Kind = "unavailable" };
+                if (peer == null)
+                {
+                    if (name == "automation_id" && target is DependencyObject element)
+                    {
+                        string attached = System.Windows.Automation.AutomationProperties.GetAutomationId(element);
+                        if (!string.IsNullOrEmpty(attached)) return ValueSerializer.Serialize(attached, typeof(string), registry, dispatcher);
+                    }
+                    return new ValueDto { Status = "unavailable", Kind = "unavailable" };
+                }
                 if ((name == "value" || name == "document_text") && (RedactionPolicy.IsProtectedIdentity(target) || peer.IsPassword()))
                     return new ValueDto { Status = "redacted", Kind = "unavailable", RedactionRule = "identity" };
                 object? result = null;
