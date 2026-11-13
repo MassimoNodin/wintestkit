@@ -1,5 +1,5 @@
 import { ManagedPanel } from "./managedPanel";
-import { isManagedProcessConfirmed, ManagedInspector } from "./managedSession";
+import { ManagedInspector } from "./managedSession";
 import { randomBytes } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import * as vscode from "vscode";
@@ -1042,7 +1042,8 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
     let result = await client.request<InspectChildrenResult>("inspect.children", { nodeId, tree: this.tree, ...(pageToken ? { pageToken } : {}) });
     if (!Array.isArray(result) && "attachRequired" in result) {
       this.treeProcesses.set(nodeId, result.process);
-      if (autoAttach && isManagedProcessConfirmed(result.process) && await this.managedInspector?.attachTree(nodeId, result.process)) {
+      const inspector = this.managedInspector;
+      if (autoAttach && inspector && await inspector.canAutoAttachTree(nodeId, result.process) && await inspector.attachTree(nodeId, result.process, true)) {
         result = await client.request<InspectChildrenResult>("inspect.children", { nodeId, tree: this.tree, ...(pageToken ? { pageToken } : {}) });
       }
     }

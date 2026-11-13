@@ -1,12 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import type { InitializeResult } from "../../src/protocol/generated";
 import type { JsonRpcClient } from "../../src/server/jsonrpc";
-const mock = vi.hoisted(() => ({ trusted: true, warning: vi.fn() }));
-vi.mock("vscode", () => ({ workspace: { get isTrusted() { return mock.trusted; } }, window: { showWarningMessage: mock.warning } }));
+const mock = vi.hoisted(() => ({ trusted: true, warning: vi.fn(), open: vi.fn() }));
+vi.mock("vscode", () => ({ workspace: { get isTrusted() { return mock.trusted; } }, window: { showWarningMessage: mock.warning }, env: { openExternal: mock.open }, Uri: { parse: (url: string) => url } }));
 import { ManagedInspector, managedErrorState } from "../../src/spy/managedSession";
 import { parseSpyRequest } from "../../src/spy/messages";
 const initialized = (enabled: boolean) => ({ capabilities: enabled ? { managedInspector: true } : undefined }) as InitializeResult;
-const facts = { process: { pid: 271, creationTimeUtc: "one" }, executable: "C:/App.exe", runtime: "net8", architecture: "x64", wpfLoaded: true };
+const facts = { process: { pid: 271, creationTimeUtc: "one" }, executable: "C:/App.exe", runtime: "net8", architecture: "x64", wpfLoaded: true, appUnderTest: false };
 const session = { sessionId: "s", process: facts.process, state: "ready", protocolMajor: 1, protocolMinor: 0, features: [] };
 function setup() {
   const request = vi.fn<(method: string, params?: unknown) => Promise<unknown>>(async (method: string) => method.endsWith("identify") ? facts : method.endsWith("attach") ? session : { releasedCount: 1 });
@@ -27,12 +27,35 @@ describe("managed Spy host", () => {
     mock.trusted = true; mock.warning.mockResolvedValueOnce(undefined); await inspector.attach(); expect(request).toHaveBeenCalledTimes(1);
     mock.warning.mockResolvedValue("Attach"); await inspector.attach();
     expect(mock.warning.mock.calls.at(-1)?.[0]).toContain("C:/App.exe");
-    for (const term of ["271", "net8", "x64", "getter", "process"]) expect(mock.warning.mock.calls.at(-1)?.[0]).toContain(term);
-    expect(mock.warning.mock.calls.at(-1)?.[1]).toEqual({ modal: true });
+    for (const term of ["271", "net8", "x64", "getters", "legacy", "until the application exits"]) expect(mock.warning.mock.calls.at(-1)?.[1].detail).toContain(term);
+    expect(mock.warning.mock.calls.at(-1)?.[1].modal).toBe(true);
+    expect(mock.warning.mock.calls.at(-1)?.slice(2)).toEqual(["Attach", "Learn more", "Cancel"]);
     await inspector.detach(); const prompts = mock.warning.mock.calls.length; await inspector.attach(); expect(mock.warning).toHaveBeenCalledTimes(prompts);
     await inspector.detach();
     request.mockImplementationOnce(async () => ({ ...facts, process: { ...facts.process, creationTimeUtc: "two" } }));
     await inspector.attach(); expect(mock.warning).toHaveBeenCalledTimes(prompts + 1);
+  });
+  it("automatically attaches the app under test only for the identified process run", async () => {
+    const process = { pid: 87003, creationTimeUtc: "first" };
+    let identified = { ...facts, process, appUnderTest: true };
+    const request = vi.fn(async (method: string) => method.endsWith("identify") ? identified : { ...session, process });
+    const inspector = new ManagedInspector({ request } as unknown as JsonRpcClient, initialized(true));
+    mock.trusted = true; mock.warning.mockReset();
+    expect(await inspector.canAutoAttachTree("window", process)).toBe(true);
+    expect(await inspector.attachTree("window", process)).toBe(true);
+    expect(mock.warning).not.toHaveBeenCalled();
+    identified = { ...identified, process: { ...process, creationTimeUtc: "second" }, appUnderTest: false };
+    expect(await inspector.canAutoAttachTree("window", identified.process)).toBe(false);
+  });
+  it("opens the explanation and leaves attachment cancelled", async () => {
+    const process = { pid: 87004, creationTimeUtc: "first" };
+    const request = vi.fn(async () => ({ ...facts, process }));
+    const inspector = new ManagedInspector({ request } as unknown as JsonRpcClient, initialized(true));
+    mock.warning.mockReset().mockResolvedValueOnce("Learn more").mockResolvedValueOnce("Cancel");
+    mock.open.mockReset();
+    expect(await inspector.attachTree("window", process)).toBe(false);
+    expect(mock.open).toHaveBeenCalledWith(expect.stringContaining("managed-inspection.md"));
+    expect(request).toHaveBeenCalledTimes(1);
   });
   it("confirms tree attachment once per process run", async () => {
     const process = { pid: 87002, creationTimeUtc: "first" };

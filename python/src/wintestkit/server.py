@@ -7,6 +7,7 @@ import dataclasses
 import json
 import logging
 import math
+import ntpath
 import platform
 import queue
 import sys
@@ -28,6 +29,7 @@ if TYPE_CHECKING:
     from wintestkit.coverage import Coverage
     from wintestkit.engine.spy import SpySession
     from wintestkit.inspector.client import InspectorClient
+    from wintestkit.inspector.models import ProcessFacts, ProcessIdentity
     from wintestkit.targets import ModuleLoader
     from wintestkit.uia.element import ElementInfo, Rect, UIAElement
 
@@ -163,6 +165,7 @@ class Server:
         # Ownership is deliberately independent of the configured launch mode. The server can
         # attach to a process it did not start.
         self._owned_app_pids: set[int] | None = None
+        self._owned_app_identities: set[ProcessIdentity] = set()
         self.nodes: OrderedDict[str, TargetElement] = OrderedDict()
         self._wpf_windows: set[str] = set()
         self.node_infos: dict[str, ElementInfo] = {}
@@ -410,6 +413,23 @@ class Server:
         if self.app is None and required:
             raise AppNotRunningError("App is not running. Start it or call app.launch.")
         return self.app
+
+    def _is_app_under_test(self, facts: ProcessFacts) -> bool:
+        """Match launched identities or the configured attach executable."""
+        if facts.identity in self._owned_app_identities:
+            return True
+        cfg = self.cfg
+        if cfg is None or cfg.launch != "attach" or cfg.app is None:
+            return False
+        app = self._app(False)
+        if app is None or facts.identity.pid not in app.pids:
+            return False
+        executable = ntpath.normcase(ntpath.normpath(facts.executable))
+        if cfg.app.path is not None:
+            configured = ntpath.normcase(ntpath.normpath(str(cfg.app.path)))
+            if executable != configured:
+                return False
+        return ntpath.basename(executable) == ntpath.basename(cfg.app.process_name).lower()
 
     def _coverage(self) -> Coverage:
         from wintestkit.coverage import Coverage
@@ -986,6 +1006,7 @@ class Server:
                     "runtime": facts.runtime,
                     "architecture": facts.architecture,
                     "wpfLoaded": facts.wpf_loaded,
+                    "appUnderTest": self._is_app_under_test(facts),
                 }
             if method in {"inspect.managed.attach", "inspect.managed.status"}:
                 identity = ProcessIdentity.from_json(params["process"])
@@ -1232,6 +1253,13 @@ class Server:
                     self.cfg, progress=lambda stage: self.notify("app.starting", {"stage": stage})
                 )
                 self._owned_app_pids = set(app.pids) or None
+                from wintestkit.inspector.probe import current_identity
+
+                self._owned_app_identities.clear()
+                if app.launched:
+                    for pid in app.pids:
+                        with contextlib.suppress(Exception):
+                            self._owned_app_identities.add(current_identity(pid))
             return {"pids": app.pids}
         if method == "app.processes":
             from wintestkit.uia import win32

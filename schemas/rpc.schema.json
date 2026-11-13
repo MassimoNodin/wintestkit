@@ -3,7 +3,7 @@
   "$id": "https://wintestkit.dev/schemas/rpc.schema.json",
   "$defs": {
     "InspectManagedIdentifyParams": {"type":"object","properties":{"nodeId":{"type":"string","minLength":1}},"required":["nodeId"],"additionalProperties":false},
-    "InspectManagedIdentifyResult": {"type":"object","properties":{"process":{"$ref":"common.schema.json#/$defs/ManagedProcessIdentity"},"executable":{"type":"string"},"runtime":{"enum":["net48","net8","net10",null]},"architecture":{"enum":["x86","x64","arm64","unknown"]},"wpfLoaded":{"type":"boolean"}},"required":["process","executable","runtime","architecture","wpfLoaded"],"additionalProperties":false},
+    "InspectManagedIdentifyResult": {"type":"object","properties":{"process":{"$ref":"common.schema.json#/$defs/ManagedProcessIdentity"},"executable":{"type":"string"},"runtime":{"enum":["net48","net8","net10",null]},"architecture":{"enum":["x86","x64","arm64","unknown"]},"wpfLoaded":{"type":"boolean"},"appUnderTest":{"type":"boolean"}},"required":["process","executable","runtime","architecture","wpfLoaded","appUnderTest"],"additionalProperties":false},
     "InspectManagedAttachParams": {"type":"object","properties":{"process":{"$ref":"common.schema.json#/$defs/ManagedProcessIdentity"}},"required":["process"],"additionalProperties":false},
     "InspectManagedAttachResult": {"$ref":"common.schema.json#/$defs/ManagedSession"},
     "InspectManagedStatusParams": {"type":"object","properties":{"process":{"$ref":"common.schema.json#/$defs/ManagedProcessIdentity"}},"required":["process"],"additionalProperties":false},

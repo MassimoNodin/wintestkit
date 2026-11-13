@@ -3,7 +3,7 @@
 ## WPF inspection
 
 The WPF Spy requires an enabled inspector, a trusted workspace
-and explicit attachment confirmation. Reads can execute target code. See [managed inspection](managed-inspection.md)
+and consent before attaching to applications other than the configured app under test. Reads can execute target code. See [managed inspection](managed-inspection.md)
 for installation, states and risks.
 
 The **WinTestKit** extension (`wintestkit.wintestkit`) adds editor actions, Test Explorer
@@ -197,7 +197,7 @@ another object.
 
 The **Spy** view, below Explorer, explores the live WPF tree for WPF windows and the UI
 Automation tree for other windows. WPF inspection requires an enabled inspector, a trusted
-workspace and confirmation once per process run. If the agent is blocked, Spy shows the error
+workspace; the configured app under test attaches automatically, while other apps require consent once per process run. If the agent is blocked, Spy shows the error
 and its fix rather than silently falling back to UI Automation. See [Managed inspection](managed-inspection.md).
 
 - Expand windows and controls lazily. Selecting a control inspects it without highlighting.

@@ -2317,6 +2317,7 @@ export interface InspectManagedIdentifyResult {
   runtime: "net48" | "net8" | "net10" | null;
   architecture: "x86" | "x64" | "arm64" | "unknown";
   wpfLoaded: boolean;
+  appUnderTest: boolean;
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema

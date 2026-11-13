@@ -16,7 +16,14 @@ async function confirmProcess(facts: InspectManagedIdentifyResult): Promise<bool
   let pending = confirmations.get(identity);
   if (!pending) {
     pending = (async () => {
-      const answer = await vscode.window.showWarningMessage(`Attach managed inspector to ${facts.executable}\nPID: ${facts.process.pid}\nRuntime: ${facts.runtime ?? "unknown"}\nArchitecture: ${facts.architecture}\n\nThis loads and executes code in the target process. Reading getters can hang the application; timeouts cannot safely stop a running getter.`, { modal: true }, "Attach");
+      if (facts.appUnderTest) return true;
+      const message = `Attach the WinTestKit inspector to ${facts.executable}?`;
+      const detail = `PID: ${facts.process.pid}\nRuntime: ${facts.runtime ?? "unknown"}\nArchitecture: ${facts.architecture}\n\nWinTestKit loads a small inspector into this application so Spy can show WPF objects, including types, x:Name and properties that Windows UI Automation does not expose. It stays loaded until the application exits and cannot be removed earlier.\n\nReading properties runs the application's own getters. These can be slow, hang the application or have side effects; a timeout cannot safely stop a running getter.\n\nSecurity software, including antivirus, AppLocker or WDAC, may flag or block the inspector. WinTestKit needs the same elevation as the application. Only your Windows user can connect to the inspector, and nothing is sent off the machine.\n\nThis is the same technique legacy uses for Open Applications. Only attach to applications you trust and are allowed to test.`;
+      let answer: string | undefined;
+      do {
+        answer = await vscode.window.showWarningMessage(message, { modal: true, detail }, "Attach", "Learn more", "Cancel");
+        if (answer === "Learn more") await vscode.env.openExternal(vscode.Uri.parse("https://github.com/MassimoNodin/wintestkit/blob/master/docs/guide/managed-inspection.md"));
+      } while (answer === "Learn more");
       if (answer !== "Attach") return false;
       confirmed.add(identity);
       return true;
@@ -92,12 +99,20 @@ export class ManagedInspector {
       return session;
     } catch (error) { if (this.current(seq, node, oldSession)) this.state = managedErrorState(error); return; }
   }
-  async attachTree(nodeId: string, process: { pid: number; creationTimeUtc: string }): Promise<boolean> {
+  async canAutoAttachTree(nodeId: string, process: { pid: number; creationTimeUtc: string }): Promise<boolean> {
+    if (isManagedProcessConfirmed(process)) return true;
+    try {
+      const facts = await this.client.request<InspectManagedIdentifyResult>("inspect.managed.identify", { nodeId });
+      return facts.appUnderTest && identityKey(facts.process) === identityKey(process);
+    } catch { return false; }
+  }
+  async attachTree(nodeId: string, process: { pid: number; creationTimeUtc: string }, automatic = false): Promise<boolean> {
     if (!this.visible || !vscode.workspace.isTrusted) return false;
     if (this.session?.state === "ready" && identityKey(this.session.process) === identityKey(process)) return true;
     try {
       const facts = await this.client.request<InspectManagedIdentifyResult>("inspect.managed.identify", { nodeId });
       if (identityKey(facts.process) !== identityKey(process)) return false;
+      if (automatic && !facts.appUnderTest && !isManagedProcessConfirmed(process)) return false;
       if (!await confirmProcess(facts)) return false;
       const result = await this.client.request<InspectManagedAttachResult>("inspect.managed.attach", { process });
       if (result.state === "ready") { this.session = { ...result, process: { ...result.process } }; this.state = "ready"; }

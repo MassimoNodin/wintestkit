@@ -56,7 +56,19 @@ variable overrides. By default, the inspector attaches after the first WPF windo
 If the application restarts itself, the new process is attached when a test touches its window.
 Set `attach: on-demand` to attach on the first managed query, `enabled: false` to disable
 inspection, or `attach: manual` to require explicit attachment.
-Review that authorization with your team. Spy still requires workspace trust and confirmation.
+Review that authorization with your team. Spy requires workspace trust. It attaches automatically
+when you expand a WPF window belonging to the configured app under test: an app launched by
+WinTestKit, or the executable identified by the workspace's attach settings. Other applications
+require consent once per process run; cancelling leaves the window waiting for attachment.
+
+Attaching loads a small inspector into the application so Spy can show WPF types, `x:Name`,
+and properties that Windows UI Automation does not expose. It remains loaded until the app exits
+and cannot be removed earlier. Reading properties runs the app's own getters: these can be slow,
+hang the app, or have side effects. A timeout cannot safely stop a running getter. Antivirus,
+AppLocker or WDAC may flag or block the inspector, and WinTestKit needs the same elevation as the
+app. Only your Windows user can connect to the inspector; nothing is sent off the machine. This
+is the same technique legacy uses for Open Applications. Only attach to applications you
+trust and are allowed to test. Tests already attach automatically to the app they launch or attach.
 
 ## Spy and reading values
 

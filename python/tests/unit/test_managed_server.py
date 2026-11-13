@@ -147,6 +147,33 @@ def managed_server(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Any:
     runtime.reset()
 
 
+def test_app_under_test_identity_and_config(managed_server: Any, tmp_path: Path) -> None:
+    server, output, _ = managed_server
+    server._owned_app_identities.add(IDENTITY)
+    result = request(server, output, "inspect.managed.identify", {"nodeId": "window"})
+    assert result["result"]["appUnderTest"] is True
+    reused = ProcessFacts(
+        ProcessIdentity(42, "2026-01-02T00:00:00Z"),
+        "app.exe",
+        "x64",
+        "net10",
+        True,
+        1,
+        "sid",
+        "medium",
+    )
+    assert not server._is_app_under_test(reused)
+    server.cfg = load_config(tmp_path, {"launch": "attach", "app.process": "APP.EXE"})
+    server.app = cast(Any, SimpleNamespace(is_running=lambda: True, pids=[42]))
+    assert server._is_app_under_test(reused)
+    server.cfg = load_config(tmp_path, {"launch": "attach", "app.path": str(tmp_path / "app.exe")})
+    matching = ProcessFacts(
+        reused.identity, str(tmp_path / "APP.EXE"), "x64", "net10", True, 1, "sid", "medium"
+    )
+    assert server._is_app_under_test(matching)
+    assert not server._is_app_under_test(reused)
+
+
 @pytest.fixture(scope="module")
 def schema_registry() -> Registry[Any]:
     paths = [
