@@ -2,6 +2,7 @@
 
 import io
 import json
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
@@ -163,15 +164,21 @@ def test_app_under_test_identity_and_config(managed_server: Any, tmp_path: Path)
         "medium",
     )
     assert not server._is_app_under_test(reused)
-    server.cfg = load_config(tmp_path, {"launch": "attach", "app.process": "APP.EXE"})
-    server.app = cast(Any, SimpleNamespace(is_running=lambda: True, pids=[42]))
+    server.cfg = load_config(tmp_path, {"launch": "per-test", "app.process": "APP"})
     assert server._is_app_under_test(reused)
-    server.cfg = load_config(tmp_path, {"launch": "attach", "app.path": str(tmp_path / "app.exe")})
+    server.cfg = load_config(tmp_path, {"launch": "per-test", "app.process": "APP.EXE"})
+    assert server._is_app_under_test(replace(reused, executable="app"))
+    assert not server._is_app_under_test(replace(reused, executable="other.exe"))
+    server.cfg = load_config(tmp_path, {"launch": "per-test", "app.path": "app.exe"})
     matching = ProcessFacts(
         reused.identity, str(tmp_path / "APP.EXE"), "x64", "net10", True, 1, "sid", "medium"
     )
     assert server._is_app_under_test(matching)
     assert not server._is_app_under_test(reused)
+    assert not server._is_app_under_test(replace(matching, executable=str(tmp_path / "other" / "app.exe")))
+    # Also handle a relative path in an already constructed config.
+    server.cfg = replace(server.cfg, app=replace(server.cfg.app, path=Path("app.exe")))
+    assert server._is_app_under_test(matching)
 
 
 @pytest.fixture(scope="module")

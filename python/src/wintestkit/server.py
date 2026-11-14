@@ -415,21 +415,25 @@ class Server:
         return self.app
 
     def _is_app_under_test(self, facts: ProcessFacts) -> bool:
-        """Match launched identities or the configured attach executable."""
+        """Match launched identities or the configured application executable."""
         if facts.identity in self._owned_app_identities:
             return True
         cfg = self.cfg
-        if cfg is None or cfg.launch != "attach" or cfg.app is None:
-            return False
-        app = self._app(False)
-        if app is None or facts.identity.pid not in app.pids:
+        if cfg is None or cfg.app is None:
             return False
         executable = ntpath.normcase(ntpath.normpath(facts.executable))
+        name = ntpath.basename(executable).removesuffix(".exe")
+        configured_name = ntpath.basename(cfg.app.process_name).lower().removesuffix(".exe")
+        if name != configured_name:
+            return False
         if cfg.app.path is not None:
-            configured = ntpath.normcase(ntpath.normpath(str(cfg.app.path)))
+            path = cfg.app.path
+            if not path.is_absolute():
+                path = (cfg.root / path).resolve()
+            configured = ntpath.normcase(ntpath.normpath(str(path)))
             if executable != configured:
                 return False
-        return ntpath.basename(executable) == ntpath.basename(cfg.app.process_name).lower()
+        return True
 
     def _coverage(self) -> Coverage:
         from wintestkit.coverage import Coverage
