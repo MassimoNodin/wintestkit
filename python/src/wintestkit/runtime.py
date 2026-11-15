@@ -121,6 +121,13 @@ def record_audit(audit: WriteAudit) -> None:
         record.audits.append(audit.to_json())
 
 
+def mark_sensitive() -> None:
+    __tracebackhide__ = True
+    record = _current_step.get()
+    if record is not None:
+        record.sensitive = True
+
+
 def record_backend(element: object) -> None:
     __tracebackhide__ = True
     from wintestkit.backends.element import WpfElement

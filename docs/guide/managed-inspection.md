@@ -6,6 +6,16 @@ type, member, dependency-property and binding information. Managed `where` keys 
 them. Injection requires no application changes, but is **not zero-impact**. Only attach to
 applications you are authorized to instrument.
 
+## Reading values
+
+Use `element.get("clr:DataContext.Label")` or `element.get("type:FullName")` to read
+managed values, including on peerless elements. Configured property aliases also work. Use
+`expect(element).to_have_property(name, expected)` or `element.wait_for_property(name, expected)`
+to wait for a value; compiled regular expressions match strings. Unqualified names read UIA
+properties instead. `type:Is` is a locator predicate, not a readable value. Redacted members
+cannot be read. As with Spy, reading managed properties executes application getters, which can
+have side effects.
+
 ## Compatibility
 
 Framework-dependent WPF targets include .NET Framework 4.8, .NET 8 and .NET 10 on x86

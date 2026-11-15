@@ -87,6 +87,7 @@ On WPF, supported waits use agent-side events to recheck conditions; other cases
 | Reads (`text`, `value`, `is_enabled()`, `is_checked()`, `selected_items()`, `row_count()`, …) | the element exists | returns the current value |
 | `exists(timeout=0)` | by default, doesn't wait | `True`/`False` |
 | `is_visible()` | doesn't wait | `True`/`False` |
+| `wait_for_property(name, expected)` | a UIA or managed property matches (including regex) | returns the element |
 | `wait_for(state)` | the state is reached: `attached`, `detached`, `visible`, `hidden`, `enabled`, `disabled` or `stable` | returns the element |
 | `expect(...)` | the assertion holds | passes, or fails with the last observed value |
 
@@ -110,7 +111,7 @@ the types they apply to (a plain `Element` has them all):
 
 | Read | On |
 |---|---|
-| `text`, `is_enabled()`, `exists()`, `is_visible()`, `info()` | every element |
+| `text`, `get(name)`, `is_enabled()`, `exists()`, `is_visible()`, `info()` | every element |
 | `value` | `TextBox`, `ComboBox` |
 | `is_checked()` | `CheckBox` |
 | `is_selected()` | `RadioButton`, `ListItem` |
@@ -147,7 +148,7 @@ once, `expect` keeps checking until the timeout.
 | `to_contain_text(expected)` | its text contains `expected` |
 | `to_have_value(expected)` | its Value pattern value equals `expected` (or matches a regex) |
 | `to_have_count(n)` | an `Elements` collection has `n` members |
-| `to_have_property(name, expected)` | a UI Automation property has the expected value |
+| `to_have_property(name, expected)` | a UIA or managed property matches the expected value or compiled regex |
 
 ```python
 # pseudo-code

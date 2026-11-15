@@ -19,6 +19,8 @@ This guide helps you migrate an existing **WPF desktop test suite** to WinTestKi
 | Wildcards | Helpers translate `*` and `?` to whole-value patterns; locators accept compiled regexes |
 | Extended find / depth | `depth` (automation-peer levels); extended find uses descendant search |
 | Direct property writes / method calls | Prefer UI actions; managed writes and calls are opt-in with an allowlist and audit (see [managed inspection](managed-inspection.md#writes-and-method-calls)) |
+| Reading object properties (e.g. `obj.DataContext.Name`) | `el.get("clr:DataContext.Name")` |
+| `WaitProperty` | `el.wait_for_property(name, expected)` |
 | Inspecting objects | The Spy (`wtk spy` or the VS Code Spy view) and `wtk inspect` |
 | Highlight on screen | `wtk highlight` or the **Highlight** CodeLens |
 | Test routines / script routines | pytest test functions |

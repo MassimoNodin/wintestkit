@@ -347,8 +347,10 @@ class Expectation:
 
         def check(element: TargetElement) -> _Outcome:
             __tracebackhide__ = True
-            actual = element.get_property(name)
-            return _Outcome(actual == expected, _describe(actual))
+            from wintestkit.engine.property_read import property_matches, read_property
+
+            actual = read_property(element, name)
+            return _Outcome(property_matches(actual, expected), _describe(actual))
 
         self._assert(
             "to_have_property",

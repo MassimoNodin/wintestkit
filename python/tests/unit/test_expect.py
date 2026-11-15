@@ -634,3 +634,47 @@ def test_positive_expectations_use_agent_wait(steps, page, world, monkeypatch, m
     getattr(expect(page.status), method)()
     assert calls == [state]
     assert steps[-1].backend == "uia"
+
+
+def test_property_reads_and_waits(
+    page: MainPage, world: World, steps: list[runtime.StepRecord], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from wintestkit.errors import WaitTimeoutError
+
+    assert world.element is not None
+    values = iter(["first", "ready", "ready", "last"])
+    monkeypatch.setattr(
+        type(world.element),
+        "get_property",
+        lambda self, name: 0 if name == "IsPassword" else next(values),
+    )
+    assert page.status.get("Name") == "first"
+    expect(page.status).to_have_property("Name", re.compile("ead"))
+    bound = page.status
+    assert bound.wait_for_property("Name", re.compile("ead")) is bound
+    with pytest.raises(WaitTimeoutError, match="last observed value: 'last'"):
+        page.status.wait_for_property("Name", "other", timeout=0)
+
+
+def test_property_expectation_retries(
+    page: MainPage, world: World, steps: list[runtime.StepRecord], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    assert world.element is not None
+    values = iter(["starting", "ready"])
+    monkeypatch.setattr(
+        type(world.element),
+        "get_property",
+        lambda self, name: 0 if name == "IsPassword" else next(values),
+    )
+    expect(page.status).to_have_property("Name", re.compile("ead"))
+
+
+def test_property_wait_redacts_password(
+    page: MainPage, world: World, steps: list[runtime.StepRecord]
+) -> None:
+    from wintestkit.errors import ActionError
+
+    with pytest.raises(ActionError, match="redacted") as error:
+        page.password.wait_for_property("Name", "private-value", timeout=0)
+    assert "private-value" not in str(error.value)
+    assert "private-value" not in str(steps[-1].to_dict())

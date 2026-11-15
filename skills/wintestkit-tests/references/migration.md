@@ -21,7 +21,9 @@ scripts or test routines. Output: pages, components, flows, tests.
 | script routine / reusable test routine | an intent method on the page or component, or a flow |
 | test or test routine | a pytest function using intent + `expect` |
 | checkpoint | `expect(...)` |
-| `Delay`, `Sleep`, `WaitProperty`, `WaitChild` | nothing (actions and `expect` wait) or `wait_for()` / `exists(timeout=)` |
+| Reading object properties (e.g. `obj.DataContext.Name`) | `el.get("clr:DataContext.Name")` |
+| `WaitProperty` | `el.wait_for_property(name, expected)` |
+| `Delay`, `Sleep`, `WaitChild` | nothing (actions and `expect` wait) or `wait_for()` / `exists(timeout=)` |
 | data-driven loop / table | `@pytest.mark.parametrize` |
 | `OnUnexpectedWindow` and other event handlers | fixtures; for known dialogs, a page plus a flow step |
 | test items / execution plan | files, folders and markers (`wtk run -m smoke`) |

@@ -1632,3 +1632,21 @@ def test_finders_find_helpers(owned, backend):
         assert len(find_all_children(page, "WPFControlName", "Duplicate", 20)) == 2
         find_child(page, "WPFControlName", "FancyAutomationId", 20).click()
         expect(page.effect, timeout=5).to_have_text("Clicked 1")
+
+
+def test_managed_property_reads_real(owned):
+    from wintestkit.expect import expect
+    from wintestkit.model import Element, Page
+
+    scope, path = owned
+
+    class FixturePage(Page):
+        fancy = Element(automation_id="FancyAutomationId")
+        peerless = Element(where={"type:Is": "WinTestKit.Fixture.PeerlessMarker"})
+
+    page = FixturePage(scope.app)
+    with runtime.config_scope(config(path, "agent")):
+        assert page.fancy.get("clr:DataContext.Label") == "fixture"
+        assert page.peerless.get("type:FullName") == "WinTestKit.Fixture.PeerlessMarker"
+        expect(page.fancy, timeout=5).to_have_property("clr:DataContext.Label", re.compile("fix"))
+        page.peerless.wait_for_property("type:FullName", re.compile("PeerlessMarker"), timeout=5)

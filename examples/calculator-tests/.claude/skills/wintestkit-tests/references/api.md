@@ -60,6 +60,7 @@ shortcut: `page(CustomerPage)`. `Page.check()` returns `{path: error or None}`.
 | `Text` | `BoundText` | `text` |
 
 Common to every element: `exists()`, `is_visible()`, `is_enabled()`, `text`, `info()`,
+`get(name)` reads a UIA property or managed path; `wait_for_property(name, expected)` waits for a value or regex.
 `wait_for(state)` (`attached`, `detached`, `visible`, `hidden`, `enabled`, `disabled`, `stable`),
 `focus()`, `scroll_into_view()`, `hover()`, `highlight()`, `nth(i)`, `resolve()`. Plain `Element`
 offers every action. `select(item)` takes a name, a 0-based index or a compiled regex. There is no
@@ -76,7 +77,7 @@ back to the mouse; `click(mode="mouse")` always uses the mouse.
 
 `to_exist()`, `to_be_visible()`, `to_be_hidden()`, `to_be_enabled()`, `to_be_disabled()`,
 `to_be_checked()`, `to_be_selected()`, `to_have_text(str | regex)`, `to_contain_text(str)`,
-`to_have_value(str | regex)`, `to_have_count(n)`, `to_have_property(name, expected)`; `.not_`
+`to_have_value(str | regex)`, `to_have_count(n)`, `to_have_property(name, expected)` (UIA or managed, including regex); `.not_`
 negates: `expect(x).not_.to_be_checked()`. It retries until the timeout (default 10 s).
 Prefer `expect` to `assert` for anything asynchronous. Window targets: `expect(dialog.window).to_exist()`;
 windows also have `close()`, `maximize()`, `minimize()`, `restore()`, `title`.

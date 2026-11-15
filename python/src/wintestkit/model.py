@@ -1142,6 +1142,45 @@ class BoundControl(_BoundBase):
 
     # -- reads (wait for the element to exist only) ---------------------------------------------
 
+    def get(self, name: str) -> Any:
+        """Read a UIA property or qualified managed path."""
+        __tracebackhide__ = True
+        from wintestkit.engine.property_read import read_property
+
+        return read_property(self.resolve(), name)
+
+    def wait_for_property(self, name: str, expected: Any, *, timeout: float | None = None) -> Self:
+        """Wait for a property to match and return this element."""
+        __tracebackhide__ = True
+        from wintestkit.engine.property_read import property_matches, read_property
+
+        budget = self._timeout(timeout)
+        latest: list[Any] = []
+        classifier = actions.PasswordClassifier()
+        secret = is_password_locator(self.locator)
+        args = {"name": name, "expected": expected}
+        with self.step("wait_for_property", args, secret=secret) as record:
+
+            def poll() -> bool | None:
+                __tracebackhide__ = True
+                element = self.resolve_once()
+                record.sensitive = True
+                record.set_arguments(args, secret=secret or classifier.is_password(element))
+                actual = read_property(element, name)
+                latest[:] = [actual]
+                return True if property_matches(actual, expected) else None
+
+            try:
+                waits.wait_until(
+                    poll, budget, description=f"{self.qualname} property {name}", retry_on=_RETRY_ON
+                )
+            except WaitTimeoutError as error:
+                actual = repr(latest[0]) if latest else "<not found>"
+                raise WaitTimeoutError(
+                    f"{error}; last observed value: {actual}", waited=error.waited
+                ) from None
+        return self
+
     @property
     def text(self) -> str:
         """The element's text: its value, document text or UIA name."""
