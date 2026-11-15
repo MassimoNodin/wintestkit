@@ -283,7 +283,7 @@ function extraView(extra: ExtraStep): TourView {
     },
     spyProperties: {
       title: "Inspect Properties",
-      text: "Use Properties to identify elements and understand their state. Review Identity, State, Geometry, and Automation. Load all properties for more detail.",
+      text: "The Preview stays here in Spy. The Properties view follows your selection in the right sidebar; after the tour, use Show properties here if the view is hidden.",
       spyTarget: "properties-pane",
     },
     spyDefinitions: {

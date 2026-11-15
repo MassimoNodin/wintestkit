@@ -394,6 +394,16 @@ def test_roots_leave_out_transient_popup_windows(
     assert [node["info"]["name"] for node in roots] == [window.name]
 
 
+def test_wpf_popup_is_a_separate_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    server, output, _ = make_server(tmp_path, monkeypatch)
+    request(server, output, "initialize", {"root": str(tmp_path)})
+    assert server.app is not None
+    popup = RpcElement("Window", "Context menu", class_name="HwndWrapper[PopupRoot]")
+    server.app.windows.append(popup)  # type: ignore[attr-defined]
+    roots = request(server, output, "inspect.roots")["result"]
+    assert [node["info"]["name"] for node in roots].count("Context menu") == 1
+
+
 @pytest.mark.parametrize("full", [False, True])
 @pytest.mark.parametrize("ancestors", [False, True])
 def test_inspection_expensive_reads_are_opt_in(

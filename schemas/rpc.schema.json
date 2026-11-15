@@ -10,6 +10,8 @@
     "InspectManagedStatusResult": {"$ref":"common.schema.json#/$defs/ManagedSession"},
     "InspectManagedDetachParams": {"type":"object","properties":{"sessionId":{"type":"string","minLength":1,"maxLength":128}},"required":["sessionId"],"additionalProperties":false},
     "InspectManagedDetachResult": {"type":"object","properties":{"detached":{"const":true}},"required":["detached"],"additionalProperties":false},
+    "InspectManagedKeepaliveParams": {"type":"object","properties":{"sessionId":{"type":"string","minLength":1,"maxLength":128}},"required":["sessionId"],"additionalProperties":false},
+    "InspectManagedKeepaliveResult": {"type":"object","properties":{"alive":{"const":true}},"required":["alive"],"additionalProperties":false},
     "InspectManagedResolveParams": {"type":"object","properties":{"sessionId":{"type":"string","minLength":1,"maxLength":128},"nodeId":{"type":"string","minLength":1}},"required":["sessionId","nodeId"],"additionalProperties":false},
     "InspectManagedResolveResult": {"anyOf":[{"$ref":"common.schema.json#/$defs/ManagedMapping"},{"type":"object","properties":{"status":{"const":"exact"},"process":{"$ref":"common.schema.json#/$defs/ManagedProcessIdentity"},"object":{"$ref":"../wpf-inspector/protocol/inspector.schema.json#/$defs/ObjectRef"},"source":{"const":"wpf"}},"required":["status","process","object","source"],"additionalProperties":false}]},
     "InspectManagedRootsParams": {"type":"object","properties":{"sessionId":{"type":"string","minLength":1,"maxLength":128},"pageSize":{"type":"integer","minimum":1,"maximum":200},"pageToken":{"type":"string","minLength":1,"maxLength":128}},"required":["sessionId"],"additionalProperties":false},

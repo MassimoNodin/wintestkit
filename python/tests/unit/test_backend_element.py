@@ -132,7 +132,7 @@ def test_mapping_and_delegation(setup, monkeypatch):
     assert element.get_property("Name") == "Name"
     assert element.info(with_patterns=True).patterns == ("Invoke",)
     client.state.uia_runtime_id = None
-    with pytest.raises(NoUiaPeerError, match="needs one until phase 3"):
+    with pytest.raises(NoUiaPeerError, match="this operation needs one"):
         element.as_live().as_uia()
 
 

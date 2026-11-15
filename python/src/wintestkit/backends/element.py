@@ -227,7 +227,7 @@ class WpfElement:
         return bool(state.uia_runtime_id) and self.runtime_id == other.runtime_id
 
     def as_uia(self) -> UIAElement:
-        """Map the agent handle to its peer for phase 2 UIA-only operations."""
+        """Map the agent handle to its UIA peer for UIA-only operations."""
         state = self._get_state()
         if state.window_handle and state.uia_runtime_id:
             if self._uia is not None:
@@ -247,8 +247,7 @@ class WpfElement:
                 self._uia = result
                 return result
         raise NoUiaPeerError(
-            f"{self.info().short()} has no UI Automation peer; "
-            "this operation needs one until phase 3"
+            f"{self.info().short()} has no UI Automation peer, and this operation needs one"
         )
 
     @property

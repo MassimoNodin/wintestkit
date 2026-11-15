@@ -13,7 +13,7 @@ from referencing import Registry, Resource
 
 from wintestkit import runtime
 from wintestkit.config import load_config
-from wintestkit.errors import InspectorUnavailableError
+from wintestkit.errors import InspectorUnavailableError, NoUiaPeerError
 from wintestkit.inspector import payload, probe
 from wintestkit.inspector.client import HitTestResult
 from wintestkit.inspector.models import (
@@ -148,6 +148,14 @@ def managed_server(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Any:
     runtime.reset()
 
 
+def test_keepalive_releases_no_objects_or_values(managed_server: Any) -> None:
+    server, output, client = managed_server
+    request(server, output, "inspect.managed.attach", {"process": IDENTITY.to_json()})
+    response = request(server, output, "inspect.managed.keepalive", {"sessionId": "session"})
+    assert response["result"] == {"alive": True}
+    assert client.calls == [("release", [])]
+
+
 def test_app_under_test_identity_and_config(managed_server: Any, tmp_path: Path) -> None:
     server, output, _ = managed_server
     server._owned_app_identities.add(IDENTITY)
@@ -175,7 +183,9 @@ def test_app_under_test_identity_and_config(managed_server: Any, tmp_path: Path)
     )
     assert server._is_app_under_test(matching)
     assert not server._is_app_under_test(reused)
-    assert not server._is_app_under_test(replace(matching, executable=str(tmp_path / "other" / "app.exe")))
+    assert not server._is_app_under_test(
+        replace(matching, executable=str(tmp_path / "other" / "app.exe"))
+    )
     # Also handle a relative path in an already constructed config.
     server.cfg = replace(server.cfg, app=replace(server.cfg.app, path=Path("app.exe")))
     assert server._is_app_under_test(matching)
@@ -544,9 +554,9 @@ def test_picker_agent_resolution(managed_server: Any, monkeypatch: pytest.Monkey
     fallback = SimpleNamespace()
     hover = server._spy_resolve(fallback, 10, 20, False, "visual")
     assert hover.node["source"] == "wpf" and hover.rect.width == 30
-    assert calls == [(321, False)]
+    assert calls == [(999, False)]
     picked = server._spy_resolve(fallback, 10, 20, True, "visual")
-    assert calls[-1] == (321, True)
+    assert calls[-1] == (999, True)
     assert picked.node["identity"]["xName"] == "Peerless"
     monkeypatch.setattr(SpySession, "start", lambda self: None)
     assert request(server, output, "spy.start", {"tree": "visual"})["result"] is None
@@ -718,6 +728,34 @@ def test_spy_wpf_pages(managed_server: Any, monkeypatch: pytest.MonkeyPatch) -> 
     server._release_managed_objects()
 
 
+def test_attached_wpf_window_properties_resolve_window_object(
+    managed_server: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from wintestkit.backends.element import WpfElement
+
+    server, output, client = managed_server
+    live_window = SimpleNamespace(process_id=42)
+    server.nodes["window"] = SimpleNamespace(process_id=42, as_live=lambda: live_window)
+    server._wpf_windows.add("window")
+
+    def properties(node: Any, params: Any, peer: Any = None) -> dict[str, Any]:
+        assert isinstance(node, WpfElement)
+        assert node.ref == REF
+        assert params["nodeId"] == "window"
+        # The window's WPF peer may report a different runtime ID from the HWND
+        # provider's, so the listed UIA root is passed on as the peer.
+        assert peer is live_window
+        return {"source": "wpf", "uiaMapped": True}
+
+    monkeypatch.setattr(server, "_wpf_properties", properties)
+    assert request(server, output, "inspect.properties", {"nodeId": "window"})["result"] == {
+        "source": "wpf",
+        "uiaMapped": True,
+    }
+    assert ("resolve", ((1, 2), None)) in client.calls
+    server._release_managed_objects()
+
+
 def test_spy_auto_wpf_without_tree_uses_uia(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -782,7 +820,7 @@ def test_spy_wpf_geometry_routes(
     node.forget_release()
 
 
-@pytest.mark.parametrize("case", ["peer", "peerless", "password", "stale"])
+@pytest.mark.parametrize("case", ["peer", "peerless", "unreachable", "password", "stale"])
 def test_wpf_properties_and_managed_resolve(
     managed_server: Any, monkeypatch: pytest.MonkeyPatch, schema_registry: Registry[Any], case: str
 ) -> None:
@@ -815,9 +853,12 @@ def test_wpf_properties_and_managed_resolve(
             return "secret"
         return "peer"
 
-    monkeypatch.setattr(
-        WpfElement, "as_uia", lambda self: SimpleNamespace(get_property=get_property)
-    )
+    def as_uia(self: Any) -> Any:
+        if case == "unreachable":
+            raise NoUiaPeerError("no peer")
+        return SimpleNamespace(get_property=get_property)
+
+    monkeypatch.setattr(WpfElement, "as_uia", as_uia)
     params = {"nodeId": "wpf-node", "full": True, "include": ["ValueValue"]}
     properties = request(server, output, "inspect.properties", params)
     resolve = request(
@@ -829,8 +870,9 @@ def test_wpf_properties_and_managed_resolve(
         result = properties["result"]
         assert result["source"] == "wpf"
         assert result["properties"]["ClrFullClassName"] == "Test.Window"
-        assert result["uiaMapped"] == (case != "peerless")
-        assert ("uia" in result) == (case != "peerless")
+        mapped = case not in ("peerless", "unreachable")
+        assert result["uiaMapped"] == mapped
+        assert ("uia" in result) == mapped
         assert resolve["result"]["object"] == REF.to_json()
         assert not any(call[0] == "resolve" for call in client.calls)
         for name, value in (
@@ -955,3 +997,166 @@ def test_wpf_ancestors_use_walked_nodes(
         == []
     )
     server._release_managed_objects()
+
+
+def test_hwnd_host_pages_and_mapping_failure(
+    managed_server: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from wintestkit.backends.element import WpfElement
+
+    server, _, client = managed_server
+    host_type = TypeInfo(
+        "ChildHost",
+        "Fixture.ChildHost",
+        "Fixture",
+        "Fixture.ChildHost, Fixture",
+        ("System.Windows.Interop.HwndHost",),
+    )
+    host_ref = replace(REF, object_id="host", type=host_type)
+    host = WpfElement(client, host_ref, 42)
+    child_ref = replace(REF, object_id="visual")
+    monkeypatch.setattr(
+        client,
+        "children",
+        lambda *a, **kw: Page(
+            (ManagedNode(child_ref, "visual", False, False),), True, "snapshot", ()
+        ),
+    )
+    hosted = ["native-a", "native-b"]
+    monkeypatch.setattr(server, "_hosted_children", lambda node: hosted)
+    monkeypatch.setattr(
+        server,
+        "_register_nodes",
+        lambda nodes, **kw: [{"nodeId": n, "source": "uia"} for n in nodes],
+    )
+    first = server._wpf_children(host, "visual", 2, None, "host")
+    assert [n["nodeId"] for n in first["nodes"]] == [first["nodes"][0]["nodeId"], "native-a"]
+    assert first["nodes"][0]["source"] == "wpf"
+    second = server._wpf_children(host, "visual", 2, first["nextPageToken"], "host")
+    assert [n["nodeId"] for n in second["nodes"]] == ["native-b"]
+    assert "nextPageToken" not in second
+    monkeypatch.setattr(server, "_hosted_children", lambda node: [])
+    monkeypatch.setattr(client, "children", lambda *a, **kw: Page((), True, "snapshot", ()))
+    assert server._wpf_children(host, "visual", 2, None, "host") == {"nodes": []}
+    host.forget_release()
+
+
+def test_host_peer_mapping_failure_is_empty(managed_server: Any) -> None:
+    server, _, _ = managed_server
+
+    def fail() -> Any:
+        raise RuntimeError("no peer")
+
+    assert server._hosted_children(SimpleNamespace(as_uia=fail)) == []
+
+
+def test_hwnd_host_advertises_children(
+    managed_server: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from wintestkit.backends.element import WpfElement
+
+    server, _, client = managed_server
+    host_type = TypeInfo(
+        "ChildHost",
+        "Fixture.ChildHost",
+        "Fixture",
+        "Fixture.ChildHost, Fixture",
+        ("System.Windows.Interop.HwndHost",),
+    )
+    host_ref = replace(REF, object_id="host", type=host_type)
+    monkeypatch.setattr(
+        client,
+        "children",
+        lambda *a, **kw: Page((ManagedNode(host_ref, "host", False, False),), True, "snapshot", ()),
+    )
+    monkeypatch.setattr(server, "_hosted_children", lambda node: [object()])
+    parent = WpfElement(client, REF, 42)
+    result = server._wpf_children(parent, "visual", 10, None, "parent")
+    assert result["nodes"][0]["hasChildren"] is True
+    parent.forget_release()
+
+
+def test_picker_reveals_hosted_uia_under_wpf_host(
+    managed_server: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from wintestkit.backends.element import WpfElement
+    from wintestkit.uia import element as uia_element
+    from wintestkit.uia import win32
+
+    server, _, client = managed_server
+    host_type = TypeInfo(
+        "ChildHost",
+        "Fixture.ChildHost",
+        "Fixture",
+        "Fixture.ChildHost, Fixture",
+        ("System.Windows.Interop.HwndHost",),
+    )
+    host_ref = replace(REF, object_id="host", type=host_type)
+    root_ref = replace(REF, object_id="root")
+    client.hit_test = lambda *a, **kw: HitTestResult(
+        host_ref,
+        (ManagedNode(root_ref, "root", True, False), ManagedNode(host_ref, "host", False, False)),
+    )
+    monkeypatch.setattr(win32, "WindowFromPoint", lambda point: 321)
+    monkeypatch.setattr(win32, "root_window", lambda hwnd: 999)
+    monkeypatch.setattr(
+        uia_element, "from_handle", lambda hwnd: SimpleNamespace(process_id=42, framework_id="WPF")
+    )
+
+    class Peer:
+        def __init__(self, name: str, parent: Any = None) -> None:
+            self.name, self._parent = name, parent
+            self.children: list[Any] = []
+
+        def parent(self) -> Any:
+            return self._parent
+
+        def same_as(self, other: Any) -> bool:
+            return self is other
+
+        def find_all(self, *args: Any, **kwargs: Any) -> list[Any]:
+            return self.children
+
+    peer = Peer("host")
+    native = Peer("native", peer)
+    peer.children = [native]
+    monkeypatch.setattr(WpfElement, "as_uia", lambda self: peer)
+    monkeypatch.setattr(server, "_hosted_children", lambda node: [native])
+    monkeypatch.setattr(
+        server, "_register_nodes", lambda nodes, **kw: [{"nodeId": "native", "source": "uia"}]
+    )
+    monkeypatch.setattr(
+        server, "_register", lambda node, *args, **kwargs: {"nodeId": "window", "source": "uia"}
+    )
+    picked = server._spy_resolve(native, 10, 20, True, "visual")
+    assert picked.node["nodeId"] == "native"
+    host_id = server._wpf_parents["native"]
+    assert server._wpf_descriptions[host_id]["identity"]["type"] == "Fixture.ChildHost"
+    assert server._wpf_parents[host_id] == "window"
+
+
+def test_picker_uses_registered_hosted_node_before_window_hit_test(
+    managed_server: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from wintestkit.uia import win32
+
+    server, _, _ = managed_server
+
+    class Native:
+        process_id = 42
+
+        def same_as(self, other: Any) -> bool:
+            return isinstance(other, Native)
+
+    description = {"nodeId": "host~0", "source": "uia"}
+    server.nodes["host~0"] = Native()
+    server._wpf_parents["host~0"] = "host"
+    server._wpf_descriptions["host~0"] = description
+
+    def unexpected_hit(point: Any) -> Any:
+        pytest.fail("a registered hosted hit should not depend on the window under the point")
+
+    monkeypatch.setattr(win32, "WindowFromPoint", unexpected_hit)
+    picked = server._spy_resolve(Native(), 10, 20, True, "visual")
+    assert picked.node == description
+    assert server._wpf_parents[picked.node["nodeId"]] == "host"

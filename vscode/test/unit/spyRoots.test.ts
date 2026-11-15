@@ -101,14 +101,18 @@ describe("Spy child response rows", () => {
     view.receive({ nodeId: "parent", nodes: ["second"], append: true });
     expect(view.rendered).toEqual(["first", "second"]); expect(view.children.children).toHaveLength(0);
   });
-  it("renders attach and blocked guidance inline", () => {
+  it("keeps hosted UIA nodes after the WPF page", () => {
+    const view = setup();
+    const visual = { nodeId: "visual", source: "wpf" };
+    const native = { nodeId: "native", source: "uia" };
+    view.receive({ nodeId: "parent", nodes: [visual], nextPageToken: "uia:0" });
+    view.receive({ nodeId: "parent", nodes: [native], append: true });
+    expect(view.rendered).toEqual([visual, native]);
+  });
+  it("does not render attach or blocked rows", () => {
     const view = setup();
     view.receive({ nodeId: "parent", nodes: [], attachRequired: true });
-    const row = view.children.children[0];
-    expect(row.children[0].textContent).toContain("Attach the WPF inspector");
-    row.children[1].events.click(); expect(view.sent).toEqual([{ type: "treeAttach", nodeId: "parent" }]);
-    view.receive({ nodeId: "parent", nodes: [], blocked: { code: "blockedByPolicy", hint: "Enable the agent" } });
-    expect(view.children.children[0].children[0].textContent).toContain("blockedByPolicy: Enable the agent Run wtk doctor --agent");
+    expect(view.children.children).toHaveLength(0);
   });
 });
 
@@ -123,13 +127,13 @@ describe("Spy root rows for the selected application", () => {
     const named = render(undefined, window, false, { source: "wpf", identity: { type: "System.Windows.Controls.Button", xName: "SaveButton", automationId: "other" } });
     expect(named.text.textContent).toBe("Button  SaveButton");
     expect(named.row.title).toContain("System.Windows.Controls.Button");
-    expect(named.row.attributes.get("aria-label")).toContain("WPF");
-    expect(named.row.find("source-badge")?.textContent).toBe("WPF");
+    expect(named.row.attributes.get("aria-label")).not.toContain("WPF");
+    expect(named.row.find("source-badge")).toBeUndefined();
     const automation = render(undefined, window, false, { source: "wpf", identity: { type: "Demo.Button", automationId: "save" } });
     expect(automation.text.textContent).toBe("Button  save");
     const uia = render(undefined, { ...window, name: "Main" }, true, { source: "uia" });
     expect(uia.text.textContent).toBe("Main");
-    expect(uia.row.find("source-badge")?.textContent).toBe("UIA");
+    expect(uia.row.find("source-badge")).toBeUndefined();
   });
   it("keeps a window's own title and still marks it", () => {
     const entry = render({ appName: "TeamViewer", appPids: [7] }, { ...window, name: "Main" });
@@ -199,12 +203,12 @@ describe("the route to a selected row", () => {
   it("describes the route from the root window by what each object is, not by node id", () => {
     const { route } = rows();
     expect(JSON.parse(JSON.stringify(route("b0")))).toEqual([
-      { controlType: "Window", automationId: "", name: "App", className: "C" },
+      { controlType: "Window", automationId: "", name: "App", className: "C", processId: 1 },
       { controlType: "Pane", automationId: "ed", name: "Editor", className: "C", index: 1 },
       { controlType: "Button", automationId: "", name: "Save", className: "C", index: 0 },
     ]);
     expect(JSON.parse(JSON.stringify(route("w1")))).toEqual([
-      { controlType: "Window", automationId: "", name: "First", className: "C" },
+      { controlType: "Window", automationId: "", name: "First", className: "C", processId: 1 },
     ]); // a root window's position is not part of its identity: windows reorder
   });
 

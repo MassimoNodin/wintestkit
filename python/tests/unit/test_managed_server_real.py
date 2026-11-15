@@ -454,6 +454,21 @@ def test_spy_tree_peerless_and_large_page(tmp_path: Path, monkeypatch: pytest.Mo
             server._wpf_windows.add(window.runtime_id)
         _call(server, output, "attach", {"process": identify(target.pid).identity.to_json()})
 
+        output.seek(0)
+        output.truncate()
+        server.handle(
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "inspect.properties",
+                "params": {"nodeId": main_window.runtime_id},
+            }
+        )
+        window_properties = json.loads(output.getvalue())["result"]
+        assert window_properties["source"] == "wpf"
+        assert window_properties["properties"]["ClrFullClassName"].endswith(".MainWindow")
+        assert window_properties["uiaMapped"] and "uia" in window_properties
+
         def children(node_id: str, tree: str, page_token: str | None = None) -> dict[str, Any]:
             output.seek(0)
             output.truncate()
@@ -482,12 +497,12 @@ def test_spy_tree_peerless_and_large_page(tmp_path: Path, monkeypatch: pytest.Mo
                 if not queue:
                     break
                 for child in children(queue.pop(0), tree)["nodes"]:
-                    if child["identity"]["type"].endswith(".PeerlessMarker"):
+                    if child.get("identity", {}).get("type", "").endswith(".PeerlessMarker"):
                         found_nodes["peerless"] = child["nodeId"]
                         found = True
-                    if child["identity"]["type"].endswith(".PeerlessClickTarget"):
+                    if child.get("identity", {}).get("type", "").endswith(".PeerlessClickTarget"):
                         found_nodes["click_target"] = child["nodeId"]
-                    if child["identity"].get("automationId") == "ParityPointer":
+                    if child.get("identity", {}).get("automationId") == "ParityPointer":
                         found_nodes["button"] = child["nodeId"]
                     if found and "button" in found_nodes and "click_target" in found_nodes:
                         break
@@ -497,11 +512,47 @@ def test_spy_tree_peerless_and_large_page(tmp_path: Path, monkeypatch: pytest.Mo
                     break
             assert found, f"peerless element missing from {tree} tree"
         assert "button" in found_nodes
+        # Hosted HWND descendants belong under their WPF host.
+        queue = [main_window.runtime_id]
+        host = None
+        while queue and host is None:
+            for child in children(queue.pop(0), "visual")["nodes"]:
+                if child.get("identity", {}).get("automationId") == "NativeHost":
+                    host = child
+                    break
+                if child["hasChildren"] and child.get("source") == "wpf":
+                    queue.append(child["nodeId"])
+        assert host is not None and host["hasChildren"]
+        native = next(
+            item
+            for item in children(host["nodeId"], "visual")["nodes"]
+            if item["info"]["name"] == "Native child"
+        )
+        assert native["source"] == "uia"
+        native_element = server.nodes[native["nodeId"]]
+        assert native_element.rect is not None
+        picked_native = server._spy_resolve(
+            native_element, *native_element.rect.center, True, "visual"
+        )
+        assert picked_native.node["nodeId"] == native["nodeId"]
+        output.seek(0)
+        output.truncate()
+        server.handle(
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "inspect.properties",
+                "params": {"nodeId": native["nodeId"], "includeAncestors": True},
+            }
+        )
+        assert host["nodeId"] in [
+            item["nodeId"] for item in json.loads(output.getvalue())["result"]["ancestors"]
+        ]
         queue = [main_window.runtime_id]
         containers: dict[str, str] = {}
         while queue and len(containers) < 4:
             for child in children(queue.pop(0), "logical")["nodes"]:
-                identity = child["identity"]
+                identity = child.get("identity", {})
                 if identity.get("xName") == "OnlyXName":
                     assert not identity.get("automationId")
                     found_nodes["x_name"] = child["nodeId"]
@@ -520,15 +571,21 @@ def test_spy_tree_peerless_and_large_page(tmp_path: Path, monkeypatch: pytest.Mo
             found_nodes[container] = next(
                 child["nodeId"]
                 for child in scoped_children
-                if child["identity"]["type"] == "System.Windows.Controls.Button"
+                if child.get("identity", {}).get("type", "") == "System.Windows.Controls.Button"
             )
         queue = [containers["ParityList"]]
         virtualizing_panel = False
         while queue and "virtual_item" not in found_nodes:
             for child in children(queue.pop(0), "visual")["nodes"]:
-                if child["identity"]["type"] == "System.Windows.Controls.VirtualizingStackPanel":
+                if (
+                    child.get("identity", {}).get("type", "")
+                    == "System.Windows.Controls.VirtualizingStackPanel"
+                ):
                     virtualizing_panel = True
-                if child["identity"]["type"] == "System.Windows.Controls.ListBoxItem":
+                if (
+                    child.get("identity", {}).get("type", "")
+                    == "System.Windows.Controls.ListBoxItem"
+                ):
                     found_nodes["virtual_item"] = child["nodeId"]
                     break
                 if child["hasChildren"]:
@@ -673,6 +730,15 @@ def test_spy_tree_peerless_and_large_page(tmp_path: Path, monkeypatch: pytest.Mo
             if menu_item is None:
                 time.sleep(0.1)
         assert menu_item is not None and menu_item.rect is not None
+        roots = server.dispatch("inspect.roots", {})
+        popup_hwnd = win32.root_window(win32.WindowFromPoint(win32.POINT(*menu_item.rect.center)))
+        popup_id = element.from_handle(popup_hwnd).runtime_id
+        popup = next(root for root in roots if root["nodeId"] == popup_id)
+        assert popup["source"] == "wpf"
+        assert children(popup_id, "visual")["nodes"]
+        assert popup_id not in [
+            item["nodeId"] for item in children(main_window.runtime_id, "visual")["nodes"]
+        ]
         check_point(menu_item.rect.center, "ParityContextItem")
         server.stop_spy()
         queue = [large.runtime_id]

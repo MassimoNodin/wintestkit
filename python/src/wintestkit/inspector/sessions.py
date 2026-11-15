@@ -45,6 +45,13 @@ def _remaining(deadline: float, cancelled: threading.Event) -> None:
         raise InspectorUnavailableError("Inspector readiness deadline expired", code="timeout")
 
 
+def _agent_active(pid: int) -> bool:
+    try:
+        return probe.agent_active(pid)
+    except InspectorError:
+        return False
+
+
 def _validate_hwnd(hwnd: int | None, pid: int) -> None:
     if hwnd is None:
         return
@@ -272,13 +279,24 @@ class SessionRegistry:
                     "Target process identity changed", code="processReused"
                 )
             return client
-        except BaseException:
+        except BaseException as error:
             if client is not None:
                 client.close()
             elif pipe is not None:
                 pipe.close()
             if process is not None:
                 launcher.policy_failure(process, executable)
+            if (
+                isinstance(error, InspectorError)
+                and error.code == "timeout"
+                and pipe is None
+                and _agent_active(identity.pid)
+            ):
+                # The agent exits without a pipe when another session already holds its
+                # mutex, so a session that attached after our check looks like a timeout.
+                raise InspectorUnavailableError(
+                    "An inspector is already attached to this process", code="alreadyAttached"
+                ) from error
             raise
         finally:
             try:

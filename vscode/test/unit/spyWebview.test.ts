@@ -1,0 +1,72 @@
+import { readFileSync } from "node:fs";
+import { JSDOM, VirtualConsole } from "jsdom";
+import { expect, it } from "vitest";
+
+it("expands a WPF window and displays an attachment failure", () => {
+  const errors: Error[] = [];
+  const virtualConsole = new VirtualConsole();
+  virtualConsole.on("jsdomError", (error) => errors.push(error));
+  const dom = new JSDOM(readFileSync("media/spy/spy.html", "utf8").replace("{{viewClass}}", "spy-view"), { runScripts: "outside-only", virtualConsole });
+  const posts: unknown[] = [];
+  Object.assign(dom.window, { acquireVsCodeApi: () => ({ postMessage: (message: unknown) => posts.push(message) }), matchMedia: () => ({ matches: false, addEventListener() {} }), requestAnimationFrame: (fn: () => void) => fn() });
+  dom.window.eval(readFileSync("media/spy/spy.js", "utf8"));
+  const send = (data: unknown) => dom.window.dispatchEvent(new dom.window.MessageEvent("message", { data }));
+  const root = { nodeId: "window", source: "wpf", hasChildren: true, info: { controlType: "Window", name: "Fixture", processId: 42 } };
+  send({ type: "roots", nodes: [root] });
+  (dom.window.document.querySelector(".toggle") as HTMLButtonElement).click();
+  expect(posts).toContainEqual({ type: "expand", nodeId: "window" });
+  send({ type: "children", nodeId: "window", nodes: [], blocked: { code: "attachFailed", hint: "Inspector unavailable" } });
+  expect(dom.window.document.querySelector("#tree")?.textContent).toContain("Inspector unavailable");
+  const retry = [...dom.window.document.querySelectorAll("#tree button")].find((button) => button.textContent === "Retry");
+  (retry as HTMLButtonElement | undefined)?.click();
+  expect(posts).toContainEqual({ type: "treeAttach", nodeId: "window" });
+  expect(posts).toContainEqual({ type: "expandedPaths", paths: [[{ controlType: "Window", name: "Fixture", automationId: "", className: "", processId: 42 }]] });
+  expect(errors).toEqual([]);
+  dom.window.close();
+});
+
+it("renders returned visual children in the Spy tree", () => {
+  const errors: Error[] = [];
+  const virtualConsole = new VirtualConsole();
+  virtualConsole.on("jsdomError", (error) => errors.push(error));
+  const dom = new JSDOM(readFileSync("media/spy/spy.html", "utf8").replace("{{viewClass}}", "spy-view"), { runScripts: "outside-only", virtualConsole });
+  Object.assign(dom.window, { acquireVsCodeApi: () => ({ postMessage() {} }), matchMedia: () => ({ matches: false, addEventListener() {} }), requestAnimationFrame: (fn: () => void) => fn() });
+  dom.window.eval(readFileSync("media/spy/spy.js", "utf8"));
+  const send = (data: unknown) => dom.window.dispatchEvent(new dom.window.MessageEvent("message", { data }));
+  const info = { controlType: "Window", name: "Fixture", processId: 42 };
+  send({ type: "roots", nodes: [{ nodeId: "window", source: "wpf", hasChildren: true, info }] });
+  (dom.window.document.querySelector(".toggle") as HTMLButtonElement).click();
+  send({ type: "wpfDetails", nodeId: "window", missing: false });
+  send({ type: "children", nodeId: "window", nodes: [{ nodeId: "child", source: "wpf", hasChildren: true, info: { controlType: "Border", name: "Child" }, identity: { type: "System.Windows.Controls.Border" } }] });
+  expect(dom.window.document.querySelector('[data-node-id="child"]')?.textContent).toContain("Border");
+  expect(errors).toEqual([]);
+  dom.window.close();
+});
+
+it("rebuilds expanded branches and clears old selections when roots are replaced", () => {
+  const dom = new JSDOM(readFileSync("media/spy/spy.html", "utf8").replace("{{viewClass}}", "spy-view"), { runScripts: "outside-only" });
+  const posts: unknown[] = [];
+  Object.assign(dom.window, { acquireVsCodeApi: () => ({ postMessage: (message: unknown) => posts.push(message) }), matchMedia: () => ({ matches: false, addEventListener() {} }), requestAnimationFrame: (fn: () => void) => fn() });
+  dom.window.eval(readFileSync("media/spy/spy.js", "utf8"));
+  const send = (data: unknown) => dom.window.dispatchEvent(new dom.window.MessageEvent("message", { data }));
+  const info = { controlType: "Window", name: "App", processId: 42 };
+  const root = (nodeId: string) => ({ nodeId, source: "wpf", hasChildren: true, info });
+  const child = (nodeId: string) => ({ nodeId, source: "wpf", hasChildren: false, info: { controlType: "Button", name: "Save" } });
+  send({ type: "roots", nodes: [root("old")] });
+  (dom.window.document.querySelector(".toggle") as HTMLButtonElement).click();
+  send({ type: "children", nodeId: "old", nodes: [child("old-child")] });
+  expect(posts).toContainEqual(expect.objectContaining({ type: "expandedPaths" }));
+  send({ type: "selected", nodeId: "old-child", properties: { source: "wpf", info: child("old-child").info, properties: {} } });
+  send({ type: "objectPreview", nodeId: "old-child", reason: "Inspector session ended. Reconnecting" });
+  expect(dom.window.document.querySelector("#object-preview-status")?.textContent).toContain("Reconnecting");
+  send({ type: "roots", nodes: [root("new")] });
+  expect(dom.window.document.querySelector('[data-node-id="old-child"]')).toBeNull();
+  send({ type: "children", nodeId: "new", nodes: [child("new-child")], expanded: true });
+  send({ type: "selected", nodeId: "new-child", properties: { source: "wpf", info: child("new-child").info, properties: {} } });
+  send({ type: "selectionRestored", nodeId: "new-child" });
+  send({ type: "objectPreview", nodeId: "new-child", reason: "Capture unavailable. Retry." });
+  expect(dom.window.document.querySelector('[data-node-id="new-child"]')).not.toBeNull();
+  expect(dom.window.document.querySelector("#selection-name")?.textContent).toBe("Save");
+  expect(dom.window.document.querySelector("#object-preview-status")?.textContent).toContain("Retry");
+  dom.window.close();
+});

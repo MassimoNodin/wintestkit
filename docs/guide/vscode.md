@@ -7,7 +7,7 @@ and consent before attaching to applications other than the configured app under
 for installation, states and risks.
 
 The **WinTestKit** extension (`wintestkit.wintestkit`) adds editor actions, Test Explorer
-integration, an **Explorer** for the Page Tree and Flows, and a **Spy** below it. It needs the
+integration, an **Explorer** for the Page Tree and Flows, and a **Spy** in the bottom panel. It requires VS Code 1.106 or later, the
 [Python extension](https://marketplace.visualstudio.com/items?itemName=ms-python.python) and the
 `wintestkit` package in the selected interpreter. A guided setup in the sidebar walks you through
 choosing the interpreter, installing the package and creating a project (see [Guided setup](#guided-setup)).
@@ -195,14 +195,16 @@ adapt the example locators when testing a different application. If the VS Code 
 its expected content pane cannot be identified, the guide explains why instead of choosing
 another object.
 
-The **Spy** view, below Explorer, explores the live WPF tree for WPF windows and the UI
+The **Spy** view in the bottom panel, explores the live WPF tree for WPF windows and the UI
 Automation tree for other windows. WPF inspection requires an enabled inspector, a trusted
-workspace; the configured app under test attaches automatically, while other apps require consent once per process run. If the agent is blocked, Spy shows the error
+workspace; the configured app under test attaches automatically, while expanding another WPF app requests consent once per process run. Cancelling shows UI Automation children and an Attach action in the window properties. If the agent is blocked, Spy shows the error
 and its fix rather than silently falling back to UI Automation. See [Managed inspection](managed-inspection.md).
 
 - Expand windows and controls lazily. Selecting a control inspects it without highlighting.
-  For WPF, switch between the visual and logical trees; labels show the type and available
-  `x:Name` or AutomationId, with a source badge. Use **Load more** for paged children.
+  For WPF, Spy uses the visual tree; labels show the type and available
+  `x:Name` or AutomationId. Use **Load more** for paged children.
+  Native HWND content appears under its WPF host. UI Automation-only elements elsewhere
+  outside the WPF visual tree are omitted.
   Use the **Highlight** button in the top-right corner to draw its outline above every
   window. The pin button after **Collapse all** (off by default; setting
   `wintestkit.spy.bringWindowToFront`) also brings the control's window to the front, without
@@ -216,14 +218,13 @@ and its fix rather than silently falling back to UI Automation. See [Managed ins
   scope. It reads **Show Other Apps** by default, when the tree lists only the current
   application's windows. Click it to append other desktop windows after those; it then reads
   **Show Only Selected App**. The choice is remembered.
-- The details show the control's properties and supported patterns. The **suggested locator** is
+- Spy shows the selected object, its page definitions, suggested locator and preview. The separate **Properties** view in the right sidebar follows the selection and shows its properties and supported patterns. When it is hidden, use **Show properties** in Spy to reveal it. You can drag the view elsewhere; VS Code remembers its location. The **suggested locator** is
   made only when you press **Generate suggested locator**, because it searches the whole window
   for each candidate and can take 20 seconds or more in a large application. A spinner shows
   while it runs, during which Spy cannot do anything else. The result is marked unique, or not
   unique with the number of matches. WPF suggestions are checked for uniqueness and resolved
   back to the selected object. If it fails, the button changes to **Try again**.
-- For WPF, **Identity** shows the CLR class, `x:Name`, AutomationId, peer name and control type;
-  managed member groups are the main view, with UI Automation in a separate group.
+- **General** shows available identity, bounds and state. **WPF** shows the CLR type, `x:Name` and dependency properties; **.NET** shows managed members. **UI Automation** shows peer properties where a peer exists, and is the main data source for other applications.
   For UI Automation, **All properties** is one list, sorted alphabetically by name. A property that holds nested
   values, such as `RuntimeId`, `BoundingRectangle` or an element list like `ControllerFor`,
   shows an arrow and a count; click the arrow to open them in place. Nested rows are indented,
@@ -246,7 +247,7 @@ and its fix rather than silently falling back to UI Automation. See [Managed ins
   the selection is forgotten so the message is not repeated. Changing **Show Other Apps** is not
   a reload and clears the selection as before. The remembered selection is kept per workspace in
   VS Code's own storage, never in a project or its git repository.
-- The **Preview** section of the properties shows the selected object. By default it shows
+- The **Preview** section in Spy shows the selected object. By default it shows
   just the element; **In App context** switches to its whole window with the object outlined in red.
   Both fit the same fixed-size frame, however large or small the image, and the choice stays
   while you select other objects. It is a live capture taken when you select the object; the
@@ -415,3 +416,5 @@ skipped-pages section.
 Flows with scalar `str`, `int`, `float`, or `bool` parameters can be run from their CodeLens. WinTestKit
 prompts for required values, pre-fills defaults, validates input as a scalar, and skips the run if a
 prompt is cancelled. Flow source expressions are never evaluated as input.
+
+The WPF inspector session expires after five minutes without requests. Spy sends a keepalive while Spy or Properties is visible. If a session has expired, Spy attempts to reconnect and restore the selection and open visual-tree branches. Other applications require consent for each process run; attachment errors appear in the tree with a Retry action.

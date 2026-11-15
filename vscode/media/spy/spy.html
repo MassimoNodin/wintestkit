@@ -11,11 +11,10 @@
         <link rel="stylesheet" href="{{css}}" />
         <title>WinTestKit Spy</title>
     </head>
-    <body>
+    <body class="{{viewClass}}">
         <div id="tutorial-scrim" hidden></div>
         <aside id="extra-tutorial" aria-label="Optional Extra Feature Tutorial" aria-live="polite" hidden><div id="extra-tutorial-body"></div></aside>
         <header class="toolbar">
-            <label class="tree-mode-label">WPF tree <select id="tree-mode" aria-label="WPF tree mode"><option value="visual">Visual</option><option value="logical">Logical</option></select></label>
             <button id="pick">
                 <span class="codicon codicon-inspect" aria-hidden="true"></span
                 ><span id="pick-label">Pick element</span>
@@ -248,7 +247,8 @@
                         id="properties-pane"
                         aria-label="Object properties"
                     >
-                        <div class="pane-heading"><h2>Properties</h2></div>
+                        <div class="pane-heading"><h2>Preview</h2></div>
+                        <p id="properties-elsewhere" class="muted">Properties are shown in the right sidebar. <button id="show-properties" class="secondary">Show properties</button></p>
                         <div class="properties-scroll">
                             <section id="object-preview" class="property-group" hidden aria-label="Object preview">
                                 <div class="preview-heading">
@@ -266,12 +266,13 @@
                                 </div>
                                 <p id="object-preview-status" class="muted" role="status"></p>
                             </section>
+                            <p id="properties-view-status" class="muted" role="status" hidden></p>
                             <p id="properties-empty" class="muted">
                                 Select an object to inspect its properties.
                             </p>
                             <div id="property-groups" hidden>
                                 <section class="property-group">
-                                    <h3>Identity <span id="identity-source" class="source-badge"></span></h3>
+                                    <h3>General</h3><p id="wpf-details-note" hidden>WPF details not loaded <button id="wpf-details-attach" class="secondary">Attach</button></p><p id="wpf-blocked" hidden></p>
                                     <table>
                                         <tbody id="properties"></tbody>
                                     </table>
@@ -289,18 +290,18 @@
                                     </table>
                                 </section>
                                 <section id="uia-automation-group" class="property-group">
-                                    <h3>Automation</h3>
+                                    <h3>UI Automation</h3>
                                     <table>
                                         <tbody
                                             id="automation-properties"
                                         ></tbody>
                                     </table>
                                 </section>
-                                <details id="wpf-uia-group" class="property-group" hidden>
+                                <section id="wpf-section" class="property-group" hidden><h3>WPF</h3><table><tbody id="wpf-properties"></tbody></table><div id="wpf-managed-groups"></div></section><details id="wpf-uia-group" class="property-group" hidden>
                                     <summary>UI Automation</summary>
                                     <table><tbody id="wpf-uia-properties"></tbody></table>
                                 </details>
-                                <p id="wpf-uia-empty" class="muted" hidden>No UI Automation peer</p>
+
                                 <section
                                     id="pinned-group"
                                     class="property-group"
@@ -351,7 +352,7 @@
                                 </section></div>
                             </div>
                             <section id="managed-panel" class="property-group" hidden aria-label="Managed inspection">
-                                <h3>Managed inspection <span id="managed-state"></span></h3>
+                                <h3>.NET <span id="managed-state"></span></h3>
                                 <p id="managed-explanation" class="muted"></p>
                                 <div class="actions managed-actions"><button id="managed-attach">Attach</button><button id="managed-detach" class="secondary">Detach</button><button id="managed-refresh" class="secondary">Refresh metadata</button><button id="managed-install-copy" class="secondary" hidden>Copy install command</button></div>
                                 <label class="managed-search">Search loaded rows only <input id="managed-search" type="search" /></label>

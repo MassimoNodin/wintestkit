@@ -41,11 +41,9 @@ describe("managed Spy host", () => {
     const request = vi.fn(async (method: string) => method.endsWith("identify") ? identified : { ...session, process });
     const inspector = new ManagedInspector({ request } as unknown as JsonRpcClient, initialized(true));
     mock.trusted = true; mock.warning.mockReset();
-    expect(await inspector.canAutoAttachTree("window", process)).toBe(true);
     expect(await inspector.attachTree("window", process)).toBe(true);
     expect(mock.warning).not.toHaveBeenCalled();
     identified = { ...identified, process: { ...process, creationTimeUtc: "second" }, appUnderTest: false };
-    expect(await inspector.canAutoAttachTree("window", identified.process)).toBe(false);
   });
   it("opens the explanation and leaves attachment cancelled", async () => {
     const process = { pid: 87004, creationTimeUtc: "first" };
@@ -96,6 +94,32 @@ describe("managed Spy host", () => {
     await inspector.select("next"); expect(request).toHaveBeenCalledWith("inspect.managed.release", { sessionId: "s", objectIds: ["o"] });
     let finish!: (value: unknown) => void; request.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
     const pending = inspector.resolve("next"); await inspector.select("third"); finish(facts); expect(await pending).toBeUndefined();
+  });
+  it("reattaches a previously approved process after invalidation without another prompt", async () => {
+    const process = { pid: 88910, creationTimeUtc: "run" };
+    const request = vi.fn(async (method: string) => method.endsWith("identify") ? { ...facts, process } : { ...session, process });
+    const inspector = new ManagedInspector({ request } as unknown as JsonRpcClient, initialized(true));
+    mock.trusted = true; mock.warning.mockReset().mockResolvedValue("Attach");
+    expect(await inspector.attachTree("window", process)).toBe(true);
+    inspector.invalidate();
+    expect(await inspector.attachTree("window", process)).toBe(true);
+    expect(mock.warning).toHaveBeenCalledTimes(1);
+    expect(request.mock.calls.filter(([method]) => method.endsWith("attach"))).toHaveLength(2);
+  });
+  it("keeps only attached sessions alive and invalidates a stale session once", async () => {
+    const { request, inspector } = setup();
+    await inspector.keepalive();
+    expect(request).not.toHaveBeenCalled();
+    mock.trusted = true; mock.warning.mockResolvedValue("Attach");
+    await inspector.select("n"); await inspector.attach();
+    await inspector.keepalive();
+    expect(request).toHaveBeenLastCalledWith("inspect.managed.keepalive", { sessionId: "s" });
+    request.mockRejectedValueOnce({ data: { code: "sessionStale" } });
+    await inspector.keepalive();
+    expect(inspector.sessionInfo).toBeUndefined();
+    const count = request.mock.calls.length;
+    await inspector.keepalive();
+    expect(request).toHaveBeenCalledTimes(count);
   });
   it("rejects malformed managed messages", () => {
     expect(parseSpyRequest({ type: "managedAttach" })).toEqual({ type: "managedAttach" });

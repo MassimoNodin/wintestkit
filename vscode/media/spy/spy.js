@@ -1,6 +1,7 @@
 (() => {
   const vscode = acquireVsCodeApi();
   const element = (id) => document.getElementById(id);
+  const propertiesView = document.body.classList.contains("properties-view");
   const post = (type, values = {}) => {
     if (tutorialView && type !== "tour" && type !== "ready") return;
     vscode.postMessage({ type, ...values });
@@ -24,11 +25,11 @@
   const managedButton = (label, action) => { const button = managedNode("button", label); button.className = "secondary"; button.addEventListener("click", action); return button; };
   function renderManaged() {
     const data = managedSnapshot; if (!data) return;
-    element("managed-panel").hidden = !data.visible;
+    element("managed-panel").hidden = !data.visible || !selectedWpf;
     element("managed-state").textContent = data.state;
     element("managed-explanation").textContent = (managedMessages[data.state] || "") + (data.state === "not installed" ? " " + data.install : "");
     element("managed-install-copy").hidden = data.state !== "not installed";
-    const root = element("managed-groups"); root.replaceChildren();
+    const root = element("managed-groups"), wpfRoot = element("wpf-managed-groups"); root.replaceChildren(); wpfRoot.replaceChildren();
     if (!data.object) return;
     const query = element("managed-search").value.toLowerCase();
     const groups = [["Managed type", ["typeMetadata"]], ["CLR properties", ["clrProperty"]], ["CLR fields", ["clrField"]], ["Dependency/attached properties", ["dependencyProperty", "attachedProperty"]], ["Bindings", []]];
@@ -65,7 +66,7 @@
       if (title === "Bindings") for (const binding of data.bindings || []) group.append(managedNode("div", `${binding.memberKey}: ${binding.kind}; ${binding.status}; ${binding.path || ""}`));
       else data.rows.filter((row) => categories.includes(row.member.category)).forEach((row) => renderRow(row, group));
       if (data.page && !data.page.complete) { group.append(managedNode("p", "Partial list")); if (data.page.nextToken) group.append(managedButton("Load more", () => post("managedLoadMore", { group: title }))); }
-      root.append(group);
+      (title === "Dependency/attached properties" ? wpfRoot : root).append(group);
     }
   }
   element("managed-attach").addEventListener("click", () => post("managedAttach"));
@@ -1046,6 +1047,13 @@
     }
     element("pinned-group").hidden = shownProperties.length === 0;
   };
+  const renderWpfDetails = (nodeId) => {
+    const entry = nodes.get(nodeId);
+    element("wpf-details-note").hidden = !entry?.wpfMissing;
+    element("wpf-blocked").hidden = !entry?.wpfBlocked;
+    element("wpf-blocked").textContent = entry?.wpfBlocked ? `${entry.wpfBlocked.code}: ${entry.wpfBlocked.hint} Run wtk doctor --agent.` : "";
+  };
+  element("wpf-details-attach").addEventListener("click", () => { if (selected) post("treeAttach", { nodeId: selected }); });
   const showProperties = (properties) => {
     currentProperties = properties;
     renderPinned();
@@ -1074,6 +1082,7 @@
         automationId: info.automationId || "",
         name: info.name || "",
         className: info.className || "",
+        ...(entry.root && Number.isSafeInteger(info.processId) ? { processId: info.processId } : {}),
         ...(entry.root || typeof entry.index !== "number" ? {} : { index: entry.index }),
       });
       id = entry.parentId;
@@ -1103,10 +1112,16 @@
     renderStatus();
     post("select", { nodeId, path: selectionPathFor(nodeId) });
   };
+  const rememberExpanded = () => {
+    const paths = [...nodes.values()].filter((entry) => entry.open).slice(0, 200)
+      .map((entry) => selectionPathFor(entry.node.nodeId)).filter(Boolean);
+    post("expandedPaths", { paths });
+  };
   const expand = (nodeId, open = true) => {
     const entry = nodes.get(nodeId);
     if (!entry || !entry.node.hasChildren) return;
     entry.open = open;
+    rememberExpanded();
     if (open && !entry.loaded && !entry.loading) {
       entry.loading = true;
       entry.row.setAttribute("aria-busy", "true");
@@ -1141,7 +1156,7 @@
         (selectedApp && appState.appName) ||
         node.info.automationId ||
         node.info.controlType;
-      row.setAttribute("aria-label", name + ", " + node.info.controlType + (node.source ? ", " + node.source.toUpperCase() : ""));
+      row.setAttribute("aria-label", name + ", " + node.info.controlType);
       row.setAttribute("aria-posinset", String(index + 1));
       row.setAttribute("aria-setsize", String(offset + values.length));
       row.setAttribute("aria-selected", String(node.nodeId === selected));
@@ -1196,13 +1211,7 @@
       metadata.className = "metadata";
       metadata.textContent = node.info.controlType;
       row.append(toggle, label, metadata);
-      if (node.source) {
-        const badge = document.createElement("span");
-        badge.className = "source-badge";
-        badge.textContent = node.source.toUpperCase();
-        badge.setAttribute("aria-hidden", "true");
-        row.append(badge);
-      }
+
       const children = document.createElement("ul");
       children.setAttribute("role", "group");
       children.hidden = true;
@@ -1318,7 +1327,6 @@
     post(picking ? "stopPick" : "pick"),
   );
   element("refresh").addEventListener("click", () => post("refresh"));
-  element("tree-mode").addEventListener("change", () => post("treeMode", { tree: element("tree-mode").value }));
   element("search").addEventListener("input", filter);
   element("clear-filter").addEventListener("click", () => {
     element("search").value = "";
@@ -1458,8 +1466,11 @@
       );
     }
   });
+  element("show-properties").addEventListener("click", () => post("showProperties"));
   window.addEventListener("message", (event) => {
     const message = event.data;
+    if (message.type === "propertiesVisibility") { element("properties-elsewhere").hidden = message.visible; return; }
+    if (message.type === "selectionPending") { element("properties-view-status").textContent = "Loading properties?"; element("properties-view-status").hidden = false; clearProperties(); focusSelected(message.nodeId); hasDetails = false; selecting = true; renderStatus(); return; }
     if (message.type === "progress") {
       if (!message.done && message.completed === 0 && message.target === "tree")
         element("enumeration-status").hidden = true;
@@ -1486,7 +1497,6 @@
       selectionIcon(selected);
     } else if (message.type === "state") {
       appState = message;
-      if (message.tree) element("tree-mode").value = message.tree;
       if (Array.isArray(message.shownProperties)) {
         const names = message.shownProperties.filter((name) => typeof name === "string" && PINNABLE.test(name));
         if (JSON.stringify(names) !== JSON.stringify(shownProperties)) {
@@ -1511,6 +1521,7 @@
       );
       renderStatus();
     } else if (message.type === "roots") {
+      element("properties-view-status").hidden = true;
       element("object-preview").hidden = true;
       clearProperties();
       hint("");
@@ -1543,42 +1554,38 @@
       locatorState("idle");
       highlightable = true;
       renderHighlight();
-    } else if (message.type === "treeModeChanged") {
-      const capture = (entry) => [...entry.children.children].map((item) => nodes.get(item.firstElementChild?.dataset.nodeId)).filter((child) => child?.open).map((child) => ({ key: JSON.stringify(child.node.identity || child.node.info), children: capture(child) }));
-      for (const entry of [...nodes.values()].filter((item) => item.root && item.node.source === "wpf" && item.open)) {
-        entry.restore = capture(entry);
-        entry.loaded = false;
-        entry.loading = false;
-        expand(entry.node.nodeId);
-      }
+    } else if (message.type === "wpfDetails") {
+      const entry = nodes.get(message.nodeId);
+      if (entry) { entry.wpfMissing = message.missing; entry.wpfBlocked = message.blocked; }
+      if (selected === message.nodeId) renderWpfDetails(message.nodeId);
     } else if (message.type === "children") {
       const entry = nodes.get(message.nodeId);
       if (entry) {
         renderNodes(entry.children, message.nodes, message.append);
         const previousMessage = entry.children.querySelector(":scope > .tree-message");
         previousMessage?.remove();
-        if (message.nextPageToken || message.attachRequired || message.blocked) {
+        if (message.nextPageToken) {
+          const item = document.createElement("li"); item.className = "tree-message"; item.setAttribute("role", "none");
+          const button = document.createElement("button"); button.textContent = "Load more";
+          button.addEventListener("click", () => { button.disabled = true; post("treeMore", { nodeId: message.nodeId, pageToken: message.nextPageToken }); });
+          item.append(button); entry.children.append(item);
+        }
+        if (message.blocked) {
+          entry.wpfBlocked = message.blocked;
           const item = document.createElement("li");
           item.className = "tree-message";
           item.setAttribute("role", "none");
-          if (message.attachRequired || message.blocked) {
-            const description = document.createElement("span");
-            description.textContent = message.attachRequired ? "Attach the WPF inspector to see this window's WPF tree" : `${message.blocked.code}: ${message.blocked.hint} Run wtk doctor --agent.`;
-            item.append(description);
-          }
-          if (message.nextPageToken || message.attachRequired) {
-            const button = document.createElement("button");
-            button.textContent = message.attachRequired ? "Attach" : "Load more";
-            button.addEventListener("click", () => { button.disabled = true; post(message.attachRequired ? "treeAttach" : "treeMore", message.attachRequired ? { nodeId: message.nodeId } : { nodeId: message.nodeId, pageToken: message.nextPageToken }); });
-            item.append(button);
-          }
-          entry.children.append(item);
+          item.textContent = `${message.blocked.code}: ${message.blocked.hint} `;
+          const retry = document.createElement("button"); retry.textContent = "Retry";
+          retry.addEventListener("click", () => post("treeAttach", { nodeId: message.nodeId }));
+          item.append(retry); entry.children.append(item);
+          if (selected === message.nodeId) renderWpfDetails(message.nodeId);
         }
-        entry.loaded = true;
+        entry.loaded = !message.blocked;
         entry.loading = false;
-        if (message.expanded) entry.open = true;
+        if (message.expanded) { entry.open = true; if (message.nodes.length || message.nextPageToken) { entry.node.hasChildren = true; entry.toggle.disabled = false; entry.row.setAttribute("aria-expanded", "true"); } }
         entry.row.removeAttribute("aria-busy");
-        if (!message.append && !message.nodes.length && !message.nextPageToken && !message.attachRequired && !message.blocked) {
+        if (!message.append && !message.nodes.length && !message.nextPageToken && !message.blocked) {
           entry.node.hasChildren = false;
           entry.open = false;
           entry.toggle.disabled = true;
@@ -1623,15 +1630,19 @@
       if (message.nodeId !== selected) return;
       fullPropertiesLoaded = true;
       fullPropertiesLoading = false;
-      showProperties(message.properties);
+      showProperties(message.properties.source === "wpf" && message.properties.uia ? message.properties.uia : message.properties);
+      if (message.properties.source === "wpf" && message.properties.uiaMapped) table("wpf-uia-properties", { "Control type": message.properties.info.controlType, "Class name": message.properties.uia?.properties?.ClassName, Patterns: message.properties.info.patterns?.join(", ") || "None", ...message.properties.uia?.properties });
       const info = message.properties.info;
       table("automation-properties", {
+        "Control type": info.controlType,
+        "Class name": info.className,
         Framework: info.frameworkId,
         "Process ID": info.processId,
         Patterns: info.patterns?.join(", ") || "None",
       });
       renderStatus();
     } else if (message.type === "selected") {
+      element("properties-view-status").hidden = true;
       // The tutorial has no live app to capture; otherwise the host sends the preview next.
       if (tutorialView) element("object-preview").hidden = true;
       else loadingPreview();
@@ -1652,13 +1663,16 @@
       if (isWpf) groups.insertBefore(managed, element("wpf-uia-group"));
       else groups.parentElement.insertBefore(managed, groups.nextSibling);
       renderManaged();
-      element("identity-source").textContent = isWpf ? "WPF" : "UIA";
-      for (const id of ["uia-state-group", "uia-geometry-group", "uia-automation-group", "pinned-group"]) element(id).hidden = isWpf;
-      element("uia-all-group").hidden = isWpf;
+      renderWpfDetails(message.nodeId);
+      element("wpf-section").hidden = !isWpf;
+      table("wpf-properties", isWpf ? { ClrFullClassName: message.properties.properties.ClrFullClassName, "x:Name": message.properties.properties["x:Name"] } : {});
+      for (const id of ["uia-state-group", "uia-geometry-group"]) element(id).hidden = true;
+      element("uia-automation-group").hidden = isWpf;
+      element("pinned-group").hidden = isWpf;
+      element("uia-all-group").hidden = isWpf && !message.properties.uiaMapped;
       element("wpf-uia-group").hidden = !isWpf || !message.properties.uiaMapped;
       element("wpf-uia-group").open = false;
-      element("wpf-uia-empty").hidden = !isWpf || !!message.properties.uiaMapped;
-      table("wpf-uia-properties", message.properties.uiaMapped ? message.properties.uia?.properties || {} : {});
+      table("wpf-uia-properties", message.properties.uiaMapped ? { "Control type": info.controlType, "Class name": message.properties.uia?.properties?.ClassName, Patterns: info.patterns?.join(", ") || "Not loaded", ...message.properties.uia?.properties } : {});
       element("selection-name").textContent =
         info.name || info.automationId || info.controlType;
       element("selection-type").textContent = [
@@ -1670,29 +1684,10 @@
       setIcon(element("selection-icon"), info.controlType);
       selectionIcon(message.nodeId);
       highlightable = !!info.rect;
-      table("properties", isWpf ? {
-        "CLR full class name": message.properties.properties.ClrFullClassName,
-        "x:Name": message.properties.properties["x:Name"],
-        "Automation ID": message.properties.properties.AutomationId,
-        "Peer Name": message.properties.properties.Name,
-        "Control type": message.properties.properties.ControlType,
-      } : {
-        Name: info.name,
-        "Control type": info.controlType,
-        "Automation ID": info.automationId,
-        Class: info.className,
-      });
-      if (isWpf) for (const row of element("properties").rows) {
-        const value = row.cells[1].textContent;
-        if (value && value !== "—") {
-          const button = document.createElement("button");
-          button.className = "secondary";
-          button.textContent = "Copy";
-          button.setAttribute("aria-label", "Copy " + row.cells[0].textContent);
-          button.addEventListener("click", () => post("copy", { text: value }));
-          row.cells[1].append(" ", button);
-        }
-      }
+      table("properties", { Name: isWpf ? (message.properties.properties["x:Name"] || info.name) : info.name,
+        Type: isWpf ? (message.properties.properties.ClrFullClassName || "").split(".").pop().split("+").pop() : info.controlType,
+        "Automation ID": info.automationId, Left: info.rect?.left, Top: info.rect?.top, Width: info.rect?.width, Height: info.rect?.height,
+        Enabled: info.isEnabled, Visible: isWpf ? message.properties.properties.Visible : (info.isOffscreen === undefined ? undefined : !info.isOffscreen) });
       table("state-properties", {
         Enabled: info.isEnabled,
         Offscreen: info.isOffscreen,
@@ -1704,13 +1699,15 @@
         Height: info.rect?.height,
       });
       table("automation-properties", {
+        "Control type": info.controlType,
+        "Class name": info.className,
         Framework: info.frameworkId,
         "Process ID": info.processId,
         Patterns: info.patterns
           ? info.patterns.join(", ") || "None"
           : "Not loaded",
       });
-      showProperties(message.properties);
+      showProperties(isWpf && message.properties.uia ? message.properties.uia : message.properties);
       if (isWpf) element("pinned-group").hidden = true;
       // A locator the user already asked for keeps its spinner while the details arrive.
       if (message.suggestion || !locatorBusy) renderSuggestion(message.suggestion);
@@ -1745,6 +1742,7 @@
       nodes.get(message.node.nodeId)?.label.focus();
       nodes.get(message.node.nodeId)?.row.scrollIntoView({ block: "nearest" });
     } else if (message.type === "error") {
+      if (propertiesView) { element("properties-view-status").textContent = message.message; element("properties-view-status").hidden = false; }
       if (failureTarget === "details") detailsError = message.message;
       else treeError = message.message;
       failureTarget = undefined;
@@ -1753,5 +1751,5 @@
     }
   });
   renderStatus();
-  post("ready", { showOtherApps });
+  post(propertiesView ? "propertiesReady" : "ready", { showOtherApps });
 })();

@@ -53,6 +53,7 @@ _PARAMS: dict[str, tuple[set[str], set[str]]] = {
     "inspect.managed.attach": ({"process"}, set()),
     "inspect.managed.status": ({"process"}, set()),
     "inspect.managed.detach": ({"sessionId"}, set()),
+    "inspect.managed.keepalive": ({"sessionId"}, set()),
     "inspect.managed.resolve": ({"sessionId", "nodeId"}, set()),
     "inspect.managed.roots": ({"sessionId"}, {"pageSize", "pageToken"}),
     "inspect.managed.children": (
@@ -556,8 +557,17 @@ class Server:
                 self._managed_objects.get(node.ref.session_id, {}).pop(node.ref.object_id, None)
             node.release()
 
-    def _wpf_properties(self, node: Any, params: dict[str, Any]) -> dict[str, Any]:
+    def _wpf_properties(
+        self, node: Any, params: dict[str, Any], peer: UIAElement | None = None
+    ) -> dict[str, Any]:
+        """Describe a WPF object; ``peer`` is its known UIA element, if any.
+
+        Window roots pass the UIA element they were listed from, because a
+        window's WPF peer can report a runtime ID that differs from the HWND
+        provider's ID that UIA clients see.
+        """
         from wintestkit.engine.properties import SUPPORTED
+        from wintestkit.errors import NoUiaPeerError
         from wintestkit.inspector.paths import PathSegment
         from wintestkit.uia.constants import PROPERTY_IDS
         from wintestkit.uia.element import ElementInfo, inspection_property
@@ -614,7 +624,7 @@ class Server:
             "inspection": inspection,
             "ancestors": [],
             "source": "wpf",
-            "uiaMapped": bool(state.uia_runtime_id),
+            "uiaMapped": False,
         }
         if params.get("includeAncestors", False):
             with self._node_lock:
@@ -637,8 +647,13 @@ class Server:
                     ancestors.append(description)
                     parent_id = self._wpf_parents.get(parent_id)
                 result["ancestors"] = list(reversed(ancestors))
-        if state.uia_runtime_id:
-            peer = node.as_uia()
+        if peer is None and state.uia_runtime_id:
+            try:
+                peer = node.as_uia()
+            except NoUiaPeerError:
+                log.debug("WPF object has no reachable UIA peer", exc_info=True)
+        if peer is not None:
+            result["uiaMapped"] = True
             try:
                 password = (
                     bool(peer.get_property("IsPassword")) or node.ref.type.name == "PasswordBox"
@@ -689,6 +704,81 @@ class Server:
                 item["source"] = "wpf"
                 self._wpf_windows.add(node_id)
 
+    @staticmethod
+    def _is_hwnd_host(ref: Any) -> bool:
+        return "System.Windows.Interop.HwndHost" in (ref.type.full_name, *ref.type.base_types)
+
+    def _hosted_children(self, node: Any) -> list[Any]:
+        from wintestkit.uia.constants import TreeScope
+
+        try:
+            return list(node.as_uia().find_all(TreeScope.Children, cached=True))
+        except Exception:
+            log.debug("Unable to map hosted HWND children", exc_info=True)
+            return []
+
+    def _hosted_nodes(
+        self, children: list[Any], parent_id: str, offset: int
+    ) -> list[dict[str, Any]]:
+        nodes = self._register_nodes(children, parent_id=parent_id, start_index=offset)
+        with self._node_lock:
+            for item in nodes:
+                self._wpf_parents[item["nodeId"]] = parent_id
+                self._wpf_descriptions[item["nodeId"]] = item
+        return nodes
+
+    def _registered_hosted_hit(self, element: Any, process_id: int) -> _SpyTarget | None:
+        """Match a UIA hit to a known host, preserving the tree's sibling-based IDs."""
+        from wintestkit.backends.element import WpfElement
+        from wintestkit.uia.constants import TreeScope
+
+        with self._node_lock:
+            registered = [
+                (node, self._wpf_descriptions.get(node_id))
+                for node_id, node in self.nodes.items()
+                if node_id in self._wpf_parents and not isinstance(node, WpfElement)
+            ]
+            hosts = [
+                (node_id, node)
+                for node_id, node in self.nodes.items()
+                if isinstance(node, WpfElement)
+                and node.process_id == process_id
+                and self._is_hwnd_host(node.ref)
+            ]
+        for node, description in registered:
+            try:
+                if description is not None and node.same_as(element):
+                    return _SpyTarget(element, description)
+            except Exception:
+                log.debug("Unable to compare registered hosted HWND", exc_info=True)
+        for host_id, host in hosts:
+            try:
+                peer = host.as_uia()
+                current = element
+                chain: list[Any] = []
+                for _ in range(100):
+                    if current is None or current.same_as(peer):
+                        break
+                    chain.append(current)
+                    current = current.parent()
+                if current is None or not current.same_as(peer) or not chain:
+                    continue
+                parent = peer
+                for part in reversed(chain):
+                    siblings = parent.find_all(TreeScope.Children, cached=True)
+                    index = next(
+                        i
+                        for i, sibling in enumerate(siblings)
+                        if sibling is not None and sibling.same_as(part)
+                    )
+                    description = self._hosted_nodes([part], host_id, index)[0]
+                    host_id = description["nodeId"]
+                    parent = part
+                return _SpyTarget(element, description)
+            except Exception:
+                log.debug("Unable to match registered hosted HWND", exc_info=True)
+        return None
+
     def _spy_resolve(self, element: Any, x: int, y: int, pick: bool, tree: str) -> _SpyTarget:
         from wintestkit import runtime
         from wintestkit.backends.element import WpfElement
@@ -701,10 +791,16 @@ class Server:
 
         fallback = _SpyTarget(element)
         try:
+            process_id = getattr(element, "process_id", None)
+            if process_id is not None:
+                hosted_hit = self._registered_hosted_hit(element, process_id)
+                if hosted_hit is not None:
+                    return hosted_hit
             hwnd = int(win32.WindowFromPoint(win32.POINT(x, y)) or 0)
             if not hwnd:
                 return fallback
-            window = uia_element.from_handle(win32.root_window(hwnd))
+            root_hwnd = win32.root_window(hwnd)
+            window = uia_element.from_handle(root_hwnd)
             if not self._wpf_enabled(window):
                 return fallback
             assert self.cfg is not None
@@ -726,7 +822,7 @@ class Server:
                     return fallback
                 deadline = time.monotonic() + self.cfg.inspector.request_timeout
                 hit = client.hit_test(
-                    hwnd,
+                    root_hwnd,
                     x,
                     y,
                     include_path=pick,
@@ -774,9 +870,12 @@ class Server:
                     description = {
                         "nodeId": node_id,
                         "info": info.to_dict(),
-                        "hasChildren": entry.has_visual_children
-                        if tree == "visual"
-                        else entry.has_logical_children,
+                        "hasChildren": (
+                            entry.has_visual_children
+                            if tree == "visual"
+                            else entry.has_logical_children
+                        )
+                        or (self._is_hwnd_host(ref) and bool(self._hosted_children(target))),
                         "source": "wpf",
                         "identity": identity_data,
                     }
@@ -795,6 +894,54 @@ class Server:
                             self._wpf_windows.discard(evicted)
                             self._release_tree_node(old)
                     parent_id = node_id
+                if self._is_hwnd_host(hit.handle):
+                    # Only accept UIA hits below this host's peer, never its siblings.
+                    try:
+                        peer = target.as_uia()
+                        current = element
+                        chain: list[Any] = []
+                        for _ in range(100):
+                            if current is None or current.same_as(peer):
+                                break
+                            chain.append(current)
+                            current = current.parent()
+                        if current is not None and current.same_as(peer) and chain:
+                            if pick:
+                                # The visual root is represented in Spy by the UIA window row.
+                                # Link its first visual child to that row for reveal.
+                                if len(entries) > 1:
+                                    root_description = self._register(window)
+                                    root_description["source"] = "wpf"
+                                    self._wpf_windows.add(root_description["nodeId"])
+                                    first = entries[1].object_ref
+                                    first_id = "wpf:" + json.dumps(
+                                        [first.session_id, first.object_id, first.generation],
+                                        separators=(",", ":"),
+                                    )
+                                    with self._node_lock:
+                                        self._wpf_descriptions[root_description["nodeId"]] = (
+                                            root_description
+                                        )
+                                        self._wpf_parents[first_id] = root_description["nodeId"]
+                                host_id = description["nodeId"]
+                                from wintestkit.uia.constants import TreeScope
+
+                                uia_parent = peer
+                                for part in reversed(chain):
+                                    siblings = uia_parent.find_all(TreeScope.Children, cached=True)
+                                    index = next(
+                                        i
+                                        for i, sibling in enumerate(siblings)
+                                        if sibling is not None and sibling.same_as(part)
+                                    )
+                                    description = self._hosted_nodes([part], host_id, index)[0]
+                                    host_id = description["nodeId"]
+                                    uia_parent = part
+                            else:
+                                description = self._register(element, locate=False)
+                            return _SpyTarget(element, description)
+                    except Exception:
+                        log.debug("Unable to resolve hosted HWND hit", exc_info=True)
                 # Fetch geometry here so failures still fall back for this event.
                 _ = target.rect
                 return _SpyTarget(target, description)
@@ -858,6 +1005,22 @@ class Server:
                         "hasChildren": True,
                         "source": "wpf",
                     }
+            host = isinstance(node, WpfElement) and self._is_hwnd_host(ref)
+            if host and page_token is not None and page_token.startswith("uia:"):
+                from wintestkit.errors import InspectorError
+
+                token = page_token[4:]
+                if not token.isascii() or not token.isdecimal():
+                    raise InspectorError("invalid page token", code="invalidPageToken")
+                offset = int(token)
+                hosted = self._hosted_children(node)
+                if offset >= len(hosted):
+                    raise InspectorError("invalid page token", code="invalidPageToken")
+                end = offset + page_size
+                result = {"nodes": self._hosted_nodes(hosted[offset:end], parent_id, offset)}
+                if end < len(hosted):
+                    result["nextPageToken"] = f"uia:{end}"
+                return result
             page = client.children(
                 ref.object_id,
                 ref.generation,
@@ -905,9 +1068,12 @@ class Server:
                 description = {
                     "nodeId": node_id,
                     "info": info.to_dict(),
-                    "hasChildren": child.has_visual_children
-                    if tree == "visual"
-                    else child.has_logical_children,
+                    "hasChildren": (
+                        child.has_visual_children
+                        if tree == "visual"
+                        else child.has_logical_children
+                    )
+                    or (self._is_hwnd_host(child_ref) and bool(self._hosted_children(element))),
                     "source": "wpf",
                     "identity": identity_data,
                 }
@@ -918,6 +1084,12 @@ class Server:
             result: dict[str, Any] = {"nodes": output}
             if page.next_token is not None:
                 result["nextPageToken"] = page.next_token
+            elif host:
+                hosted = self._hosted_children(node)
+                remaining = max(0, page_size - len(output))
+                output.extend(self._hosted_nodes(hosted[:remaining], parent_id, 0))
+                if remaining < len(hosted):
+                    result["nextPageToken"] = f"uia:{remaining}"
             return result
 
     def _remember_managed(self, session_id: str, value: Any) -> None:
@@ -1030,7 +1202,11 @@ class Server:
             session_id = params["sessionId"]
             client = self._managed_client(session_id)
             deadline = time.monotonic() + self.cfg.inspector.request_timeout
-            if method == "inspect.managed.resolve":
+            if method == "inspect.managed.keepalive":
+                # An empty release touches no application objects or property getters.
+                client.release([], deadline=deadline)
+                result = {"alive": True}
+            elif method == "inspect.managed.resolve":
                 from wintestkit.backends.element import WpfElement
 
                 with self._node_lock:
@@ -1522,6 +1698,37 @@ class Server:
 
         with self._node_lock:
             selected = self.nodes.get(params["nodeId"])
+        if (
+            method == "inspect.properties"
+            and selected is not None
+            and params["nodeId"] in self._wpf_windows
+        ):
+            # Roots retain their UIA identity for window enumeration and locators.  Once
+            # attached, resolve that identity to the Window object for its properties.
+            from wintestkit import runtime
+            from wintestkit.errors import InspectorError
+            from wintestkit.inspector.probe import current_identity
+
+            assert self.cfg is not None
+            try:
+                with runtime.config_scope(self.cfg):
+                    client = runtime.inspector_sessions().get(current_identity(selected.process_id))
+                    if client is not None:
+                        rid, hwnd = runtime.managed_element_identity(cast("UIAElement", selected))
+                        mapping = client.resolve(
+                            rid,
+                            hwnd,
+                            deadline=time.monotonic() + self.cfg.inspector.request_timeout,
+                        )
+                        if mapping.status == "exact" and mapping.object_ref is not None:
+                            ref = mapping.object_ref
+                            return self._wpf_properties(
+                                WpfElement(client, ref, selected.process_id),
+                                params,
+                                cast("UIAElement", selected).as_live(),
+                            )
+            except InspectorError:
+                log.debug("WPF window properties unavailable; using UIA", exc_info=True)
         if isinstance(selected, WpfElement) and method in (
             "inspect.highlight",
             "inspect.preview",
@@ -1616,11 +1823,13 @@ class Server:
             if token is not None and offset >= len(children):
                 raise InspectorError("invalid page token", code="invalidPageToken")
             end = offset + params.get("pageSize", 200)
-            page_result: dict[str, Any] = {
-                "nodes": self._register_nodes(
+            if params["nodeId"] in self._wpf_parents:
+                page_nodes = self._hosted_nodes(children[offset:end], params["nodeId"], offset)
+            else:
+                page_nodes = self._register_nodes(
                     children[offset:end], parent_id=params["nodeId"], start_index=offset
                 )
-            }
+            page_result: dict[str, Any] = {"nodes": page_nodes}
             if end < len(children):
                 page_result["nextPageToken"] = str(end)
             return page_result
@@ -1684,7 +1893,17 @@ class Server:
                     properties[alias] = properties[property_name]
             ancestors: list[dict[str, Any]] = []
             parent = node.parent() if params.get("includeAncestors", False) else None
+            hosted_parent = self._wpf_parents.get(params["nodeId"]) if parent is not None else None
             seen = {params["nodeId"]}
+            while hosted_parent and len(ancestors) < 100:
+                registered = self._wpf_descriptions.get(hosted_parent)
+                if registered is None or hosted_parent in seen:
+                    break
+                seen.add(hosted_parent)
+                ancestors.append(registered)
+                hosted_parent = self._wpf_parents.get(hosted_parent)
+            if ancestors:
+                parent = None
             while parent is not None and len(ancestors) < 100:
                 registered = self._register(parent)
                 if registered["nodeId"] in seen:

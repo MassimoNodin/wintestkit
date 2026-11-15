@@ -13,6 +13,7 @@ export interface PathSegment {
   className: string;
   /** Position among the siblings when it was selected; absent for root windows. */
   index?: number;
+  processId?: number;
 }
 
 export const MAX_PATH_DEPTH = 64;
@@ -38,6 +39,10 @@ export function parseSelectionPath(value: unknown): PathSegment[] | undefined {
     if (raw.index !== undefined) {
       if (!Number.isInteger(raw.index) || (raw.index as number) < 0 || (raw.index as number) > 1_000_000) return;
       segment.index = raw.index as number;
+    }
+    if (raw.processId !== undefined) {
+      if (!Number.isSafeInteger(raw.processId) || (raw.processId as number) < 0) return;
+      segment.processId = raw.processId as number;
     }
     path.push(segment);
   }

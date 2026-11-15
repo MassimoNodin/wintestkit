@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 import { describe, expect, it, vi } from "vitest";
 
-const script = readFileSync("media/spy/spy.js", "utf8");
+const script = readFileSync("media/spy/spy.js", "utf8").replaceAll("\r\n", "\n");
 
 describe("Spy tutorial webview", () => {
   it("spotlights the selected green-tick row only during the definitions step", () => {
@@ -63,7 +63,7 @@ describe("Spy tutorial webview", () => {
       window: { addEventListener: (_type: string, handler: typeof receive) => { receive = handler; } },
     };
     const start = script.indexOf('  window.addEventListener("message",');
-    const stop = script.lastIndexOf('  renderStatus();\n  post("ready"');
+    const stop = script.lastIndexOf('  renderStatus();\n  post(propertiesView');
     expect(start).toBeGreaterThan(0);
     expect(stop).toBeGreaterThan(start);
     runInNewContext(script.slice(start, stop), context);

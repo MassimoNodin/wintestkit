@@ -760,6 +760,10 @@ Verification: 2,817 unit/contract tests passed (141 skipped); the live query gat
 locator suite passed twice (115 each), and the expanded two-window managed locator case passed
 twice. Ruff, Pyright and skill synchronization passed.
 
+### Spy unified tree (2026-11-14)
+
+Spy uses one tree: WPF visual objects under WPF windows and UI Automation objects elsewhere, with no source badges or tree selector. The app under test attaches automatically; other WPF processes ask for consent on expansion. Cancellation shows UI Automation children and an Attach action in window properties; blocked agents show their error and fix. Properties are grouped as General, WPF, .NET and UI Automation where applicable in a separate secondary-sidebar view; Spy retains the preview and offers Show properties when that view is hidden. Picker, highlight, verified locators, previews and application filters remain available. Hosted native HWND content beneath WPF visuals still needs a combined traversal and duplicate-suppression design before the every-element requirement is met.
+
 ## 7. Test strategy
 
 - **Parity suite**: run the same locator, wait, action and typed-control tests under
@@ -797,6 +801,10 @@ twice. Ruff, Pyright and skill synchronization passed.
 - §10: managed constraints are no longer only post-filters; the candidate cap applies to the
   UIA backend only.
 - §11 Spy: WPF tree and picker become primary for WPF windows.
+
+Round 3: hosted HWND UI Automation children appear under their WPF host and picker paths cross
+that boundary. Visible popup HWNDs are enumerated as separate roots. The general window UIA
+tree is not merged into the WPF tree. Live fixture verification remains opt-in.
 
 ## 10. What stays as is
 

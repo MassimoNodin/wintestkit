@@ -891,6 +891,8 @@ export interface ProtocolContracts {
   InspectManagedDetachResult?: InspectManagedDetachResult;
   InspectManagedIdentifyParams?: InspectManagedIdentifyParams;
   InspectManagedIdentifyResult?: InspectManagedIdentifyResult;
+  InspectManagedKeepaliveParams?: InspectManagedKeepaliveParams;
+  InspectManagedKeepaliveResult?: InspectManagedKeepaliveResult;
   InspectManagedMembersParams?: InspectManagedMembersParams;
   InspectManagedMembersResult?: InspectManagedMembersResult;
   InspectManagedReadParams?: InspectManagedReadParams;
@@ -2318,6 +2320,20 @@ export interface InspectManagedIdentifyResult {
   architecture: "x86" | "x64" | "arm64" | "unknown";
   wpfLoaded: boolean;
   appUnderTest: boolean;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "InspectManagedKeepaliveParams".
+ */
+export interface InspectManagedKeepaliveParams {
+  sessionId: string;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "InspectManagedKeepaliveResult".
+ */
+export interface InspectManagedKeepaliveResult {
+  alive: true;
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema

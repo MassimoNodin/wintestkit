@@ -56,7 +56,7 @@ export class ManagedInspector {
   private handles = new Set<string>();
   private releasing: Promise<void> = Promise.resolve();
   get sessionInfo(): InspectManagedAttachResult | undefined { return this.session; }
-  constructor(private readonly client: JsonRpcClient, initialized: InitializeResult) {
+  constructor(private readonly client: JsonRpcClient, initialized: InitializeResult, private readonly onStale?: (process?: { pid: number; creationTimeUtc: string }) => void) {
     this.visible = initialized.capabilities?.managedInspector === true;
   }
   private current(sequence: number, nodeId: string | undefined, sessionId?: string): boolean {
@@ -99,25 +99,28 @@ export class ManagedInspector {
       return session;
     } catch (error) { if (this.current(seq, node, oldSession)) this.state = managedErrorState(error); return; }
   }
-  async canAutoAttachTree(nodeId: string, process: { pid: number; creationTimeUtc: string }): Promise<boolean> {
-    if (isManagedProcessConfirmed(process)) return true;
-    try {
-      const facts = await this.client.request<InspectManagedIdentifyResult>("inspect.managed.identify", { nodeId });
-      return facts.appUnderTest && identityKey(facts.process) === identityKey(process);
-    } catch { return false; }
-  }
+  treeFailure?: { code: string; hint: string };
   async attachTree(nodeId: string, process: { pid: number; creationTimeUtc: string }, automatic = false): Promise<boolean> {
-    if (!this.visible || !vscode.workspace.isTrusted) return false;
+    this.treeFailure = undefined;
+    if (!this.visible || !vscode.workspace.isTrusted) { this.treeFailure = { code: "blockedByPolicy", hint: "Enable the inspector and trust the workspace." }; return false; }
     if (this.session?.state === "ready" && identityKey(this.session.process) === identityKey(process)) return true;
     try {
       const facts = await this.client.request<InspectManagedIdentifyResult>("inspect.managed.identify", { nodeId });
-      if (identityKey(facts.process) !== identityKey(process)) return false;
+      if (identityKey(facts.process) !== identityKey(process)) {
+        this.treeFailure = { code: "processChanged", hint: "The target process changed. Refresh the object tree and try again." };
+        return false;
+      }
       if (automatic && !facts.appUnderTest && !isManagedProcessConfirmed(process)) return false;
       if (!await confirmProcess(facts)) return false;
       const result = await this.client.request<InspectManagedAttachResult>("inspect.managed.attach", { process });
       if (result.state === "ready") { this.session = { ...result, process: { ...result.process } }; this.state = "ready"; }
+      if (result.state !== "ready") this.treeFailure = { code: "attachFailed", hint: "Run wtk doctor --agent for guidance." };
       return result.state === "ready";
-    } catch { return false; }
+    } catch (error) {
+      const detail = error as { message?: string; data?: { code?: string; hint?: string } };
+      this.treeFailure = { code: detail.data?.code || "attachFailed", hint: detail.data?.hint || detail.message || "Run wtk doctor --agent for guidance." };
+      return false;
+    }
   }
   async reuseTreeSession(nodeId: string): Promise<void> {
     if (!this.visible || nodeId !== this.nodeId) return;
@@ -130,6 +133,18 @@ export class ManagedInspector {
       if (!this.current(sequence, nodeId, oldSession)) return;
       if (session.state === "ready" && identityKey(session.process) === identityKey(facts.process)) { this.session = session; this.state = "ready"; }
     } catch (error) { if (this.current(sequence, nodeId, oldSession)) this.state = managedErrorState(error); }
+  }
+  async keepalive(): Promise<void> {
+    const sessionId = this.session?.sessionId;
+    if (!sessionId) return;
+    try { await this.client.request("inspect.managed.keepalive", { sessionId }); }
+    catch (error) {
+      if (this.session?.sessionId === sessionId && managedErrorState(error) === "detached (idle)") {
+        const process = this.session?.process;
+        this.invalidate();
+        this.onStale?.(process);
+      }
+    }
   }
   async detach(): Promise<void> {
     const session = this.session; this.invalidate();
@@ -147,7 +162,7 @@ export class ManagedInspector {
         return;
       }
       this.remember(result); return result;
-    } catch (error) { if (this.current(seq, node, sessionId)) { this.state = managedErrorState(error); if (this.state === "detached (idle)") this.invalidate(); } return; }
+    } catch (error) { if (this.current(seq, node, sessionId)) { this.state = managedErrorState(error); if (this.state === "detached (idle)") { const process = this.session?.process; this.invalidate(); this.onStale?.(process); } } return; }
   }
   async resolve(nodeId: string): Promise<InspectManagedResolveResult | undefined> {
     if (nodeId !== this.nodeId) return;

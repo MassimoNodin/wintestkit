@@ -38,6 +38,11 @@ type SpyConnection = { client?: JsonRpcClient; revision: number };
 
 export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
   private view?: vscode.WebviewView;
+  private propertiesView?: vscode.WebviewView;
+  private propertiesSubscriptions: vscode.Disposable[] = [];
+  private propertiesReady = false;
+  private propertiesHistory: SpyResponse[] = [];
+  private managedSnapshot?: unknown;
   private extrasActive = false;
   private tutorialEpoch = 0;
   private tutorialPrepared = false;
@@ -62,8 +67,8 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
   private loaded = false;
   private appPids: number[] = [];
   private showOtherApps = true;
-  private tree: "visual" | "logical" = "visual";
   private treeProcesses = new Map<string, ManagedProcessIdentity>();
+  private disconnectedProcess?: { project: string; process: ManagedProcessIdentity };
   private treeTokens = new Map<string, string>();
   private revision = 0;
   private scopeRevision = 0;
@@ -90,6 +95,12 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
   private loadedNodeIds = new Set<string>();
   private coverageRun = 0;
   private coverageTimer?: NodeJS.Timeout;
+  private keepaliveTimer?: NodeJS.Timeout;
+  private recovering = false;
+  private expandedPaths: PathSegment[][] = [];
+  private recoveryAttempts = new Map<string, number>();
+  private recoveryFailures = new Set<string>();
+  private recoveryProcess?: ManagedProcessIdentity;
   private notifications: vscode.Disposable[] = [];
   private viewSubscriptions: vscode.Disposable[] = [];
   private readonly subscriptions: vscode.Disposable[];
@@ -101,13 +112,13 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
     private readonly setup?: SetupMonitor,
     private readonly memory?: vscode.Memento,
   ) {
-    this.tree = this.memory?.get<string>("wintestkit.spy.tree") === "logical" ? "logical" : "visual";
     this.subscriptions = [
       ...(setup ? [setup.onDidChange(() => this.syncTour())] : []),
       // Keep the tree when the panel tab is hidden: a recreated webview would reload everything.
       vscode.window.registerWebviewViewProvider("wintestkit.spy", this, {
         webviewOptions: { retainContextWhenHidden: true },
       }),
+      vscode.window.registerWebviewViewProvider("wintestkit.properties", { resolveWebviewView: (view) => this.resolvePropertiesView(view) }, { webviewOptions: { retainContextWhenHidden: true } }),
       vscode.commands.registerCommand("wintestkit.spy.startPick", async () => {
         await vscode.commands.executeCommand("wintestkit.spy.focus");
         await this.safe(() => this.startPick());
@@ -171,6 +182,7 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
       "utf8",
     );
     for (const [name, value] of Object.entries({
+      viewClass: "spy-view",
       cspSource: view.webview.cspSource,
       nonce,
       css: view.webview
@@ -186,12 +198,14 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
       html = html.replaceAll("{{" + name + "}}", value);
     if (this.disposed || this.view !== view) return;
     view.webview.html = html;
+    this.updateKeepalive();
     this.viewSubscriptions = [
       view.webview.onDidReceiveMessage((value) => {
         const message = parseSpyRequest(value);
         if (message) void this.safe(() => this.handle(message));
       }),
       view.onDidChangeVisibility(() => {
+        this.updateKeepalive();
         if (view.visible)
           void this.safe(() =>
             this.tutorialActive() ? this.restoreTutorial() : this.refreshIfStale(),
@@ -201,9 +215,59 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
       view.onDidDispose(() => {
         if (this.view !== view) return;
         this.view = undefined;
+        this.updateKeepalive();
         void this.safe(() => this.stopPick());
       }),
     ];
+  }
+  private async resolvePropertiesView(view: vscode.WebviewView): Promise<void> {
+    this.propertiesSubscriptions.forEach((subscription) => subscription.dispose());
+    this.propertiesView = view;
+    this.propertiesReady = false;
+    this.postPropertiesVisibility();
+    const assets = vscode.Uri.joinPath(this.extensionUri, "media", "spy");
+    const icons = vscode.Uri.joinPath(this.extensionUri, "media", "codicons");
+    view.webview.options = { enableScripts: true, localResourceRoots: [assets, icons] };
+    const nonce = randomBytes(24).toString("hex");
+    let html = await readFile(vscode.Uri.joinPath(assets, "spy.html").fsPath, "utf8");
+    for (const [name, value] of Object.entries({
+      viewClass: "properties-view", cspSource: view.webview.cspSource, nonce,
+      css: view.webview.asWebviewUri(vscode.Uri.joinPath(assets, "spy.css")).toString(),
+      js: view.webview.asWebviewUri(vscode.Uri.joinPath(assets, "spy.js")).toString(),
+      icons: view.webview.asWebviewUri(vscode.Uri.joinPath(icons, "codicon.css")).toString(),
+    })) html = html.replaceAll("{{" + name + "}}", value);
+    if (this.disposed || this.propertiesView !== view) return;
+    this.propertiesSubscriptions = [
+      view.webview.onDidReceiveMessage((value) => {
+        const message = parseSpyRequest(value);
+        if (!message) return;
+        if (message.type === "propertiesReady") {
+          this.propertiesReady = true;
+          for (const item of this.propertiesHistory) void view.webview.postMessage(item);
+          if (this.managedSnapshot) void view.webview.postMessage(this.managedSnapshot);
+        } else void this.safe(() => this.handle(message));
+      }),
+      view.onDidChangeVisibility(() => { this.postPropertiesVisibility(); this.updateKeepalive(); }),
+      view.onDidDispose(() => {
+        if (this.propertiesView !== view) return;
+        this.propertiesView = undefined;
+        this.updateKeepalive();
+        this.propertiesReady = false;
+        this.postPropertiesVisibility();
+      }),
+    ];
+    view.webview.html = html;
+    this.updateKeepalive();
+  }
+  private updateKeepalive(): void {
+    clearInterval(this.keepaliveTimer);
+    this.keepaliveTimer = undefined;
+    if (!this.disposed && (this.view?.visible || this.propertiesView?.visible)) {
+      this.keepaliveTimer = setInterval(() => void this.managedInspector?.keepalive(), 60_000);
+    }
+  }
+  private postPropertiesVisibility(): void {
+    this.post({ type: "propertiesVisibility", visible: !!this.propertiesView?.visible });
   }
   private currentProject(): Project | undefined {
     const uri = vscode.window.activeTextEditor?.document.uri;
@@ -264,7 +328,25 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
   }
   private post(message: SpyResponse, tutorial = false): void {
     if (this.tutorialActive() && !tutorial && message.type !== "tour") return;
-    if (!this.disposed) void this.view?.webview.postMessage(message);
+    if (this.disposed) return;
+    void this.view?.webview.postMessage(message);
+    if (message.type === "propertiesVisibility") return;
+    if (message.type === "roots") {
+      this.selectedNodeId = undefined;
+      this.managedSnapshot = undefined;
+      this.managedPanel?.select(undefined);
+      this.propertiesHistory = this.propertiesHistory.filter((item) => item.type === "state");
+    }
+    if (message.type === "selectionPending" || message.type === "selected") {
+      this.propertiesHistory = this.propertiesHistory.filter((item) => !["selected", "selectionPending", "allProperties", "propertiesLoading", "progress", "error"].includes(item.type));
+      if (message.type === "selectionPending") this.managedSnapshot = undefined;
+    }
+    if (["roots", "children", "wpfDetails", "state", "selected", "selectionPending", "allProperties", "propertiesLoading", "progress", "error"].includes(message.type)) {
+      if (message.type === "state") this.propertiesHistory = this.propertiesHistory.filter((item) => item.type !== "state");
+      if (message.type === "progress") this.propertiesHistory = this.propertiesHistory.filter((item) => item.type !== "progress" || item.taskId !== message.taskId);
+      if (message.type !== "progress" || !message.done) this.propertiesHistory.push(message);
+      if (this.propertiesReady) void this.propertiesView?.webview.postMessage(message);
+    }
   }
   private async restoreTutorial(): Promise<void> {
     this.postTour();
@@ -440,7 +522,6 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
       hasProject: !!this.currentProject(),
       showOtherApps: this.showOtherApps,
       bringToFront: this.bringToFront(),
-      tree: this.tree,
       shownProperties: this.shownProperties(),
     });
     void vscode.commands.executeCommand(
@@ -497,6 +578,10 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
       });
     } catch (error) {
       failed = true;
+      if (nodeId?.startsWith("wpf:") && this.isStale(error) && !this.recovering) {
+        await this.recoverStale();
+        return undefined as T;
+      }
       throw error;
     } finally {
       finished = true;
@@ -523,6 +608,9 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
   }
   private unbind(invalidatePick = true): void {
     const client = this.client;
+    const process = this.managedInspector?.sessionInfo?.process;
+    if (process && this.project) this.disconnectedProcess = { project: this.project.root.toString(), process };
+    if (client) { this.post({ type: "roots", nodes: [] }); this.selectedNodeId = undefined; this.managedSnapshot = undefined; }
     this.managedPanel?.dispose();
     this.managedPanel = undefined;
     this.managedInspector?.invalidate();
@@ -583,8 +671,13 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
       ? path.win32.basename(appProcess).replace(/\.exe$/i, "")
       : undefined;
     this.client = client;
-    this.managedInspector = new ManagedInspector(client, connection.initialized);
-    this.managedPanel = new ManagedPanel(this.managedInspector, (message) => { if (this.managedInspector?.visible && !this.tutorialActive()) void this.view?.webview.postMessage(message); });
+    this.managedInspector = new ManagedInspector(client, connection.initialized, (process) => void this.safe(() => this.recoverStale(process)));
+    this.managedPanel = new ManagedPanel(this.managedInspector, (message) => {
+      if (this.managedInspector?.visible && !this.tutorialActive()) {
+        this.managedSnapshot = message;
+        if (this.propertiesReady) void this.propertiesView?.webview.postMessage(message);
+      }
+    });
     this.managedPanel.select(this.selectedNodeId);
     this.notifications = [
       client.onNotification("spy.hover", (value) => {
@@ -621,12 +714,13 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
                   await this.startPick();
                 }
               } else if (client === this.client && revision === this.revision) {
-                this.post({ type: "children", nodeId: windowNode.nodeId, nodes: [], expanded: true, attachRequired: true });
+                await this.showChildren(client, windowNode.nodeId, undefined, false);
               }
             }
             return;
           }
           const selection = ++this.selection;
+          this.post({ type: "selectionPending", nodeId: picked.node.nodeId });
           void this.managedInspector?.select(picked.node.nodeId);
           let treeRevision = this.revision;
           const pickedScope = this.showOtherApps;
@@ -672,6 +766,7 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
               if (properties.source === "wpf" && !ancestors.length && !roots.some((root) => root.nodeId === picked.node.nodeId)) {
                 this.post({ type: "error", message: "Picked WPF node was not found in the tree." });
               }
+              const mixedWpfPath = properties.source === "wpf" || ancestors.some((ancestor) => ancestor.source === "wpf");
               for (const [index, ancestor] of ancestors.entries()) {
                 if (!this.sameReveal(client, treeRevision, selection))
                   return false;
@@ -679,7 +774,7 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
                   "Loading " +
                     (ancestor.info.name || ancestor.info.controlType),
                   async () => {
-                    if (properties.source !== "wpf") return this.enumerate(client, "inspect.children", { nodeId: ancestor.nodeId });
+                    if (!mixedWpfPath) return this.enumerate(client, "inspect.children", { nodeId: ancestor.nodeId });
                     const target = ancestors[index + 1]?.nodeId ?? picked.node.nodeId;
                     const nodes: NodeInfo[] = [];
                     let token: string | undefined;
@@ -778,6 +873,9 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
         return;
       }
       const client = attempt.client;
+      const disconnected = this.disconnectedProcess;
+      const previousProcess = this.recoveryProcess ?? this.managedInspector?.sessionInfo?.process ??
+        (disconnected && disconnected.project === this.project?.root.toString() ? disconnected.process : undefined);
       const revision = ++this.revision;
       this.selection++;
       this.suggestion = undefined;
@@ -791,10 +889,35 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
       this.targetName = status.running ? status.mainWindowTitle : undefined;
       this.state();
       this.post({ type: "roots", nodes });
+      this.treeProcesses.clear();
       this.loaded = true;
       this.trackNodes(client, nodes, true);
       this.deferIcons(client, nodes, revision);
-      if (restore) void this.restoreSelection(client, nodes, revision);
+      if (previousProcess) {
+        const window = nodes.find((node) => node.info.processId === previousProcess.pid);
+        let sameProcess = false;
+        if (window) {
+          try {
+            const facts = await client.request<{ process: ManagedProcessIdentity }>("inspect.managed.identify", { nodeId: window.nodeId });
+            sameProcess = facts.process.pid === previousProcess.pid && facts.process.creationTimeUtc === previousProcess.creationTimeUtc;
+          } catch { /* A disappeared or unidentifiable process cannot safely retain WPF handles. */ }
+        }
+        if (this.disposed || !this.sameScope(scopeRevision, revision)) return;
+        if (!sameProcess) {
+          this.managedInspector?.invalidate();
+          this.rememberSelection(undefined);
+          this.expandedPaths = [];
+        }
+        this.disconnectedProcess = undefined;
+      }
+      if (restore) {
+        if (this.recovering) {
+          const loaded = new Map<string, NodeInfo[]>();
+          await this.restoreExpanded(client, nodes, revision, loaded);
+          await this.restoreSelection(client, nodes, revision, loaded);
+        }
+        else void this.restoreSelection(client, nodes, revision);
+      }
     });
   }
   // -- keeping the selection through a reload ------------------------------------------------
@@ -823,7 +946,7 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
    * through the fresh tree and opening each level on the way. If it is not there any more, says
    * so once in a VS Code notification and forgets it.
    */
-  private async restoreSelection(client: JsonRpcClient, roots: NodeInfo[], revision: number): Promise<void> {
+  private async restoreSelection(client: JsonRpcClient, roots: NodeInfo[], revision: number, loaded?: Map<string, NodeInfo[]>): Promise<void> {
     const path = this.recallSelection();
     if (!path?.length) return;
     const selection = this.selection;
@@ -835,22 +958,68 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
       let current: NodeInfo | undefined;
       for (let depth = 0; depth < path.length; depth++) {
         if (current) {
-          candidates = await this.enumerate(client, "inspect.children", { nodeId: current.nodeId });
+          const cached = loaded?.get(current.nodeId);
+          if (this.recovering && this.recoveryFailures.has(current.nodeId)) return;
+          candidates = cached ?? await this.enumerate(client, "inspect.children", { nodeId: current.nodeId });
           if (stale()) return;
-          this.post({ type: "children", nodeId: current.nodeId, nodes: candidates, expanded: true });
-          this.trackNodes(client, candidates);
+          if (!cached) {
+            this.post({ type: "children", nodeId: current.nodeId, nodes: candidates, expanded: true });
+            this.trackNodes(client, candidates);
+          }
         }
-        current = bestMatch(path[depth], candidates);
-        if (!current) {
-          this.selectionNotFound(path);
+        const segment = path[depth];
+        const indexed = segment.index === undefined ? undefined : candidates[segment.index];
+        const match = this.recovering && depth > 0
+          ? (indexed?.info.controlType === segment.controlType ? indexed : undefined)
+          : bestMatch(segment, candidates);
+        if (this.recovering && depth === 0 && match && path[0].processId !== undefined && match.info.processId !== path[0].processId) {
+          this.rememberSelection(undefined);
           return;
         }
+        if (!match) {
+          if (this.recovering && current) {
+            this.rememberSelection(path.slice(0, depth));
+            await this.handle({ type: "select", nodeId: current.nodeId });
+            this.post({ type: "selectionRestored", nodeId: current.nodeId });
+            void vscode.window.showWarningMessage("The selected object no longer exists. Spy selected its closest surviving ancestor.");
+          } else this.selectionNotFound(path);
+          return;
+        }
+        current = match;
       }
       if (!current || stale()) return;
       await this.handle({ type: "select", nodeId: current.nodeId });
       this.post({ type: "selectionRestored", nodeId: current.nodeId });
     } catch (error) {
-      if (!stale()) this.log.error("Could not restore the selection: " + String(error));
+      if (!stale()) {
+        this.log.error("Could not restore the selection: " + String(error));
+        if (this.recovering) this.post({ type: "error", message: "Could not restore the selected object. Refresh Spy or use Retry." });
+      }
+    }
+  }
+  private async restoreExpanded(client: JsonRpcClient, roots: NodeInfo[], revision: number, loaded: Map<string, NodeInfo[]>): Promise<void> {
+    const paths = this.expandedPaths.slice(0, 200).sort((a, b) => a.length - b.length);
+    let count = 0;
+    for (const path of paths) {
+      let candidates = roots;
+      for (let depth = 0; depth < path.length && depth < 64; depth++) {
+        if (this.disposed || client !== this.client || revision !== this.revision || count >= 200) return;
+        const segment = path[depth];
+        const current = depth === 0 ? bestMatch(segment, candidates) :
+          (segment.index === undefined ? undefined : candidates[segment.index]);
+        if (!current || (depth === 0 && segment.processId !== undefined && current.info.processId !== segment.processId) ||
+          (depth > 0 && current.info.controlType !== segment.controlType) || !current.hasChildren) break;
+        let children = loaded.get(current.nodeId);
+        if (!children) {
+          try { children = await this.enumerate(client, "inspect.children", { nodeId: current.nodeId }); }
+          catch { this.recoveryFailures.add(current.nodeId); break; }
+          if (this.disposed || client !== this.client || revision !== this.revision) return;
+          loaded.set(current.nodeId, children); count++;
+          this.post({ type: "children", nodeId: current.nodeId, nodes: children, expanded: true });
+          this.trackNodes(client, children);
+        }
+        candidates = children;
+      }
     }
   }
   private selectionNotFound(path: PathSegment[]): void {
@@ -995,7 +1164,7 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
       this.pickSession = sessionId;
       await phase("Starting element picker", () => client.request("spy.start", {
         sessionId,
-        tree: this.tree,
+        tree: "visual",
         foregroundForProcessId: process.pid,
       }));
       if (
@@ -1038,26 +1207,80 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
       data.errors.map((entry) => String(entry.index) + ": " + String(entry.message)).join("; ") });
     return data.nodes;
   }
+  private async recoverStale(process?: ManagedProcessIdentity): Promise<void> {
+    if (this.recovering || this.disposed || !this.client) return;
+    this.recovering = true;
+    this.recoveryFailures.clear();
+    this.recoveryProcess = process ?? this.managedInspector?.sessionInfo?.process;
+    this.managedInspector?.invalidate();
+    const selected = this.selectedNodeId;
+    try { await this.refresh(); }
+    catch (error) {
+      const reason = "Inspector recovery failed. Refresh Spy or use Retry: " + (error instanceof Error ? error.message : String(error));
+      if (selected) this.post({ type: "objectPreview", nodeId: selected, reason });
+      this.post({ type: "roots", nodes: [] });
+      this.post({ type: "error", message: reason });
+    } finally { this.recovering = false; this.recoveryProcess = undefined; }
+  }
+  private isStale(error: unknown): boolean {
+    const code = (error as { data?: { code?: string } })?.data?.code;
+    return code === "sessionStale" || code === "processExited" || code === "processReused" ||
+      (error instanceof RpcError && error.code === -32005);
+  }
   private async childrenPage(client: JsonRpcClient, nodeId: string, pageToken?: string, autoAttach = true): Promise<InspectChildrenResult> {
-    let result = await client.request<InspectChildrenResult>("inspect.children", { nodeId, tree: this.tree, ...(pageToken ? { pageToken } : {}) });
+    const params = { nodeId, tree: "visual" as const, ...(pageToken ? { pageToken } : {}) };
+    let result = await client.request<InspectChildrenResult>("inspect.children", params);
     if (!Array.isArray(result) && "attachRequired" in result) {
       this.treeProcesses.set(nodeId, result.process);
-      const inspector = this.managedInspector;
-      if (autoAttach && inspector && await inspector.canAutoAttachTree(nodeId, result.process) && await inspector.attachTree(nodeId, result.process, true)) {
-        result = await client.request<InspectChildrenResult>("inspect.children", { nodeId, tree: this.tree, ...(pageToken ? { pageToken } : {}) });
+      if (this.recovering && this.recoveryProcess?.pid === result.process.pid &&
+        this.recoveryProcess.creationTimeUtc !== result.process.creationTimeUtc) {
+        this.rememberSelection(undefined);
+        this.recoveryFailures.add(nodeId);
+        return [];
+      }
+      if (autoAttach && this.managedInspector) {
+        const key = `${result.process.pid}:${result.process.creationTimeUtc}`;
+        const last = this.recoveryAttempts.get(key);
+        if (this.recovering && last !== undefined && Date.now() - last < 30_000) {
+          return { blocked: { code: "reattachLimited", hint: "Automatic reattach was attempted recently. Use Retry to try again." } };
+        }
+        if (this.recovering) this.recoveryAttempts.set(key, Date.now());
+        const attached = await this.managedInspector.attachTree(nodeId, result.process);
+        if (!attached && this.managedInspector.treeFailure) return { blocked: this.managedInspector.treeFailure };
+        result = await client.request<InspectChildrenResult>("inspect.children", params);
+        if (!Array.isArray(result) && "attachRequired" in result && this.managedInspector.treeFailure) {
+          result = { blocked: this.managedInspector.treeFailure };
+        }
+      }
+      if (!Array.isArray(result) && "attachRequired" in result) {
+        const fallback = await client.request<InspectChildrenResult>("inspect.children", { nodeId });
+        this.post({ type: "wpfDetails", nodeId, missing: true });
+        return fallback;
       }
     }
+    this.post({ type: "wpfDetails", nodeId, missing: false, ...(!Array.isArray(result) && "blocked" in result ? { blocked: result.blocked } : {}) });
     return result;
   }
-  private async showChildren(client: JsonRpcClient, nodeId: string, pageToken?: string, autoAttach = true): Promise<void> {
-    const revision = this.revision, mode = this.tree;
-    const result = await this.childrenPage(client, nodeId, pageToken, autoAttach);
-    if (client !== this.client || revision !== this.revision || mode !== this.tree) return;
+  private async showChildren(client: JsonRpcClient, nodeId: string, pageToken?: string, autoAttach = true, expanded = false): Promise<void> {
+    const revision = this.revision;
+    let result: InspectChildrenResult;
+    try {
+      result = await this.childrenPage(client, nodeId, pageToken, autoAttach);
+    } catch (error) {
+      if (client !== this.client || revision !== this.revision) return;
+      if (this.isStale(error) && nodeId.startsWith("wpf:")) { await this.recoverStale(); return; }
+      const hint = error instanceof RpcError && error.code === -32005
+        ? "The element is gone. Reload the objects view to refresh it."
+        : error instanceof Error ? error.message : String(error);
+      if (error instanceof RpcError && error.code === -32005) this.post({ type: "error", message: hint });
+      result = { blocked: { code: "childrenUnavailable", hint } };
+      this.post({ type: "wpfDetails", nodeId, missing: false, blocked: result.blocked });
+    }
+    if (client !== this.client || revision !== this.revision) return;
     const nodes = Array.isArray(result) ? result : "nodes" in result ? result.nodes : [];
     const nextPageToken = !Array.isArray(result) && "nodes" in result ? result.nextPageToken : undefined;
     if (nextPageToken) this.treeTokens.set(nodeId, nextPageToken); else this.treeTokens.delete(nodeId);
-    this.post({ type: "children", nodeId, nodes, append: !!pageToken, nextPageToken,
-      attachRequired: !Array.isArray(result) && "attachRequired" in result,
+    this.post({ type: "children", nodeId, nodes, append: !!pageToken, nextPageToken, ...(expanded ? { expanded: true } : {}),
       blocked: !Array.isArray(result) && "blocked" in result ? result.blocked : undefined });
     this.trackNodes(client, nodes);
   }
@@ -1067,11 +1290,16 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
       if (method !== "inspect.children" || !params?.nodeId) return await (params ? client.request<NodeInfo[]>(method, params) : client.request<NodeInfo[]>(method));
       const nodes: NodeInfo[] = [];
       let token: string | undefined;
+      const seen = new Set<string>();
       do {
+        if (token) {
+          if (seen.has(token) || seen.size >= 200) throw new Error("Child enumeration limit reached.");
+          seen.add(token);
+        }
         const result = await this.childrenPage(client, params.nodeId, token);
         if (Array.isArray(result)) return [...nodes, ...result];
         if (!("nodes" in result)) {
-          this.post({ type: "children", nodeId: params.nodeId, nodes: [], expanded: true, attachRequired: "attachRequired" in result, blocked: "blocked" in result ? result.blocked : undefined });
+          this.post({ type: "children", nodeId: params.nodeId, nodes: [], expanded: true, blocked: "blocked" in result ? result.blocked : undefined });
           throw new Error("WPF tree is not available");
         }
         nodes.push(...result.nodes);
@@ -1124,6 +1352,13 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
     }
   }
   private async handle(message: SpyRequest): Promise<void> {
+    if (message.type === "expandedPaths") { this.expandedPaths = message.paths; return; }
+    if (message.type === "showProperties") {
+      if (this.propertiesView) this.propertiesView.show?.(true);
+      else await vscode.commands.executeCommand("wintestkit.properties.focus");
+      return;
+    }
+    if (message.type === "propertiesReady") return;
     if (message.type.startsWith("managed")) { await this.managedPanel?.handle(message as import("./messages").ManagedRequest); return; }
     if (message.type === "tour") {
       const setup = this.setup;
@@ -1159,21 +1394,12 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
       return;
     }
     if (message.type === "ready") {
+      this.postPropertiesVisibility();
       this.postTour();
       if (typeof message.showOtherApps === "boolean")
         this.showOtherApps = message.showOtherApps;
       this.invalidateScope();
       return this.refresh();
-    }
-    if (message.type === "treeMode") {
-      if (message.tree === this.tree) return;
-      this.tree = message.tree;
-      this.treeTokens.clear();
-      this.treeProcesses.clear();
-      await this.memory?.update("wintestkit.spy.tree", this.tree);
-      this.state();
-      this.post({ type: "treeModeChanged" });
-      return;
     }
     if (message.type === "treeAttach" || message.type === "treeMore") {
       const client = this.client;
@@ -1181,8 +1407,14 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
       if (message.type === "treeAttach") {
         const process = this.treeProcesses.get(message.nodeId);
         if (process) {
-          await this.managedInspector?.attachTree(message.nodeId, process);
-          await this.showChildren(client, message.nodeId, undefined, false);
+          const attached = await this.managedInspector?.attachTree(message.nodeId, process);
+          const failure = this.managedInspector?.treeFailure;
+          if (!attached && failure) {
+            this.post({ type: "wpfDetails", nodeId: message.nodeId, missing: false, blocked: failure });
+            this.post({ type: "children", nodeId: message.nodeId, nodes: [], expanded: true, blocked: failure });
+          } else {
+            await this.showChildren(client, message.nodeId, undefined, false, true);
+          }
         }
       } else if (this.treeTokens.get(message.nodeId) === message.pageToken) {
         await this.showChildren(client, message.nodeId, message.pageToken);
@@ -1242,6 +1474,7 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
     if (message.type === "select") {
       this.suggestion = undefined;
       this.selectedNodeId = message.nodeId;
+      this.post({ type: "selectionPending", nodeId: message.nodeId });
       this.managedPanel?.select(message.nodeId);
       if (message.path) this.rememberSelection(message.path);
     }
@@ -1351,6 +1584,10 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
       else this.post({ type: "objectPreview", nodeId, preview: result });
     } catch (error) {
       if (!current()) return;
+      if (nodeId.startsWith("wpf:") && this.isStale(error)) {
+        this.post({ type: "objectPreview", nodeId, reason: "Inspector session ended. Reconnecting; retry if the object cannot be restored." });
+        await this.recoverStale(); return;
+      }
       this.log.error(String(error));
       this.post({
         type: "objectPreview",
@@ -1560,9 +1797,10 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
   dispose(): void {
     this.previewViewer.dispose();
     clearTimeout(this.coverageTimer);
+    clearInterval(this.keepaliveTimer);
     this.unbind();
     this.disposed = true;
-    [...this.subscriptions, ...this.viewSubscriptions].forEach((subscription) =>
+    [...this.subscriptions, ...this.viewSubscriptions, ...this.propertiesSubscriptions].forEach((subscription) =>
       subscription.dispose(),
     );
     this.view = undefined;

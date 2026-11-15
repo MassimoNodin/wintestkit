@@ -156,6 +156,51 @@ def test_owned_net10_x64_attach_read_detach(monkeypatch: pytest.MonkeyPatch) -> 
         target.wait(timeout=5)
 
 
+@pytest.mark.integration
+def test_live_session_reopens_after_agent_closes(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Exercise the live attach prerequisite for Spy recovery after a session ends."""
+    monkeypatch.syspath_prepend(str(PAYLOAD))
+    environment = os.environ.copy()
+    environment["DOTNET_ROOT_X64"] = live_dotnet_root()
+    environment["DOTNET_MULTILEVEL_LOOKUP"] = "0"
+    target = subprocess.Popen(
+        [str(FIXTURE / "WinTestKit.Fixture.exe")],
+        cwd=FIXTURE,
+        env=environment,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    registry = SessionRegistry()
+    try:
+        until = time.monotonic() + 15
+        while True:
+            assert target.poll() is None
+            try:
+                facts = identify(target.pid)
+                if facts.wpf_loaded and facts.runtime == "net10":
+                    break
+            except (OSError, InspectorUnavailableError):
+                pass
+            assert time.monotonic() < until
+            time.sleep(0.1)
+        first = registry.attach(facts.identity, target_hwnd=None, deadline=time.monotonic() + 10)
+        assert first.roots(deadline=time.monotonic() + 2).items
+        registry.detach(first.session.session_id)
+        until = time.monotonic() + 3
+        while agent_active(target.pid) and time.monotonic() < until:
+            time.sleep(0.05)
+        assert not agent_active(target.pid)
+        second = registry.attach(facts.identity, target_hwnd=None, deadline=time.monotonic() + 10)
+        assert second.session.session_id != first.session.session_id
+        assert second.roots(deadline=time.monotonic() + 2).items
+    finally:
+        registry.close_all()
+        if target.poll() is None:
+            target.terminate()
+        target.wait(timeout=5)
+
+
 @pytest.mark.parametrize("mismatch", ["token", "version"])
 def test_owned_net10_x64_rejects_hello_mismatch(
     monkeypatch: pytest.MonkeyPatch, mismatch: str

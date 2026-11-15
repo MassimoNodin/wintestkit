@@ -184,6 +184,54 @@ def test_attach_cleanup_failure_closes_authenticated_client(
         registry.close_all()
 
 
+@pytest.mark.parametrize("taken", [True, False])
+def test_pipe_timeout_reports_agent_taken_by_another_session(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, taken: bool
+) -> None:
+    """The agent exits without a pipe when another session won the race for it."""
+    payload = SimpleNamespace(
+        verify=lambda: None,
+        inspector_version="1",
+        launcher_for=lambda architecture: tmp_path / "launcher.exe",
+        agent_for=lambda runtime: tmp_path / "agent.dll",
+    )
+    settings = SimpleNamespace(
+        path=tmp_path / "consumed.json",
+        session_id="session",
+        pipe_name="pipe",
+        token="token",
+        cleanup=lambda: None,
+    )
+    checks: list[int] = []
+
+    def agent_active(pid: int) -> bool:
+        checks.append(pid)
+        # Free at the pre-attach check; held by the other session afterwards.
+        return taken and len(checks) > 1
+
+    def connect(*args: Any, **kwargs: Any) -> Any:
+        raise InspectorUnavailableError("Inspector readiness deadline expired", code="timeout")
+
+    monkeypatch.setattr(probe, "identify", lambda pid: FACTS)
+    monkeypatch.setattr(probe, "current_identity", lambda pid: IDENTITY)
+    monkeypatch.setattr(probe, "agent_active", agent_active)
+    monkeypatch.setattr(sessions, "_validate_facts", lambda *args: None)
+    monkeypatch.setattr(sessions, "_payload_path", lambda payload, path: path)
+    monkeypatch.setattr(sessions.bootstrap, "create_bootstrap", lambda *args, **kwargs: settings)
+    monkeypatch.setattr(sessions.launcher, "launch", lambda *args: object())
+    monkeypatch.setattr(sessions.launcher, "close_launcher", lambda process: None)
+    monkeypatch.setattr(sessions.launcher, "policy_failure", lambda *args: None)
+    monkeypatch.setattr(sessions.WindowsPipe, "connect", connect)
+    registry = sessions.SessionRegistry(payload_loader=lambda: payload)
+    try:
+        with pytest.raises(InspectorUnavailableError) as error:
+            registry.attach(IDENTITY, target_hwnd=None, deadline=time.monotonic() + 1)
+        assert error.value.code == ("alreadyAttached" if taken else "timeout")
+        assert len(checks) == 2
+    finally:
+        registry.close_all()
+
+
 @pytest.mark.parametrize("failure", ["processExited", "processReused"])
 def test_status_rechecks_identity_after_pipe_closes_before_process_exit(
     monkeypatch: pytest.MonkeyPatch, failure: str

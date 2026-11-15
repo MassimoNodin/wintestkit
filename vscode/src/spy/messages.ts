@@ -25,7 +25,8 @@ export type ManagedRequest =
 
 export type SpyRequest =
   | ManagedRequest
-  | { type: "treeMode"; tree: "visual" | "logical" }
+  | { type: "showProperties" | "propertiesReady" }
+  | { type: "expandedPaths"; paths: PathSegment[][] }
   | { type: "treeAttach"; nodeId: string }
   | { type: "treeMore"; nodeId: string; pageToken: string }
   | { type: "tour"; action: (typeof SPY_TOUR_ACTIONS)[number] }
@@ -52,7 +53,9 @@ export type SpyRequest =
   | { type: "openPreview"; view: "element" | "window"; dataUrl: string }
   | { type: "openDefinition"; id: string };
 export type SpyResponse =
-  | { type: "treeModeChanged" }
+  | { type: "propertiesVisibility"; visible: boolean }
+  | { type: "selectionPending"; nodeId: string }
+  | { type: "wpfDetails"; nodeId: string; missing: boolean; blocked?: { code: string; hint: string } }
   | { type: "objectPreview"; nodeId: string; preview?: PreviewImages; reason?: string }
   | { type: "selectionRestored"; nodeId: string }
   | { type: "enumerationIncomplete"; message: string; nodeId?: string }
@@ -82,12 +85,11 @@ export type SpyResponse =
       hasProject: boolean;
       showOtherApps: boolean;
       bringToFront: boolean;
-      tree?: "visual" | "logical";
       /** Properties the user pinned to the default list (a user setting). */
       shownProperties?: string[];
     }
   | { type: "roots"; nodes: NodeInfo[] }
-  | { type: "children"; nodeId: string; nodes: NodeInfo[]; expanded?: boolean; append?: boolean; nextPageToken?: string; attachRequired?: boolean; blocked?: { code: string; hint: string } }
+  | { type: "children"; nodeId: string; nodes: NodeInfo[]; expanded?: boolean; append?: boolean; nextPageToken?: string; blocked?: { code: string; hint: string } }
   | {
       type: "selected";
       nodeId: string;
@@ -131,7 +133,11 @@ export type SpyResponse =
 export function parseSpyRequest(value: unknown): SpyRequest | undefined {
   if (!value || typeof value !== "object") return;
   const message = value as Record<string, unknown>;
-  if (message.type === "treeMode" && (message.tree === "visual" || message.tree === "logical")) return { type: "treeMode", tree: message.tree };
+  if (message.type === "expandedPaths" && Array.isArray(message.paths) && message.paths.length <= 200) {
+    const paths = message.paths.map(parseSelectionPath);
+    if (paths.every((path): path is PathSegment[] => !!path)) return { type: "expandedPaths", paths };
+    return;
+  }
   if ((message.type === "treeAttach" || message.type === "treeMore") && typeof message.nodeId === "string" && message.nodeId.length > 0 && message.nodeId.length <= 512) {
     if (message.type === "treeAttach") return { type: "treeAttach", nodeId: message.nodeId };
     if (typeof message.pageToken === "string" && message.pageToken.length > 0 && message.pageToken.length <= 128) return { type: "treeMore", nodeId: message.nodeId, pageToken: message.pageToken };
@@ -141,6 +147,7 @@ export function parseSpyRequest(value: unknown): SpyRequest | undefined {
     return SPY_TOUR_ACTIONS.includes(message.action as (typeof SPY_TOUR_ACTIONS)[number])
       ? { type: "tour", action: message.action as (typeof SPY_TOUR_ACTIONS)[number] }
       : undefined;
+  if (message.type === "showProperties" || message.type === "propertiesReady") return { type: message.type };
   if (message.type === "ready")
     return typeof message.showOtherApps === "boolean"
       ? { type: "ready", showOtherApps: message.showOtherApps }

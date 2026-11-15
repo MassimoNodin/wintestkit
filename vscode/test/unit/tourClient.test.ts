@@ -224,18 +224,18 @@ describe("introduction clients", () => {
     const properties = { source: "wpf", info, properties: { ClrFullClassName: "Demo.Button", "x:Name": "Save", AutomationId: "save", Name: "Save", ControlType: "Button" }, ancestors: [], uiaMapped: true, uia: { properties: { Name: "Peer" } } };
     fixture.send({ type: "managedPanel", sequence: 1, visible: true, state: "ready", object: { type: { fullName: "Demo.Button", assemblyName: "Demo", baseTypes: [] } }, rows: [] });
     fixture.send({ type: "selected", nodeId: "wpf", properties });
-    expect(fixture.element("identity-source").textContent).toBe("WPF");
-    expect(fixture.element("properties").children.map((row) => row.cells[0].textContent)).toEqual(["CLR full class name", "x:Name", "Automation ID", "Peer Name", "Control type"]);
+    expect(fixture.element("wpf-section").hidden).toBe(false);
+    expect(fixture.element("wpf-properties").children.map((row) => row.cells[0].textContent)).toEqual(["ClrFullClassName", "x:Name"]);
     expect(fixture.element("property-groups").children.indexOf(fixture.element("managed-panel"))).toBeLessThan(fixture.element("property-groups").children.indexOf(fixture.element("wpf-uia-group")));
     expect(fixture.element("managed-groups").children.every((group) => group.open)).toBe(true);
     expect(fixture.element("wpf-uia-group").hidden).toBe(false);
     expect(fixture.element("wpf-uia-group").open).toBe(false);
     fixture.send({ type: "selected", nodeId: "other", properties: { ...properties, uiaMapped: false } });
     expect(fixture.element("wpf-uia-group").hidden).toBe(true);
-    expect(fixture.element("wpf-uia-empty").hidden).toBe(false);
+    expect(fixture.element("wpf-section").hidden).toBe(false);
     fixture.send({ type: "selected", nodeId: "uia", properties: { info, properties: {}, ancestors: [] } });
-    expect(fixture.element("identity-source").textContent).toBe("UIA");
-    expect(fixture.element("uia-state-group").hidden).toBe(false);
+    expect(fixture.element("wpf-section").hidden).toBe(true);
+    expect(fixture.element("uia-automation-group").hidden).toBe(false);
     expect(fixture.element("managed-panel").parentElement).toBe(fixture.element("property-groups").parentElement);
   });
   it("highlights the selection summary and Highlight without lighting Properties", () => {

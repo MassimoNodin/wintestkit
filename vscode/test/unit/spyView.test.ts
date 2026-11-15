@@ -148,7 +148,7 @@ describe("Spy view bridge", () => {
     mocks.projectListeners.splice(0);
     mocks.previews.mockReset().mockResolvedValue(undefined);
   });
-  it("uses and persists the WPF tree mode and handles paged, UIA, and blocked responses", async () => {
+  it("uses the visual tree and handles paged, UIA, and blocked responses", async () => {
     const update = vi.fn(async () => {});
     const memory = { get: () => undefined, update };
     const first = { nodeId: "a", info: { controlType: "Button", name: "A" }, hasChildren: false, source: "wpf", identity: { type: "Demo.Button", xName: "A" } };
@@ -156,14 +156,16 @@ describe("Spy view bridge", () => {
     mocks.request.mockImplementation(async (method: string, params?: { nodeId?: string; pageToken?: string }) => {
       if (method === "inspect.children") {
         if (params?.nodeId === "blocked") return { blocked: { code: "policy", hint: "Enable it" } };
-        if (params?.nodeId === "attach") return { attachRequired: true, process: { pid: 42, creationTimeUtc: "start" } };
+        if (params?.nodeId === "attach") return (params as { tree?: string }).tree ? { attachRequired: true, process: { pid: 42, creationTimeUtc: "start" } } : [first];
         if (params?.nodeId === "uia") return [first];
         return params?.pageToken ? { nodes: [second] } : { nodes: [first], nextPageToken: "next" };
       }
       if (method === "inspect.refresh") return { nodes: [], status: { running: false } };
+      if (method === "inspect.managed.identify") return { process: { pid: 42, creationTimeUtc: "start" }, executable: "Other.exe", architecture: "x64", appUnderTest: false };
       return {};
     });
-    const fixture = await create(undefined, undefined, memory);
+    mocks.warning.mockResolvedValue("Cancel");
+    const fixture = await create(undefined, undefined, memory, true);
     await fixture.provider.refresh();
     fixture.receive({ type: "expand", nodeId: "wpf" });
     await vi.waitFor(() => expect(fixture.sent).toContainEqual(expect.objectContaining({ type: "children", nodeId: "wpf", nextPageToken: "next", nodes: [first] })));
@@ -172,15 +174,48 @@ describe("Spy view bridge", () => {
     fixture.receive({ type: "expand", nodeId: "uia" });
     fixture.receive({ type: "expand", nodeId: "blocked" });
     fixture.receive({ type: "expand", nodeId: "attach" });
-    await vi.waitFor(() => expect(fixture.sent).toContainEqual(expect.objectContaining({ type: "children", nodeId: "attach", attachRequired: true })));
+    await vi.waitFor(() => expect(fixture.sent).toContainEqual({ type: "wpfDetails", nodeId: "attach", missing: true }));
     await vi.waitFor(() => expect(fixture.sent).toContainEqual(expect.objectContaining({ type: "children", nodeId: "blocked", blocked: { code: "policy", hint: "Enable it" } })));
     await vi.waitFor(() => expect(fixture.sent).toContainEqual(expect.objectContaining({ type: "children", nodeId: "uia", nodes: [first] })));
-    fixture.receive({ type: "treeMode", tree: "logical" });
-    await vi.waitFor(() => expect(update).toHaveBeenCalledWith("wintestkit.spy.tree", "logical"));
-    expect(fixture.sent).toContainEqual({ type: "treeModeChanged" });
-    fixture.receive({ type: "expand", nodeId: "wpf" });
-    await vi.waitFor(() => expect(mocks.request).toHaveBeenCalledWith("inspect.children", { nodeId: "wpf", tree: "logical" }));
     expect(mocks.request).toHaveBeenCalledWith("inspect.children", { nodeId: "wpf", tree: "visual", pageToken: "next" });
+    fixture.provider.dispose();
+  });
+  it("shows a node-level error when fallback enumeration fails", async () => {
+    const process = { pid: 99701, creationTimeUtc: "run" };
+    mocks.warning.mockResolvedValue("Cancel");
+    mocks.request.mockImplementation(async (method: string, params?: { tree?: string }) => {
+      if (method === "inspect.children") {
+        if (params?.tree) return { attachRequired: true, process };
+        throw new Error("UI Automation failed");
+      }
+      if (method === "inspect.managed.identify") return { process, executable: "App.exe", architecture: "x64", appUnderTest: false };
+      if (method === "inspect.refresh") return { nodes: [], status: { running: false } };
+      return {};
+    });
+    const fixture = await create(undefined, undefined, undefined, true);
+    fixture.receive({ type: "expand", nodeId: "window" });
+    await vi.waitFor(() => expect(fixture.sent).toContainEqual(expect.objectContaining({
+      type: "children", nodeId: "window", nodes: [], blocked: { code: "childrenUnavailable", hint: "UI Automation failed" },
+    })));
+    fixture.provider.dispose();
+  });
+  it.each([true, false])("expands the visual tree after attach (app under test: %s)", async (appUnderTest) => {
+    const process = { pid: appUnderTest ? 99301 : 99302, creationTimeUtc: "run" };
+    const child = { nodeId: "wpf-child", info: { name: "Save", controlType: "Button" }, hasChildren: false, source: "wpf" };
+    let attached = false;
+    mocks.warning.mockResolvedValue("Attach");
+    mocks.request.mockImplementation(async (method: string) => {
+      if (method === "inspect.children") return attached ? { nodes: [child] } : { attachRequired: true, process };
+      if (method === "inspect.managed.identify") return { process, executable: "App.exe", architecture: "x64", appUnderTest };
+      if (method === "inspect.managed.attach") { attached = true; return { sessionId: "session", process, state: "ready" }; }
+      if (method === "inspect.refresh") return { nodes: [], status: { running: false } };
+      return {};
+    });
+    const fixture = await create(undefined, undefined, undefined, true);
+    fixture.receive({ type: "expand", nodeId: "window" });
+    await vi.waitFor(() => expect(fixture.sent).toContainEqual(expect.objectContaining({ type: "children", nodeId: "window", nodes: [child] })));
+    expect(mocks.request).toHaveBeenCalledWith("inspect.children", { nodeId: "window", tree: "visual" });
+    expect(mocks.warning).toHaveBeenCalledTimes(appUnderTest ? 0 : 1);
     fixture.provider.dispose();
   });
   it.each([true, false])("reveals a picked WPF node across pages (found: %s)", async (found) => {
@@ -198,6 +233,23 @@ describe("Spy view bridge", () => {
     await vi.waitFor(() => expect(fixture.sent).toContainEqual(expect.objectContaining({ type: "selected", nodeId: "picked" })));
     expect(mocks.request).toHaveBeenCalledWith("inspect.children", { nodeId: "root", tree: "visual", pageToken: "page2" });
     expect(fixture.sent.some((message) => message.type === "error" && String(message.message).includes("not found"))).toBe(!found);
+    fixture.provider.dispose();
+  });
+  it("reveals a hosted UIA pick through paged WPF ancestors", async () => {
+    const root = { nodeId: "root", source: "wpf", hasChildren: true, info: { name: "App", controlType: "Window" } };
+    const host = { nodeId: "host", source: "wpf", hasChildren: true, info: { name: "Host", controlType: "Pane" } };
+    const picked = { nodeId: "native", source: "uia", info: { name: "Native child", controlType: "Text" } };
+    mocks.request.mockImplementation(async (method: string, params?: { nodeId?: string; pageToken?: string }) => {
+      if (method === "inspect.roots") return [root];
+      if (method === "inspect.properties") return { info: picked.info, properties: {}, ancestors: [root, host] };
+      if (method === "inspect.children") return params?.nodeId === "root" ? { nodes: [host] } : params?.pageToken ? { nodes: [picked] } : { nodes: [], nextPageToken: "uia:0" };
+      return {};
+    });
+    const fixture = await create(); fixture.receive({ type: "pick" });
+    await vi.waitFor(() => expect(latestSession()).toBeTypeOf("string"));
+    mocks.notifications.get("spy.picked")?.({ sessionId: latestSession(), node: picked });
+    await vi.waitFor(() => expect(fixture.sent).toContainEqual(expect.objectContaining({ type: "selected", nodeId: "native" })));
+    expect(mocks.request).toHaveBeenCalledWith("inspect.children", { nodeId: "host", tree: "visual", pageToken: "uia:0" });
     fixture.provider.dispose();
   });
   it("attaches on pick once per process run and resumes picking", async () => {
@@ -222,10 +274,10 @@ describe("Spy view bridge", () => {
     expect(mocks.request.mock.calls.filter(([method]) => method === "inspect.managed.attach")).toHaveLength(2);
     fixture.provider.dispose();
   });
-  it("passes the selected WPF tree mode to the picker", async () => {
+  it("uses the visual tree for the picker", async () => {
     const fixture = await create(undefined, undefined, { get: () => "logical", update: vi.fn() });
     fixture.receive({ type: "pick" });
-    await vi.waitFor(() => expect(mocks.request).toHaveBeenCalledWith("spy.start", expect.objectContaining({ tree: "logical" })));
+    await vi.waitFor(() => expect(mocks.request).toHaveBeenCalledWith("spy.start", expect.objectContaining({ tree: "visual" })));
     fixture.provider.dispose();
   });
   it("shows a blocked pick on its window instead of inspecting the UIA fallback", async () => {
@@ -338,6 +390,47 @@ describe("Spy view bridge", () => {
       },
     };
   };
+  it("replays selection into a late properties view and tracks its visibility without fetching again", async () => {
+    mocks.request.mockImplementation(async (method: string) => method === "inspect.refresh"
+      ? { nodes: [], status: { running: false } } : method === "inspect.properties"
+      ? { info: { name: "Save", controlType: "Button" }, properties: {}, ancestors: [] }
+      : method === "inspect.definitions" ? { definitions: [], errors: [], pageCount: 0 } : undefined);
+    const fixture = await create();
+    fixture.receive({ type: "ready" });
+    await vi.waitFor(() => expect(fixture.sent).toContainEqual({ type: "propertiesVisibility", visible: false }));
+    await vi.waitFor(() => expect(fixture.sent).toContainEqual({ type: "roots", nodes: [] }));
+    fixture.receive({ type: "select", nodeId: "save" });
+    await vi.waitFor(() => expect(fixture.sent).toContainEqual(expect.objectContaining({ type: "selected", nodeId: "save" })));
+    const before = mocks.request.mock.calls.filter(([method]) => method === "inspect.properties").length;
+    const sent: unknown[] = [];
+    let receive: (value: unknown) => void = () => {};
+    let visibility = () => {};
+    let dispose = () => {};
+    const show = vi.fn();
+    const view = { visible: true, show, webview: {
+      html: "", options: {}, cspSource: "source", asWebviewUri: (uri: unknown) => uri,
+      postMessage: (message: unknown) => { sent.push(message); return Promise.resolve(true); },
+      onDidReceiveMessage: (callback: typeof receive) => { receive = callback; return { dispose() {} }; },
+    }, onDidChangeVisibility: (callback: () => void) => { visibility = callback; return { dispose() {} }; },
+    onDidDispose: (callback: () => void) => { dispose = callback; return { dispose() {} }; } };
+    const registration = mocks.providerRegistrations.find(([id]) => id === "wintestkit.properties")!;
+    await (registration[1] as vscode.WebviewViewProvider).resolveWebviewView(view as unknown as vscode.WebviewView, {} as never, {} as never);
+    receive({ type: "propertiesReady" });
+    expect(sent).toContainEqual(expect.objectContaining({ type: "selected", nodeId: "save" }));
+    expect(mocks.request.mock.calls.filter(([method]) => method === "inspect.properties")).toHaveLength(before);
+    expect(fixture.sent).toContainEqual({ type: "propertiesVisibility", visible: true });
+    view.visible = false; visibility();
+    expect(fixture.sent.at(-1)).toEqual({ type: "propertiesVisibility", visible: false });
+    fixture.receive({ type: "showProperties" });
+    await vi.waitFor(() => expect(show).toHaveBeenCalledWith(true));
+    fixture.receive({ type: "select", nodeId: "next" });
+    await vi.waitFor(() => expect(sent).toContainEqual(expect.objectContaining({ type: "selected", nodeId: "next" })));
+    fixture.serverChanged("stopped");
+    expect(sent).toContainEqual({ type: "roots", nodes: [] });
+    dispose();
+    expect(fixture.sent.at(-1)).toEqual({ type: "propertiesVisibility", visible: false });
+    fixture.provider.dispose();
+  });
   const tutorialView = (): TourView => ({
     step: "spy",
     phase: "extras",
@@ -2040,7 +2133,7 @@ describe("Spy view bridge", () => {
 
     it("keeps the webview alive while the panel tab is hidden", async () => {
       const fixture = await create();
-      expect(mocks.providerRegistrations).toHaveLength(1);
+      expect(mocks.providerRegistrations).toHaveLength(2);
       expect(mocks.providerRegistrations[0][2]).toEqual({
         webviewOptions: { retainContextWhenHidden: true },
       });
@@ -2390,6 +2483,110 @@ describe("Spy view bridge", () => {
   });
 
   describe("keeping the selection through a reload", () => {
+    it("stops keepalives when Spy is hidden, the server disconnects, or the view is disposed", async () => {
+      const process = { pid: 42, creationTimeUtc: "start" };
+      mocks.request.mockImplementation(async (method: string) => {
+        if (method === "inspect.refresh") return { nodes: [], status: { running: true, pids: [42] } };
+        if (method === "inspect.managed.identify") return { process, appUnderTest: true };
+        if (method === "inspect.managed.attach") return { state: "ready", sessionId: "session", process };
+        return {};
+      });
+      const fixture = await create(undefined, undefined, undefined, true);
+      await fixture.provider.refresh();
+      const inspector = (fixture.provider as unknown as { managedInspector: { attachTree(id: string, target: typeof process): Promise<boolean> } }).managedInspector;
+      await inspector.attachTree("window", process);
+      let propertiesVisibility = () => {};
+      const propertiesView = { visible: false, webview: {
+        html: "", options: {}, cspSource: "source", asWebviewUri: (uri: unknown) => uri,
+        postMessage: () => Promise.resolve(true), onDidReceiveMessage: () => ({ dispose() {} }),
+      }, onDidChangeVisibility: (callback: () => void) => { propertiesVisibility = callback; return { dispose() {} }; }, onDidDispose: () => ({ dispose() {} }) };
+      const registration = mocks.providerRegistrations.find(([id]) => id === "wintestkit.properties")!;
+      await (registration[1] as vscode.WebviewViewProvider).resolveWebviewView(propertiesView as unknown as vscode.WebviewView, {} as never, {} as never);
+      vi.useFakeTimers();
+      try {
+        fixture.visibility();
+        await vi.advanceTimersByTimeAsync(60_000);
+        expect(mocks.request.mock.calls.filter(([method]) => method === "inspect.managed.keepalive")).toHaveLength(1);
+        fixture.view.visible = false; fixture.visibility();
+        await vi.advanceTimersByTimeAsync(120_000);
+        expect(mocks.request.mock.calls.filter(([method]) => method === "inspect.managed.keepalive")).toHaveLength(1);
+        propertiesView.visible = true; propertiesVisibility();
+        await vi.advanceTimersByTimeAsync(60_000);
+        expect(mocks.request.mock.calls.filter(([method]) => method === "inspect.managed.keepalive")).toHaveLength(2);
+        (inspector as unknown as { invalidate(): void }).invalidate();
+        await vi.advanceTimersByTimeAsync(120_000);
+        expect(mocks.request.mock.calls.filter(([method]) => method === "inspect.managed.keepalive")).toHaveLength(2);
+        await inspector.attachTree("window", process);
+        propertiesView.visible = false; propertiesVisibility();
+        fixture.view.visible = true; fixture.visibility();
+        fixture.serverChanged("stopped");
+        await vi.advanceTimersByTimeAsync(120_000);
+        expect(mocks.request.mock.calls.filter(([method]) => method === "inspect.managed.keepalive")).toHaveLength(2);
+        fixture.provider.dispose();
+        await vi.advanceTimersByTimeAsync(120_000);
+        expect(mocks.request.mock.calls.filter(([method]) => method === "inspect.managed.keepalive")).toHaveLength(2);
+      } finally { vi.useRealTimers(); fixture.provider.dispose(); }
+    });
+    it("limits automatic reattach attempts for 30 seconds and permits an explicit retry", async () => {
+      const process = { pid: 42, creationTimeUtc: "start" };
+      mocks.request.mockImplementation(async (method: string) => {
+        if (method === "inspect.refresh") return { nodes: [], status: { running: true, pids: [42] } };
+        if (method === "inspect.children") return { attachRequired: true, process };
+        if (method === "inspect.managed.identify") return { process, appUnderTest: true };
+        if (method === "inspect.managed.attach") throw new Error("Inspector unavailable");
+        return {};
+      });
+      const fixture = await create(undefined, undefined, undefined, true);
+      await fixture.provider.refresh();
+      vi.useFakeTimers();
+      try {
+        vi.setSystemTime(1000);
+        const host = fixture.provider as unknown as { recovering: boolean; childrenPage(client: unknown, nodeId: string): Promise<unknown>; handle(message: unknown): Promise<void> };
+        host.recovering = true;
+        expect(await host.childrenPage(fixture.client, "window")).toEqual({ blocked: { code: "attachFailed", hint: "Inspector unavailable" } });
+        expect(await host.childrenPage(fixture.client, "window")).toEqual({ blocked: expect.objectContaining({ code: "reattachLimited" }) });
+        expect(mocks.request.mock.calls.filter(([method]) => method === "inspect.managed.attach")).toHaveLength(1);
+        await host.handle({ type: "treeAttach", nodeId: "window" });
+        expect(mocks.request.mock.calls.filter(([method]) => method === "inspect.managed.attach")).toHaveLength(2);
+        vi.advanceTimersByTime(30_000);
+        await host.childrenPage(fixture.client, "window");
+        expect(mocks.request.mock.calls.filter(([method]) => method === "inspect.managed.attach")).toHaveLength(3);
+      } finally { vi.useRealTimers(); fixture.provider.dispose(); }
+    });
+    it.each(["gone", "reused"].flatMap((change) => ["button", "automatic", "stale", "restart"].map((trigger) => ({ change, trigger }))))("clears the old WPF selection when the process is $change via $trigger", async ({ change, trigger }) => {
+      const oldProcess = { pid: 42, creationTimeUtc: "old" };
+      let restarted = false;
+      const root = { nodeId: "window", hasChildren: true, info: { controlType: "Window", name: "App", processId: 42 } };
+      mocks.request.mockImplementation(async (method: string) => {
+        if (method === "inspect.refresh") return { nodes: restarted && change === "gone" ? [] : [root], status: { running: true, pids: [42] } };
+        if (method === "inspect.managed.identify") return { process: restarted ? { ...oldProcess, creationTimeUtc: "new" } : oldProcess, appUnderTest: true };
+        if (method === "inspect.managed.attach") return { sessionId: "old-session", state: "ready", process: oldProcess };
+        if (method === "inspect.properties") return { source: "wpf", info: root.info, properties: {}, ancestors: [] };
+        if (method === "inspect.children") return [];
+        if (method === "inspect.definitions") return { definitions: [], errors: [], pageCount: 0 };
+        return {};
+      });
+      const fixture = await create(undefined, undefined, undefined, true);
+      await fixture.provider.refresh();
+      const inspector = (fixture.provider as unknown as { managedInspector: { attachTree(id: string, process: typeof oldProcess): Promise<boolean> } }).managedInspector;
+      expect(await inspector.attachTree("window", oldProcess)).toBe(true);
+      fixture.receive({ type: "select", nodeId: "wpf:old", path: [{ ...root.info, automationId: "", className: "" }, { controlType: "Button", name: "Old", automationId: "", className: "", index: 0 }] });
+      await vi.waitFor(() => expect(fixture.sent).toContainEqual(expect.objectContaining({ type: "selected", nodeId: "wpf:old" })));
+      const before = fixture.sent.length;
+      restarted = true;
+      if (trigger === "button") await (fixture.provider as unknown as { handle(value: unknown): Promise<void> }).handle({ type: "refresh" });
+      else if (trigger === "stale") await (fixture.provider as unknown as { recoverStale(process: typeof oldProcess): Promise<void> }).recoverStale(oldProcess);
+      else if (trigger === "restart") {
+        fixture.serverChanged("stopped");
+        fixture.serverChanged("ready");
+        await vi.waitFor(() => expect(mocks.request.mock.calls.filter(([method]) => method === "inspect.refresh")).toHaveLength(2));
+        await vi.waitFor(() => expect(fixture.sent.slice(before).filter((message) => message.type === "roots")).toHaveLength(2));
+      } else await fixture.provider.refresh();
+      expect(fixture.sent.slice(before)).toContainEqual(expect.objectContaining({ type: "roots" }));
+      expect(fixture.sent.slice(before)).not.toContainEqual(expect.objectContaining({ type: "selectionRestored" }));
+      expect((fixture.provider as unknown as { selectedNodeId?: string }).selectedNodeId).toBeUndefined();
+      fixture.provider.dispose();
+    });
     const info = (controlType: string, name = "", extra: Record<string, string> = {}) =>
       ({ controlType, name, automationId: "", className: controlType === "Window" ? "W" : "P", ...extra });
     const root = { nodeId: "r1", hasChildren: true, info: info("Window", "App") };
@@ -2398,9 +2595,72 @@ describe("Spy view bridge", () => {
       { controlType: "Pane", automationId: "ed", name: "Editor", className: "P", index: 1 },
       { controlType: "Button", automationId: "", name: "Save", className: "P", index: 0 },
     ];
+    it.each([false, true])("updates the Properties view after selected-object recovery (failure: %s)", async (fail) => {
+      mocks.request.mockImplementation(async (method: string, params?: { nodeId?: string }) => {
+        if (method === "inspect.refresh") {
+          if (fail) throw new Error("server unavailable");
+          return { nodes: [{ ...root, nodeId: "fresh-root" }], status: { running: true, pids: [1] } };
+        }
+        if (method === "inspect.children") return params?.nodeId === "fresh-root"
+          ? [{ nodeId: "other", hasChildren: false, info: info("Pane") }, { nodeId: "fresh-editor", hasChildren: true, info: info("Pane", "Editor", { automationId: "ed" }) }]
+          : [{ nodeId: "wpf:fresh-save", hasChildren: false, info: info("Button", "Save") }];
+        if (method === "inspect.properties") {
+          if (params?.nodeId === "wpf:old-save") throw Object.assign(new Error("session ended"), { data: { code: "sessionStale" } });
+          return { source: "wpf", info: info("Button", "Save"), properties: {}, ancestors: [] };
+        }
+        if (method === "inspect.definitions") return { definitions: [], errors: [], pageCount: 0 };
+        return {};
+      });
+      const fixture = await create();
+      const propertiesMessages: Array<{ type: string; [key: string]: unknown }> = [];
+      let propertiesReceive: (value: unknown) => void = () => {};
+      const propertiesView = { visible: true, webview: {
+        html: "", options: {}, cspSource: "source", asWebviewUri: (uri: unknown) => uri,
+        postMessage: (message: { type: string }) => { propertiesMessages.push(message); return Promise.resolve(true); },
+        onDidReceiveMessage: (callback: typeof propertiesReceive) => { propertiesReceive = callback; return { dispose() {} }; },
+      }, onDidChangeVisibility: () => ({ dispose() {} }), onDidDispose: () => ({ dispose() {} }) };
+      const registration = mocks.providerRegistrations.find(([id]) => id === "wintestkit.properties")!;
+      await (registration[1] as vscode.WebviewViewProvider).resolveWebviewView(propertiesView as unknown as vscode.WebviewView, {} as never, {} as never);
+      propertiesReceive({ type: "propertiesReady" });
+      fixture.receive({ type: "select", nodeId: "wpf:old-save", path: route });
+      if (fail) await vi.waitFor(() => expect(propertiesMessages).toContainEqual(expect.objectContaining({ type: "error", message: expect.stringContaining("server unavailable") })));
+      else await vi.waitFor(() => expect(propertiesMessages).toContainEqual(expect.objectContaining({ type: "selected", nodeId: "wpf:fresh-save" })));
+      expect(propertiesMessages).toContainEqual(expect.objectContaining({ type: "roots" }));
+      fixture.provider.dispose();
+    });
+    it.each([false, true])("reports stale preview recovery (refresh failure: %s)", async (fail) => {
+      let previewCalls = 0;
+      let refreshCalls = 0;
+      const stale = Object.assign(new Error("session ended"), { data: { code: "sessionStale" } });
+      mocks.request.mockImplementation(async (method: string, params?: { nodeId?: string }) => {
+        if (method === "inspect.refresh") {
+          refreshCalls++;
+          if (fail) throw new Error("server unavailable");
+          return { nodes: [{ ...root, nodeId: "fresh-root" }], status: { running: true, pids: [1] } };
+        }
+        if (method === "inspect.children") return params?.nodeId === "fresh-root"
+          ? [{ nodeId: "fresh-editor", hasChildren: true, info: info("Pane", "Editor", { automationId: "ed" }) }, { nodeId: "fresh-editor", hasChildren: true, info: info("Pane", "Editor", { automationId: "ed" }) }]
+          : [{ nodeId: "wpf:fresh-save", hasChildren: false, info: info("Button", "Save") }];
+        if (method === "inspect.properties") return { source: "wpf", info: info("Button", "Save"), properties: {}, ancestors: [] };
+        if (method === "inspect.preview") { if (++previewCalls === 1) throw stale; return { reason: "New capture" }; }
+        if (method === "inspect.definitions") return { definitions: [], errors: [], pageCount: 0 };
+        return {};
+      });
+      const fixture = await create();
+      fixture.receive({ type: "select", nodeId: "wpf:old-save", path: route });
+      await vi.waitFor(() => expect(fixture.sent).toContainEqual(expect.objectContaining({ type: "objectPreview", nodeId: "wpf:old-save", reason: expect.stringContaining("Reconnecting") })));
+      if (fail) {
+        await vi.waitFor(() => expect(fixture.sent).toContainEqual(expect.objectContaining({ type: "error", message: expect.stringContaining("server unavailable") })));
+      } else {
+        await vi.waitFor(() => expect(fixture.sent).toContainEqual(expect.objectContaining({ type: "objectPreview", nodeId: "wpf:fresh-save", reason: "New capture" })));
+        expect(fixture.sent).toContainEqual({ type: "selectionRestored", nodeId: "wpf:fresh-save" });
+      }
+      expect(refreshCalls).toBe(1);
+      fixture.provider.dispose();
+    });
     /** A server whose tree is rebuilt with new node ids on every call, as after a restart. */
-    const serve = (options: { editor?: boolean; generation?: () => number } = {}) => {
-      const { editor = true, generation = () => 1 } = options;
+    const serve = (options: { editor?: boolean; branch?: boolean; generation?: () => number } = {}) => {
+      const { editor = true, branch = false, generation = () => 1 } = options;
       const id = (name: string) => name + generation();
       mocks.request.mockImplementation((method: string, params?: { nodeId?: string }) => {
         if (method === "inspect.refresh")
@@ -2408,7 +2668,7 @@ describe("Spy view bridge", () => {
         if (method === "inspect.children") {
           if (params?.nodeId === id("r"))
             return Promise.resolve([
-              { nodeId: id("a"), hasChildren: false, info: info("Pane") },
+              { nodeId: id("a"), hasChildren: branch, info: info("Pane") },
               ...(editor ? [{ nodeId: id("ed"), hasChildren: true, info: info("Pane", "Editor", { automationId: "ed" }) }] : []),
             ]);
           if (params?.nodeId === id("ed"))
@@ -2434,6 +2694,32 @@ describe("Spy view bridge", () => {
       fixture.receive({ type: "select", nodeId: "save1", path: route });
       return vi.waitFor(() => expect(selected(fixture)).toEqual(["save1"]));
     };
+
+    it("rebuilds expanded paths and restores the selection after a stale session", async () => {
+      let generation = 1;
+      serve({ branch: true, generation: () => generation });
+      const fixture = await create();
+      await selectSave(fixture);
+      fixture.receive({ type: "expandedPaths", paths: [[route[0]], route.slice(0, 2), [route[0], { controlType: "Pane", automationId: "", name: "", className: "P", index: 0 }]] });
+      generation = 2;
+      await (fixture.provider as unknown as { recoverStale(): Promise<void> }).recoverStale();
+      expect(fixture.sent).toContainEqual(expect.objectContaining({ type: "children", nodeId: "r2", expanded: true }));
+      expect(fixture.sent).toContainEqual(expect.objectContaining({ type: "children", nodeId: "ed2", expanded: true }));
+      expect(fixture.sent).toContainEqual(expect.objectContaining({ type: "children", nodeId: "a2", expanded: true }));
+      expect(fixture.sent).toContainEqual({ type: "selectionRestored", nodeId: "save2" });
+      fixture.provider.dispose();
+    });
+
+    it("selects the closest surviving ancestor during stale recovery", async () => {
+      serve();
+      const fixture = await create();
+      await selectSave(fixture);
+      serve({ editor: false });
+      await (fixture.provider as unknown as { recoverStale(): Promise<void> }).recoverStale();
+      expect(fixture.sent).toContainEqual({ type: "selectionRestored", nodeId: "r1" });
+      expect(mocks.warning).toHaveBeenCalledWith(expect.stringContaining("closest surviving ancestor"));
+      fixture.provider.dispose();
+    });
 
     it("selects the same object again after a reload, opening the tree down to it", async () => {
       serve();

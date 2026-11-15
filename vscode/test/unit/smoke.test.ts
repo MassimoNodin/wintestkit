@@ -621,7 +621,10 @@ describe("extension scaffold", () => {
   });
 
   it("has a Windows testing manifest and configuration parser dependencies", () => {
-    expect(manifest.engines.vscode).toBe("^1.95.0");
+    expect(manifest.engines.vscode).toBe("^1.106.0");
+    expect(manifest.devDependencies["@types/vscode"]).toBe("1.106.0");
+    expect(manifest.contributes.viewsContainers.secondarySidebar).toContainEqual(expect.objectContaining({ id: "wintestkit-properties" }));
+    expect(manifest.contributes.views["wintestkit-properties"]).toContainEqual({ id: "wintestkit.properties", name: "Properties", type: "webview", when: "wintestkit.enabled && !wintestkit.setupBlocked" });
     expect(manifest.extensionDependencies).toContain("ms-python.python");
     expect(Object.keys(manifest.dependencies)).toEqual([
       "@vscode/python-extension",

@@ -508,9 +508,6 @@ ul {
 .control-icon[data-kind="action"] {
     color: var(--vscode-symbolIcon-methodForeground, #9a78bd);
 }
-.tree-mode-label { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
-.tree-mode-label select { color: var(--vscode-foreground); background: var(--vscode-dropdown-background); border: 1px solid var(--vscode-dropdown-border); }
-.source-badge { font-size: 10px; color: var(--vscode-descriptionForeground); border: 1px solid var(--vscode-panel-border); border-radius: 3px; padding: 0 3px; margin-inline: 4px; }
 .tree-message { padding: 4px 8px 4px 24px; color: var(--vscode-descriptionForeground); }
 .tree-message button { margin-left: 8px; }
 .metadata {
@@ -1061,3 +1058,12 @@ col.property-action-column { width: 34px; }
 .managed-row button { margin: 4px 4px 0 0; }
 .managed-children { margin-left: 16px; border-left: 1px solid var(--border); }
 #managed-groups p { padding: 8px 12px; overflow-wrap: anywhere; }
+
+/* The same renderer serves two views; each exposes only its own controls. */
+body.spy-view #properties-view-status, body.spy-view #property-groups, body.spy-view #properties-empty, body.spy-view #managed-panel { display: none !important; }
+body.properties-view .toolbar, body.properties-view #tree-pane, body.properties-view #splitter, body.properties-view #selection-main, body.properties-view #details > .pane-heading, body.properties-view #properties-pane > .pane-heading, body.properties-view #object-preview, body.properties-view #properties-elsewhere, body.properties-view #extra-tutorial, body.properties-view #tutorial-scrim { display: none !important; }
+body.properties-view #workspace, body.properties-view #details, body.properties-view .inspector-columns, body.properties-view #properties-pane { display: block; height: auto; min-height: 0; padding: 0; border: 0; overflow: visible; }
+body.properties-view .properties-scroll { overflow: visible; }
+#properties-elsewhere { padding: 0 12px; }
+
+body.properties-view { display: block; height: auto; min-height: 100vh; overflow-y: auto; }
