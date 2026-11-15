@@ -113,6 +113,18 @@ def _caller_source() -> tuple[str, int] | None:
     return (frame.f_code.co_filename, frame.f_lineno)
 
 
+def _has_locator(has: Element[Any] | Locator | None) -> Locator | None:
+    """The locator a ``has=`` argument stands for (an element's own properties)."""
+    __tracebackhide__ = True
+    if has is None or isinstance(has, Locator):
+        return has
+    if not isinstance(has, Element) or isinstance(has, Elements):  # pyright: ignore[reportUnnecessaryIsInstance]
+        raise TypeError("has= must be an Element or a Locator")
+    if has.within is not None or has.window is not None:
+        raise ValueError("has= takes properties, where, any_of and depth, not within, window")
+    return has._own
+
+
 class ChildOptions(TypedDict, total=False):
     """Options of ``parent.Element(...)`` and the typed child methods (``parent.Button(...)``).
 
@@ -129,6 +141,7 @@ class ChildOptions(TypedDict, total=False):
     validate: bool
     where: Mapping[str, WhereValue]
     any_of: Sequence[Mapping[str, Any]]
+    has: Element[Any] | Locator
 
 
 class ChildGroupOptions(TypedDict, total=False):
@@ -141,6 +154,7 @@ class ChildGroupOptions(TypedDict, total=False):
     timeout: float
     where: Mapping[str, WhereValue]
     any_of: Sequence[Mapping[str, Any]]
+    has: Element[Any] | Locator
 
 
 _CHILD_FORBIDDEN = ("within", "depth", "window")
@@ -1647,6 +1661,7 @@ class Element(Generic[B]):  # noqa: UP046  (a type-parameter default needs Pytho
         validate: bool = True,
         where: Mapping[str, WhereValue] | None = None,
         any_of: Sequence[Mapping[str, Any]] | None = None,
+        has: Element[Any] | Locator | None = None,
     ) -> None:
         __tracebackhide__ = True
         self._init(
@@ -1662,6 +1677,7 @@ class Element(Generic[B]):  # noqa: UP046  (a type-parameter default needs Pytho
             validate,
             where,
             any_of,
+            has,
         )
 
     def _init(
@@ -1678,6 +1694,7 @@ class Element(Generic[B]):  # noqa: UP046  (a type-parameter default needs Pytho
         validate: bool = True,
         where: Mapping[str, WhereValue] | None = None,
         any_of: Sequence[Mapping[str, Any]] | None = None,
+        has: Element[Any] | Locator | None = None,
     ) -> None:
         __tracebackhide__ = True
         if within is not None and (
@@ -1704,6 +1721,7 @@ class Element(Generic[B]):  # noqa: UP046  (a type-parameter default needs Pytho
             depth=depth,
             where=normalize_where(where, {}),
             any_of=any_of_from_mappings(any_of),
+            has=_has_locator(has),
         )
         self.name: str | None = None
         self.owner: type | None = None
@@ -1824,6 +1842,7 @@ class Elements(Element[BoundElement]):
         timeout: float | None = None,
         where: Mapping[str, WhereValue] | None = None,
         any_of: Sequence[Mapping[str, Any]] | None = None,
+        has: Element[Any] | Locator | None = None,
     ) -> None:
         __tracebackhide__ = True
         self._init(
@@ -1838,6 +1857,7 @@ class Elements(Element[BoundElement]):
             timeout,
             where=where,
             any_of=any_of,
+            has=has,
         )
 
     @overload  # type: ignore[override]

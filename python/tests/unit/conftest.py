@@ -10,6 +10,7 @@ def fake_uia_tree_backend(request, monkeypatch):
     modules = {
         "test_coverage.py",
         "test_any_of.py",
+        "test_has.py",
         "test_expect.py",
         "test_managed_locator.py",
         "test_model.py",

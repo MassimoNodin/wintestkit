@@ -6,7 +6,7 @@ import json
 from collections.abc import Generator, Mapping, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from difflib import SequenceMatcher
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -456,6 +456,28 @@ def diagnose_ambiguous(
         searched_in=searched_in,
         match_count=len(matches),
         candidates=_match_candidates(matches, link),
+    )
+
+
+def diagnose_no_has_match(
+    matched: Sequence[TargetElement], link: Locator, searched_in: str, full_locator: Locator
+) -> Diagnostic:
+    """Explain that elements matched ``link``'s properties but none contains its ``has=`` child."""
+    __tracebackhide__ = True
+    assert link.has is not None
+    count = len(matched)
+    noun = "1 element matched" if count == 1 else f"{count} elements matched"
+    base = replace(link, has=None, index=None, item=None).describe_link()
+    return Diagnostic(
+        kind="not_found",
+        message=(
+            f"{noun} {base} in {searched_in}, "
+            f"but none contains {link.has.describe_link(include_item=False)}"
+        ),
+        locator=full_locator.describe(),
+        searched_in=searched_in,
+        match_count=0,
+        candidates=_match_candidates(matched, link),
     )
 
 

@@ -1827,6 +1827,7 @@ export interface LocatorData {
    * @minItems 2
    */
   anyOf?: [LocatorData, LocatorData, ...LocatorData[]];
+  has?: LocatorData;
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema

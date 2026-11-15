@@ -140,5 +140,24 @@
       ]
     },
     "describe": "Button[any_of=(id=\"Ok\" | name=/^ok$/i, control_type=Button | HelpText=\"Confirm\")]"
+  },
+  {
+    "locator": {
+      "controlType": "Group",
+      "has": { "controlType": "Button", "automationId": "Ok" }
+    },
+    "describe": "Group[has=Button[id=\"Ok\"]]"
+  },
+  {
+    "locator": {
+      "controlType": "Group",
+      "name": "Panel",
+      "depth": 1,
+      "has": {
+        "depth": 2,
+        "anyOf": [{ "automationId": "A" }, { "name": "B", "controlType": "Button" }]
+      }
+    },
+    "describe": "Group[name=\"Panel\", depth=1, has=*[depth=2, any_of=(id=\"A\" | name=\"B\", control_type=Button)]]"
   }
 ]

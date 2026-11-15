@@ -299,6 +299,9 @@
           "items": {
             "$ref": "common.schema.json#/$defs/LocatorData"
           }
+        },
+        "has": {
+          "$ref": "common.schema.json#/$defs/LocatorData"
         }
       },
       "required": [],

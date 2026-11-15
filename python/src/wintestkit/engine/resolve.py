@@ -19,6 +19,7 @@ from wintestkit.engine.diagnose import (
     Diagnostic,
     diagnose_ambiguous,
     diagnose_index_out_of_range,
+    diagnose_no_has_match,
     diagnose_not_found,
     diagnose_window,
     diagnose_within_failed,
@@ -189,6 +190,8 @@ def _match_link(
     use_index: bool = False,
 ) -> list[TargetElement]:
     __tracebackhide__ = True
+    if link.has is not None:
+        return _match_has(scope, root, link, full, first, use_index=use_index)
     if link.any_of:
         return _match_alternatives(scope, root, link, full, first, use_index=use_index)
     matches: list[TargetElement]
@@ -201,15 +204,76 @@ def _match_link(
     return matches
 
 
+#: At most this many candidates of one link are checked against its ``has=`` filter.
+MAX_HAS_CANDIDATES = 200
+
+
+class _HasMatches(list[TargetElement]):
+    """Matches that passed a ``has=`` filter; ``prefiltered`` holds the ones before it."""
+
+    prefiltered: list[TargetElement]
+
+    def __init__(self, kept: list[TargetElement], prefiltered: list[TargetElement]) -> None:
+        __tracebackhide__ = True
+        super().__init__(kept)
+        self.prefiltered = prefiltered
+
+
 class _IndexedMatches(list[TargetElement]):
     """The single element chosen by ``index`` from the union of ``any_of`` alternatives."""
 
     indexed = True
 
-    def __init__(self, selected: list[TargetElement], merged: list[TargetElement]) -> None:
+    def __init__(
+        self,
+        selected: list[TargetElement],
+        merged: list[TargetElement],
+        prefiltered: list[TargetElement] | None = None,
+    ) -> None:
         __tracebackhide__ = True
         super().__init__(selected)
         self.merged = merged
+        #: Candidates before a ``has=`` filter (empty without one).
+        self.prefiltered = prefiltered or []
+
+
+def _contains(candidate: TargetElement, child: Locator) -> bool:
+    """True when ``child`` (properties, where, any_of, depth) matches below ``candidate``."""
+    __tracebackhide__ = True
+    for alternative in expand_alternatives(child):
+        if isinstance(candidate, WpfElement):
+            if len(wpf_query(candidate, alternative)):
+                return True
+        elif query_all(uia_of(candidate), alternative):
+            return True
+    return False
+
+
+def _match_has(
+    scope: Scope,
+    root: TargetElement,
+    link: Locator,
+    full: Locator,
+    first: bool,
+    *,
+    use_index: bool,
+) -> list[TargetElement]:
+    """Matches of ``link`` that contain its ``has=`` child; ``index`` applies after filtering."""
+    __tracebackhide__ = True
+    assert link.has is not None
+    base = replace(link, has=None, index=None)
+    candidates = list(_match_link(scope, root, base, full, first))
+    if len(candidates) > MAX_HAS_CANDIDATES:
+        raise InspectorLimitError(
+            f"has= query exceeded {MAX_HAS_CANDIDATES} candidates for local filtering; "
+            "narrow the locator",
+            code="limitExceeded",
+        )
+    kept = [candidate for candidate in candidates if _contains(candidate, link.has)]
+    if use_index and link.index is not None:
+        chosen = [kept[link.index]] if link.index < len(kept) else []
+        return _IndexedMatches(chosen, kept, candidates)
+    return _HasMatches(kept, candidates)
 
 
 def _match_alternatives(
@@ -346,6 +410,11 @@ def _resolve_link(
                 return matches[0].as_live()
             # An empty indexed result: the union of any_of alternatives is shorter than the index.
             merged = cast(_IndexedMatches, matches).merged
+            prefiltered = cast(_IndexedMatches, matches).prefiltered
+            if not merged and prefiltered:
+                raise ElementNotFoundError(
+                    diagnose_no_has_match(prefiltered, link, searched_in, full)
+                )
             raise ElementNotFoundError(diagnose_index_out_of_range(merged, link, searched_in, full))
         if link.index >= len(matches):
             raise ElementNotFoundError(
@@ -354,6 +423,10 @@ def _resolve_link(
         return matches[link.index].as_live()
     if len(matches) == 1:
         return matches[0].as_live()
+    if not matches and link.has is not None and getattr(matches, "prefiltered", None):
+        raise ElementNotFoundError(
+            diagnose_no_has_match(cast(_HasMatches, matches).prefiltered, link, searched_in, full)
+        )
     if not matches:
         try:
             diagnostic_root = uia_of(root)
@@ -399,8 +472,8 @@ def wait_link(scope: Scope, locator: Locator, state: str) -> tuple[bool, TargetE
     link = links[-1]
     if state not in ("attached", "visible", "enabled") or link.item is not None:
         return False, None
-    if any(candidate.any_of for candidate in links):
-        # One wire query cannot express alternatives: poll through normal resolution.
+    if any(candidate.any_of or candidate.has is not None for candidate in links):
+        # One wire query cannot express alternatives or has= filters: poll normally.
         return False, None
     try:
         constraints = resolve_where(link.where, link.describe_link(), link.taken())

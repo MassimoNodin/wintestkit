@@ -21,6 +21,7 @@ from wintestkit.engine.resolve import Scope, resolve, resolve_all
 from wintestkit.engine.wpf_query import translate
 from wintestkit.errors import (
     AmbiguousElementError,
+    ElementNotFoundError,
     InspectorError,
     InspectorUnavailableError,
     InvalidLocatorError,
@@ -1650,3 +1651,50 @@ def test_managed_property_reads_real(owned):
         assert page.peerless.get("type:FullName") == "WinTestKit.Fixture.PeerlessMarker"
         expect(page.fancy, timeout=5).to_have_property("clr:DataContext.Label", re.compile("fix"))
         page.peerless.wait_for_property("type:FullName", re.compile("PeerlessMarker"), timeout=5)
+
+
+def _runtime_ids(matches):
+    from wintestkit.backends.element import uia_of
+
+    return [uia_of(element).runtime_id for element in matches]
+
+
+@pytest.mark.parametrize("backend", ["uia", "auto"])
+def test_any_of_resolves_through_either_alternative(owned, backend):
+    scope, path = owned
+    fancy = Locator(automation_id="FancyAutomationId")
+    missing = Locator(automation_id="NoSuchAutomationId")
+    with runtime.config_scope(replace(config(path, "agent"), backend=backend)):
+        expected = _runtime_ids([resolve(scope, fancy)])
+        for alternatives in ((fancy, missing), (missing, fancy)):
+            locator = Locator(any_of=alternatives)
+            assert _runtime_ids([resolve(scope, locator)]) == expected
+
+
+@pytest.mark.parametrize("backend", ["uia", "auto"])
+def test_any_of_ambiguity_across_alternatives(owned, backend):
+    scope, path = owned
+    locator = Locator(
+        any_of=(Locator(automation_id="FancyAutomationId"), Locator(automation_id="ParityGroup"))
+    )
+    with runtime.config_scope(replace(config(path, "agent"), backend=backend)):
+        assert len(resolve_all(scope, locator)) == 2
+        with pytest.raises(AmbiguousElementError):
+            resolve(scope, locator)
+        picked = _runtime_ids([resolve(scope, replace(locator, index=0))])
+        assert picked == _runtime_ids([resolve(scope, Locator(automation_id="FancyAutomationId"))])
+
+
+@pytest.mark.parametrize("backend", ["uia", "auto"])
+def test_has_picks_the_group_containing_the_nested_button(owned, backend):
+    scope, path = owned
+    nested = Locator(automation_id="NestedButton")
+    with runtime.config_scope(replace(config(path, "agent"), backend=backend)):
+        parity = _runtime_ids([resolve(scope, Locator(automation_id="ParityGroup"))])
+        groups = Locator(control_type="Group", has=nested)
+        assert set(parity) <= set(_runtime_ids(resolve_all(scope, groups)))
+        unique = Locator(automation_id="ParityGroup", has=nested)
+        assert _runtime_ids([resolve(scope, unique)]) == parity
+        wrong = Locator(automation_id="ParityGroup", has=Locator(automation_id="Duplicate"))
+        with pytest.raises(ElementNotFoundError, match="none contains"):
+            resolve(scope, wrong)

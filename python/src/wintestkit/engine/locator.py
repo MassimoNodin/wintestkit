@@ -254,6 +254,8 @@ class Locator:
     where: Where = ()
     #: OR across alternative property groups; each alternative holds only property fields.
     any_of: tuple[Locator, ...] = ()
+    #: Keep only matches that contain a descendant matching this locator.
+    has: Locator | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "where", normalize_where(dict(self.where), self.taken()))
@@ -269,8 +271,32 @@ class Locator:
                 alternative.check_alternative()
             # Fail at construction time when an alternative contradicts the locator itself.
             expand_alternatives(self)
+        if self.has is not None:
+            if not isinstance(self.has, Locator):  # pyright: ignore[reportUnnecessaryIsInstance]
+                raise TypeError("has= must be an Element or a Locator")
+            self.has.check_has()
         if self.is_empty() and self.index is None:
             raise ValueError("locator needs at least one property")
+
+    def check_has(self) -> None:
+        """Raise unless this locator is a valid ``has`` child (properties, where, any_of, depth)."""
+        if self.is_empty():
+            raise ValueError("has= needs at least one property")
+        extras = [
+            name
+            for name, value in (
+                ("index", self.index),
+                ("within", self.within),
+                ("window", self.window),
+                ("item", self.item),
+                ("has", self.has),
+            )
+            if value is not None
+        ]
+        if extras:
+            raise ValueError(
+                f"has= takes properties, where, any_of and depth, not {', '.join(extras)}"
+            )
 
     def check_alternative(self) -> None:
         """Raise unless this locator is a valid ``any_of`` alternative (properties only)."""
@@ -285,6 +311,7 @@ class Locator:
                 ("window", self.window),
                 ("item", self.item),
                 ("any_of", self.any_of or None),
+                ("has", self.has),
             )
             if value is not None
         ]
@@ -300,6 +327,7 @@ class Locator:
             and self.class_name is None
             and not self.where
             and not self.any_of
+            and self.has is None
         )
 
     def taken(self) -> dict[str, str]:
@@ -381,6 +409,8 @@ class Locator:
         if self.any_of:
             alternatives = " | ".join(alt.describe_properties() for alt in self.any_of)
             parts.append(f"any_of=({alternatives})")
+        if self.has is not None:
+            parts.append(f"has={self.has.describe_link()}")
         head = self.control_type or "*"
         text = f"{head}[{', '.join(parts)}]" if parts else head
         if include_item and self.item is not None:
@@ -418,6 +448,8 @@ class Locator:
             data["item"] = self.item.to_dict()
         if self.any_of:
             data["anyOf"] = [alternative.to_dict() for alternative in self.any_of]
+        if self.has is not None:
+            data["has"] = self.has.to_dict()
         return data
 
     @classmethod
@@ -437,6 +469,7 @@ class Locator:
                 "item",
                 "where",
                 "anyOf",
+                "has",
             },
         )
         return cls(
@@ -453,6 +486,7 @@ class Locator:
             item=ItemSelector.from_dict(data["item"]) if "item" in data else None,
             where=where_from_data(data["where"]) if "where" in data else (),
             any_of=tuple(cls.from_dict(alt) for alt in data.get("anyOf", ())),
+            has=cls.from_dict(data["has"]) if "has" in data else None,
         )
 
 
@@ -520,6 +554,7 @@ def expand_alternatives(link: Locator) -> list[Locator]:
                 class_name=_merge_value("class_name", link.class_name, alternative.class_name),
                 where=tuple(where.items()),
                 any_of=(),
+                has=None,
                 index=None,
             )
         )

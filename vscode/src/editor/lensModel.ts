@@ -103,7 +103,7 @@ const alternativeParts = (alternative: LocatorData): string =>
       : []),
     ...whereParts(alternative.where),
   ].join(", ");
-export function describeLocator(locator: LocatorData): string {
+function describeLink(locator: LocatorData): string {
   const parts: string[] = [];
   if (locator.automationId !== undefined)
     parts.push("id=" + matcher(locator.automationId));
@@ -115,6 +115,7 @@ export function describeLocator(locator: LocatorData): string {
   parts.push(...whereParts(locator.where));
   if (locator.anyOf?.length)
     parts.push("any_of=(" + locator.anyOf.map(alternativeParts).join(" | ") + ")");
+  if (locator.has) parts.push("has=" + describeLink(locator.has));
   let result =
     (locator.controlType ?? "*") +
     (parts.length ? "[" + parts.join(", ") + "]" : "");
@@ -125,6 +126,10 @@ export function describeLocator(locator: LocatorData): string {
         ? " > row(" + item.row + ")"
         : " > cell(" + item.row + ", " + JSON.stringify(item.column) + ")";
   }
+  return result;
+}
+export function describeLocator(locator: LocatorData): string {
+  let result = describeLink(locator);
   if (locator.within) result = describeLocator(locator.within) + " > " + result;
   if (locator.window) result = describeWindow(locator.window) + " >> " + result;
   return result;
