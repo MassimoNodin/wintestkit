@@ -3504,10 +3504,14 @@
       "properties": {
         "audit": {
           "$ref": "#/$defs/WriteAudit"
+        },
+        "result": {
+          "$ref": "#/$defs/Value"
         }
       },
       "required": [
-        "audit"
+        "audit",
+        "result"
       ],
       "additionalProperties": false
     },

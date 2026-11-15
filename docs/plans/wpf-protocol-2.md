@@ -122,7 +122,7 @@ are exact; no implicit sessionId is needed beyond the ObjectRefs and authenticat
 | `wait.until` | `{condition:WaitCondition,timeoutMs}` | WaitResult. Recheck on relevant layout/property changes until deadline; timeout returns `satisfied:false`. Multiple matches use the first; the query warning is not included. |
 | `hitTest` | `{nativeWindowHandle:integer,point:{x:number,y:number},timeoutMs,includePath?:boolean}` | `{handle:ObjectRef,path?:ManagedNode[]}` or `notFound`; point uses physical screen pixels. |
 | `write.setProperty` | `{handle:ObjectRef,memberKey:string,value:Scalar,timeoutMs}` | `{audit:WriteAudit}` |
-| `write.call` | `{handle:ObjectRef,memberKey:string,arguments:Scalar[],timeoutMs}` | `{audit:WriteAudit}`; at most 16 scalar arguments, no return value |
+| `write.call` | `{handle:ObjectRef,memberKey:string,arguments:Scalar[],timeoutMs}` | `{audit:WriteAudit,result:Value}`; at most 16 scalar arguments; void returns a null value and protected returns are redacted |
 | `events.subscribe` | `{kinds:EventKind[]}` | `{subscriptionId:string}`; 1–3 unique kinds |
 | `events.unsubscribe` | `{subscriptionId:string}` | `{unsubscribed:boolean}` |
 

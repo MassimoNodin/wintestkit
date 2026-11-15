@@ -812,7 +812,7 @@ class InspectorClient:
         params: dict[str, object],
         timeout_ms: int,
         deadline: float,
-    ) -> WriteAudit:
+    ) -> tuple[WriteAudit, Value | None]:
         self._feature("writes")
         try:
             self._object_ref(ref)
@@ -821,11 +821,12 @@ class InspectorClient:
         except (ValueError, TypeError, AttributeError) as error:
             raise InspectorError("Invalid write target", code="invalidParams") from error
 
-        def parse(value: object) -> WriteAudit:
-            audit = WriteAudit.from_json(_obj(value, "audit")["audit"])
+        def parse(value: object) -> tuple[WriteAudit, Value | None]:
+            data = _obj(value, "audit result" if method == "write.call" else "audit")
+            audit = WriteAudit.from_json(data["audit"])
             if audit.operation != method.removeprefix("write.") or audit.outcome != "performed":
                 raise ValueError("Invalid write audit")
-            return audit
+            return audit, Value.from_json(data["result"]) if method == "write.call" else None
 
         return self._parse(
             parse,
@@ -854,9 +855,10 @@ class InspectorClient:
             scalar = _write_scalar(value)
         except (ValueError, TypeError, OverflowError) as error:
             raise InspectorError("Invalid write value", code="invalidParams") from error
-        return self._write(
+        audit, _ = self._write(
             "write.setProperty", ref, member_key, {"value": scalar}, timeout_ms, deadline
         )
+        return audit
 
     def write_call(
         self,
@@ -866,16 +868,18 @@ class InspectorClient:
         *,
         timeout_ms: int,
         deadline: float,
-    ) -> WriteAudit:
+    ) -> tuple[WriteAudit, Value]:
         try:
             if not isinstance(arguments, (list, tuple)) or len(arguments) > 16:
                 raise ValueError("Invalid arguments")
             values = [_write_scalar(value) for value in arguments]
         except (ValueError, TypeError, OverflowError) as error:
             raise InspectorError("Invalid write arguments", code="invalidParams") from error
-        return self._write(
+        audit, result = self._write(
             "write.call", ref, member_key, {"arguments": values}, timeout_ms, deadline
         )
+        assert result is not None
+        return audit, result
 
     def act_realize_item(
         self,

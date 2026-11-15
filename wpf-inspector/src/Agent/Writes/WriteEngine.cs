@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Threading;
 using WinTestKit.Inspector.Agent.Inspection;
+using WinTestKit.Inspector.Agent.Contracts;
 using WinTestKit.Inspector.Agent.Inspection.Members;
 using WinTestKit.Inspector.Protocol;
 
@@ -22,7 +23,7 @@ namespace WinTestKit.Inspector.Agent.Writes
         internal WriteEngine(DispatcherExecutor executor, WriteAllowlist allowlist, IEnumerable<string> rules)
         { this.executor = executor; this.allowlist = allowlist; redaction = new RedactionPolicy(rules); }
 
-        internal async Task<WriteAudit> ExecuteAsync(Dispatcher dispatcher, object target, string operation, string key, IReadOnlyList<JsonNode> values, DateTime deadline, int timeoutMs, CancellationToken ct)
+        internal async Task<WriteCallResult> ExecuteWithResultAsync(Dispatcher dispatcher, object target, string operation, string key, IReadOnlyList<JsonNode> values, DateTime deadline, int timeoutMs, CancellationToken ct, IObjectRegistry registry)
         {
             string typeName = target.GetType().FullName ?? target.GetType().Name;
             string name = MemberName(key, operation);
@@ -73,20 +74,30 @@ namespace WinTestKit.Inspector.Agent.Writes
                                 throw Error(ErrorCodes.WriteDenied, Audit("denied", "redacted"));
                             if (dependency != null && !dependency.Property.ReadOnly) resolvedKey = dependency.Key;
                         }
-                        try { Perform(target, operation, resolvedKey, values); }
+                        object? returned; Type declared;
+                        try { returned = Perform(target, operation, resolvedKey, values, out declared); }
                         catch (ProtocolException e) { throw Error(e.Code, Audit(e.Code == ErrorCodes.WriteDenied ? "denied" : "failed", e.Code)); }
                         catch (Exception e)
                         {
                             var actual = e is TargetInvocationException invocation && invocation.InnerException != null ? invocation.InnerException : e;
                             throw Error(ErrorCodes.InternalError, Audit("failed", actual.GetType().Name));
                         }
-                        return Audit("performed");
+                        var result = returned != null && RedactionPolicy.IsProtectedIdentity(returned)
+                            ? new ValueDto { Status = "redacted", Kind = "unavailable", RedactionRule = "identity" }
+                            : ValueSerializer.Serialize(returned, declared, registry, dispatcher);
+                        return new WriteCallResult { Audit = Audit("performed"), Result = result };
                     }, timed.Token).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException) when (!ct.IsCancellationRequested) { throw Error(ErrorCodes.Timeout, Audit("failed", "timeout")); }
                 catch (ProtocolException e) when (e.Details == null || !e.Details.TryGet("audit", out _))
                 { throw Error(e.Code, Audit("failed", DateTime.UtcNow >= end ? "timeout" : e.Code)); }
             }
+        }
+
+        internal async Task<WriteAudit> ExecuteAsync(Dispatcher dispatcher, object target, string operation, string key, IReadOnlyList<JsonNode> values, DateTime deadline, int timeoutMs, CancellationToken ct)
+        {
+            using (var registry = new ObjectRegistry("write", executor))
+                return (await ExecuteWithResultAsync(dispatcher, target, operation, key, values, deadline, timeoutMs, ct, registry).ConfigureAwait(false)).Audit;
         }
 
         private static string MemberName(string key, string operation)
@@ -97,8 +108,9 @@ namespace WinTestKit.Inspector.Agent.Writes
 
         // Method keys are metadata names plus exact CLR parameter names, e.g. Refresh(System.Boolean,System.Int64).
         private static string MethodKey(MethodInfo method) => method.Name + "(" + string.Join(",", method.GetParameters().Select(p => p.ParameterType.FullName ?? "")) + ")";
-        private static void Perform(object target, string operation, string key, IReadOnlyList<JsonNode> values)
+        private static object? Perform(object target, string operation, string key, IReadOnlyList<JsonNode> values, out Type declared)
         {
+            declared = typeof(void);
             if (operation == "setProperty")
             {
                 if (target is DependencyObject dependency)
@@ -107,7 +119,7 @@ namespace WinTestKit.Inspector.Agent.Writes
                     if (dp != null)
                     {
                         if (dp.Property.ReadOnly) throw Denied();
-                        dependency.SetCurrentValue(dp.Property, Scalar(values[0], dp.Property.PropertyType)); return;
+                        dependency.SetCurrentValue(dp.Property, Scalar(values[0], dp.Property.PropertyType)); return null;
                     }
                 }
                 var declaration = ReflectionCatalog.Get(target.GetType()).FirstOrDefault(d => d.Key == key && d.Property != null);
@@ -115,7 +127,7 @@ namespace WinTestKit.Inspector.Agent.Writes
                 var setter = property?.GetSetMethod(true);
                 if (property == null || setter == null || !setter.IsPublic || setter.IsStatic || property.GetIndexParameters().Length != 0) throw Denied();
                 if (RedactionPolicy.IsPasswordIdentity(declaration!.DeclaringType, declaration.Name)) throw Denied();
-                property.SetValue(target, Scalar(values[0], property.PropertyType), null); return;
+                property.SetValue(target, Scalar(values[0], property.PropertyType), null); return null;
             }
             var matches = target.GetType().GetMethods(BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic).Where(m => MethodKey(m) == key).ToArray();
             if (matches.Length != 1) throw Denied();
@@ -124,7 +136,8 @@ namespace WinTestKit.Inspector.Agent.Writes
             if (parameters.Length != values.Count || values.Count > 16) throw Invalid();
             var args = new object[values.Count];
             for (int i = 0; i < args.Length; i++) args[i] = Scalar(values[i], parameters[i].ParameterType);
-            method.Invoke(target, args);
+            declared = method.ReturnType;
+            return method.Invoke(target, args);
         }
         private static object Scalar(JsonNode node, Type expected)
         {

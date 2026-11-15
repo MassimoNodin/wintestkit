@@ -216,7 +216,7 @@ still checks the member, protected identities, redaction rules, and rate limits.
 attempts are audited without argument or property values. Use the narrowest list possible.
 
 Use `backend: auto` and a WPF element, for example `page.editor.set_property("IsModified", True)`
-or `page.editor.call("SetTitle", "Draft")`. Supported values are exactly strings, booleans,
+or `page.editor.call("SetTitle", "Draft")`. `call()` returns the method result (or `None` for void); redacted results raise `ActionError`. Supported arguments are exactly strings, booleans,
 signed 64-bit integers and finite doubles; method signatures name their exact CLR types.
 Dependency properties, including CLR wrappers of dependency properties, use
 `SetCurrentValue` to preserve bindings; ordinary CLR properties use their public setter.

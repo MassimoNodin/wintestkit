@@ -49,7 +49,7 @@ namespace WinTestKit.Inspector.Agent.Contracts
 
     public interface IWriteInspectionService
     {
-        Task<WriteAudit> WriteAsync(string operation, ObjectRef handle, string memberKey, IReadOnlyList<JsonNode> values, DateTime deadline, int timeoutMs, CancellationToken ct);
+        Task<WriteCallResult> WriteAsync(string operation, ObjectRef handle, string memberKey, IReadOnlyList<JsonNode> values, DateTime deadline, int timeoutMs, CancellationToken ct);
     }
 
     public interface IWriteInspectionServiceFactory

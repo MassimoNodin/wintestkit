@@ -93,7 +93,7 @@ namespace WinTestKit.Inspector.Protocol
     }
     public sealed class WriteCallResult
     {
-        public WriteAudit Audit { get; set; } = new WriteAudit(); public JsonObjectNode ToJson() { var o = new JsonObjectNode(); o.Add("audit",Audit.ToJson()); FromJson(o); return o; } public static WriteCallResult FromJson(JsonNode n) { var o = DtoHelpers.Object(n,"audit"); return new WriteCallResult { Audit = WriteAudit.FromJson(o.Get("audit")) }; }
+        public WriteAudit Audit { get; set; } = new WriteAudit(); public ValueDto Result { get; set; } = new ValueDto(); public JsonObjectNode ToJson() { var o = new JsonObjectNode(); o.Add("audit",Audit.ToJson()); o.Add("result",Result.ToJson()); FromJson(o); return o; } public static WriteCallResult FromJson(JsonNode n) { var o = DtoHelpers.Object(n,"audit","result"); return new WriteCallResult { Audit = WriteAudit.FromJson(o.Get("audit")), Result = ValueDto.FromJson(o.Get("result")) }; }
     }
     public sealed class WriteSetPropertyResult
     {

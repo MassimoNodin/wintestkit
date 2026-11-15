@@ -3307,6 +3307,7 @@ export interface WriteCallParams {
  */
 export interface WriteCallResult {
   audit: WriteAudit;
+  result: Value;
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema

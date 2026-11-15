@@ -37,14 +37,36 @@ def audit(operation: str, outcome: str = "performed") -> dict:
 )
 def test_write_wire_and_feature(method, operation, argument, field):
     transport = ScriptedTransport(
-        lambda req: {"id": req["id"], "result": {"audit": audit(operation)}}
+        lambda req: {
+            "id": req["id"],
+            "result": {
+                "audit": audit(operation),
+                **(
+                    {
+                        "result": {
+                            "status": "ok",
+                            "kind": "null",
+                            "declaredType": "System.Void",
+                            "runtimeType": "",
+                            "scalar": None,
+                        }
+                    }
+                    if operation == "call"
+                    else {}
+                ),
+            },
+        }
     )
     client = InspectorClient(transport, session())
     try:
         result = getattr(client, method)(
             REF, "M", argument, timeout_ms=500, deadline=time.monotonic() + 1
         )
-        assert result == WriteAudit.from_json(audit(operation))
+        assert (result[0] if operation == "call" else result) == WriteAudit.from_json(
+            audit(operation)
+        )
+        if operation == "call":
+            assert result[1].kind == "null"
         request = transport.requests[0]
         assert request["method"] == "write." + operation
         assert request["params"][field] == argument
@@ -95,7 +117,25 @@ def test_invalid_scalars_are_not_sent(method, value):
 )
 def test_write_integer_boundaries(method, operation, value, valid):
     transport = ScriptedTransport(
-        lambda req: {"id": req["id"], "result": {"audit": audit(operation)}}
+        lambda req: {
+            "id": req["id"],
+            "result": {
+                "audit": audit(operation),
+                **(
+                    {
+                        "result": {
+                            "status": "ok",
+                            "kind": "null",
+                            "declaredType": "System.Void",
+                            "runtimeType": "",
+                            "scalar": None,
+                        }
+                    }
+                    if operation == "call"
+                    else {}
+                ),
+            },
+        }
     )
     client = InspectorClient(transport, session())
     argument = [value] if method == "write_call" else value

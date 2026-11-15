@@ -78,7 +78,7 @@ def test_allowed_writes_and_report(owned):
             page = FixturePage(scope.app)
             page.control.set_property("DefaultValue", "written-dp-781")
             page.control.set_property("WritableText", "written-clr-782")
-            page.control.call("RecordWrite", "written-call-783", 9)
+            assert page.control.call("RecordWrite", "written-call-783", 9) == "written-call-783"
             assert _control(scope.app.pids[0]).get("RecordWrite", 0) == 1
             assert resolve(
                 scope,

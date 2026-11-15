@@ -1025,15 +1025,16 @@ class BoundControl(_BoundBase):
         *,
         property_write: bool,
         deadline: float,
-    ) -> None:
+    ) -> Any:
         __tracebackhide__ = True
+        result = None
         try:
             if property_write:
                 audit = element.client.write_set_property(
                     element.ref, key, values[0], timeout_ms=2000, deadline=deadline
                 )
             else:
-                audit = element.client.write_call(
+                audit, result = element.client.write_call(
                     element.ref, key, values, timeout_ms=2000, deadline=deadline
                 )
         except InspectorError as error:
@@ -1045,6 +1046,11 @@ class BoundControl(_BoundBase):
                 error.args = (error.message,)
             raise
         runtime.record_audit(audit)
+        if result is not None:
+            from wintestkit.engine.property_read import to_python
+
+            return to_python(result)
+        return None
 
     @contextmanager
     def _write_step(self, action: str, operation: str) -> Generator[None]:
@@ -1099,8 +1105,8 @@ class BoundControl(_BoundBase):
             ).member_key
             self._write(element, name, key, (value,), property_write=True, deadline=deadline)
 
-    def call(self, name: str, *args: Any) -> None:
-        """Call an explicitly allowlisted WPF method overload."""
+    def call(self, name: str, *args: Any) -> Any:
+        """Call an explicitly allowlisted WPF method overload and return its value."""
         __tracebackhide__ = True
         with self._write_step("call", "call"):
             element = self._write_target()
@@ -1115,7 +1121,7 @@ class BoundControl(_BoundBase):
             except KeyError:
                 raise InspectorError("Invalid write argument type", code="invalidParams") from None
             deadline = operation_deadline(runtime.get_config().inspector.request_timeout)
-            self._write(element, key, key, args, property_write=False, deadline=deadline)
+            return self._write(element, key, key, args, property_write=False, deadline=deadline)
 
     # -- actions every control has --------------------------------------------------------------
 

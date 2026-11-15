@@ -23,6 +23,10 @@ namespace WinTestKit.Inspector.Agent.Writes.Tests
             public string ReadOnly => "";
             public int Calls;
             public void All(string s, bool b, long i, double d) { Calls++; Text = s; }
+            public string ReturnText() => "result";
+            public int ReturnNumber() => 42;
+            public void ReturnVoid() { }
+            public object ReturnProtected() => new PasswordBox();
             public void Throw() { throw new InvalidOperationException("sensitive value"); }
             public string PrivateSetter { get; private set; } = "";
             public static string StaticProperty { get; set; } = "";
@@ -57,6 +61,21 @@ namespace WinTestKit.Inspector.Agent.Writes.Tests
         { await ui.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle).Task; return await engine.ExecuteAsync(ui.Dispatcher, target, op, key, values, DateTime.UtcNow.AddSeconds(60), 2000, CancellationToken.None); }
         private static WriteAudit Audit(ProtocolException error) => WriteAudit.FromJson(error.Details!.Get("audit"));
 
+        [Fact]
+        public async Task CallResultsUseReadEncodingAndProtectIdentities()
+        {
+            using (var ui = new Ui())
+            using (var registry = new ObjectRegistry("test", new DispatcherExecutor()))
+            {
+                var target = new Target();
+                var engine = Engine("ReturnText()", "ReturnNumber()", "ReturnVoid()", "ReturnProtected()");
+                async Task<ValueDto> Call(string key) => (await engine.ExecuteWithResultAsync(ui.Dispatcher, target, "call", key, Array.Empty<JsonNode>(), DateTime.UtcNow.AddSeconds(60), 2000, CancellationToken.None, registry)).Result;
+                var text = await Call("ReturnText()"); Assert.Equal("string", text.Kind); Assert.Equal("result", ((JsonStringNode)text.Scalar!).Value);
+                var number = await Call("ReturnNumber()"); Assert.Equal("integer", number.Kind); Assert.Equal("42", ((JsonNumberNode)number.Scalar!).RawText);
+                Assert.Equal("null", (await Call("ReturnVoid()")).Kind);
+                Assert.Equal("redacted", (await Call("ReturnProtected()")).Status);
+            }
+        }
         [Fact]
         public async Task WritesAndCallsUseExactScalarsAndNeverAuditValues()
         {

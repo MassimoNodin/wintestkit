@@ -58,13 +58,13 @@ namespace WinTestKit.Inspector.Agent.Inspection
 
         public bool ExactMappingAvailable => mapper.IsAvailable;
 
-        public Task<WriteAudit> WriteAsync(string operation, ObjectRef handle, string memberKey, IReadOnlyList<JsonNode> values, DateTime deadline, int timeoutMs, CancellationToken ct) => RunAsync(async token =>
+        public Task<WriteCallResult> WriteAsync(string operation, ObjectRef handle, string memberKey, IReadOnlyList<JsonNode> values, DateTime deadline, int timeoutMs, CancellationToken ct) => RunAsync(async token =>
         {
             object target = GetObject(handle.ObjectId, handle.Generation, out Dispatcher dispatcher);
             ObjectRef actual = registry.Register(target, dispatcher, inspector.DescribeType(target.GetType()));
             if (actual.SessionId != handle.SessionId || actual.DispatcherId != handle.DispatcherId)
                 throw new ProtocolException(ErrorCodes.ObjectStale, "Unknown or stale object handle.");
-            return await writes.ExecuteAsync(dispatcher, target, operation, memberKey, values, deadline, timeoutMs, token).ConfigureAwait(false);
+            return await writes.ExecuteWithResultAsync(dispatcher, target, operation, memberKey, values, deadline, timeoutMs, token, registry).ConfigureAwait(false);
         }, ct);
 
         [DllImport("user32.dll")]

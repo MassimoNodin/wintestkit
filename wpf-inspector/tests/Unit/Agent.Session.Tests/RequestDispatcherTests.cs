@@ -349,13 +349,13 @@ public class RequestDispatcherTests
         public string? Operation { get; private set; }
         public bool Fail { get; set; }
         public string? ErrorCode { get; set; }
-        public Task<WriteAudit> WriteAsync(string operation, ObjectRef handle, string memberKey, IReadOnlyList<JsonNode> values, DateTime deadline, int timeoutMs, CancellationToken ct)
+        public Task<WriteCallResult> WriteAsync(string operation, ObjectRef handle, string memberKey, IReadOnlyList<JsonNode> values, DateTime deadline, int timeoutMs, CancellationToken ct)
         {
             if (ErrorCode != null) throw new ProtocolException(ErrorCode, "failed");
             Operation = operation;
             var audit = new WriteAudit { Operation = operation, TypeFullName = "Example", MemberKey = memberKey, Outcome = Fail ? "denied" : "performed", TimestampUtc = DateTime.UtcNow.ToString("O") };
             if (Fail) { var details = new JsonObjectNode(); details.Add("audit", audit.ToJson()); details.Add("secret", new JsonStringNode("private")); throw new ProtocolException(ErrorCodes.WriteDenied, "private", details); }
-            return Task.FromResult(audit);
+            return Task.FromResult(new WriteCallResult { Audit = audit, Result = new ValueDto { Status = "ok", Kind = "null", Scalar = JsonNullNode.Instance } });
         }
     }
     private sealed class HitTestService : RecordingService, IHitTestInspectionService

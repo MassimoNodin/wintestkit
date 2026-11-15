@@ -7,6 +7,7 @@ from wintestkit import runtime
 from wintestkit.backends.element import TargetElement, WpfElement
 from wintestkit.engine.managed import operation_deadline
 from wintestkit.errors import ActionError, InvalidLocatorError
+from wintestkit.inspector.models import Value
 from wintestkit.inspector.paths import is_managed_key, parse_managed_key
 
 
@@ -30,7 +31,10 @@ def read_property(element: TargetElement, name: str) -> Any:
         [path.segments],
         deadline=operation_deadline(config.inspector.request_timeout),
     )
-    value = values[0].value
+    return to_python(values[0].value)
+
+
+def to_python(value: Value) -> Any:
     if value.status == "redacted":
         runtime.mark_sensitive()
         raise ActionError("Managed property is redacted")

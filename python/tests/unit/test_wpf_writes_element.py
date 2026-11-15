@@ -8,7 +8,7 @@ import pytest
 from wintestkit import runtime
 from wintestkit.backends.element import WpfElement
 from wintestkit.errors import ActionError, InspectorError, WriteDeniedError
-from wintestkit.inspector.models import WriteAudit
+from wintestkit.inspector.models import Value, WriteAudit
 from wintestkit.model import BoundControl
 
 
@@ -45,7 +45,15 @@ def setup_write(monkeypatch):
 
         def write_call(self, ref, key, arguments, **kwargs):
             calls.append(("call", key, arguments))
-            return audit
+            return audit, Value.from_json(
+                {
+                    "status": "ok",
+                    "kind": "string",
+                    "declaredType": "System.String",
+                    "runtimeType": "System.String",
+                    "scalar": "done",
+                }
+            )
 
     target = object.__new__(WpfElement)
     target.client = Client()
@@ -83,13 +91,30 @@ def test_property_prefers_dependency_property_and_records_audit(setup_write):
 
 def test_method_overload_and_arguments(setup_write):
     bound, _, calls, records, _ = setup_write
-    bound.call("Submit", "secret", True, 3, 1.5)
+    assert bound.call("Submit", "secret", True, 3, 1.5) == "done"
     assert calls[-1] == (
         "call",
         "Submit(System.String,System.Boolean,System.Int64,System.Double)",
         ("secret", True, 3, 1.5),
     )
     assert "secret" not in str(records[-1].to_dict())
+
+
+def test_redacted_method_result_raises_and_keeps_audit(setup_write, monkeypatch):
+    bound, target, _, records, audit = setup_write
+    result = Value.from_json(
+        {
+            "status": "redacted",
+            "kind": "unavailable",
+            "declaredType": "",
+            "runtimeType": "",
+            "redactionRule": "identity",
+        }
+    )
+    monkeypatch.setattr(target.client, "write_call", lambda *args, **kwargs: (audit, result))
+    with pytest.raises(ActionError, match="redacted"):
+        bound.call("Submit")
+    assert records[-1].to_dict()["audits"] == [audit.to_json()]
 
 
 def test_non_wpf_and_uia_rejected(setup_write, monkeypatch):

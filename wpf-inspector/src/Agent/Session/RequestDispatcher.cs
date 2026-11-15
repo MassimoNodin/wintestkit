@@ -221,11 +221,11 @@ namespace WinTestKit.Inspector.Agent.Session
                 case PipeMethods.WriteSetProperty:
                     var set = WriteSetPropertyParams.FromJson(request.Params, false);
                     if (!(service is IWriteInspectionService setService)) throw new ProtocolException(ErrorCodes.UnsupportedTarget, "Feature not available.");
-                    return new WriteSetPropertyResult { Audit = await setService.WriteAsync("setProperty", set.Handle, set.MemberKey, new[] { set.Value }, deadline, set.TimeoutMs, ct).ConfigureAwait(false) }.ToJson();
+                    return new WriteSetPropertyResult { Audit = (await setService.WriteAsync("setProperty", set.Handle, set.MemberKey, new[] { set.Value }, deadline, set.TimeoutMs, ct).ConfigureAwait(false)).Audit }.ToJson();
                 case PipeMethods.WriteCall:
                     var call = WriteCallParams.FromJson(request.Params, false);
                     if (!(service is IWriteInspectionService callService)) throw new ProtocolException(ErrorCodes.UnsupportedTarget, "Feature not available.");
-                    return new WriteCallResult { Audit = await callService.WriteAsync("call", call.Handle, call.MemberKey, call.Arguments, deadline, call.TimeoutMs, ct).ConfigureAwait(false) }.ToJson();
+                    return (await callService.WriteAsync("call", call.Handle, call.MemberKey, call.Arguments, deadline, call.TimeoutMs, ct).ConfigureAwait(false)).ToJson();
                 case PipeMethods.EventsSubscribe:
                     return new EventsSubscription { SubscriptionId = Subscriptions.Subscribe(EventsSubscribeParams.FromJson(request.Params).Kinds) }.ToJson();
                 case PipeMethods.EventsUnsubscribe:
