@@ -17,9 +17,11 @@ if TYPE_CHECKING:
     from wintestkit.controls import BoundButton as BoundButton
     from wintestkit.controls import BoundCheckBox as BoundCheckBox
     from wintestkit.controls import BoundComboBox as BoundComboBox
+    from wintestkit.controls import BoundContextMenu as BoundContextMenu
     from wintestkit.controls import BoundDataGrid as BoundDataGrid
     from wintestkit.controls import BoundListBox as BoundListBox
     from wintestkit.controls import BoundListItem as BoundListItem
+    from wintestkit.controls import BoundMenu as BoundMenu
     from wintestkit.controls import BoundRadioButton as BoundRadioButton
     from wintestkit.controls import BoundTabControl as BoundTabControl
     from wintestkit.controls import BoundText as BoundText
@@ -28,9 +30,11 @@ if TYPE_CHECKING:
     from wintestkit.controls import Button as Button
     from wintestkit.controls import CheckBox as CheckBox
     from wintestkit.controls import ComboBox as ComboBox
+    from wintestkit.controls import ContextMenu as ContextMenu
     from wintestkit.controls import DataGrid as DataGrid
     from wintestkit.controls import ListBox as ListBox
     from wintestkit.controls import ListItem as ListItem
+    from wintestkit.controls import Menu as Menu
     from wintestkit.controls import RadioButton as RadioButton
     from wintestkit.controls import TabControl as TabControl
     from wintestkit.controls import Text as Text
@@ -63,12 +67,14 @@ __all__ = [
     "BoundButton",
     "BoundCheckBox",
     "BoundComboBox",
+    "BoundContextMenu",
     "BoundControl",
     "BoundDataGrid",
     "BoundElement",
     "BoundElements",
     "BoundListBox",
     "BoundListItem",
+    "BoundMenu",
     "BoundRadioButton",
     "BoundTabControl",
     "BoundText",
@@ -78,6 +84,7 @@ __all__ = [
     "Button",
     "CheckBox",
     "ComboBox",
+    "ContextMenu",
     "DataGrid",
     "Decimal",
     "Double",
@@ -88,6 +95,7 @@ __all__ = [
     "Int64",
     "ListBox",
     "ListItem",
+    "Menu",
     "Null",
     "Page",
     "PageObject",
@@ -126,9 +134,11 @@ _LAZY: dict[str, tuple[str, str]] = {
     "BoundButton": ("wintestkit.controls", "BoundButton"),
     "BoundCheckBox": ("wintestkit.controls", "BoundCheckBox"),
     "BoundComboBox": ("wintestkit.controls", "BoundComboBox"),
+    "BoundContextMenu": ("wintestkit.controls", "BoundContextMenu"),
     "BoundDataGrid": ("wintestkit.controls", "BoundDataGrid"),
     "BoundListBox": ("wintestkit.controls", "BoundListBox"),
     "BoundListItem": ("wintestkit.controls", "BoundListItem"),
+    "BoundMenu": ("wintestkit.controls", "BoundMenu"),
     "BoundRadioButton": ("wintestkit.controls", "BoundRadioButton"),
     "BoundTabControl": ("wintestkit.controls", "BoundTabControl"),
     "BoundText": ("wintestkit.controls", "BoundText"),
@@ -137,9 +147,11 @@ _LAZY: dict[str, tuple[str, str]] = {
     "Button": ("wintestkit.controls", "Button"),
     "CheckBox": ("wintestkit.controls", "CheckBox"),
     "ComboBox": ("wintestkit.controls", "ComboBox"),
+    "ContextMenu": ("wintestkit.controls", "ContextMenu"),
     "DataGrid": ("wintestkit.controls", "DataGrid"),
     "ListBox": ("wintestkit.controls", "ListBox"),
     "ListItem": ("wintestkit.controls", "ListItem"),
+    "Menu": ("wintestkit.controls", "Menu"),
     "RadioButton": ("wintestkit.controls", "RadioButton"),
     "TabControl": ("wintestkit.controls", "TabControl"),
     "Text": ("wintestkit.controls", "Text"),

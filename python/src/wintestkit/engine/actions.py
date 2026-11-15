@@ -39,6 +39,7 @@ MouseButton = input.MouseButton
 
 _ITEM_TYPES = ("ListItem", "DataItem", "TreeItem", "TabItem")
 _STABLE_TIMEOUT = 1.0
+_HEADER_X = 40
 MAX_LISTED_ITEMS = 5
 
 
@@ -404,6 +405,8 @@ def _wpf_mouse_target(
     offset: Offset | None = None,
     *,
     guard: bool = True,
+    header: bool = False,
+    header_height: float | None = None,
 ) -> tuple[int, int]:
     """Resolve stable agent-verified physical-pixel geometry.
 
@@ -422,7 +425,18 @@ def _wpf_mouse_target(
 
     def target(state: ElementState) -> tuple[int, int]:
         __tracebackhide__ = True
-        if role is None:
+        if header:
+            rect = state.bounds
+            if (
+                state.visible
+                and not state.offscreen
+                and rect
+                and rect.width > 0
+                and rect.height > 0
+            ):
+                dx, dy = _header_offset(rect.width, rect.height, header_height)
+                return round(rect.x + dx), round(rect.y + dy)
+        elif role is None:
             point = state.click_point
             if point is not None and state.visible and not state.offscreen:
                 return round(point.x), round(point.y)
@@ -497,6 +511,31 @@ def _click_kwargs(button: MouseButton, count: int, modifiers: tuple[int, ...]) -
     return kwargs
 
 
+def _header_offset(width: float, height: float, header_height: float | None) -> tuple[float, float]:
+    """A point on the header row of a tree item whose rectangle also covers its children."""
+    __tracebackhide__ = True
+    row = height if header_height is None else max(1.0, min(height, header_height))
+    return min(width / 2, _HEADER_X), row / 2
+
+
+def click_header(el: TargetElement, header_height: float | None = None) -> None:
+    """Click the header row of a tree item (its rectangle includes the expanded children).
+
+    ``header_height`` is the height of that row; without it the whole rectangle is the row.
+    """
+    __tracebackhide__ = True
+    if isinstance(el, WpfElement):
+        x, y = _wpf_mouse_target(el, header=True, header_height=header_height)
+        input.click(x, y, button="left", count=1)
+        return
+    uia = uia_of(el)
+    rect = uia.rect
+    if rect is None:
+        raise ActionError(f"{_short(uia)} has no on-screen rectangle to click")
+    dx, dy = _header_offset(rect.width, rect.height, header_height)
+    _mouse_click(uia, offset=(int(dx), int(dy)))
+
+
 def _wpf_mouse_click(
     el: WpfElement,
     button: MouseButton = "left",
@@ -544,7 +583,31 @@ def _mouse_click(
 def _validate_mouse_target(el: UIAElement, x: int, y: int) -> None:
     __tracebackhide__ = True
     hwnd = _validate_foreground(el)
+    popup = _owned_popup_at(hwnd, el.process_id, x, y)
+    if popup:
+        # Submenus, context menus and drop-downs live in popup windows owned by the app's window.
+        _window_guard(popup, el.process_id)
+        return
     _validate_point(hwnd, el.process_id, x, y)
+
+
+def _owned_popup_at(hwnd: int, process_id: int, x: int, y: int) -> int:
+    """The root window under the point when it is a window of this process owned by ``hwnd``."""
+    __tracebackhide__ = True
+    hit = win32.WindowFromPoint(win32.POINT(x, y))
+    if not hit:
+        return 0
+    top = win32.root_window(hit)
+    if top == hwnd or win32.window_pid(top) != process_id:
+        return 0
+    seen = {top}
+    owner = win32.window_owner(top)
+    while owner and owner not in seen:
+        if owner == hwnd:
+            return top
+        seen.add(owner)
+        owner = win32.window_owner(owner)
+    return 0
 
 
 def _validate_point(hwnd: int, process_id: int, x: int, y: int) -> None:
@@ -970,6 +1033,17 @@ def collapse(el: TargetElement, *, mode: InputMode = "pattern") -> None:
         return
     el = uia_of(el)
     patterns.collapse(el)
+
+
+def is_expanded(el: TargetElement) -> bool:
+    """Whether the element reports the Expanded state (False when it has no such state)."""
+    __tracebackhide__ = True
+    try:
+        if isinstance(el, WpfElement):
+            return _wpf_read(el, "expand_state", "ExpandCollapse") == "Expanded"
+        return patterns.expand_state(uia_of(el)) == ExpandCollapseState.Expanded
+    except (ActionError, UIAError):
+        return False
 
 
 def selected_items(el: TargetElement) -> list[str]:

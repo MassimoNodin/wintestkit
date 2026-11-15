@@ -13,9 +13,11 @@ from wintestkit.controls import (
     BoundButton,
     BoundCheckBox,
     BoundComboBox,
+    BoundContextMenu,
     BoundDataGrid,
     BoundListBox,
     BoundListItem,
+    BoundMenu,
     BoundRadioButton,
     BoundTabControl,
     BoundText,
@@ -128,7 +130,9 @@ EXPECTED = {
     BoundListItem: {"click", "double_click", "right_click", "select", "is_selected"},
     BoundDataGrid: {"row", "cell", "row_count", "column_count", "find_row", "select"}
     | {"selected_items"},
-    BoundTreeView: {"select", "selected", "selected_items", "items"},
+    BoundTreeView: {"select", "selected", "selected_items", "items", "expand", "collapse"},
+    BoundMenu: {"click_path"},
+    BoundContextMenu: {"click_path"},
     BoundTabControl: {"select", "selected", "selected_items", "items"},
     BoundText: set(),
 }
@@ -438,9 +442,10 @@ def test_combo_select_uses_the_combo_path_and_reads(page: Typed, calls: Calls) -
 
 def test_list_tree_tab_select_generic_path(page: Typed, calls: Calls, world: World) -> None:
     world.element = FakeElement("Tree", "t")
-    for bound in (page.colors, page.tree, page.tabs):
+    for bound in (page.colors, page.tabs):
         bound.select(re.compile("A"))
         assert bound.items() == ["A", "B"]
+    page.tree.select(re.compile("A"))
     assert [name for name, _ in calls.log] == ["select"] * 3
 
 
@@ -595,5 +600,7 @@ def test_every_builtin_is_exported_and_listed() -> None:
         "TreeView",
         "TabControl",
         "Text",
+        "Menu",
+        "ContextMenu",
     }
-    assert not hasattr(controls, "Menu")
+    assert {"Menu", "ContextMenu"} <= set(controls.__all__)

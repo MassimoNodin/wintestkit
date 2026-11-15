@@ -302,3 +302,16 @@ def test_scroll_validates_the_target_point(uia: Any, monkeypatch: pytest.MonkeyP
     with pytest.raises(ActionError, match="refusing global input"):
         actions.scroll(control, 1)
     assert calls == []
+
+
+def test_header_offset_aims_at_the_first_row_of_an_item_with_children() -> None:
+    assert actions._header_offset(600, 48, 16) == (40, 8)
+    assert actions._header_offset(30, 16, None) == (15, 8)
+    assert actions._header_offset(600, 48, 500) == (40, 24)  # never beyond the rectangle
+
+
+def test_click_header_uses_an_offset_on_the_first_row(uia: Any) -> None:
+    control, calls = uia
+    control.rect = Rect(100, 200, 600, 48)
+    actions.click_header(control, 16)
+    assert calls == [("click", (140, 208), {"button": "left", "count": 1})]

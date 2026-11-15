@@ -235,3 +235,26 @@ def test_foreground_activation_attaches_and_detaches_input(monkeypatch: pytest.M
     monkeypatch.setattr(win32, "BringWindowToTop", lambda hwnd: True)
     assert win32.bring_to_foreground(100, timeout=0)
     assert calls == [(11, 22, True), (11, 22, False)]
+
+
+def test_owned_popup_under_the_point_is_accepted(target, monkeypatch):
+    control, calls = target
+    monkeypatch.setattr(actions, "_top_level_hwnd", lambda element: 100)
+    monkeypatch.setattr(win32, "WindowFromPoint", lambda point: 300)
+    monkeypatch.setattr(win32, "root_window", lambda hwnd: 300)
+    monkeypatch.setattr(win32, "window_owner", lambda hwnd: 100 if hwnd == 300 else 0)
+    monkeypatch.setattr(win32, "GetForegroundWindow", lambda: 100)
+    actions._validate_mouse_target(control, 10, 10)
+    assert calls == []
+
+
+def test_unowned_or_foreign_popup_under_the_point_is_refused(target, monkeypatch):
+    control, _ = target
+    monkeypatch.setattr(actions, "_top_level_hwnd", lambda element: 100)
+    monkeypatch.setattr(win32, "WindowFromPoint", lambda point: 300)
+    monkeypatch.setattr(win32, "root_window", lambda hwnd: 300)
+    monkeypatch.setattr(win32, "window_owner", lambda hwnd: 0)
+    monkeypatch.setattr(win32, "GetForegroundWindow", lambda: 100)
+    monkeypatch.setattr(actions, "_STABLE_TIMEOUT", 0)
+    with pytest.raises(ActionError, match="refusing global input"):
+        actions._validate_mouse_target(control, 10, 10)

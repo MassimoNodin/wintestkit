@@ -1245,6 +1245,22 @@ class BoundControl(_BoundBase):
         with self.step("hover"):
             self.perform(timeout, actions.hover)
 
+    def open_context_menu(
+        self, *, timeout: float | None = None, mode: InputMode | None = None
+    ) -> _controls.BoundContextMenu:
+        """Open the element's context menu (right-click, or Shift+F10 in ``pattern`` mode).
+
+        Returns the menu: ``click_path("More|Deep")`` clicks an item of it.
+        """
+        __tracebackhide__ = True
+        from wintestkit import controls
+        from wintestkit.engine import navigate
+
+        effective = mode or runtime.get_config().input_mode
+        with self.step("open_context_menu", {"mode": effective}):
+            self.perform(timeout, lambda el: navigate.open_context_menu(el, mode=effective))
+        return controls.BoundContextMenu._for_owner(self)
+
     def middle_click(
         self,
         *,
