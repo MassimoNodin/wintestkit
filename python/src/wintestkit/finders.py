@@ -411,7 +411,9 @@ def send_keys(
             record.sensitive = True
             secret = secret or classifier.is_password(element)
             record.set_arguments({"keys": text}, secret=secret)
-            if isinstance(element, WpfElement):
+            if isinstance(target, model.BoundWindow):
+                actions.activate_for_keys(element)  # keys go to whatever has focus in the window
+            elif isinstance(element, WpfElement):
                 actions.focus(element)
                 cast(Any, actions)._wpf_keyboard_target(element)
             else:

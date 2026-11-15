@@ -670,17 +670,21 @@ def app(request: pytest.FixtureRequest) -> Generator[App, None, None]:
             except AppNotRunningError:
                 raise _AttachNotRunning(config.app.process_name) from None
             _verify_started(attached, config)
+        runtime.set_current_app(attached)
         try:
             yield attached
         finally:
+            runtime.set_current_app(None)
             attached.detach_inspector()
     else:
         with runtime.step("app.start", name, _app_path(config)):
             launched = launch_app(config)
             _verify_started(launched, config)
+        runtime.set_current_app(launched)
         try:
             yield launched
         finally:
+            runtime.set_current_app(None)
             launched.close(timeout=config.app.close_timeout if config.app else 10.0)
 
 

@@ -262,6 +262,98 @@ def focus(el: TargetElement) -> None:
         raise ActionError(f"{_short(el)} cannot take keyboard focus: {exc}") from exc
 
 
+# -- windows --------------------------------------------------------------------------------------
+
+
+def _window_target(el: TargetElement) -> tuple[int, int]:
+    """The top-level window handle and process id of a window element."""
+    __tracebackhide__ = True
+    if isinstance(el, WpfElement):
+        state = el.client.state_get(el.ref, timeout_ms=2000, deadline=operation_deadline(2))
+        return state.window_handle or 0, el.process_id
+    uia = uia_of(el)
+    return _top_level_hwnd(uia), uia.process_id
+
+
+def activate_window(el: TargetElement) -> None:
+    """Make the window the foreground window; ``ActionError`` when Windows refuses."""
+    __tracebackhide__ = True
+    hwnd, process_id = _window_target(el)
+    if not hwnd or not win32.IsWindow(hwnd) or win32.window_pid(hwnd) != process_id:
+        raise ActionError("The window is no longer available to activate")
+    if win32.GetForegroundWindow() == hwnd:
+        return
+    raised = win32.bring_to_foreground(hwnd)
+    if not raised and win32.GetForegroundWindow() != hwnd:
+        raise ActionError("Windows refused to bring the window to the foreground")
+
+
+def window_is_active(el: TargetElement) -> bool:
+    """Whether the window, or a window it owns, is the foreground window."""
+    __tracebackhide__ = True
+    hwnd, _ = _window_target(el)
+    current = win32.GetForegroundWindow()
+    seen: set[int] = set()
+    while current and current not in seen:
+        if current == hwnd:
+            return bool(hwnd)
+        seen.add(current)
+        current = win32.window_owner(current)
+    return False
+
+
+def activate_for_keys(el: TargetElement) -> None:
+    """Activate the window and check it owns the foreground; no element focus is required."""
+    __tracebackhide__ = True
+    hwnd, process_id = _window_target(el)
+    _window_guard(hwnd, process_id, activate=True)
+
+
+def press_in_window(el: TargetElement, keys: str) -> None:
+    """Activate the window and press keys; they go to whatever has focus inside it."""
+    __tracebackhide__ = True
+    activate_for_keys(el)
+    input.press(keys)
+
+
+def type_in_window(el: TargetElement, text: str) -> None:
+    """Activate the window and type text into whatever has focus inside it."""
+    __tracebackhide__ = True
+    activate_for_keys(el)
+    input.type_text(text)
+
+
+def _require_normal_window(el: TargetElement, verb: str) -> None:
+    __tracebackhide__ = True
+    state = patterns.window_visual_state(el)
+    if state != "normal":
+        raise ActionError(f"Cannot {verb} a {state} window; call restore() first")
+
+
+def move_window(el: TargetElement, x: int, y: int) -> None:
+    """Move the window's top-left corner to physical screen coordinates."""
+    __tracebackhide__ = True
+    _require_normal_window(el, "move")
+    if patterns.transform_can(el, "move"):
+        patterns.transform_move(el, x, y)
+        return
+    hwnd, _ = _window_target(el)
+    if not hwnd or not win32.move_resize_window(hwnd, x=x, y=y):
+        raise ActionError("The window cannot be moved")
+
+
+def resize_window(el: TargetElement, width: int, height: int) -> None:
+    """Resize the window to ``width`` x ``height`` physical pixels (outer size)."""
+    __tracebackhide__ = True
+    _require_normal_window(el, "resize")
+    if patterns.transform_can(el, "resize"):
+        patterns.transform_resize(el, width, height)
+        return
+    hwnd, _ = _window_target(el)
+    if not hwnd or not win32.move_resize_window(hwnd, width=width, height=height):
+        raise ActionError("The window cannot be resized")
+
+
 # -- mouse ----------------------------------------------------------------------------------------
 
 

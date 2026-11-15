@@ -16,6 +16,7 @@ EXPECTED = {
     "Decimal",
     "Enum",
     "Null",
+    "keyboard",
     "log",
     "step",
     "App",

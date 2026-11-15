@@ -9,6 +9,7 @@ __version__ = "0.1.1rc2"
 
 if TYPE_CHECKING:
     from wintestkit import errors as errors
+    from wintestkit import keyboard as keyboard
     from wintestkit import log as log
     from wintestkit.app import App as App
     from wintestkit.config import WtkConfig as WtkConfig
@@ -104,6 +105,7 @@ __all__ = [
     "find",
     "find_all_children",
     "find_child",
+    "keyboard",
     "load_config",
     "log",
     "step",
@@ -162,7 +164,7 @@ _LAZY: dict[str, tuple[str, str]] = {
 
 
 def __getattr__(name: str) -> Any:
-    if name in ("errors", "log"):
+    if name in ("errors", "keyboard", "log"):
         return importlib.import_module("wintestkit." + name)
     target = _LAZY.get(name)
     if target is None:

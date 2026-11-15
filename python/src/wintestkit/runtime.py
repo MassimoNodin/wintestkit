@@ -21,6 +21,7 @@ from wintestkit.config import WtkConfig, load_config
 from wintestkit.errors import ActionError
 
 if TYPE_CHECKING:
+    from wintestkit.app import App
     from wintestkit.inspector.client import InspectorClient
     from wintestkit.inspector.models import ProcessIdentity, WriteAudit
     from wintestkit.inspector.sessions import SessionRegistry
@@ -144,6 +145,7 @@ _config: WtkConfig | None = None
 _scoped_config: ContextVar[WtkConfig | None] = ContextVar("wtk_config", default=None)
 _listeners: list[StepListener] = []
 _current_test: str | None = None
+_current_app: App | None = None
 _seq = 0
 _inspector_registry: SessionRegistry | None = None
 _inspector_request_timeout: float | None = None
@@ -480,6 +482,20 @@ def end_test() -> None:
         _current_test = None
 
 
+def set_current_app(app: App | None) -> None:
+    """Record the application under test (what ``wintestkit.keyboard`` may send keys to)."""
+    __tracebackhide__ = True
+    global _current_app
+    with _lock:
+        _current_app = app
+
+
+def current_app() -> App | None:
+    __tracebackhide__ = True
+    with _lock:
+        return _current_app
+
+
 def current_test() -> str | None:
     __tracebackhide__ = True
     with _lock:
@@ -489,13 +505,14 @@ def current_test() -> str | None:
 def reset() -> None:
     """Forget configuration, listeners and the current test (for tests of WinTestKit itself)."""
     __tracebackhide__ = True
-    global _config, _current_test, _seq
+    global _config, _current_test, _current_app, _seq
     close_inspector_sessions()
     with _inspector_lock:
         _inspector_attached.clear()
     with _lock:
         _config = None
         _current_test = None
+        _current_app = None
         _seq = 0
         _listeners.clear()
         _log_listeners.clear()

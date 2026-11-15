@@ -109,6 +109,7 @@ WS_EX_NOACTIVATE = 0x08000000
 LWA_COLORKEY = 0x1
 SWP_NOSIZE = 0x0001
 SWP_NOMOVE = 0x0002
+SWP_NOZORDER = 0x0004
 SWP_NOACTIVATE = 0x0010
 SWP_SHOWWINDOW = 0x0040
 SWP_HIDEWINDOW = 0x0080
@@ -633,6 +634,25 @@ def raise_window(hwnd: int) -> bool:
     if raised and not was_topmost:
         SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, flags)
     return raised
+
+
+def move_resize_window(
+    hwnd: int,
+    x: int | None = None,
+    y: int | None = None,
+    width: int | None = None,
+    height: int | None = None,
+) -> bool:
+    """Move (``x`` and ``y``) and/or resize (``width`` and ``height``) a window in physical pixels.
+
+    The window is neither activated nor reordered. Returns whether Windows accepted the change.
+    """
+    flags = SWP_NOZORDER | SWP_NOACTIVATE
+    if x is None or y is None:
+        flags |= SWP_NOMOVE
+    if width is None or height is None:
+        flags |= SWP_NOSIZE
+    return bool(SetWindowPos(hwnd, 0, x or 0, y or 0, width or 0, height or 0, flags))
 
 
 def bring_to_foreground(hwnd: int, timeout: float = 0.5) -> bool:

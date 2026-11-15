@@ -340,6 +340,47 @@ def window_set_state(el: TargetElement, state: str) -> None:
         pattern.SetWindowVisualState(getattr(com.uia_module(), _WINDOW_STATES[state]))
 
 
+def window_visual_state(el: TargetElement) -> str:
+    """``"normal"``, ``"maximized"`` or ``"minimized"``."""
+    __tracebackhide__ = True
+    el = uia_of(el)
+    pattern = _pattern(el, "Window")
+    with com.wrap_com_errors:
+        current = int(pattern.CurrentWindowVisualState)
+    module = com.uia_module()
+    for name, constant in _WINDOW_STATES.items():
+        if int(getattr(module, constant)) == current:
+            return name
+    return "normal"
+
+
+def transform_can(el: TargetElement, what: str) -> bool:
+    """Whether the Transform pattern is supported and allows ``"move"`` or ``"resize"``."""
+    __tracebackhide__ = True
+    el = uia_of(el)
+    if _raw_pattern(el, "Transform") is None:
+        return False
+    pattern = _pattern(el, "Transform")
+    with com.wrap_com_errors:
+        return bool(pattern.CurrentCanMove if what == "move" else pattern.CurrentCanResize)
+
+
+def transform_move(el: TargetElement, x: int, y: int) -> None:
+    __tracebackhide__ = True
+    el = uia_of(el)
+    pattern = _pattern(el, "Transform")
+    with com.wrap_com_errors:
+        pattern.Move(float(x), float(y))
+
+
+def transform_resize(el: TargetElement, width: int, height: int) -> None:
+    __tracebackhide__ = True
+    el = uia_of(el)
+    pattern = _pattern(el, "Transform")
+    with com.wrap_com_errors:
+        pattern.Resize(float(width), float(height))
+
+
 def window_is_modal(el: TargetElement) -> bool:
     __tracebackhide__ = True
     el = uia_of(el)

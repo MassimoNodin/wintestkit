@@ -68,7 +68,7 @@ from wintestkit.errors import (
     WtkError,
 )
 from wintestkit.uia import patterns
-from wintestkit.uia.element import ElementInfo, UIAElement
+from wintestkit.uia.element import ElementInfo, Rect, UIAElement
 
 __all__ = [
     "BoundControl",
@@ -263,6 +263,8 @@ class PageObject:
         self._source = _caller_source()  # where the page or mount was written, for diagnostics
         if app is not None:
             self.app = app.app if isinstance(app, PageObject) else app
+            if isinstance(app, App):
+                runtime.set_current_app(app)
         self._bind_window_override()
 
     def _bind_window_override(self) -> None:
@@ -854,6 +856,69 @@ class BoundWindow(_BoundBase):
         __tracebackhide__ = True
         with runtime.step("window.restore", self.qualname, self.locator.describe()):
             patterns.window_set_state(self.resolve(timeout), "normal")
+
+    def _window_step(
+        self, action: str, args: Mapping[str, Any] | None = None, *, secret: bool = False
+    ) -> AbstractContextManager[runtime.StepRecord]:
+        __tracebackhide__ = True
+        return runtime.step(action, self.qualname, self.locator.describe(), args, secret=secret)
+
+    def activate(self, *, timeout: float | None = None) -> None:
+        """Bring the window to the foreground (``ActionError`` if Windows refuses)."""
+        __tracebackhide__ = True
+        with self._window_step("window.activate"):
+            actions.activate_window(self.resolve(timeout))
+
+    def is_active(self) -> bool:
+        """Whether the window (or a window it owns) is the foreground window; no waiting."""
+        __tracebackhide__ = True
+        try:
+            return actions.window_is_active(self.resolve_once())
+        except (LocatorError, UIAError):
+            return False
+
+    @property
+    def rect(self) -> Rect:
+        """The window's current bounds in physical screen pixels."""
+        __tracebackhide__ = True
+        bounds = self.resolve().rect
+        if bounds is None:
+            raise ActionError(f"{self._description()} has no on-screen rectangle")
+        return bounds
+
+    def move(self, x: int, y: int, *, timeout: float | None = None) -> None:
+        """Move the window's top-left corner to physical screen coordinates ``(x, y)``."""
+        __tracebackhide__ = True
+        with self._window_step("window.move", {"x": x, "y": y}):
+            actions.move_window(self.resolve(timeout), x, y)
+
+    def resize(self, width: int, height: int, *, timeout: float | None = None) -> None:
+        """Resize the window to ``width`` x ``height`` physical pixels (outer size)."""
+        __tracebackhide__ = True
+        if width <= 0 or height <= 0:
+            raise ValueError("width and height must be positive")
+        with self._window_step("window.resize", {"width": width, "height": height}):
+            actions.resize_window(self.resolve(timeout), width, height)
+
+    def press(self, keys: str, *, timeout: float | None = None, secret: bool = False) -> None:
+        """Activate the window and press keys (``"Ctrl+S Enter"``) into whatever has focus in it."""
+        __tracebackhide__ = True
+        args = {"keys": keys}
+        with self._window_step("press", args, secret=True) as rec:
+            element = self.resolve(timeout)
+            rec.sensitive = True
+            rec.set_arguments(args, secret=secret)
+            actions.press_in_window(element, keys)
+
+    def type(self, text: str, *, timeout: float | None = None, secret: bool = False) -> None:
+        """Activate the window and type text into whatever has focus in it."""
+        __tracebackhide__ = True
+        args = {"text": text}
+        with self._window_step("type", args, secret=True) as rec:
+            element = self.resolve(timeout)
+            rec.sensitive = True
+            rec.set_arguments(args, secret=secret)
+            actions.type_in_window(element, text)
 
     def __repr__(self) -> str:
         __tracebackhide__ = True

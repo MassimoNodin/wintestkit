@@ -20,6 +20,7 @@ from wintestkit.engine.properties import resolve_where
 from wintestkit.engine.resolve import Scope, resolve, resolve_all
 from wintestkit.engine.wpf_query import translate
 from wintestkit.errors import (
+    ActionError,
     AmbiguousElementError,
     ElementNotFoundError,
     InspectorError,
@@ -1733,3 +1734,66 @@ def test_has_picks_the_group_containing_the_nested_button(owned, backend):
         wrong = Locator(automation_id="ParityGroup", has=Locator(automation_id="Duplicate"))
         with pytest.raises(ElementNotFoundError, match="none contains"):
             resolve(scope, wrong)
+
+
+def _main_window_page(scope):
+    from wintestkit.controls import TextBox
+    from wintestkit.model import Page, Window
+
+    class MainWindowPage(Page):
+        window = Window()
+        source = TextBox(automation_id="BindingSource")
+
+    return MainWindowPage(scope.app)
+
+
+def test_window_press_and_type_reach_the_focused_control(owned):
+    from wintestkit.expect import expect
+
+    scope, path = owned
+    page = _main_window_page(scope)
+    with runtime.config_scope(config(path, "agent")):
+        page.window.activate()
+        assert page.window.is_active()
+        page.source.focus()
+        page.source.press("Ctrl+A Backspace")
+        page.window.type("abc")
+        expect(page.source, timeout=5).to_have_value("abc")
+        page.window.press("Backspace")
+        expect(page.source, timeout=5).to_have_value("ab")
+
+
+def test_keyboard_module_sends_to_the_app_foreground_window(owned):
+    from wintestkit import keyboard
+    from wintestkit.expect import expect
+
+    scope, path = owned
+    page = _main_window_page(scope)
+    runtime.set_current_app(scope.app)
+    with runtime.config_scope(config(path, "agent")):
+        page.window.activate()
+        page.source.focus()
+        page.source.press("Ctrl+A Backspace")
+        keyboard.type("xyz")
+        expect(page.source, timeout=5).to_have_value("xyz")
+        with keyboard.hold("Shift"):
+            keyboard.press("Home")
+
+
+def test_window_move_resize_and_rect(owned):
+    scope, path = owned
+    page = _main_window_page(scope)
+    with runtime.config_scope(config(path, "agent")):
+        page.window.restore()
+        page.window.move(60, 70)
+        page.window.resize(900, 650)
+        deadline = time.monotonic() + 5
+        while page.window.rect.width != 900 and time.monotonic() < deadline:
+            time.sleep(0.05)
+        rect = page.window.rect
+        assert (rect.width, rect.height) == (900, 650)
+        assert (rect.left, rect.top) == (60, 70)
+        page.window.maximize()
+        with pytest.raises(ActionError, match="call restore"):
+            page.window.move(0, 0)
+        page.window.restore()

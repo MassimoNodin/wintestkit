@@ -6,6 +6,7 @@ from __future__ import annotations
 import contextlib
 import ctypes
 import time
+from collections.abc import Generator
 from dataclasses import dataclass
 from typing import Literal
 
@@ -323,6 +324,17 @@ def drag(
 
 
 # -- keyboard ------------------------------------------------------------------------------------
+
+
+@contextlib.contextmanager
+def hold_modifiers(modifiers: tuple[int, ...]) -> Generator[None]:
+    """Hold modifier keys down for the block; they are always released, even on an error."""
+    __tracebackhide__ = True
+    try:
+        _send(_modifier_events(modifiers, False))
+        yield
+    finally:
+        _release_quietly(_modifier_events(modifiers, True))
 
 
 def press(keys: str) -> None:
