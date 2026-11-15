@@ -351,6 +351,9 @@ demand.
 **Disable for this workspace** (the red button in the callout, **WinTestKit: Disable for This Workspace**,
 or the Test Target menu) returns the sidebar to the Enable button. The choice is remembered per workspace.
 
+The **Action waiting** setting in **Test runs** selects `exists` (default) or `strict`;
+see [auto-waiting](actions-and-assertions.md#auto-waiting).
+
 The custom YAML editor offers **User Settings** (the ignored `wintestkit.local.yaml`) and **Repository
 Settings** (the committed `wintestkit.yaml`) tabs. Every setting is shown at once, grouped as
 **Application** (starting with **Application executable** and its **Browse…** button; clearing it

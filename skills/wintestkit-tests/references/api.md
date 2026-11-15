@@ -19,7 +19,7 @@ class P(Page):
 ```
 
 Element options: `automation_id`, `name`, `control_type`, `class_name`, `index`, `depth`, `within`,
-`window`, `timeout`, `validate` (typed elements only), `where`. Windows and `Elements` also accept
+`window`, `timeout`, `validate` (typed elements only), `where`, `any_of`, `has`. Windows and `Elements` also accept
 `where={"HelpText": "Save", "ItemStatus": re.compile(r"AddressBox$")}`. Entries AND together;
 boolean/numeric properties require boolean/numeric values. With `backend: auto`, WPF uses its
 managed tree; other windows use UIA. Qualified keys such as `type:FullName`, `type:Is`, `clr:`,
@@ -28,6 +28,16 @@ to qualified or UIA keys. Use paths observed in Spy and never put secrets in `wh
 reads execute application code. Do not duplicate a property via a keyword and `where`.
 Strings match exactly; a compiled regex
 matches with `re.search`. `window = Window()` with no arguments means the application's main window.
+
+`any_of=[{"automation_id": "Save"}, {"name": "Save"}]` ORs non-empty
+property groups (at least two when provided), each merged with the element's properties; conflicts raise at definition time.
+Matches form a de-duplicated union in alternative order; strict matching and `index` apply to the
+union. Keys other than the four locator fields are `where` properties. `has=Element(...)` or a
+`Locator` requires a matching descendant before strict matching and `index`. The child may use
+properties, `where`, `any_of` and `depth`, but not `index`, `within`, `window`, item selectors or
+nested `has`; it needs a property. Typed elements used as `has` do not add a control type. More
+than 200 outer candidates raises `InspectorLimitError`; narrow the locator. If none contains the
+child, the diagnostic says `but none contains`. Waits for either form poll.
 
 Direct children only: `ok = panel.Button(name="OK")`, `rows = panel.Elements(control_type="ListItem")`,
 `zip_code = panel.Element(name="Address").TextBox(name="Zip")`; any typed element works. It is
@@ -68,8 +78,14 @@ offers every action. `select(item)` takes a name, a 0-based index or a compiled 
 searched too). Items of virtualized lists/grids only exist when realized: ask the container with
 `select`, `row`, `cell`, `find_row`. Every action accepts `timeout=`.
 
-`click()` uses the control's UIA pattern (Invoke, Toggle, SelectionItem, ExpandCollapse) and falls
-back to the mouse; `click(mode="mouse")` always uses the mouse.
+`click()` uses mouse input by default; `click(mode="pattern")` uses the control's automation
+pattern and falls back to the mouse. Actions normally wait only for existence (`actionability: exists`),
+then fail immediately if disabled or hidden and not scrollable. Scrollable off-screen items are
+scrolled into view. Use `expect(x).to_be_enabled()` or set `actionability: strict` to wait for
+enabled and visible. An element disappearing during an action is resolved and retried once.
+Configure via YAML/TOML, `WTK_ACTIONABILITY`, `wtk run --actionability`,
+`pytest --wtk-actionability`, or `@pytest.mark.wtk(actionability="strict")`; the marker overrides
+the project setting for that test.
 
 ## expect
 
@@ -113,7 +129,7 @@ class DatePicker(Element[BoundDatePicker]):
 ```
 
 Use `DatePicker(automation_id="Start")` like any element. `self.perform(timeout, act)` waits for the
-element to be enabled and visible and calls `act(uia_element)`; `self.step(name, args,
+element according to actionability and calls `act(uia_element)`; `self.step(name, args,
 secret=False)` logs the action. Other type rules: `accepted_control_types`, or override
 `check_type(element)` and raise `self.type_mismatch(element, "reason")`. To extend a built-in:
 `class BoundMyCombo(BoundComboBox)` with `class MyCombo(Element[BoundMyCombo])`, or subclass the typed

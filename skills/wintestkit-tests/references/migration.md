@@ -16,6 +16,8 @@ scripts or test routines. Output: pages, components, flows, tests.
 | `WPFControlName` | `automation_id` (peer or peerless attached ID, or `x:Name` when empty with `backend: auto`) |
 | `ClrFullClassName` | `where={"type:FullName": ...}`; `type:Is` includes derived types |
 | `WPFControlText`, `Content`, `Caption` | `name` |
+| Conditional mapping (OR groups) | `any_of=[...]` |
+| Required child objects | `has=Element(...)` |
 | ordinal number | `index` (0-based; avoid) |
 | mapped parent chain | the component root; never a `within=` chain |
 | script routine / reusable test routine | an intent method on the page or component, or a flow |
@@ -23,7 +25,7 @@ scripts or test routines. Output: pages, components, flows, tests.
 | checkpoint | `expect(...)` |
 | Reading object properties (e.g. `obj.DataContext.Name`) | `el.get("clr:DataContext.Name")` |
 | `WaitProperty` | `el.wait_for_property(name, expected)` |
-| `Delay`, `Sleep`, `WaitChild` | nothing (actions and `expect` wait) or `wait_for()` / `exists(timeout=)` |
+| `Delay`, `Sleep`, `WaitChild` | use `expect` or `wait_for()` for the required state; actions wait for existence by default |
 | data-driven loop / table | `@pytest.mark.parametrize` |
 | `OnUnexpectedWindow` and other event handlers | fixtures; for known dialogs, a page plus a flow step |
 | test items / execution plan | files, folders and markers (`wtk run -m smoke`) |
@@ -70,6 +72,10 @@ Use `find_child(parent, props, values, depth=1)` for a lazy first match,
 `*` and `?` are whole-value wildcards. Depth counts WPF automation-peer levels, which can
 differ from the original visual tree. Verify AutomationId and text in Spy.
 
+The importer does not yet convert OR groups; add `any_of` manually. Actions default to
+`actionability: exists`: disabled or hidden, unscrollable elements fail immediately. Use
+`expect(x).to_be_enabled()` or `actionability: strict` to wait for enabled and visible.
+
 The importer emits parent-scoped `Element` declarations with `within=` and `depth=1`, or
 unlimited/default depth for extended find. It assumes nested mapped items and accepts either
 an `extendedFind="True"` attribute or an `ExtendedFind` property. Unmappable properties and
@@ -81,8 +87,7 @@ are emitted as qualified keys with `--managed-class-names`; review the generated
 - Strict matching: an existing mapping may resolve to the first of several matches; WinTestKit fails.
   Expect to add roots or properties while migrating.
 - WPF uses the managed tree under `backend: auto`; other windows use UIA. There is no image or OCR recognition.
-- Pattern input is the default for clicks and typing; mouse input only when the app needs real
-  mouse events (`click(mode="mouse")`).
+- Mouse input is the default for clicks; use `click(mode="pattern")` for automation patterns.
 - There is no recorder: use the Spy and write Python.
 
 First-match finders warn on ambiguity; add identifying properties, narrow the scope, or use `strict=True`. Explicit ordinals suppress the warning. Use `wintestkit.finders.send_keys(target, text)` for mixed key strings and `to_keys(text)` to convert key-only strings to `press()` syntax.

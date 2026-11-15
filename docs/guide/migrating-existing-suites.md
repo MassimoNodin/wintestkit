@@ -16,6 +16,8 @@ This guide helps you migrate an existing **WPF desktop test suite** to WinTestKi
 | `WPFControlText` | `name` (peer Name, not necessarily actual text) |
 | `Visible` / `Enabled` | `clr:IsVisible` / `clr:IsEnabled` via helpers or `where` |
 | `ObjectIdentifier` | No direct equivalent: inspect and choose stable properties, not an invented ID |
+| Conditional mapping (OR groups) | `any_of=[...]` |
+| Required child objects | `has=Element(...)` |
 | Wildcards | Helpers translate `*` and `?` to whole-value patterns; locators accept compiled regexes |
 | Extended find / depth | `depth` (automation-peer levels); extended find uses descendant search |
 | Direct property writes / method calls | Prefer UI actions; managed writes and calls are opt-in with an allowlist and audit (see [managed inspection](managed-inspection.md#writes-and-method-calls)) |
@@ -91,7 +93,7 @@ Run `wtk import-namemapping NameMapping.xml pages/imported.py`. The command gene
 `depth=1`; extended searches use the default descendant depth. It assumes children are nested
 `Item`, `Node`, or `MappedObject` elements (possibly inside containers), and accepts the
 unverified flag forms `extendedFind="True"` on the object or an `ExtendedFind` property.
-It does not migrate actions or tests. Existing output is preserved; pass `--force` to replace it.
+It does not yet convert OR groups; add `any_of` manually. It does not migrate actions or tests. Existing output is preserved; pass `--force` to replace it.
 
 `WPFControlName` becomes `automation_id` (verify the AutomationId or WPF x:Name fallback in Spy).
 `ClrFullClassName` is retained as `where={"ClrFullClassName": ...}`. Configure

@@ -82,7 +82,7 @@ On WPF, supported waits use agent-side events to recheck conditions; other cases
 
 | Call | Waits until | Then |
 |---|---|---|
-| Actions (`click`, `type`, `select`, …) | the element exists, is **enabled** and is **visible** (items that can be scrolled into view count as visible) | acts; if the element disappears during the action it is found again and the action retried once |
+| Actions (`click`, `type`, `select`, ...) | the element exists by default (`actionability: exists`) | checks enabled and visible, then acts; if it disappears during the action it is found again and the action retried once |
 | `scroll_into_view()` | the element exists | scrolls |
 | Reads (`text`, `value`, `is_enabled()`, `is_checked()`, `selected_items()`, `row_count()`, …) | the element exists | returns the current value |
 | `exists(timeout=0)` | by default, doesn't wait | `True`/`False` |
@@ -90,6 +90,13 @@ On WPF, supported waits use agent-side events to recheck conditions; other cases
 | `wait_for_property(name, expected)` | a UIA or managed property matches (including regex) | returns the element |
 | `wait_for(state)` | the state is reached: `attached`, `detached`, `visible`, `hidden`, `enabled`, `disabled` or `stable` | returns the element |
 | `expect(...)` | the assertion holds | passes, or fails with the last observed value |
+
+With the default `actionability: exists`, a disabled element fails immediately with
+`<element> is disabled; actions no longer wait for enabled elements: wait with expect(...).to_be_enabled() or set actionability: strict`.
+An off-screen element that cannot be scrolled into view fails immediately with
+`<element> is hidden (off-screen and cannot be scrolled into view); actions no longer wait for visible elements: wait with expect(...).to_be_visible() or set actionability: strict`.
+Off-screen scrollable items are scrolled into view. Set `actionability: strict` to wait for the
+element to be enabled and visible as well. Use `expect(x).to_be_enabled()` for an explicit wait.
 
 An ambiguous locator never waits; it fails immediately (see
 [strict matching](locators-for-wpf.md#strict-matching)).
@@ -100,7 +107,8 @@ def test_continue_waits_until_it_is_enabled(main: MainPage) -> None:
     expect(main.continue_button).to_be_disabled()
     main.load.click()
     expect(main.status).to_have_text("Loading...")
-    main.continue_button.click()  # disabled for about two seconds: click() waits
+    expect(main.continue_button).to_be_enabled()  # wait for loading to finish
+    main.continue_button.click()
     expect(main.status).to_have_text("Continued")
 ```
 
@@ -178,7 +186,8 @@ The time an action or assertion waits is, from highest to lowest precedence:
 # pseudo-code
 def test_timeouts(main: MainPage) -> None:
     main.load.click()
-    main.continue_button.click(timeout=5)  # per-call: wait up to 5 s for this action
+    expect(main.continue_button, timeout=5).to_be_enabled()
+    main.continue_button.click(timeout=5)  # per-call: wait up to 5 s for existence
     expect(main.status, timeout=5).to_contain_text("Continued")
 
 

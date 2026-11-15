@@ -22,6 +22,7 @@ wtk run -- -p no:cacheprovider --maxfail=3  # raw pytest arguments after --
 | `TESTS` | Test ids or paths |
 | `--launch {per-test,attach}` | How to get the application (see below) |
 | `--timeout SECONDS` | Default auto-wait |
+| `--actionability {exists,strict}` | Wait for existence only (default), or also enabled and visible before actions |
 | `--app PATH` | Application executable |
 | `--input-mode {pattern,mouse}` | Default click strategy |
 | `--screenshots {off,on-failure,every-step}` | When to capture screenshots |
@@ -53,6 +54,7 @@ Shared `wintestkit.yaml` (commit this):
 ```yaml
 launch: per-test
 timeout: 10
+actionability: exists
 backend: auto
 input_mode: mouse
 inspector:
@@ -96,7 +98,7 @@ local YAML; the VS Code Configuration page warns about it. Keep machine-specific
 Legacy paths remain supported; move machine-specific ones from `pyproject.toml` to local YAML. Keep secrets out of shared
 configuration; advanced `app.env` settings accept string values in local YAML.
 Relative paths resolve from the project directory. Environment variables include
-`WTK_APP_PATH`, `WTK_LAUNCH`, `WTK_TIMEOUT`, `WTK_INPUT_MODE`, `WTK_SCREENSHOTS`, `WTK_REPLAY`,
+`WTK_APP_PATH`, `WTK_LAUNCH`, `WTK_TIMEOUT`, `WTK_ACTIONABILITY`, `WTK_INPUT_MODE`, `WTK_SCREENSHOTS`, `WTK_REPLAY`,
 `WTK_REPLAY_FPS`, `WTK_REPLAY_SCOPE`, and `WTK_OBJECT_PREVIEWS`; `WTK_LOG`
 sets the log level of the `wintestkit` logger (`DEBUG`, `INFO`, …).
 Replay limits are configurable with `replay_max_frames` (default 3000) and `replay_max_bytes`
@@ -152,8 +154,10 @@ database, or `attach` to a running app when you need to inspect it by hand.
 | `page` | test | A factory: `page(MainPage)` returns `MainPage(app)` |
 | `wtk_config` | session | The effective `WtkConfig` |
 
-`@pytest.mark.wtk(launch=..., timeout=...)` overrides the launch mode or default timeout for one
-test. Use ordinary pytest markers and paths to organize suites (`wtk run -m smoke`,
+`@pytest.mark.wtk(launch=..., timeout=..., actionability=...)` overrides the launch mode,
+default timeout or action waiting for one test. For example, `@pytest.mark.wtk(actionability="strict")`
+waits for enabled and visible elements. The marker overrides the project setting for that test;
+otherwise actionability follows the configuration precedence above. Use ordinary pytest markers and paths to organize suites (`wtk run -m smoke`,
 `wtk run tests/orders`).
 
 ## Report

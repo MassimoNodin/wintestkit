@@ -50,6 +50,35 @@ There is no "self-healing". A locator that silently picks the first of several m
 closest of several near misses, clicks the wrong control as soon as the application changes, and
 the failure shows up far from its cause. Strict matching fails at the line that is wrong.
 
+## Alternatives and required children
+
+Use `any_of` when a control can match any of several property groups, and `has` when a
+container must contain a particular descendant:
+
+```python
+# pseudo-code
+    submit = Element(control_type="Button", any_of=[
+        {"automation_id": "Submit"}, {"name": "Send", "HelpText": "Submit order"},
+    ])
+    order = Element(control_type="Group", has=Element(automation_id="OrderTotal"))
+```
+
+A non-empty `any_of` takes at least two non-empty property dictionaries. `automation_id`, `name`,
+`control_type` and `class_name` are locator fields; other keys are `where` properties.
+Each group is ANDed with the element's own properties. Conflicting values raise `ValueError`
+at definition time. Matches are combined in alternative order and de-duplicated; strict matching
+and `index` apply to the whole union, not each group. Waits poll for these locators.
+
+`has` accepts an `Element` or `Locator` describing a matching descendant. It may use properties,
+`where`, `any_of` and `depth`, but not `index`, `within`, `window`, an item selector or nested
+`has`. It needs at least one property. A typed element used as `has=`, such as
+`Button(automation_id="OK")`, does not add a control type: specify `control_type="Button"`
+explicitly if needed. Candidates are filtered before strict matching and `index`; waits poll.
+If more than 200 candidates need filtering, `InspectorLimitError` reports
+`has= query exceeded 200 candidates for local filtering; narrow the locator`. If candidates
+match the outer properties but none contains the child, the not-found diagnostic says
+`but none contains` the required locator.
+
 ## Reading diagnostics
 
 A not-found failure lists the closest candidates and how each differs:

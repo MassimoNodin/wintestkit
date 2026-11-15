@@ -61,6 +61,8 @@ An element is found by its locator in the WPF tree or, for a UIA window, by UI A
 | `name` | `Name`: the label, content or text |
 | `control_type` | `ControlType`: `Button`, `Edit`, `CheckBox`, `ComboBox`, `List`, `DataGrid`, … |
 | `class_name` | `ClassName`: the WPF type, e.g. `TextBox`, `PasswordBox` |
+| `any_of` | alternative property groups; matches their de-duplicated union |
+| `has` | require a matching descendant; see [Alternatives and required children](locators-for-wpf.md#alternatives-and-required-children) |
 | `index` | the n-th match (0-based) when several elements match |
 | `depth` | maximum search depth below the container (`1`: direct children only) |
 | `within` | another `Element` to search inside instead of the whole window; see also [Direct children](#direct-children) |
@@ -280,7 +282,7 @@ def test_booking(booking: BookingPage) -> None:
 The type argument of `Element[...]` is the only link between the two; it also gives
 `booking.start` its type in the editor and under pyright strict. Inside a bound class:
 
-- `self.perform(timeout, act)` waits until the element exists, is enabled and visible, then calls
+- `self.perform(timeout, act)` waits according to [actionability](actions-and-assertions.md#auto-waiting), then calls
   `act(element)` with the live UI Automation element and returns its result (retrying once if the
   element disappears mid-action). The helpers in `wintestkit.engine.actions` (`click`, `type_text`,
   `select`, `set_checked`, `expand`, ...) and `wintestkit.uia.patterns` take such an element.

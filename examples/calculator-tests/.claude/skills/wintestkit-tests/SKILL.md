@@ -191,7 +191,7 @@ Rules for the other direction: a dictionary from page types or enums to element 
 `expect` assertions: `to_exist`, `to_be_visible`, `to_be_hidden`, `to_be_enabled`, `to_be_disabled`,
 `to_be_checked`, `to_be_selected`, `to_have_text`, `to_contain_text`, `to_have_value`,
 `to_have_count`, `to_have_property`; negate with `.not_`. Details in the
-[API cheat sheet](references/api.md). Actions and `expect` auto-wait; do not add sleeps. Use
+[API cheat sheet](references/api.md). Actions wait for existence by default; `expect` waits for its assertion. Use `expect` for enabled or visible states, or set `actionability: strict`. Do not add sleeps. Use
 `@pytest.mark.wtk(timeout=20)` or `timeout=` for the rare slow step.
 
 ### Data-driven tests and reset
@@ -247,7 +247,7 @@ Short form:
 3. Open the window in the app, then `wtk check pages/x.py` until **green for that page** before
    migrating any test. Fix locators with the Spy.
 4. Turn each script routine into an intent method; each test into a test using intent + `expect`;
-   checkpoints into `expect`; `Delay`/`Sleep` into nothing (auto-wait) or `wait_for`; data-driven
+   checkpoints into `expect`; `Delay`/`Sleep` into an explicit `expect` or `wait_for` for the required state; data-driven
    loops into `parametrize`; event handlers into fixtures.
 5. Run the tests of that page, then the next window.
 

@@ -117,9 +117,10 @@ Add a property, scope it with `within=`, or use `index=` as a last resort. See
 
 ## Timed out waiting for an element to be enabled or visible
 
-Actions wait for their element to be enabled and visible. The message says which condition wasn't
-met: something in the application keeps the control disabled (validation, a busy state) or covers
-it, or it's scrolled out of view in a container that can't scroll it back.
+By default actions fail immediately when an existing element is disabled or hidden; under
+`actionability: strict` they wait and can time out. Check for validation or a busy state, or an
+off-screen control in a container that cannot scroll it into view. Use `expect(...).to_be_enabled()`
+or `expect(...).to_be_visible()` to wait explicitly.
 
 ## Elevated applications
 
