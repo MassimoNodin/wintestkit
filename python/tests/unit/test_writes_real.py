@@ -6,7 +6,7 @@ import time
 import pytest
 from test_inspector_owned_integration import _control
 
-from wintestkit import runtime
+from wintestkit import Decimal, Enum, Int32, Int64, Null, runtime
 from wintestkit.config import load_config
 from wintestkit.engine.locator import Locator
 from wintestkit.engine.resolve import resolve
@@ -68,6 +68,11 @@ def test_allowed_writes_and_report(owned):
             prefix + "DefaultValue",
             prefix + "WritableText",
             prefix + "RecordWrite(System.String,System.Int64)",
+            prefix + "Overload(System.Int32)",
+            prefix + "Overload(System.Int64)",
+            prefix + "TakeEnum(WinTestKit.Fixture.WriteChoice)",
+            prefix + "TakeNullable(System.String)",
+            prefix + "TakeDecimal(System.Decimal)",
             "System.Windows.Controls.PasswordBox.Password",
         ],
     )
@@ -80,6 +85,14 @@ def test_allowed_writes_and_report(owned):
             page.control.set_property("WritableText", "written-clr-782")
             assert page.control.call("RecordWrite", "written-call-783", 9) == "written-call-783"
             assert _control(scope.app.pids[0]).get("RecordWrite", 0) == 1
+            assert page.control.call("Overload", Int32(1)) == "int32"
+            assert page.control.call("Overload", Int64(1)) == "int64"
+            assert (
+                page.control.call("TakeEnum", Enum("WinTestKit.Fixture.WriteChoice", "Second"))
+                == "Second"
+            )
+            assert page.control.call("TakeNullable", Null("System.String")) == "null"
+            assert page.control.call("TakeDecimal", Decimal("1.25")) == "1.25"
             assert resolve(
                 scope,
                 Locator(

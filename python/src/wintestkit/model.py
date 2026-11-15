@@ -1110,16 +1110,12 @@ class BoundControl(_BoundBase):
         __tracebackhide__ = True
         with self._write_step("call", "call"):
             element = self._write_target()
-            type_names = {
-                str: "System.String",
-                bool: "System.Boolean",
-                int: "System.Int64",
-                float: "System.Double",
-            }
+            from wintestkit.managed import argument
+
             try:
-                key = f"{name}({','.join(type_names[type(arg)] for arg in args)})"
-            except KeyError:
-                raise InspectorError("Invalid write argument type", code="invalidParams") from None
+                key = f"{name}({','.join(argument(arg).type for arg in args)})"
+            except (ValueError, TypeError, OverflowError) as error:
+                raise InspectorError(str(error), code="invalidParams") from error
             deadline = operation_deadline(runtime.get_config().inspector.request_timeout)
             return self._write(element, key, key, args, property_write=False, deadline=deadline)
 

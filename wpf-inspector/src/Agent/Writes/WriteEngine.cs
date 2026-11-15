@@ -107,7 +107,8 @@ namespace WinTestKit.Inspector.Agent.Writes
         }
 
         // Method keys are metadata names plus exact CLR parameter names, e.g. Refresh(System.Boolean,System.Int64).
-        private static string MethodKey(MethodInfo method) => method.Name + "(" + string.Join(",", method.GetParameters().Select(p => p.ParameterType.FullName ?? "")) + ")";
+        private static string MethodKey(MethodInfo method) => method.Name + "(" + string.Join(",", method.GetParameters().Select(p => TypeName(p.ParameterType))) + ")";
+        private static string TypeName(Type type) => Nullable.GetUnderlyingType(type) is Type inner ? "System.Nullable`1[" + (inner.FullName ?? inner.Name) + "]" : type.FullName ?? type.Name;
         private static object? Perform(object target, string operation, string key, IReadOnlyList<JsonNode> values, out Type declared)
         {
             declared = typeof(void);
@@ -135,9 +136,45 @@ namespace WinTestKit.Inspector.Agent.Writes
             if (!method.IsPublic || method.IsStatic || method.IsGenericMethod || parameters.Any(p => p.ParameterType.IsByRef || p.IsOut || p.IsDefined(typeof(ParamArrayAttribute), false))) throw Denied();
             if (parameters.Length != values.Count || values.Count > 16) throw Invalid();
             var args = new object[values.Count];
-            for (int i = 0; i < args.Length; i++) args[i] = Scalar(values[i], parameters[i].ParameterType);
+            for (int i = 0; i < args.Length; i++) args[i] = CallScalar(values[i], parameters[i].ParameterType)!;
             declared = method.ReturnType;
             return method.Invoke(target, args);
+        }
+        private static object? CallScalar(JsonNode node, Type expected)
+        {
+            if (!(node is JsonObjectNode arg)) return Scalar(node, expected);
+            if (arg.Members.Count != 2 || arg.Members.Any(item => item.Key != "type" && item.Key != "value" && item.Key != "enum" && item.Key != "null")) throw Invalid();
+            if (!(arg.Get("type") is JsonStringNode type) || type.Value != TypeName(expected)) throw Invalid();
+            if (arg.TryGet("null", out var nullNode))
+            {
+                if (!(nullNode is JsonBoolNode nil) || !nil.Value || (expected.IsValueType && Nullable.GetUnderlyingType(expected) == null)) throw Invalid();
+                return null;
+            }
+            if (arg.TryGet("enum", out var enumNode))
+            {
+                if (!expected.IsEnum) throw Invalid();
+                try
+                {
+                    object result;
+                    if (enumNode is JsonStringNode name) result = System.Enum.Parse(expected, name.Value, false);
+                    else if (enumNode is JsonNumberNode number && number.TryGetInt64(out long integer)) result = System.Enum.ToObject(expected, Convert.ChangeType(integer, System.Enum.GetUnderlyingType(expected), CultureInfo.InvariantCulture));
+                    else throw Invalid();
+                    if (!expected.IsDefined(typeof(FlagsAttribute), false) && !System.Enum.IsDefined(expected, result)) throw Invalid();
+                    return result;
+                }
+                catch (ArgumentException) { throw Invalid(); }
+                catch (OverflowException) { throw Invalid(); }
+            }
+            if (!arg.TryGet("value", out var value)) throw Invalid();
+            if (expected == typeof(string) || expected == typeof(bool) || expected == typeof(long) || expected == typeof(double))
+            {
+                if (expected == typeof(double) && value is JsonNumberNode doubleNode && double.TryParse(doubleNode.RawText, NumberStyles.Float, CultureInfo.InvariantCulture, out double dbl) && !double.IsNaN(dbl) && !double.IsInfinity(dbl)) return dbl;
+                return Scalar(value, expected);
+            }
+            if (expected == typeof(int) && value is JsonNumberNode intNode && intNode.TryGetInt64(out long whole) && whole >= int.MinValue && whole <= int.MaxValue) return (int)whole;
+            if (expected == typeof(float) && value is JsonNumberNode floatNode && float.TryParse(floatNode.RawText, NumberStyles.Float, CultureInfo.InvariantCulture, out float single) && !float.IsNaN(single) && !float.IsInfinity(single)) return single;
+            if (expected == typeof(decimal) && value is JsonStringNode text && decimal.TryParse(text.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out decimal dec)) return dec;
+            throw Invalid();
         }
         private static object Scalar(JsonNode node, Type expected)
         {

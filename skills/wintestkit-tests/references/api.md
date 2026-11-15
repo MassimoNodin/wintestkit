@@ -137,3 +137,5 @@ Use `secret=True` to redact all step or message details; sensitive picture
 targets are skipped.
 
 `wintestkit.finders.send_keys(target, text, secret=False, timeout=None)` sends migrated key strings; `parse_keys(text)` parses segments and `to_keys(text)` converts key-only strings to `press()` syntax.
+
+Managed calls accept `Int32`, `Int64`, `Single`, `Double`, `Decimal`, `Enum` and `Null` from `wintestkit` to select exact CLR overloads. For example, allowlist `Method(System.Int32)` for `Int32(1)`, `Method(Ns.Choice)` for `Enum("Ns.Choice", "First")`, and ``Method(System.Nullable`1[System.Int32])`` for ``Null("System.Nullable`1[System.Int32]")``. Plain `int`, `float`, `str`, `bool`, and `decimal.Decimal` map to Int64, Double, String, Boolean, and Decimal. Use `Null(type)` instead of `None` and explicit `Enum(...)` instead of Python enum members.

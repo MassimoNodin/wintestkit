@@ -51,6 +51,8 @@ public class MiddleControl : BaseControl
     public new string Hidden { get { Counts.Hit("Middle.Hidden"); return "middle"; } }
     public override string Overridden { get { Counts.Hit("Middle.Overridden"); return "middle"; } }
 }
+public enum WriteChoice { First = 1, Second = 2 }
+
 [Counted("fixture")]
 public sealed class FixtureControl : MiddleControl, ICustomTypeDescriptor
 {
@@ -62,6 +64,11 @@ public sealed class FixtureControl : MiddleControl, ICustomTypeDescriptor
     public double CoercedValue { get => (double)GetValue(CoercedValueProperty); set => SetValue(CoercedValueProperty, value); }
     public string WritableText { get; set; } = "initial";
     public string RecordWrite(string value, long number) { Counts.Hit("RecordWrite"); return value; }
+    public string Overload(int value) => "int32";
+    public string Overload(long value) => "int64";
+    public string TakeEnum(WriteChoice value) => value.ToString();
+    public string TakeNullable(string? value) => value ?? "null";
+    public string TakeDecimal(decimal value) => value.ToString(CultureInfo.InvariantCulture);
     public string PublicField = "public field";
     private string PrivateField = "private field";
     public string WriteOnly { set { Counts.Hit("WriteOnly.set"); PrivateField = value; } }

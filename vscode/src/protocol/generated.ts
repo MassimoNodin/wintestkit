@@ -216,6 +216,20 @@ export type AttributeLiteral = AttributeLiteral1;
  */
 export type BindingInfo = BindingInfo1;
 /**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "CallArgument".
+ */
+export type CallArgument =
+  | Scalar
+  | ({
+      [k: string]: unknown;
+    } & {
+      type: string;
+      value?: Scalar;
+      enum?: string | number;
+      null?: true;
+    });
+/**
  * @minItems 1
  * @maxItems 1024
  *
@@ -831,6 +845,7 @@ export interface ProtocolContracts {
   BindingsParams?: BindingsParams;
   BindingsResult?: BindingsResult;
   BootstrapSettings?: BootstrapSettings;
+  CallArgument?: CallArgument;
   CancelParams?: CancelParams;
   CancelResult?: CancelResult;
   Candidate?: Candidate;
@@ -3185,119 +3200,153 @@ export interface WriteCallParams {
    */
   arguments:
     | []
-    | [Scalar]
-    | [Scalar, Scalar]
-    | [Scalar, Scalar, Scalar]
-    | [Scalar, Scalar, Scalar, Scalar]
-    | [Scalar, Scalar, Scalar, Scalar, Scalar]
-    | [Scalar, Scalar, Scalar, Scalar, Scalar, Scalar]
-    | [Scalar, Scalar, Scalar, Scalar, Scalar, Scalar, Scalar]
-    | [Scalar, Scalar, Scalar, Scalar, Scalar, Scalar, Scalar, Scalar]
-    | [Scalar, Scalar, Scalar, Scalar, Scalar, Scalar, Scalar, Scalar, Scalar]
+    | [CallArgument]
+    | [CallArgument, CallArgument]
+    | [CallArgument, CallArgument, CallArgument]
+    | [CallArgument, CallArgument, CallArgument, CallArgument]
+    | [CallArgument, CallArgument, CallArgument, CallArgument, CallArgument]
     | [
-        Scalar,
-        Scalar,
-        Scalar,
-        Scalar,
-        Scalar,
-        Scalar,
-        Scalar,
-        Scalar,
-        Scalar,
-        Scalar
+        CallArgument,
+        CallArgument,
+        CallArgument,
+        CallArgument,
+        CallArgument,
+        CallArgument
       ]
     | [
-        Scalar,
-        Scalar,
-        Scalar,
-        Scalar,
-        Scalar,
-        Scalar,
-        Scalar,
-        Scalar,
-        Scalar,
-        Scalar,
-        Scalar
+        CallArgument,
+        CallArgument,
+        CallArgument,
+        CallArgument,
+        CallArgument,
+        CallArgument,
+        CallArgument
       ]
     | [
-        Scalar,
-        Scalar,
-        Scalar,
-        Scalar,
-        Scalar,
-        Scalar,
-        Scalar,
-        Scalar,
-        Scalar,
-        Scalar,
-        Scalar,
-        Scalar
+        CallArgument,
+        CallArgument,
+        CallArgument,
+        CallArgument,
+        CallArgument,
+        CallArgument,
+        CallArgument,
+        CallArgument
       ]
     | [
-        Scalar,
-        Scalar,
-        Scalar,
-        Scalar,
-        Scalar,
-        Scalar,
-        Scalar,
-        Scalar,
-        Scalar,
-        Scalar,
-        Scalar,
-        Scalar,
-        Scalar
+        CallArgument,
+        CallArgument,
+        CallArgument,
+        CallArgument,
+        CallArgument,
+        CallArgument,
+        CallArgument,
+        CallArgument,
+        CallArgument
       ]
     | [
-        Scalar,
-        Scalar,
-        Scalar,
-        Scalar,
-        Scalar,
-        Scalar,
-        Scalar,
-        Scalar,
-        Scalar,
-        Scalar,
-        Scalar,
-        Scalar,
-        Scalar,
-        Scalar
+        CallArgument,
+        CallArgument,
+        CallArgument,
+        CallArgument,
+        CallArgument,
+        CallArgument,
+        CallArgument,
+        CallArgument,
+        CallArgument,
+        CallArgument
       ]
     | [
-        Scalar,
-        Scalar,
-        Scalar,
-        Scalar,
-        Scalar,
-        Scalar,
-        Scalar,
-        Scalar,
-        Scalar,
-        Scalar,
-        Scalar,
-        Scalar,
-        Scalar,
-        Scalar,
-        Scalar
+        CallArgument,
+        CallArgument,
+        CallArgument,
+        CallArgument,
+        CallArgument,
+        CallArgument,
+        CallArgument,
+        CallArgument,
+        CallArgument,
+        CallArgument,
+        CallArgument
       ]
     | [
-        Scalar,
-        Scalar,
-        Scalar,
-        Scalar,
-        Scalar,
-        Scalar,
-        Scalar,
-        Scalar,
-        Scalar,
-        Scalar,
-        Scalar,
-        Scalar,
-        Scalar,
-        Scalar,
-        Scalar,
-        Scalar
+        CallArgument,
+        CallArgument,
+        CallArgument,
+        CallArgument,
+        CallArgument,
+        CallArgument,
+        CallArgument,
+        CallArgument,
+        CallArgument,
+        CallArgument,
+        CallArgument,
+        CallArgument
+      ]
+    | [
+        CallArgument,
+        CallArgument,
+        CallArgument,
+        CallArgument,
+        CallArgument,
+        CallArgument,
+        CallArgument,
+        CallArgument,
+        CallArgument,
+        CallArgument,
+        CallArgument,
+        CallArgument,
+        CallArgument
+      ]
+    | [
+        CallArgument,
+        CallArgument,
+        CallArgument,
+        CallArgument,
+        CallArgument,
+        CallArgument,
+        CallArgument,
+        CallArgument,
+        CallArgument,
+        CallArgument,
+        CallArgument,
+        CallArgument,
+        CallArgument,
+        CallArgument
+      ]
+    | [
+        CallArgument,
+        CallArgument,
+        CallArgument,
+        CallArgument,
+        CallArgument,
+        CallArgument,
+        CallArgument,
+        CallArgument,
+        CallArgument,
+        CallArgument,
+        CallArgument,
+        CallArgument,
+        CallArgument,
+        CallArgument,
+        CallArgument
+      ]
+    | [
+        CallArgument,
+        CallArgument,
+        CallArgument,
+        CallArgument,
+        CallArgument,
+        CallArgument,
+        CallArgument,
+        CallArgument,
+        CallArgument,
+        CallArgument,
+        CallArgument,
+        CallArgument,
+        CallArgument,
+        CallArgument,
+        CallArgument,
+        CallArgument
       ];
   timeoutMs: number;
 }

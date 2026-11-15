@@ -17,12 +17,14 @@ namespace WinTestKit.Inspector.Agent.Writes.Tests
     [Trait("Category", "Unit")]
     public sealed class WriteEngineTests
     {
+        public enum Choice { First = 1, Second = 2 }
         public sealed class Target
         {
             public string Text { get; set; } = "";
             public string ReadOnly => "";
             public int Calls;
             public void All(string s, bool b, long i, double d) { Calls++; Text = s; }
+            public void Typed(int i, long l, float f, double d, decimal m, string s, bool b, Choice e, int? nullable) { Calls++; }
             public string ReturnText() => "result";
             public int ReturnNumber() => 42;
             public void ReturnVoid() { }
@@ -189,6 +191,24 @@ namespace WinTestKit.Inspector.Agent.Writes.Tests
                 Assert.Equal("ambiguous", Audit(hidden).Reason);
                 var missing = await Assert.ThrowsAsync<ProtocolException>(() => engine.ExecuteAsync(ui.Dispatcher, target, "setProperty", "clrProperty|A|T|Missing|", new JsonNode[] { new JsonStringNode("x") }, DateTime.UtcNow.AddSeconds(60), 2000, CancellationToken.None));
                 Assert.Equal("notFound", Audit(missing).Reason);
+            }
+        }
+        [Fact]
+        public async Task TypedCallsValidateDeclaredTypesAndValues()
+        {
+            using (var ui = new Ui())
+            {
+                string enumName = typeof(Choice).FullName!;
+                string key = "Typed(System.Int32,System.Int64,System.Single,System.Double,System.Decimal,System.String,System.Boolean," + enumName + ",System.Nullable`1[System.Int32])";
+                var target = new Target(); var engine = Engine(key);
+                JsonObjectNode Arg(string type, string field, JsonNode value) { var result = new JsonObjectNode(); result.Add("type", new JsonStringNode(type)); result.Add(field, value); return result; }
+                JsonNode[] values = { Arg("System.Int32", "value", new JsonNumberNode("1")), Arg("System.Int64", "value", new JsonNumberNode("2")), Arg("System.Single", "value", new JsonNumberNode("1.5")), Arg("System.Double", "value", new JsonNumberNode("2.5")), Arg("System.Decimal", "value", new JsonStringNode("1.25")), Arg("System.String", "value", new JsonStringNode("hello")), Arg("System.Boolean", "value", new JsonBoolNode(true)), Arg(enumName, "enum", new JsonStringNode("Second")), Arg("System.Nullable`1[System.Int32]", "null", new JsonBoolNode(true)) };
+                Assert.Equal("performed", (await Run(ui, engine, target, "call", key, values)).Outcome);
+                values[0] = Arg("System.Int64", "value", new JsonNumberNode("1"));
+                Assert.Equal(ErrorCodes.InvalidParams, (await Assert.ThrowsAsync<ProtocolException>(() => Run(ui, engine, target, "call", key, values))).Code);
+                values[0] = Arg("System.Int32", "value", new JsonNumberNode("1"));
+                values[7] = Arg(enumName, "enum", new JsonNumberNode("3"));
+                Assert.Equal(ErrorCodes.InvalidParams, (await Assert.ThrowsAsync<ProtocolException>(() => Run(ui, engine, target, "call", key, values))).Code);
             }
         }
         [Fact]

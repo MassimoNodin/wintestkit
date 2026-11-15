@@ -39,6 +39,13 @@ if TYPE_CHECKING:
     from wintestkit.finders import find as find
     from wintestkit.finders import find_all_children as find_all_children
     from wintestkit.finders import find_child as find_child
+    from wintestkit.managed import Decimal as Decimal
+    from wintestkit.managed import Double as Double
+    from wintestkit.managed import Enum as Enum
+    from wintestkit.managed import Int32 as Int32
+    from wintestkit.managed import Int64 as Int64
+    from wintestkit.managed import Null as Null
+    from wintestkit.managed import Single as Single
     from wintestkit.model import BoundControl as BoundControl
     from wintestkit.model import BoundElement as BoundElement
     from wintestkit.model import BoundElements as BoundElements
@@ -71,13 +78,20 @@ __all__ = [
     "CheckBox",
     "ComboBox",
     "DataGrid",
+    "Decimal",
+    "Double",
     "Element",
     "Elements",
+    "Enum",
+    "Int32",
+    "Int64",
     "ListBox",
     "ListItem",
+    "Null",
     "Page",
     "PageObject",
     "RadioButton",
+    "Single",
     "TabControl",
     "Text",
     "TextBox",
@@ -98,6 +112,13 @@ __all__ = [
 # Public names are imported lazily so that merely loading the pytest plugin (which happens in
 # every pytest run once wintestkit is installed) does not initialise COM or import UI Automation.
 _LAZY: dict[str, tuple[str, str]] = {
+    "Int32": ("wintestkit.managed", "Int32"),
+    "Int64": ("wintestkit.managed", "Int64"),
+    "Single": ("wintestkit.managed", "Single"),
+    "Double": ("wintestkit.managed", "Double"),
+    "Decimal": ("wintestkit.managed", "Decimal"),
+    "Enum": ("wintestkit.managed", "Enum"),
+    "Null": ("wintestkit.managed", "Null"),
     "step": ("wintestkit.runtime", "user_step"),
     "App": ("wintestkit.app", "App"),
     "BoundButton": ("wintestkit.controls", "BoundButton"),

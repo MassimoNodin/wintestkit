@@ -69,7 +69,15 @@ def test_write_wire_and_feature(method, operation, argument, field):
             assert result[1].kind == "null"
         request = transport.requests[0]
         assert request["method"] == "write." + operation
-        assert request["params"][field] == argument
+        if operation == "call":
+            assert request["params"][field] == [
+                {"type": "System.Boolean", "value": True},
+                {"type": "System.Int64", "value": 12},
+                {"type": "System.Double", "value": 1.5},
+                {"type": "System.String", "value": "secret"},
+            ]
+        else:
+            assert request["params"][field] == argument
         assert request["params"]["handle"] == REF.to_json()
         assert request["params"]["memberKey"] == "M"
         assert 1 <= request["params"]["timeoutMs"] <= 500

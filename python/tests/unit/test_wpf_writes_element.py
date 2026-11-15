@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from wintestkit import runtime
+from wintestkit import Enum, Int32, Null, runtime
 from wintestkit.backends.element import WpfElement
 from wintestkit.errors import ActionError, InspectorError, WriteDeniedError
 from wintestkit.inspector.models import Value, WriteAudit
@@ -98,6 +98,17 @@ def test_method_overload_and_arguments(setup_write):
         ("secret", True, 3, 1.5),
     )
     assert "secret" not in str(records[-1].to_dict())
+
+
+def test_typed_method_overload_key(setup_write):
+    bound, _, calls, _, _ = setup_write
+    args = (Int32(1), Enum("Ns.Choice", "First"), Null("System.Nullable`1[System.Int32]"))
+    assert bound.call("Submit", *args) == "done"
+    assert calls[-1] == (
+        "call",
+        "Submit(System.Int32,Ns.Choice,System.Nullable`1[System.Int32])",
+        args,
+    )
 
 
 def test_redacted_method_result_raises_and_keeps_audit(setup_write, monkeypatch):

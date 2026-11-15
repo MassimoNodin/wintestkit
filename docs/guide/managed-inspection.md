@@ -216,8 +216,18 @@ still checks the member, protected identities, redaction rules, and rate limits.
 attempts are audited without argument or property values. Use the narrowest list possible.
 
 Use `backend: auto` and a WPF element, for example `page.editor.set_property("IsModified", True)`
-or `page.editor.call("SetTitle", "Draft")`. `call()` returns the method result (or `None` for void); redacted results raise `ActionError`. Supported arguments are exactly strings, booleans,
-signed 64-bit integers and finite doubles; method signatures name their exact CLR types.
+or `page.editor.call("SetTitle", "Draft")`. `call()` returns the method result (or `None` for void); redacted results raise `ActionError`. Plain arguments map `str` to `System.String`, `bool` to `System.Boolean`, `int` to `System.Int64`, `float` to `System.Double`, and `decimal.Decimal` to `System.Decimal`. Use `Int32`, `Int64`, `Single`, `Double`, `Decimal`, `Enum`, and `Null` from `wintestkit` for explicit types. For example, `call("Overload", Int32(1))` requires `Overload(System.Int32)` in the allowlist; `Enum("Ns.Choice", "First")` requires `TakeEnum(Ns.Choice)`. Pass `Null("System.String")` for null references; nullable value types use ``Null("System.Nullable`1[System.Int32]")`` and the identical spelling in the allowlist. Python enum members and bare `None` are not accepted. Decimal values travel as strings; enum integers must fit in signed 64 bits. Flags enums permit combinations; other enum values must be defined.
+
+| Python argument | CLR type or behavior |
+| --- | --- |
+| `str`, `bool`, `int`, `float` | `System.String`, `System.Boolean`, `System.Int64`, `System.Double` |
+| `decimal.Decimal` | `System.Decimal` |
+| `Int32(v)`, `Int64(v)` | `System.Int32`, `System.Int64` |
+| `Single(v)`, `Double(v)` | `System.Single`, `System.Double` |
+| `Decimal(v)` | `System.Decimal` from a decimal or string |
+| `Enum(type, name_or_integer)` | Exact declared enum type |
+| `Null(type)` | Null reference or nullable value of the declared type |
+
 Dependency properties, including CLR wrappers of dependency properties, use
 `SetCurrentValue` to preserve bindings; ordinary CLR properties use their public setter.
 Protected identities (including password controls), redacted names, static, generic,

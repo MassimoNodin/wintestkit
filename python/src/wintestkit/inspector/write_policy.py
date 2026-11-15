@@ -7,8 +7,9 @@ from typing import cast
 
 _NAME = r"[A-Za-z_][A-Za-z0-9_]*"
 _TYPE = rf"{_NAME}(?:[.+]{_NAME})+"
+_ARG_TYPE = rf"(?:{_TYPE}|System\.Nullable`1\[{_TYPE}\])"
 _ENTRY = re.compile(
-    rf"(?P<type>{_TYPE})\.(?P<member>{_NAME})(?P<args>\((?:{_TYPE}(?:,{_TYPE})*)?\))?"
+    rf"(?P<type>{_TYPE})\.(?P<member>{_NAME})(?P<args>\((?:{_ARG_TYPE}(?:,{_ARG_TYPE})*)?\))?"
 )
 
 

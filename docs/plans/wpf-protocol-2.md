@@ -254,7 +254,7 @@ explicit `backend: uia` keep the UIA backend.
 2. class_name is Type.Name; the shared regex subset and traversal order are specified above.
 3. Multiple matches choose the first and produce a bounded-count warning and Python log.
 4. Events are required, sequenced and buffered; overflow and reconnect require rescan.
-5. Writes use overload-specific allowlists, exact scalar types, no nulls, and timeout/redaction-safe audit.
+5. Writes use overload-specific allowlists and timeout/redaction-safe audit. Method arguments carry a CLR `type` plus exactly one of `value`, `enum`, or `null`; decimals use string values, enum values use names or signed 64-bit integers, and null is only valid for references or nullable values. Nullable keys use ``System.Nullable`1[System.Int32]``. Legacy scalar arguments retain their original exact types.
 6. ElementState exposes template-part geometry for actual sub-part mouse input.
 7. findAll returns capped results with complete:false and count only after full traversal.
 8. Unreadable predicate values fail the query with valueUnreadable; missing peers do not match.

@@ -872,7 +872,14 @@ class InspectorClient:
         try:
             if not isinstance(arguments, (list, tuple)) or len(arguments) > 16:
                 raise ValueError("Invalid arguments")
-            values = [_write_scalar(value) for value in arguments]
+            from wintestkit.managed import encode_argument
+
+            values = [encode_argument(value) for value in arguments]
+            for item in values:
+                if "value" in item:
+                    _write_scalar(item["value"])
+                elif "enum" in item:
+                    _write_scalar(item["enum"])
         except (ValueError, TypeError, OverflowError) as error:
             raise InspectorError("Invalid write arguments", code="invalidParams") from error
         audit, result = self._write(

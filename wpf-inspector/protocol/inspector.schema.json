@@ -2314,6 +2314,12 @@
       ],
       "additionalProperties": false
     },
+    "CallArgument": {
+      "oneOf": [
+        { "$ref": "#/$defs/Scalar" },
+        { "type": "object", "properties": { "type": { "type": "string", "minLength": 1, "maxLength": 1024 }, "value": { "$ref": "#/$defs/Scalar" }, "enum": { "oneOf": [{ "type": "string" }, { "type": "integer" }] }, "null": { "const": true } }, "required": ["type"], "oneOf": [{ "required": ["value"] }, { "required": ["enum"] }, { "required": ["null"] }], "additionalProperties": false }
+      ]
+    },
     "Scalar": {
       "type": [
         "string",
@@ -3469,7 +3475,7 @@
         "arguments": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/Scalar"
+            "$ref": "#/$defs/CallArgument"
           },
           "maxItems": 16
         },
