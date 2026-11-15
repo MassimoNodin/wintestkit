@@ -764,17 +764,15 @@ class Server:
                 if current is None or not current.same_as(peer) or not chain:
                     continue
                 parent = peer
+                description = None
                 for part in reversed(chain):
                     siblings = parent.find_all(TreeScope.Children, cached=True)
-                    index = next(
-                        i
-                        for i, sibling in enumerate(siblings)
-                        if sibling is not None and sibling.same_as(part)
-                    )
+                    index = next(i for i, sibling in enumerate(siblings) if sibling.same_as(part))
                     description = self._hosted_nodes([part], host_id, index)[0]
                     host_id = description["nodeId"]
                     parent = part
-                return _SpyTarget(element, description)
+                if description is not None:
+                    return _SpyTarget(element, description)
             except Exception:
                 log.debug("Unable to match registered hosted HWND", exc_info=True)
         return None
