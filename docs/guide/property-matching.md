@@ -47,6 +47,9 @@ reordering can change their identities. Depth counts automation-peer levels. The
 [migration guide](migrating-existing-suites.md) covers the NameMapping importer and
 helper semantics.
 
+Lazy first-match finders warn in the report and pytest when multiple elements match. Add identifying properties or scope, or use `strict=True`; explicit ordinals suppress the warning.
+
+
 ## Property aliases
 
 Shared `property_aliases` can rename a UIA property or a qualified managed key. For example:

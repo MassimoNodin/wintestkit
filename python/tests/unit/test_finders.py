@@ -146,3 +146,121 @@ def test_find_helpers_lazy_depth_and_order(helper_tree):
         find_child(page.container, "ClrClassName", "Button", strict=True).resolve_once()
     assert find(page.container, "WPFControlName", "Group").resolve_once() is group
     assert find(page.container, "WPFControlName", "Match2").resolve_once() is second
+
+
+def test_first_match_warning_channels_and_once(helper_tree, monkeypatch):
+    from wintestkit import log
+    from wintestkit.errors import AmbiguousMatchWarning
+    from wintestkit.finders import find_child
+
+    page, _, first, _ = helper_tree
+    reports = []
+    monkeypatch.setattr(log, "warning", lambda message: reports.append(message))
+    lookup = find_child(page.container, "ClrClassName", "Button")
+    with pytest.warns(AmbiguousMatchWarning, match="matched 2"):
+        assert lookup.resolve_once() is first
+    lookup.resolve_once()
+    assert len(reports) == 1
+    find_child(page.container, "WPFControlName", "Match1").resolve_once()
+    find_child(
+        page.container, ["ClrClassName", "WPFControlOrdinalNo"], ["Button", 1]
+    ).resolve_once()
+    assert len(reports) == 1
+
+
+def test_key_parser_and_conversion():
+    from wintestkit.finders import parse_keys, to_keys
+
+    segments = parse_keys("^a[Del]Hello~1[Enter]^^!!~~[[")
+    assert [segment.kind for segment in segments] == ["key", "key", "text", "key", "key", "text"]
+    assert segments[-1].text == "^!~["
+    assert to_keys("^a[Del]") == "Ctrl+A Delete"
+    assert to_keys("hello") is None
+    assert [part.kind for part in parse_keys("^[Hold]a[Release]")] == ["hold", "key", "release"]
+    with pytest.raises(ValueError, match="dangling"):
+        parse_keys("^")
+    with pytest.raises(ValueError, match="unknown"):
+        parse_keys("[Bogus]")
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "Enter",
+        "Tab",
+        "BS",
+        "Del",
+        "Ins",
+        "Esc",
+        "Home",
+        "End",
+        "PageUp",
+        "PageDown",
+        "Up",
+        "Down",
+        "Left",
+        "Right",
+        "Win",
+        "Apps",
+        "Pause",
+        "CapsLock",
+        "NumLock",
+        "ScrollLock",
+        "PrtSc",
+        "Space",
+    ]
+    + [f"F{number}" for number in range(1, 25)],
+)
+def test_named_key_conversion(name):
+    from wintestkit.finders import parse_keys, to_keys
+    from wintestkit.uia.input import parse_keys as parse_press_keys
+
+    assert parse_keys(f"[{name}]")[0].kind == "key"
+    assert parse_press_keys(to_keys(f"[{name}]"))
+
+
+@pytest.mark.parametrize("secret, password", [(True, False), (False, True)])
+def test_send_keys_sequence_and_redaction(helper_tree, monkeypatch, secret, password):
+    from contextlib import contextmanager
+
+    from wintestkit import finders
+
+    page, _, element, _ = helper_tree
+    target = finders.find_child(page.container, "WPFControlName", "Match1")
+    events = []
+    arguments = []
+
+    class Record:
+        sensitive = False
+
+        def set_arguments(self, args, *, secret):
+            arguments.append((args, secret))
+
+    @contextmanager
+    def step(*args, **kwargs):
+        assert args[0] == "send_keys"
+        assert kwargs["secret"]
+        yield Record()
+
+    monkeypatch.setattr(finders.runtime, "step", step)
+    monkeypatch.setattr(target, "perform", lambda timeout, action: action(element))
+    monkeypatch.setattr(finders.actions.PasswordClassifier, "is_password", lambda *args: password)
+    monkeypatch.setattr(finders, "uia_of", lambda el: el)
+    monkeypatch.setattr(finders.actions, "focus", lambda el: events.append("focus"))
+    monkeypatch.setattr(finders.actions, "_keyboard_target", lambda el: events.append("safe"))
+    monkeypatch.setattr(finders.keyboard, "_key_event", lambda key, up: (key, up))
+    monkeypatch.setattr(finders.keyboard, "_send", lambda keys: events.extend(keys))
+    monkeypatch.setattr(finders.keyboard, "type_text", lambda text: events.append(text))
+    finders.send_keys(target, "^[Hold]a[Release]hello[Enter]", secret=secret)
+    assert events == [
+        "focus",
+        "safe",
+        (17, False),
+        (65, False),
+        (65, True),
+        (17, True),
+        "hello",
+        (13, False),
+        (13, True),
+    ]
+    assert arguments == [({"keys": "^[Hold]a[Release]hello[Enter]"}, True)]

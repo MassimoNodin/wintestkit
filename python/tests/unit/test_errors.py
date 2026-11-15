@@ -75,7 +75,7 @@ def test_hierarchy() -> None:
     for name in dir(errors):
         obj = getattr(errors, name)
         if isinstance(obj, type) and obj.__module__ == errors.__name__ and name[0] != "_":
-            assert issubclass(obj, WtkError)
+            assert issubclass(obj, (WtkError, UserWarning))
 
 
 def test_config_error_key() -> None:

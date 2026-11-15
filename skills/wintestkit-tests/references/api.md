@@ -134,3 +134,5 @@ nested groups, `log.message(text, **details)`, `log.warning(text, **details)`,
 and `log.picture(target=None, name="picture")`. Warnings do not fail tests.
 Use `secret=True` to redact all step or message details; sensitive picture
 targets are skipped.
+
+`wintestkit.finders.send_keys(target, text, secret=False, timeout=None)` sends migrated key strings; `parse_keys(text)` parses segments and `to_keys(text)` converts key-only strings to `press()` syntax.

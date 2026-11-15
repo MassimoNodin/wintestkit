@@ -13,6 +13,10 @@ if TYPE_CHECKING:
     from wintestkit.inspector.models import WriteAudit
 
 
+class AmbiguousMatchWarning(UserWarning):
+    """A first-match finder matched more than one element."""
+
+
 class WtkError(Exception):
     """Base class for all WinTestKit errors."""
 

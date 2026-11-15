@@ -82,3 +82,5 @@ are emitted as qualified keys with `--managed-class-names`; review the generated
 - Pattern input is the default for clicks and typing; mouse input only when the app needs real
   mouse events (`click(mode="mouse")`).
 - There is no recorder: use the Spy and write Python.
+
+First-match finders warn on ambiguity; add identifying properties, narrow the scope, or use `strict=True`. Explicit ordinals suppress the warning. Use `wintestkit.finders.send_keys(target, text)` for mixed key strings and `to_keys(text)` to convert key-only strings to `press()` syntax.

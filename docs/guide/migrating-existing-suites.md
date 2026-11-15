@@ -9,6 +9,7 @@ This guide helps you migrate an existing **WPF desktop test suite** to WinTestKi
 | Project suite / project | A folder with `pyproject.toml` containing `[tool.wintestkit]` |
 | Tested Applications | `[tool.wintestkit.app]` (`path`, `args`, `cwd`, `env`) and the launch mode |
 | Name mapping and aliases | A `Page` per window and reusable `Page` components per movable box; page and component attributes name the controls |
+| Key strings with `^`, `!`, `~` and `[Enter]` | `wintestkit.finders.send_keys` / `to_keys` |
 | `FindChild` / `FindAllChildren` / `Find` calls | `wintestkit.finders.find_child`, `find_all_children`, `find`, or declared locators |
 | `ClrFullClassName` | `where={"type:FullName": "Namespace.Type"}`; `type:Is` includes derived types |
 | `WPFControlName` | `automation_id`: peer or peerless attached AutomationId, falling back to `x:Name` with the WPF backend |
@@ -44,6 +45,9 @@ This guide helps you migrate an existing **WPF desktop test suite** to WinTestKi
   completes element names from your pages.
 - **Code review and version control.** Pages and tests are plain Python files that diff, review
   and merge like any other code.
+
+First-match finders warn on ambiguity in the report and pytest; use identifying properties, scope, or `strict=True` instead. Explicit ordinals suppress the warning.
+
 
 ## Migrating FindChild
 

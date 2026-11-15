@@ -70,6 +70,11 @@ def test_mouse_mode_and_nth(main: MainPage) -> None:
     expect(main.status).to_have_text("B OK")
 ```
 
+### Migrated key strings
+
+Use `wintestkit.finders.send_keys(target, "^a[Del]Hello~1[Enter]")` for mixed text and keys. Prefixes `^`, `!`, and `~` select Ctrl, Alt, and Shift; doubled prefixes or `[[` are literal. `[Hold]` and `[Release]` hold and release prefixed modifiers. `to_keys(text)` converts key-only strings to `press()` syntax, or returns `None` for mixed text. Use `secret=True` for sensitive input.
+
+
 ## Auto-waiting
 
 WinTestKit waits for the application so tests don't need sleeps.
