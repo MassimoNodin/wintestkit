@@ -52,7 +52,7 @@ and can be passed to `expect` (`expect(dialog.window).not_.to_exist()`).
 
 ## `Element`
 
-An element is found by its locator in the WPF tree or, for a UIA window, by UI Automation properties (a plain `Element` offers every action; see
+An element is found by its locator in the WPF tree or, for a UIA window, by UI Automation properties (a plain `Element` offers generic actions; see
 [Typed elements](#typed-elements) for declarations that offer only what a control supports):
 
 | Option | Matches |
@@ -165,7 +165,7 @@ def test_the_dropdown_items(main: MainPage) -> None:
 
 ## Typed elements
 
-`Element` is the generic declaration: its bound element offers every action (`click`, `type`,
+`Element` is the generic declaration: its bound element offers generic actions (`click`, `type`,
 `select`, `check`, `expand`, `row`, ...) whatever the control. When you know what the control is,
 declare it with a **typed element**. It takes the same options as `Element`, but the bound element
 offers only the actions and reads that apply, so autocomplete and the type checker reject the rest
@@ -202,20 +202,38 @@ def test_create_a_customer(customer: CustomerPage) -> None:
 | `CheckBox` | `BoundCheckBox` | `check()`, `uncheck()`, `toggle()`, `is_checked()`, `click()`, `double_click()`, `right_click()` |
 | `RadioButton` | `BoundRadioButton` | `select()`, `is_selected()`, `click()`, `double_click()`, `right_click()` |
 | `ComboBox` | `BoundComboBox` | `select(item)`, `selected`, `selected_items()`, `items()` (expands, reads, collapses), `expand()`, `collapse()`, `value` |
-| `ListBox` | `BoundListBox` | `select(item)`, `selected`, `selected_items()`, `items()` |
+| `ListBox` | `BoundListBox` | `select(item or items, add=False)`, `deselect(item)`, `clear_selection()`, `selected`, `selected_items()`, `items()` |
 | `ListItem` | `BoundListItem` | `select()`, `is_selected()`, `click()`, `double_click()`, `right_click()` |
-| `DataGrid` | `BoundDataGrid` | `row(i)`, `cell(row, column)`, `row_count()`, `column_count()`, `find_row(column, value)`, `select(row_index)`, `selected_items()` |
-| `TreeView` | `BoundTreeView` | `select(item)`, `selected`, `selected_items()`, `items()` |
+| `DataGrid` | `BoundDataGrid` | `row(i)`, `cell(row, column)`, `row_count()`, `column_count()`, `find_row(column, value)`, `select(items, add=False)`, `deselect(item)`, `clear_selection()`, `selected_items()` |
+| `TreeView` | `BoundTreeView` | `select(item or path)`, `expand(path)`, `collapse(path)`, `selected`, `selected_items()`, `items(path=None)` |
 | `TabControl` | `BoundTabControl` | `select(tab)`, `selected`, `selected_items()`, `items()` (the tabs) |
 | `Text` | `BoundText` | nothing extra: a read-only label, read with `text` |
+| `Menu` / `ContextMenu` | `BoundMenu` / `BoundContextMenu` | `click_path(path)` |
+| `Slider` / `ScrollBar` | `BoundSlider` / `BoundScrollBar` | `value`, `minimum`, `maximum`, `set_value(value)`; slider also has `increase(steps=1)`, `decrease(steps=1)` |
+| `ProgressBar` | `BoundProgressBar` | `value`, `minimum`, `maximum` |
+| `DatePicker` | `BoundDatePicker` | `value`, `date`, `set_date(date)` |
+| `Expander` | `BoundExpander` | `expand()`, `collapse()`, `is_expanded()` |
+| `ToggleButton` | `BoundToggleButton` | `click()`, `double_click()`, `right_click()`, `check()`, `uncheck()`, `toggle()`, `is_checked()` |
+| `Hyperlink` | `BoundHyperlink` | `click()`, `double_click()`, `right_click()`; use UIA for WPF content hyperlinks |
+| `ToolBar` | `BoundToolBar` | `click_button(name)` |
+| `StatusBar` | `BoundStatusBar` | `texts()` |
+
+The new types validate the resolved control as follows: `Menu` accepts Menu or MenuBar;
+`ContextMenu` accepts Menu. Slider, ScrollBar, ProgressBar, Hyperlink, ToolBar and StatusBar
+check their corresponding control type. `DatePicker` requires a class name containing
+`DatePicker`; `Expander` requires a Group whose class ends in `Expander`; `ToggleButton` requires
+a Button with the Toggle pattern. A context menu returned by `open_context_menu()` is anchored to
+its owner. WPF content hyperlinks need the UIA backend because the WPF inspector cannot supply the
+geometry or automation peer needed to act on them. See [Actions and assertions](actions-and-assertions.md)
+for modes and limits.
 
 Every typed element, and the plain `Element`, also has the **common** members: `resolve()`,
 `exists()`, `is_visible()`, `info()`, `wait_for(state)`, `highlight()`, `text`, `is_enabled()`,
-`focus()`, `scroll_into_view()`, `hover()`, `nth(i)`, `locator`, `qualname`, and works with
+`focus()`, `scroll_into_view()`, `hover()`, `middle_click()`, `drag_to()`, `drag_by()`, `scroll()`,
+`open_context_menu()`, `nth(i)`, `locator`, `qualname`, and works with
 `expect(...)`. `items()` of a list, tree or tab control returns the items that are currently
 realized (a virtualized list yields only those on screen). `row()`, `cell()` and `find_row()` return
-a plain bound element. There is deliberately no `Menu` type: menus are usually components or
-plain elements with your own naming.
+a plain bound element.
 
 `Element(...)` is unchanged and stays the generic fallback for controls without a fitting type.
 There are no typed `Elements(...)` collections; those keep returning plain bound elements.

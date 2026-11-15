@@ -7,6 +7,16 @@ scripts or test routines. Output: pages, components, flows, tests.
 
 | Existing concept | WinTestKit |
 |---|---|
+| Drag and drop | `drag_to(target)` / `drag_by(dx, dy)` |
+| Positioned or modified clicks | `click(x=..., y=..., modifiers=...)`, double/right/middle clicks |
+| Wheel | `scroll(clicks, horizontal=False)` |
+| Global keyboard input | `wintestkit.keyboard.press`, `type`, `hold`; app window must own foreground |
+| Menu paths | `Menu.click_path` / `element.open_context_menu().click_path` |
+| Tree paths | `TreeView.select`, `expand`, `collapse`, `items(path)` |
+| Multi-select | `ListBox` / `DataGrid.select([...], add=...)`, `deselect`, `clear_selection` |
+| Window position, size, activation | `move`, `resize`, `rect`, `activate`, `is_active` |
+| Grid checkpoints | `expect(grid).to_have_rows(...)` |
+| Other controls | `Slider`, `ScrollBar`, `ProgressBar`, `DatePicker`, `Expander`, `ToggleButton`, `Hyperlink`, `ToolBar`, `StatusBar` |
 | Project / project suite | a folder with `pyproject.toml` containing `[tool.wintestkit]` |
 | Tested Application | `[tool.wintestkit.app]` (`path`, `args`, `cwd`, `env`, `process`) and `launch` mode |
 | A window node in NameMapping | one `Page` with `window = Window(...)` |

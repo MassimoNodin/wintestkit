@@ -30,7 +30,6 @@ tests/
 ```
 
 ## What goes where
-
 | You are describing | It is a | Declares |
 |---|---|---|
 | A top-level window or dialog | **Page** (`class X(Page)`) | `window = Window(...)` |
@@ -59,7 +58,8 @@ from wintestkit import Button, CheckBox, ComboBox, Element, Page, TextBox, Windo
 ```
 
 - Prefer a **typed element** when a built-in fits: `Button`, `TextBox`, `CheckBox`, `RadioButton`,
-  `ComboBox`, `ListBox`, `ListItem`, `DataGrid`, `TreeView`, `TabControl`, `Text`. The bound element offers
+  `ComboBox`, `ListBox`, `ListItem`, `DataGrid`, `TreeView`, `TabControl`, `Text`, `Menu`, `ContextMenu`, `Slider`,
+  `ScrollBar`, `ProgressBar`, `DatePicker`, `Expander`, `ToggleButton`, `Hyperlink`, `ToolBar`, `StatusBar`. The bound element offers
   only the actions that apply (`save.type("x")` on a `Button` is a type error), and a mismatch
   between the declared type and the real control fails at once with a clear message.
 - Use plain **`Element`** for containers (component roots, panels), for controls without a fitting
@@ -75,7 +75,6 @@ from wintestkit import Button, CheckBox, ComboBox, Element, Page, TextBox, Windo
 Name intent methods with a verb the user would say: `set_address`, `add_item`, `open_standard`.
 
 ## Locator priority
-
 Every locator must match **exactly one** element (ambiguity fails immediately; there is no
 self-healing). Choose, in this order:
 
@@ -190,7 +189,7 @@ Rules for the other direction: a dictionary from page types or enums to element 
 
 `expect` assertions: `to_exist`, `to_be_visible`, `to_be_hidden`, `to_be_enabled`, `to_be_disabled`,
 `to_be_checked`, `to_be_selected`, `to_have_text`, `to_contain_text`, `to_have_value`,
-`to_have_count`, `to_have_property`; negate with `.not_`. Details in the
+`to_have_count`, `to_have_property`, `to_have_rows`; negate with `.not_`. Details in the
 [API cheat sheet](references/api.md). Actions wait for existence by default; `expect` waits for its assertion. Use `expect` for enabled or visible states, or set `actionability: strict`. Do not add sleeps. Use
 `@pytest.mark.wtk(timeout=20)` or `timeout=` for the rare slow step.
 

@@ -10,6 +10,16 @@ This guide helps you migrate an existing **WPF desktop test suite** to WinTestKi
 | Tested Applications | `[tool.wintestkit.app]` (`path`, `args`, `cwd`, `env`) and the launch mode |
 | Name mapping and aliases | A `Page` per window and reusable `Page` components per movable box; page and component attributes name the controls |
 | Key strings with `^`, `!`, `~` and `[Enter]` | `wintestkit.finders.send_keys` / `to_keys` |
+| Drag and drop | `element.drag_to(target)` / `drag_by(dx, dy)` |
+| Positioned or modified mouse clicks | `click(x=..., y=..., modifiers=...)` and corresponding double/right/middle clicks |
+| Mouse wheel | `element.scroll(clicks, horizontal=False)` |
+| Global keys | `wintestkit.keyboard.press`, `type` and `hold`; the app must own the foreground |
+| Menu path clicks | `Menu.click_path` / `element.open_context_menu().click_path` |
+| Tree item paths | `TreeView.select`, `expand`, `collapse`, `items(path)` |
+| Multi-select | `ListBox` / `DataGrid.select([...], add=...)`, `deselect`, `clear_selection` |
+| Window position, size and activation | `window.move`, `resize`, `rect`, `activate`, `is_active` |
+| Table checks | `expect(grid).to_have_rows(...)` |
+| Extra control types | `Slider`, `ScrollBar`, `ProgressBar`, `DatePicker`, `Expander`, `ToggleButton`, `Hyperlink`, `ToolBar`, `StatusBar` |
 | `FindChild` / `FindAllChildren` / `Find` calls | `wintestkit.finders.find_child`, `find_all_children`, `find`, or declared locators |
 | `ClrFullClassName` | `where={"type:FullName": "Namespace.Type"}`; `type:Is` includes derived types |
 | `WPFControlName` | `automation_id`: peer or peerless attached AutomationId, falling back to `x:Name` with the WPF backend |

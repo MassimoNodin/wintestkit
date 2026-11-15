@@ -5,30 +5,97 @@
 Every action is a method of a bound element and accepts `timeout=` (seconds) to override how long
 it waits for the element.
 
-Which actions exist depends on how the element is declared. A plain `Element` has all of them; a
+Which actions exist depends on how the element is declared. A plain `Element` has the common and
+generic actions; a
 [typed element](pages-and-elements.md#typed-elements) has only the ones that apply to its control
 (the *On* column), and a [custom control](pages-and-elements.md#custom-controls) adds its own.
 
 | Action | What it does | On |
 |---|---|---|
-| `click(mode=None)` | Click. In `pattern` mode it uses the control's Invoke, Toggle, SelectionItem or ExpandCollapse pattern and falls back to a mouse click; `mode="mouse"` (the default) moves the mouse and clicks | `Button`, `CheckBox`, `RadioButton`, `ListItem` |
-| `double_click()` / `right_click()` | Mouse input at the center of the element | `Button`, `CheckBox`, `RadioButton` |
+| `click(mode=None, x=None, y=None, button="left", modifiers=None)` | Click; pattern mode tries an automation pattern and falls back to mouse input | `Button`, `CheckBox`, `RadioButton`, `ListItem`, `ToggleButton`, `Hyperlink` |
+| `double_click(x=None, y=None, modifiers=None)` / `right_click(x=None, y=None, modifiers=None)` | Mouse input | `Button`, `CheckBox`, `RadioButton`, `ListItem`, `ToggleButton`, `Hyperlink` |
+| `middle_click(x=None, y=None, modifiers=None)` | Middle mouse click | every element |
+| `drag_to(target, source_offset=None, target_offset=None, button="left", modifiers=None)` / `drag_by(dx, dy, source_offset=None, button="left", modifiers=None)` | Drag to an element or window / by pixels | every element |
+| `scroll(clicks, x=None, y=None, horizontal=False)` | Turn the mouse wheel | every element |
+| `open_context_menu(mode=None)` | Open and return a context menu | every element |
 | `hover()` | Move the mouse over the element | every element |
 | `type(text, clear=True, keys=False)` | Enter text: set through the Value pattern when possible, otherwise typed on the keyboard. `clear=False` appends; `keys=True` always types key by key | `TextBox` |
 | `clear()` | Remove all text | `TextBox` |
 | `press(keys)` | Focus the element and press keys: `"Enter"`, `"Ctrl+S"`, `"Ctrl+A Delete"` (combos separated by spaces) | `TextBox` |
-| `select(item)` | Select an item by name, 0-based index or compiled regex (a combo box opens, picks and closes itself); a grid selects a row by index | `ComboBox`, `ListBox`, `DataGrid`, `TreeView`, `TabControl` |
+| `select(item)` | Select by name, 0-based index or compiled regex; combo boxes open and close; trees also accept paths | `ComboBox`, `ListBox`, `DataGrid`, `TreeView`, `TabControl` |
+| `select(items, add=False)` / `deselect(item)` / `clear_selection()` | Select several or remove selections | `ListBox`, `DataGrid` |
 | `select()` | Select the radio button or list item itself | `RadioButton`, `ListItem` |
-| `check()` / `uncheck()` / `toggle()` | Set a check box or toggle button to a state (no-op if already there) / flip it | `CheckBox` (`toggle` only here) |
-| `expand()` / `collapse()` | Expand or collapse a combo box | `ComboBox` |
+| `check()` / `uncheck()` / `toggle()` | Set a check box or toggle button to a state (no-op if already there) / flip it | `CheckBox`, `ToggleButton` |
+| `expand()` / `collapse()` | Expand or collapse; trees require a path | `ComboBox`, `TreeView`, `Expander` |
+| `click_path(path, separator="\|")` | Open menu levels and click the last item | `Menu`, `ContextMenu` |
+| `set_value(value, mode=None)` / `increase(steps=1)` / `decrease(steps=1)` | Set a range or step a slider | `Slider` (all), `ScrollBar` (`set_value` only) |
+| `set_date(value, mode=None)` | Set a `datetime.date` | `DatePicker` |
+| `click_button(name, mode=None)` | Click a toolbar button by name or automation ID, or regex | `ToolBar` |
 | `focus()` | Give the element keyboard focus | every element |
 | `scroll_into_view()` | Scroll a list or grid item into view | every element |
 | `highlight(duration_ms=1500)` | Bring the owning window forward, then draw a frame around the element. The outline is still drawn if Windows denies foreground | every element |
 
 "every element" means the typed elements and the plain `Element`. A plain `Element` additionally
-has all the other rows (`type`, `check`, `expand`, `select`, ...), so existing pages keep working.
+has generic actions such as `type`, `check`, `expand` and `select`; specialized menu, tree and
+widget methods belong to their typed elements.
 
-Windows have `close()`, `maximize()`, `minimize()` and `restore()`.
+### Mouse details
+
+Offsets `x` and `y` must be supplied together, in physical pixels from the top-left; otherwise
+the center is used. Invalid or out-of-bounds offsets fail. `modifiers` accepts combinations such
+as `"Ctrl+Shift"`. `click` accepts `left`, `right` or `middle`; a position, modifier or non-left
+button forces mouse input even in pattern mode. Double, right and middle clicks always use mouse input.
+Drag offsets are `(x, y)` pairs; drags move in steps across the system drag threshold and release
+the button and modifiers even on failure. Wheel clicks are positive for up, or right when horizontal.
+Mouse input may target the app's owned popups as well as its window, but rejects unrelated windows.
+
+### Windows
+
+Windows have `close()`, `maximize()`, `minimize()`, `restore()`, `activate()`, `move(x, y)` and
+`resize(width, height)`. `rect` reads the screen rectangle and `is_active()` checks foreground.
+Move and resize use Transform when available or the native window handle; sizes must be positive.
+`window.press(keys, secret=False)` and `window.type(text, secret=False)` activate the window and
+send input to its focused control. `wintestkit.finders.send_keys` also accepts a window target and
+activates it. Foreground activation can fail; input is refused if the target loses foreground.
+
+### Keyboard outside an element
+
+`from wintestkit import keyboard` exposes `keyboard.press(keys, secret=False)`,
+`keyboard.type(text, secret=False)` and `with keyboard.hold("Ctrl+Shift"):`. The context manager
+releases modifiers even on error. These calls do not activate a window: they require the foreground
+window to belong to the current app. The `app` fixture or a page bound to an `App` registers it;
+without one, or when another app is foreground, they raise an error. Use `secret=True` for sensitive input.
+
+### Menus and trees
+
+`menu.click_path("File|Recent|Report.txt")` opens each level and clicks the final item. For a
+context menu use `item.open_context_menu().click_path("Edit|Copy")`; opening uses right-click in
+mouse mode or Shift+F10 in pattern mode. Tree `select`, `expand`, `collapse` and `items` accept
+paths such as `"Root|Child"`; `items()` lists top-level names, while `items(path)` lists children
+of that node, which must be expanded first. Ancestors are expanded as needed. Set `separator=`
+to change `|`, or pass a list of exact names and compiled regex segments. Empty paths or segments
+fail. Missing segments report available siblings; failed menu navigation sends Escape to close opened
+levels. Mouse tree selection clicks the header row and verifies that the intended item was selected.
+
+### Selecting several items
+
+On a `ListBox`, `DataGrid` or plain `Element`, `select(["A", "B"], add=False)` replaces the
+selection; `add=True` retains it. Items can be names, indices or compiled regexes. `deselect(item)`
+and `clear_selection()` remove selections. The control must support multiple selection for multiple
+items. Empty lists for `select` or `deselect` raise an error; use `clear_selection()` instead.
+Mouse mode uses a plain click for the first replacement and Ctrl+click for additional changes;
+pattern mode uses selection patterns. The resulting selection is verified and an error is raised
+if it does not match.
+
+### Typed control details
+
+Slider and scrollbar values must be in range and writable; setting verifies the result within half
+a small change. Slider mouse mode clicks its thumb and moves by keys; pattern mode uses RangeValue.
+`increase` and `decrease` send arrow keys and require at least one step. Scrollbar `set_value`
+requires pattern mode. A date picker writes the system short date format, commits and verifies it;
+formats using month or day names are unsupported. Expander actions verify the state, using its header
+button for UIA mouse mode and the relevant action/pattern on WPF. Hyperlink actions require the UIA
+backend when the WPF inspector cannot act on the content element.
 
 Built-in typing, key presses and assertions redact recorded arguments and failure
 details for resolved controls reporting UI Automation `IsPassword`, as well as
@@ -115,16 +182,20 @@ def test_continue_waits_until_it_is_enabled(main: MainPage) -> None:
 ## Reading state
 
 Reads return the current value without asserting anything. Like actions, some exist only on
-the types they apply to (a plain `Element` has them all):
+the types they apply to:
 
 | Read | On |
 |---|---|
 | `text`, `get(name)`, `is_enabled()`, `exists()`, `is_visible()`, `info()` | every element |
-| `value` | `TextBox`, `ComboBox` |
-| `is_checked()` | `CheckBox` |
+| `value` | `TextBox`, `ComboBox`, `DatePicker`, `Slider`, `ScrollBar`, `ProgressBar` |
+| `minimum`, `maximum` | `Slider`, `ScrollBar`, `ProgressBar` |
+| `date` | `DatePicker` (`datetime.date` or `None` when empty) |
+| `texts()` | `StatusBar` (item texts in order) |
+| `is_expanded()` | `Expander` |
+| `is_checked()` | `CheckBox`, `ToggleButton` |
 | `is_selected()` | `RadioButton`, `ListItem` |
 | `selected`, `selected_items()` | `ComboBox`, `ListBox`, `TreeView`, `TabControl` (`DataGrid`: `selected_items()` only) |
-| `items()` | `ComboBox` (expands and collapses it), `ListBox`, `TreeView`, `TabControl` |
+| `items()` / `items(path)` | `ComboBox` (expands and collapses it), `ListBox`, `TreeView` (also accepts a path), `TabControl` |
 | `row_count()`, `column_count()`, `row(i)`, `cell(row, column)`, `find_row(column, value)` | `DataGrid` |
 
 
@@ -157,6 +228,7 @@ once, `expect` keeps checking until the timeout.
 | `to_have_value(expected)` | its Value pattern value equals `expected` (or matches a regex) |
 | `to_have_count(n)` | an `Elements` collection has `n` members |
 | `to_have_property(name, expected)` | a UIA or managed property matches the expected value or compiled regex |
+| `to_have_rows(expected, columns=None, ordered=True)` | a grid has the expected rows and cells |
 
 ```python
 # pseudo-code
@@ -171,6 +243,20 @@ def test_remember_me_can_be_checked_and_unchecked(main: MainPage) -> None:
 
 A failing assertion reports what was expected and the last value it saw; VS Code shows text
 mismatches as a diff.
+
+For grids, list rows contain every compared column; dict rows compare only their named columns
+(header names or zero-based indices). `columns=` selects and orders columns; without it list rows
+compare all columns and dict rows use their named columns. Cells compare as strings or compiled
+regexes. `ordered=False` matches rows without regard to order. Comparisons are limited to 500 rows;
+failures show expected and actual tables and the first difference (or unmatched row).
+
+```python
+# pseudo-code
+expect(main.orders).to_have_rows(
+    [{"Customer": "Ada", "Status": re.compile(r"^Ready")}, {"Customer": "Lin"}],
+    ordered=False,
+)
+```
 
 ## Timeouts
 

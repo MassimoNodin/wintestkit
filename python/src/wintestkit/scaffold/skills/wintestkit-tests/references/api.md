@@ -1,5 +1,57 @@
 # API cheat sheet
 
+## Mouse, windows, navigation and typed controls
+
+Clickable typed elements and plain `Element` support `click(mode=None, x=None, y=None,
+button="left", modifiers=None)`, `double_click(x=None, y=None, modifiers=None)` and
+`right_click(x=None, y=None, modifiers=None)`. All elements support `middle_click` with the same
+offset and modifier options, `drag_to(target, source_offset=None, target_offset=None, button="left",
+modifiers=None)`, `drag_by(dx, dy, source_offset=None, button="left", modifiers=None)` and
+`scroll(clicks, x=None, y=None, horizontal=False)`. Offsets are physical pixels from the top-left;
+both coordinates are required, otherwise the center is used. Position, modifiers, or a non-left
+button force mouse input. Buttons are left, right or middle; modifiers include `"Ctrl+Shift"`.
+Wheel positive is up, or right horizontally. Drag releases input even on failure. Mouse targeting
+also accepts the app's owned popups.
+
+Bound windows offer `activate()`, `is_active()`, `rect`, `move(x, y)`, `resize(width, height)`,
+`press(keys, secret=False)` and `type(text, secret=False)` as well as close/maximize/minimize/restore.
+Window keys activate the window and target its focused control; `finders.send_keys` accepts windows.
+`from wintestkit import keyboard` provides `press(keys, secret=False)`, `type(text, secret=False)`
+and `hold(modifiers)` as a context manager. They do not activate a window: the app fixture or a
+bound page must register the current app, and its window must already own the foreground, otherwise
+input is refused. Held modifiers are released on exit, including on error.
+
+`Menu.click_path("File|Recent|Report")` and `element.open_context_menu().click_path("Edit|Copy")`
+walk menu levels. Opening a context menu uses right-click or Shift+F10 in pattern mode. `TreeView`
+supports `select(path)`, `expand(path)`, `collapse(path)` and `items(path=None)`; expand the target
+before listing its children. Paths use `|` by default (`separator=` changes it), or a list of exact
+names and compiled regex segments. Empty paths/segments fail; missing segments name siblings.
+Failed menu navigation closes open levels with Escape. Tree mouse selection clicks the header and
+verifies selection.
+
+`ListBox`, `DataGrid` and plain `Element` support `select(items, add=False)`, `deselect(items)` and
+`clear_selection()`. Items may be names, indices or regexes, individually or in a list. Multiple
+selection requires control support; mouse mode uses Ctrl+click, pattern mode selection patterns,
+and the result is verified. `expect(grid).to_have_rows(expected, columns=None, ordered=True)`
+compares list rows or dict rows keyed by header or zero-based index. List rows cover the compared
+columns; dict rows can omit cells. Cells are strings or regexes; `columns` chooses a subset and
+order, `ordered=False` ignores row order. The limit is 500 rows; failures show tables and the first
+difference or unmatched row.
+
+`Slider`, `ScrollBar` and `ProgressBar` expose numeric `value`, `minimum`, `maximum`. Slider and
+scrollbar have `set_value(value, mode=None)`; only pattern mode can set a scrollbar. Slider mouse
+mode clicks the thumb and uses keys; `increase(steps=1)` and `decrease(steps=1)` use arrow keys,
+with at least one step. Range writes reject read-only/out-of-range values and verify within half
+a small change. `DatePicker.value` is text, `.date` is a date or None, and `set_date(date, mode=None)`
+uses the system short date format and verifies it; month/day names are unsupported. `Expander` has
+`expand`, `collapse`, `is_expanded`; `ToggleButton` has click and check/toggle actions. `ToolBar`
+has `click_button(name, mode=None)` by name, automation ID or regex; `StatusBar.texts()` returns
+item texts. `Hyperlink` actions need UIA for WPF content elements because the WPF inspector lacks
+their geometry and automation peer. Menu validates Menu/MenuBar; ContextMenu validates Menu;
+range controls, Hyperlink, ToolBar and StatusBar validate their control types. DatePicker checks
+its class name contains DatePicker; Expander requires Group and a class ending in Expander;
+ToggleButton requires Button plus Toggle pattern.
+
 Everything importable from `wintestkit`: `App`, `Page` (alias of `PageObject`), `Window`, `Element`,
 `Elements`, the typed elements and `expect`. Bound classes (`BoundButton`, ...) are what you get from
 an instance (`page.save` is a `BoundButton`; `CustomerPage.save` on the class is the `Button` definition).
@@ -62,10 +114,10 @@ shortcut: `page(CustomerPage)`. `Page.check()` returns `{path: error or None}`.
 | `CheckBox` | `BoundCheckBox` | `check()`, `uncheck()`, `toggle()`, `is_checked()`, `click()` |
 | `RadioButton` | `BoundRadioButton` | `select()`, `is_selected()`, `click()` |
 | `ComboBox` | `BoundComboBox` | `select(item)`, `selected`, `selected_items()`, `items()`, `expand()`, `collapse()`, `value` |
-| `ListBox` | `BoundListBox` | `select(item)`, `selected`, `selected_items()`, `items()` |
+| `ListBox` | `BoundListBox` | `select(items, add=False)`, `deselect(items)`, `clear_selection()`, `selected`, `selected_items()`, `items()` |
 | `ListItem` | `BoundListItem` | `select()`, `is_selected()`, `click()` |
-| `DataGrid` | `BoundDataGrid` | `row(i)`, `cell(row, column)`, `row_count()`, `column_count()`, `find_row(column, value)`, `select(row_index)` |
-| `TreeView` | `BoundTreeView` | `select(item)`, `selected`, `selected_items()`, `items()` |
+| `DataGrid` | `BoundDataGrid` | `row(i)`, `cell(row, column)`, `row_count()`, `column_count()`, `find_row(column, value)`, `select(items, add=False)`, `deselect(items)`, `clear_selection()`, `selected_items()` |
+| `TreeView` | `BoundTreeView` | `select(item or path)`, `expand(path)`, `collapse(path)`, `selected`, `selected_items()`, `items(path=None)` |
 | `TabControl` | `BoundTabControl` | `select(tab)`, `selected`, `selected_items()`, `items()` |
 | `Text` | `BoundText` | `text` |
 
@@ -73,9 +125,8 @@ Common to every element: `exists()`, `is_visible()`, `is_enabled()`, `text`, `in
 `get(name)` reads a UIA property or managed path; `wait_for_property(name, expected)` waits for a value or regex.
 `wait_for(state)` (`attached`, `detached`, `visible`, `hidden`, `enabled`, `disabled`, `stable`),
 `focus()`, `scroll_into_view()`, `hover()`, `highlight()`, `nth(i)`, `resolve()`. Plain `Element`
-offers every action. `select(item)` takes a name, a 0-based index or a compiled regex. There is no
-`Menu` type: declare menu items as plain `Element(control_type="MenuItem", name=...)` (popups are
-searched too). Items of virtualized lists/grids only exist when realized: ask the container with
+offers generic actions. `select(item)` takes a name, a 0-based index or a compiled regex.
+Items of virtualized lists/grids only exist when realized: ask the container with
 `select`, `row`, `cell`, `find_row`. Every action accepts `timeout=`.
 
 `click()` uses mouse input by default; `click(mode="pattern")` uses the control's automation

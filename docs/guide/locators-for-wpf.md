@@ -139,15 +139,19 @@ is checked for uniqueness before it is shown.
 
 ## Popups, menus and combo boxes
 
-WPF opens menus, combo box drop-downs and context menus in separate popup windows. WinTestKit
-searches the application's popups too, so menu items are declared like any other element:
+WPF opens menus, combo box drop-downs and context menus in separate popup windows. Use a `Menu`
+declaration to navigate menu levels, or open a context menu from its owner:
 
 ```python
 # pseudo-code
-    # menu
-    menu_file = Element(control_type="MenuItem", name="File")
-    menu_reset = Element(control_type="MenuItem", name="Reset")
+    menu = Menu(automation_id="MainMenu")
+
+    # after binding the page
+    main.menu.click_path("File|Reset")
+    main.document.open_context_menu().click_path("Edit|Copy")
 ```
+
+Paths also accept lists of names or compiled regex segments; see [Menus and trees](actions-and-assertions.md#menus-and-trees).
 
 For combo boxes, `select()` opens the drop-down when needed and selects by name, index or pattern:
 

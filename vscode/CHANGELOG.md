@@ -7,6 +7,8 @@ Unreleased changes must be moved to a dated candidate section before a release c
 
 ## [Unreleased]
 
+- Add menu, range, date, expander, toggle, hyperlink, toolbar and status bar types to Spy insertion.
+
 - Add the **Action waiting** configuration setting for existence-only or strict action waits.
 
 - Use WPF hit testing for Spy picking and display WPF identity, managed properties and locator verification status.
