@@ -23,12 +23,14 @@ Define your own for a custom control by subclassing ``BoundControl`` and ``Eleme
 
 from __future__ import annotations
 
+import datetime
 import re
 from collections.abc import Sequence
 
 from wintestkit import runtime
 from wintestkit.backends.element import TargetElement, WpfElement
-from wintestkit.engine import actions, navigate
+from wintestkit.engine import actions, navigate, widgets
+from wintestkit.errors import ActionError
 from wintestkit.model import (
     BoundControl,
     Element,
@@ -41,6 +43,7 @@ from wintestkit.model import (
     _TextEntry,
     _Valued,
 )
+from wintestkit.uia import patterns
 
 __all__ = [
     "BoundButton",
@@ -48,26 +51,44 @@ __all__ = [
     "BoundComboBox",
     "BoundContextMenu",
     "BoundDataGrid",
+    "BoundDatePicker",
+    "BoundExpander",
+    "BoundHyperlink",
     "BoundListBox",
     "BoundListItem",
     "BoundMenu",
+    "BoundProgressBar",
     "BoundRadioButton",
+    "BoundScrollBar",
+    "BoundSlider",
+    "BoundStatusBar",
     "BoundTabControl",
     "BoundText",
     "BoundTextBox",
+    "BoundToggleButton",
+    "BoundToolBar",
     "BoundTreeView",
     "Button",
     "CheckBox",
     "ComboBox",
     "ContextMenu",
     "DataGrid",
+    "DatePicker",
+    "Expander",
+    "Hyperlink",
     "ListBox",
     "ListItem",
     "Menu",
+    "ProgressBar",
     "RadioButton",
+    "ScrollBar",
+    "Slider",
+    "StatusBar",
     "TabControl",
     "Text",
     "TextBox",
+    "ToggleButton",
+    "ToolBar",
     "TreeView",
 ]
 
@@ -323,6 +344,199 @@ class BoundText(BoundControl):
     accepted_control_types = ("Text", "Edit", "Document")
 
 
+class _Ranged(BoundControl):
+    """A control with a RangeValue: ``value``, ``minimum`` and ``maximum``."""
+
+    @property
+    def value(self) -> float:
+        __tracebackhide__ = True
+        return widgets.read_range(self.resolve()).value
+
+    @property
+    def minimum(self) -> float:
+        __tracebackhide__ = True
+        return widgets.read_range(self.resolve()).minimum
+
+    @property
+    def maximum(self) -> float:
+        __tracebackhide__ = True
+        return widgets.read_range(self.resolve()).maximum
+
+
+class BoundSlider(_Ranged):
+    """A slider: ``value``, ``minimum``, ``maximum``, ``set_value``, ``increase`` and ``decrease``.
+
+    ``set_value`` uses the RangeValue pattern; in mouse mode it clicks the thumb and moves the
+    value by keys (Home, End, Page Up and Down, arrows) until it is within half a small change.
+    """
+
+    accepted_control_types = ("Slider",)
+
+    def set_value(
+        self, value: float, *, timeout: float | None = None, mode: actions.InputMode | None = None
+    ) -> None:
+        __tracebackhide__ = True
+        effective = mode or runtime.get_config().input_mode
+        with self.step("set_value", {"value": value, "mode": effective}):
+            self.perform(timeout, lambda el: widgets.set_slider(el, value, mode=effective))
+
+    def increase(self, steps: int = 1, *, timeout: float | None = None) -> None:
+        """Press the Right arrow ``steps`` times (one small change each)."""
+        __tracebackhide__ = True
+        with self.step("increase", {"steps": steps}):
+            self.perform(timeout, lambda el: widgets.step_slider(el, steps, up=True))
+
+    def decrease(self, steps: int = 1, *, timeout: float | None = None) -> None:
+        """Press the Left arrow ``steps`` times (one small change each)."""
+        __tracebackhide__ = True
+        with self.step("decrease", {"steps": steps}):
+            self.perform(timeout, lambda el: widgets.step_slider(el, steps, up=False))
+
+
+class BoundScrollBar(_Ranged):
+    """A scroll bar: ``value``, ``minimum``, ``maximum`` and ``set_value`` (pattern mode only)."""
+
+    accepted_control_types = ("ScrollBar",)
+
+    def set_value(
+        self, value: float, *, timeout: float | None = None, mode: actions.InputMode | None = None
+    ) -> None:
+        __tracebackhide__ = True
+        effective = mode or runtime.get_config().input_mode
+        with self.step("set_value", {"value": value, "mode": effective}):
+            self.perform(timeout, lambda el: widgets.set_scroll_bar(el, value, mode=effective))
+
+
+class BoundProgressBar(_Ranged):
+    """A progress bar: read-only ``value``, ``minimum`` and ``maximum``."""
+
+    accepted_control_types = ("ProgressBar",)
+
+
+class BoundDatePicker(BoundControl):
+    """A date picker: ``value`` (the text shown), ``date`` and ``set_date``."""
+
+    def check_type(self, element: TargetElement) -> None:
+        __tracebackhide__ = True
+        if "DatePicker" not in element.class_name:
+            raise self.type_mismatch(element, "is not a DatePicker (by class name)")
+
+    @property
+    def value(self) -> str:
+        """The date as the picker displays it."""
+        __tracebackhide__ = True
+        return widgets.date_text(self.resolve())
+
+    @property
+    def date(self) -> datetime.date | None:
+        """The selected date, or ``None`` when the picker is empty."""
+        __tracebackhide__ = True
+        return widgets.read_date(self.resolve())
+
+    def set_date(
+        self,
+        value: datetime.date,
+        *,
+        timeout: float | None = None,
+        mode: actions.InputMode | None = None,
+    ) -> None:
+        """Type ``value`` in the system short date format, commit it and check ``date``."""
+        __tracebackhide__ = True
+        effective = mode or runtime.get_config().input_mode
+        with self.step("set_date", {"date": value.isoformat(), "mode": effective}):
+            self.perform(timeout, lambda el: widgets.set_date(el, value, mode=effective))
+
+
+class BoundExpander(BoundControl):
+    """An expander: ``expand``, ``collapse`` and ``is_expanded`` (header toggle in mouse mode)."""
+
+    def check_type(self, element: TargetElement) -> None:
+        __tracebackhide__ = True
+        if element.control_type != "Group" or not element.class_name.endswith("Expander"):
+            raise self.type_mismatch(element, "is not a Group of class Expander")
+
+    def expand(
+        self, *, timeout: float | None = None, mode: actions.InputMode | None = None
+    ) -> None:
+        __tracebackhide__ = True
+        effective = mode or runtime.get_config().input_mode
+        with self.step("expand", {"mode": effective}):
+            self.perform(timeout, lambda el: widgets.set_expanded(el, True, mode=effective))
+
+    def collapse(
+        self, *, timeout: float | None = None, mode: actions.InputMode | None = None
+    ) -> None:
+        __tracebackhide__ = True
+        effective = mode or runtime.get_config().input_mode
+        with self.step("collapse", {"mode": effective}):
+            self.perform(timeout, lambda el: widgets.set_expanded(el, False, mode=effective))
+
+    def is_expanded(self) -> bool:
+        __tracebackhide__ = True
+        return actions.is_expanded(self.resolve())
+
+
+class BoundToggleButton(_Clickable, _Checkable):
+    """A toggle button: ``check``, ``uncheck``, ``toggle``, ``is_checked`` and ``click``."""
+
+    def check_type(self, element: TargetElement) -> None:
+        __tracebackhide__ = True
+        if element.control_type != "Button" or not patterns.has_pattern(element, "Toggle"):
+            raise self.type_mismatch(element, "is not a Button with the Toggle pattern")
+
+    def toggle(self, *, timeout: float | None = None) -> None:
+        __tracebackhide__ = True
+        with self.step("toggle"):
+            self.perform(timeout, actions.toggle)
+
+
+class BoundHyperlink(_Clickable):
+    """A hyperlink: ``click``."""
+
+    accepted_control_types = ("Hyperlink",)
+
+    def _actionable(self, timeout: float | None) -> TargetElement:
+        __tracebackhide__ = True
+        element = self.resolve(timeout)
+        if isinstance(element, WpfElement) and element.rect is None:
+            # A hyperlink is a content element: the agent has neither geometry nor an automation
+            # peer for it, so it can neither click it nor invoke it.
+            raise ActionError(
+                f"{self._description()} is a content element that the WPF inspector cannot "
+                "act on; use backend 'uia' for hyperlinks"
+            )
+        return super()._actionable(timeout)
+
+
+class BoundToolBar(BoundControl):
+    """A tool bar: ``click_button`` clicks a button by name (or automation id)."""
+
+    accepted_control_types = ("ToolBar",)
+
+    def click_button(
+        self,
+        name: str | re.Pattern[str],
+        *,
+        timeout: float | None = None,
+        mode: actions.InputMode | None = None,
+    ) -> None:
+        __tracebackhide__ = True
+        effective = mode or runtime.get_config().input_mode
+        label = name if isinstance(name, str) else name.pattern
+        with self.step("click_button", {"name": label, "mode": effective}):
+            self.perform(timeout, lambda el: widgets.click_toolbar_button(el, name, mode=effective))
+
+
+class BoundStatusBar(BoundControl):
+    """A status bar: ``texts`` lists the texts of its items."""
+
+    accepted_control_types = ("StatusBar",)
+
+    def texts(self) -> list[str]:
+        __tracebackhide__ = True
+        return widgets.status_texts(self.resolve())
+
+
 # -- elements -------------------------------------------------------------------------------------
 
 
@@ -376,3 +590,39 @@ class Menu(Element[BoundMenu]):
 
 class ContextMenu(Element[BoundContextMenu]):
     """A context menu (a popup, so it exists only while open)."""
+
+
+class DatePicker(Element[BoundDatePicker]):
+    """A date picker."""
+
+
+class Expander(Element[BoundExpander]):
+    """An expander."""
+
+
+class Hyperlink(Element[BoundHyperlink]):
+    """A hyperlink."""
+
+
+class ProgressBar(Element[BoundProgressBar]):
+    """A progress bar."""
+
+
+class ScrollBar(Element[BoundScrollBar]):
+    """A scroll bar."""
+
+
+class Slider(Element[BoundSlider]):
+    """A slider."""
+
+
+class StatusBar(Element[BoundStatusBar]):
+    """A status bar."""
+
+
+class ToggleButton(Element[BoundToggleButton]):
+    """A toggle button."""
+
+
+class ToolBar(Element[BoundToolBar]):
+    """A tool bar."""

@@ -19,26 +19,44 @@ if TYPE_CHECKING:
     from wintestkit.controls import BoundComboBox as BoundComboBox
     from wintestkit.controls import BoundContextMenu as BoundContextMenu
     from wintestkit.controls import BoundDataGrid as BoundDataGrid
+    from wintestkit.controls import BoundDatePicker as BoundDatePicker
+    from wintestkit.controls import BoundExpander as BoundExpander
+    from wintestkit.controls import BoundHyperlink as BoundHyperlink
     from wintestkit.controls import BoundListBox as BoundListBox
     from wintestkit.controls import BoundListItem as BoundListItem
     from wintestkit.controls import BoundMenu as BoundMenu
+    from wintestkit.controls import BoundProgressBar as BoundProgressBar
     from wintestkit.controls import BoundRadioButton as BoundRadioButton
+    from wintestkit.controls import BoundScrollBar as BoundScrollBar
+    from wintestkit.controls import BoundSlider as BoundSlider
+    from wintestkit.controls import BoundStatusBar as BoundStatusBar
     from wintestkit.controls import BoundTabControl as BoundTabControl
     from wintestkit.controls import BoundText as BoundText
     from wintestkit.controls import BoundTextBox as BoundTextBox
+    from wintestkit.controls import BoundToggleButton as BoundToggleButton
+    from wintestkit.controls import BoundToolBar as BoundToolBar
     from wintestkit.controls import BoundTreeView as BoundTreeView
     from wintestkit.controls import Button as Button
     from wintestkit.controls import CheckBox as CheckBox
     from wintestkit.controls import ComboBox as ComboBox
     from wintestkit.controls import ContextMenu as ContextMenu
     from wintestkit.controls import DataGrid as DataGrid
+    from wintestkit.controls import DatePicker as DatePicker
+    from wintestkit.controls import Expander as Expander
+    from wintestkit.controls import Hyperlink as Hyperlink
     from wintestkit.controls import ListBox as ListBox
     from wintestkit.controls import ListItem as ListItem
     from wintestkit.controls import Menu as Menu
+    from wintestkit.controls import ProgressBar as ProgressBar
     from wintestkit.controls import RadioButton as RadioButton
+    from wintestkit.controls import ScrollBar as ScrollBar
+    from wintestkit.controls import Slider as Slider
+    from wintestkit.controls import StatusBar as StatusBar
     from wintestkit.controls import TabControl as TabControl
     from wintestkit.controls import Text as Text
     from wintestkit.controls import TextBox as TextBox
+    from wintestkit.controls import ToggleButton as ToggleButton
+    from wintestkit.controls import ToolBar as ToolBar
     from wintestkit.controls import TreeView as TreeView
     from wintestkit.expect import expect as expect
     from wintestkit.finders import find as find
@@ -70,15 +88,24 @@ __all__ = [
     "BoundContextMenu",
     "BoundControl",
     "BoundDataGrid",
+    "BoundDatePicker",
     "BoundElement",
     "BoundElements",
+    "BoundExpander",
+    "BoundHyperlink",
     "BoundListBox",
     "BoundListItem",
     "BoundMenu",
+    "BoundProgressBar",
     "BoundRadioButton",
+    "BoundScrollBar",
+    "BoundSlider",
+    "BoundStatusBar",
     "BoundTabControl",
     "BoundText",
     "BoundTextBox",
+    "BoundToggleButton",
+    "BoundToolBar",
     "BoundTreeView",
     "BoundWindow",
     "Button",
@@ -86,11 +113,14 @@ __all__ = [
     "ComboBox",
     "ContextMenu",
     "DataGrid",
+    "DatePicker",
     "Decimal",
     "Double",
     "Element",
     "Elements",
     "Enum",
+    "Expander",
+    "Hyperlink",
     "Int32",
     "Int64",
     "ListBox",
@@ -99,11 +129,17 @@ __all__ = [
     "Null",
     "Page",
     "PageObject",
+    "ProgressBar",
     "RadioButton",
+    "ScrollBar",
     "Single",
+    "Slider",
+    "StatusBar",
     "TabControl",
     "Text",
     "TextBox",
+    "ToggleButton",
+    "ToolBar",
     "TreeView",
     "Window",
     "WtkConfig",
@@ -136,26 +172,44 @@ _LAZY: dict[str, tuple[str, str]] = {
     "BoundComboBox": ("wintestkit.controls", "BoundComboBox"),
     "BoundContextMenu": ("wintestkit.controls", "BoundContextMenu"),
     "BoundDataGrid": ("wintestkit.controls", "BoundDataGrid"),
+    "BoundDatePicker": ("wintestkit.controls", "BoundDatePicker"),
+    "BoundExpander": ("wintestkit.controls", "BoundExpander"),
+    "BoundHyperlink": ("wintestkit.controls", "BoundHyperlink"),
     "BoundListBox": ("wintestkit.controls", "BoundListBox"),
     "BoundListItem": ("wintestkit.controls", "BoundListItem"),
     "BoundMenu": ("wintestkit.controls", "BoundMenu"),
+    "BoundProgressBar": ("wintestkit.controls", "BoundProgressBar"),
     "BoundRadioButton": ("wintestkit.controls", "BoundRadioButton"),
+    "BoundScrollBar": ("wintestkit.controls", "BoundScrollBar"),
+    "BoundSlider": ("wintestkit.controls", "BoundSlider"),
+    "BoundStatusBar": ("wintestkit.controls", "BoundStatusBar"),
     "BoundTabControl": ("wintestkit.controls", "BoundTabControl"),
     "BoundText": ("wintestkit.controls", "BoundText"),
     "BoundTextBox": ("wintestkit.controls", "BoundTextBox"),
+    "BoundToggleButton": ("wintestkit.controls", "BoundToggleButton"),
+    "BoundToolBar": ("wintestkit.controls", "BoundToolBar"),
     "BoundTreeView": ("wintestkit.controls", "BoundTreeView"),
     "Button": ("wintestkit.controls", "Button"),
     "CheckBox": ("wintestkit.controls", "CheckBox"),
     "ComboBox": ("wintestkit.controls", "ComboBox"),
     "ContextMenu": ("wintestkit.controls", "ContextMenu"),
     "DataGrid": ("wintestkit.controls", "DataGrid"),
+    "DatePicker": ("wintestkit.controls", "DatePicker"),
+    "Expander": ("wintestkit.controls", "Expander"),
+    "Hyperlink": ("wintestkit.controls", "Hyperlink"),
     "ListBox": ("wintestkit.controls", "ListBox"),
     "ListItem": ("wintestkit.controls", "ListItem"),
     "Menu": ("wintestkit.controls", "Menu"),
+    "ProgressBar": ("wintestkit.controls", "ProgressBar"),
     "RadioButton": ("wintestkit.controls", "RadioButton"),
+    "ScrollBar": ("wintestkit.controls", "ScrollBar"),
+    "Slider": ("wintestkit.controls", "Slider"),
+    "StatusBar": ("wintestkit.controls", "StatusBar"),
     "TabControl": ("wintestkit.controls", "TabControl"),
     "Text": ("wintestkit.controls", "Text"),
     "TextBox": ("wintestkit.controls", "TextBox"),
+    "ToggleButton": ("wintestkit.controls", "ToggleButton"),
+    "ToolBar": ("wintestkit.controls", "ToolBar"),
     "TreeView": ("wintestkit.controls", "TreeView"),
     "BoundControl": ("wintestkit.model", "BoundControl"),
     "BoundElement": ("wintestkit.model", "BoundElement"),

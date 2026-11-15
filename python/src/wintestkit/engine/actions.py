@@ -103,7 +103,7 @@ def _wpf_patterns(el: WpfElement) -> set[str]:
 
 
 def _wpf_act(
-    el: WpfElement, verb: str, pattern: str | None = None, value: str | None = None
+    el: WpfElement, verb: str, pattern: str | None = None, value: str | float | None = None
 ) -> None:
     __tracebackhide__ = True
     try:

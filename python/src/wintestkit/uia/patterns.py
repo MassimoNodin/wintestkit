@@ -7,7 +7,7 @@ support the required pattern. COM failures surface as ``UIAError``.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, NamedTuple
 
 import comtypes
 import comtypes.automation
@@ -135,6 +135,41 @@ def toggle_state(el: TargetElement) -> ToggleState:
     pattern = _pattern(el, "Toggle")
     with com.wrap_com_errors:
         return ToggleState(int(pattern.CurrentToggleState))
+
+
+# -- RangeValue -----------------------------------------------------------------------------------
+
+
+class RangeInfo(NamedTuple):
+    value: float
+    minimum: float
+    maximum: float
+    small_change: float
+    large_change: float
+    read_only: bool
+
+
+def range_info(el: TargetElement) -> RangeInfo:
+    __tracebackhide__ = True
+    el = uia_of(el)
+    pattern = _pattern(el, "RangeValue")
+    with com.wrap_com_errors:
+        return RangeInfo(
+            float(pattern.CurrentValue),
+            float(pattern.CurrentMinimum),
+            float(pattern.CurrentMaximum),
+            float(pattern.CurrentSmallChange),
+            float(pattern.CurrentLargeChange),
+            bool(pattern.CurrentIsReadOnly),
+        )
+
+
+def set_range_value(el: TargetElement, value: float) -> None:
+    __tracebackhide__ = True
+    el = uia_of(el)
+    pattern = _pattern(el, "RangeValue")
+    with com.wrap_com_errors:
+        pattern.SetValue(float(value))
 
 
 # -- Selection ------------------------------------------------------------------------------------
