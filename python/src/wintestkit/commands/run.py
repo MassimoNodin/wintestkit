@@ -18,6 +18,7 @@ _FORWARDED = (
     ("timeout", "--wtk-timeout"),
     ("app", "--wtk-app"),
     ("input_mode", "--wtk-input-mode"),
+    ("actionability", "--wtk-actionability"),
     ("screenshots", "--wtk-screenshots"),
     ("slowmo", "--wtk-slowmo"),
     ("report", "--wtk-report"),
@@ -39,6 +40,7 @@ def add_parser(subparsers: Any) -> None:
     parser.add_argument("--timeout", type=float, metavar="SECONDS")
     parser.add_argument("--app", metavar="PATH")
     parser.add_argument("--input-mode", dest="input_mode", choices=("pattern", "mouse"))
+    parser.add_argument("--actionability", choices=("exists", "strict"))
     parser.add_argument("--screenshots", choices=("off", "on-failure", "every-step"))
     parser.add_argument("--highlight", action="store_true")
     parser.add_argument("--slowmo", type=int, metavar="MS")

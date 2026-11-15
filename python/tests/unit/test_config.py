@@ -13,6 +13,7 @@ ENV_VARS = [
     "WTK_TIMEOUT",
     "WTK_BACKEND",
     "WTK_INPUT_MODE",
+    "WTK_ACTIONABILITY",
     "WTK_SCREENSHOTS",
     "WTK_REPLAY",
     "WTK_REPLAY_FPS",
@@ -263,6 +264,7 @@ def test_the_removed_per_session_launch_mode_means_a_fresh_app_per_test(tmp_path
     [
         ('launch = "sometimes"', "launch", "'per-test', 'attach'"),
         ('input_mode = "touch"', "input_mode", "'pattern', 'mouse'"),
+        ('actionability = "lazy"', "actionability", "'exists', 'strict'"),
         ('screenshots = "always"', "screenshots", "'off', 'on-failure', 'every-step'"),
         ("timeout = 0", "timeout", "greater than 0"),
         ('timeout = "fast"', "timeout", "expected a number"),
@@ -341,3 +343,20 @@ def test_backend_invalid_yaml(tmp_path: Path, value: str) -> None:
     (tmp_path / "wintestkit.yaml").write_text(f"backend: {value!r}\n", encoding="utf-8")
     with pytest.raises(ConfigError, match="backend"):
         load_config(tmp_path)
+
+
+def test_actionability_defaults_to_exists(tmp_path: Path) -> None:
+    write_pyproject(tmp_path, "[tool.wintestkit]\n")
+    assert load_config(tmp_path).actionability == "exists"
+
+
+def test_actionability_precedence(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    write_pyproject(tmp_path, '[tool.wintestkit]\nactionability = "strict"\n')
+    assert load_config(tmp_path).actionability == "strict"
+    (tmp_path / "wintestkit.local.toml").write_text(
+        '[tool.wintestkit]\nactionability = "exists"\n', encoding="utf-8"
+    )
+    assert load_config(tmp_path).actionability == "exists"  # local beats shared
+    monkeypatch.setenv("WTK_ACTIONABILITY", "strict")
+    assert load_config(tmp_path).actionability == "strict"  # environment beats local
+    assert load_config(tmp_path, {"actionability": "exists"}).actionability == "exists"  # CLI wins

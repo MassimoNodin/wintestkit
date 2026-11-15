@@ -156,6 +156,17 @@ export const settingFields: SettingField[] = [
     group: "Test runs",
   },
   {
+    key: "actionability",
+    label: "Action waiting",
+    kind: "select",
+    description: same(
+      "Exists: actions wait only for the element to exist, and fail at once when it is disabled or hidden. Strict: actions also wait for it to be enabled and visible.",
+    ),
+    default: "exists",
+    choices: ["exists", "strict"],
+    group: "Test runs",
+  },
+  {
     key: "screenshots",
     label: "Screenshot policy",
     kind: "select",

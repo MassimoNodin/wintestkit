@@ -17,11 +17,13 @@ from wintestkit.errors import ConfigError
 
 LaunchMode = Literal["per-test", "attach"]
 InputMode = Literal["pattern", "mouse"]
+Actionability = Literal["exists", "strict"]
 ScreenshotMode = Literal["off", "on-failure", "every-step"]
 ReplayMode = Literal["off", "on", "retain-on-failure"]
 
 LAUNCH_MODES = ("per-test", "attach")
 INPUT_MODES = ("pattern", "mouse")
+ACTIONABILITY_MODES = ("exists", "strict")
 SCREENSHOT_MODES = ("off", "on-failure", "every-step")
 
 LOCAL_IGNORE_PATTERNS = (
@@ -78,6 +80,7 @@ _TOP_LEVEL_KEYS = {
     "timeout",
     "backend",
     "input_mode",
+    "actionability",
     "screenshots",
     "report_dir",
     "highlight_actions",
@@ -108,6 +111,7 @@ _ENV_VARS = {
     "WTK_TIMEOUT": "timeout",
     "WTK_BACKEND": "backend",
     "WTK_INPUT_MODE": "input_mode",
+    "WTK_ACTIONABILITY": "actionability",
     "WTK_SCREENSHOTS": "screenshots",
     "WTK_REPLAY": "replay",
     "WTK_REPLAY_FPS": "replay_fps",
@@ -160,6 +164,7 @@ class WtkConfig:
     launch: LaunchMode
     timeout: float
     input_mode: InputMode
+    actionability: Actionability
     screenshots: ScreenshotMode
     report_dir: Path
     highlight_actions: bool
@@ -577,6 +582,10 @@ def load_config(start: Path | None = None, overrides: Mapping[str, Any] | None =
         ),
         input_mode=cast(
             "InputMode", _enum("input_mode", values.get("input_mode", "mouse"), INPUT_MODES)
+        ),
+        actionability=cast(
+            "Actionability",
+            _enum("actionability", values.get("actionability", "exists"), ACTIONABILITY_MODES),
         ),
         screenshots=cast(
             "ScreenshotMode",

@@ -121,6 +121,7 @@ def test_options_override_the_config(pytester: pytest.Pytester) -> None:
             assert wtk_config.launch == "per-test"
             assert wtk_config.timeout == 2.5
             assert wtk_config.input_mode == "mouse"
+            assert wtk_config.actionability == "strict"
             assert wtk_config.screenshots == "every-step"
             assert wtk_config.highlight_actions is True
             assert wtk_config.slow_mo_ms == 30
@@ -135,6 +136,7 @@ def test_options_override_the_config(pytester: pytest.Pytester) -> None:
         "--wtk-launch=per-test",
         "--wtk-timeout=2.5",
         "--wtk-input-mode=mouse",
+        "--wtk-actionability=strict",
         "--wtk-screenshots=every-step",
         "--wtk-highlight",
         "--wtk-slowmo=30",
@@ -251,6 +253,42 @@ def test_marker_overrides_launch_mode_and_timeout(
     )
     pytester.runpytest("-p", "no:cacheprovider").assert_outcomes(passed=2)
     assert fake_apps == ["attach FakeApp.exe", "launch 1 FakeApp.exe", "close launched-1"]
+
+
+def test_marker_overrides_actionability_for_one_test(
+    pytester: pytest.Pytester, fake_apps: list[str]
+) -> None:
+    project(
+        pytester,
+        tests="""
+        import pytest
+        from wintestkit import runtime
+
+        @pytest.mark.wtk(actionability="strict")
+        def test_marked(app):
+            assert runtime.get_config().actionability == "strict"
+            assert runtime.get_config().timeout == 4.0
+
+        def test_unmarked(app):
+            assert runtime.get_config().actionability == "exists"
+        """,
+    )
+    pytester.runpytest("-p", "no:cacheprovider").assert_outcomes(passed=2)
+
+
+def test_marker_with_an_invalid_actionability_errors(pytester: pytest.Pytester) -> None:
+    project(
+        pytester,
+        tests="""
+        import pytest
+
+        @pytest.mark.wtk(actionability="lazy")
+        def test_bad(): pass
+        """,
+    )
+    result = pytester.runpytest("-p", "no:cacheprovider")
+    result.assert_outcomes(errors=1)
+    result.stdout.fnmatch_lines(["*invalid actionability 'lazy'*"])
 
 
 def test_marker_with_unknown_argument_errors(pytester: pytest.Pytester) -> None:

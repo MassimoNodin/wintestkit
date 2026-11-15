@@ -1,5 +1,6 @@
 """Unit tests for the Page / Element model (resolver and actions are patched out)."""
 
+import dataclasses
 import re
 from pathlib import Path
 from typing import Any
@@ -79,6 +80,11 @@ def runtime_setup(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> list[runti
     runtime.add_step_listener(records.append)
     yield records  # type: ignore[misc]
     runtime.reset()
+
+
+@pytest.fixture
+def strict_actions() -> None:
+    runtime.set_config(dataclasses.replace(runtime.get_config(), actionability="strict"))
 
 
 @pytest.fixture
@@ -474,6 +480,7 @@ def test_every_action_emits_a_step_and_calls_the_engine(
     assert runtime_setup[0].action == action
 
 
+@pytest.mark.usefixtures("strict_actions")
 def test_actions_wait_for_enabled(
     page: MainPage, recorder: Recorder, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -493,6 +500,7 @@ def test_actions_wait_for_enabled(
     assert polls[0] == 4
 
 
+@pytest.mark.usefixtures("strict_actions")
 def test_actions_time_out_naming_the_unmet_state(
     page: MainPage, recorder: Recorder, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -506,6 +514,7 @@ def test_actions_time_out_naming_the_unmet_state(
 
 
 @pytest.mark.parametrize("first_poll_deadline", [False, True])
+@pytest.mark.usefixtures("strict_actions")
 def test_action_deadline_preserves_disabled_state(
     page: MainPage, recorder: Recorder, monkeypatch: pytest.MonkeyPatch, first_poll_deadline: bool
 ) -> None:
@@ -537,6 +546,7 @@ def test_action_deadline_preserves_disabled_state(
     assert calls == 2
 
 
+@pytest.mark.usefixtures("strict_actions")
 def test_offpage_elements_wait_for_visibility_unless_scrollable(
     page: MainPage, recorder: Recorder, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -549,6 +559,7 @@ def test_offpage_elements_wait_for_visibility_unless_scrollable(
     page.sign_in.click(timeout=1)  # scrollable: ensure_visible handles it
 
 
+@pytest.mark.usefixtures("strict_actions")
 def test_offscreen_managed_element_does_not_map_virtualized_pattern(
     page: MainPage, recorder: Recorder, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -565,6 +576,96 @@ def test_offscreen_managed_element_does_not_map_virtualized_pattern(
         page.sign_in.click(timeout=0)
     assert "ScrollItem" in names
     assert "VirtualizedItem" not in names
+
+
+def test_exists_mode_waits_only_for_the_element_and_acts(
+    page: MainPage, recorder: Recorder, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    recorder.element.is_enabled = True
+    seen: list[Any] = []
+    monkeypatch.setattr(actions, "click", lambda el, *, mode, **_kw: seen.append(el))
+    page.sign_in.click()
+    assert len(seen) == 1
+    assert len(recorder.calls) == 1
+
+
+def test_exists_mode_fails_at_once_on_a_disabled_element(
+    page: MainPage, recorder: Recorder, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    recorder.element.is_enabled = False
+    clicked: list[Any] = []
+    monkeypatch.setattr(actions, "click", lambda el, *, mode, **_kw: clicked.append(el))
+    with pytest.raises(ActionError) as exc_info:
+        page.sign_in.click(timeout=5)
+    assert str(exc_info.value) == (
+        'MainPage.sign_in Button[name="Sign in"] is disabled; actions no longer wait for '
+        "enabled elements: wait with expect(...).to_be_enabled() or set actionability: strict"
+    )
+    assert not clicked
+    assert len(recorder.calls) == 1  # no polling
+
+
+def test_exists_mode_fails_at_once_on_a_hidden_element(
+    page: MainPage, recorder: Recorder, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    recorder.element.is_offscreen = True
+    monkeypatch.setattr(model.patterns, "has_pattern", lambda el, name: False)
+    monkeypatch.setattr(actions, "click", lambda el, *, mode, **_kw: "invoke")
+    with pytest.raises(ActionError) as exc_info:
+        page.sign_in.click(timeout=5)
+    assert str(exc_info.value) == (
+        'MainPage.sign_in Button[name="Sign in"] is hidden (off-screen and cannot be scrolled '
+        "into view); actions no longer wait for visible elements: wait with "
+        "expect(...).to_be_visible() or set actionability: strict"
+    )
+    assert len(recorder.calls) == 1
+
+
+def test_exists_mode_acts_on_a_scrollable_offscreen_element(
+    page: MainPage, recorder: Recorder, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    recorder.element.is_offscreen = True
+    monkeypatch.setattr(model.patterns, "has_pattern", lambda el, name: name == "ScrollItem")
+    seen: list[Any] = []
+    monkeypatch.setattr(actions, "click", lambda el, *, mode, **_kw: seen.append(el))
+    page.sign_in.click(timeout=1)
+    assert len(seen) == 1
+
+
+@pytest.mark.usefixtures("strict_actions")
+def test_strict_mode_waits_for_the_element_to_become_visible(
+    page: MainPage, recorder: Recorder, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    recorder.element.is_offscreen = True
+    polls = [0]
+    original = recorder._resolve
+
+    def resolve(scope: Any, locator: Locator) -> FakeElement:
+        polls[0] += 1
+        if polls[0] == 3:
+            recorder.element.is_offscreen = False
+        return original(scope, locator)
+
+    monkeypatch.setattr(model, "resolve", resolve)
+    monkeypatch.setattr(model.patterns, "has_pattern", lambda el, name: False)
+    monkeypatch.setattr(actions, "click", lambda el, *, mode, **_kw: "invoke")
+    page.sign_in.click()
+    assert polls[0] == 3
+
+
+def test_exists_mode_still_retries_once_when_the_element_vanishes(
+    page: MainPage, recorder: Recorder, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    attempts = [0]
+
+    def flaky(element: Any, **_kw: Any) -> None:
+        attempts[0] += 1
+        if attempts[0] == 1:
+            raise UIAError("gone", element_gone=True)
+
+    monkeypatch.setattr(actions, "double_click", flaky)
+    page.sign_in.double_click()
+    assert attempts[0] == 2
 
 
 def test_timeout_precedence(page: MainPage, recorder: Recorder) -> None:

@@ -1298,7 +1298,10 @@ def test_phase3_disabled_action_messages_match(owned, mode, monkeypatch):
     page = FixturePage(scope.app)
     messages = []
     for backend in ("uia", "auto"):
-        with runtime.config_scope(replace(config(path, "agent"), backend=backend, input_mode=mode)):  # noqa: SIM117
+        strict = replace(
+            config(path, "agent"), backend=backend, input_mode=mode, actionability="strict"
+        )
+        with runtime.config_scope(strict):  # noqa: SIM117
             with monkeypatch.context() as guard:
                 if backend == "auto":
                     guard.setattr(
@@ -1308,6 +1311,26 @@ def test_phase3_disabled_action_messages_match(owned, mode, monkeypatch):
                     page.disabled.click(timeout=2.0)
                 messages.append(re.sub(r"[0-9.]+s", "<time>", str(error.value)))
     assert messages[0] == messages[1]
+
+
+@pytest.mark.parametrize("mode", ["pattern", "mouse"])
+def test_exists_actionability_fails_at_once_on_a_disabled_button(owned, mode):
+    from wintestkit.controls import Button
+    from wintestkit.errors import ActionError
+    from wintestkit.model import Page
+
+    scope, path = owned
+
+    class FixturePage(Page):
+        disabled = Button(automation_id="ParityDisabled")
+
+    page = FixturePage(scope.app)
+    with runtime.config_scope(replace(config(path, "agent"), input_mode=mode)):
+        assert runtime.get_config().actionability == "exists"
+        started = time.monotonic()
+        with pytest.raises(ActionError, match="is disabled; actions no longer wait for enabled"):
+            page.disabled.click(timeout=10.0)
+        assert time.monotonic() - started < 5.0
 
 
 def test_phase2_disabled_waits_match(owned):
@@ -1426,7 +1449,10 @@ def test_phase3_hidden_actions_parity(owned, mode, monkeypatch):
     page = FixturePage(scope.app)
     outcomes = []
     for backend in ("uia", "auto"):
-        with runtime.config_scope(replace(config(path, "agent"), backend=backend, input_mode=mode)):  # noqa: SIM117
+        strict = replace(
+            config(path, "agent"), backend=backend, input_mode=mode, actionability="strict"
+        )
+        with runtime.config_scope(strict):  # noqa: SIM117
             with monkeypatch.context() as guard:
                 if backend == "auto":
                     guard.setattr(

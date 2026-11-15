@@ -1,5 +1,6 @@
 """Typed elements: method availability, binding, type validation and user-defined types."""
 
+import dataclasses
 import re
 from pathlib import Path
 from typing import Any
@@ -94,6 +95,11 @@ def runtime_setup(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> list[runti
     runtime.add_step_listener(records.append)
     yield records  # type: ignore[misc]
     runtime.reset()
+
+
+@pytest.fixture
+def strict_actions() -> None:
+    runtime.set_config(dataclasses.replace(runtime.get_config(), actionability="strict"))
 
 
 class World:
@@ -480,6 +486,7 @@ def test_grid_rows_and_cells_are_plain_elements(page: Typed, calls: Calls) -> No
     assert cell.definition is Typed.grid
 
 
+@pytest.mark.usefixtures("strict_actions")
 def test_typed_actions_auto_wait(
     page: Typed, calls: Calls, world: World, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -527,6 +534,7 @@ def test_a_custom_type_binds_through_its_generic_argument(calendar: Calendar) ->
     assert Calendar.start in Calendar.elements().values()
 
 
+@pytest.mark.usefixtures("strict_actions")
 def test_a_custom_action_auto_waits_and_reports(
     calendar: Calendar,
     world: World,

@@ -25,6 +25,7 @@ import pytest
 from wintestkit import __version__, runtime
 from wintestkit import artifacts as artifact_files
 from wintestkit.config import (
+    ACTIONABILITY_MODES,
     INPUT_MODES,
     LAUNCH_MODES,
     SCREENSHOT_MODES,
@@ -43,13 +44,14 @@ if TYPE_CHECKING:
 
 log = logging.getLogger("wintestkit.pytest")
 
-_MARKER_KEYS = {"launch", "timeout"}
+_MARKER_KEYS = {"launch", "timeout", "actionability"}
 _MAX_MESSAGE = 2000
 _ENV_VARS = (
     "WTK_APP_PATH",
     "WTK_LAUNCH",
     "WTK_TIMEOUT",
     "WTK_INPUT_MODE",
+    "WTK_ACTIONABILITY",
     "WTK_SCREENSHOTS",
     "WTK_REPLAY",
     "WTK_REPLAY_FPS",
@@ -111,6 +113,7 @@ _OPTION_TO_KEY = {
     "wtk_timeout": "timeout",
     "wtk_app": "app.path",
     "wtk_input_mode": "input_mode",
+    "wtk_actionability": "actionability",
     "wtk_screenshots": "screenshots",
     "wtk_highlight": "highlight_actions",
     "wtk_slowmo": "slow_mo_ms",
@@ -127,6 +130,11 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     group.addoption("--wtk-timeout", type=float, metavar="SECONDS", help="default auto-wait")
     group.addoption("--wtk-app", metavar="PATH", help="path of the application executable")
     group.addoption("--wtk-input-mode", choices=INPUT_MODES, help="default click strategy")
+    group.addoption(
+        "--wtk-actionability",
+        choices=ACTIONABILITY_MODES,
+        help="what actions wait for: the element to exist, or also to be enabled and visible",
+    )
     group.addoption("--wtk-screenshots", choices=SCREENSHOT_MODES, help="when to capture screens")
     group.addoption(
         "--wtk-replay", choices=("off", "on", "retain-on-failure"), help="record a test replay"
@@ -188,8 +196,8 @@ CONTROLLER_KEY = pytest.StashKey["_Controller"]()
 def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line(
         "markers",
-        "wtk(launch=None, timeout=None): override the WinTestKit launch mode or default "
-        "timeout for one test",
+        "wtk(launch=None, timeout=None, actionability=None): override the WinTestKit launch "
+        "mode, default timeout or action waiting for one test",
     )
     if not _is_wintestkit_run(config):
         return  # not a WinTestKit project: stay inert
@@ -252,7 +260,7 @@ class _Controller:
         self.finished: list[_Finished] = []
         self.collect_errors: list[dict[str, str]] = []
         self.current: pytest.Item | None = None
-        self.restore_timeout: float | None = None
+        self.restore_config: WtkConfig | None = None
         self.remove_listener = runtime.add_step_listener(self._on_step)
         self.remove_log_listener = runtime.add_log_listener(self._on_log)
 
@@ -395,10 +403,22 @@ class _Controller:
                 f"allowed: {', '.join(sorted(_MARKER_KEYS))}"
             )
         timeout = marker.kwargs.get("timeout")
-        if timeout is not None:
+        actionability = marker.kwargs.get("actionability")
+        if actionability is not None and actionability not in ACTIONABILITY_MODES:
+            raise ConfigError(
+                f"invalid actionability {actionability!r} in the wtk marker; "
+                f"allowed: {', '.join(ACTIONABILITY_MODES)}",
+                key="actionability",
+            )
+        if timeout is not None or actionability is not None:
             current = runtime.get_config()
-            self.restore_timeout = current.timeout
-            runtime.set_config(dataclasses.replace(current, timeout=float(timeout)))
+            self.restore_config = current
+            changes: dict[str, Any] = {}
+            if timeout is not None:
+                changes["timeout"] = float(timeout)
+            if actionability is not None:
+                changes["actionability"] = actionability
+            runtime.set_config(dataclasses.replace(current, **changes))
 
     @staticmethod
     def _replay_window(replay: ReplayRecorder, app: Any) -> None:
@@ -423,10 +443,9 @@ class _Controller:
     @pytest.hookimpl(trylast=True)
     def pytest_runtest_teardown(self, item: pytest.Item, nextitem: pytest.Item | None) -> None:
         runtime.end_test()
-        if self.restore_timeout is not None:
-            restored = dataclasses.replace(runtime.get_config(), timeout=self.restore_timeout)
-            runtime.set_config(restored)
-            self.restore_timeout = None
+        if self.restore_config is not None:
+            runtime.set_config(self.restore_config)
+            self.restore_config = None
 
     @pytest.hookimpl(hookwrapper=True)
     def pytest_runtest_makereport(

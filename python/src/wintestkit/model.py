@@ -1026,9 +1026,15 @@ class BoundControl(_BoundBase):
         return element
 
     def _actionable(self, timeout: float | None) -> TargetElement:
-        """Wait until the element is attached and enabled (and visible unless it can scroll)."""
+        """Wait for the element as the ``actionability`` setting says.
+
+        ``strict`` waits until it is attached and enabled (and visible unless it can scroll).
+        ``exists`` waits only until it is attached, then fails at once, saying why, when it is
+        disabled or hidden.
+        """
         __tracebackhide__ = True
         budget = self._timeout(timeout)
+        strict = runtime.get_config().actionability == "strict"
         unmet = ["to exist"]
         deadline_exhausted = False
 
@@ -1038,8 +1044,14 @@ class BoundControl(_BoundBase):
             try:
                 element = self.resolve_once()
                 if not element.is_enabled:
-                    unmet[0] = "to be enabled"
-                    return None
+                    if strict:
+                        unmet[0] = "to be enabled"
+                        return None
+                    raise ActionError(
+                        f"{self._description()} is disabled; actions no longer wait for enabled "
+                        "elements: wait with expect(...).to_be_enabled() or set actionability: "
+                        "strict"
+                    )
                 if element.is_offscreen and not (
                     patterns.has_pattern(element, "ScrollItem")
                     or (
@@ -1047,8 +1059,14 @@ class BoundControl(_BoundBase):
                         and patterns.has_pattern(element, "VirtualizedItem")
                     )
                 ):
-                    unmet[0] = "to be visible"
-                    return None
+                    if strict:
+                        unmet[0] = "to be visible"
+                        return None
+                    raise ActionError(
+                        f"{self._description()} is hidden (off-screen and cannot be scrolled "
+                        "into view); actions no longer wait for visible elements: wait with "
+                        "expect(...).to_be_visible() or set actionability: strict"
+                    )
                 return element
             except InspectorDeadlineError as error:
                 deadline_exhausted = not error.busy
@@ -1077,7 +1095,8 @@ class BoundControl(_BoundBase):
     def perform(self, timeout: float | None, act: Callable[[TargetElement], _T]) -> _T:
         """Wait until the element is actionable, then run ``act`` on it and return its result.
 
-        This is the hook for writing actions: it auto-waits (exists, enabled, visible), highlights
+        This is the hook for writing actions: it auto-waits (for the element to exist, or with
+        ``actionability: strict`` also to be enabled and visible), highlights
         when configured, and resolves and acts once more if the element vanishes mid-action.
         """
         __tracebackhide__ = True

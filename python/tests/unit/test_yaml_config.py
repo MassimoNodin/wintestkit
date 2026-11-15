@@ -107,3 +107,10 @@ def test_highlight_color_is_normalised_and_an_unquoted_hash_is_explained(tmp_pat
     with pytest.raises(ConfigError, match="quote it in YAML") as error:
         load_config(tmp_path)
     assert error.value.key == "highlight_color"
+
+
+def test_actionability_in_shared_and_local_yaml(tmp_path: Path) -> None:
+    (tmp_path / "wintestkit.yaml").write_text("actionability: strict\n", encoding="utf-8")
+    assert load_config(tmp_path).actionability == "strict"
+    (tmp_path / "wintestkit.local.yaml").write_text("actionability: exists\n", encoding="utf-8")
+    assert load_config(tmp_path).actionability == "exists"
