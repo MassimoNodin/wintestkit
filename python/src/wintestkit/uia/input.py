@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import ctypes
 import time
 from dataclasses import dataclass
@@ -188,15 +189,60 @@ def move_mouse(x: int, y: int) -> None:
     _send([_move_event(x, y)])
 
 
-def click(x: int, y: int, button: MouseButton = "left", count: int = 1) -> None:
-    """Click ``count`` times at physical screen coordinates."""
+def parse_modifiers(text: str | None) -> tuple[int, ...]:
+    """Parse ``"Ctrl+Shift"`` into virtual-key codes (empty for ``None`` or ``""``)."""
+    __tracebackhide__ = True
+    if not text:
+        return ()
+    codes: list[int] = []
+    for token in text.split("+"):
+        code = _MODIFIERS.get(token.strip().lower())
+        if code is None:
+            raise ValueError(f"unknown modifier {token.strip()!r} in {text!r}")
+        if code not in codes:
+            codes.append(code)
+    return tuple(codes)
+
+
+def _modifier_events(modifiers: tuple[int, ...], up: bool) -> list[win32.INPUT]:
+    __tracebackhide__ = True
+    ordered = reversed(modifiers) if up else modifiers
+    return [_key_event(vk, up=up) for vk in ordered]
+
+
+def _release_quietly(events: list[win32.INPUT]) -> None:
+    __tracebackhide__ = True
+    with contextlib.suppress(ActionError):
+        _send(events)
+
+
+def _send_with_modifiers(events: list[win32.INPUT], modifiers: tuple[int, ...]) -> None:
+    """Send ``events`` between modifier presses in one batch, never leaving a modifier held."""
+    __tracebackhide__ = True
+    batch = _modifier_events(modifiers, False) + events + _modifier_events(modifiers, True)
+    try:
+        _send(batch)
+    except BaseException:
+        if modifiers:
+            _release_quietly(_modifier_events(modifiers, True))
+        raise
+
+
+def click(
+    x: int,
+    y: int,
+    button: MouseButton = "left",
+    count: int = 1,
+    modifiers: tuple[int, ...] = (),
+) -> None:
+    """Click ``count`` times at physical screen coordinates, holding ``modifiers`` throughout."""
     __tracebackhide__ = True
     down, up = _BUTTON_FLAGS[button]
     events = [_move_event(x, y)]
     for _ in range(count):
         events.append(_mouse_event(down))
         events.append(_mouse_event(up))
-    _send(events)
+    _send_with_modifiers(events, modifiers)
     time.sleep(INPUT_SETTLE_S)
 
 
@@ -210,10 +256,69 @@ def mouse_up(button: MouseButton = "left") -> None:
     _send([_mouse_event(_BUTTON_FLAGS[button][1])])
 
 
-def scroll_wheel(x: int, y: int, clicks: int) -> None:
-    """Scroll the wheel at a position; positive ``clicks`` scroll up."""
+def scroll_wheel(x: int, y: int, clicks: int, horizontal: bool = False) -> None:
+    """Scroll the wheel at a position; positive ``clicks`` scroll up (or right if horizontal)."""
     __tracebackhide__ = True
-    _send([_move_event(x, y), _mouse_event(win32.MOUSEEVENTF_WHEEL, data=clicks * WHEEL_DELTA)])
+    flag = win32.MOUSEEVENTF_HWHEEL if horizontal else win32.MOUSEEVENTF_WHEEL
+    _send([_move_event(x, y), _mouse_event(flag, data=clicks * WHEEL_DELTA)])
+    time.sleep(INPUT_SETTLE_S)
+
+
+DRAG_STEPS = 10
+DRAG_STEP_DELAY_S = 0.02
+DRAG_MIN_FIRST_MOVE = 10
+
+
+def _drag_threshold() -> int:
+    __tracebackhide__ = True
+    metric = max(win32.GetSystemMetrics(win32.SM_CXDRAG), win32.GetSystemMetrics(win32.SM_CYDRAG))
+    return max(DRAG_MIN_FIRST_MOVE, metric + 1)
+
+
+def drag_path(x1: int, y1: int, x2: int, y2: int) -> list[tuple[int, int]]:
+    """Cursor positions after the press: a first move past the drag threshold, then steps."""
+    __tracebackhide__ = True
+    dx, dy = x2 - x1, y2 - y1
+    distance = (dx * dx + dy * dy) ** 0.5
+    if distance == 0:
+        return []
+    first = min(distance, _drag_threshold()) / distance
+    points = [(round(x1 + dx * first), round(y1 + dy * first))]
+    for i in range(1, DRAG_STEPS):
+        t = first + (1 - first) * i / DRAG_STEPS
+        points.append((round(x1 + dx * t), round(y1 + dy * t)))
+    return points
+
+
+def drag(
+    x1: int,
+    y1: int,
+    x2: int,
+    y2: int,
+    button: MouseButton = "left",
+    modifiers: tuple[int, ...] = (),
+) -> None:
+    """Press at the start, move in steps past the drag threshold, release at the end."""
+    __tracebackhide__ = True
+    down, up = _BUTTON_FLAGS[button]
+    pressed = False
+    try:
+        _send([*_modifier_events(modifiers, False), _move_event(x1, y1)])
+        time.sleep(DRAG_STEP_DELAY_S)
+        _send([_mouse_event(down)])
+        pressed = True
+        time.sleep(DRAG_STEP_DELAY_S)
+        for x, y in drag_path(x1, y1, x2, y2):
+            _send([_move_event(x, y)])
+            time.sleep(DRAG_STEP_DELAY_S)
+        _send([_move_event(x2, y2)])
+        time.sleep(DRAG_STEP_DELAY_S * 2)
+        _send([_mouse_event(up), *_modifier_events(modifiers, True)])
+    except BaseException:
+        _release_quietly(
+            ([_mouse_event(up)] if pressed else []) + _modifier_events(modifiers, True)
+        )
+        raise
     time.sleep(INPUT_SETTLE_S)
 
 

@@ -652,6 +652,30 @@ def is_password_locator(locator: Locator) -> bool:
 # -- bound elements -------------------------------------------------------------------------------
 
 
+def _record_mouse(
+    args: dict[str, Any], *, button: str = "left", modifiers: str | None = None
+) -> None:
+    __tracebackhide__ = True
+    if button != "left":
+        args["button"] = button
+    if modifiers:
+        args["modifiers"] = modifiers
+
+
+def _mouse_options(
+    x: int | None, y: int | None, modifiers: str | None, button: str = "left"
+) -> tuple[tuple[int, int] | None, tuple[int, ...], dict[str, Any]]:
+    """Validate the position and modifiers of a mouse action; also returns the step arguments."""
+    __tracebackhide__ = True
+    offset = actions.parse_offset(x, y)
+    keys = actions.parse_modifiers(modifiers)
+    args: dict[str, Any] = {}
+    if offset is not None:
+        args["x"], args["y"] = offset
+    _record_mouse(args, button=button, modifiers=modifiers)
+    return offset, keys, args
+
+
 class _BoundBase:
     """Shared resolution logic of bound single elements and windows."""
 
@@ -1156,6 +1180,108 @@ class BoundControl(_BoundBase):
         with self.step("hover"):
             self.perform(timeout, actions.hover)
 
+    def middle_click(
+        self,
+        *,
+        timeout: float | None = None,
+        x: int | None = None,
+        y: int | None = None,
+        modifiers: str | None = None,
+    ) -> None:
+        """Middle-click the centre, or the point ``x``, ``y`` pixels from the top-left corner."""
+        __tracebackhide__ = True
+        offset, keys, args = _mouse_options(x, y, modifiers)
+        with self.step("middle_click", args):
+            self.perform(
+                timeout, lambda el: actions.middle_click(el, offset=offset, modifiers=keys)
+            )
+
+    def drag_to(
+        self,
+        target: _BoundBase,
+        *,
+        timeout: float | None = None,
+        source_offset: tuple[int, int] | None = None,
+        target_offset: tuple[int, int] | None = None,
+        button: actions.MouseButton = "left",
+        modifiers: str | None = None,
+    ) -> None:
+        """Drag from this element to ``target`` (an element or window, possibly in another window).
+
+        Offsets are ``(x, y)`` physical pixels from each element's top-left corner; the default
+        is the centre.
+        """
+        __tracebackhide__ = True
+        keys = actions.parse_modifiers(modifiers)
+        source = actions.parse_offset(*source_offset) if source_offset else None
+        destination = actions.parse_offset(*target_offset) if target_offset else None
+        args: dict[str, Any] = {"target": target.qualname}
+        _record_mouse(args, button=button, modifiers=modifiers)
+        if source is not None:
+            args["source_offset"] = source
+        if destination is not None:
+            args["target_offset"] = destination
+        with self.step("drag_to", args):
+            end = target.resolve(timeout)
+            self.perform(
+                timeout,
+                lambda el: actions.drag_to(
+                    el,
+                    end,
+                    source_offset=source,
+                    target_offset=destination,
+                    button=button,
+                    modifiers=keys,
+                ),
+            )
+
+    def drag_by(
+        self,
+        dx: int,
+        dy: int,
+        *,
+        timeout: float | None = None,
+        source_offset: tuple[int, int] | None = None,
+        button: actions.MouseButton = "left",
+        modifiers: str | None = None,
+    ) -> None:
+        """Drag from this element by ``dx``, ``dy`` physical pixels."""
+        __tracebackhide__ = True
+        keys = actions.parse_modifiers(modifiers)
+        source = actions.parse_offset(*source_offset) if source_offset else None
+        args: dict[str, Any] = {"dx": dx, "dy": dy}
+        _record_mouse(args, button=button, modifiers=modifiers)
+        if source is not None:
+            args["source_offset"] = source
+        with self.step("drag_by", args):
+            self.perform(
+                timeout,
+                lambda el: actions.drag_by(
+                    el, dx, dy, source_offset=source, button=button, modifiers=keys
+                ),
+            )
+
+    def scroll(
+        self,
+        clicks: int,
+        *,
+        timeout: float | None = None,
+        x: int | None = None,
+        y: int | None = None,
+        horizontal: bool = False,
+    ) -> None:
+        """Turn the mouse wheel over the element; positive is up (right if ``horizontal``)."""
+        __tracebackhide__ = True
+        offset, _, args = _mouse_options(x, y, None)
+        args["clicks"] = clicks
+        if horizontal:
+            args["horizontal"] = True
+        with self.step("scroll", args):
+            self.perform(
+                timeout,
+                lambda el: actions.scroll(el, clicks, offset=offset, horizontal=horizontal),
+            )
+
     def focus(self, *, timeout: float | None = None) -> None:
         __tracebackhide__ = True
         with self.step("focus"):
@@ -1311,23 +1437,62 @@ class BoundControl(_BoundBase):
 
 
 class _Clickable(BoundControl):
-    def click(self, *, mode: InputMode | None = None, timeout: float | None = None) -> None:
+    def click(
+        self,
+        *,
+        mode: InputMode | None = None,
+        timeout: float | None = None,
+        x: int | None = None,
+        y: int | None = None,
+        button: actions.MouseButton = "left",
+        modifiers: str | None = None,
+    ) -> None:
+        """Click the element.
+
+        ``x`` and ``y`` (together) click that many physical pixels from the top-left corner;
+        a position, a non-left ``button`` or ``modifiers`` (``"Ctrl"``, ``"Ctrl+Shift"``) always
+        use the mouse.
+        """
         __tracebackhide__ = True
+        offset, keys, args = _mouse_options(x, y, modifiers, button)
         effective = mode or runtime.get_config().input_mode
-        with self.step("click", {"mode": effective}) as record:
+        if args:
+            effective = "mouse"
+        with self.step("click", {"mode": effective, **args}) as record:
             record.args["strategy"] = self.perform(
-                timeout, lambda el: actions.click(el, mode=effective)
+                timeout,
+                lambda el: actions.click(
+                    el, mode=effective, button=button, offset=offset, modifiers=keys
+                ),
             )
 
-    def double_click(self, *, timeout: float | None = None) -> None:
+    def double_click(
+        self,
+        *,
+        timeout: float | None = None,
+        x: int | None = None,
+        y: int | None = None,
+        modifiers: str | None = None,
+    ) -> None:
         __tracebackhide__ = True
-        with self.step("double_click"):
-            self.perform(timeout, actions.double_click)
+        offset, keys, args = _mouse_options(x, y, modifiers)
+        with self.step("double_click", args):
+            self.perform(
+                timeout, lambda el: actions.double_click(el, offset=offset, modifiers=keys)
+            )
 
-    def right_click(self, *, timeout: float | None = None) -> None:
+    def right_click(
+        self,
+        *,
+        timeout: float | None = None,
+        x: int | None = None,
+        y: int | None = None,
+        modifiers: str | None = None,
+    ) -> None:
         __tracebackhide__ = True
-        with self.step("right_click"):
-            self.perform(timeout, actions.right_click)
+        offset, keys, args = _mouse_options(x, y, modifiers)
+        with self.step("right_click", args):
+            self.perform(timeout, lambda el: actions.right_click(el, offset=offset, modifiers=keys))
 
 
 class _Valued(BoundControl):

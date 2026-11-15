@@ -219,6 +219,41 @@ def test_default_backend_and_mouse_input(owned):
         remove()
 
 
+def test_positioned_and_modified_mouse_actions(owned):
+    from wintestkit.controls import Button, ListBox, Text
+    from wintestkit.expect import expect
+    from wintestkit.model import Element, Page
+
+    scope, path = owned
+
+    class FixturePage(Page):
+        button = Button(automation_id="FancyAutomationId")
+        effect = Text(automation_id="ActionEffect")
+        pointer = Element(automation_id="ParityPointer")
+        pointer_effect = Element(automation_id="ParityInteractionEffect")
+        rows = ListBox(automation_id="ParityList")
+
+    records = []
+    remove = runtime.add_step_listener(records.append)
+    try:
+        with runtime.config_scope(load_config(path)):
+            page = FixturePage(scope.app)
+            page.button.click(x=5, y=5)
+            expect(page.effect, timeout=5).to_have_text("Clicked 1")
+            page.button.click(modifiers="Ctrl")
+            expect(page.effect, timeout=5).to_have_text("Clicked 2")
+            page.pointer.double_click(x=10, y=5, modifiers="Shift")
+            expect(page.pointer_effect, timeout=5).to_have_text("Double clicked")
+            page.rows.scroll(-3)
+            page.rows.scroll(3)
+        clicks = [record for record in records if record.action == "click"]
+        assert clicks[0].args["x"] == 5 and clicks[0].args["strategy"] == "mouse"
+        assert clicks[1].args["modifiers"] == "Ctrl"
+        assert [record.action for record in records].count("scroll") == 2
+    finally:
+        remove()
+
+
 @pytest.mark.parametrize("mode", ["pattern", "mouse"])
 @pytest.mark.parametrize("backend", ["uia", "auto"])
 def test_phase3_typed_button_click(owned, backend, mode, monkeypatch):

@@ -292,7 +292,7 @@ def test_click_emits_a_step(
 ) -> None:
     seen: dict[str, Any] = {}
 
-    def fake_click(element: Any, *, mode: str, button: str = "left") -> str:
+    def fake_click(element: Any, *, mode: str, **_kw: Any) -> str:
         seen["mode"] = mode
         return "invoke"
 
@@ -311,9 +311,7 @@ def test_click_mode_comes_from_the_call_or_config(
     page: MainPage, recorder: Recorder, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     modes: list[str] = []
-    monkeypatch.setattr(
-        actions, "click", lambda el, *, mode, button="left": modes.append(mode) or "x"
-    )
+    monkeypatch.setattr(actions, "click", lambda el, *, mode, **_kw: modes.append(mode) or "x")
     page.sign_in.click(mode="mouse")
     runtime.set_config(load_config(tmp_path, {"input_mode": "mouse"}))
     page.sign_in.click()
@@ -490,7 +488,7 @@ def test_actions_wait_for_enabled(
         return original(scope, locator)
 
     monkeypatch.setattr(model, "resolve", resolve)
-    monkeypatch.setattr(actions, "click", lambda el, *, mode, button="left": "invoke")
+    monkeypatch.setattr(actions, "click", lambda el, *, mode, **_kw: "invoke")
     page.sign_in.click()
     assert polls[0] == 4
 
@@ -499,7 +497,7 @@ def test_actions_time_out_naming_the_unmet_state(
     page: MainPage, recorder: Recorder, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     recorder.element.is_enabled = False
-    monkeypatch.setattr(actions, "click", lambda el, *, mode, button="left": "invoke")
+    monkeypatch.setattr(actions, "click", lambda el, *, mode, **_kw: "invoke")
     with pytest.raises(WaitTimeoutError) as exc_info:
         page.sign_in.click(timeout=2)
     assert str(exc_info.value) == (
@@ -544,7 +542,7 @@ def test_offpage_elements_wait_for_visibility_unless_scrollable(
 ) -> None:
     recorder.element.is_offscreen = True
     monkeypatch.setattr(model.patterns, "has_pattern", lambda el, name: False)
-    monkeypatch.setattr(actions, "click", lambda el, *, mode, button="left": "invoke")
+    monkeypatch.setattr(actions, "click", lambda el, *, mode, **_kw: "invoke")
     with pytest.raises(WaitTimeoutError, match="to be visible"):
         page.sign_in.click(timeout=1)
     monkeypatch.setattr(model.patterns, "has_pattern", lambda el, name: name == "ScrollItem")
@@ -593,7 +591,7 @@ def test_element_gone_mid_action_is_retried_once(
 ) -> None:
     attempts = [0]
 
-    def flaky(element: Any) -> None:
+    def flaky(element: Any, **_kw: Any) -> None:
         attempts[0] += 1
         if attempts[0] == 1:
             raise UIAError("gone", element_gone=True)
@@ -607,7 +605,7 @@ def test_element_gone_mid_action_is_retried_once(
 def test_element_gone_twice_raises(
     page: MainPage, recorder: Recorder, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    def always(element: Any) -> None:
+    def always(element: Any, **_kw: Any) -> None:
         raise UIAError("gone", element_gone=True)
 
     monkeypatch.setattr(actions, "double_click", always)
@@ -620,7 +618,7 @@ def test_other_uia_errors_are_not_retried(
 ) -> None:
     attempts = [0]
 
-    def failing(element: Any) -> None:
+    def failing(element: Any, **_kw: Any) -> None:
         attempts[0] += 1
         raise UIAError("com failure")
 
@@ -796,3 +794,121 @@ def test_missing_window_does_not_exist(page: MainPage, monkeypatch: pytest.Monke
     monkeypatch.setattr(model, "resolve_window", missing)
     assert page.window.exists() is False
     assert page.window.is_visible() is False
+
+
+# -- positioned clicks, drags and wheel -------------------------------------------------------
+
+
+def test_positioned_modified_click_forces_mouse_mode_and_records_arguments(
+    page: MainPage,
+    recorder: Recorder,
+    monkeypatch: pytest.MonkeyPatch,
+    runtime_setup: list[runtime.StepRecord],
+) -> None:
+    seen: dict[str, Any] = {}
+
+    def fake_click(element: Any, **kwargs: Any) -> str:
+        seen.update(kwargs)
+        return "mouse"
+
+    monkeypatch.setattr(actions, "click", fake_click)
+    page.sign_in.click(mode="pattern", x=4, y=6, button="right", modifiers="Ctrl+Shift")
+    assert seen == {"mode": "mouse", "button": "right", "offset": (4, 6), "modifiers": (0x11, 0x10)}
+    assert runtime_setup[0].args == {
+        "mode": "mouse",
+        "x": 4,
+        "y": 6,
+        "button": "right",
+        "modifiers": "Ctrl+Shift",
+        "strategy": "mouse",
+    }
+
+
+def test_click_arguments_are_validated_before_any_step(
+    page: MainPage, recorder: Recorder, runtime_setup: list[runtime.StepRecord]
+) -> None:
+    with pytest.raises(ActionError, match="together"):
+        page.sign_in.click(x=3)
+    with pytest.raises(ActionError, match="unknown modifier"):
+        page.sign_in.double_click(modifiers="Hyper")
+    assert runtime_setup == []
+
+
+def test_middle_click_double_click_and_right_click_pass_position(
+    page: MainPage,
+    recorder: Recorder,
+    monkeypatch: pytest.MonkeyPatch,
+    runtime_setup: list[runtime.StepRecord],
+) -> None:
+    calls: list[tuple[str, Any]] = []
+    for name in ("double_click", "right_click", "middle_click"):
+        monkeypatch.setattr(actions, name, lambda el, _n=name, **kw: calls.append((_n, kw)))
+    page.sign_in.double_click(x=1, y=2, modifiers="Alt")
+    page.sign_in.right_click(x=3, y=4)
+    page.sign_in.middle_click(modifiers="Shift")
+    assert calls == [
+        ("double_click", {"offset": (1, 2), "modifiers": (0x12,)}),
+        ("right_click", {"offset": (3, 4), "modifiers": ()}),
+        ("middle_click", {"offset": None, "modifiers": (0x10,)}),
+    ]
+    assert [r.action for r in runtime_setup] == ["double_click", "right_click", "middle_click"]
+    assert runtime_setup[0].args == {"x": 1, "y": 2, "modifiers": "Alt"}
+
+
+def test_drag_to_records_the_target_and_offsets(
+    page: MainPage,
+    recorder: Recorder,
+    monkeypatch: pytest.MonkeyPatch,
+    runtime_setup: list[runtime.StepRecord],
+) -> None:
+    seen: dict[str, Any] = {}
+    monkeypatch.setattr(actions, "drag_to", lambda el, dest, **kw: seen.update(dest=dest, **kw))
+    page.sign_in.drag_to(
+        page.status, source_offset=(1, 2), target_offset=(3, 4), modifiers="Ctrl", button="middle"
+    )
+    assert seen["dest"] is recorder.element
+    assert seen["source_offset"] == (1, 2) and seen["target_offset"] == (3, 4)
+    assert seen["button"] == "middle" and seen["modifiers"] == (0x11,)
+    (record,) = runtime_setup
+    assert record.action == "drag_to"
+    assert record.args == {
+        "target": "MainPage.status",
+        "button": "middle",
+        "modifiers": "Ctrl",
+        "source_offset": [1, 2],
+        "target_offset": [3, 4],
+    }
+
+
+def test_drag_to_accepts_a_window(
+    page: MainPage, recorder: Recorder, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen: list[Any] = []
+    monkeypatch.setattr(actions, "drag_to", lambda el, dest, **kw: seen.append(dest))
+    page.sign_in.drag_to(page.window)
+    assert len(seen) == 1
+
+
+def test_drag_by_and_scroll_record_their_arguments(
+    page: MainPage,
+    recorder: Recorder,
+    monkeypatch: pytest.MonkeyPatch,
+    runtime_setup: list[runtime.StepRecord],
+) -> None:
+    calls: list[tuple[str, Any, dict[str, Any]]] = []
+    monkeypatch.setattr(
+        actions, "drag_by", lambda el, dx, dy, **kw: calls.append(("drag_by", (dx, dy), kw))
+    )
+    monkeypatch.setattr(
+        actions, "scroll", lambda el, clicks, **kw: calls.append(("scroll", clicks, kw))
+    )
+    page.sign_in.drag_by(10, -5, source_offset=(2, 2))
+    page.sign_in.scroll(-3, x=1, y=1, horizontal=True)
+    assert calls[0] == (
+        "drag_by",
+        (10, -5),
+        {"source_offset": (2, 2), "button": "left", "modifiers": ()},
+    )
+    assert calls[1] == ("scroll", -3, {"offset": (1, 1), "horizontal": True})
+    assert runtime_setup[0].args == {"dx": 10, "dy": -5, "source_offset": [2, 2]}
+    assert runtime_setup[1].args == {"x": 1, "y": 1, "clicks": -3, "horizontal": True}

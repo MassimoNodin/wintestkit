@@ -693,3 +693,31 @@ def test_wpf_item_name_reads_and_query(item_target, monkeypatch):
     client.values["name"] = "Realized"
     assert actions.listed_item_names(el) == ["Realized", "Realized"]
     assert calls == list(actions._ITEM_TYPES)
+
+
+def test_wpf_offset_click_uses_bounds_and_modifiers(mouse):
+    _, el, _, events = mouse
+    assert actions.click(el, mode="pattern", offset=(5, 6), modifiers=(0x11,)) == "mouse"
+    assert events == [(15, 26, {"button": "left", "count": 1, "modifiers": (0x11,)})]
+
+
+def test_wpf_offset_outside_bounds_is_rejected(mouse):
+    _, el, _, events = mouse
+    with pytest.raises(ActionError, match="outside"):
+        actions.middle_click(el, offset=(100, 0))
+    assert events == []
+
+
+def test_wpf_drag_destination_skips_window_activation(mouse, monkeypatch):
+    _, el, _, _ = mouse
+    activated = []
+    monkeypatch.setattr(actions.win32, "bring_to_foreground", lambda hwnd: activated.append(hwnd))
+    monkeypatch.setattr(
+        actions.win32, "virtual_screen_rect", lambda: actions.win32.Rect(0, 0, 500, 500)
+    )
+    drags = []
+    monkeypatch.setattr(actions.input, "drag", lambda *a, **kw: drags.append((a, kw)))
+    assert actions._destination_point(el, (1, 1)) == (11, 21)
+    assert activated == []
+    actions.drag_to(el, el, target_offset=(0, 0), source_offset=(10, 10))
+    assert drags == [((20, 30, 10, 20), {"button": "left", "modifiers": ()})]

@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 import re
 import time
-from typing import Literal
+from typing import Any, Literal
 
 from wintestkit.backends.element import TargetElement, WpfElement, uia_of
 from wintestkit.engine import waits
@@ -265,8 +265,59 @@ def focus(el: TargetElement) -> None:
 # -- mouse ----------------------------------------------------------------------------------------
 
 
-def _wpf_mouse_target(el: WpfElement, role: str | None = None) -> tuple[int, int]:
-    """Resolve stable agent-verified physical-pixel geometry."""
+Offset = tuple[int, int]
+
+
+def parse_offset(x: int | None, y: int | None) -> Offset | None:
+    """Combine the ``x``/``y`` arguments of an action into one offset (both or neither)."""
+    __tracebackhide__ = True
+    if (x is None) != (y is None):
+        raise ActionError("x and y must be given together")
+    if x is None or y is None:
+        return None
+    return int(x), int(y)
+
+
+def parse_modifiers(text: str | None) -> tuple[int, ...]:
+    """Parse a modifier string such as ``"Ctrl+Shift"`` into key codes."""
+    __tracebackhide__ = True
+    try:
+        return input.parse_modifiers(text)
+    except ValueError as exc:
+        raise ActionError(str(exc)) from exc
+
+
+def _offset_point(
+    el_text: str, left: float, top: float, width: float, height: float, offset: Offset
+) -> tuple[int, int]:
+    __tracebackhide__ = True
+    ox, oy = offset
+    if not (0 <= ox < width and 0 <= oy < height):
+        raise ActionError(
+            f"Offset ({ox}, {oy}) lies outside {el_text} ({round(width)}x{round(height)} px)"
+        )
+    return round(left + ox), round(top + oy)
+
+
+def _check_screen_point(x: int, y: int) -> None:
+    __tracebackhide__ = True
+    screen = win32.virtual_screen_rect()
+    if not (screen.left <= x < screen.right and screen.top <= y < screen.bottom):
+        raise ActionError(f"Drag destination ({x}, {y}) is outside the screen")
+
+
+def _wpf_mouse_target(
+    el: WpfElement,
+    role: str | None = None,
+    offset: Offset | None = None,
+    *,
+    guard: bool = True,
+) -> tuple[int, int]:
+    """Resolve stable agent-verified physical-pixel geometry.
+
+    ``offset`` replaces the default point by a position relative to the element's top-left corner.
+    ``guard=False`` skips window activation and ownership checks (drag destinations).
+    """
     __tracebackhide__ = True
 
     def read() -> ElementState:
@@ -303,7 +354,8 @@ def _wpf_mouse_target(el: WpfElement, role: str | None = None) -> tuple[int, int
         _wpf_act(el, "scroll_into_view" if "ScrollItem" in _wpf_patterns(el) else "bring_into_view")
         first = read()
     target(first)
-    _wpf_window(el, activate=True)
+    if guard:
+        _wpf_window(el, activate=True)
 
     def stable() -> ElementState | None:
         __tracebackhide__ = True
@@ -329,41 +381,72 @@ def _wpf_mouse_target(el: WpfElement, role: str | None = None) -> tuple[int, int
         raise ActionError(str(exc)) from exc
     x, y = target(state)
     bounds = state.bounds
+    if offset is not None and bounds is not None:
+        x, y = _offset_point(_short(el), bounds.x, bounds.y, bounds.width, bounds.height, offset)
     if bounds is None or not (
         bounds.x <= x < bounds.x + bounds.width and bounds.y <= y < bounds.y + bounds.height
     ):
         raise ActionError(f"{_short(el)} has no on-screen rectangle to click")
-    hwnd = _wpf_window(el)
-    if hwnd != state.window_handle:
-        raise ActionError("Target window ownership or foreground changed; refusing global input")
-    _validate_point(hwnd, el.process_id, x, y)
+    if guard:
+        hwnd = _wpf_window(el)
+        if hwnd != state.window_handle:
+            raise ActionError(
+                "Target window ownership or foreground changed; refusing global input"
+            )
+        _validate_point(hwnd, el.process_id, x, y)
     return x, y
 
 
+def _click_kwargs(button: MouseButton, count: int, modifiers: tuple[int, ...]) -> dict[str, Any]:
+    __tracebackhide__ = True
+    kwargs: dict[str, Any] = {"button": button, "count": count}
+    if modifiers:
+        kwargs["modifiers"] = modifiers
+    return kwargs
+
+
 def _wpf_mouse_click(
-    el: WpfElement, button: MouseButton = "left", count: int = 1, *, role: str | None = None
+    el: WpfElement,
+    button: MouseButton = "left",
+    count: int = 1,
+    *,
+    role: str | None = None,
+    offset: Offset | None = None,
+    modifiers: tuple[int, ...] = (),
 ) -> None:
     __tracebackhide__ = True
-    x, y = _wpf_mouse_target(el, role)
-    input.click(x, y, button=button, count=count)
+    x, y = _wpf_mouse_target(el, role, offset)
+    input.click(x, y, **_click_kwargs(button, count, modifiers))
 
 
-def _mouse_target(el: UIAElement) -> tuple[int, int]:
+def _mouse_target(
+    el: UIAElement, offset: Offset | None = None, *, guard: bool = True
+) -> tuple[int, int]:
     __tracebackhide__ = True
     ensure_visible(el)
-    _foreground(el)
+    if guard:
+        _foreground(el)
     waits.wait_for_state(lambda: el, "stable", _STABLE_TIMEOUT, f"{_short(el)} to stop moving")
     rect = el.rect
     if rect is None:
         raise ActionError(f"{_short(el)} has no on-screen rectangle to click")
+    if offset is not None:
+        return _offset_point(_short(el), rect.left, rect.top, rect.width, rect.height, offset)
     return rect.center
 
 
-def _mouse_click(el: UIAElement, button: MouseButton = "left", count: int = 1) -> None:
+def _mouse_click(
+    el: UIAElement,
+    button: MouseButton = "left",
+    count: int = 1,
+    *,
+    offset: Offset | None = None,
+    modifiers: tuple[int, ...] = (),
+) -> None:
     __tracebackhide__ = True
-    x, y = _mouse_target(el)
+    x, y = _mouse_target(el, offset)
     _validate_mouse_target(el, x, y)
-    input.click(x, y, button=button, count=count)
+    input.click(x, y, **_click_kwargs(button, count, modifiers))
 
 
 def _validate_mouse_target(el: UIAElement, x: int, y: int) -> None:
@@ -393,10 +476,21 @@ def _validate_point(hwnd: int, process_id: int, x: int, y: int) -> None:
         time.sleep(min(waits.STABLE_INTERVAL, remaining))
 
 
-def click(el: TargetElement, *, mode: InputMode = "pattern", button: MouseButton = "left") -> str:
-    """Click the element; returns the strategy used (``invoke``, ``toggle``, ``mouse`` ...)."""
+def click(
+    el: TargetElement,
+    *,
+    mode: InputMode = "pattern",
+    button: MouseButton = "left",
+    offset: Offset | None = None,
+    modifiers: tuple[int, ...] = (),
+) -> str:
+    """Click the element; returns the strategy used (``invoke``, ``toggle``, ``mouse`` ...).
+
+    A position, a non-left button or modifier keys always use the mouse.
+    """
     __tracebackhide__ = True
-    if isinstance(el, WpfElement) and mode == "pattern" and button == "left":
+    plain = button == "left" and offset is None and not modifiers
+    if isinstance(el, WpfElement) and mode == "pattern" and plain:
         available = _wpf_patterns(el)
         for pattern, verb, strategy in (
             ("Invoke", "invoke", "invoke"),
@@ -415,10 +509,13 @@ def click(el: TargetElement, *, mode: InputMode = "pattern", button: MouseButton
         _wpf_mouse_click(el, button=button)
         return "mouse"
     if isinstance(el, WpfElement):
-        _wpf_mouse_click(el, button=button)
+        if plain:
+            _wpf_mouse_click(el, button=button)
+        else:
+            _wpf_mouse_click(el, button=button, offset=offset, modifiers=modifiers)
         return "mouse"
     el = uia_of(el)
-    if mode == "pattern" and button == "left":
+    if mode == "pattern" and plain:
         if patterns.has_pattern(el, "Invoke"):
             patterns.invoke(el)
             return "invoke"
@@ -434,38 +531,115 @@ def click(el: TargetElement, *, mode: InputMode = "pattern", button: MouseButton
             else:
                 patterns.collapse(el)
             return "expand_collapse"
-    _mouse_click(el, button=button)
+    if plain:
+        _mouse_click(el, button=button)
+    else:
+        _mouse_click(el, button=button, offset=offset, modifiers=modifiers)
     return "mouse"
 
 
-def double_click(el: TargetElement) -> None:
+def _repeat_click(
+    el: TargetElement,
+    button: MouseButton,
+    count: int,
+    offset: Offset | None,
+    modifiers: tuple[int, ...],
+) -> None:
     __tracebackhide__ = True
     if isinstance(el, WpfElement):
-        _wpf_mouse_click(el, count=2)
+        _wpf_mouse_click(el, button=button, count=count, offset=offset, modifiers=modifiers)
         return
-    el = uia_of(el)
-    _mouse_click(el, count=2)
+    _mouse_click(uia_of(el), button=button, count=count, offset=offset, modifiers=modifiers)
 
 
-def right_click(el: TargetElement) -> None:
+def double_click(
+    el: TargetElement, *, offset: Offset | None = None, modifiers: tuple[int, ...] = ()
+) -> None:
+    __tracebackhide__ = True
+    _repeat_click(el, "left", 2, offset, modifiers)
+
+
+def right_click(
+    el: TargetElement, *, offset: Offset | None = None, modifiers: tuple[int, ...] = ()
+) -> None:
+    __tracebackhide__ = True
+    _repeat_click(el, "right", 1, offset, modifiers)
+
+
+def middle_click(
+    el: TargetElement, *, offset: Offset | None = None, modifiers: tuple[int, ...] = ()
+) -> None:
+    __tracebackhide__ = True
+    _repeat_click(el, "middle", 1, offset, modifiers)
+
+
+def _source_point(el: TargetElement, offset: Offset | None) -> tuple[int, int]:
+    """A validated point on ``el``: its window is active and owns the point."""
     __tracebackhide__ = True
     if isinstance(el, WpfElement):
-        _wpf_mouse_click(el, button="right")
-        return
-    el = uia_of(el)
-    _mouse_click(el, button="right")
+        return _wpf_mouse_target(el, None, offset)
+    uia = uia_of(el)
+    x, y = _mouse_target(uia, offset)
+    _validate_mouse_target(uia, x, y)
+    return x, y
+
+
+def _destination_point(el: TargetElement, offset: Offset | None) -> tuple[int, int]:
+    """A point on ``el`` that may belong to another window of the application."""
+    __tracebackhide__ = True
+    if isinstance(el, WpfElement):
+        x, y = _wpf_mouse_target(el, None, offset, guard=False)
+    else:
+        x, y = _mouse_target(uia_of(el), offset, guard=False)
+    _check_screen_point(x, y)
+    return x, y
 
 
 def hover(el: TargetElement) -> None:
     __tracebackhide__ = True
-    if isinstance(el, WpfElement):
-        x, y = _wpf_mouse_target(el)
-        input.move_mouse(x, y)
-        return
-    el = uia_of(el)
-    x, y = _mouse_target(el)
-    _validate_mouse_target(el, x, y)
+    x, y = _source_point(el, None)
     input.move_mouse(x, y)
+
+
+def drag_to(
+    el: TargetElement,
+    destination: TargetElement,
+    *,
+    source_offset: Offset | None = None,
+    target_offset: Offset | None = None,
+    button: MouseButton = "left",
+    modifiers: tuple[int, ...] = (),
+) -> None:
+    """Drag from ``el`` to ``destination`` (resolved first, so the source window ends up active)."""
+    __tracebackhide__ = True
+    x2, y2 = _destination_point(destination, target_offset)
+    x1, y1 = _source_point(el, source_offset)
+    input.drag(x1, y1, x2, y2, button=button, modifiers=modifiers)
+
+
+def drag_by(
+    el: TargetElement,
+    dx: int,
+    dy: int,
+    *,
+    source_offset: Offset | None = None,
+    button: MouseButton = "left",
+    modifiers: tuple[int, ...] = (),
+) -> None:
+    __tracebackhide__ = True
+    x1, y1 = _source_point(el, source_offset)
+    x2, y2 = x1 + int(dx), y1 + int(dy)
+    _check_screen_point(x2, y2)
+    input.drag(x1, y1, x2, y2, button=button, modifiers=modifiers)
+
+
+def scroll(
+    el: TargetElement, clicks: int, *, offset: Offset | None = None, horizontal: bool = False
+) -> None:
+    """Turn the mouse wheel over the element; positive scrolls up (or right if horizontal)."""
+    __tracebackhide__ = True
+    x, y = _source_point(el, offset)
+    input.scroll_wheel(x, y, clicks, horizontal=horizontal)
 
 
 # -- text -----------------------------------------------------------------------------------------
