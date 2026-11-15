@@ -66,9 +66,8 @@ and properties that Windows UI Automation does not expose. It remains loaded unt
 and cannot be removed earlier. Reading properties runs the app's own getters: these can be slow,
 hang the app, or have side effects. A timeout cannot safely stop a running getter. Antivirus,
 AppLocker or WDAC may flag or block the inspector, and WinTestKit needs the same elevation as the
-app. Only your Windows user can connect to the inspector; nothing is sent off the machine. This
-is the same technique legacy uses for Open Applications. Only attach to applications you
-trust and are allowed to test. Tests already attach automatically to the app they launch or attach.
+app. Only your Windows user can connect to the inspector; nothing is sent off the machine.
+Only attach to applications you trust and are allowed to test. Tests already attach automatically to the app they launch or attach.
 
 ## Spy and reading values
 

@@ -1,6 +1,6 @@
 ---
 name: wintestkit-tests
-description: Write, migrate or fix WinTestKit (pytest-based WPF / Windows UI Automation) page objects, components, flows and tests. Use when creating or editing files under pages/, flows/ or tests/ of a project that imports `wintestkit`, when migrating a legacy NameMapping or script to WinTestKit, when `wtk check` or a test reports "found in another window" or "No element matches", or when asked how to structure UI tests for a WPF application.
+description: Write, migrate or fix WinTestKit (pytest-based WPF / Windows UI Automation) page objects, components, flows and tests. Use when creating or editing files under pages/, flows/ or tests/ of a project that imports `wintestkit`, when migrating a NameMapping or script to WinTestKit, when `wtk check` or a test reports "found in another window" or "No element matches", or when asked how to structure UI tests for a WPF application.
 ---
 
 # Writing WinTestKit tests
@@ -8,7 +8,7 @@ description: Write, migrate or fix WinTestKit (pytest-based WPF / Windows UI Aut
 WinTestKit drives WPF through its managed tree and other Windows apps through UI Automation (UIA)
 with pytest when `backend: auto` is selected. The design goal of this skill is that **a box that moves to another window is fixed by changing one line**. Follow the
 structure below exactly; do not invent API. Longer material: [API cheat sheet](references/api.md),
-[legacy migration](references/migration.md),
+[Suite migration](references/migration.md),
 [fixing breakages](references/fixing-breakages.md). A complete reference implementation is the
 Calculator example (`examples/calculator-tests` in the WinTestKit repository).
 
@@ -89,14 +89,14 @@ self-healing). Choose, in this order:
 
 `name`, `class_name`, `automation_id` accept a string (exact) or a compiled regex (`re.search`).
 Confirm every locator in the Spy (`wtk spy`, Ctrl+Click) or with `wtk inspect` (see below); never
-guess from the legacy mapping alone.
+guess from the existing mapping alone.
 
 With `backend: auto`, use observed WPF `type:FullName`, `type:Is` and managed paths.
 Managed keys fail under `backend: uia`; keep secrets out of `where`. Reads run application code; timeouts cannot stop getters.
 
-### Mapping from the legacy tool properties
+### Mapping existing properties
 
-| legacy | WinTestKit |
+| Existing concept | WinTestKit |
 |---|---|
 | `WPFControlName` | `automation_id`: peer or peerless attached ID, or `x:Name` when empty with `backend: auto` |
 | `ClrFullClassName` | `where={"type:FullName": "My.App.Views.AddressBox"}`; use `type:Is` to include derived types. `class_name` is only the short peer class name. |
@@ -104,7 +104,7 @@ Managed keys fail under `backend: uia`; keep secrets out of `where`. Reads run a
 | ordinal / index properties | `index` (0-based; check the base) |
 | the deep mapped parent chain | **not copied**. The component root replaces it |
 
-Never reproduce legacy's deep hierarchy as a `within=` chain. One component root says where
+Never reproduce a deep mapped hierarchy as a `within=` chain. One component root says where
 the box is; its members are searched inside it. Keep `within=` to one level, and only when two
 boxes in one window must be told apart.
 
@@ -236,7 +236,7 @@ Flows tab or CodeLens), calls intent methods, synchronizes with `expect`, and re
 on. Pages do not import each other for navigation; flows know the pages. Keep flows free of
 assertions about behaviour under test: only wait for arrival.
 
-## Migrating from the legacy tool
+## Migrating an existing suite
 
 Full procedure in [references/migration.md](references/migration.md).
 Short form:
@@ -292,7 +292,7 @@ understood, and never use found-elsewhere elements through a workaround.
       on elements in tests; every action is an intent method or a flow.
 - [ ] No `getattr` / `setattr` / string-built attribute names for elements, anywhere.
 - [ ] No `time.sleep`, no polling loops; waits are `expect`, `wait_for` or the built-in auto-wait.
-- [ ] Locators are `automation_id` first; no `index=` without a comment; no copied legacy
+- [ ] Locators are `automation_id` first; no `index=` without a comment; no copied mapping
       hierarchy; `class_name` is the short type name.
 - [ ] Names say what the user sees or what it is for; docstrings on pages and components.
 - [ ] Tests are independent (a reset fixture), parametrized instead of copied, and keep their

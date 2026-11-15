@@ -1,11 +1,11 @@
-# Migrating from the legacy tool
+# Migrating an existing suite
 
 Input: a NameMapping (objects with identification properties, nested in a hierarchy), Aliases, and
-scripts or keyword tests. Output: pages, components, flows, tests.
+scripts or test routines. Output: pages, components, flows, tests.
 
 ## Concept mapping
 
-| legacy | WinTestKit |
+| Existing concept | WinTestKit |
 |---|---|
 | Project / project suite | a folder with `pyproject.toml` containing `[tool.wintestkit]` |
 | Tested Application | `[tool.wintestkit.app]` (`path`, `args`, `cwd`, `env`, `process`) and `launch` mode |
@@ -18,14 +18,14 @@ scripts or keyword tests. Output: pages, components, flows, tests.
 | `WPFControlText`, `Content`, `Caption` | `name` |
 | ordinal number | `index` (0-based; avoid) |
 | mapped parent chain | the component root; never a `within=` chain |
-| script routine / reusable keyword test | an intent method on the page or component, or a flow |
-| test or keyword test | a pytest function using intent + `expect` |
+| script routine / reusable test routine | an intent method on the page or component, or a flow |
+| test or test routine | a pytest function using intent + `expect` |
 | checkpoint | `expect(...)` |
 | `Delay`, `Sleep`, `WaitProperty`, `WaitChild` | nothing (actions and `expect` wait) or `wait_for()` / `exists(timeout=)` |
 | data-driven loop / table | `@pytest.mark.parametrize` |
 | `OnUnexpectedWindow` and other event handlers | fixtures; for known dialogs, a page plus a flow step |
 | test items / execution plan | files, folders and markers (`wtk run -m smoke`) |
-| TestExecute | `wtk run` / `pytest` |
+| Command-line runner | `wtk run` / `pytest` |
 
 ## ClrFullClassName
 
@@ -64,9 +64,9 @@ managed class-name keys in generated skeletons.
 Use `find_child(parent, props, values, depth=1)` for a lazy first match,
 `find_all_children(parent, props, values, depth=1)` for a snapshot, and
 `find(parent, props, values, depth=...)` for descendant searches. Use `strict=True` on
-`find_child` when ambiguity should fail. Property names use the shared legacy mapping;
+`find_child` when ambiguity should fail. Property names use the shared existing mapping;
 `*` and `?` are whole-value wildcards. Depth counts WPF automation-peer levels, which can
-differ from the legacy tool's visual tree. Verify AutomationId and text in Spy.
+differ from the original visual tree. Verify AutomationId and text in Spy.
 
 The importer emits parent-scoped `Element` declarations with `within=` and `depth=1`, or
 unlimited/default depth for extended find. It assumes nested mapped items and accepts either
@@ -76,7 +76,7 @@ are emitted as qualified keys with `--managed-class-names`; review the generated
 
 ## Things that differ
 
-- Strict matching: legacy may resolve to the first of several matches; WinTestKit fails.
+- Strict matching: an existing mapping may resolve to the first of several matches; WinTestKit fails.
   Expect to add roots or properties while migrating.
 - WPF uses the managed tree under `backend: auto`; other windows use UIA. There is no image or OCR recognition.
 - Pattern input is the default for clicks and typing; mouse input only when the app needs real

@@ -23,7 +23,7 @@ windows reject them. UIA properties such as `HelpText`, `ItemStatus` and `IsEnab
 also available where the backend exposes them. `class_name` is a short peer class name,
 not the full CLR type. Do not place secrets in locators.
 
-## legacy helpers
+## Property-name find helpers
 
 `wintestkit.finders` provides `to_locator`, `find_child`, `find_all_children` and
 `find`. `ClrFullClassName` maps to `type:FullName`, `WPFControlName` to `automation_id`,

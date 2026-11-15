@@ -8,8 +8,8 @@ Implementation evidence and remaining integration gates are recorded in
 [`wpf-inspector-implementation-brief.md`](wpf-inspector-implementation-brief.md). Implemented
 slices and passing component tests do not imply that the full stage or release gate passes.
 
-Terminology: "attributes" in the feature request means the properties a legacy-style
-object browser shows for a control (`ClrFullClassName`, `DataContext`, nested view-model
+Terminology: "attributes" in the feature request means the properties an inspector
+shows for a control (`ClrFullClassName`, `DataContext`, nested view-model
 members), not only .NET custom attributes. This document calls them *members*; .NET custom
 attributes are *attribute metadata* (section 8, step 6). The subsystem is the *inspector*.
 
@@ -44,7 +44,7 @@ Required outcomes:
 7. CLI, pytest, and Spy share one Python client and structured contracts.
 8. Explicit managed scalar paths work in `where`, without becoming native UIA conditions.
 9. Versioned artifacts, local protocol, compatibility tests, and operational docs ship together.
-10. Suites migrated from the legacy tool can match `ClrFullClassName` against the real runtime
+10. Migrated suites can match `ClrFullClassName` against the real runtime
     type through an explicit, opt-in alias (section 10), instead of a UIA `ItemStatus` guess.
 11. The core `wintestkit` package stays installable and UIA-only everywhere it installs today;
     the inspector is an optional, platform-specific add-on (section 11).
@@ -725,7 +725,7 @@ assembly loading. Parse once into typed segments, validate length/depth, and pre
 original canonical string for serialization. Casing is ordinal and exact. Ambiguous names are
 errors; the user must choose a different unambiguous path in V1.
 
-### Managed alias targets (legacy migration)
+### Managed alias targets (Suite migration)
 
 `property_aliases` values may name a qualified managed key, for example
 `property_aliases: {ClrFullClassName: "type:FullName"}`. This is the only way an unqualified
@@ -1240,7 +1240,7 @@ Revision 2 (2026-10-27) corrected these defects in revision 1:
 Revision 2 added these improvements:
 
 - Opt-in managed alias targets (`ClrFullClassName: "type:FullName"`) and an importer flag,
-  so legacy-migrated suites use the real runtime type (section 10).
+  so migrated suites use the real runtime type (section 10).
 - `blockedByPolicy` handling, Authenticode-signed release payloads, and `wtk doctor` checks
   for security software and Smart App Control (section 3).
 - Additive `redact_names`, extra built-in sensitive names, and visible redaction reasons.

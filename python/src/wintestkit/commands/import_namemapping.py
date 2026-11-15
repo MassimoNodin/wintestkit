@@ -1,4 +1,4 @@
-"""Opt-in legacy NameMapping importer."""
+"""Opt-in NameMapping importer."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ def add_parser(subparsers: Any) -> None:
     parser = subparsers.add_parser(
         "import-namemapping", help="generate a Python page from NameMapping XML"
     )
-    parser.add_argument("xml", metavar="XML", help="legacy NameMapping export")
+    parser.add_argument("xml", metavar="XML", help="NameMapping export")
     parser.add_argument("output", metavar="PY", help="new Python page skeleton")
     parser.add_argument("--force", action="store_true", help="overwrite the output file")
     parser.add_argument(

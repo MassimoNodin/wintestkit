@@ -44,7 +44,7 @@ def test_names_and_paths():
 
 @pytest.mark.parametrize("name", ["", "1abc", "a..b", "a-b", "DataContext[0]", "a b"])
 def test_invalid_names(name):
-    with pytest.raises(ValueError, match="invalid legacy property name"):
+    with pytest.raises(ValueError, match="invalid property name"):
         to_locator(name, "x")
 
 

@@ -1563,8 +1563,8 @@ def test_ensure_visible_virtual_items_cached(owned, backend, mode):
 
 def test_xname_lookup_probe(owned):
     from wintestkit.engine.suggest import suggest_locator
-    from wintestkit.model import Element, Page
     from wintestkit.finders import find_child, to_locator
+    from wintestkit.model import Element, Page
 
     scope, path = owned
 
@@ -1611,8 +1611,8 @@ def test_peerless_name_and_not_found_hint(owned):
 @pytest.mark.parametrize("backend", ["uia", "auto"])
 def test_finders_find_helpers(owned, backend):
     from wintestkit.expect import expect
-    from wintestkit.model import Element, Page
     from wintestkit.finders import find_all_children, find_child
+    from wintestkit.model import Element, Page
 
     scope, path = owned
 

@@ -9,7 +9,7 @@ inspector on `master` (agent, protocol, Python client, managed locators, Spy pan
 
 Make the WPF object tree, not UI Automation, the primary model WinTestKit uses to **find,
 identify, wait on, act on, assert on, and inspect** elements in WPF applications, so suites
-migrated from the legacy tool behave like legacy: `FindChild`-style searches over the real
+can use familiar find operations: `FindChild`-style searches over the real
 WPF tree, identification by `ClrFullClassName`, `WPFControlName`, `DataContext` and any .NET
 property, and reach to objects that UIA does not expose.
 
@@ -21,13 +21,13 @@ actions; UIA remains for non-WPF windows, and for repositories that opt out with
 
 - Replacing UIA for non-WPF content (Win32 dialogs, `MessageBox`, WinForms, WebView2, OS
   file pickers). Those keep the UIA backend.
-- Recording/playback, keyword tests, or a legacy object-mapping repository.
+- Recording/playback or an object-mapping repository.
 - Running test logic inside the target. Tests stay Python; the agent executes bounded,
   typed operations only.
 
 ## 2. Where the current design stops
 
-| Area | Today | Blocks legacy parity because |
+| Area | Today | Blocks migration support because |
 | --- | --- | --- |
 | Discovery | UIA tree; managed keys post-filter UIA candidates (`engine/query.py`) | Objects without UIA peers are unreachable; 1,000-candidate cap; batch round trips |
 | Identity | UIA runtime ID → exact mapping (`Mapping/ElementMapper.cs`) | Every managed lookup starts from UIA |
@@ -42,7 +42,7 @@ actions; UIA remains for non-WPF windows, and for repositories that opt out with
 | # | Decision | Chosen |
 | --- | --- | --- |
 | D1 | **How actions are performed** | Both offered, real input is the default. `input_mode: mouse` (default): the agent reports the element's screen geometry and WinTestKit sends real mouse/keyboard input there. `input_mode: pattern`: the agent performs the automation-peer action (Invoke, Toggle, Value, …) inside the app. Same per-call `mode=` override as today |
-| D2 | **Direct writes and method calls** (legacy's `obj.IsChecked = True`, `obj.Method()`) | Allowed, opt-in: off by default, only for properties/methods on a repository allowlist, every use recorded in the report |
+| D2 | **Direct writes and method calls** (for example `obj.IsChecked = True`, `obj.Method()`) | Allowed, opt-in: off by default, only for properties/methods on a repository allowlist, every use recorded in the report |
 | D3 | **Inspector plan amendment** | Approved: the read-only contract is amended (see §9); protocol 2.0 |
 | D4 | **Attach model** | Partially delivered: on-demand attach by default at the phase 3 gate (owner, 2026-11-08); phase 7 retains launch-time attach and reattach on restart |
 | D5 | **Agent cannot load** (blocked by policy, unsupported runtime) | Fail. Test steps on WPF windows fail with the agent's error code (`blockedByPolicy`, `unsupportedTarget`, …); there is no silent fallback to UIA. Spy shows the blocked state and its fix instead of a UIA view |
@@ -153,8 +153,8 @@ UIA candidate step, the 1,000 cap and the 32-per-batch round trips.
    gain WPF implementations with identical public APIs.
 6. **Waits and expectations** (`engine/waits.py`, `expect.py`): use `wait.until` when on the
    WPF backend; same timeouts and error messages.
-7. **legacy helpers**: `find_child(parent, props, values, depth=...)`,
-   `find_all_children(...)`, `find(...)` with legacy property names via aliases,
+7. **Property-name find helpers**: `find_child(parent, props, values, depth=...)`,
+   `find_all_children(...)`, `find(...)` with existing property names via aliases,
    `*`/`?` wildcards, and an optional first-match mode; NameMapping importer emits them.
 8. **App lifecycle** (`app.py`, `runtime.py`): attach after the first WPF window appears on
    launch (D4); reattach on process restart; detach at app close.
@@ -211,12 +211,12 @@ Each phase is separately shippable behind configuration; none changes UIA-only b
 | 2 | Backend abstraction + router; WPF backend for properties, waits, `expect` | Parity suite: existing locator/wait tests pass on both backends |
 | 3 | Actions: OS input at WPF geometry (`mouse`, default), then peer patterns (`pattern`); typed controls on WPF; virtualized item selection (D6); **switch the default to `backend: auto`** (D7) | Parity suite for every typed control and input mode; actions on objects with no UIA peer; `wtk doctor` detects agent blocks; find a row 5,000 items down without realizing others |
 | 4 | Spy WPF-native: tree, picker, Identity, suggestions with uniqueness | Spy DOM + live tests; suggested locators round-trip on the fixture and the real suite's pages |
-| 5 | legacy helpers + importer output (virtualization moved to phase 3, §6.4) | Migrated `FindChild` samples pass |
+| 5 | Property-name find helpers + importer output (virtualization moved to phase 3, §6.4) | Migrated `FindChild` samples pass |
 | 6 | Optional writes/calls (D2) with allowlist and audit | Off by default; allowlist enforced; audit in reports; security review |
 | 7 | Auto-attach on launch, events, stress (100 cycles), six-cell matrix, CI desktop job | Inspector-plan release gates plus new action/stress gates |
 | 8 | Docs, skill, migration guide; remove the managed post-filter path | Real 27-page suite runs on `auto` with no regressions versus UIA |
 
-Phase 1 alone delivers the biggest legacy-like gain (true WPF-tree `FindChild`) while
+Phase 1 alone delivers the biggest WPF-tree gain (true WPF-tree `FindChild`) while
 actions stay on proven UIA.
 
 ### 6.1 Phase 1 outcome (2026-10-31)
@@ -334,7 +334,7 @@ Decisions (owner, 2026-11-06):
   `backend: auto` (D1, D7); per-call `mode=` keeps overriding it.
 - **Item selection.** `act.realizeItem` and the `virtualItems` feature (D6) move from phase 5
   into phase 3, so typed-control item selection on the WPF backend never goes through
-  `as_uia()`. Phase 5 keeps only the legacy helpers and importer output.
+  `as_uia()`. Phase 5 keeps only the Property-name find helpers and importer output.
 
 Design:
 
@@ -500,7 +500,7 @@ Design:
   callers of `inspect.*` keep their contracts; element lookups go through the router.
 - **Tree.** Top-level windows still come from `inspect.roots`. Under a WPF window,
   `inspect.children` walks the agent tree, with `tree: "visual" | "logical"` (default `visual`,
-  the tree legacy users know). Other windows stay on UIA. Labels use the type name plus
+  the tree existing suite authors know). Other windows stay on UIA. Labels use the type name plus
   `x:Name` or AutomationId.
 - **Blocked agent (D5).** A WPF window whose agent cannot load does not fall back to a UIA view:
   the node reports the agent error code and its fix, as `wtk doctor` does.
@@ -548,29 +548,29 @@ and docs.
 the fixture as listed above. The real-suite page checks stay open for the owner and do not
 block phase 5.
 
-### 6.7 Phase 5 design (2026-11-10)
+### 6.7 Phase 5: legacy find helpers and importer output (2026-11-10)
 
-Scope: legacy helpers and importer output (virtualization moved to phase 3).
+Scope: Property-name find helpers and importer output (virtualization moved to phase 3).
 
 Design:
 
-- **Property names.** One shared map turns legacy property names into locator keys:
+- **Property names.** One shared map turns existing property names into locator keys:
   `WPFControlName` to `x:Name` (`clr:Name`), `ClrFullClassName` to `type:FullName`,
   `ClrClassName` to the short type name, `WPFControlText` to the element's text,
   `WPFControlOrdinalNo` to an index, `Visible` and `Enabled` to state conditions. Any other
-  name becomes a managed `clr:` path, since legacy exposes .NET members directly. Names
+  name becomes a managed `clr:` path, to support direct access to .NET members. Names
   that cannot be mapped are an error, not a silent drop.
 - **Wildcards.** `*` and `?` in string values become anchored regexes through the shared
   regex subset; other characters are matched literally.
 - **Helpers.** `find_child(parent, props, values, depth=1)`, `find_all_children(parent, props,
-  values, depth=1)` and `find(parent, props, values, depth=...)` follow legacy's
+  values, depth=1)` and `find(parent, props, values, depth=...)` follow the existing
   argument order and depth meaning. `find_child` returns a lazy element for the first match
   in tree order, so a missing element fails when used, with the normal diagnostic, and
   `.exists()` works; `strict=True` keeps WinTestKit's ambiguity error. `find_all_children`
   returns a snapshot list. They work on both backends.
 - **Importer.** The NameMapping importer maps properties through the same table, converts
   wildcards, and turns extended find into a descendant search with the matching depth.
-- **Gate samples.** A set of legacy-style `FindChild`, `FindAllChildren` and `Find`
+- **Gate samples.** A set of legacy `FindChild`, `FindAllChildren` and `Find`
   calls with their migrated WinTestKit form, run against the fixture on both backends.
 
 Slices: P5a property map and wildcard translation; P5b helpers; P5c importer output; P5d
@@ -738,7 +738,7 @@ with no regressions versus UIA.
 
 - **P8a:** Remove the managed post-filter path.
 - **P8b:** Rewrite `docs/guide/*` for WPF-first.
-- **P8c:** Migration guide from the legacy tool, `skills/wintestkit-tests` and synced copies, plus examples.
+- **P8c:** Migration guide for existing suites, `skills/wintestkit-tests` and synced copies, plus examples.
 - **P8d:** Compare two result runs (`auto` vs `uia`) and provide the owner's runbook.
 
 **P8d results:** The comparison aid and owner runbook distinguish expected UIA managed-key
@@ -748,7 +748,7 @@ had four expected UIA managed-key failures and one pass; auto passed all five, w
 regressions.
 
 **Gate verdict (owner, 2026-11-13): passed on fixture evidence.** No WinTestKit version of the
-real suite exists yet; it is still in legacy. The owner closed phase 8 on the fixture
+real suite exists yet; it remains in the original environment. The owner closed phase 8 on the fixture
 dry run and green CI and Desktop CI at `dab9d57`. The real-suite UIA-versus-auto comparison
 moves into the owner's migration: run `wtk compare --baseline-uia` per the runbook as pages are
 migrated, and treat each regression as a bug against this plan.

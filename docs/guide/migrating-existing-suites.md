@@ -1,16 +1,15 @@
-# Migrating from the legacy tool
+# Migrating an existing suite
 
-WinTestKit covers the part of legacy used for **WPF desktop testing**, with Python and
-pytest instead of a proprietary IDE and project format.
+This guide helps you migrate an existing **WPF desktop test suite** to WinTestKit, Python and pytest.
 
 ## Concept mapping
 
-| legacy | WinTestKit |
+| Existing concept | WinTestKit |
 |---|---|
 | Project suite / project | A folder with `pyproject.toml` containing `[tool.wintestkit]` |
 | Tested Applications | `[tool.wintestkit.app]` (`path`, `args`, `cwd`, `env`) and the launch mode |
-| NameMapping / Aliases | A `Page` per window and reusable `Page` components per movable box; page and component attributes name the controls |
-| `FindChild`, `FindAllChildren`, `Find` | `wintestkit.finders.find_child`, `find_all_children`, `find`, or declared locators |
+| Name mapping and aliases | A `Page` per window and reusable `Page` components per movable box; page and component attributes name the controls |
+| `FindChild` / `FindAllChildren` / `Find` calls | `wintestkit.finders.find_child`, `find_all_children`, `find`, or declared locators |
 | `ClrFullClassName` | `where={"type:FullName": "Namespace.Type"}`; `type:Is` includes derived types |
 | `WPFControlName` | `automation_id`: peer or peerless attached AutomationId, falling back to `x:Name` with the WPF backend |
 | `WPFControlText` | `name` (peer Name, not necessarily actual text) |
@@ -19,22 +18,22 @@ pytest instead of a proprietary IDE and project format.
 | Wildcards | Helpers translate `*` and `?` to whole-value patterns; locators accept compiled regexes |
 | Extended find / depth | `depth` (automation-peer levels); extended find uses descendant search |
 | Direct property writes / method calls | Prefer UI actions; managed writes and calls are opt-in with an allowlist and audit (see [managed inspection](managed-inspection.md#writes-and-method-calls)) |
-| Object Spy / Object Browser | The Spy (`wtk spy` or the VS Code Spy view) and `wtk inspect` |
+| Inspecting objects | The Spy (`wtk spy` or the VS Code Spy view) and `wtk inspect` |
 | Highlight on screen | `wtk highlight` or the **Highlight** CodeLens |
-| Keyword tests / script routines | pytest test functions |
-| Checkpoints (property, region) | `expect(...)` assertions |
-| `aqObject` / `aqUtils` waits, `WaitProperty`, `WaitChild`, `Exists` | Automatic waiting in actions and `expect`; `wait_for()`, `exists()` |
+| Test routines / script routines | pytest test functions |
+| Property checkpoints and region checks | `expect(...)` assertions |
+| Property and child waits | Automatic waiting in actions and `expect`; `wait_for()`, `exists()` |
 | Auto-wait timeout | `timeout` setting, per-element `timeout=`, per-call `timeout=` |
 | Event handlers (`OnUnexpectedWindow`, …) | pytest fixtures (setup and teardown) |
 | Test items / execution plan | Test files, folders and pytest markers (`wtk run -m smoke`) |
 | Data-driven loops | `@pytest.mark.parametrize` |
-| TestExecute / command-line runs | `wtk run` (or `pytest`) |
+| Command-line runner | `wtk run` (or `pytest`) |
 | Test log | The HTML report (`wtk-report/index.html`) and JUnit XML |
-| Visualizer screenshots | `screenshots = "on-failure"` or `"every-step"` |
+| Screenshots | `screenshots = "on-failure"` or `"every-step"` |
 
 ## What's different
 
-- **Strict matching.** A mapped object in legacy may silently resolve to the first of several
+- **Strict matching.** An existing mapping may resolve to the first of several
   matches. WinTestKit fails when a locator matches more than one element, so ambiguous mappings
   surface at the line that is wrong. Expect to add `within=` scopes while migrating.
 - **UI Automation discovery.** There is no image-based or OCR recognition. Controls a screen reader can't
@@ -46,11 +45,11 @@ pytest instead of a proprietary IDE and project format.
 
 ## Migrating FindChild
 
-The originals below are legacy JavaScript-style calls; `p` is the fixture page and
+The originals below are existing JavaScript-style calls; `p` is the fixture page and
 `group` is its mapped group. The WinTestKit examples use `page` and `page.group`.
 Import `find_child`, `find_all_children`, and `find` from `wintestkit.finders`.
 
-| legacy call | WinTestKit call |
+| Existing call | WinTestKit call |
 | --- | --- |
 | `p.FindChild("WPFControlName", "FancyAutomationId", 20)` | `find_child(page, "WPFControlName", "FancyAutomationId", 20)` |
 | `group.FindChild("ClrFullClassName", "System.Windows.Controls.Button", 20)` | `find_child(page.group, "ClrFullClassName", "System.Windows.Controls.Button", 20)` |
@@ -109,7 +108,7 @@ object's direct `Properties` collection, avoiding ancestor/descendant property d
 
 ## A migrated test
 
-A keyword test that signs in and checks the welcome text becomes a page and a test function:
+A test routine that signs in and checks the welcome text becomes a page and a test function:
 
 ```python
 # pseudo-code

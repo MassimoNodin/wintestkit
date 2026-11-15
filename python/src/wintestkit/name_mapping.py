@@ -1,4 +1,4 @@
-"""Safe, opt-in conversion of legacy NameMapping XML to page skeletons."""
+"""Safe, opt-in conversion of NameMapping XML to page skeletons."""
 
 from __future__ import annotations
 
@@ -10,8 +10,8 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any, cast
 
-from wintestkit.model import PageObject
 from wintestkit.finders import to_locator
+from wintestkit.model import PageObject
 
 MAX_XML_BYTES = 10 * 1024 * 1024
 RESERVED_NAMES = set(dir(PageObject)) | set(PageObject.__annotations__) | {"Element", "Page", "re"}
@@ -187,7 +187,7 @@ def convert(xml_path: Path, *, managed_class_names: bool = False) -> str:
     if not has_properties:
         raise ValueError("no NameMapping nodes with properties were found")
     lines = [
-        '"""Generated from the legacy tool NameMapping; review locators before use.',
+        '"""Generated from NameMapping; review locators before use.',
         "",
         "Managed class names require the WPF inspector."
         if managed_class_names

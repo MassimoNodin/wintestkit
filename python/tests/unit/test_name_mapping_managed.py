@@ -12,7 +12,7 @@ def test_managed_flag_and_default_output_are_golden(tmp_path):
         "</Properties></Item></Root>",
         encoding="utf-8",
     )
-    expected = '''"""Generated from the legacy tool NameMapping; review locators before use.
+    expected = '''"""Generated from NameMapping; review locators before use.
 
 ClrFullClassName requires a verified application-specific UIA property alias.
 """

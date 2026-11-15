@@ -289,7 +289,7 @@ First public prerelease. Install the extension's pre-release channel together wi
 
 - Elements, typed controls, collections and windows accept `where={...}` constraints on scalar
   UI Automation properties, with exact values and compiled regular expressions.
-- Shared and local configuration support `property_aliases` for legacy property names.
+- Shared and local configuration support `property_aliases` for existing property names.
   Spy and inspection expose matching properties; editor discovery and locator displays preserve them.
 - Add a test-build WPF guide for exposing full .NET type names and update migration skills.
 - Checks report every missing declaration as broken/moved, show relocation details when available,

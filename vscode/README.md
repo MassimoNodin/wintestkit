@@ -204,7 +204,7 @@ these example locators before using the starter tests with a different applicati
 - **Nothing happens after installing the package:** run **Restart Server**.
 
 See the [user guide](https://github.com/MassimoNodin/wintestkit/tree/master/docs/guide) for
-locator strategies, CI setup and migrating from the legacy tool.
+locator strategies, CI setup and migrating an existing suite.
 
 ## Development
 

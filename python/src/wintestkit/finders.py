@@ -1,4 +1,4 @@
-"""Translate legacy property lists into WinTestKit locators.
+"""Translate property lists into WinTestKit locators.
 
 The search helpers use the same lazy locators as page objects.
 """
@@ -21,7 +21,7 @@ from wintestkit.model import (
     PageObject,
 )
 
-# legacy property (lowercase) -> locator field or qualified where key.
+# property (lowercase) -> locator field or qualified where key.
 PROPERTY_MAP = {
     "wpfcontrolname": "automation_id",
     "clrfullclassname": "type:FullName",
@@ -58,7 +58,7 @@ def to_locator(props: str | Sequence[str], values: Any, *, depth: int | None = N
 
     Ordinals become zero-based indexes into all results of the locator in tree
     order, not indexes among siblings of the same type. Depth 1 means direct
-    children; on WPF it counts automation-peer levels, not legacy's
+    children; on WPF it counts automation-peer levels, not arbitrary
     visual-tree levels. None leaves the library default in place.
 
     Wildcard regexes use strict whole-value matching, including for Unicode text.
@@ -79,12 +79,12 @@ def to_locator(props: str | Sequence[str], values: Any, *, depth: int | None = N
     seen: set[str] = set()
     for prop, value in zip(names, items, strict=True):
         if not isinstance(prop, str) or not all(part.isidentifier() for part in prop.split(".")):
-            raise ValueError(f"invalid legacy property name: {prop!r}")
+            raise ValueError(f"invalid property name: {prop!r}")
         key = prop.casefold()
         if key == "name":
-            raise ValueError("legacy Name is an object name; use mapped properties instead")
+            raise ValueError("Name is an object name; use mapped properties instead")
         if key in seen:
-            raise ValueError(f"duplicate legacy property: {prop!r}")
+            raise ValueError(f"duplicate property: {prop!r}")
         seen.add(key)
         target = PROPERTY_MAP.get(key, f"clr:{prop}")
         if key in {"visible", "enabled"}:
@@ -186,7 +186,7 @@ def find(
     values: Any,
     depth: int | None = 1,
 ) -> BoundElement:
-    """Find the parent or its descendants, defaulting to legacy's depth 1.
+    """Find the parent or its descendants, defaulting to a depth of 1.
 
     A bound parent is included. A Page or Scope without an element root starts at
     its window; the window itself cannot be included by the descendant resolver.

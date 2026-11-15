@@ -1,4 +1,4 @@
-"""Reviewable legacy migration samples against the owned WPF fixture."""
+"""Reviewable Suite migration samples against the owned WPF fixture."""
 
 import os
 from dataclasses import replace
@@ -10,9 +10,9 @@ from wintestkit import runtime
 from wintestkit.engine.locator import Locator
 from wintestkit.engine.resolve import resolve, resolve_all
 from wintestkit.errors import InvalidLocatorError
+from wintestkit.finders import find, find_all_children, find_child
 from wintestkit.model import Element, Page
 from wintestkit.name_mapping import convert
-from wintestkit.finders import find, find_all_children, find_child
 
 pytest_plugins = ["test_wpf_query_gate_real"]
 

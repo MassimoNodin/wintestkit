@@ -35,6 +35,9 @@ if TYPE_CHECKING:
     from wintestkit.controls import TextBox as TextBox
     from wintestkit.controls import TreeView as TreeView
     from wintestkit.expect import expect as expect
+    from wintestkit.finders import find as find
+    from wintestkit.finders import find_all_children as find_all_children
+    from wintestkit.finders import find_child as find_child
     from wintestkit.model import BoundControl as BoundControl
     from wintestkit.model import BoundElement as BoundElement
     from wintestkit.model import BoundElements as BoundElements
@@ -44,9 +47,6 @@ if TYPE_CHECKING:
     from wintestkit.model import Page as Page
     from wintestkit.model import PageObject as PageObject
     from wintestkit.model import Window as Window
-    from wintestkit.finders import find as find
-    from wintestkit.finders import find_all_children as find_all_children
-    from wintestkit.finders import find_child as find_child
 
 __all__ = [
     "App",

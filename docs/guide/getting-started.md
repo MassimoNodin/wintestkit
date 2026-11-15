@@ -25,7 +25,7 @@ Ignore rules do not untrack files already committed to Git.
 
 `wtk init` also writes the `wintestkit-tests` agent skill to `.claude/skills/wintestkit-tests/`. It teaches AI
 coding tools (such as Claude Code) the page, component, flow and test conventions of these guides,
-including migration from the legacy tool. The canonical copy is `skills/wintestkit-tests` in the repository;
+including migration of an existing suite. The canonical copy is `skills/wintestkit-tests` in the repository;
 `wtk init --force` refreshes it.
 
 Use your own application's executable, window titles and locators. No example applications

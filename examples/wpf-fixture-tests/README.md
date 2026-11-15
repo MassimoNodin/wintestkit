@@ -1,7 +1,7 @@
 # WPF fixture tests
 
 This example uses the published WPF fixture, the managed WPF tree (`backend: auto`), a movable
-component mounted twice, typed controls, and legacy's `find_child` equivalent. The
+component mounted twice, typed controls, and the `find_child` helper. The
 `automation_id` locator uses AutomationId, falling back to `x:Name` for WPF controls. Run on an
 interactive, unlocked Windows desktop with Python 3.12+, uv, and x64 .NET 10 Core and Windows
 Desktop runtimes. Publish the fixture with `scripts/publish_fixtures.ps1` from the repository root. The inspector

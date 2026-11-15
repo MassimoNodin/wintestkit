@@ -218,7 +218,7 @@ Element(where={"type:FullName": "Company.Controls.AddressBox"})
 ```
 
 See [property matching](docs/guide/property-matching.md) for managed paths, aliases and
-legacy helpers. Managed keys require a WPF window and `backend: auto`.
+Property-name find helpers. Managed keys require a WPF window and `backend: auto`.
 Confirm values with `wtk inspect --at 400,300 --json` or Spy before matching.
 
 With the application open, verify the locators:

@@ -27,7 +27,7 @@ describe("managed Spy host", () => {
     mock.trusted = true; mock.warning.mockResolvedValueOnce(undefined); await inspector.attach(); expect(request).toHaveBeenCalledTimes(1);
     mock.warning.mockResolvedValue("Attach"); await inspector.attach();
     expect(mock.warning.mock.calls.at(-1)?.[0]).toContain("C:/App.exe");
-    for (const term of ["271", "net8", "x64", "getters", "legacy", "until the application exits"]) expect(mock.warning.mock.calls.at(-1)?.[1].detail).toContain(term);
+    for (const term of ["271", "net8", "x64", "getters", "until the application exits"]) expect(mock.warning.mock.calls.at(-1)?.[1].detail).toContain(term);
     expect(mock.warning.mock.calls.at(-1)?.[1].modal).toBe(true);
     expect(mock.warning.mock.calls.at(-1)?.slice(2)).toEqual(["Attach", "Learn more", "Cancel"]);
     await inspector.detach(); const prompts = mock.warning.mock.calls.length; await inspector.attach(); expect(mock.warning).toHaveBeenCalledTimes(prompts);

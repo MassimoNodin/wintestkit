@@ -20,9 +20,9 @@ order = Element(where={"type:Is": "Company.Views.OrderView",
 address = Element(where={"type:FullName": re.compile(r"^Company\.Controls\..*Box$")})
 ```
 
-With `backend: auto`, `automation_id` uses the peer's AutomationId, or the attached AutomationId on a peerless element, falling back to `x:Name` when empty. With `backend: uia`, it uses only the ID exposed by UIA; a custom peer may suppress WPF's usual name fallback. legacy's `WPFControlName` helper maps to this field. If one element's ID equals another's name, the locator is ambiguous.
+With `backend: auto`, `automation_id` uses the peer's AutomationId, or the attached AutomationId on a peerless element, falling back to `x:Name` when empty. With `backend: uia`, it uses only the ID exposed by UIA; a custom peer may suppress WPF's usual name fallback. The `WPFControlName` property maps to this field. If one element's ID equals another's name, the locator is ambiguous.
 An explicit AutomationId can differ from `x:Name`. `type:FullName` is the CLR type including namespace; `type:Is` also matches
-derived types. See [legacy helpers](property-matching.md#finder-helpers) for
+derived types. See [Property-name find helpers](property-matching.md#property-name-find-helpers) for
 `ClrFullClassName`, `*` and `?` wildcards.
 
 ## Strict matching
