@@ -1823,6 +1823,10 @@ export interface LocatorData {
   within?: LocatorData;
   window?: WindowLocatorData;
   item?: ItemSelectorData;
+  /**
+   * @minItems 2
+   */
+  anyOf?: [LocatorData, LocatorData, ...LocatorData[]];
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema

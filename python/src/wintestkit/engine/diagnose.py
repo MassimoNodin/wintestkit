@@ -11,7 +11,13 @@ from difflib import SequenceMatcher
 from typing import TYPE_CHECKING, Any, Literal
 
 from wintestkit.backends.element import TargetElement
-from wintestkit.engine.locator import Locator, WindowLocator, describe_matcher, match_value
+from wintestkit.engine.locator import (
+    Locator,
+    WindowLocator,
+    describe_matcher,
+    expand_alternatives,
+    match_value,
+)
 from wintestkit.engine.query import relaxed_descendants
 from wintestkit.uia.element import ElementInfo, UIAElement
 
@@ -336,19 +342,42 @@ def _score_link(link: Locator, info: ElementInfo) -> tuple[int, tuple[Mismatch, 
     return score, tuple(mismatches)
 
 
+def _best_score(link: Locator, info: ElementInfo) -> tuple[int, tuple[Mismatch, ...]]:
+    """``_score_link`` of the closest ``any_of`` alternative (the link itself without any_of)."""
+    __tracebackhide__ = True
+    best: tuple[int, tuple[Mismatch, ...]] | None = None
+    for alternative in expand_alternatives(link):
+        scored = _score_link(alternative, info)
+        if best is None or scored[0] > best[0]:
+            best = scored
+    assert best is not None
+    return best
+
+
 def _name_similarity(link: Locator, info: ElementInfo) -> float:
     """Similarity (0..1) between the expected and actual name; 0 unless the name is a string."""
     __tracebackhide__ = True
-    if not isinstance(link.name, str) or not info.name:
-        return 0.0
-    return SequenceMatcher(None, link.name.lower(), info.name.lower()).ratio()
+    best = 0.0
+    for alternative in expand_alternatives(link):
+        if isinstance(alternative.name, str) and info.name:
+            ratio = SequenceMatcher(None, alternative.name.lower(), info.name.lower()).ratio()
+            best = max(best, ratio)
+    return best
 
 
 def _specified_property_count(link: Locator) -> int:
     __tracebackhide__ = True
-    return sum(
-        value is not None
-        for value in (link.automation_id, link.name, link.class_name, link.control_type)
+    return max(
+        sum(
+            value is not None
+            for value in (
+                alt.automation_id,
+                alt.name,
+                alt.class_name,
+                alt.control_type,
+            )
+        )
+        for alt in expand_alternatives(link)
     )
 
 
@@ -371,9 +400,11 @@ def diagnose_not_found(
             match_count=0,
         )
     scored: list[tuple[int, float, int, ElementInfo, tuple[Mismatch, ...]]] = []
-    for order, element in enumerate(relaxed_descendants(root, link.control_type)):
+    control_types = {alt.control_type for alt in expand_alternatives(link)}
+    shared_type = control_types.pop() if len(control_types) == 1 else None
+    for order, element in enumerate(relaxed_descendants(root, shared_type)):
         info = element.info()
-        score, mismatches = _score_link(link, info)
+        score, mismatches = _best_score(link, info)
         if score >= 1:
             scored.append((score, _name_similarity(link, info), order, info, mismatches))
     # Score first, then how close the name is (so typos rank their intended target high), then

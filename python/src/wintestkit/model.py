@@ -16,7 +16,7 @@ import inspect
 import os
 import re
 import time
-from collections.abc import Callable, Generator, Iterator, Mapping
+from collections.abc import Callable, Generator, Iterator, Mapping, Sequence
 from contextlib import AbstractContextManager, contextmanager
 from datetime import UTC, datetime
 from types import FrameType
@@ -46,6 +46,7 @@ from wintestkit.engine.locator import (
     Locator,
     Matcher,
     WindowLocator,
+    any_of_from_mappings,
     match_value,
 )
 from wintestkit.engine.managed import diagnostic_query_budget, operation_deadline, query_budget
@@ -127,6 +128,7 @@ class ChildOptions(TypedDict, total=False):
     timeout: float
     validate: bool
     where: Mapping[str, WhereValue]
+    any_of: Sequence[Mapping[str, Any]]
 
 
 class ChildGroupOptions(TypedDict, total=False):
@@ -138,6 +140,7 @@ class ChildGroupOptions(TypedDict, total=False):
     class_name: Matcher
     timeout: float
     where: Mapping[str, WhereValue]
+    any_of: Sequence[Mapping[str, Any]]
 
 
 _CHILD_FORBIDDEN = ("within", "depth", "window")
@@ -1643,6 +1646,7 @@ class Element(Generic[B]):  # noqa: UP046  (a type-parameter default needs Pytho
         timeout: float | None = None,
         validate: bool = True,
         where: Mapping[str, WhereValue] | None = None,
+        any_of: Sequence[Mapping[str, Any]] | None = None,
     ) -> None:
         __tracebackhide__ = True
         self._init(
@@ -1657,6 +1661,7 @@ class Element(Generic[B]):  # noqa: UP046  (a type-parameter default needs Pytho
             timeout,
             validate,
             where,
+            any_of,
         )
 
     def _init(
@@ -1672,6 +1677,7 @@ class Element(Generic[B]):  # noqa: UP046  (a type-parameter default needs Pytho
         timeout: float | None,
         validate: bool = True,
         where: Mapping[str, WhereValue] | None = None,
+        any_of: Sequence[Mapping[str, Any]] | None = None,
     ) -> None:
         __tracebackhide__ = True
         if within is not None and (
@@ -1697,6 +1703,7 @@ class Element(Generic[B]):  # noqa: UP046  (a type-parameter default needs Pytho
             index=index,
             depth=depth,
             where=normalize_where(where, {}),
+            any_of=any_of_from_mappings(any_of),
         )
         self.name: str | None = None
         self.owner: type | None = None
@@ -1816,6 +1823,7 @@ class Elements(Element[BoundElement]):
         window: Window | None = None,
         timeout: float | None = None,
         where: Mapping[str, WhereValue] | None = None,
+        any_of: Sequence[Mapping[str, Any]] | None = None,
     ) -> None:
         __tracebackhide__ = True
         self._init(
@@ -1829,6 +1837,7 @@ class Elements(Element[BoundElement]):
             window,
             timeout,
             where=where,
+            any_of=any_of,
         )
 
     @overload  # type: ignore[override]

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from typing import Any, Literal, cast
 
@@ -252,6 +252,8 @@ class Locator:
     window: WindowLocator | None = None
     item: ItemSelector | None = None
     where: Where = ()
+    #: OR across alternative property groups; each alternative holds only property fields.
+    any_of: tuple[Locator, ...] = ()
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "where", normalize_where(dict(self.where), self.taken()))
@@ -259,8 +261,35 @@ class Locator:
             object.__setattr__(self, "control_type", normalize_control_type(self.control_type))
         _check_index("index", self.index)
         _check_index("depth", self.depth, minimum=1)
+        object.__setattr__(self, "any_of", tuple(self.any_of))
+        if self.any_of:
+            if len(self.any_of) < 2:
+                raise ValueError("any_of needs at least two alternatives")
+            for alternative in self.any_of:
+                alternative.check_alternative()
+            # Fail at construction time when an alternative contradicts the locator itself.
+            expand_alternatives(self)
         if self.is_empty() and self.index is None:
             raise ValueError("locator needs at least one property")
+
+    def check_alternative(self) -> None:
+        """Raise unless this locator is a valid ``any_of`` alternative (properties only)."""
+        if self.is_empty():
+            raise ValueError("any_of alternatives need at least one property")
+        extras = [
+            name
+            for name, value in (
+                ("index", self.index),
+                ("depth", self.depth),
+                ("within", self.within),
+                ("window", self.window),
+                ("item", self.item),
+                ("any_of", self.any_of or None),
+            )
+            if value is not None
+        ]
+        if extras:
+            raise ValueError(f"any_of alternatives take only properties, not {', '.join(extras)}")
 
     def is_empty(self) -> bool:
         """True when no property is given (only valid together with ``index``)."""
@@ -270,6 +299,7 @@ class Locator:
             and self.control_type is None
             and self.class_name is None
             and not self.where
+            and not self.any_of
         )
 
     def taken(self) -> dict[str, str]:
@@ -320,6 +350,20 @@ class Locator:
             props["class_name"] = self.class_name
         return props
 
+    def describe_properties(self) -> str:
+        """The property fields alone, e.g. ``id="Ok", control_type=Button``."""
+        parts: list[str] = []
+        if self.automation_id is not None:
+            parts.append(f"id={describe_matcher(self.automation_id)}")
+        if self.name is not None:
+            parts.append(f"name={describe_matcher(self.name)}")
+        if self.class_name is not None:
+            parts.append(f"class={describe_matcher(self.class_name)}")
+        if self.control_type is not None:
+            parts.append(f"control_type={self.control_type}")
+        parts.extend(describe_where(self.where))
+        return ", ".join(parts)
+
     def describe_link(self, include_item: bool = True, include_index: bool = True) -> str:
         """Describe this locator alone, without its ``within`` chain or window prefix."""
         parts: list[str] = []
@@ -334,6 +378,9 @@ class Locator:
         if self.depth is not None:
             parts.append(f"depth={self.depth}")
         parts.extend(describe_where(self.where))
+        if self.any_of:
+            alternatives = " | ".join(alt.describe_properties() for alt in self.any_of)
+            parts.append(f"any_of=({alternatives})")
         head = self.control_type or "*"
         text = f"{head}[{', '.join(parts)}]" if parts else head
         if include_item and self.item is not None:
@@ -369,6 +416,8 @@ class Locator:
             data["window"] = self.window.to_dict()
         if self.item is not None:
             data["item"] = self.item.to_dict()
+        if self.any_of:
+            data["anyOf"] = [alternative.to_dict() for alternative in self.any_of]
         return data
 
     @classmethod
@@ -387,6 +436,7 @@ class Locator:
                 "window",
                 "item",
                 "where",
+                "anyOf",
             },
         )
         return cls(
@@ -402,4 +452,75 @@ class Locator:
             window=WindowLocator.from_dict(data["window"]) if "window" in data else None,
             item=ItemSelector.from_dict(data["item"]) if "item" in data else None,
             where=where_from_data(data["where"]) if "where" in data else (),
+            any_of=tuple(cls.from_dict(alt) for alt in data.get("anyOf", ())),
         )
+
+
+def alternative_from_mapping(data: Mapping[str, Any]) -> Locator:
+    """Build one ``any_of`` alternative from ``{"automation_id": ..., "ClassName": ...}``.
+
+    ``automation_id``/``name``/``control_type``/``class_name`` set those fields; any other key is
+    a ``where`` entry.
+    """
+    __tracebackhide__ = True
+    if not isinstance(data, Mapping):  # pyright: ignore[reportUnnecessaryIsInstance]
+        raise TypeError("any_of= alternatives must be dicts of properties")
+    fields: dict[str, Any] = {}
+    where: dict[str, Any] = {}
+    for key, value in data.items():
+        if key in ("automation_id", "name", "control_type", "class_name"):
+            fields[key] = value
+        else:
+            where[key] = value
+    alternative = Locator(**fields, where=tuple(where.items()))
+    alternative.check_alternative()
+    return alternative
+
+
+def any_of_from_mappings(data: Sequence[Mapping[str, Any]] | None) -> tuple[Locator, ...]:
+    """Convert the ``any_of=[{...}, {...}]`` argument of an element declaration."""
+    __tracebackhide__ = True
+    if data is None:
+        return ()
+    if isinstance(data, Mapping | str | bytes):  # pyright: ignore[reportUnnecessaryIsInstance]
+        raise TypeError("any_of= must be a list of dicts")
+    return tuple(alternative_from_mapping(item) for item in data)
+
+
+def _merge_value(label: str, own: Any, other: Any) -> Any:
+    if own is None:
+        return other
+    if other is None or own == other:
+        return own
+    raise ValueError(
+        f"any_of alternative conflicts with the locator on {label}: {own!r} vs {other!r}"
+    )
+
+
+def expand_alternatives(link: Locator) -> list[Locator]:
+    """One locator per ``any_of`` alternative, own properties merged; ``[link]`` otherwise."""
+    __tracebackhide__ = True
+    if not link.any_of:
+        return [link]
+    expanded: list[Locator] = []
+    for alternative in link.any_of:
+        where = dict(link.where)
+        for key, value in alternative.where:
+            where[key] = _merge_value(f"where[{key!r}]", where.get(key), value)
+        expanded.append(
+            replace(
+                link,
+                automation_id=_merge_value(
+                    "automation_id", link.automation_id, alternative.automation_id
+                ),
+                name=_merge_value("name", link.name, alternative.name),
+                control_type=_merge_value(
+                    "control_type", link.control_type, alternative.control_type
+                ),
+                class_name=_merge_value("class_name", link.class_name, alternative.class_name),
+                where=tuple(where.items()),
+                any_of=(),
+                index=None,
+            )
+        )
+    return expanded

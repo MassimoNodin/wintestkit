@@ -292,6 +292,13 @@
         },
         "item": {
           "$ref": "common.schema.json#/$defs/ItemSelectorData"
+        },
+        "anyOf": {
+          "type": "array",
+          "minItems": 2,
+          "items": {
+            "$ref": "common.schema.json#/$defs/LocatorData"
+          }
         }
       },
       "required": [],

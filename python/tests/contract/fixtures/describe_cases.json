@@ -129,5 +129,16 @@
   {
     "locator": { "controlType": "Edit", "window": {}, "className": "TextBox" },
     "describe": "Window >> Edit[class=\"TextBox\"]"
+  },
+  {
+    "locator": {
+      "controlType": "Button",
+      "anyOf": [
+        { "automationId": "Ok" },
+        { "name": { "regex": "^ok$", "flags": "i" }, "controlType": "Button" },
+        { "where": { "HelpText": "Confirm" } }
+      ]
+    },
+    "describe": "Button[any_of=(id=\"Ok\" | name=/^ok$/i, control_type=Button | HelpText=\"Confirm\")]"
   }
 ]

@@ -10,7 +10,7 @@ import re
 import time
 from dataclasses import dataclass, replace
 from difflib import SequenceMatcher
-from typing import cast
+from typing import Any, cast
 
 from wintestkit import runtime
 from wintestkit.app import App
@@ -24,7 +24,13 @@ from wintestkit.engine.diagnose import (
     diagnose_within_failed,
     quote,
 )
-from wintestkit.engine.locator import ItemSelector, Locator, WindowLocator, match_value
+from wintestkit.engine.locator import (
+    ItemSelector,
+    Locator,
+    WindowLocator,
+    expand_alternatives,
+    match_value,
+)
 from wintestkit.engine.managed import diagnostic_query_budget, locator_deadline, query_budget
 from wintestkit.engine.properties import Condition, read, resolve_where
 from wintestkit.engine.properties import matches as matches_property
@@ -183,6 +189,8 @@ def _match_link(
     use_index: bool = False,
 ) -> list[TargetElement]:
     __tracebackhide__ = True
+    if link.any_of:
+        return _match_alternatives(scope, root, link, full, first, use_index=use_index)
     matches: list[TargetElement]
     if isinstance(root, WpfElement):
         matches = cast(list[TargetElement], wpf_query(root, link, use_index=use_index))
@@ -191,6 +199,51 @@ def _match_link(
     if not matches and first and full.window is None and scope.window is None:
         matches = _popup_matches(scope, root, link, use_index=use_index)
     return matches
+
+
+class _IndexedMatches(list[TargetElement]):
+    """The single element chosen by ``index`` from the union of ``any_of`` alternatives."""
+
+    indexed = True
+
+    def __init__(self, selected: list[TargetElement], merged: list[TargetElement]) -> None:
+        __tracebackhide__ = True
+        super().__init__(selected)
+        self.merged = merged
+
+
+def _match_alternatives(
+    scope: Scope,
+    root: TargetElement,
+    link: Locator,
+    full: Locator,
+    first: bool,
+    *,
+    use_index: bool,
+) -> list[TargetElement]:
+    """Union of the matches of every ``any_of`` alternative, deduplicated, in alternative order."""
+    __tracebackhide__ = True
+    alternatives = expand_alternatives(link)
+    merged: list[TargetElement] = []
+
+    def collect(found: list[TargetElement]) -> None:
+        __tracebackhide__ = True
+        for element in found:
+            if not any(cast(Any, element).same_as(known) for known in merged):
+                merged.append(element)
+
+    for alternative in alternatives:
+        if isinstance(root, WpfElement):
+            collect(cast(list[TargetElement], list(wpf_query(root, alternative))))
+        else:
+            collect(list(query_all(uia_of(root), alternative)))
+    if not merged and first and full.window is None and scope.window is None:
+        for alternative in alternatives:
+            collect(_popup_matches(scope, root, alternative))
+    if use_index and link.index is not None:
+        chosen = [merged[link.index]] if link.index < len(merged) else []
+        return _IndexedMatches(chosen, merged)
+    return merged
 
 
 def _wpf_id_hint(
@@ -289,7 +342,11 @@ def _resolve_link(
     matches = _match_link(scope, root, link, full, first, use_index=True)
     if link.index is not None:
         if getattr(matches, "indexed", False):
-            return matches[0].as_live()
+            if matches:
+                return matches[0].as_live()
+            # An empty indexed result: the union of any_of alternatives is shorter than the index.
+            merged = cast(_IndexedMatches, matches).merged
+            raise ElementNotFoundError(diagnose_index_out_of_range(merged, link, searched_in, full))
         if link.index >= len(matches):
             raise ElementNotFoundError(
                 diagnose_index_out_of_range(matches, link, searched_in, full)
@@ -341,6 +398,9 @@ def wait_link(scope: Scope, locator: Locator, state: str) -> tuple[bool, TargetE
     links = locator.chain()
     link = links[-1]
     if state not in ("attached", "visible", "enabled") or link.item is not None:
+        return False, None
+    if any(candidate.any_of for candidate in links):
+        # One wire query cannot express alternatives: poll through normal resolution.
         return False, None
     try:
         constraints = resolve_where(link.where, link.describe_link(), link.taken())

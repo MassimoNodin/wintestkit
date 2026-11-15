@@ -6,7 +6,7 @@ from collections.abc import Callable
 from typing import Any
 
 from wintestkit import runtime
-from wintestkit.engine.locator import Locator
+from wintestkit.engine.locator import Locator, expand_alternatives
 from wintestkit.engine.managed import ManagedCondition
 from wintestkit.engine.properties import Condition, matches, native_value, read, resolve_where
 from wintestkit.errors import InvalidLocatorError
@@ -63,6 +63,11 @@ def query_all(root: UIAElement, locator: Locator) -> list[UIAElement]:
     property values; call ``as_live()`` before handing them to actions.
     """
     __tracebackhide__ = True
+    if locator.any_of:
+        union: list[UIAElement] = []
+        for alternative in expand_alternatives(locator):
+            union.extend(query_all(root, alternative))
+        return _unique(union)
     constraints = resolve_where(locator.where, locator.describe_link(), locator.taken())
     uia = [c for c in constraints if isinstance(c, Condition)]
     managed = [c for c in constraints if not isinstance(c, Condition)]

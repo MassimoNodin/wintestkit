@@ -74,6 +74,8 @@ def translate(
     constraints: tuple[Condition | ManagedCondition, ...],
     handle: ObjectRef | None,
 ) -> WireLocator:
+    if locator.any_of:
+        raise UnsupportedQuery("any_of alternatives cannot be expressed as one query")
     predicates: list[Predicate] = []
     for name in ("automation_id", "name", "class_name", "control_type"):
         value = getattr(locator, name)

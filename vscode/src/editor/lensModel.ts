@@ -87,6 +87,22 @@ export function describeWindow(window: WindowLocatorData): string {
   parts.push(...whereParts(window.where));
   return "Window" + (parts.length ? "[" + parts.join(", ") + "]" : "");
 }
+const alternativeParts = (alternative: LocatorData): string =>
+  [
+    ...(alternative.automationId !== undefined
+      ? ["id=" + matcher(alternative.automationId)]
+      : []),
+    ...(alternative.name !== undefined
+      ? ["name=" + matcher(alternative.name)]
+      : []),
+    ...(alternative.className !== undefined
+      ? ["class=" + matcher(alternative.className)]
+      : []),
+    ...(alternative.controlType !== undefined
+      ? ["control_type=" + alternative.controlType]
+      : []),
+    ...whereParts(alternative.where),
+  ].join(", ");
 export function describeLocator(locator: LocatorData): string {
   const parts: string[] = [];
   if (locator.automationId !== undefined)
@@ -97,6 +113,8 @@ export function describeLocator(locator: LocatorData): string {
   if (locator.index !== undefined) parts.push("index=" + locator.index);
   if (locator.depth !== undefined) parts.push("depth=" + locator.depth);
   parts.push(...whereParts(locator.where));
+  if (locator.anyOf?.length)
+    parts.push("any_of=(" + locator.anyOf.map(alternativeParts).join(" | ") + ")");
   let result =
     (locator.controlType ?? "*") +
     (parts.length ? "[" + parts.join(", ") + "]" : "");
