@@ -49,6 +49,11 @@ def _contains(outer: Rect, inner: Rect) -> bool:
     return not inner.is_empty() and screenshot.clip(inner, outer) == inner
 
 
+def picture_target_is_safe(element: UIAElement, bounds: Rect) -> bool:
+    """Check a picture target and its visible contents before capture."""
+    return _owning_window(element, bounds) is not None and _safe_content(element, bounds)
+
+
 def _native_path(path: Path) -> str:
     value = str(path.absolute())
     if value.startswith("\\\\?\\"):

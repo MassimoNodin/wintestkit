@@ -32,17 +32,27 @@
         },
         "status": {
           "type": "string",
-          "enum": ["passed", "failed"]
+          "enum": [
+            "passed",
+            "failed"
+          ]
         },
         "backend": {
           "type": "string",
-          "enum": ["uia", "wpf"]
+          "enum": [
+            "uia",
+            "wpf"
+          ]
         },
         "error": {
           "$ref": "common.schema.json#/$defs/ErrorInfo"
         },
         "screenshot": {
           "type": "string"
+        },
+        "parent": {
+          "type": "integer",
+          "minimum": 1
         }
       },
       "required": [

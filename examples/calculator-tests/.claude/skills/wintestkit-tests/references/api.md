@@ -125,3 +125,12 @@ intent methods like any other.
 `wtk inspect [--window TITLE|/REGEX/ | --all-windows | --at X,Y] [--depth N] [--json]`,
 `wtk check FILE[::Page] [--json]`, `wtk highlight`, `wtk discover [--json]`,
 `wtk run [-k EXPR] [-m EXPR] [-x] [--lf] [TESTS ...]`.
+
+
+## Logging and steps
+
+`from wintestkit import log, step` exposes `with step(name, **details):` for
+nested groups, `log.message(text, **details)`, `log.warning(text, **details)`,
+and `log.picture(target=None, name="picture")`. Warnings do not fail tests.
+Use `secret=True` to redact all step or message details; sensitive picture
+targets are skipped.

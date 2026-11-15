@@ -268,3 +268,43 @@ def test_step_records_resolved_backend() -> None:
         assert record.to_dict()["backend"] == "uia"
         runtime.record_backend(object.__new__(WpfElement))
         assert record.to_dict()["backend"] == "wpf"
+
+
+def test_public_steps_group_actions_and_logs() -> None:
+    from wintestkit import log
+    from wintestkit import step as user_step
+
+    records, _ = collect()
+    entries: list[dict[str, object]] = []
+    runtime.add_log_listener(entries.append)
+    runtime.begin_test("group")
+    with pytest.raises(ActionError, match="Sensitive"), user_step("outer", value="visible"):  # noqa: SIM117
+        with user_step("inner", secret=True, value="hidden"):
+            log.warning("careful", token="hidden")
+            with step("click", "button", ""):
+                raise ValueError("broken")
+    outer = next(record for record in records if record.target == "outer")
+    inner = next(record for record in records if record.target == "inner")
+    action = next(record for record in records if record.target == "button")
+    assert inner.parent == outer.seq and action.parent == inner.seq
+    assert inner.status == outer.status == "failed"
+    assert inner.args == {"value": "***"}
+    assert entries[0]["parent"] == inner.seq
+    assert entries[0]["details"] == {"token": "***"}
+
+
+def test_picture_skips_sensitive_locator(monkeypatch: pytest.MonkeyPatch) -> None:
+    from wintestkit import log, model
+
+    class Target:
+        locator = object()
+
+        def resolve(self) -> None:
+            raise AssertionError("must not resolve")
+
+    entries: list[dict[str, object]] = []
+    runtime.begin_test("picture")
+    runtime.add_log_listener(entries.append)
+    monkeypatch.setattr(model, "is_password_locator", lambda _: True)
+    log.picture(Target())
+    assert entries[0]["skipped"] is True

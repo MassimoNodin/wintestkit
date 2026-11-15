@@ -218,6 +218,7 @@ class _Run:
     tree_baseline: str | None = None
     step_screenshots: list[Path] = field(default_factory=lambda: [])
     replay: ReplayRecorder | None = None
+    warnings: list[str] = field(default_factory=lambda: [])
 
 
 @dataclass
@@ -253,10 +254,12 @@ class _Controller:
         self.current: pytest.Item | None = None
         self.restore_timeout: float | None = None
         self.remove_listener = runtime.add_step_listener(self._on_step)
+        self.remove_log_listener = runtime.add_log_listener(self._on_log)
 
     def close(self) -> None:
         runtime.close_inspector_sessions()
         self.remove_listener()
+        self.remove_log_listener()
         for run in self.runs.values():
             if run.replay is not None:
                 run.replay.stop()
@@ -355,6 +358,15 @@ class _Controller:
                     run.step_screenshots.append(path)
         self._emit({"event": "step", "id": test_id, "step": record.to_dict()})
 
+    def _on_log(self, entry: dict[str, Any]) -> None:
+        test_id = runtime.current_test()
+        if not test_id:
+            return
+        run = self.runs.get(test_id)
+        if run is not None and entry["level"] == "warning":
+            run.warnings.append(entry["text"])
+        self._emit({"event": "log", "id": test_id, "entry": entry})
+
     # -- per-test lifecycle ---------------------------------------------------------------------
 
     @pytest.hookimpl(tryfirst=True)
@@ -423,6 +435,11 @@ class _Controller:
         outcome = yield
         report: pytest.TestReport = outcome.get_result()
         run = self.runs.setdefault(item.nodeid, _Run(item.nodeid))
+        if run.warnings:
+            report.user_properties = [
+                *item.user_properties,
+                ("wintestkit warnings", "\n".join(run.warnings)),
+            ]
         if report.when == "setup" and run.replay is not None:
             self._replay_window(run.replay, _funcarg(item, "app"))
         if call.excinfo is not None:

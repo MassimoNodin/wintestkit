@@ -28,6 +28,8 @@ This guide helps you migrate an existing **WPF desktop test suite** to WinTestKi
 | Test items / execution plan | Test files, folders and pytest markers (`wtk run -m smoke`) |
 | Data-driven loops | `@pytest.mark.parametrize` |
 | Command-line runner | `wtk run` (or `pytest`) |
+| Test log messages, warnings and pictures | `log.message`, `log.warning`, `log.picture` |
+| Log folders | Nested `step` contexts |
 | Test log | The HTML report (`wtk-report/index.html`) and JUnit XML |
 | Screenshots | `screenshots = "on-failure"` or `"every-step"` |
 

@@ -52,6 +52,8 @@ class StepRecord:
     backend: Literal["uia", "wpf"] | None = None
     audits: list[dict[str, Any]] = field(default_factory=lambda: [])
     sensitive: bool = field(default=False, repr=False)
+    parent: int | None = None
+    group: bool = False
 
     def set_arguments(self, args: Mapping[str, Any], *, secret: bool) -> None:
         __tracebackhide__ = True
@@ -72,6 +74,8 @@ class StepRecord:
             "duration": self.duration,
             "status": self.status,
         }
+        if self.parent is not None:
+            data["parent"] = self.parent
         if self.backend is not None:
             data["backend"] = self.backend
         if self.audits:
@@ -81,6 +85,30 @@ class StepRecord:
         if self.screenshot is not None:
             data["screenshot"] = self.screenshot
         return data
+
+
+_current_group: ContextVar[StepRecord | None] = ContextVar("wtk_group", default=None)
+_log_listeners: list[Callable[[dict[str, Any]], None]] = []
+
+
+def add_log_listener(listener: Callable[[dict[str, Any]], None]) -> Callable[[], None]:
+    __tracebackhide__ = True
+    _log_listeners.append(listener)
+
+    def remove() -> None:
+        __tracebackhide__ = True
+        _log_listeners.remove(listener)
+
+    return remove
+
+
+def emit_log(entry: dict[str, Any]) -> None:
+    __tracebackhide__ = True
+    group = _current_group.get()
+    if group is not None:
+        entry["parent"] = group.seq
+    for listener in list(_log_listeners):
+        listener(entry)
 
 
 _current_step: ContextVar[StepRecord | None] = ContextVar("wtk_step", default=None)
@@ -463,6 +491,7 @@ def reset() -> None:
         _current_test = None
         _seq = 0
         _listeners.clear()
+        _log_listeners.clear()
 
 
 # -- steps ----------------------------------------------------------------------------------------
@@ -497,6 +526,12 @@ def _redact(args: Mapping[str, Any] | None, secret: bool) -> dict[str, Any]:
         sensitive = secret or any(part in key.lower() for part in _SECRET_NAME_PARTS)
         safe[key] = REDACTED if sensitive else _json_safe(value)
     return safe
+
+
+def redact_details(args: Mapping[str, Any], secret: bool = False) -> dict[str, Any]:
+    """Return JSON-safe details with sensitive values removed."""
+    __tracebackhide__ = True
+    return _redact(args, secret)
 
 
 def _error_info(exc: BaseException) -> dict[str, Any]:
@@ -538,6 +573,10 @@ class _StepContext:
     def __enter__(self) -> StepRecord:
         __tracebackhide__ = True
         self._started = time.perf_counter()
+        parent = _current_group.get()
+        self._record.parent = parent.seq if parent else None
+        if self._record.group:
+            self._group_token = _current_group.set(self._record)
         self._token = _current_step.set(self._record)
         return self._record
 
@@ -549,6 +588,8 @@ class _StepContext:
     ) -> None:
         __tracebackhide__ = True
         _current_step.reset(self._token)
+        if self._record.group:
+            _current_group.reset(self._group_token)
         record = self._record
         record.duration = time.perf_counter() - self._started
         if exc is not None:
@@ -601,3 +642,12 @@ def step(
             or any(part in key.lower() for key in (args or {}) for part in _SECRET_NAME_PARTS),
         )
     )
+
+
+def user_step(name: str, **details: Any) -> _StepContext:
+    """Group actions and log entries within a named step."""
+    __tracebackhide__ = True
+    secret = bool(details.pop("secret", False))
+    context = step("step", name, "", details, secret=secret)
+    context._record.group = True  # pyright: ignore[reportPrivateUsage]
+    return context

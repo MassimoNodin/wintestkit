@@ -13,6 +13,14 @@ const events = readFileSync(
   .split("\n")
   .map((line) => JSON.parse(line) as RunEvent);
 describe("test event mapping", () => {
+  it("writes structured messages and warnings to test output", () => {
+    const mapper = new EventMapper();
+    const entry = { level: "warning" as const, text: "take care", details: {}, timestamp: 1 };
+    expect(mapper.consume({ event: "log", time: 1, id: "test", entry })).toEqual([
+      { kind: "output", id: "test", text: "Warning: take care\r\n" },
+    ]);
+    expect(mapper.consume({ event: "log", time: 2, id: "test", entry: { ...entry, level: "info" } })[0]).toMatchObject({ text: "take care\r\n" });
+  });
   it("replays Python events with parameterized children and millisecond durations", () => {
     const mapper = new EventMapper(["tests/test_login.py::test_sign_in"]);
     const actions = events.flatMap((event) => mapper.consume(event));

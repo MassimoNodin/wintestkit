@@ -9,6 +9,8 @@ import pytest
 import wintestkit
 
 EXPECTED = {
+    "log",
+    "step",
     "App",
     "BoundButton",
     "BoundCheckBox",

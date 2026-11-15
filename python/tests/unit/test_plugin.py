@@ -411,3 +411,19 @@ def test_no_report_disables_all_automatic_capture(
     result.assert_outcomes(failed=1)
     result.stdout.fnmatch_lines(["*intentional test failure*"])
     assert not (pytester.path / "wtk-report").exists()
+
+
+def test_warning_is_recorded_in_junit(pytester: pytest.Pytester) -> None:
+    project(
+        pytester,
+        tests="""
+        def test_warning():
+            from wintestkit import log
+            log.warning("check the setup")
+    """,
+    )
+    result = pytester.runpytest(
+        "-p", "no:cacheprovider", "--junitxml=out.xml", "--wtk-screenshots=off"
+    )
+    result.assert_outcomes(passed=1)
+    assert "check the setup" in (pytester.path / "out.xml").read_text(encoding="utf-8")

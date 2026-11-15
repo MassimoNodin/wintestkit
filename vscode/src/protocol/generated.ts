@@ -598,6 +598,22 @@ export type RunEvent =
       step: StepEvent;
     }
   | {
+      event: "log";
+      time: number;
+      id: string;
+      entry: {
+        level: "info" | "warning";
+        text: string;
+        details: {
+          [k: string]: unknown;
+        };
+        timestamp: number;
+        parent?: number;
+        picture?: string;
+        skipped?: boolean;
+      };
+    }
+  | {
       event: "test_output";
       time: number;
       id: string;
@@ -2979,6 +2995,7 @@ export interface StepEvent {
   backend?: "uia" | "wpf";
   error?: ErrorInfo;
   screenshot?: string;
+  parent?: number;
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema

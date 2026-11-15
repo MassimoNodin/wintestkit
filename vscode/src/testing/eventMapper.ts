@@ -72,6 +72,9 @@ export class EventMapper {
             "s)\r\n",
         });
         break;
+      case "log":
+        actions.push({ kind: "output", id: event.id, text: terminalText((event.entry.level === "warning" ? "Warning: " : "") + event.entry.text + "\n") });
+        break;
       case "test_output":
         actions.push({
           kind: "output",

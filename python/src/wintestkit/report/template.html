@@ -179,6 +179,7 @@ mark{background:#ffe58a;color:#000;border-radius:2px}
 .log{border:1px solid var(--line);border-radius:8px;font-family:var(--mono);font-size:12px;padding:6px 0;overflow:auto}
 .log div{display:grid;grid-template-columns:32px 1fr;padding:1px 10px 1px 0;white-space:pre-wrap;word-break:break-word}
 .log div::before{content:attr(data-n);color:var(--faint);text-align:right;padding-right:10px}
+tr.warning{color:#a46700;font-weight:600} tr.warning img,tbody img{max-width:180px;max-height:120px;display:block}
 .log .ERROR{color:var(--red)}.log .WARNING{font-weight:700}.log .DEBUG{color:var(--faint)}
 .noout{color:var(--muted);padding:16px 0}
 
@@ -378,7 +379,8 @@ const TESTS=(Array.isArray(DATA.tests)?DATA.tests:[]).map((raw,index)=>{
   return {...raw,id:raw.id||'test-'+index,file:(raw.id?.split('::')[0]||raw.file||'Unknown file').replace(/\\/g,'/'),status:status(raw.outcome),dur:Number(raw.duration)||0,
     frames,line:Number(raw.line||0)+1,name:raw.name||raw.id||'Unnamed test',steps,error,diagnostic,hasReplay:frames.length>0,
     failureShot:raw.screenshots?.[0]||failed?.screenshot||failed?.shot,skip:text(raw.message)||'No skip reason was recorded.',
-    out:Object.fromEntries(['stdout','stderr','log'].map(key=>[key,text(raw[key]).replace(/\r\n/g,'\n').replace(/\n$/,'').split('\n').filter((line,i,all)=>line||all.length>1)]))};
+    entries:Array.isArray(raw.log)?raw.log:[],
+    out:Object.fromEntries(['stdout','stderr','log'].map(key=>[key,text(key==='log'?(raw.capturedLog||(!Array.isArray(raw.log)?raw.log:'')):raw[key]).replace(/\r\n/g,'\n').replace(/\n$/,'').split('\n').filter((line,i,all)=>line||all.length>1)]))};
 });
 const FILES=[];
 for(const test of TESTS){let group=FILES.find(group=>group.file===test.file);if(!group){group={file:test.file,tests:[]};FILES.push(group)}group.tests.push(test)}
@@ -418,6 +420,7 @@ function renderHeader(){
   $('#runinfo').textContent=`Run ${longDate(RUN.started)} \u00b7 ${fmt(RUN.duration)}`+(audits.length?` \u00b7 ${audits.length} writes: ${counts('performed')} performed, ${counts('denied')} denied, ${counts('failed')} failed`:'');
   const box=$('#counts');box.replaceChildren(
     ...['passed','failed','skipped'].map(k=>el('div',{class:'count'},svg(ICON[k]),el('div',{},el('small',{text:k[0].toUpperCase()+k.slice(1)}),el('b',{text:c[k]})))),
+    el('div',{class:'count'},el('div',{},el('small',{text:'Warnings'}),el('b',{text:TESTS.reduce((n,t)=>n+t.entries.filter(e=>e.level==='warning').length,0)}))),
     el('div',{class:'count total'},el('div',{},el('small',{text:'Total'}),el('b',{text:TESTS.length}))))}
 
 /* ---------- sidebar ---------- */
@@ -430,7 +433,7 @@ function renderNav(){
     nav.append(el('button',{class:'file','aria-expanded':String(!!open),title:f.file,onclick:()=>{st.collapsed.has(f.file)?st.collapsed.delete(f.file):st.collapsed.add(f.file);renderNav()}},
       svg(CHEV),svg(PY),el('span',{text:f.file.split('/').pop()}),!open&&fails?el('span',{class:'fails',text:fails+' failed'}):null));
     if(open)tests.forEach(t=>nav.append(el('button',{class:'test'+(t.id===st.sel?' sel':''),'aria-current':t.id===st.sel?'true':null,onclick:()=>select(t.id)},
-      el('span',{class:'dot '+t.status,title:t.status}),el('span',{class:'nm',text:t.name}),el('span',{class:'dur',text:t.status==='skipped'?'–':fmt(t.dur)}))))});
+      el('span',{class:'dot '+t.status,title:t.status}),el('span',{class:'nm',text:t.name}),t.entries.some(e=>e.level==='warning')?el('span',{class:'fails',text:t.entries.filter(e=>e.level==='warning').length+' warnings'}):null,el('span',{class:'dur',text:t.status==='skipped'?'–':fmt(t.dur)}))))});
   if(!any)nav.append(el('div',{class:'empty-nav',text:'No tests match.'}))}
 
 
@@ -459,8 +462,15 @@ function renderMain(){
  }
  if(test.status==='skipped')main.append(el('div',{class:'card'},el('h3',{text:'Skipped'}),el('div',{class:'skipbox',text:test.skip})));
  const body=el('tbody');
- test.steps.forEach((step,index)=>body.append(el('tr',{class:step.status+(step.shot?' click':''),tabindex:step.shot?'0':null,onclick:step.shot?()=>openReplay(index):null,onkeydown:step.shot?event=>{if(event.key==='Enter')openReplay(index)}:null},el('td',{class:'n',text:index+1}),el('td',{class:'st'},svg(ICON[step.status])),el('td',{},step.name,step.loc?el('span',{class:'stepsub',text:step.loc}):null,...(step.audits||[]).map(audit=>el('span',{class:'stepsub',text:[audit.operation,audit.typeFullName,audit.memberKey,audit.outcome,audit.reason||'',audit.timestampUtc].join(' | ')}))),el('td',{class:'d',text:step.status==='not_run'?'Not run':fmt(step.dur)}))));
- main.append(el('div',{class:'card'},el('h3',{text:'Test Steps'}),test.steps.length?el('table',{},el('thead',{},el('tr',{},...['#','Status','Step','Duration'].map(label=>el('th',{text:label})))),body):el('div',{class:'passnote',text:'No steps were recorded.'})));
+ const bySeq=new Map(test.steps.map(step=>[step.seq,step]));
+ const depth=item=>{let n=0,p=item.parent,seen=new Set();while(p!=null&&bySeq.has(p)&&!seen.has(p)){seen.add(p);n++;p=bySeq.get(p).parent}return n};
+ const timeline=[...test.steps.map((step,index)=>({step,index,time:step.start||0})),...test.entries.map(entry=>({entry,time:entry.timestamp||0}))].sort((a,b)=>a.time-b.time);
+ timeline.forEach(({step,index,entry})=>{
+  if(entry){const img=entry.picture?image(entry.picture,entry.text):null;const link=img?el('a',{href:img.getAttribute('src'),target:'_blank',rel:'noopener'},img):null;
+   body.append(el('tr',{class:entry.level==='warning'?'warning':''},el('td',{}),el('td',{}),el('td',{style:`padding-left:${12+depth(entry)*20}px`},el('span',{text:(entry.level==='warning'?'Warning: ':'')+entry.text}),entry.skipped?el('span',{class:'stepsub',text:'Picture skipped'}):null,Object.keys(entry.details||{}).length?el('span',{class:'stepsub',text:text(entry.details)}):null,link),el('td',{})));return}
+  body.append(el('tr',{class:step.status+(step.shot?' click':''),tabindex:step.shot?'0':null,onclick:step.shot?()=>openReplay(index):null},el('td',{class:'n',text:index+1}),el('td',{class:'st'},svg(ICON[step.status])),el('td',{style:`padding-left:${12+depth(step)*20}px`},step.name,step.loc?el('span',{class:'stepsub',text:step.loc}):null,...(step.audits||[]).map(audit=>el('span',{class:'stepsub',text:[audit.operation,audit.typeFullName,audit.memberKey,audit.outcome,audit.reason||'',audit.timestampUtc].join(' | ')}))),el('td',{class:'d',text:step.status==='not_run'?'Not run':fmt(step.dur)})));
+ });
+ main.append(el('div',{class:'card'},el('h3',{text:'Test Steps'}),timeline.length?el('table',{},el('thead',{},el('tr',{},...['#','Status','Step','Duration'].map(label=>el('th',{text:label})))),body):el('div',{class:'passnote',text:'No steps were recorded.'})));
 }
 function diagView(test,panel){
  if(test.status!=='failed')return nothing(panel,test.status==='passed'?'This test passed, so there is nothing to diagnose.':'This test was skipped.');

@@ -128,9 +128,10 @@ class RunRecorder:
                     "screenshots": [],
                     "stdout": "",
                     "stderr": "",
-                    "log": "",
+                    "log": [],
+                    "capturedLog": "",
                 }
-        elif kind in ("step", "test_output", "test_end"):
+        elif kind in ("step", "log", "test_output", "test_end"):
             test = self.tests.get(event["id"])
             if test is None:
                 return
@@ -142,8 +143,11 @@ class RunRecorder:
                         self._relative(str(path)) if path.is_absolute() else path.as_posix()
                     )
                 test["steps"].append(step)
+            elif kind == "log":
+                test["log"].append(copy.deepcopy(event["entry"]))
             elif kind == "test_output":
-                test[event["stream"]] += event["text"]
+                key = "capturedLog" if event["stream"] == "log" else event["stream"]
+                test[key] += event["text"]
             else:
                 self.completed.append(event["id"])
                 for key in ("outcome", "duration", "message", "error", "location"):

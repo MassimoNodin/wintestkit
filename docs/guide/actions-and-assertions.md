@@ -184,3 +184,23 @@ def test_a_slow_test(main: MainPage) -> None:
 
 Application start-up has its own limit, `startup_timeout` in `[tool.wintestkit.app]` (30 seconds
 by default).
+
+
+## Logging and steps
+
+Use named steps to group actions and messages in the report. Steps can be nested;
+exceptions mark each enclosing step as failed. Details named like secrets are
+redacted, and `secret=True` redacts every detail.
+
+```python
+# pseudo-code
+from wintestkit import log, step
+
+with step("Sign in", account="operator"):
+    log.message("Opening the sign-in form")
+    log.warning("Using a temporary account")
+    log.picture(name="Before sign-in")
+```
+
+`log.picture()` captures the desktop; pass a bound control or window to capture
+its area. Sensitive or unavailable targets are skipped. Warnings do not fail a test.

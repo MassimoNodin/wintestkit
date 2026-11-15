@@ -9,6 +9,7 @@ __version__ = "0.1.1rc2"
 
 if TYPE_CHECKING:
     from wintestkit import errors as errors
+    from wintestkit import log as log
     from wintestkit.app import App as App
     from wintestkit.config import WtkConfig as WtkConfig
     from wintestkit.config import load_config as load_config
@@ -47,6 +48,7 @@ if TYPE_CHECKING:
     from wintestkit.model import Page as Page
     from wintestkit.model import PageObject as PageObject
     from wintestkit.model import Window as Window
+    from wintestkit.runtime import user_step as step
 
 __all__ = [
     "App",
@@ -89,11 +91,14 @@ __all__ = [
     "find_all_children",
     "find_child",
     "load_config",
+    "log",
+    "step",
 ]
 
 # Public names are imported lazily so that merely loading the pytest plugin (which happens in
 # every pytest run once wintestkit is installed) does not initialise COM or import UI Automation.
 _LAZY: dict[str, tuple[str, str]] = {
+    "step": ("wintestkit.runtime", "user_step"),
     "App": ("wintestkit.app", "App"),
     "BoundButton": ("wintestkit.controls", "BoundButton"),
     "BoundCheckBox": ("wintestkit.controls", "BoundCheckBox"),
@@ -136,8 +141,8 @@ _LAZY: dict[str, tuple[str, str]] = {
 
 
 def __getattr__(name: str) -> Any:
-    if name == "errors":
-        return importlib.import_module("wintestkit.errors")
+    if name in ("errors", "log"):
+        return importlib.import_module("wintestkit." + name)
     target = _LAZY.get(name)
     if target is None:
         raise AttributeError(f"module 'wintestkit' has no attribute {name!r}")

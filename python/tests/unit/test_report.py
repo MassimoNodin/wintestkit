@@ -227,3 +227,63 @@ def test_write_audits_in_report_and_command(
         "setProperty | Example.Control | identity | denied | redacted | 2026-11-11T00:00:00Z"
         in output
     )
+
+
+def test_structured_log_round_trip_and_html_escaping(tmp_path: Path) -> None:
+    recorder = RunRecorder(tmp_path)
+    recorder.record(
+        {
+            "event": "collected",
+            "tests": [{"id": "t", "name": "t", "file": str(tmp_path / "t.py"), "line": 0}],
+        }
+    )
+    entry = {
+        "level": "warning",
+        "text": "</script><b>unsafe</b>",
+        "details": {},
+        "timestamp": 2,
+        "parent": 1,
+    }
+    recorder.record({"event": "log", "id": "t", "entry": entry})
+    recorder.record({"event": "step", "id": "t", "step": {"seq": 2, "parent": 1}})
+    recorder.record(
+        {"event": "test_end", "id": "t", "outcome": "passed", "duration": 1, "screenshots": []}
+    )
+    results = recorder.results()
+    write_report(tmp_path, results)
+    saved = json.loads((tmp_path / "results.json").read_text(encoding="utf-8"))
+    assert saved["tests"][0]["log"] == [entry]
+    assert saved["tests"][0]["steps"][0]["parent"] == 1
+    html = (tmp_path / "index.html").read_text(encoding="utf-8")
+    assert "</script><b>unsafe</b>" not in html
+    assert "innerHTML" not in html
+    assert main(["report", str(tmp_path)]) == 0
+
+
+def test_log_event_matches_schema() -> None:
+    from jsonschema import Draft202012Validator
+    from referencing import Registry, Resource
+
+    schemas = Path(__file__).resolve().parents[3] / "schemas"
+    registry = Registry()
+    for path in schemas.glob("*.schema.json"):
+        schema = json.loads(path.read_text(encoding="utf-8"))
+        registry = registry.with_resource(schema["$id"], Resource.from_contents(schema))
+    validator = Draft202012Validator(
+        {"$ref": "https://wintestkit.dev/schemas/events.schema.json#/$defs/RunEvent"},
+        registry=registry,
+    )
+    validator.validate(
+        {
+            "event": "log",
+            "time": 1,
+            "id": "test",
+            "entry": {
+                "level": "warning",
+                "text": "warning",
+                "details": {},
+                "timestamp": 1,
+                "parent": 1,
+            },
+        }
+    )
