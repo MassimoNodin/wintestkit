@@ -3,6 +3,44 @@
   "$id": "https://wintestkit.dev/schemas/events.schema.json",
   "$ref": "#/$defs/RunEvent",
   "$defs": {
+    "LogEntry": {
+      "type": "object",
+      "properties": {
+        "level": {
+          "enum": [
+            "info",
+            "warning"
+          ]
+        },
+        "text": {
+          "type": "string"
+        },
+        "details": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "timestamp": {
+          "type": "number"
+        },
+        "parent": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "picture": {
+          "type": "string"
+        },
+        "skipped": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "level",
+        "text",
+        "details",
+        "timestamp"
+      ],
+      "additionalProperties": false
+    },
     "TestOutcome": {
       "type": "string",
       "enum": [
@@ -228,44 +266,7 @@
             "id": {
               "type": "string"
             },
-            "entry": {
-              "type": "object",
-              "properties": {
-                "level": {
-                  "enum": [
-                    "info",
-                    "warning"
-                  ]
-                },
-                "text": {
-                  "type": "string"
-                },
-                "details": {
-                  "type": "object",
-                  "additionalProperties": true
-                },
-                "timestamp": {
-                  "type": "number"
-                },
-                "parent": {
-                  "type": "integer",
-                  "minimum": 1
-                },
-                "picture": {
-                  "type": "string"
-                },
-                "skipped": {
-                  "type": "boolean"
-                }
-              },
-              "required": [
-                "level",
-                "text",
-                "details",
-                "timestamp"
-              ],
-              "additionalProperties": false
-            }
+            "entry": { "$ref": "events.schema.json#/$defs/LogEntry" }
           },
           "required": [
             "event",

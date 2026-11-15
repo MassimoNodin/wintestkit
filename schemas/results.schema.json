@@ -163,6 +163,10 @@
           "type": "string"
         },
         "log": {
+          "type": "array",
+          "items": { "$ref": "events.schema.json#/$defs/LogEntry" }
+        },
+        "capturedLog": {
           "type": "string"
         }
       },
@@ -177,7 +181,8 @@
         "screenshots",
         "stdout",
         "stderr",
-        "log"
+        "log",
+        "capturedLog"
       ],
       "additionalProperties": false
     }

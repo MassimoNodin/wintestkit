@@ -601,17 +601,7 @@ export type RunEvent =
       event: "log";
       time: number;
       id: string;
-      entry: {
-        level: "info" | "warning";
-        text: string;
-        details: {
-          [k: string]: unknown;
-        };
-        timestamp: number;
-        parent?: number;
-        picture?: string;
-        skipped?: boolean;
-      };
+      entry: LogEntry;
     }
   | {
       event: "test_output";
@@ -937,6 +927,7 @@ export interface ProtocolContracts {
   Key?: Key;
   Locator?: Locator;
   LocatorData?: LocatorData;
+  LogEntry?: LogEntry;
   LogNotification?: LogNotification;
   ManagedBindingInfo?: ManagedBindingInfo;
   ManagedDiagnostic?: ManagedDiagnostic;
@@ -2622,6 +2613,21 @@ export interface Locator {
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "LogEntry".
+ */
+export interface LogEntry {
+  level: "info" | "warning";
+  text: string;
+  details: {
+    [k: string]: unknown;
+  };
+  timestamp: number;
+  parent?: number;
+  picture?: string;
+  skipped?: boolean;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
  * via the `definition` "LogNotification".
  */
 export interface LogNotification {
@@ -2975,7 +2981,8 @@ export interface TestResult {
   treeDiff?: string;
   stdout: string;
   stderr: string;
-  log: string;
+  log: LogEntry[];
+  capturedLog: string;
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema

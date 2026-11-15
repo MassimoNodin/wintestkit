@@ -172,6 +172,8 @@ def definition_examples() -> dict[str, dict[str, Any]]:
         "FlowRunParams": {"file": "C:/wtk/flows/navigation.py", "name": "tour_calculator"},
         "FlowRunResult": {"status": "failed", "durationMs": 12.5, "message": "AssertionError: x"},
         "InspectRootsParams": {},
+        "InspectManagedKeepaliveParams": {"sessionId": "session-1"},
+        "InspectManagedKeepaliveResult": {"alive": True},
         "InspectRootsResult": [node],
         "InspectRefreshParams": {},
         "InspectRefreshResult": {
@@ -282,6 +284,7 @@ def definition_examples() -> dict[str, dict[str, Any]]:
         "step.schema.json": {"StepEvent": fixture_data("step.json")},
         "events.schema.json": {
             "RunEvent": events[0],
+            "LogEntry": results["tests"][0]["log"][0],
             "TestOutcome": "passed",
             "CollectedTest": events[1]["tests"][0],
             "CollectError": {"file": "C:/wtk/tests/test_broken.py", "message": "invalid syntax"},

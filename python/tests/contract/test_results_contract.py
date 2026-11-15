@@ -79,13 +79,16 @@ def test_pytest_results_match_events(
     pytester.makepyprojecttoml('[tool.wintestkit]\nscreenshots = "off"\n')
     pytester.makepyfile("""
 import sys
+import logging
 import pytest
-from wintestkit import runtime
+from wintestkit import log, runtime, step
 def test_ok():
     print("captured output")
     print("captured error", file=sys.stderr)
-    with runtime.step("click", "Main.button", "Button[id=ok]", {}):
-        pass
+    with step("group"):
+        with runtime.step("click", "Main.button", "Button[id=ok]", {}):
+            log.message("nested message", detail="value")
+            logging.warning("captured warning")
 def test_failure():
     assert False, "failure details"
 @pytest.fixture
@@ -112,6 +115,12 @@ def test_skip(): pass
     assert passed["stdout"] == "captured output\n"
     assert passed["stderr"] == "captured error\n"
     assert passed["steps"][0]["action"] == "click"
+    log_events = [event for event in events if event["event"] == "log"]
+    assert passed["log"] == [event["entry"] for event in log_events]
+    assert passed["log"][0]["parent"] == passed["steps"][0]["parent"]
+    assert "captured warning" in passed["capturedLog"]
+    for event in events:
+        validate("events.schema.json", "RunEvent", event)
     failed = next(test for test in results["tests"] if test["outcome"] == "failed")
     assert "failure details" in failed["message"]
     assert failed["location"]["file"].startswith("../")

@@ -62,7 +62,8 @@
       "treeDiff": "artifacts/sign-in/tree-diff.txt",
       "stdout": "Signed in\n",
       "stderr": "",
-      "log": ""
+      "log": [{"level": "info", "text": "Signed in", "details": {}, "timestamp": 1791936000.3, "parent": 1}],
+      "capturedLog": ""
     }
   ]
 }
