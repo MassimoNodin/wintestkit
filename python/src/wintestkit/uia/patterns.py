@@ -156,6 +156,23 @@ def add_to_selection(el: TargetElement) -> None:
         pattern.AddToSelection()
 
 
+def remove_from_selection(el: TargetElement) -> None:
+    __tracebackhide__ = True
+    el = uia_of(el)
+    pattern = _pattern(el, "SelectionItem")
+    with com.wrap_com_errors:
+        pattern.RemoveFromSelection()
+
+
+def can_select_multiple(el: TargetElement) -> bool:
+    """Whether the container's Selection pattern allows more than one selected item."""
+    __tracebackhide__ = True
+    el = uia_of(el)
+    pattern = _pattern(el, "Selection")
+    with com.wrap_com_errors:
+        return bool(pattern.CurrentCanSelectMultiple)
+
+
 def is_selected(el: TargetElement) -> bool:
     __tracebackhide__ = True
     if isinstance(el, WpfElement):

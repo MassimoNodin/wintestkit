@@ -126,9 +126,10 @@ EXPECTED = {
     BoundRadioButton: {"click", "double_click", "right_click", "select", "is_selected"},
     BoundComboBox: {"select", "selected", "selected_items", "items", "expand", "collapse"}
     | {"value"},
-    BoundListBox: {"select", "selected", "selected_items", "items"},
+    BoundListBox: {"select", "selected", "selected_items", "items", "deselect", "clear_selection"},
     BoundListItem: {"click", "double_click", "right_click", "select", "is_selected"},
     BoundDataGrid: {"row", "cell", "row_count", "column_count", "find_row", "select"}
+    | {"deselect", "clear_selection"}
     | {"selected_items"},
     BoundTreeView: {"select", "selected", "selected_items", "items", "expand", "collapse"},
     BoundMenu: {"click_path"},

@@ -36,6 +36,7 @@ from wintestkit.model import (
     _Clickable,
     _Expandable,
     _GridControl,
+    _MultiSelecting,
     _Selecting,
     _TextEntry,
     _Valued,
@@ -162,15 +163,16 @@ class BoundComboBox(_Valued, _Expandable, _Choice):
         return actions.combo_item_names(self.resolve())
 
 
-class BoundListBox(_Listed):
-    """A list: ``select``, ``selected``, ``selected_items`` and ``items``."""
+class BoundListBox(_MultiSelecting, _Listed):
+    """A list: ``select`` (one item or several), ``deselect``, ``clear_selection``, ``selected``,
+    ``selected_items`` and ``items``."""
 
     required_patterns = ("Selection",)
 
 
-class BoundDataGrid(_GridControl, _Selecting):
+class BoundDataGrid(_GridControl, _MultiSelecting):
     """A data grid: ``row``, ``cell``, ``row_count``, ``column_count``, ``find_row``, ``select``
-    (a row by index) and ``selected_items``."""
+    (rows by index, one or several), ``deselect``, ``clear_selection`` and ``selected_items``."""
 
     required_patterns = ("Grid",)
 
@@ -187,21 +189,21 @@ class BoundTreeView(_Choice):
 
     def select(
         self,
-        item: str | int | re.Pattern[str] | Sequence[navigate.Segment],
+        items: str | int | re.Pattern[str] | Sequence[navigate.Segment],
         *,
         timeout: float | None = None,
         separator: str = navigate.DEFAULT_SEPARATOR,
     ) -> None:
         __tracebackhide__ = True
-        if isinstance(item, int | re.Pattern) or (
-            isinstance(item, str) and not navigate.is_path(item, separator)
+        if isinstance(items, int | re.Pattern) or (
+            isinstance(items, str) and not navigate.is_path(items, separator)
         ):
-            super().select(item, timeout=timeout)
+            super().select(items, timeout=timeout)
             return
-        segments = navigate.split_path(item, separator)
+        segments = navigate.split_path(items, separator)
         mode = runtime.get_config().input_mode
         budget = self._timeout(timeout)
-        with self.step("select", {"item": navigate.path_text(item, separator)}):
+        with self.step("select", {"item": navigate.path_text(items, separator)}):
             self.perform(
                 timeout,
                 lambda el: navigate.select_tree_path(el, segments, mode=mode, timeout=budget),

@@ -10,6 +10,8 @@ from __future__ import annotations
 import logging
 import re
 import time
+from collections import Counter
+from collections.abc import Sequence
 from typing import Any, Literal
 
 from wintestkit.backends.element import TargetElement, WpfElement, uia_of
@@ -1271,7 +1273,8 @@ def _wpf_item_not_found(el: WpfElement, item: Item) -> ElementNotFoundError:
     )
 
 
-def _wpf_select(el: WpfElement, item: Item, *, mode: InputMode, combo: bool) -> None:
+def _wpf_realize(el: WpfElement, item: Item) -> WpfElement:
+    """Realize one item of a container and return its element."""
     __tracebackhide__ = True
     from wintestkit.engine.wpf_query import UnsupportedQuery, predicate
     from wintestkit.errors import InvalidLocatorError
@@ -1283,21 +1286,26 @@ def _wpf_select(el: WpfElement, item: Item, *, mode: InputMode, combo: bool) -> 
             match = ItemMatch.from_json(predicate((PathSegment("uia", "name"),), item).to_json())
         except UnsupportedQuery as error:
             raise InvalidLocatorError(f"Unsupported WPF item locator: {error}") from error
+    if match is None:
+        raise _wpf_item_not_found(el, item)
+    try:
+        result = el.client.act_realize_item(
+            el.ref, match, max_items=10000, timeout_ms=2000, deadline=operation_deadline(2)
+        )
+    except InspectorError as error:
+        if error.code == "notFound":
+            raise _wpf_item_not_found(el, item) from error
+        _translate_wpf_error(error, "realizing item")
+        raise
+    return WpfElement(el.client, result.handle, el.process_id)
+
+
+def _wpf_select(el: WpfElement, item: Item, *, mode: InputMode, combo: bool) -> None:
+    __tracebackhide__ = True
     if combo:
         expand(el, mode=mode)
     try:
-        if match is None:
-            raise _wpf_item_not_found(el, item)
-        try:
-            result = el.client.act_realize_item(
-                el.ref, match, max_items=10000, timeout_ms=2000, deadline=operation_deadline(2)
-            )
-        except InspectorError as error:
-            if error.code == "notFound":
-                raise _wpf_item_not_found(el, item) from error
-            _translate_wpf_error(error, "realizing item")
-            raise
-        chosen = WpfElement(el.client, result.handle, el.process_id)
+        chosen = _wpf_realize(el, item)
         if mode == "mouse":
             if combo:
 
@@ -1349,3 +1357,214 @@ def select(el: TargetElement, item: Item, *, mode: InputMode = "pattern") -> Non
     if patterns.has_pattern(chosen, "ScrollItem"):
         patterns.scroll_into_view(chosen)
     patterns.select_item(chosen)
+
+
+# -- multi-selection ------------------------------------------------------------------------------
+
+Items = Sequence[Item]
+_CTRL = input.parse_modifiers("Ctrl")
+
+
+def _unique_items(items: Items) -> list[Item]:
+    __tracebackhide__ = True
+    unique: dict[str, Item] = {}
+    for item in items:
+        unique.setdefault(_describe_item(item), item)
+    return list(unique.values())
+
+
+def _multi_container(el: TargetElement, count: int) -> None:
+    """Refuse a container that cannot select several items."""
+    __tracebackhide__ = True
+    if isinstance(el, WpfElement):
+        available = _wpf_patterns(el)
+        kind = str(_wpf_read(el, "control_type"))
+    else:
+        uia = uia_of(el)
+        available = {"Selection"} if patterns.has_pattern(uia, "Selection") else set[str]()
+        kind = uia.control_type
+    if kind == "ComboBox" or "Selection" not in available:
+        raise ActionError(f"Multi-selection is not supported on {_short(el)}")
+    if count > 1 and not patterns.can_select_multiple(el):
+        raise ActionError(
+            f"{_short(el)} does not allow selecting more than one item (CanSelectMultiple is false)"
+        )
+
+
+def _resolve_item(el: TargetElement, item: Item, mode: InputMode) -> TargetElement:
+    """The element of one item: an agent element for WPF mouse input, else its UIA peer.
+
+    The agent has no add or remove selection verbs, so pattern input goes through the UIA tree.
+    """
+    __tracebackhide__ = True
+    if isinstance(el, WpfElement) and mode == "mouse":
+        return _wpf_realize(el, item)
+    uia = uia_of(el)
+    chosen = _item_by_index(uia, item) if isinstance(item, int) else _find_listed_item(uia, item)
+    if chosen is None:
+        available = [c for t in _ITEM_TYPES for c in query_all(uia, Locator(control_type=t))]
+        raise _item_not_found(uia, item, available)
+    return chosen
+
+
+def _scroll_item(chosen: TargetElement) -> None:
+    __tracebackhide__ = True
+    if patterns.has_pattern(chosen, "ScrollItem"):
+        patterns.scroll_into_view(chosen)
+
+
+def _click_item(
+    container: TargetElement, chosen: TargetElement, modifiers: tuple[int, ...]
+) -> None:
+    """Click an item with the mouse (a grid row at its row header)."""
+    __tracebackhide__ = True
+    if isinstance(chosen, WpfElement):
+        if isinstance(container, WpfElement) and _wpf_read(container, "control_type") == "DataGrid":
+            try:
+                x, y = _wpf_mouse_target(chosen, "gridRowHeader")
+            except ActionError:
+                pass
+            else:
+                input.click(x, y, **_click_kwargs("left", 1, modifiers))
+                return
+        _wpf_mouse_click(chosen, modifiers=modifiers)
+        return
+    uia = uia_of(chosen)
+    if uia.control_type == "DataItem":
+        # The empty part of a grid row does not take clicks: use its row header, else a cell.
+        cells = uia.children()
+        header = next((c for c in cells if c.control_type == "HeaderItem"), None)
+        uia = header or (cells[0] if cells else uia)
+    _mouse_click(uia, modifiers=modifiers)
+
+
+def _select_only(container: TargetElement, chosen: TargetElement, mode: InputMode) -> None:
+    __tracebackhide__ = True
+    if mode == "mouse":
+        _click_item(container, chosen, ())
+        return
+    _scroll_item(chosen)
+    select_self(chosen)
+
+
+def _toggle_on(container: TargetElement, chosen: TargetElement, mode: InputMode) -> None:
+    __tracebackhide__ = True
+    if mode == "mouse":
+        _click_item(container, chosen, _CTRL)
+        return
+    _scroll_item(chosen)
+    patterns.add_to_selection(chosen)
+
+
+def _toggle_off(container: TargetElement, chosen: TargetElement, mode: InputMode) -> None:
+    __tracebackhide__ = True
+    if mode == "mouse":
+        _click_item(container, chosen, _CTRL)
+        return
+    _scroll_item(chosen)
+    patterns.remove_from_selection(chosen)
+
+
+def _verify_selection(el: TargetElement, expected: Counter[str], timeout: float) -> None:
+    """Wait for the selection to equal ``expected``; ``ActionError`` naming both otherwise."""
+    __tracebackhide__ = True
+    try:
+        waits.wait_until(
+            lambda: Counter(selected_items(el)) == expected or None,
+            timeout,
+            description=f"the selection of {_short(el)}",
+        )
+    except waits.WaitTimeoutError:
+        actual = selected_items(el)
+        raise ActionError(
+            f"The selection of {_short(el)} is {actual}, expected {list(expected.elements())}"
+        ) from None
+
+
+def select_items(
+    el: TargetElement,
+    items: Items,
+    *,
+    add: bool = False,
+    mode: InputMode = "pattern",
+    timeout: float = 2.0,
+) -> None:
+    """Select several items: replace the selection (``add=False``) or add to it.
+
+    Pattern mode uses Select and AddToSelection, mouse mode a plain click and Ctrl+clicks. Fails
+    with ``ActionError`` when the resulting selection differs from the requested one.
+    """
+    __tracebackhide__ = True
+    unique = _unique_items(items)
+    if not unique:
+        raise ActionError("select() needs at least one item; use clear_selection() to select none")
+    _multi_container(el, len(unique))
+    expected = Counter(selected_items(el)) if add else Counter[str]()
+    for position, item in enumerate(unique):
+        chosen = _resolve_item(el, item, mode)
+        name = chosen.name
+        if position == 0 and not add:
+            _select_only(el, chosen, mode)
+            expected = Counter({name: 1})
+        elif not is_selected(chosen):
+            _toggle_on(el, chosen, mode)
+            expected[name] += 1
+    _verify_selection(el, expected, timeout)
+
+
+def deselect_items(
+    el: TargetElement, items: Items, *, mode: InputMode = "pattern", timeout: float = 2.0
+) -> None:
+    """Remove items from the selection (RemoveFromSelection, or Ctrl+click in mouse mode)."""
+    __tracebackhide__ = True
+    unique = _unique_items(items)
+    if not unique:
+        raise ActionError("deselect() needs at least one item; use clear_selection() to clear")
+    _multi_container(el, 1)
+    expected = Counter(selected_items(el))
+    for item in unique:
+        chosen = _resolve_item(el, item, mode)
+        if is_selected(chosen):
+            _toggle_off(el, chosen, mode)
+            expected[chosen.name] -= 1
+    _verify_selection(el, +expected, timeout)
+
+
+def clear_selection(
+    el: TargetElement, *, mode: InputMode = "pattern", timeout: float = 2.0
+) -> None:
+    """Deselect every selected item."""
+    __tracebackhide__ = True
+    _multi_container(el, 1)
+    for chosen in patterns.selection(el):
+        _toggle_off(el, chosen, mode)
+    _verify_selection(el, Counter[str](), timeout)
+
+
+# -- grid contents --------------------------------------------------------------------------------
+
+
+def grid_headers(el: TargetElement) -> list[str]:
+    """The column header names of a grid (empty when it exposes none)."""
+    __tracebackhide__ = True
+    try:
+        return [header.name for header in patterns.column_headers(el)]
+    except (ActionError, UIAError):
+        return []
+
+
+def read_grid(el: TargetElement, columns: Sequence[int] | None = None) -> list[list[str]]:
+    """The cell texts of every row (of the given columns); refuses grids beyond 500 rows."""
+    __tracebackhide__ = True
+    from wintestkit.engine.table import MAX_TABLE_ROWS
+
+    rows, count = patterns.grid_size(el)
+    if rows > MAX_TABLE_ROWS:
+        raise ActionError(
+            f"{_short(el)} has {rows} rows; reading a table is limited to {MAX_TABLE_ROWS} rows"
+        )
+    wanted = list(range(count)) if columns is None else list(columns)
+    return [
+        [get_text(patterns.grid_item(el, row, column)).strip() for column in wanted]
+        for row in range(rows)
+    ]

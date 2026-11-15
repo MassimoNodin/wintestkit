@@ -1658,14 +1658,76 @@ class _Selecting(BoundControl):
         else:
             actions.select(element, item)
 
-    def select(self, item: str | int | re.Pattern[str], *, timeout: float | None = None) -> None:
+    def select(self, items: str | int | re.Pattern[str], *, timeout: float | None = None) -> None:
         __tracebackhide__ = True
-        with self.step("select", {"item": item}):
-            self.perform(timeout, lambda el: self._choose(el, item))
+        with self.step("select", {"item": items}):
+            self.perform(timeout, lambda el: self._choose(el, items))
 
     def selected_items(self) -> list[str]:
         __tracebackhide__ = True
         return actions.selected_items(self.resolve())
+
+
+_ItemSpec = (
+    str
+    | int
+    | re.Pattern[str]
+    | list[str | int | re.Pattern[str]]
+    | tuple[str | int | re.Pattern[str], ...]
+)
+
+
+class _MultiSelecting(_Selecting):
+    """Selecting that also takes several items, ``deselect`` and ``clear_selection``."""
+
+    def select(
+        self,
+        items: _ItemSpec,
+        *,
+        add: bool = False,
+        timeout: float | None = None,
+    ) -> None:
+        """Select one item or a list of them; ``add=True`` keeps the current selection."""
+        __tracebackhide__ = True
+        if isinstance(items, list | tuple):
+            chosen = list(items)
+        elif add:
+            chosen = [items]
+        else:
+            super().select(items, timeout=timeout)
+            return
+        mode = runtime.get_config().input_mode
+        budget = self._timeout(timeout)
+        with self.step("select", {"items": chosen, "add": add}):
+            self.perform(
+                timeout,
+                lambda el: actions.select_items(el, chosen, add=add, mode=mode, timeout=budget),
+            )
+
+    def deselect(
+        self,
+        items: _ItemSpec,
+        *,
+        timeout: float | None = None,
+    ) -> None:
+        """Remove one item or a list of them from the selection."""
+        __tracebackhide__ = True
+        chosen = list(items) if isinstance(items, list | tuple) else [items]
+        mode = runtime.get_config().input_mode
+        budget = self._timeout(timeout)
+        with self.step("deselect", {"items": chosen}):
+            self.perform(
+                timeout,
+                lambda el: actions.deselect_items(el, chosen, mode=mode, timeout=budget),
+            )
+
+    def clear_selection(self, *, timeout: float | None = None) -> None:
+        """Deselect everything."""
+        __tracebackhide__ = True
+        mode = runtime.get_config().input_mode
+        budget = self._timeout(timeout)
+        with self.step("clear_selection"):
+            self.perform(timeout, lambda el: actions.clear_selection(el, mode=mode, timeout=budget))
 
 
 class _Expandable(BoundControl):
@@ -1736,7 +1798,7 @@ class _GridControl(BoundControl):
         raise ElementNotFoundError(_find_row_diagnostic(self, column, shown, rows))
 
 
-class BoundElement(_Clickable, _TextEntry, _Checkable, _Selecting, _Expandable, _GridControl):
+class BoundElement(_Clickable, _TextEntry, _Checkable, _MultiSelecting, _Expandable, _GridControl):
     """The generic bound element: every action, whatever the control (see ``Element``).
 
     Prefer a typed element (``Button``, ``ComboBox`` ...) where one fits: it offers only the

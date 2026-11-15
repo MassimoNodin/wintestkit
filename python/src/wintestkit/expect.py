@@ -6,13 +6,13 @@ import json
 import re
 import sys
 import types
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any
 
 from wintestkit import runtime
 from wintestkit.backends.element import TargetElement
-from wintestkit.engine import actions, waits
+from wintestkit.engine import actions, table, waits
 from wintestkit.engine.resolve import wait_link
 from wintestkit.errors import (
     AmbiguousElementError,
@@ -329,6 +329,43 @@ class Expectation:
             return _Outcome(found == n, str(found))
 
         self._assert("to_have_count", n, evaluate)
+
+    def to_have_rows(
+        self,
+        expected: Sequence[table.ExpectedRow],
+        *,
+        columns: Sequence[str | int] | None = None,
+        ordered: bool = True,
+    ) -> None:
+        """Compare a grid's rows with ``expected``: lists of cell texts, or dicts by column header.
+
+        ``columns`` limits and orders the compared columns; ``ordered=False`` ignores row order.
+        A cell may be a compiled regex. A dict row compares only the columns it names.
+        """
+        __tracebackhide__ = True
+
+        def check(element: TargetElement) -> _Outcome:
+            __tracebackhide__ = True
+            headers = actions.grid_headers(element)
+            _, count = patterns.grid_size(element)
+            wanted = table.normalize(expected, columns, headers, count)
+            rows = actions.read_grid(element, wanted.columns)
+            problem = table.compare(wanted, rows, ordered=ordered)
+            if not problem:
+                return _Outcome(True, f"{len(rows)} matching rows")
+            expected_table = table.format_table(wanted.titles, wanted.rows)
+            actual_table = table.format_table(wanted.titles, rows)
+            actual = (
+                f"{problem}\n  Expected table:\n{expected_table}\n  Actual table:\n{actual_table}"
+            )
+            return _Outcome(False, actual)
+
+        self._assert(
+            "to_have_rows",
+            list(expected),
+            lambda e: _needs(e, check),
+            wanted=f"{len(expected)} rows{'' if ordered else ' in any order'}",
+        )
 
     def to_be_selected(self) -> None:
         __tracebackhide__ = True
