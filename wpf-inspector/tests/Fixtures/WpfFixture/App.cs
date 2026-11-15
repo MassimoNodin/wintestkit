@@ -64,6 +64,9 @@ public sealed class FixtureControl : MiddleControl, ICustomTypeDescriptor
     public double CoercedValue { get => (double)GetValue(CoercedValueProperty); set => SetValue(CoercedValueProperty, value); }
     public string WritableText { get; set; } = "initial";
     public string RecordWrite(string value, long number) { Counts.Hit("RecordWrite"); return value; }
+    [System.Diagnostics.Contracts.Pure]
+    public string DescribeState() => "fixture-ready";
+    public string UnlistedMethod() => "unlisted";
     public string Overload(int value) => "int32";
     public string Overload(long value) => "int64";
     public string TakeEnum(WriteChoice value) => value.ToString();

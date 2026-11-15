@@ -1,5 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <DefineConstants>$(DefineConstants);CONTRACTS_FULL</DefineConstants>
     <OutputType>WinExe</OutputType><TargetFrameworks>net48;net8.0-windows;net10.0-windows</TargetFrameworks>
     <RuntimeIdentifiers>win-x86;win-x64</RuntimeIdentifiers>
     <UseWPF>true</UseWPF><AssemblyName>WinTestKit.Fixture</AssemblyName><RootNamespace>WinTestKit.Fixture</RootNamespace>

@@ -337,6 +337,20 @@ public class RequestDispatcherTests
         }
     }
 
+    [Fact]
+    public async Task PureCallsCountTowardRateLimit()
+    {
+        var service = new WriteService(); var dispatcher = new RequestDispatcher(Session, service);
+        var request = new WriteCallParams { Handle = StateService.Handle, MemberKey = "PureValue()", TimeoutMs = 2000 }.ToJson();
+        for (int index = 0; index < 10; index++)
+        {
+            var response = await Dispatch(dispatcher, PipeMethods.WriteCall, request);
+            Assert.Equal("pure", WriteCallResult.FromJson(response.Result!).Audit.Authorization);
+        }
+        var limited = await Dispatch(dispatcher, PipeMethods.WriteCall, request);
+        Assert.Equal(ErrorCodes.WriteRateExceeded, limited.Error!.Code);
+    }
+
     private sealed class RejectingScheduler : IRequestScheduler
     {
         public bool Reject { get; set; }
@@ -353,7 +367,7 @@ public class RequestDispatcherTests
         {
             if (ErrorCode != null) throw new ProtocolException(ErrorCode, "failed");
             Operation = operation;
-            var audit = new WriteAudit { Operation = operation, TypeFullName = "Example", MemberKey = memberKey, Outcome = Fail ? "denied" : "performed", TimestampUtc = DateTime.UtcNow.ToString("O") };
+            var audit = new WriteAudit { Operation = operation, TypeFullName = "Example", MemberKey = memberKey, Outcome = Fail ? "denied" : "performed", Authorization = memberKey == "PureValue()" ? "pure" : null, TimestampUtc = DateTime.UtcNow.ToString("O") };
             if (Fail) { var details = new JsonObjectNode(); details.Add("audit", audit.ToJson()); details.Add("secret", new JsonStringNode("private")); throw new ProtocolException(ErrorCodes.WriteDenied, "private", details); }
             return Task.FromResult(new WriteCallResult { Audit = audit, Result = new ValueDto { Status = "ok", Kind = "null", Scalar = JsonNullNode.Instance } });
         }

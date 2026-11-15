@@ -44,6 +44,54 @@
             "wpf"
           ]
         },
+        "audits": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "operation": {
+                "enum": [
+                  "setProperty",
+                  "call"
+                ]
+              },
+              "typeFullName": {
+                "type": "string"
+              },
+              "memberKey": {
+                "type": "string"
+              },
+              "outcome": {
+                "enum": [
+                  "performed",
+                  "denied",
+                  "failed"
+                ]
+              },
+              "timestampUtc": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "reason": {
+                "type": "string"
+              },
+              "authorization": {
+                "enum": [
+                  "allowlist",
+                  "pure"
+                ]
+              }
+            },
+            "required": [
+              "operation",
+              "typeFullName",
+              "memberKey",
+              "outcome",
+              "timestampUtc"
+            ],
+            "additionalProperties": false
+          }
+        },
         "error": {
           "$ref": "common.schema.json#/$defs/ErrorInfo"
         },

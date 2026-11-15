@@ -1078,6 +1078,19 @@ class BoundControl(_BoundBase):
         """Set an explicitly allowlisted property on a WPF element."""
         __tracebackhide__ = True
         with self._write_step("set_property", "setProperty"):
+            if not runtime.get_config().inspector.writes_allow:
+                from wintestkit.inspector.models import WriteAudit
+
+                audit = WriteAudit(
+                    "setProperty",
+                    "<unknown>",
+                    "identity",
+                    "denied",
+                    datetime.now(UTC).isoformat(),
+                    "notAllowlisted",
+                )
+                runtime.record_audit(audit)
+                raise WriteDeniedError("Writes are disabled", code="writeDenied", audit=audit)
             element = self._write_target()
             deadline = operation_deadline(runtime.get_config().inspector.request_timeout)
             candidates: list[Member] = []
@@ -1106,7 +1119,7 @@ class BoundControl(_BoundBase):
             self._write(element, name, key, (value,), property_write=True, deadline=deadline)
 
     def call(self, name: str, *args: Any) -> Any:
-        """Call an explicitly allowlisted WPF method overload and return its value."""
+        """Call an allowlisted or pure WPF method overload and return its value."""
         __tracebackhide__ = True
         with self._write_step("call", "call"):
             element = self._write_target()

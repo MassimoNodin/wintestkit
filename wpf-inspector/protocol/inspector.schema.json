@@ -2960,6 +2960,9 @@
           "format": "date-time",
           "maxLength": 128
         },
+        "authorization": {
+          "enum": ["allowlist", "pure"]
+        },
         "reason": {
           "type": "string",
           "maxLength": 1024

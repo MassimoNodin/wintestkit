@@ -1478,10 +1478,13 @@ class WriteAudit(WireModel):
     outcome: str
     timestamp_utc: str
     reason: str | None = None
+    authorization: str | None = None
 
     @classmethod
     def from_json(cls, value: object) -> WriteAudit:
-        d = _obj(value, "operation typeFullName memberKey outcome timestampUtc", "reason")
+        d = _obj(
+            value, "operation typeFullName memberKey outcome timestampUtc", "reason authorization"
+        )
         if d.get("reason") == "timeout" and d["outcome"] != "failed":
             raise ValueError("Invalid timeout audit")
         return cls(
@@ -1491,6 +1494,7 @@ class WriteAudit(WireModel):
             _choice(d["outcome"], {"performed", "denied", "failed"}),
             _timestamp(d["timestampUtc"]),
             _optional(d, "reason", lambda x: _str(x, 1024, empty=True)),
+            _optional(d, "authorization", lambda x: _choice(x, {"allowlist", "pure"})),
         )
 
 

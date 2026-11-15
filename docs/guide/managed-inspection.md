@@ -236,3 +236,5 @@ admits at most 10 write attempts per rolling second per session; denied attempts
 The HTML report and `wtk report` show each step's audit and a write summary, without values.
 A client failure without an agent audit is recorded as `clientFailure` with an unknown type
 and redacted member; the outcome of a request whose response was lost may be unknown.
+
+Pure method calls: public instance methods directly marked with an attribute named `PureAttribute` may be called without an allowlist entry. Signature, redaction, deadline and rate limits still apply; property setters always require an allowlist entry. The attribute is the author's claim, not proof: a method can still have side effects. Value-free audits identify authorization as `pure` or `allowlist`; denied attempts omit it.

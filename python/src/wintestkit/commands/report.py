@@ -48,8 +48,18 @@ def run(args: argparse.Namespace) -> int:
             f"{counts['denied']} denied, {counts['failed']} failed"
         )
         for test, step, audit in audits:
-            fields = ("operation", "typeFullName", "memberKey", "outcome", "reason", "timestampUtc")
-            detail = " | ".join(str(audit.get(key, "")) for key in fields)
+            fields = (
+                "operation",
+                "typeFullName",
+                "memberKey",
+                "outcome",
+                "authorization",
+                "reason",
+                "timestampUtc",
+            )
+            detail = " | ".join(
+                str(audit.get(key, "")) for key in fields if key != "authorization" or key in audit
+            )
             print(
                 f"  {test.get('name', test.get('id', 'Test'))} / "
                 f"{step.get('name', step.get('action', 'Step'))}: {detail}"

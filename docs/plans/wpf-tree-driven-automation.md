@@ -649,6 +649,14 @@ review.
   able to edit the shared repository policy can grant access. Audit recording requires a live
   test step and cannot guarantee persistence after process termination.
 
+**2026-11-15 review addendum:** Public instance methods with a directly declared attribute
+named `PureAttribute` may be called without an allowlist entry. Allowlist authorization takes
+precedence. Protected identities, redacted names, signature and argument checks, deadlines,
+rate limits and return-value redaction still apply; property setters remain allowlist-only.
+Value-free audits record `authorization` as `allowlist` or `pure` when known; denied and
+early failures omit it. The attribute is an author claim, not proof: methods may have side
+effects. Results use the read encoder and are never copied into an audit.
+
 ### 6.11 Phase 6 results
 
 The owned-fixture live gate passed 128 tests on 2026-11-11. The write checks cover default

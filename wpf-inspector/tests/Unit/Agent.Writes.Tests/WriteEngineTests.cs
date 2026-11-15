@@ -25,6 +25,8 @@ namespace WinTestKit.Inspector.Agent.Writes.Tests
             public int Calls;
             public void All(string s, bool b, long i, double d) { Calls++; Text = s; }
             public void Typed(int i, long l, float f, double d, decimal m, string s, bool b, Choice e, int? nullable) { Calls++; }
+            [System.Diagnostics.Contracts.Pure] public string PureValue() => "pure-result";
+            [System.Diagnostics.Contracts.Pure] public void PureGeneric<T>() { }
             public string ReturnText() => "result";
             public int ReturnNumber() => 42;
             public void ReturnVoid() { }
@@ -39,6 +41,10 @@ namespace WinTestKit.Inspector.Agent.Writes.Tests
             public void Generic<T>() { }
             public static void Static() { }
             public string this[long index] { get => ""; set { } }
+        }
+        public sealed class ProtectedTarget : DependencyObject
+        {
+            [System.Diagnostics.Contracts.Pure] public string PureValue() => "secret";
         }
         public class Base { public string Text { get; set; } = ""; }
         public interface IText { string Text { get; set; } }
@@ -63,6 +69,29 @@ namespace WinTestKit.Inspector.Agent.Writes.Tests
         { await ui.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle).Task; return await engine.ExecuteAsync(ui.Dispatcher, target, op, key, values, DateTime.UtcNow.AddSeconds(60), 2000, CancellationToken.None); }
         private static WriteAudit Audit(ProtocolException error) => WriteAudit.FromJson(error.Details!.Get("audit"));
 
+        [Fact]
+        public async Task PureCallsRequireNoAllowlist()
+        {
+            using (var ui = new Ui())
+            using (var registry = new ObjectRegistry("test", new DispatcherExecutor()))
+            {
+                var target = new Target();
+                var engine = new WriteEngine(new DispatcherExecutor(), new WriteAllowlist(), Array.Empty<string>());
+                var result = await engine.ExecuteWithResultAsync(ui.Dispatcher, target, "call", "PureValue()", Array.Empty<JsonNode>(), DateTime.UtcNow.AddSeconds(60), 2000, CancellationToken.None, registry);
+                Assert.Equal("pure", result.Audit.Authorization);
+                Assert.Equal("pure-result", ((JsonStringNode)result.Result.Scalar!).Value);
+                var denied = await Assert.ThrowsAsync<ProtocolException>(() => Run(ui, engine, target, "call", "ReturnText()"));
+                Assert.Equal(ErrorCodes.WriteDenied, denied.Code);
+                Assert.Null(Audit(denied).Authorization);
+                var protectedTarget = await ui.Dispatcher.InvokeAsync(() => new ProtectedTarget());
+                var protectedError = await Assert.ThrowsAsync<ProtocolException>(() => engine.ExecuteAsync(ui.Dispatcher, protectedTarget, "call", "PureValue()", Array.Empty<JsonNode>(), DateTime.UtcNow.AddSeconds(60), 2000, CancellationToken.None));
+                Assert.Equal(ErrorCodes.WriteDenied, protectedError.Code);
+                Assert.Equal("protectedIdentity", Audit(protectedError).Reason);
+                var generic = await Assert.ThrowsAsync<ProtocolException>(() => Run(ui, engine, target, "call", "PureGeneric()"));
+                Assert.Equal(ErrorCodes.WriteDenied, generic.Code);
+                Assert.Equal("allowlist", (await Run(ui, Engine("ReturnText()"), target, "call", "ReturnText()")).Authorization);
+            }
+        }
         [Fact]
         public async Task CallResultsUseReadEncodingAndProtectIdentities()
         {

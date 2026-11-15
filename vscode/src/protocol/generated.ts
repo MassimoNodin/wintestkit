@@ -3015,6 +3015,15 @@ export interface StepEvent {
   duration: number;
   status: "passed" | "failed";
   backend?: "uia" | "wpf";
+  audits?: {
+    operation: "setProperty" | "call";
+    typeFullName: string;
+    memberKey: string;
+    outcome: "performed" | "denied" | "failed";
+    timestampUtc: string;
+    reason?: string;
+    authorization?: "allowlist" | "pure";
+  }[];
   error?: ErrorInfo;
   screenshot?: string;
   parent?: number;
@@ -3186,6 +3195,7 @@ export interface WriteAudit {
   memberKey: Key;
   outcome: "performed" | "denied" | "failed";
   timestampUtc: string;
+  authorization?: "allowlist" | "pure";
   reason?: string;
 }
 /**

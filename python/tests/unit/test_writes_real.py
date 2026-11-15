@@ -47,14 +47,16 @@ def test_writes_disabled(owned):
             page = FixturePage(scope.app)
             with pytest.raises(WriteDeniedError):
                 page.control.set_property("DefaultValue", "denied-value-917")
+            assert page.control.call("DescribeState") == "fixture-ready"
             with pytest.raises(WriteDeniedError):
-                page.control.call("RecordWrite", "denied-method-918", 4)
+                page.control.call("UnlistedMethod")
             assert _control(scope.app.pids[0]).get("RecordWrite", 0) == 0
             assert resolve(
                 scope,
                 Locator(automation_id="FixtureControl", where=(("clr:DefaultValue", "default"),)),
             )
-            assert [r.audits[0]["outcome"] for r in records] == ["denied", "denied"]
+            assert [r.audits[0]["outcome"] for r in records] == ["denied", "performed", "denied"]
+            assert records[1].audits[0]["authorization"] == "pure"
     finally:
         unsubscribe()
 

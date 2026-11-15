@@ -31,7 +31,8 @@ namespace WinTestKit.Inspector.Agent.Writes
             // Until the owning Dispatcher has checked an object's identity, do not expose
             // a member key for a dependency object in timeout or admission errors.
             string auditKey = rule ?? (target is DependencyObject ? "identity" : key);
-            WriteAudit Audit(string outcome, string? reason = null) => new WriteAudit { Operation = operation, TypeFullName = typeName, MemberKey = auditKey, Outcome = outcome, TimestampUtc = DateTime.UtcNow.ToString("O", CultureInfo.InvariantCulture), Reason = reason };
+            string? authorization = null;
+            WriteAudit Audit(string outcome, string? reason = null) => new WriteAudit { Operation = operation, TypeFullName = typeName, MemberKey = auditKey, Outcome = outcome, TimestampUtc = DateTime.UtcNow.ToString("O", CultureInfo.InvariantCulture), Reason = reason, Authorization = outcome == "denied" ? null : authorization };
             DateTime end = DateTime.UtcNow.AddMilliseconds(timeoutMs);
             if (deadline < end) end = deadline;
             int remaining = (int)Math.Max(0, (end - DateTime.UtcNow).TotalMilliseconds);
@@ -50,13 +51,20 @@ namespace WinTestKit.Inspector.Agent.Writes
                         string resolvedKey = key;
                         if (operation == "call")
                         {
-                            if (!allowlist.Methods.Any(e => e.TypeFullName == typeName && e.MemberKey == key))
-                                throw Error(ErrorCodes.WriteDenied, Audit("denied", "notAllowlisted"));
+                            if (allowlist.Methods.Any(e => e.TypeFullName == typeName && e.MemberKey == key)) authorization = "allowlist";
+                            else
+                            {
+                                var matches = target.GetType().GetMethods(BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic).Where(m => MethodKey(m) == key).ToArray();
+                                if (matches.Length != 1 || !matches[0].IsPublic || matches[0].IsStatic || matches[0].IsGenericMethod || !matches[0].GetCustomAttributesData().Any(a => a.AttributeType.Name == "PureAttribute"))
+                                    throw Error(ErrorCodes.WriteDenied, Audit("denied", "notAllowlisted"));
+                                authorization = "pure";
+                            }
                         }
                         else
                         {
                             if (!allowlist.Properties.Any(e => e.TypeFullName == typeName && e.MemberName == name))
                                 throw Error(ErrorCodes.WriteDenied, Audit("denied", "notAllowlisted"));
+                            authorization = "allowlist";
                             var declarations = ReflectionCatalog.Get(target.GetType()).Where(d => d.Property != null && d.Name == name).ToArray();
                             var dependencies = target is DependencyObject dep ? DependencyCatalog.Discover(dep, _ => { }).Where(d => d.Property.Name == name).ToArray() : Array.Empty<DependencyEntry>();
                             if (declarations.Length > 1 || dependencies.Length > 1)

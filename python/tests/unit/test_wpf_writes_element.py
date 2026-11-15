@@ -66,7 +66,9 @@ def setup_write(monkeypatch):
         runtime,
         "get_config",
         lambda: SimpleNamespace(
-            backend="auto", inspector=SimpleNamespace(request_timeout=2), slow_mo_ms=0
+            backend="auto",
+            inspector=SimpleNamespace(request_timeout=2, writes_allow=("Example.Control.Prop",)),
+            slow_mo_ms=0,
         ),
     )
 
@@ -87,6 +89,25 @@ def test_property_prefers_dependency_property_and_records_audit(setup_write):
     bound.set_property("IsChecked", True)
     assert calls == [("members", None), ("members", "next"), ("property", "dp", True)]
     assert records[-1].to_dict()["audits"] == [audit.to_json()]
+
+
+def test_disabled_writes_only_block_property(setup_write, monkeypatch):
+    bound, _, calls, records, _ = setup_write
+    monkeypatch.setattr(
+        runtime,
+        "get_config",
+        lambda: SimpleNamespace(
+            backend="auto",
+            inspector=SimpleNamespace(request_timeout=2, writes_allow=()),
+            slow_mo_ms=0,
+        ),
+    )
+    with pytest.raises(WriteDeniedError):
+        bound.set_property("IsChecked", True)
+    assert calls == []
+    assert records[-1].audits[0]["outcome"] == "denied"
+    assert bound.call("Submit") == "done"
+    assert calls[-1][0] == "call"
 
 
 def test_method_overload_and_arguments(setup_write):

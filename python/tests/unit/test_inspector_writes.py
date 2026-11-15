@@ -216,3 +216,14 @@ def test_error_constructors_accept_audit():
     assert WriteDeniedError("denied", code="writeDenied", audit=record).audit is record
     assert InspectorDeadlineError("timeout", code="timeout", audit=record).audit is record
     assert InspectorError("error", code="internalError").audit is None
+
+
+@pytest.mark.parametrize("authorization", ["pure", "allowlist"])
+def test_audit_authorization_round_trip(authorization):
+    payload = {**audit("call"), "authorization": authorization}
+    assert WriteAudit.from_json(payload).to_json()["authorization"] == authorization
+
+
+def test_audit_rejects_unknown_authorization():
+    with pytest.raises(ValueError):
+        WriteAudit.from_json({**audit("call"), "authorization": "other"})

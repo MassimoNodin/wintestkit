@@ -1,5 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <DefineConstants>$(DefineConstants);CONTRACTS_FULL</DefineConstants>
     <TargetFrameworks>net10.0-windows;net48</TargetFrameworks>
     <UseWPF>true</UseWPF>
     <IsTestProject>true</IsTestProject>
