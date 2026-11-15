@@ -1257,9 +1257,17 @@ def _fixture_scenario(pid, name, value):
 
     from wintestkit.inspector.pipe import WindowsPipe, _api
 
-    handle = _api().CreateFileW(
-        rf"\\.\pipe\WinTestKit.Fixture.{pid}", 0xC0000000, 0, None, 3, 0x40000000, None
-    )
+    pipe_name = rf"\\.\pipe\WinTestKit.Fixture.{pid}"
+    api = _api()
+    give_up = time.monotonic() + 5
+    while True:
+        handle = api.CreateFileW(pipe_name, 0xC0000000, 0, None, 3, 0x40000000, None)
+        if handle != ctypes.c_void_p(-1).value or time.monotonic() >= give_up:
+            break
+        if ctypes.get_last_error() == 231:  # ERROR_PIPE_BUSY
+            api.WaitNamedPipeW(pipe_name, 100)
+        else:
+            time.sleep(0.05)
     assert handle != ctypes.c_void_p(-1).value
     pipe = WindowsPipe(handle)
     try:

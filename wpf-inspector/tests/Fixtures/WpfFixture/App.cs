@@ -20,6 +20,8 @@ using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Data;
 using System.Windows.Documents;
+using System.Windows.Input;
+using System.Windows.Media;
 using System.Windows.Interop;
 using System.Windows.Media.Animation;
 using System.Windows.Threading;
@@ -232,6 +234,7 @@ public sealed class MainWindow : Window
     private readonly ListBox rows;
     private Window? second;
     private Window? large;
+    private Window? controls;
     private readonly StackPanel dynamicTree = new();
     private readonly Button parityDisabled = Id(new Button { Content = "Disabled", IsEnabled = false }, "ParityDisabled");
     private int generation;
@@ -332,6 +335,89 @@ public sealed class MainWindow : Window
         panel.Children.Add(suggestionLeft); panel.Children.Add(suggestionRight);
     }
     private static T Id<T>(T control, string id) where T : DependencyObject { AutomationProperties.SetAutomationId(control, id); return control; }
+    private static Window BuildControlsWindow()
+    {
+        var effect = Id(new TextBlock { Text = "Ready" }, "ControlsEffect");
+        void Say(string text) => effect.Text = text;
+        var panel = new StackPanel { Margin = new Thickness(8) };
+        panel.Children.Add(effect);
+
+        MenuItem Item(string header, string id, string? says = null)
+        {
+            var item = Id(new MenuItem { Header = header }, id);
+            if (says != null) item.Click += (_, _) => Say(says);
+            return item;
+        }
+        var menu = Id(new Menu(), "ControlsMenu");
+        var file = Item("File", "MenuFile"); file.Items.Add(Item("Open", "MenuOpen", "Open clicked"));
+        var recent = Item("Recent", "MenuRecent"); recent.Items.Add(Item("Report.txt", "MenuRecentReport", "Recent Report.txt")); file.Items.Add(recent);
+        var edit = Item("Edit", "MenuEdit"); edit.Items.Add(Item("Copy", "MenuCopy", "Copy clicked"));
+        menu.Items.Add(file); menu.Items.Add(edit); panel.Children.Add(menu);
+
+        var contextTarget = Id(new Button { Content = "Context target", Width = 140, HorizontalAlignment = HorizontalAlignment.Left }, "ContextTarget");
+        var context = new ContextMenu(); context.Items.Add(Item("Paste", "ContextPaste", "Paste clicked"));
+        var more = Item("More", "ContextMore"); more.Items.Add(Item("Deep", "ContextDeep", "Deep clicked")); context.Items.Add(more);
+        contextTarget.ContextMenu = context; panel.Children.Add(contextTarget);
+
+        TreeViewItem Node(string header, params TreeViewItem[] children)
+        {
+            var node = new TreeViewItem { Header = header, IsExpanded = false };
+            foreach (var child in children) node.Items.Add(child);
+            return node;
+        }
+        var tree = Id(new TreeView { Height = 100 }, "ControlsTree");
+        tree.Items.Add(Node("Root", Node("Child A", Node("Leaf 1"), Node("Leaf 2")), Node("Child B", Node("Leaf 3"))));
+        tree.Items.Add(Node("Other"));
+        tree.SelectedItemChanged += (_, e) => { if (e.NewValue is TreeViewItem selected) Say("Selected " + selected.Header); };
+        panel.Children.Add(tree);
+
+        var multi = Id(new ListBox { Height = 100, SelectionMode = SelectionMode.Extended, ItemsSource = new[] { "One", "Two", "Three", "Four", "Five", "Six" } }, "MultiList");
+        multi.SelectionChanged += (_, _) => Say("Selected: " + string.Join(", ", multi.Items.Cast<object>().Where(item => multi.SelectedItems.Contains(item)).Select(item => item.ToString())));
+        panel.Children.Add(multi);
+
+        var rowsGrid = Id(new DataGrid { AutoGenerateColumns = false, CanUserAddRows = false, SelectionMode = DataGridSelectionMode.Extended, SelectionUnit = DataGridSelectionUnit.FullRow, Height = 120 }, "RowsGrid");
+        rowsGrid.Columns.Add(new DataGridTextColumn { Header = "Name", Binding = new Binding("Name") });
+        rowsGrid.Columns.Add(new DataGridTextColumn { Header = "Qty", Binding = new Binding("Qty") });
+        rowsGrid.Columns.Add(new DataGridTextColumn { Header = "City", Binding = new Binding("City") });
+        rowsGrid.ItemsSource = new[] { new GridRow("Apple", 3, "Paris"), new GridRow("Banana", 5, "Rome"), new GridRow("Cherry", 7, "Oslo") };
+        panel.Children.Add(rowsGrid);
+
+        var slider = Id(new Slider { Minimum = 0, Maximum = 100, Value = 20 }, "VolumeSlider");
+        slider.ValueChanged += (_, e) => Say("Volume " + (int)e.NewValue);
+        panel.Children.Add(slider);
+        var date = Id(new DatePicker { SelectedDate = new DateTime(2026, 1, 15) }, "StartDate");
+        date.SelectedDateChanged += (_, _) => { if (date.SelectedDate is DateTime picked) Say("Date " + picked.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)); };
+        panel.Children.Add(date);
+        panel.Children.Add(Id(new ProgressBar { Minimum = 0, Maximum = 100, Value = 40, Height = 16 }, "LoadProgress"));
+        panel.Children.Add(Id(new Expander { Header = "Details", Content = Id(new TextBlock { Text = "Details content" }, "DetailsText") }, "DetailsExpander"));
+        var bold = Id(new ToggleButton { Content = "Bold", Width = 80, HorizontalAlignment = HorizontalAlignment.Left }, "BoldToggle");
+        bold.Checked += (_, _) => Say("Bold on"); bold.Unchecked += (_, _) => Say("Bold off");
+        panel.Children.Add(bold);
+        var link = Id(new Hyperlink(new Run("Help")), "HelpLink");
+        link.Click += (_, _) => Say("Link clicked");
+        var linkText = new TextBlock(); linkText.Inlines.Add(link); panel.Children.Add(linkText);
+
+        var toolbar = Id(new ToolBar(), "MainToolBar");
+        var toolNew = Id(new Button { Content = "New" }, "ToolNew"); toolNew.Click += (_, _) => Say("Tool new");
+        toolbar.Items.Add(toolNew); toolbar.Items.Add(Id(new Button { Content = "Save" }, "ToolSave"));
+        panel.Children.Add(toolbar);
+        var status = Id(new StatusBar(), "MainStatusBar");
+        status.Items.Add(new StatusBarItem { Content = Id(new TextBlock { Text = "Status ready" }, "StatusText") });
+        panel.Children.Add(status);
+        panel.Children.Add(Id(new ScrollBar { Orientation = Orientation.Horizontal, Minimum = 0, Maximum = 100, Value = 10, Height = 18 }, "HScroll"));
+
+        // Labels, unlike Border, have an automation peer, so the AutomationIds are visible to UIA.
+        var dragSource = Id(new Label { Content = "Drag me", Width = 120, Height = 40, Background = Brushes.LightBlue, HorizontalAlignment = HorizontalAlignment.Left }, "DragSource");
+        dragSource.MouseMove += (_, e) => { if (e.LeftButton == MouseButtonState.Pressed) DragDrop.DoDragDrop(dragSource, "payload", DragDropEffects.Copy); };
+        panel.Children.Add(dragSource);
+        var dropTarget = Id(new Label { Content = "Drop here", Width = 200, Height = 80, AllowDrop = true, Background = Brushes.LightGreen, HorizontalAlignment = HorizontalAlignment.Left }, "DropTarget");
+        dropTarget.Drop += (_, e) => Say("Dropped " + e.Data.GetData(DataFormats.Text));
+        panel.Children.Add(dropTarget);
+
+        var window = new Window { Title = "Controls", Width = 700, Height = 700, Content = new ScrollViewer { Content = panel } };
+        AutomationProperties.SetAutomationId(window, "ControlsWindow");
+        return window;
+    }
     public void Scenario(string name, int value)
     {
         switch (name)
@@ -348,6 +434,9 @@ public sealed class MainWindow : Window
                 large = new Window { Title = "Large", Width = 600, Height = 700, Content = new ScrollViewer { Content = stack } };
                 AutomationProperties.SetAutomationId(large, "LargeWindow");
                 large.Closed += (_, _) => large = null; large.Show(); break;
+            case "openControls":
+                if (controls != null) break;
+                controls = BuildControlsWindow(); controls.Closed += (_, _) => controls = null; controls.Show(); break;
             case "openPopup": popup.IsOpen = true; break;
             case "openVirtualItems":
                 var items = Enumerable.Range(0, 5000).Select(index => new VirtualItem { Id = index, Name = "Item " + index, Enabled = index % 2 == 0 }).ToArray();
@@ -377,6 +466,13 @@ public sealed class MainWindow : Window
             case "closeWindow": if (second != null) { var window = second; second = null; window.Dispatcher.BeginInvoke(new Action(window.Close)); } break;
         }
     }
+}
+public sealed class GridRow
+{
+    public GridRow(string name, int qty, string city) { Name = name; Qty = qty; City = city; }
+    public string Name { get; }
+    public int Qty { get; }
+    public string City { get; }
 }
 public sealed class InventoryControl : Control
 {
