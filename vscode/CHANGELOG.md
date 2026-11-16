@@ -7,28 +7,20 @@ Unreleased changes must be moved to a dated candidate section before a release c
 
 ## [Unreleased]
 
-- Add menu, range, date, expander, toggle, hyperlink, toolbar and status bar types to Spy insertion.
+## [0.1.1rc3] - 2026-11-17
 
-- Add the **Action waiting** configuration setting for existence-only or strict action waits.
+Third prerelease. Install the extension's pre-release channel together with `pip install --pre "wintestkit==0.1.1rc3"`.
 
-- Use WPF hit testing for Spy picking and display WPF identity, managed properties and locator verification status.
-
-- Show paged WPF visual or logical trees in Spy, with source badges, inline attach and blocked-agent guidance.
-
-- Align Configuration defaults with Python, expose backend selection, and report WPF agent doctor failures in setup health.
-
-- **Preview (unreleased):** Add opt-in managed WPF inspection to Spy, including explicit
-  attach confirmation and lazy managed member reads. Instrumentation executes target code;
-  compatibility and release gates remain open.
-
-- Show the selected Page Tree element's last checked capture in a bottom-pinned Preview section,
-  replacing the floating image hover. Include Element / In App context views, image-viewer access,
-  capture age, and separate empty states for no selection and no saved check image.
-
-- Keep unfinished Configuration text and numeric edits, text selection, and focus in place when
-  background updates refresh the form, without carrying edits between User and Repository Settings.
-- Make Configuration option groups and highlight swatches keyboard navigable with arrow keys,
-  Home, and End, with a single tab stop per radio group.
+- **WPF backend:** The default `backend: auto` now uses an injected inspector agent for WPF windows and UI Automation for other windows. Install `wintestkit[inspector]`, or choose `backend: uia` to opt out. Mouse input is now the default on both backends; choose `input_mode: pattern` to use patterns. Managed `clr:` and `type:` locators, virtualized item search and agent-side events support WPF automation. Use `wtk doctor --agent` to check the agent and `wtk compare` to compare runs.
+- **Spy:** Browse paged WPF visual and logical trees, pick elements with WPF hit testing, inspect managed properties and verify locators. The configured app attaches automatically in a trusted workspace; other apps ask for consent. Blocked attachment shows guidance. Insert the new typed controls from Spy.
+- **Locators:** Use `any_of` for alternative property groups and `has=` to require a matching child.
+- **Actions:** Actions now wait for existence only by default and report disabled or hidden elements immediately. Set `actionability: strict` to also wait for enabled and visible elements. Add `drag_to` and `drag_by`, positioned, middle and modified clicks, scrolling, keyboard and window keys, window move, resize and activation, menu and tree paths, multi-select and `to_have_rows`.
+- **Typed controls:** Add Menu, ContextMenu, Slider, ScrollBar, ProgressBar, DatePicker, Expander, ToggleButton, Hyperlink (UIA backend only), ToolBar and StatusBar.
+- **Managed access:** Read managed properties with `el.get("clr:Name")`, `wait_for_property` and `to_have_property`. Opt in to audited writes and method calls with an allowlist; typed arguments are available through `wintestkit.managed`, and calls return their results. Public instance methods marked `[Pure]` can be called without an allowlist entry.
+- **Migration:** Use `wintestkit.finders` find helpers, import NameMapping files and convert legacy key strings. First-match finders warn when a locator is ambiguous.
+- **Reporting:** Add `wintestkit.step` and `log.message`, `log.warning` and `log.picture` for structured reports.
+- **Configuration:** Add Action waiting and backend selection to VS Code settings, align defaults with Python and show WPF agent doctor failures in setup health. Preserve unfinished edits, selection and focus during background refreshes. Navigate option groups and highlight swatches with arrow keys, Home and End.
+- **Page Tree:** Show the selected element's last checked capture in a pinned Preview section, with Element and In App views, image viewer access, capture age and separate empty states.
 
 ## [0.1.1rc2] - 2026-10-23
 

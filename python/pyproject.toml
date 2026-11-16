@@ -18,7 +18,7 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
-inspector = ["wintestkit-inspector==0.1.1rc2"]
+inspector = ["wintestkit-inspector==0.1.1rc3"]
 
 [project.urls]
 Homepage = "https://github.com/MassimoNodin/wintestkit"
