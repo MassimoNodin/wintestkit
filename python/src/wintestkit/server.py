@@ -696,7 +696,13 @@ class Server:
         )
 
     def _mark_roots(self, nodes: list[dict[str, Any]]) -> None:
+        from wintestkit.uia import win32
+
+        names = dict(win32.list_processes())
         for item in nodes:
+            name = names.get(item["info"].get("processId"))
+            if name:
+                item["info"]["processName"] = name
             node_id = item["nodeId"]
             with self._node_lock:
                 node = self.nodes.get(node_id)
@@ -892,6 +898,18 @@ class Server:
                             self._wpf_windows.discard(evicted)
                             self._release_tree_node(old)
                     parent_id = node_id
+                if pick and len(entries) > 1:
+                    root_description = self._register(window)
+                    root_description["source"] = "wpf"
+                    first = entries[1].object_ref
+                    first_id = "wpf:" + json.dumps(
+                        [first.session_id, first.object_id, first.generation],
+                        separators=(",", ":"),
+                    )
+                    with self._node_lock:
+                        self._wpf_windows.add(root_description["nodeId"])
+                        self._wpf_descriptions[root_description["nodeId"]] = root_description
+                        self._wpf_parents[first_id] = root_description["nodeId"]
                 if self._is_hwnd_host(hit.handle):
                     # Only accept UIA hits below this host's peer, never its siblings.
                     try:
@@ -905,22 +923,6 @@ class Server:
                             current = current.parent()
                         if current is not None and current.same_as(peer) and chain:
                             if pick:
-                                # The visual root is represented in Spy by the UIA window row.
-                                # Link its first visual child to that row for reveal.
-                                if len(entries) > 1:
-                                    root_description = self._register(window)
-                                    root_description["source"] = "wpf"
-                                    self._wpf_windows.add(root_description["nodeId"])
-                                    first = entries[1].object_ref
-                                    first_id = "wpf:" + json.dumps(
-                                        [first.session_id, first.object_id, first.generation],
-                                        separators=(",", ":"),
-                                    )
-                                    with self._node_lock:
-                                        self._wpf_descriptions[root_description["nodeId"]] = (
-                                            root_description
-                                        )
-                                        self._wpf_parents[first_id] = root_description["nodeId"]
                                 host_id = description["nodeId"]
                                 from wintestkit.uia.constants import TreeScope
 
@@ -1034,8 +1036,67 @@ class Server:
                 page_token=page_token,
                 deadline=time.monotonic() + self.cfg.inspector.request_timeout,
             )
+            text_deadline = time.monotonic() + 5.0
             for child in page.items:
                 child_ref = child.object_ref
+                text = ""
+                text_members = {
+                    "TextBlock": ("Text",),
+                    "TextBox": ("Text",),
+                    "ListBoxItem": ("Content",),
+                    "Button": ("Content",),
+                    "CheckBox": ("Content",),
+                    "RadioButton": ("Content",),
+                    "Label": ("Content",),
+                    "ContentControl": ("Content",),
+                    "TabItem": ("Header", "Content"),
+                    "MenuItem": ("Header",),
+                    "Expander": ("Header",),
+                    "GroupBox": ("Header",),
+                    "Window": ("Title",),
+                }
+                from wintestkit.inspector.paths import PathSegment
+
+                sensitive_names = (
+                    "password",
+                    "passwd",
+                    "pwd",
+                    "secret",
+                    "token",
+                    "credential",
+                    "connectionstring",
+                    "apikey",
+                    "privatekey",
+                    *self.cfg.inspector.redact_names,
+                )
+                identity_names = (
+                    child_ref.type.full_name,
+                    child.identity.x_name if child.identity else "",
+                    child.identity.automation_id if child.identity else "",
+                )
+                protected = any(
+                    rule.lower() in name.lower()
+                    for rule in sensitive_names
+                    for name in identity_names
+                    if rule and name
+                )
+                for member in () if protected else text_members.get(child_ref.type.name, ()):
+                    remaining = text_deadline - time.monotonic()
+                    if remaining <= 0:
+                        break
+                    try:
+                        values, _ = client.read(
+                            child_ref.object_id,
+                            child_ref.generation,
+                            [[PathSegment("property", member)]],
+                            deadline=time.monotonic() + min(0.25, remaining),
+                        )
+                        value = values[0].value
+                        if value.status == "ok" and isinstance(value.scalar, str) and value.scalar:
+                            text = value.scalar[:100]
+                            break
+                    except Exception:
+                        log.debug("Unable to read WPF tree text", exc_info=True)
                 self._remember_managed(client.session.session_id, child_ref.to_json())
                 identity_data: dict[str, str] = {"type": child_ref.type.full_name}
                 if child.identity is not None:
@@ -1049,7 +1110,7 @@ class Server:
                 )
                 info = ElementInfo(
                     identity_data.get("automationId", ""),
-                    identity_data.get("xName", ""),
+                    text,
                     child_ref.type.name,
                     child_ref.type.full_name,
                     "WPF",
@@ -1341,14 +1402,21 @@ class Server:
         parent_id: str | None = None,
         start_index: int = 0,
     ) -> list[dict[str, Any]]:
+        from wintestkit.uia import win32
+
         nodes: list[dict[str, Any]] = []
+        names = dict(win32.list_processes())
         errors = list(errors or [])
         for index, element in enumerate(elements):
             if element is None:
                 continue
             try:
                 fallback_id = None if parent_id is None else f"{parent_id}~{index + start_index}"
-                nodes.append(self._register(element, fallback_id))
+                node = self._register(element, fallback_id)
+                name = names.get(node["info"].get("processId"))
+                if name:
+                    node["info"]["processName"] = name
+                nodes.append(node)
             except Exception as exc:
                 errors.append(
                     {
@@ -1564,8 +1632,6 @@ class Server:
             ]
             return result
         if method in ("inspect.roots", "inspect.refresh"):
-            if method == "inspect.refresh":
-                self._release_managed_objects()
             if self.coverage is not None:
                 self.coverage.invalidate()
             app = self._app(False)

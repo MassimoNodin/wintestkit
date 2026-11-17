@@ -4,6 +4,7 @@
   const propertiesView = document.body.classList.contains("properties-view");
   const post = (type, values = {}) => {
     if (tutorialView && type !== "tour" && type !== "ready") return;
+    if (typeof values.nodeId === "string" && values.nodeId.startsWith("process:")) return;
     vscode.postMessage({ type, ...values });
   };
   // Managed inspection is kept separate from the UI Automation property view.
@@ -315,13 +316,13 @@
     image.addEventListener(
       "load",
       () => {
-        entry.label.querySelector(".app-icon")?.remove();
-        entry.icon.hidden = true;
+        for (const old of entry.label.querySelectorAll(".app-icon")) if (old !== image) old.remove();
         image.hidden = false;
-        entry.label.prepend(image);
+        entry.icon.hidden = true;
       },
       { once: true },
     );
+    entry.label.prepend(image);
     image.src = source;
   };
   const markerText = (info) =>
@@ -335,20 +336,8 @@
     if (!entry) return;
     const info = coverage.get(entry.node.nodeId);
     const existing = entry.label.querySelector(".defined-marker");
-    // A defined object reads "<name in your pages> - <application's name>", the latter dimmed. The
-    // tooltip (which the filter searches) carries both names.
-    const attribute = info ? info.first.split(".").pop() : undefined;
-    if (attribute) {
-      const defined = document.createElement("span");
-      defined.className = "defined-name";
-      defined.textContent = attribute;
-      const original = document.createElement("span");
-      original.className = "original-name";
-      original.textContent = " - " + entry.name;
-      entry.text.replaceChildren(defined, original);
-    } else {
-      entry.text.textContent = entry.name;
-    }
+    // Keep the object label visible while exposing definitions in the tooltip.
+    entry.text.textContent = entry.name;
     entry.row.title = info
       ? "Defined as " +
         info.first +
@@ -356,12 +345,7 @@
         " · UI name: " +
         entry.baseTitle
       : entry.baseTitle;
-    entry.row.setAttribute(
-      "aria-label",
-      (attribute ? attribute + " (" + entry.name + ")" : entry.name) +
-        ", " +
-        entry.node.info.controlType,
-    );
+    entry.row.setAttribute("aria-label", entry.name);
     if (!info) {
       existing?.remove();
       return;
@@ -707,46 +691,8 @@
     }
   };
   const narrow = window.matchMedia("(max-width: 620px)");
-  const iconFor = (type) => {
-    const icons = {
-      Window: "window",
-      Pane: "layout",
-      Group: "symbol-namespace",
-      ToolBar: "layout-menubar",
-      StatusBar: "ellipsis",
-      Button: "symbol-method",
-      SplitButton: "symbol-method",
-      Edit: "edit",
-      Document: "file-text",
-      Text: "text-size",
-      ComboBox: "list-selection",
-      CheckBox: "checklist",
-      RadioButton: "circle-large-outline",
-      DataGrid: "table",
-      Table: "table",
-      DataItem: "list-flat",
-      List: "list-unordered",
-      ListItem: "symbol-field",
-      Tree: "list-tree",
-      TreeItem: "symbol-field",
-      Tab: "layout-panel",
-      TabItem: "file",
-      Menu: "list-unordered",
-      MenuBar: "layout-menubar",
-      MenuItem: "list-flat",
-      Image: "file-media",
-      Hyperlink: "link",
-      ScrollBar: "arrow-swap",
-      Slider: "settings",
-      Spinner: "arrow-swap",
-      ProgressBar: "loading",
-      Header: "layout-menubar",
-      HeaderItem: "symbol-field",
-    };
-    return icons[type] || "symbol-object";
-  };
-  const setIcon = (icon, type) => {
-    icon.className = "control-icon codicon codicon-" + iconFor(type);
+  const setIcon = (icon, type, clrType) => {
+    icon.className = "control-icon codicon codicon-" + WtkTreeLabels.iconFor(type, clrType);
     icon.dataset.kind =
       type === "Window"
         ? "window"
@@ -1082,8 +1028,7 @@
         automationId: info.automationId || "",
         name: info.name || "",
         className: info.className || "",
-        ...(entry.root && Number.isSafeInteger(info.processId) ? { processId: info.processId } : {}),
-        ...(entry.root || typeof entry.index !== "number" ? {} : { index: entry.index }),
+        ...(entry.root || nodes.get(entry.parentId)?.node.info.controlType === "Process" || typeof entry.index !== "number" ? {} : { index: entry.index }),
       });
       id = entry.parentId;
     }
@@ -1099,7 +1044,22 @@
     fullPropertiesLoaded = false;
     fullPropertiesLoading = false;
     detailsError = "";
-    const info = nodes.get(nodeId).node.info;
+    const entry = nodes.get(nodeId);
+    const info = entry.node.info;
+    if (entry.root) {
+      selecting = false;
+      element("selection-name").textContent = `Process: ${info.name}, PID ${info.processId}, ${entry.children.children.length} windows`;
+      element("selection-type").textContent = "Process";
+      selectionIcon(nodeId);
+      element("object-preview").hidden = true;
+      locatorState("idle");
+      element("generate").disabled = true;
+      highlightable = false;
+      renderHighlight();
+      renderDefinitions({ state: "idle" });
+      renderStatus();
+      return;
+    }
     element("selection-name").textContent =
       info.name || info.automationId || info.controlType;
     element("selection-type").textContent = info.controlType;
@@ -1117,9 +1077,36 @@
       .map((entry) => selectionPathFor(entry.node.nodeId)).filter(Boolean);
     post("expandedPaths", { paths });
   };
+  const treeScroller = element("tree-region");
+  let treePointerDown = false;
+  let lastTreeScrollInput = 0;
+  treeScroller.addEventListener("pointerdown", () => { treePointerDown = true; });
+  window.addEventListener("pointerup", () => { treePointerDown = false; });
+  window.addEventListener("pointercancel", () => { treePointerDown = false; });
+  treeScroller.addEventListener("wheel", () => { lastTreeScrollInput = Date.now(); }, { passive: true });
+  const revealLabels = (rows) => {
+    requestAnimationFrame(() => {
+      if (treePointerDown || Date.now() - lastTreeScrollInput < 250) return;
+      const box = treeScroller.getBoundingClientRect();
+      const positions = rows.map((row) => {
+        const rect = row.querySelector(".label")?.getBoundingClientRect();
+        return rect && { offsetLeft: rect.left - box.left + treeScroller.scrollLeft, width: rect.width };
+      }).filter(Boolean);
+      const left = WtkTreeLabels.scrollForLabels(treeScroller.scrollLeft, treeScroller.clientWidth, positions);
+      if (left !== treeScroller.scrollLeft) {
+        const behavior = window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth";
+        if (treeScroller.scrollTo) treeScroller.scrollTo({ left, behavior });
+        else treeScroller.scrollLeft = left;
+      }
+    });
+  };
   const expand = (nodeId, open = true) => {
     const entry = nodes.get(nodeId);
     if (!entry || !entry.node.hasChildren) return;
+    if (open) {
+      let ancestor = nodes.get(entry.parentId);
+      while (ancestor) { ancestor.open = true; ancestor = nodes.get(ancestor.parentId); }
+    }
     entry.open = open;
     rememberExpanded();
     if (open && !entry.loaded && !entry.loading) {
@@ -1128,6 +1115,7 @@
       post("expand", { nodeId });
     }
     filter();
+    if (open && entry.loaded) revealLabels([...entry.children.querySelectorAll(":scope > li > .node")]);
   };
   const renderNodes = (parent, values, append = false) => {
     if (!append) {
@@ -1150,13 +1138,7 @@
       const selectedApp =
         parent.id === "tree" &&
         !!appState?.appPids?.includes(node.info.processId);
-      const name =
-        (node.source === "wpf" && node.identity ? [node.identity.type.split(".").pop().split("+").pop(), node.identity.xName || node.identity.automationId].filter(Boolean).join("  ") : "") ||
-        node.info.name ||
-        (selectedApp && appState.appName) ||
-        node.info.automationId ||
-        node.info.controlType;
-      row.setAttribute("aria-label", name + ", " + node.info.controlType);
+      const name = "";
       row.setAttribute("aria-posinset", String(index + 1));
       row.setAttribute("aria-setsize", String(offset + values.length));
       row.setAttribute("aria-selected", String(node.nodeId === selected));
@@ -1185,16 +1167,22 @@
       toggle.disabled = !node.hasChildren;
       toggle.tabIndex = -1;
       toggle.addEventListener("click", () =>
-        expand(node.nodeId, !nodes.get(node.nodeId).open),
+        expand(row.dataset.nodeId, !nodes.get(row.dataset.nodeId).open),
       );
       const label = document.createElement("button");
       label.className = "label";
       label.tabIndex = -1;
       const icon = document.createElement("span");
-      setIcon(icon, node.info.controlType);
+      setIcon(icon, node.info.controlType, node.identity?.type?.split(/[.+]/).pop());
       const text = document.createElement("span");
       text.textContent = name;
       label.append(icon, text);
+      const badge = document.createElement("span");
+      badge.className = "technology-badge";
+      badge.textContent = WtkTreeLabels.badgeFor(node, parent.id === "tree");
+      badge.title = badge.textContent + " object";
+      badge.setAttribute("aria-label", badge.title);
+      if (node.info.controlType !== "Process") label.append(badge);
       if (selectedApp) {
         const marker = document.createElement("span");
         marker.className = "app-marker codicon codicon-pass";
@@ -1203,13 +1191,13 @@
         marker.setAttribute("aria-label", marker.title);
         label.append(marker);
       }
-      label.addEventListener("click", () => choose(node.nodeId));
+      label.addEventListener("click", () => choose(row.dataset.nodeId));
       label.addEventListener("dblclick", () =>
-        expand(node.nodeId, !nodes.get(node.nodeId).open),
+        expand(row.dataset.nodeId, !nodes.get(row.dataset.nodeId).open),
       );
       const metadata = document.createElement("span");
       metadata.className = "metadata";
-      metadata.textContent = node.info.controlType;
+      metadata.textContent = node.info.controlType === "Process" ? "PID " + node.info.processId : node.info.controlType;
       row.append(toggle, label, metadata);
 
       const children = document.createElement("ul");
@@ -1229,7 +1217,7 @@
         root: parent.id === "tree",
         parentId: parentRow?.dataset?.nodeId,
         index,
-        loaded: false,
+        loaded: node.info.controlType === "Process",
         loading: false,
         open: false,
         name,
@@ -1237,7 +1225,128 @@
       rootIcon(nodes.get(node.nodeId));
       applyMarker(nodes.get(node.nodeId));
     });
+    const entries = Array.from(parent.children).map((item) => nodes.get(item.firstElementChild?.dataset.nodeId)).filter(Boolean);
+    const labels = WtkTreeLabels.labelsFor(entries.map((entry) => entry.node));
+    entries.forEach((entry, index) => {
+      entry.name = entry.root && entry.node.info.controlType === "Process" ? "Process(" + JSON.stringify(entry.node.info.name) + ")" : labels[index];
+      entry.row.setAttribute("aria-label", entry.name);
+      entry.row.setAttribute("aria-setsize", String(entries.length));
+      entry.baseTitle = [entry.name, entry.node.info.controlType, entry.node.identity?.type || entry.node.info.className, entry.node.info.automationId, entry.node.info.name, entry.node.info.className, entry.root ? "PID " + entry.node.info.processId : ""].filter(Boolean).join(" \u00b7 ");
+      applyMarker(entry);
+    });
+    if (selected && entries.some((entry) => entry.node.nodeId === selected) && hasDetails) {
+      const cell = element("properties").querySelector("tr:first-child td");
+      if (cell) cell.textContent = nodes.get(selected).name;
+    }
     filter();
+  };
+  const processName = (node) => node.info.processId ? (node.info.processName || node.info.name || "Process(" + node.info.processId + ")").replace(/\.exe$/i, "") : "unknown";
+  const addWindowRow = (process, node) => renderNodes(process.children, [node], true);
+  const removeRow = (nodeId) => {
+    const entry = nodes.get(nodeId);
+    if (!entry) return;
+    for (const row of entry.children.querySelectorAll(".node")) nodes.delete(row.dataset.nodeId);
+    entry.row.parentElement.remove();
+    nodes.delete(nodeId);
+  };
+  let refreshRun;
+  let treeRevision = -1;
+  let refreshCounts;
+  const updateCounts = () => {
+    if (!refreshCounts) return;
+    element("tree").dataset.refreshCounts = JSON.stringify(refreshCounts);
+    element("refresh-counts").textContent = `Refresh: +${refreshCounts.added} added, -${refreshCounts.removed} removed, ${refreshCounts.kept} kept, ${refreshCounts.redrawn} redrawn`;
+    element("refresh-counts").hidden = !appState?.showRefreshCounts;
+  };
+  const finishRefresh = () => {
+    if (!refreshRun || refreshRun.pending || refreshRun.queue.length) return;
+    const current = new Set([...nodes.values()].map((entry) => entry.row));
+    const before = refreshRun.before;
+    refreshCounts = { added: [...current].filter((row) => !before.rows.has(row)).length, removed: [...before.rows].filter((row) => !current.has(row)).length, kept: [...current].filter((row) => before.rows.has(row)).length, redrawn: [...before.ids].filter(([id, row]) => nodes.has(id) && nodes.get(id).row !== row).length };
+    updateCounts();
+    post("refreshCounts", refreshCounts);
+    refreshRun = undefined;
+  };
+  const pumpRefresh = () => {
+    if (!refreshRun) return;
+    while (refreshRun.pending < 4 && refreshRun.queue.length) {
+      const id = refreshRun.queue.shift();
+      const entry = nodes.get(id);
+      if (!entry || !entry.open || !entry.loaded) continue;
+      refreshRun.pending++;
+      post("refreshChildren", { nodeId: id, revision: refreshRun.revision });
+    }
+    finishRefresh();
+  };
+  const clearRemovedSelection = () => {
+    if (!selected || nodes.has(selected) || selecting) return;
+    selected = undefined;
+    hasDetails = false;
+    selecting = false;
+    clearProperties();
+    post("selectionRemoved");
+    rememberExpanded();
+    element("selection-name").textContent = "No object selected";
+    element("selection-type").textContent = "Select a control to inspect its properties.";
+    element("object-preview").hidden = true;
+    renderStatus();
+  };
+  const diffChildren = (entry, values) => {
+    const parent = entry.children;
+    const key = (node) => JSON.stringify(node.identity || node.info);
+    const oldEntries = [...parent.children].map((item) => nodes.get(item.firstElementChild?.dataset.nodeId)).filter(Boolean);
+    for (const node of values) {
+      if (nodes.has(node.nodeId)) continue;
+      const matches = oldEntries.filter((old) => key(old.node) === key(node) && !values.some((value) => value.nodeId === old.node.nodeId));
+      if (matches.length !== 1 || values.filter((value) => key(value) === key(node)).length !== 1) continue;
+      const existing = matches[0], oldId = existing.node.nodeId;
+      nodes.delete(oldId);
+      nodes.set(node.nodeId, existing);
+      if (refreshRun?.before.ids.has(oldId)) {
+        refreshRun.before.ids.set(node.nodeId, refreshRun.before.ids.get(oldId));
+        refreshRun.before.ids.delete(oldId);
+      }
+      existing.row.dataset.nodeId = node.nodeId;
+      for (const child of nodes.values()) if (child.parentId === oldId) child.parentId = node.nodeId;
+      if (selected === oldId) selected = node.nodeId;
+    }
+    const keep = new Set(values.map((node) => node.nodeId));
+    let removed = false;
+    for (const item of [...parent.children]) {
+      const id = item.firstElementChild?.dataset.nodeId;
+      if (id && !keep.has(id)) {
+        const old = nodes.get(id);
+        const oldCount = old && oldEntries.filter((candidate) => key(candidate.node) === key(old.node)).length;
+        const newCount = old && values.filter((candidate) => key(candidate) === key(old.node)).length;
+        if (oldCount > 1 && newCount) continue;
+        removeRow(id); removed = true;
+      }
+    }
+    for (const node of values) {
+      const existing = nodes.get(node.nodeId);
+      if (!existing) renderNodes(parent, [node], true);
+      else {
+        const changed = JSON.stringify(existing.node.info) !== JSON.stringify(node.info);
+        existing.node = node;
+        if (changed && selected === node.nodeId && !selecting) post("select", { nodeId: node.nodeId, path: selectionPathFor(node.nodeId) });
+        existing.toggle.disabled = !node.hasChildren;
+        if (!node.hasChildren) { existing.open = false; existing.row.removeAttribute("aria-expanded"); }
+        else existing.row.setAttribute("aria-expanded", String(existing.open));
+      }
+    }
+    let position = 0;
+    for (const node of values) {
+      const item = nodes.get(node.nodeId).row.parentElement;
+      if (parent.children[position] !== item) parent.insertBefore(item, parent.children[position] || null);
+      position++;
+    }
+    renderNodes(parent, [], true);
+    [...parent.children].forEach((item, index) => {
+      const child = nodes.get(item.firstElementChild?.dataset.nodeId);
+      if (child) { child.index = index; child.row.setAttribute("aria-posinset", String(index + 1)); }
+    });
+    clearRemovedSelection();
+    if (removed) rememberExpanded();
   };
   const table = (id, values) => {
     const body = element(id);
@@ -1388,6 +1497,9 @@
       event.preventDefault();
       const next = visible[position + (event.key === "ArrowDown" ? 1 : -1)];
       next?.focus();
+    } else if (event.key === "Home" || event.key === "End") {
+      event.preventDefault();
+      (event.key === "Home" ? visible[0] : visible[visible.length - 1])?.focus();
     } else if (event.key === "ArrowRight" || event.key === "ArrowLeft") {
       event.preventDefault();
       const entry = nodes.get(nodeId);
@@ -1395,7 +1507,7 @@
         if (entry.node.hasChildren && !entry.open) expand(nodeId, true);
         else entry.children.querySelector(':scope > li:not([hidden]) > .node')?.focus();
       } else if (entry.open) expand(nodeId, false);
-      else row.parentElement?.parentElement?.closest(".node")?.focus();
+      else row.parentElement?.parentElement?.previousElementSibling?.focus();
     } else if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
       choose(nodeId);
@@ -1480,6 +1592,17 @@
     }
     if (message.type === "roots") element("upgrade-package").hidden = true;
     if (message.type === "propertiesVisibility") { element("properties-elsewhere").hidden = message.visible; return; }
+    if (message.type === "selectionCleared") {
+      selected = undefined;
+      hasDetails = false;
+      selecting = false;
+      clearProperties();
+      element("selection-name").textContent = "No object selected";
+      element("selection-type").textContent = "Select a control to inspect its properties.";
+      element("object-preview").hidden = true;
+      renderStatus();
+      return;
+    }
     if (message.type === "selectionPending") { element("properties-view-status").textContent = "Loading properties\u2026"; element("properties-view-status").hidden = false; clearProperties(); focusSelected(message.nodeId); hasDetails = false; selecting = true; renderStatus(); return; }
     if (message.type === "progress") {
       if (!message.done && message.completed === 0 && message.target === "tree")
@@ -1507,6 +1630,7 @@
       selectionIcon(selected);
     } else if (message.type === "state") {
       appState = message;
+      updateCounts();
       if (Array.isArray(message.shownProperties)) {
         const names = message.shownProperties.filter((name) => typeof name === "string" && PINNABLE.test(name));
         if (JSON.stringify(names) !== JSON.stringify(shownProperties)) {
@@ -1530,14 +1654,18 @@
         picking ? "Hover over the app. Ctrl+Click to pick, Esc to cancel." : "",
       );
       renderStatus();
-    } else if (message.type === "roots") {
+    } else if (message.type === "roots" || message.type === "rootsDiff") {
+      const inPlace = message.type === "rootsDiff";
+      if (inPlace && message.revision < treeRevision) return;
+      if (inPlace) { treeRevision = message.revision; refreshRun = undefined; }
+      const before = inPlace && message.refresh ? { rows: new Set([...nodes.values()].map((entry) => entry.row)), ids: new Map([...nodes].map(([id, entry]) => [id, entry.row])) } : undefined;
+      if (!inPlace) {
+      refreshRun = undefined;
       element("properties-view-status").hidden = true;
       element("object-preview").hidden = true;
       clearProperties();
       hint("");
-      rootIcons = {};
       coverage.clear();
-      nodes.clear();
       selected = undefined;
       suggestion = undefined;
       rootsLoaded = true;
@@ -1547,7 +1675,46 @@
       fullPropertiesLoading = false;
         treeError = "";
       detailsError = "";
-      renderNodes(element("tree"), message.nodes);
+      }
+      const groups = new Map();
+      for (const node of message.nodes) {
+        const pid = node.info.processId || 0;
+        if (!groups.has(pid)) groups.set(pid, []);
+        groups.get(pid).push(node);
+      }
+      const keep = new Set(message.nodes.map((node) => node.nodeId));
+      const previousSize = nodes.size;
+      for (const entry of [...nodes.values()]) {
+        if (entry.root && !groups.has(entry.node.info.processId)) removeRow(entry.node.nodeId);
+        else if (nodes.get(entry.parentId)?.root && !keep.has(entry.node.nodeId)) removeRow(entry.node.nodeId);
+      }
+      if (inPlace && nodes.size < previousSize) rememberExpanded();
+      for (const [pid, windows] of groups) {
+        const id = "process:" + pid;
+        if (!nodes.has(id)) {
+          const name = processName(windows[0]);
+          renderNodes(element("tree"), [{ nodeId: id, hasChildren: true, info: { controlType: "Process", name, processId: pid, automationId: "process:" + name.toLowerCase(), className: "" } }], true);
+          nodes.get(id).open = true;
+        }
+        const process = nodes.get(id);
+        for (const node of windows) {
+          const existing = nodes.get(node.nodeId);
+          if (existing && existing.parentId !== id) removeRow(node.nodeId);
+          if (!nodes.has(node.nodeId)) addWindowRow(process, node);
+        }
+        diffChildren(process, windows);
+        [...process.children.children].forEach((item, index) => { const row = item.firstElementChild; row.setAttribute("aria-posinset", String(index + 1)); row.setAttribute("aria-setsize", String(windows.length)); });
+        const processIndex = [...groups.keys()].indexOf(pid);
+        if (element("tree").children[processIndex] !== process.row.parentElement) element("tree").insertBefore(process.row.parentElement, element("tree").children[processIndex] || null);
+      }
+      [...element("tree").children].forEach((item, index, all) => { item.firstElementChild.setAttribute("aria-posinset", String(index + 1)); item.firstElementChild.setAttribute("aria-setsize", String(all.length)); });
+      filter();
+      clearRemovedSelection();
+      if (before) {
+        refreshRun = { revision: message.revision, before, queue: [...nodes.values()].filter((entry) => !entry.root && entry.loaded && entry.open && nodes.get(entry.parentId)?.root).map((entry) => entry.node.nodeId), pending: 0 };
+        pumpRefresh();
+      }
+      if (!inPlace) {
       for (const id of [
         "properties",
         "state-properties",
@@ -1564,13 +1731,40 @@
       locatorState("idle");
       highlightable = true;
       renderHighlight();
+      }
     } else if (message.type === "wpfDetails") {
       const entry = nodes.get(message.nodeId);
       if (entry) { entry.wpfMissing = message.missing; entry.wpfBlocked = message.blocked; }
       if (selected === message.nodeId) renderWpfDetails(message.nodeId);
+    } else if (message.type === "childrenDiff") {
+      if (message.revision !== treeRevision) return;
+      const entry = nodes.get(message.nodeId);
+      if (entry && !message.blocked && !message.nextPageToken && message.nodes.length) {
+        diffChildren(entry, message.nodes);
+        entry.loaded = true;
+        entry.loading = false;
+        entry.row.removeAttribute("aria-busy");
+        if (!message.nodes.length && !message.nextPageToken) {
+          entry.node.hasChildren = false;
+          entry.open = false;
+          entry.toggle.disabled = true;
+          entry.row.removeAttribute("aria-expanded");
+        }
+        filter();
+      }
+      if (refreshRun && message.revision === refreshRun.revision) {
+        refreshRun.pending--;
+        if (entry && !message.blocked && !message.nextPageToken && message.nodes.length) for (const item of entry.children.children) {
+          const child = nodes.get(item.firstElementChild?.dataset.nodeId);
+          if (child?.loaded && child.open) refreshRun.queue.push(child.node.nodeId);
+        }
+        pumpRefresh();
+      }
     } else if (message.type === "children") {
       const entry = nodes.get(message.nodeId);
       if (entry) {
+        let ancestor = nodes.get(entry.parentId);
+        while (ancestor) { ancestor.open = true; ancestor = nodes.get(ancestor.parentId); }
         renderNodes(entry.children, message.nodes, message.append);
         const previousMessage = entry.children.querySelector(":scope > .tree-message");
         previousMessage?.remove();
@@ -1604,13 +1798,15 @@
         if (entry.restore) {
           const remaining = [];
           for (const saved of entry.restore) {
-            const child = [...entry.children.children].map((item) => nodes.get(item.firstElementChild?.dataset.nodeId)).find((item) => item && JSON.stringify(item.node.identity || item.node.info) === saved.key);
+            const matches = [...entry.children.children].map((item) => nodes.get(item.firstElementChild?.dataset.nodeId)).filter((item) => item && JSON.stringify(item.node.identity || item.node.info) === saved.key);
+            const child = matches.length === 1 ? matches[0] : undefined;
             if (child) { child.restore = saved.children; expand(child.node.nodeId); } else remaining.push(saved);
           }
           entry.restore = message.nextPageToken ? remaining : undefined;
           if (remaining.length && message.nextPageToken) post("treeMore", { nodeId: message.nodeId, pageToken: message.nextPageToken });
         }
         filter();
+        if (entry.open) revealLabels([...entry.children.querySelectorAll(":scope > li > .node")]);
       }
     } else if (message.type === "suggestion") {
       if (message.nodeId !== selected) return;
@@ -1694,7 +1890,7 @@
       setIcon(element("selection-icon"), info.controlType);
       selectionIcon(message.nodeId);
       highlightable = !!info.rect;
-      table("properties", { Name: isWpf ? (message.properties.properties["x:Name"] || info.name) : info.name,
+      table("properties", { Name: nodes.get(message.nodeId)?.name || info.name,
         Type: isWpf ? (message.properties.properties.ClrFullClassName || "").split(".").pop().split("+").pop() : info.controlType,
         "Automation ID": info.automationId, Left: info.rect?.left, Top: info.rect?.top, Width: info.rect?.width, Height: info.rect?.height,
         Enabled: info.isEnabled, Visible: isWpf ? message.properties.properties.Visible : (info.isOffscreen === undefined ? undefined : !info.isOffscreen) });
@@ -1723,7 +1919,14 @@
       if (message.suggestion || !locatorBusy) renderSuggestion(message.suggestion);
       renderStatus();
     } else if (message.type === "selectionRestored") {
-      nodes.get(message.nodeId)?.row.scrollIntoView?.({ block: "nearest" });
+      const restored = nodes.get(message.nodeId);
+      if (restored) {
+        let parent = nodes.get(restored.parentId);
+        while (parent) { parent.open = true; parent = nodes.get(parent.parentId); }
+        filter();
+        restored.row.scrollIntoView?.({ block: "nearest" });
+        revealLabels([restored.row]);
+      }
     } else if (message.type === "objectPreview") {
       if (message.nodeId === selected) renderObjectPreview(message.preview, message.reason);
     } else if (message.type === "enumerationIncomplete") {
@@ -1751,6 +1954,7 @@
       focusSelected(message.node.nodeId);
       nodes.get(message.node.nodeId)?.label.focus();
       nodes.get(message.node.nodeId)?.row.scrollIntoView({ block: "nearest" });
+      if (entry) revealLabels([entry.row]);
     } else if (message.type === "error") {
       if (propertiesView) { element("properties-view-status").textContent = message.message; element("properties-view-status").hidden = false; }
       if (failureTarget === "details") detailsError = message.message;

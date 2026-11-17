@@ -25,8 +25,10 @@ export type ManagedRequest =
 
 export type SpyRequest =
   | ManagedRequest
-  | { type: "showProperties" | "propertiesReady" | "upgradePackage" }
+  | { type: "showProperties" | "propertiesReady" | "upgradePackage" | "selectionRemoved" }
   | { type: "expandedPaths"; paths: PathSegment[][] }
+  | { type: "refreshChildren"; nodeId: string; revision: number }
+  | { type: "refreshCounts"; added: number; removed: number; kept: number; redrawn: number }
   | { type: "treeAttach"; nodeId: string }
   | { type: "treeMore"; nodeId: string; pageToken: string }
   | { type: "tour"; action: (typeof SPY_TOUR_ACTIONS)[number] }
@@ -55,6 +57,7 @@ export type SpyRequest =
 export type SpyResponse =
   | { type: "compatibilityBlocked"; message: string; label: string }
   | { type: "propertiesVisibility"; visible: boolean }
+  | { type: "selectionCleared" }
   | { type: "selectionPending"; nodeId: string }
   | { type: "wpfDetails"; nodeId: string; missing: boolean; blocked?: { code: string; hint: string } }
   | { type: "objectPreview"; nodeId: string; preview?: PreviewImages; reason?: string }
@@ -88,8 +91,11 @@ export type SpyResponse =
       bringToFront: boolean;
       /** Properties the user pinned to the default list (a user setting). */
       shownProperties?: string[];
+      showRefreshCounts?: boolean;
     }
   | { type: "roots"; nodes: NodeInfo[] }
+  | { type: "rootsDiff"; nodes: NodeInfo[]; revision: number; refresh?: boolean }
+  | { type: "childrenDiff"; nodeId: string; nodes: NodeInfo[]; revision: number; nextPageToken?: string; blocked?: { code: string; hint: string } }
   | { type: "children"; nodeId: string; nodes: NodeInfo[]; expanded?: boolean; append?: boolean; nextPageToken?: string; blocked?: { code: string; hint: string } }
   | {
       type: "selected";
@@ -134,6 +140,8 @@ export type SpyResponse =
 export function parseSpyRequest(value: unknown): SpyRequest | undefined {
   if (!value || typeof value !== "object") return;
   const message = value as Record<string, unknown>;
+  if (message.type === "refreshChildren" && typeof message.nodeId === "string" && message.nodeId.length > 0 && message.nodeId.length <= 512 && Number.isSafeInteger(message.revision)) return { type: "refreshChildren", nodeId: message.nodeId, revision: message.revision as number };
+  if (message.type === "refreshCounts" && [message.added, message.removed, message.kept, message.redrawn].every((n) => Number.isSafeInteger(n) && (n as number) >= 0)) return { type: "refreshCounts", added: message.added as number, removed: message.removed as number, kept: message.kept as number, redrawn: message.redrawn as number };
   if (message.type === "expandedPaths" && Array.isArray(message.paths) && message.paths.length <= 200) {
     const paths = message.paths.map(parseSelectionPath);
     if (paths.every((path): path is PathSegment[] => !!path)) return { type: "expandedPaths", paths };
@@ -148,7 +156,7 @@ export function parseSpyRequest(value: unknown): SpyRequest | undefined {
     return SPY_TOUR_ACTIONS.includes(message.action as (typeof SPY_TOUR_ACTIONS)[number])
       ? { type: "tour", action: message.action as (typeof SPY_TOUR_ACTIONS)[number] }
       : undefined;
-  if (message.type === "showProperties" || message.type === "propertiesReady" || message.type === "upgradePackage") return { type: message.type };
+  if (message.type === "showProperties" || message.type === "propertiesReady" || message.type === "upgradePackage" || message.type === "selectionRemoved") return { type: message.type };
   if (message.type === "ready")
     return typeof message.showOtherApps === "boolean"
       ? { type: "ready", showOtherApps: message.showOtherApps }

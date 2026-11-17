@@ -49,6 +49,11 @@ export function parseSelectionPath(value: unknown): PathSegment[] | undefined {
   return path;
 }
 
+export function processSegment(info: NodeInfo["info"]): PathSegment {
+  const name = info.processId ? (info.processName || info.name || `Process(${info.processId})`).replace(/\.exe$/i, "") : "unknown";
+  return { controlType: "Process", automationId: "process:" + name.toLowerCase(), name, className: "" };
+}
+
 export function segmentOf(info: NodeInfo["info"], index?: number): PathSegment {
   return {
     controlType: info.controlType,

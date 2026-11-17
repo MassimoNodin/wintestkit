@@ -252,6 +252,31 @@ describe("Spy view bridge", () => {
     expect(mocks.request).toHaveBeenCalledWith("inspect.children", { nodeId: "host", tree: "visual", pageToken: "uia:0" });
     fixture.provider.dispose();
   });
+  it("reveals a mixed picked path with diffs after a tree is loaded", async () => {
+    const root = { nodeId: "root", source: "wpf", hasChildren: true, info: { name: "App", controlType: "Window", processId: 42 } };
+    const host = { nodeId: "host", source: "wpf", hasChildren: true, info: { name: "Host", controlType: "Pane" } };
+    const picked = { nodeId: "native", source: "uia", info: { name: "Native", controlType: "Text" } };
+    mocks.request.mockImplementation(async (method: string, params?: { nodeId?: string; pageToken?: string }) => {
+      if (method === "inspect.refresh") return { nodes: [root], status: { running: true, pids: [42] } };
+      if (method === "inspect.roots") return [root];
+      if (method === "inspect.properties") return { info: picked.info, properties: {}, ancestors: [root, host] };
+      if (method === "inspect.children") return params?.nodeId === "root" ? { nodes: [host] } : params?.pageToken ? { nodes: [picked] } : { nodes: [], nextPageToken: "page2" };
+      return {};
+    });
+    const fixture = await create();
+    await fixture.provider.refresh();
+    const before = fixture.sent.length;
+    fixture.receive({ type: "pick" });
+    await vi.waitFor(() => expect(latestSession()).toBeTypeOf("string"));
+    mocks.notifications.get("spy.picked")?.({ sessionId: latestSession(), node: picked });
+    await vi.waitFor(() => expect(fixture.sent.slice(before)).toContainEqual(expect.objectContaining({ type: "picked", node: picked })));
+    const messages = fixture.sent.slice(before);
+    expect(messages.some((message) => message.type === "roots")).toBe(false);
+    expect(messages).toContainEqual(expect.objectContaining({ type: "rootsDiff", nodes: [root] }));
+    expect(messages).toContainEqual(expect.objectContaining({ type: "childrenDiff", nodeId: "root", nodes: [host] }));
+    expect(messages).toContainEqual(expect.objectContaining({ type: "childrenDiff", nodeId: "host", nodes: [picked] }));
+    fixture.provider.dispose();
+  });
   it("attaches on pick once per process run and resumes picking", async () => {
     const root = { nodeId: "window", hasChildren: true, info: { name: "App", controlType: "Window", processId: 90211 } };
     let process = { pid: 90211, creationTimeUtc: "first" };
@@ -1454,6 +1479,28 @@ describe("Spy view bridge", () => {
     ).toBe(true);
     fixture.provider.dispose();
   });
+  it.each(["empty", "blocked", "partial", "error", "attach"])("protects existing children on %s refresh results", async (kind) => {
+    const root = { nodeId: "root", hasChildren: true, info: { name: "App", controlType: "Window", processId: 42 } };
+    mocks.request.mockImplementation(async (method: string) => {
+      if (method === "inspect.refresh") return { nodes: [root], status: { running: true, pids: [42] } };
+      if (method === "inspect.children") {
+        if (kind === "error") throw new Error("unavailable");
+        if (kind === "attach") return { attachRequired: true, process: { pid: 42, creationTimeUtc: "test" } };
+        if (kind === "blocked") return { blocked: { code: "unavailable", hint: "no" } };
+        if (kind === "partial") return { nodes: [root], nextPageToken: "repeat" };
+        return [];
+      }
+      return {};
+    });
+    const fixture = await create();
+    await fixture.provider.refresh();
+    await fixture.provider.refresh();
+    const refresh = [...fixture.sent].reverse().find((message) => message.type === "rootsDiff");
+    expect(refresh).toBeDefined();
+    fixture.receive({ type: "refreshChildren", nodeId: "root", revision: refresh!.revision });
+    await vi.waitFor(() => expect(fixture.sent).toContainEqual(expect.objectContaining({ type: "childrenDiff", nodeId: "root", blocked: expect.any(Object) })));
+    fixture.provider.dispose();
+  });
   describe("suggested locator", () => {
     const answer = (locator: () => Promise<unknown>) =>
       mocks.request.mockImplementation((method: string) => {
@@ -2403,20 +2450,22 @@ describe("Spy view bridge", () => {
     fixture.provider.dispose();
   });
 
-  it("coalesces concurrent refreshes and consumes the combined status snapshot", async () => {
-    let finish: (value: unknown) => void = () => {};
+  it("discards an older overlapping refresh", async () => {
+    const finish: ((value: unknown) => void)[] = [];
     mocks.markers = false;
     mocks.request.mockImplementation((method: string) => method === "inspect.refresh"
-      ? new Promise((resolve) => { finish = resolve; }) : Promise.resolve(undefined));
+      ? new Promise((resolve) => { finish.push(resolve); }) : Promise.resolve(undefined));
     const fixture = await create();
     const first = fixture.provider.refresh();
     const second = fixture.provider.refresh();
-    await vi.waitFor(() => expect(mocks.request).toHaveBeenCalledWith("inspect.refresh", { includeOtherApps: true }));
-    expect(mocks.request.mock.calls.filter((call) => call[0] === "inspect.refresh")).toHaveLength(1);
-    finish({ nodes: [], status: { running: true, mainWindowTitle: "Combined snapshot" } });
-    await Promise.all([first, second]);
+    await vi.waitFor(() => expect(finish).toHaveLength(2));
+    finish[1]({ nodes: [], status: { running: true, mainWindowTitle: "Newest snapshot" } });
+    await second;
+    finish[0]({ nodes: [], status: { running: true, mainWindowTitle: "Old snapshot" } });
+    await first;
     expect(mocks.request).not.toHaveBeenCalledWith("app.status");
-    expect(fixture.sent).toContainEqual(expect.objectContaining({ type: "state", targetName: "Combined snapshot", appRunning: true }));
+    expect(fixture.sent).toContainEqual(expect.objectContaining({ type: "state", targetName: "Newest snapshot", appRunning: true }));
+    expect(fixture.sent).not.toContainEqual(expect.objectContaining({ type: "state", targetName: "Old snapshot" }));
     fixture.provider.dispose();
   });
 
@@ -2721,6 +2770,20 @@ describe("Spy view bridge", () => {
       fixture.provider.dispose();
     });
 
+    it("restores a selection through its process segment", async () => {
+      serve();
+      const fixture = await create();
+      const process = { controlType: "Process", automationId: "process:unknown", name: "unknown", className: "" };
+      fixture.receive({ type: "select", nodeId: "save1", path: [process, ...route] });
+      await vi.waitFor(() => expect(selected(fixture)).toEqual(["save1"]));
+      fixture.receive({ type: "expandedPaths", paths: [[process, route[0]]] });
+      await fixture.provider.refresh();
+      await vi.waitFor(() => expect(selected(fixture)).toEqual(["save1", "save1"]));
+      expect(fixture.sent).toContainEqual({ type: "selectionRestored", nodeId: "save1" });
+      expect(mocks.request.mock.calls.some(([method, params]) => method === "inspect.children" && String(params?.nodeId).startsWith("process:"))).toBe(false);
+      fixture.provider.dispose();
+    });
+
     it("selects the same object again after a reload, opening the tree down to it", async () => {
       serve();
       const fixture = await create();
@@ -2822,8 +2885,9 @@ describe("Spy view bridge", () => {
       await new Promise((resolve) => setTimeout(resolve, 30));
       expect(selected(fixture)).toEqual(["save1"]);
       expect(mocks.warning).not.toHaveBeenCalled();
-      await fixture.provider.refresh(); // but the next ordinary reload still can
-      await vi.waitFor(() => expect(selected(fixture)).toEqual(["save1", "save1"]));
+      await fixture.provider.refresh(); // an in-place refresh does not reload selection details
+      expect(selected(fixture)).toEqual(["save1"]);
+      expect(fixture.sent).toContainEqual(expect.objectContaining({ type: "rootsDiff" }));
       fixture.provider.dispose();
     });
 

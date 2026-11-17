@@ -441,6 +441,11 @@ public sealed class MainWindow : Window
                 if (controls != null) break;
                 controls = BuildControlsWindow(); controls.Closed += (_, _) => controls = null; controls.Show(); break;
             case "openPopup": popup.IsOpen = true; break;
+            case "openDuplicateItems":
+                var duplicateList = Id(new ListBox { ItemsSource = new[] { "Alpha", "Beta", "Beta", "Gamma" } }, "DuplicateItemsList");
+                var duplicateWindow = new Window { Title = "Duplicate items", Width = 300, Height = 250, Content = duplicateList };
+                AutomationProperties.SetAutomationId(duplicateWindow, "DuplicateItemsWindow");
+                duplicateWindow.Show(); break;
             case "openVirtualItems":
                 var items = Enumerable.Range(0, 5000).Select(index => new VirtualItem { Id = index, Name = "Item " + index, Enabled = index % 2 == 0 }).ToArray();
                 var list = Id(new ListBox { Height = 250, ItemsSource = items, DisplayMemberPath = "Name" }, "VirtualItemsList");
@@ -462,9 +467,22 @@ public sealed class MainWindow : Window
             case "sleepDispatcher": Counts.Hit("dispatcher.sleeping"); Thread.Sleep(1000); break;
             case "blockDispatcher": Counts.Hit("dispatcher.blocked"); FixtureState.Hang.Wait(); Counts.Hit("dispatcher.released"); break;
             case "scrollRows": rows.ScrollIntoView(rows.Items[Math.Max(0, Math.Min(value, rows.Items.Count - 1))]); break;
+            case "openDeepTree":
+                var deepRoot = new StackPanel();
+                var deepParent = deepRoot;
+                for (int level = 1; level <= 14; level++)
+                {
+                    var container = new StackPanel { Name = "Level" + level };
+                    container.Children.Add(new TextBlock { Text = "Level " + level + " - a long descriptive label for the deeply nested fixture container" });
+                    deepParent.Children.Add(container);
+                    deepParent = container;
+                }
+                var deepWindow = new Window { Title = "Deep tree", Width = 700, Height = 700, Content = new ScrollViewer { Content = deepRoot } };
+                AutomationProperties.SetAutomationId(deepWindow, "DeepTreeWindow");
+                deepWindow.Show(); break;
             case "openSecondWindow":
                 if (second != null) break;
-                var thread = new Thread(() => { var window = new Window { Title = "Fixture second dispatcher", Width = 300, Height = 200, Content = new Button { Content = "Second dispatcher" } }; AutomationProperties.SetAutomationId(window, "SecondWindow"); second = window; window.Closed += (_, _) => Dispatcher.CurrentDispatcher.BeginInvokeShutdown(DispatcherPriority.Background); window.Show(); Dispatcher.Run(); });
+                var thread = new Thread(() => { var window = new Window { Name = "SecondFixtureWindow", Title = "Fixture second dispatcher", Width = 300, Height = 200, Content = new Button { Content = "Second dispatcher" } }; AutomationProperties.SetAutomationId(window, "SecondWindow"); second = window; window.Closed += (_, _) => Dispatcher.CurrentDispatcher.BeginInvokeShutdown(DispatcherPriority.Background); window.Show(); Dispatcher.Run(); });
                 thread.SetApartmentState(ApartmentState.STA); thread.IsBackground = true; thread.Start(); break;
             case "closeWindow": if (second != null) { var window = second; second = null; window.Dispatcher.BeginInvoke(new Action(window.Close)); } break;
         }

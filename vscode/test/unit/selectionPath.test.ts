@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { NodeInfo } from "../../src/protocol/generated";
 import {
   bestMatch,
+  processSegment,
   describeSegment,
   MAX_PATH_DEPTH,
   parseSelectionPath,
@@ -119,4 +120,12 @@ describe("finding the same object again", () => {
     expect(bestMatch(wanted, [node("a", "Group", { className: "G" }), node("b", "Group", { className: "G" })])?.nodeId).toBe("b");
     expect(bestMatch({ ...wanted, index: 5 }, [node("a", "Group", { className: "G" }), node("b", "Group", { className: "G" })])).toBeUndefined();
   });
+});
+
+
+it("uses the executable name for a process path across PID changes", () => {
+  const first = { ...node("one", "Window", { name: "First" }).info, processId: 42, processName: "Fixture.exe" };
+  const restarted = { ...node("two", "Window", { name: "Changed" }).info, processId: 99, processName: "FIXTURE.EXE" };
+  expect(processSegment(first).automationId).toBe("process:fixture");
+  expect(processSegment(restarted).automationId).toBe(processSegment(first).automationId);
 });

@@ -93,6 +93,7 @@
         "frameworkId": {
           "type": "string"
         },
+        "processName": { "type": "string" },
         "processId": {
           "type": "integer",
           "minimum": 0

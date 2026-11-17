@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 import { describe, expect, it, vi } from "vitest";
 
-const script = readFileSync("media/spy/spy.js", "utf8").replaceAll("\r\n", "\n");
+const script = (readFileSync("media/spy/treeLabels.js", "utf8") + "\n" + readFileSync("media/spy/spy.js", "utf8")).replaceAll("\r\n", "\n");
 
 describe("Spy tutorial webview", () => {
   it("spotlights the selected green-tick row only during the definitions step", () => {
