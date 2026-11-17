@@ -63,6 +63,17 @@ job-level repository gates. This change does not modify settings or perform publ
    | Workflow filename (not path or display name) | `release.yml` |
    | Environment name | `release` |
 
+For `wintestkit-inspector`, use a pending publisher before the first upload and the
+project's Publishing settings afterward:
+
+| PyPI trusted-publisher field | Exact value |
+| --- | --- |
+| PyPI project name (pending publisher) | `wintestkit-inspector` |
+| GitHub owner | `MassimoNodin` |
+| GitHub repository name | `wintestkit` |
+| Workflow filename (not path or display name) | `release.yml` |
+| Environment name | `release` |
+
 The environment field is required for this configuration because the publishing job
 uses that exact environment. Its OIDC subject includes `environment:release`. The job
 requests `id-token: write` and invokes `uv publish --trusted-publishing always`. No PyPI
@@ -233,6 +244,6 @@ the inspector wheel with `uv build --directory inspector-payload --wheel`.
 Set `WTK_SIGN_CERT_THUMBPRINT` to the release signing certificate thumbprint for the build;
 Authenticode signatures are required for release executables and DLLs. The owner must approve
 the third-party inventory before publication. Complete the compatibility and release gates
-before publishing. Publish the inspector wheel first, then the matching core distribution,
-so the pinned extra can resolve. The existing release workflow does not publish the inspector
-wheel; arrange its publication separately before publishing core.
+before publishing. The Release workflow publishes the CI-built inspector wheel first, then
+the core distributions, so the pinned extra can resolve. The wheel is unsigned unless signing
+is configured, and its version must equal the core version.

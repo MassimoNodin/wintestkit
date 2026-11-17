@@ -247,7 +247,7 @@ def test_workflows_withhold_public_vsix_by_default() -> None:
     release = yaml.safe_load((root / ".github/workflows/release.yml").read_text())
     pypi = release["jobs"]["publish-pypi"]
     assert "needs.version.outputs.pypi == 'true'" in pypi["if"]
-    assert pypi["needs"] == ["version", "checks"]
+    assert pypi["needs"] == ["version", "checks", "publish-inspector"]
     assert "AZURE" not in json.dumps(pypi)
     extension = release["jobs"]["extension"]
     assert extension["steps"][0]["id"] == "gate"

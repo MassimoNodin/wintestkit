@@ -76,8 +76,45 @@ jobs:
     needs: version
     uses: ./.github/workflows/ci.yml
 
-  publish-pypi:
+  publish-inspector:
     needs: [version, checks]
+    if: needs.version.outputs.publish == 'true' && needs.version.outputs.pypi == 'true'
+    runs-on: windows-latest
+    environment: release
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: inspector-results
+          path: inspector-artifacts
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884
+        with:
+          version: "0.12.5"
+      - name: Publish tested inspector wheel using only PyPI OIDC
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          $wheels = @(Get-ChildItem inspector-artifacts -Filter *.whl -File -Recurse)
+          if ($wheels.Count -ne 1) { throw "Expected exactly one inspector wheel" }
+          if ($wheels[0].Name -cne "wintestkit_inspector-$env:VERSION-py3-none-win_amd64.whl") { throw "Inspector wheel name does not match release version" }
+          New-Item -ItemType Directory -Path inspector-dist | Out-Null
+          Copy-Item -LiteralPath $wheels[0].FullName -Destination inspector-dist
+          # Rebuilt distributions are not byte-identical, so a retry after a successful upload
+          # must not try to re-upload; skip only when PyPI already has every file by name.
+          $local = (Get-ChildItem inspector-dist -File).Name
+          try {
+            $remote = (Invoke-RestMethod "https://pypi.org/pypi/wintestkit-inspector/$env:VERSION/json").urls.filename
+            if (-not ($local | Where-Object { $remote -notcontains $_ })) {
+              Write-Host "PyPI already has $env:VERSION ($($local -join ', ')); skipping upload."
+              exit 0
+            }
+          } catch { Write-Host "PyPI has no $env:VERSION yet; uploading." }
+          uv publish --trusted-publishing always --check-url https://pypi.org/simple/ (Get-ChildItem inspector-dist -File).FullName
+
+  publish-pypi:
+    needs: [version, checks, publish-inspector]
     if: needs.version.outputs.publish == 'true' && needs.version.outputs.pypi == 'true'
     runs-on: windows-latest
     environment: release
@@ -209,10 +246,11 @@ jobs:
           if-no-files-found: error
 
   github-release:
-    needs: [version, checks, publish-pypi, extension]
+    needs: [version, checks, publish-inspector, publish-pypi, extension]
     if: >-
       always() && needs.version.outputs.publish == 'true' &&
       needs.checks.result == 'success' && needs.extension.result == 'success' &&
+      (needs.publish-inspector.result == 'success' || needs.publish-inspector.result == 'skipped') &&
       (needs.publish-pypi.result == 'success' || needs.publish-pypi.result == 'skipped')
     runs-on: windows-latest
     permissions:
