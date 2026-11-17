@@ -63,6 +63,7 @@
                 ><span id="other-apps-label">Show Other Apps</span>
             </button>
         </header>
+        <p id="refresh-counts" class="muted" role="status" hidden></p>
         <main id="workspace">
             <section id="tree-pane" class="pane" aria-label="Object browser">
                 <p id="enumeration-status" class="muted" role="status" hidden></p>
@@ -365,6 +366,7 @@
                 </div>
             </section>
         </main>
+        <script nonce="{{nonce}}" src="{{treeLabelsJs}}"></script>
         <script nonce="{{nonce}}" src="{{js}}"></script>
     </body>
 </html>

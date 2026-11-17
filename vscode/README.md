@@ -181,6 +181,7 @@ these example locators before using the starter tests with a different applicati
 
 | Setting | Default | Description |
 |---|---|---|
+| `wintestkit.spy.traceFile` | `""` | Append Spy diagnostic messages to a JSON lines file; empty disables tracing. |
 | `wintestkit.pythonPath` | `""` | Python interpreter to use. Empty uses the Python extension's selection. |
 | `wintestkit.codeLens.enabled` | `true` | Show Highlight, Check exists, class-wide checks and Run Flow CodeLens. |
 | `wintestkit.highlight.durationMs` | `1500` | How long a highlight stays on screen (200–10000 ms). |

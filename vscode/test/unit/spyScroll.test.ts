@@ -1,0 +1,31 @@
+﻿import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import { JSDOM } from "jsdom";
+import { expect, it } from "vitest";
+const { scrollForLabels } = createRequire(import.meta.url)("../../media/spy/treeLabels.js");
+it("moves the minimum distance needed to reveal labels", () => {
+  expect(scrollForLabels(10, 100, [{ offsetLeft: 30, width: 70 }])).toBe(10);
+  expect(scrollForLabels(10, 100, [{ offsetLeft: 80, width: 60 }])).toBe(40);
+  expect(scrollForLabels(0, 100, [{ offsetLeft: 120, width: 200 }])).toBe(120);
+  expect(scrollForLabels(30, 100, [])).toBe(30);
+});
+it("reveals newly rendered children without motion when requested", () => {
+  const dom = new JSDOM(readFileSync("media/spy/spy.html", "utf8").replace("{{viewClass}}", "spy-view"), { runScripts: "outside-only" });
+  Object.assign(dom.window, { acquireVsCodeApi: () => ({ postMessage() {} }), matchMedia: () => ({ matches: true, addEventListener() {} }), requestAnimationFrame: (fn: () => void) => fn() });
+  dom.window.eval(readFileSync("media/spy/treeLabels.js", "utf8") + "\n" + readFileSync("media/spy/spy.js", "utf8"));
+  const scroller = dom.window.document.querySelector("#tree-region") as HTMLElement;
+  Object.defineProperty(scroller, "clientWidth", { value: 100 });
+  const calls: ScrollToOptions[] = [];
+  scroller.scrollTo = (options?: ScrollToOptions | number) => { if (options && typeof options !== "number") calls.push(options); };
+  const rect = (left: number, width: number) => ({ left, width, right: left + width, top: 0, bottom: 0, height: 0, x: left, y: 0, toJSON() {} });
+  scroller.getBoundingClientRect = () => rect(0, 100);
+  const send = (data: unknown) => dom.window.dispatchEvent(new dom.window.MessageEvent("message", { data }));
+  const info = { controlType: "Window", name: "Fixture", processId: 42 };
+  send({ type: "roots", nodes: [{ nodeId: "root", hasChildren: true, info }] });
+  (dom.window.document.querySelector('[data-node-id="root"] .toggle') as HTMLButtonElement).click();
+  const original = dom.window.HTMLElement.prototype.getBoundingClientRect;
+  dom.window.HTMLElement.prototype.getBoundingClientRect = function () { return this.classList.contains("label") ? rect(140, 60) : original.call(this); };
+  send({ type: "children", nodeId: "root", nodes: [{ nodeId: "child", hasChildren: false, info }] });
+  expect(calls).toEqual([{ left: 100, behavior: "auto" }]);
+  dom.window.close();
+});

@@ -1434,6 +1434,7 @@ export interface ElementInfo {
   controlType: string;
   className: string;
   frameworkId: string;
+  processName?: string;
   processId: number;
   rect: Rect | null;
   isEnabled: boolean;

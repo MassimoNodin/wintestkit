@@ -400,6 +400,17 @@
           },
           "markdownDescription": "UI Automation properties Spy shows for every selected object, in addition to the built-in ones, in the order listed. Add one with the pin button beside a property under **All properties**. This is a user setting: it is kept with your VS Code settings and never in a project or its git repository."
         },
+        "wintestkit.spy.traceFile": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "description": "Developer diagnostics: append every message between the Spy panel and the extension to this file as JSON lines. Leave empty to disable."
+        },
+        "wintestkit.spy.showRefreshCounts": {
+          "type": "boolean",
+          "default": false,
+          "description": "Show row counts after refreshing the Spy tree."
+        },
         "wintestkit.spy.bringWindowToFront": {
           "type": "boolean",
           "default": false,

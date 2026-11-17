@@ -1,0 +1,46 @@
+import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import { JSDOM } from "jsdom";
+import { expect, it } from "vitest";
+const { labelsFor, iconFor } = createRequire(import.meta.url)("../../media/spy/treeLabels.js");
+const w = (name: string, xName = "") => ({ source: "wpf", info: { controlType: "ListBoxItem", name }, identity: { type: "Controls.ListBoxItem", xName } });
+const u = (name: string, id = "") => ({ source: "uia", info: { controlType: "Button", name, automationId: id } });
+it("minimizes labels across pages and escapes arguments", () => {
+  expect(labelsFor([w("Alpha", "item")])).toEqual(['WPFObject("item")']);
+  expect(labelsFor([w("Alpha"), w("Beta"), w("Beta"), w("Gamma")])).toEqual(['WPFObject("ListBoxItem", "Alpha")', 'WPFObject("ListBoxItem", "Beta", 1)', 'WPFObject("ListBoxItem", "Beta", 2)', 'WPFObject("ListBoxItem", "Gamma")']);
+  expect(labelsFor([w(""), w("")])).toEqual(['WPFObject("ListBoxItem", 1)', 'WPFObject("ListBoxItem", 2)']);
+  expect(labelsFor([w('\u96ea "a"')])[0]).toBe('WPFObject("ListBoxItem", "\u96ea \\"a\\"")');
+  expect(labelsFor([u(""), u("")])).toEqual(['UIAObject("Button", "", 1)', 'UIAObject("Button", "", 2)']);
+  expect(labelsFor([u("A")])).toEqual(['UIAObject("Button")']);
+  expect(labelsFor([u("A"), u("A")])).toEqual(['UIAObject("Button", "A", 1)', 'UIAObject("Button", "A", 2)']);
+  expect(labelsFor([u("A", "id"), u("B")])[0]).toBe('UIAObject("id")');
+  const win = (name: string) => ({ source: "uia", info: { controlType: "Window", className: "C", name } });
+  expect(labelsFor([win("A")])).toEqual(['Window("C")']);
+  expect(labelsFor([win("A"), win("B")])).toEqual(['Window("C", "A")', 'Window("C", "B")']);
+  expect(labelsFor([win("A"), win("A")])).toEqual(['Window("C", "A", 1)', 'Window("C", "A", 2)']);
+});
+it("maps every UIA type and WPF panels", () => {
+  const types = readFileSync("../python/src/wintestkit/uia/constants.py", "utf8").split("_CONTROL_TYPE_NAMES_IN_ORDER = (")[1].split(")")[0].match(/"[A-Za-z]+"/g)!.map((x) => JSON.parse(x));
+  for (const type of [...types, "ListBox", "ListBoxItem", "TextBox", "TextBlock", "Border", "StackPanel", "Grid", "DockPanel", "Canvas", "ContentPresenter", "ScrollViewer"]) expect(iconFor(type), type).not.toBe("symbol-object");
+  expect(iconFor("unknown")).toBe("symbol-object");
+});
+it("shows mixed labels, badges, and General Name", () => {
+  const dom = new JSDOM(readFileSync("media/spy/spy.html", "utf8").replace("{{viewClass}}", "properties-view"), { runScripts: "outside-only" });
+  Object.assign(dom.window, { acquireVsCodeApi: () => ({ postMessage() {} }), matchMedia: () => ({ matches: false, addEventListener() {} }), requestAnimationFrame: (fn: () => void) => fn() });
+  dom.window.eval(readFileSync("media/spy/treeLabels.js", "utf8") + "\n" + readFileSync("media/spy/spy.js", "utf8"));
+  const send = (data: unknown) => dom.window.dispatchEvent(new dom.window.MessageEvent("message", { data }));
+  const root = { ...u("Root"), nodeId: "root", hasChildren: true };
+  const child = { ...w("Alpha", "item"), nodeId: "child", hasChildren: false };
+  send({ type: "roots", nodes: [root] });
+  send({ type: "children", nodeId: "root", nodes: [child, { ...u("Search"), nodeId: "other", hasChildren: false }] });
+  const row = dom.window.document.querySelector('[data-node-id="child"]')!;
+  expect(row.getAttribute("aria-label")).toBe('WPFObject("item")');
+  expect(row.textContent).toContain('WPFObject("item")');
+  expect(row.querySelector(".technology-badge")?.getAttribute("aria-label")).toBe("WPF object");
+  expect(dom.window.document.querySelector('[data-node-id="other"] .technology-badge')?.textContent).toBe("UIA");
+  send({ type: "children", nodeId: "root", append: true, nodes: [{ ...w("Beta", "item"), nodeId: "third", hasChildren: false }] });
+  expect(row.getAttribute("aria-label")).toBe('WPFObject("ListBoxItem", "Alpha")');
+  send({ type: "selected", nodeId: "child", properties: { source: "wpf", info: child.info, properties: {} } });
+  expect(dom.window.document.querySelector("#properties tr:first-child td")?.textContent).toBe('WPFObject("ListBoxItem", "Alpha")');
+  dom.window.close();
+});

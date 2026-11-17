@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import vm from "node:vm";
 import { describe, expect, it } from "vitest";
 import { buildTestAppModel } from "../../src/settings/testAppModel";
@@ -102,6 +103,7 @@ function client(file: "setup" | "spy", viewport: { width?: number } = {}) {
   vm.runInNewContext(
     readFileSync("media/" + file + "/" + file + ".js", "utf8"),
     {
+      WtkTreeLabels: createRequire(import.meta.url)("../../media/spy/treeLabels.js"),
       document: {
         body,
         getElementById: element,

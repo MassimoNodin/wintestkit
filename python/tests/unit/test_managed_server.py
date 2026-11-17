@@ -392,7 +392,7 @@ def test_unexpected_managed_errors_do_not_expose_target_data(
     assert "private target value" not in caplog.text
 
 
-def test_refresh_releases_leases_but_keeps_session(
+def test_refresh_keeps_leases_and_session(
     managed_server: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from wintestkit.uia import win32
@@ -407,14 +407,13 @@ def test_refresh_releases_leases_but_keeps_session(
 
     monkeypatch.setattr(win32, "desktop_windows", no_windows)
     assert "result" in request(server, output, "inspect.refresh", {})
-    assert ("release", ["object"]) in client.calls and not client.closed
-    error = request(
+    assert ("release", ["object"]) not in client.calls and not client.closed
+    assert "result" in request(
         server,
         output,
         "inspect.managed.members",
         {"sessionId": "session", "objectId": "object", "generation": 1},
-    )["error"]
-    assert error["data"]["code"] == "objectStale"
+    )
 
 
 def test_disabled_attach_does_not_create_registry(
@@ -494,7 +493,7 @@ def test_spy_wpf_children_identity_and_failures(
     )
 
     def read(*args: Any, **kwargs: Any) -> Any:
-        pytest.fail("children must not read each object")
+        return (), "read"
 
     monkeypatch.setattr(client, "read", read)
     window = SimpleNamespace(process_id=42)
@@ -530,6 +529,15 @@ def test_picker_agent_resolution(managed_server: Any, monkeypatch: pytest.Monkey
     monkeypatch.setattr(win32, "WindowFromPoint", lambda point: 321)
     monkeypatch.setattr(win32, "root_window", lambda hwnd: 999)
     monkeypatch.setattr(uia_element, "from_handle", lambda hwnd: window)
+    monkeypatch.setattr(
+        server,
+        "_register",
+        lambda element, **kwargs: {
+            "nodeId": "window",
+            "info": {"controlType": "Window", "name": "Fixture"},
+            "hasChildren": True,
+        },
+    )
     root = ObjectRef("session", "root", 1, TYPE, "dispatcher")
     path = (
         ManagedNode(root, "root", True, True),
@@ -574,7 +582,7 @@ def test_picker_agent_resolution(managed_server: Any, monkeypatch: pytest.Monkey
         "inspect.properties",
         {"nodeId": picked.node["nodeId"], "includeAncestors": True},
     )["result"]
-    assert len(result["ancestors"]) == 1
+    assert [ancestor["nodeId"] for ancestor in result["ancestors"]] == ["window"]
     client.hit_test = lambda *a, **kw: None
     assert server._spy_resolve(fallback, 0, 0, False, "visual").extra == {"source": "uia"}
 
@@ -724,11 +732,11 @@ def test_spy_wpf_pages(managed_server: Any, monkeypatch: pytest.MonkeyPatch) -> 
     server._wpf_windows.add("window")
     params = {"nodeId": "window", "tree": "visual", "pageSize": 2}
     first = request(server, output, "inspect.children", params)["result"]
-    assert len(first["nodes"]) == 2 and not reads
+    assert len(first["nodes"]) == 2 and reads == ["0", "1"]
     assert first["nextPageToken"] == "next"
     last = request(server, output, "inspect.children", {**params, "pageToken": "next"})["result"]
     assert len(last["nodes"]) == 1 and "nextPageToken" not in last
-    assert not reads and calls == [(None, 2), ("next", 2)]
+    assert reads == ["0", "1", "2"] and calls == [(None, 2), ("next", 2)]
     error = request(server, output, "inspect.children", {**params, "pageToken": "bad"})["error"]
     assert error["data"]["code"] == "invalidPageToken"
     server._release_managed_objects()

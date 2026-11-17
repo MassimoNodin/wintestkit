@@ -238,7 +238,6 @@ namespace WinTestKit.Inspector.Agent.Inspection
             if (target is DependencyObject dependencyObject)
                 await CollectNodesAsync(dispatcher, () => TreeWalker.EnumerateChildren(dependencyObject, tree),
                     nodes, new HashSet<object>(ReferenceComparer.Instance), walker.NewBudget(), token).ConfigureAwait(false);
-            nodes.Sort(CompareNodes);
             page = NewPage(objectId, generation, "children", tree, nodes, Array.Empty<Diagnostic>(), size, token);
             return await AddPageIdentityAsync(page, dispatcher, token).ConfigureAwait(false);
         }, ct);

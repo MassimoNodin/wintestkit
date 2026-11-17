@@ -176,6 +176,30 @@ namespace WinTestKit.Inspector.Agent.Mapping.Tests
         [Theory]
         [InlineData("visual")]
         [InlineData("logical")]
+        public async Task ChildrenPreserveTreeOrderWhenLastChildWasRegisteredFirst(string tree)
+        {
+            using (var window = new MappingWindow(3))
+            using (var service = new WpfInspectionService("order", new FakeInspector()))
+            {
+                var registry = (ObjectRegistry)typeof(WpfInspectionService).GetField("registry", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(service)!;
+                await window.Thread.Dispatcher.InvokeAsync(() => registry.Register(window.Buttons[2], window.Thread.Dispatcher, new TypeInfoDto { Name = "Button" })).Task;
+                ObjectRef panel = await PanelHandle(service, window);
+                var page = await service.ChildrenAsync(panel.ObjectId, panel.Generation, tree, 2, null, None);
+                var nodes = new List<ManagedNodeDto>(page.Items);
+                page = await service.ChildrenAsync(panel.ObjectId, panel.Generation, tree, 2, page.NextToken, None);
+                nodes.AddRange(page.Items);
+                Assert.Equal(3, nodes.Count);
+                for (int index = 0; index < nodes.Count; index++)
+                {
+                    Assert.True(registry.TryGet(nodes[index].Object.ObjectId, nodes[index].Object.Generation, out object target, out _));
+                    Assert.Same(window.Buttons[index], target);
+                }
+            }
+        }
+
+        [Theory]
+        [InlineData("visual")]
+        [InlineData("logical")]
         public async Task ChildrenPagesRemainFrozenAfterTreeChanges(string tree)
         {
             using (var window = new MappingWindow(5))
