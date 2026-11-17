@@ -1,7 +1,7 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import * as vscode from "vscode";
 import { checkWintestkit, getInterpreter } from "../python";
-import { CompatibilityError, packageCompatibility, protocolCompatibility, type CompatibilityIssue } from "../compatibility";
+import { CompatibilityError, packageCompatibility, protocolCompatibility, UPGRADE_LABEL, type CompatibilityIssue } from "../compatibility";
 import type { InitializeResult } from "../protocol/generated";
 import { JsonRpcClient, LineSplitter, RpcError } from "./jsonrpc";
 
@@ -44,14 +44,14 @@ export class ServerManager implements vscode.Disposable {
     this.log.error(error.message);
     const actions = [
       ...(issue.updateExtension ? ["Update Extension"] : []),
-      "Install Compatible Package",
+      issue.kind === "older" ? UPGRADE_LABEL : "Install Compatible Package",
       "Choose Interpreter",
       "Show Output",
     ];
     void vscode.window.showErrorMessage(error.message, ...actions).then(async (choice) => {
       if (choice === "Show Output") this.log.show();
       if (choice === "Update Extension") await vscode.commands.executeCommand("wintestkit.updateExtension");
-      if (choice === "Install Compatible Package")
+      if (choice === "Install Compatible Package" || choice === UPGRADE_LABEL)
         await vscode.commands.executeCommand("wintestkit.installCompatiblePackage", entry.project.root);
       if (choice === "Choose Interpreter")
         await vscode.commands.executeCommand("wintestkit.selectInterpreter", entry.project.root);
@@ -118,7 +118,7 @@ export class ServerManager implements vscode.Disposable {
       // The guided setup notices this and offers to fix it, so there is no message here.
       throw new Error("wintestkit is not installed");
     }
-    const issue = packageCompatibility(packageInfo.version);
+    const issue = packageCompatibility(packageInfo.version, packageInfo.inspectorVersion);
     if (issue) throw this.incompatible(entry, issue, python);
     const level = vscode.workspace
       .getConfiguration("wintestkit", entry.project.root)

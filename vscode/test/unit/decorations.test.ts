@@ -58,6 +58,14 @@ describe("Windows backend editor paths", () => {
 });
 
 describe("check decorations", () => {
+  it("shows the check message in the hover", () => {
+    mocks.decorate.mockClear();
+    const message = "Not found: `clr:Name` needs the inspector; alreadyAttached. Close the other session.";
+    const decorations = create(entry("error", { message, code: "alreadyAttached", hint: "Close the other session.", diagnostic: { message: "old" } }));
+    expect(mocks.decorate.mock.calls.flatMap(([, list]) => list)).toContainEqual(expect.objectContaining({ hoverMessage: message }));
+    decorations.dispose();
+  });
+
   it("draws no gutter icon for any status", () => {
     mocks.styleOptions.length = 0;
     create(entry("found")).dispose();

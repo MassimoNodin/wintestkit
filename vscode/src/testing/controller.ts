@@ -4,7 +4,7 @@ import type { Projects } from "../projects";
 import type { DiscoveryStore } from "../discovery/store";
 import { formatDiagnostic } from "../editor/diagnostics";
 import { getInterpreter } from "../python";
-import type { Project } from "../server/serverManager";
+import type { Project, ServerManager } from "../server/serverManager";
 import type { TestEntry } from "../protocol/generated";
 import { EventMapper, type RunAction, type TestEnd } from "./eventMapper";
 import { EventServer } from "./eventServer";
@@ -101,6 +101,7 @@ export class TestController implements vscode.Disposable {
       /** A test could not start because attach mode found the app not running. */
       notRunning(project: Project): void;
     },
+    private readonly servers?: ServerManager,
   ) {
     this.profile = this.controller.createRunProfile(
       "Run",
@@ -507,6 +508,7 @@ export class TestController implements vscode.Disposable {
         this.apply(project, run, mapper.finish(null, true));
         return;
       }
+      if (this.servers) await this.servers.get(project);
       const python = await getInterpreter(project.root);
       if (!(await saveExecutionSources(this.projects, project))) {
         this.apply(project, run, mapper.finish(null, true));

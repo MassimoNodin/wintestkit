@@ -417,19 +417,19 @@ def test_refresh_releases_leases_but_keeps_session(
     assert error["data"]["code"] == "objectStale"
 
 
-def test_disabled_methods_do_not_probe_or_create_registry(
+def test_disabled_attach_does_not_create_registry(
     managed_server: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     server, output, _ = managed_server
     server.cfg = load_config(server.cfg.root, {"inspector.enabled": False})
-    monkeypatch.setattr(probe, "identify", _unexpected_probe)
     monkeypatch.setattr(runtime, "inspector_sessions", lambda: pytest.fail("unexpected registry"))
-    for method, params in (
-        ("identify", {"nodeId": "n"}),
-        ("attach", {"process": IDENTITY.to_json()}),
-    ):
-        error = request(server, output, f"inspect.managed.{method}", params)["error"]
-        assert error["data"]["code"] == "notAttached"
+    facts = request(server, output, "inspect.managed.identify", {"nodeId": "n"})["result"]
+    assert facts["executable"] == "app.exe"
+    error = request(server, output, "inspect.managed.attach", {"process": IDENTITY.to_json()})[
+        "error"
+    ]
+    assert error["data"]["code"] == "inspectorDisabled"
+    assert "enabled = true" in error["data"]["hint"]
 
 
 def test_uia_properties_ignore_managed_aliases_without_probing(
@@ -655,7 +655,7 @@ def test_spy_wpf_eviction_releases_handle(
     [
         ("auto", True, "WPF", "wpf"),
         ("uia", True, "WPF", "uia"),
-        ("auto", False, "WPF", "uia"),
+        ("auto", False, "WPF", "wpf"),
         ("auto", True, "Win32", "uia"),
     ],
 )
@@ -678,6 +678,12 @@ def test_spy_root_source_and_uia_fallback(
     window.framework_id = framework
     root = rpc_request(server, output, "inspect.roots")["result"][0]
     assert root["source"] == expected
+    if not enabled and expected == "wpf":
+        result = rpc_request(
+            server, output, "inspect.children", {"nodeId": root["nodeId"], "tree": "visual"}
+        )["result"]
+        assert result["blocked"]["code"] == "inspectorDisabled"
+        assert "enabled = true" in result["blocked"]["hint"]
     if expected == "uia":
         result = rpc_request(
             server, output, "inspect.children", {"nodeId": root["nodeId"], "tree": "logical"}
@@ -1160,3 +1166,32 @@ def test_picker_uses_registered_hosted_node_before_window_hit_test(
     picked = server._spy_resolve(Native(), 10, 20, True, "visual")
     assert picked.node == description
     assert server._wpf_parents[picked.node["nodeId"]] == "host"
+
+
+def test_attach_errors_include_code_and_hint(
+    managed_server: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from wintestkit.inspector.hints import inspector_error_hint
+
+    server, output, _ = managed_server
+
+    def fail(*args: Any, **kwargs: Any) -> Any:
+        raise InspectorUnavailableError("owned by another session", code="alreadyAttached")
+
+    monkeypatch.setattr(runtime, "attach_managed", fail)
+    error = request(server, output, "inspect.managed.attach", {"process": IDENTITY.to_json()})[
+        "error"
+    ]
+    assert error["message"] == "owned by another session"
+    assert error["data"]["code"] == "alreadyAttached"
+    assert error["data"]["hint"] == inspector_error_hint("alreadyAttached")
+
+
+def test_non_ready_attach_reports_reason(managed_server: Any) -> None:
+    server, output, client = managed_server
+    client.session = replace(SESSION, state="faulted", error="alreadyAttached")
+    error = request(server, output, "inspect.managed.attach", {"process": IDENTITY.to_json()})[
+        "error"
+    ]
+    assert error["data"]["code"] == "alreadyAttached"
+    assert "faulted" in error["message"]

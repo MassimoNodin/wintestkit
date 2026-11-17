@@ -8,7 +8,7 @@ from contextvars import ContextVar
 from typing import Literal
 
 from wintestkit.backends.element import TargetElement
-from wintestkit.engine.managed import query_budget
+from wintestkit.engine.managed import instant_deadline, query_budget
 from wintestkit.errors import InspectorDeadlineError, LocatorError, UIAError, WaitTimeoutError
 
 POLL_INTERVAL = 0.1
@@ -55,14 +55,17 @@ def wait_until[T](
     last_error: BaseException | None = None
     while True:
         wakers: list[Callable[[float], object]] = []
+        operation_deadline = instant_deadline() if timeout == 0 else None
         token = _waker.set(wakers)
         try:
             try:
-                with query_budget(start + timeout):
+                with query_budget(operation_deadline or start + timeout):
                     result = fn()
             finally:
                 _waker.reset(token)
         except InspectorDeadlineError as error:
+            if operation_deadline is not None:
+                raise
             if not error.busy:
                 if _clock() < start + timeout - 0.001:
                     raise
@@ -86,12 +89,20 @@ def wait_until[T](
         if waited >= timeout:
             break
     if isinstance(last_error, LocatorError):
-        suffix = f" (waited {timeout:.1f}s)"
+        suffix = f" (waited {timeout:.1f}s)" if timeout else ""
         last_error.message += suffix
         last_error.args = (last_error.message,)
         raise last_error
     raise WaitTimeoutError(
-        f"Timed out after {timeout:.1f}s waiting for {description}",
+        (
+            f"Timed out after {timeout:.1f}s waiting for {description}"
+            if timeout
+            else (
+                f"Not found: {description.removesuffix(' to exist')}"
+                if description.endswith(" to exist")
+                else f"Condition not met: {description}"
+            )
+        ),
         last_error=last_error,
         waited=waited,
     )

@@ -111,7 +111,7 @@ export class ElementsTree implements vscode.Disposable {
     );
     item.id = node.id;
     item.description = node.description;
-    item.tooltip = node.tooltip ?? node.description;
+    item.tooltip = this.resultOf(node)?.message ?? node.tooltip ?? node.description;
     item.contextValue = nodeContext(node);
     const presentation = checkPresentation(this.statusOf(node));
     item.iconPath = new vscode.ThemeIcon(
@@ -137,10 +137,11 @@ export class ElementsTree implements vscode.Disposable {
    * rows under the page it ran on; any other row shows the result of a check of the element itself.
    */
   private statusOf(node: ElementNode): CheckResult["status"] | undefined {
-    return (
-      this.checks.scopedResults.get(node.id)?.status ??
-      (node.elementId ? this.checks.results.get(node.elementId)?.status : undefined)
-    );
+    return this.resultOf(node)?.status;
+  }
+  private resultOf(node: ElementNode): CheckResult | undefined {
+    return this.checks.scopedResults.get(node.id) ??
+      (node.elementId ? this.checks.results.get(node.elementId) : undefined);
   }
   private discoveries(): DiscoveryResult[] {
     return this.projects.all
@@ -306,8 +307,11 @@ export class ElementsTree implements vscode.Disposable {
     let source = this.sectionNodes();
     const unusedState = this.unusedState();
     if (unusedState) source = annotateUnused(source, this.unusedLookup(), unusedState.filtering);
+    const withResults = (nodes: ElementNode[]): ElementNode[] => nodes.map((node) => ({
+      ...node, tooltip: this.resultOf(node)?.message ?? node.tooltip, children: withResults(node.children),
+    }));
     const nodes = toNavNodes(
-      source,
+      withResults(source),
       (node) => this.statusOf(node),
       (node) => {
         if (

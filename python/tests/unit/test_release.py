@@ -26,7 +26,7 @@ def test_repository_compatibility_is_consistent() -> None:
     RELEASE["check_compatibility"]()
 
 
-def test_version_bump_preserves_explicit_compatibility_bounds(tmp_path: Path) -> None:
+def test_version_bump_updates_compatibility_bounds(tmp_path: Path) -> None:
     root = Path(__file__).resolve().parents[3]
     for name in (
         "scripts/bump_version.py",
@@ -42,18 +42,17 @@ def test_version_bump_preserves_explicit_compatibility_bounds(tmp_path: Path) ->
     helpers["bump"]("0.2.0")
     assert set(helpers["current"]().values()) == {"0.2.0"}
     changed = json.loads((tmp_path / "vscode/src/compatibility.json").read_text(encoding="utf-8"))
-    assert changed["python"] == policy()["python"]
-    with pytest.raises(ValueError, match="outside"):
-        RELEASE["validate_compatibility"](changed, "0.2.0", "0.2.0", 1, 1)
+    assert changed["python"] == {"minimum": "0.2.0", "maximumExclusive": "0.3.0"}
+    RELEASE["validate_compatibility"](changed, "0.2.0", "0.2.0", 1, 1)
 
 
 @pytest.mark.parametrize(
     ("field", "value", "message"),
     [
         ("minimum", "0.2.0", "minimum must be below"),
-        ("minimum", "0.1.2", "outside"),
+        ("minimum", "0.1.2", "stale"),
         ("maximumExclusive", "0.1.1", "minimum must be below"),
-        ("minimum", "0.1.1rc1", "stable"),
+        ("minimum", "0.1.1rc1", "stale"),
     ],
 )
 def test_invalid_compatibility_bounds(field: str, value: str, message: str) -> None:
@@ -138,7 +137,12 @@ def test_candidate_notes_must_be_dated() -> None:
 
 @pytest.mark.parametrize("version", ["0.1.1a0", "0.1.1b2", "0.1.1rc1", "0.1.1.dev0"])
 def test_prerelease_contract_uses_numeric_vsix_and_explicit_channel(version: str) -> None:
-    prerelease_policy = {**policy(), "extensionVersion": "0.1.2", "channel": "prerelease"}
+    prerelease_policy = {
+        **policy(),
+        "extensionVersion": "0.1.2",
+        "channel": "prerelease",
+        "python": {"minimum": version, "maximumExclusive": "0.2.0"},
+    }
     RELEASE["validate_compatibility"](prerelease_policy, "0.1.2", version, 1, 1)
     with pytest.raises(ValueError, match="channel"):
         RELEASE["validate_compatibility"](policy(), "0.1.1", version, 1, 1)
@@ -146,7 +150,7 @@ def test_prerelease_contract_uses_numeric_vsix_and_explicit_channel(version: str
 
 def test_prerelease_release_tuple_must_remain_in_bounds() -> None:
     prerelease_policy = {**policy(), "channel": "prerelease"}
-    with pytest.raises(ValueError, match="outside"):
+    with pytest.raises(ValueError, match="stale"):
         RELEASE["validate_compatibility"](prerelease_policy, "0.1.1", "0.2.0rc1", 1, 1)
 
 
@@ -175,6 +179,35 @@ def version_workspace(tmp_path: Path) -> Path:
     return tmp_path
 
 
+@pytest.mark.parametrize("version", ["0.2.0rc1", "0.2.0", "0.3.1", "1.0.0"])
+def test_bump_expands_upper_bound(version_workspace: Path, version: str) -> None:
+    helpers = runpy.run_path(str(version_workspace / "scripts/bump_version.py"))
+    helpers["bump"](version, "0.2.0" if "rc" in version else None)
+    bounds = json.loads((version_workspace / "vscode/src/compatibility.json").read_text())["python"]
+    major, minor, _ = RELEASE["VERSIONS"]["release_version"](version)[0]
+    assert bounds == {"minimum": version, "maximumExclusive": f"{major}.{minor + 1}.0"}
+
+
+def test_check_reports_stale_minimum(version_workspace: Path) -> None:
+    script = version_workspace / "scripts/bump_version.py"
+    helpers = runpy.run_path(str(script))
+    helpers["bump"]("0.1.1rc3", "0.1.3")
+    policy_path = version_workspace / "vscode/src/compatibility.json"
+    changed = json.loads(policy_path.read_text())
+    changed["python"]["minimum"] = "0.1.1"
+    policy_path.write_text(json.dumps(changed))
+    result = subprocess.run(
+        [sys.executable, str(script), "--check", "0.1.1rc3", "--extension-version", "0.1.3"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 1
+    assert "minimum 0.1.1 is stale" in result.stderr
+    with pytest.raises(ValueError, match=r"minimum 0\.1\.1 is stale"):
+        RELEASE["validate_compatibility"](changed, "0.1.3", "0.1.1rc3", 1, 1)
+
+
 def test_prerelease_bump_requires_numeric_selection_before_writing(version_workspace: Path) -> None:
     helpers = runpy.run_path(str(version_workspace / "scripts/bump_version.py"))
     original = helpers["current"]()
@@ -186,14 +219,11 @@ def test_prerelease_bump_requires_numeric_selection_before_writing(version_works
 def test_prerelease_bump_check_and_return_to_stable(version_workspace: Path) -> None:
     script = version_workspace / "scripts/bump_version.py"
     helpers = runpy.run_path(str(script))
-    original_bounds = json.loads((version_workspace / "vscode/src/compatibility.json").read_text())[
-        "python"
-    ]
     helpers["bump"]("0.1.1rc1", "0.1.2")
     assert list(helpers["current"]().values()) == ["0.1.1rc1", "0.1.2", "0.1.2", "0.1.2", "0.1.2"]
     changed = json.loads((version_workspace / "vscode/src/compatibility.json").read_text())
     assert changed["channel"] == "prerelease"
-    assert changed["python"] == original_bounds
+    assert changed["python"]["minimum"] == "0.1.1rc1"
     assert (
         subprocess.run(
             [sys.executable, str(script), "--check", "0.1.1rc1", "--extension-version", "0.1.2"],
@@ -341,3 +371,13 @@ def test_extension_gate_executes_before_checkout_and_is_independent(
         ).strip()
         == f"enabled={str(enabled_gate == expected_gate).lower()}"
     )
+
+
+def test_prerelease_minimum_must_be_below_maximum_release() -> None:
+    changed = {
+        **policy(),
+        "channel": "prerelease",
+        "python": {"minimum": "0.2.0rc1", "maximumExclusive": "0.2.0"},
+    }
+    with pytest.raises(ValueError, match="minimum must be below maximumExclusive"):
+        RELEASE["validate_compatibility"](changed, "0.1.1", "0.2.0rc1", 1, 1)

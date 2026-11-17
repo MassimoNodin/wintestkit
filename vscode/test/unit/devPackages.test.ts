@@ -12,7 +12,7 @@ vi.mock("vscode", () => ({
   window: { showOpenDialog: mocks.dialog },
 }));
 import { DevPackages } from "../../src/setup/devPackages";
-import { ALLOW_PRERELEASE, PYTHON_REQUIREMENT } from "../../src/compatibility";
+import { ALLOW_PRERELEASE, UPGRADE_REQUIREMENT } from "../../src/compatibility";
 
 const folder = { toString: () => "file:///work" } as vscode.Uri;
 function source() {
@@ -54,7 +54,7 @@ describe("development package selection", () => {
     expect(mocks.dialog).toHaveBeenCalledOnce();
     await packages.select(folder, "remote");
     expect(packages.view(folder)).toEqual({ source: "remote" });
-    expect(await packages.arguments(folder)).toEqual(["-m", "pip", "install", "--upgrade", "--force-reinstall", ...(ALLOW_PRERELEASE ? ["--pre"] : []), PYTHON_REQUIREMENT]);
+    expect(await packages.arguments(folder)).toEqual(["-m", "pip", "install", "--upgrade", "--force-reinstall", ...(ALLOW_PRERELEASE ? ["--pre"] : []), UPGRADE_REQUIREMENT]);
   });
   it("preserves the selected source when the picker is cancelled", async () => {
     const packages = source();

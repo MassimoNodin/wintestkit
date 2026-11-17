@@ -19,6 +19,28 @@ _budget: ContextVar[tuple[float, float | None] | None] = ContextVar(
 )
 
 
+_instant: ContextVar[bool] = ContextVar("wintestkit_instant_resolution", default=False)
+
+
+@contextmanager
+def instant_resolution(enabled: bool) -> Generator[None]:
+    """Give a single check its own inspector operation budget."""
+    token = _instant.set(enabled)
+    try:
+        yield
+    finally:
+        _instant.reset(token)
+
+
+def instant_deadline() -> float | None:
+    if not _instant.get():
+        return None
+    from wintestkit import runtime
+
+    config = runtime.get_config()
+    return time.monotonic() + config.inspector.attach_timeout + config.inspector.request_timeout
+
+
 @contextmanager
 def query_budget(deadline: float | None = None) -> Generator[None]:
     """Share the outer deadline across retries, window filters, and within links."""

@@ -27,7 +27,8 @@ def validate_compatibility(
             raise ValueError("Compatibility versions must be stable X.Y.Z releases")
         return tuple(int(part) for part in value.split("."))
 
-    minimum = version(policy["python"]["minimum"])
+    minimum_text = policy["python"]["minimum"]
+    minimum, _ = VERSIONS["release_version"](minimum_text)
     maximum = version(policy["python"]["maximumExclusive"])
     if minimum >= maximum:
         raise ValueError("Compatibility minimum must be below maximumExclusive")
@@ -37,7 +38,12 @@ def validate_compatibility(
     channel = policy.get("channel", "stable")
     if channel not in ("stable", "prerelease") or prerelease != (channel == "prerelease"):
         raise ValueError("Compatibility channel must match the Python release channel")
-    if not minimum <= python_release < maximum:
+    if minimum_text != python_version:
+        raise ValueError(
+            f"Compatibility minimum {minimum_text} is stale: it must equal the released "
+            f"Python version {python_version}. Run scripts/bump_version.py."
+        )
+    if python_release >= maximum:
         raise ValueError("Released Python version is outside the supported compatibility range")
     version(extension_version)
     protocols = (policy["protocolVersion"], protocol, schema_protocol)

@@ -248,6 +248,9 @@ public sealed class MainWindow : Window
         AttachedOwner.SetMarker(fixture, "attached");
         fixture.BeginAnimation(OpacityProperty, new DoubleAnimation(0.5, 1, new Duration(TimeSpan.FromHours(1))));
         panel.Children.Add(fixture);
+        var contentDock = new DockPanel { Name = "_mainWindowDockPanel" };
+        contentDock.Children.Add(new TextBlock { Text = "Content" });
+        panel.Children.Add(contentDock);
         var effect = Id(new TextBlock { Text = "Ready" }, "ActionEffect");
         var fancy = Id(new FancyButton { Name = "FancyXName", Content = "Fancy action", Tag = "fancy" }, "FancyAutomationId");
         int clicks = 0; fancy.Click += (_, _) => effect.Text = "Clicked " + ++clicks;

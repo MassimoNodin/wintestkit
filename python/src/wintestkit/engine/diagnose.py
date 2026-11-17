@@ -359,9 +359,13 @@ def _name_similarity(link: Locator, info: ElementInfo) -> float:
     __tracebackhide__ = True
     best = 0.0
     for alternative in expand_alternatives(link):
-        if isinstance(alternative.name, str) and info.name:
-            ratio = SequenceMatcher(None, alternative.name.lower(), info.name.lower()).ratio()
-            best = max(best, ratio)
+        for expected, actual in (
+            (alternative.name, info.name),
+            (alternative.automation_id, info.automation_id),
+        ):
+            if isinstance(expected, str) and actual:
+                ratio = SequenceMatcher(None, expected.lower(), actual.lower()).ratio()
+                best = max(best, ratio)
     return best
 
 
@@ -405,7 +409,7 @@ def diagnose_not_found(
     for order, element in enumerate(relaxed_descendants(root, shared_type)):
         info = element.info()
         score, mismatches = _best_score(link, info)
-        if score >= 1:
+        if score >= 0:
             scored.append((score, _name_similarity(link, info), order, info, mismatches))
     # Score first, then how close the name is (so typos rank their intended target high), then
     # document order.

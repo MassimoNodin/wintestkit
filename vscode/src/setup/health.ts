@@ -18,6 +18,7 @@ export interface StepResult {
   detail: string;
   /** The installed wintestkit version, on the package step. */
   version?: string;
+  issue?: ReturnType<typeof packageCompatibility>;
 }
 export type Health = Record<StepId, StepResult>;
 
@@ -136,7 +137,7 @@ export interface HealthProbes {
   /** The interpreter VS Code would use for the project, if one is selected. */
   interpreter(): Promise<string | undefined>;
   interpreterExists(python: string): boolean;
-  packageInfo(python: string): Promise<{ installed: boolean; version?: string }>;
+  packageInfo(python: string): Promise<{ installed: boolean; version?: string; inspectorVersion?: string }>;
   doctor(python: string): Promise<DoctorCheck[] | undefined>;
   /** Undefined when there is no WinTestKit project in the folder. */
   project(): Promise<{ name: string; config: Record<string, unknown> | undefined } | undefined>;
@@ -153,12 +154,12 @@ export async function gatherHealth(probes: HealthProbes): Promise<Health> {
       : pending(`The selected interpreter no longer exists: ${python}`);
   const usable = interpreter.state === "ok" ? python : undefined;
   const info = usable ? await probes.packageInfo(usable) : undefined;
-  const issue = info?.installed ? packageCompatibility(info.version) : undefined;
+  const issue = info?.installed ? packageCompatibility(info.version, info.inspectorVersion) : undefined;
   const packageResult: StepResult = !usable
     ? pending("Select a Python interpreter first")
     : info?.installed
       ? issue
-        ? { state: "broken", detail: issue.message + " Selected interpreter: " + usable, version: info.version }
+        ? { state: "broken", detail: issue.message + " Selected interpreter: " + usable, version: info.version, issue }
         : { ...ok(`wintestkit ${info.version ?? ""}`.trim()), version: info.version }
       : pending(`The wintestkit package is not installed in ${usable}`);
   const project = await probes.project();

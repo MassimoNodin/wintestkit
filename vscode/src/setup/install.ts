@@ -45,7 +45,7 @@ export class PackageInstaller implements vscode.Disposable {
     }
   }
   /** Returns whether pip succeeded. */
-  async install(folder: vscode.Uri, python: string): Promise<boolean> {
+  async install(folder: vscode.Uri, python: string, upgrade = false): Promise<boolean> {
     if (this.working) return false;
     if (!vscode.workspace.isTrusted) throw new Error("Trust the workspace before installing WinTestKit.");
     this.working = true;
@@ -53,27 +53,27 @@ export class PackageInstaller implements vscode.Disposable {
     this.changed.fire();
     try {
       let args: string[] | undefined;
-      if (typeof __WTK_DEV__ !== "undefined" && __WTK_DEV__ && this.development)
+      if (!upgrade && typeof __WTK_DEV__ !== "undefined" && __WTK_DEV__ && this.development)
         args = await this.development.arguments(folder);
       else args = await installArguments();
       if (!args) return false;
-      await requirePip(python, args);
-      this.log.info(`Installing wintestkit: ${python} ${args.join(" ")}`);
+      const command = await requirePip(python, args);
+      this.log.info(`Installing wintestkit: ${[command.executable, ...command.args].map((part) => JSON.stringify(part)).join(" ")}`);
       const output = await new Promise<{ ok: boolean; text: string }>((resolve) => {
         execFile(
-          python,
-          args,
+          command.executable,
+          command.args,
           { timeout: 10 * 60 * 1000, windowsHide: true, maxBuffer: 16 * 1024 * 1024 },
           (error, stdout, stderr) => resolve({ ok: !error, text: `${stdout}\n${stderr}` }),
         );
       });
-      this.log.info(output.text);
+      this.log.info(`Install ${output.ok ? "succeeded" : "failed"}: ${output.text}`);
       if (!output.ok) {
         this.failure = "Could not install " + PYTHON_REQUIREMENT + " in " + python + ": " + installFailure(output.text);
         return false;
       }
       const installed = await checkWintestkit(python);
-      const issue = packageCompatibility(installed.installed ? installed.version : undefined);
+      const issue = packageCompatibility(installed.installed ? installed.version : undefined, installed.inspectorVersion);
       if (issue) throw new CompatibilityError(issue, python);
       return true;
     } catch (error) {

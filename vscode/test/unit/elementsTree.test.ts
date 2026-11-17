@@ -704,6 +704,12 @@ describe("navigation view", () => {
     );
     expect(mocks.execute).not.toHaveBeenCalled();
   });
+  it("shows the check message in the row tooltip", () => {
+    const { tree, checks } = createTree();
+    const message = "Not found: `clr:Name` needs the inspector; alreadyAttached. Close the other session.";
+    checks.results.set("Main.username", { status: "error", durationMs: 1, qualname: "Main.username", message, code: "alreadyAttached", hint: "Close the other session." });
+    expect(tree.getTreeItem({ id: "element", label: "username", description: "Edit", kind: "element", icon: "symbol-field", children: [], elementId: "Main.username" }).tooltip).toBe(message);
+  });
   it("colors check status icons with the testing theme tokens", () => {
     const { tree, checks } = createTree();
     checks.results.set("Main.username", {

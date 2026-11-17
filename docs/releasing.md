@@ -103,6 +103,8 @@ VSIX versions remain numeric `X.Y.Z`. A formal prerelease requires the maintaine
 an explicit numeric version: `bump_version.py PYTHON_VERSION --extension-version VSIX_VERSION`.
 There is no automatic mapping and this change does not choose a candidate. Manifest,
 lockfile/root package and `compatibility.json.extensionVersion` must agree numerically.
+The bump sets `compatibility.json.python.minimum` to the full Python version, including any prerelease tag, and raises `maximumExclusive` to the next minor when needed. `--check` rejects a stale minimum. Older packages and mismatched inspector versions block Spy and tests; the upgrade button installs the matching `wintestkit[inspector]` release in the selected interpreter and restarts the server.
+
 `compatibility.json.channel` is `"prerelease"` for formal prereleases; stable bumps remove
 it, preserving compatibility with older policies where absence means stable.
 

@@ -166,7 +166,7 @@ def test_nothing_found_elsewhere_leaves_the_message_alone() -> None:
     error = fail(Home(build_app(moved=False)).address.street)
     assert error.diagnostic.relocations == ()
     assert error.diagnostic.hint is None
-    assert str(error) == error.diagnostic.message + " (waited 0.0s)"
+    assert str(error) == error.diagnostic.message
     assert ARROW not in str(error)
     assert "relocations" not in error.diagnostic.to_dict()
 

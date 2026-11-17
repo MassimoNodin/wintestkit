@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 import * as path from "node:path";
 import { PythonExtension } from "@vscode/python-extension";
 import * as vscode from "vscode";
-import { ALLOW_PRERELEASE, PYTHON_REQUIREMENT } from "./compatibility";
+import { ALLOW_PRERELEASE, PYTHON_REQUIREMENT, UPGRADE_REQUIREMENT } from "./compatibility";
 
 export async function getInterpreter(
   folder: vscode.Uri,
@@ -69,18 +69,18 @@ export async function onDidChangeInterpreter(
 
 export function checkWintestkit(
   python: string,
-): Promise<{ installed: boolean; version?: string }> {
+): Promise<{ installed: boolean; version?: string; inspectorVersion?: string }> {
   return new Promise((resolve) => {
     execFile(
       python,
-      ["-c", "import wintestkit;print(wintestkit.__version__)"],
+      ["-c", "import wintestkit, importlib.metadata as m; print(wintestkit.__version__); print(next((d.version for d in m.distributions() if d.metadata['Name'].lower().replace('_', '-') == 'wintestkit-inspector'), ''))"],
       { timeout: 10000, windowsHide: true },
       (error, stdout) => {
-        const version = stdout.trim();
+        const [version, inspectorVersion] = stdout.trim().split(/\r?\n/);
         resolve(
           error || !version
             ? { installed: false }
-            : { installed: true, version },
+            : { installed: true, version, ...(inspectorVersion ? { inspectorVersion } : {}) },
         );
       },
     );
@@ -105,20 +105,28 @@ export async function runTerminal(
 }
 
 export async function installArguments(): Promise<string[]> {
-  return ["-m", "pip", "install", "--upgrade", "--force-reinstall", ...(ALLOW_PRERELEASE ? ["--pre"] : []), PYTHON_REQUIREMENT];
+  return ["-m", "pip", "install", "--upgrade", "--force-reinstall", ...(ALLOW_PRERELEASE ? ["--pre"] : []), UPGRADE_REQUIREMENT];
 }
 
-export async function requirePip(python: string, args: string[]): Promise<void> {
-  await new Promise<void>((resolve, reject) => {
-    execFile(python, ["-I", "-m", "pip", "--version"],
-      { timeout: 10000, windowsHide: true }, (error) => {
-        if (!error) return resolve();
-        const quote = (value: string) => "'" + value.replaceAll("'", "''") + "'";
-        const target = args.at(-1) ?? PYTHON_REQUIREMENT;
-        reject(new Error("Could not run pip in the selected interpreter " + python +
-          ". No environment was changed. For a pip-less uv environment, run in PowerShell: uv pip install --python " +
-          quote(python) + " --upgrade " + (args.includes("--pre") ? "--prerelease allow " : "") + quote(target) +
-          ". Otherwise enable pip in that environment or select an interpreter with pip, then retry. Probe: " + error.message));
-      });
+export async function requirePip(python: string, args: string[]): Promise<{ executable: string; args: string[] }> {
+  const probe = (executable: string, probeArgs: string[]) => new Promise<Error | null>((resolve) => {
+    execFile(executable, probeArgs, { timeout: 10000, windowsHide: true }, (error) => resolve(error));
   });
+  const error = await probe(python, ["-I", "-m", "pip", "--version"]);
+  if (!error) return { executable: python, args };
+  const profile = process.env.USERPROFILE;
+  const candidates = ["uv", ...(profile ? [path.join(profile, ".local", "bin", "uv.exe"), path.join(profile, ".cargo", "bin", "uv.exe")] : [])];
+  for (const executable of candidates) {
+    if (!(await probe(executable, ["--version"]))) {
+      return { executable, args: ["pip", "install", "--python", python, "--upgrade",
+        "--reinstall-package", "wintestkit", "--reinstall-package", "wintestkit-inspector",
+        ...(args.includes("--pre") ? ["--prerelease", "allow"] : []), args.at(-1) ?? PYTHON_REQUIREMENT] };
+    }
+  }
+  const quote = (value: string) => "'" + value.replaceAll("'", "''") + "'";
+  const target = args.at(-1) ?? PYTHON_REQUIREMENT;
+  throw new Error("Could not run pip in the selected interpreter " + python +
+    ". No environment was changed. For a pip-less uv environment, run in PowerShell: uv pip install --python " +
+    quote(python) + " --upgrade " + (args.includes("--pre") ? "--prerelease allow " : "") + quote(target) +
+    ". Otherwise enable pip in that environment or select an interpreter with pip, then retry. Probe: " + error.message);
 }

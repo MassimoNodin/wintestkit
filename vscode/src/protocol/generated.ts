@@ -1569,6 +1569,8 @@ export interface CheckResult {
   element?: ElementInfo;
   diagnostic?: Diagnostic;
   message?: string;
+  code?: string;
+  hint?: string;
   durationMs: number;
   qualname: string;
 }
@@ -1895,6 +1897,8 @@ export interface ElementCheckResult {
   element?: ElementInfo;
   diagnostic?: Diagnostic;
   message?: string;
+  code?: string;
+  hint?: string;
   durationMs: number;
 }
 /**
@@ -1911,6 +1915,8 @@ export interface ElementHighlightResult {
   element?: ElementInfo;
   diagnostic?: Diagnostic;
   message?: string;
+  code?: string;
+  hint?: string;
   durationMs: number;
 }
 /**
@@ -1922,6 +1928,8 @@ export interface ElementResult {
   element?: ElementInfo;
   diagnostic?: Diagnostic;
   message?: string;
+  code?: string;
+  hint?: string;
   durationMs: number;
 }
 /**
@@ -3508,6 +3516,8 @@ export interface ElementResult1 {
   element?: ElementInfo;
   diagnostic?: Diagnostic;
   message?: string;
+  code?: string;
+  hint?: string;
   durationMs: number;
 }
 /**
@@ -3519,6 +3529,8 @@ export interface ElementResult2 {
   element?: ElementInfo;
   diagnostic?: Diagnostic;
   message?: string;
+  code?: string;
+  hint?: string;
   durationMs: number;
 }
 /**

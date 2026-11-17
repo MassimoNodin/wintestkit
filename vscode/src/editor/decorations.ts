@@ -153,8 +153,8 @@ export class CheckDecorations implements vscode.Disposable {
           range.end.line,
           range.end.character,
         ),
-        entry.result.diagnostic?.message ??
-          entry.result.message ??
+        entry.result.message ??
+          entry.result.diagnostic?.message ??
           "Element resolution failed",
         vscode.DiagnosticSeverity.Warning,
       );
@@ -185,7 +185,7 @@ export class CheckDecorations implements vscode.Disposable {
             // An empty range at the end of the line puts the text after the code, not before it.
             range: new vscode.Range(line, END_OF_LINE, line, END_OF_LINE),
             hoverMessage:
-              entry.result.diagnostic?.message ?? entry.result.message,
+              entry.result.message ?? entry.result.diagnostic?.message,
             renderOptions: { after: { contentText: text } },
           });
         }

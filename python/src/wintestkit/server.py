@@ -366,7 +366,10 @@ class Server:
                 )
                 data = exc.to_dict()
                 if isinstance(exc, InspectorError):
+                    from wintestkit.inspector.hints import inspector_error_hint
+
                     data["code"] = exc.code
+                    data["hint"] = inspector_error_hint(exc.code)
                 self._error(request_id, code, str(exc), data)
             else:
                 if method.startswith("inspect.managed."):
@@ -689,10 +692,7 @@ class Server:
 
     def _wpf_enabled(self, element: UIAElement) -> bool:
         return bool(
-            self.cfg is not None
-            and self.cfg.backend == "auto"
-            and self.cfg.inspector.enabled
-            and element.framework_id == "WPF"
+            self.cfg is not None and self.cfg.backend == "auto" and element.framework_id == "WPF"
         )
 
     def _mark_roots(self, nodes: list[dict[str, Any]]) -> None:
@@ -960,6 +960,13 @@ class Server:
 
         assert self.cfg is not None
         with runtime.config_scope(self.cfg):
+            if not self.cfg.inspector.enabled:
+                return {
+                    "blocked": {
+                        "code": "inspectorDisabled",
+                        "hint": inspector_error_hint("inspectorDisabled"),
+                    }
+                }
             if isinstance(node, WpfElement):
                 client, ref = node.client, node.ref
                 process_id = node.process_id
@@ -1171,9 +1178,18 @@ class Server:
                 if client is not None:
                     client.close()
                 return {"detached": True}
-            runtime.require_managed(values=method != "inspect.managed.identify")
             if method == "inspect.managed.identify":
-                facts = identify(self._node(params["nodeId"]).process_id)
+                from wintestkit.backends.element import WpfElement
+
+                with self._node_lock:
+                    selected = self.nodes.get(params["nodeId"])
+                if isinstance(selected, WpfElement):
+                    if not selected.is_alive():
+                        raise RpcError(-32005, "unknown node id")
+                    pid = selected.process_id
+                else:
+                    pid = self._node(params["nodeId"]).process_id
+                facts = identify(pid)
                 return {
                     "process": facts.identity.to_json(),
                     "executable": facts.executable,
@@ -1182,6 +1198,7 @@ class Server:
                     "wpfLoaded": facts.wpf_loaded,
                     "appUnderTest": self._is_app_under_test(facts),
                 }
+            runtime.require_managed()
             if method in {"inspect.managed.attach", "inspect.managed.status"}:
                 identity = ProcessIdentity.from_json(params["process"])
                 registry = runtime.inspector_sessions()
@@ -1190,8 +1207,21 @@ class Server:
                         identity, deadline=time.monotonic() + self.cfg.inspector.attach_timeout
                     )
                     session = client.session
+                    if session.state != "ready":
+                        from wintestkit.errors import InspectorUnavailableError
+
+                        raise InspectorUnavailableError(
+                            f"Inspector attachment ended in state {session.state}",
+                            code=session.error or "attachFailed",
+                        )
                 else:
                     session = registry.status(identity)
+                    if session.state == "faulted" and session.error:
+                        from wintestkit.errors import InspectorUnavailableError
+
+                        raise InspectorUnavailableError(
+                            "Inspector session is faulted", code=session.error
+                        )
                     client = registry.get(identity) if session.state == "ready" else None
                 if client is not None:
                     with self._managed_lock:

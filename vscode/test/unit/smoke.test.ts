@@ -326,7 +326,7 @@ describe("extension scaffold", () => {
       expect.objectContaining({ id: "wintestkit-spy" }),
     ]);
     expect(manifest.contributes.views["wintestkit-spy"]).toEqual([
-      { id: "wintestkit.spy", name: "Spy", type: "webview", when: "wintestkit.enabled && !wintestkit.setupBlocked" },
+      { id: "wintestkit.spy", name: "Spy", type: "webview", when: "wintestkit.enabled" },
     ]);
     expect(
       JSON.stringify(manifest.contributes.menus["view/title"]),
@@ -624,7 +624,7 @@ describe("extension scaffold", () => {
     expect(manifest.engines.vscode).toBe("^1.106.0");
     expect(manifest.devDependencies["@types/vscode"]).toBe("1.106.0");
     expect(manifest.contributes.viewsContainers.secondarySidebar).toContainEqual(expect.objectContaining({ id: "wintestkit-properties" }));
-    expect(manifest.contributes.views["wintestkit-properties"]).toContainEqual({ id: "wintestkit.properties", name: "Properties", type: "webview", when: "wintestkit.enabled && !wintestkit.setupBlocked" });
+    expect(manifest.contributes.views["wintestkit-properties"]).toContainEqual({ id: "wintestkit.properties", name: "Properties", type: "webview", when: "wintestkit.enabled" });
     expect(manifest.extensionDependencies).toContain("ms-python.python");
     expect(Object.keys(manifest.dependencies)).toEqual([
       "@vscode/python-extension",

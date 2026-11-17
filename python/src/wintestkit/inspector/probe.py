@@ -235,6 +235,10 @@ def _modules(pid: int) -> tuple[str, ...]:
         kernel.CloseHandle(snapshot)
 
 
+def loaded_modules(pid: int) -> tuple[str, ...]:
+    return _modules(pid)
+
+
 class _FixedFileInfo(ctypes.Structure):
     _fields_ = [
         (name, wintypes.DWORD)

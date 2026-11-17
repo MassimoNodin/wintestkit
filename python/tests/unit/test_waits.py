@@ -145,17 +145,22 @@ def test_zero_timeout_is_a_single_attempt(fake_time: FakeTime) -> None:
     def fn() -> None:
         calls[0] += 1
 
-    with pytest.raises(WaitTimeoutError):
+    with pytest.raises(WaitTimeoutError, match=r"^Condition not met: x$"):
         wait_until(fn, 0, description="x")
     assert calls[0] == 1
     assert fake_time.sleeps == []
+
+
+def test_zero_timeout_missing_element(fake_time: FakeTime) -> None:
+    with pytest.raises(WaitTimeoutError, match=r"^Not found: MainPage\.content$"):
+        wait_until(lambda: None, 0, description="MainPage.content to exist")
 
 
 def test_zero_timeout_locator_error(fake_time: FakeTime) -> None:
     def fn() -> None:
         raise not_found()
 
-    with pytest.raises(ElementNotFoundError, match=r"\(waited 0\.0s\)"):
+    with pytest.raises(ElementNotFoundError):
         wait_until(fn, 0, description="x")
 
 

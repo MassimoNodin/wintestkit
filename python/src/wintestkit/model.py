@@ -1087,7 +1087,16 @@ class BoundControl(_BoundBase):
                 except (InspectorError, LocatorError, UIAError):
                     pass
             raise WaitTimeoutError(
-                f"Timed out after {budget:.1f}s waiting for {self._description()} {unmet[0]}",
+                (
+                    f"Timed out after {budget:.1f}s waiting for {self._description()} {unmet[0]}"
+                    if budget
+                    else (
+                        f"Not found: {self._description()}"
+                        if unmet[0] == "to exist"
+                        else f"Not ready: {self._description()} was found but is not "
+                        f"{unmet[0].removeprefix('to be ')}"
+                    )
+                ),
                 last_error=exc.last_error,
                 waited=exc.waited,
             ) from None

@@ -216,3 +216,9 @@ describe("setup tracker", () => {
     expect(new SetupTracker().update(noProject).announce).toBeUndefined();
   });
 });
+
+it("blocks an installed inspector that differs from the core package", async () => {
+  const health = await gatherHealth(probes({ packageInfo: async () => ({ installed: true, version: "0.1.1rc3", inspectorVersion: "0.1.1rc1" }) }));
+  expect(health.package.state).toBe("broken");
+  expect(health.package.issue?.kind).toBe("older");
+});

@@ -513,6 +513,22 @@ def test_actions_time_out_naming_the_unmet_state(
     )
 
 
+@pytest.mark.parametrize(
+    ("attribute", "state"), [("is_enabled", "enabled"), ("is_offscreen", "visible")]
+)
+@pytest.mark.usefixtures("strict_actions")
+def test_zero_timeout_names_unactionable_state(
+    page: MainPage, recorder: Recorder, monkeypatch: pytest.MonkeyPatch, attribute: str, state: str
+) -> None:
+    setattr(recorder.element, attribute, attribute == "is_offscreen")
+    monkeypatch.setattr(model.patterns, "has_pattern", lambda el, name: False)
+    with pytest.raises(WaitTimeoutError) as error:
+        page.sign_in.click(timeout=0)
+    assert str(error.value) == (
+        f'Not ready: MainPage.sign_in Button[name="Sign in"] was found but is not {state}'
+    )
+
+
 @pytest.mark.parametrize("first_poll_deadline", [False, True])
 @pytest.mark.usefixtures("strict_actions")
 def test_action_deadline_preserves_disabled_state(
@@ -572,7 +588,7 @@ def test_offscreen_managed_element_does_not_map_virtualized_pattern(
         return False
 
     monkeypatch.setattr(model.patterns, "has_pattern", has_pattern)
-    with pytest.raises(WaitTimeoutError, match="to be visible"):
+    with pytest.raises(WaitTimeoutError, match="was found but is not visible"):
         page.sign_in.click(timeout=0)
     assert "ScrollItem" in names
     assert "VirtualizedItem" not in names
@@ -682,9 +698,7 @@ def test_resolve_error_message_carries_the_diagnostic(page: MainPage, recorder: 
     recorder.error = not_found('No element matches Button[name="Sign in"] in Window "WTK Demo"')
     with pytest.raises(ElementNotFoundError) as exc_info:
         page.sign_in.resolve(timeout=0)
-    assert str(exc_info.value) == (
-        'No element matches Button[name="Sign in"] in Window "WTK Demo" (waited 0.0s)'
-    )
+    assert str(exc_info.value) == ('No element matches Button[name="Sign in"] in Window "WTK Demo"')
 
 
 def test_element_gone_mid_action_is_retried_once(

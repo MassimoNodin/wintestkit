@@ -6,7 +6,7 @@ import type { Enablement } from "../enablement";
 import type { Reports } from "../report";
 import { describeInterpreter, onDidChangeInterpreter } from "../python";
 import { chooseWorkspaceFolder, initializeProject } from "../init";
-import { packageCompatibility } from "../compatibility";
+import { packageCompatibility, UPGRADE_LABEL } from "../compatibility";
 import type { SetupMonitor } from "../setup/monitor";
 import { TOUR_ACTIONS, type TourAction } from "../setup/tour";
 import type { AppProcessesResult } from "../protocol/generated";
@@ -275,7 +275,7 @@ export class TestAppView implements vscode.Disposable {
         action: { id: "installPackage", label: "Install" },
       };
     const version = health.package.version;
-    const issue = packageCompatibility(version);
+    const issue = health.package.issue ?? packageCompatibility(version);
     return issue
       ? {
           state: "error",
@@ -283,7 +283,7 @@ export class TestAppView implements vscode.Disposable {
           tooltip: issue.message,
           action: issue.updateExtension
             ? { id: "updateExtension", label: "Update extension" }
-            : { id: "installPackage", label: "Install compatible package" },
+            : { id: "installPackage", label: issue.kind === "older" ? UPGRADE_LABEL : "Install compatible package" },
         }
       : { state: "ok", text: "wintestkit " + (version ?? "installed") };
   }
@@ -370,13 +370,13 @@ export class TestAppView implements vscode.Disposable {
     }
   }
   /** Installs or updates wintestkit in the selected interpreter, then looks again. */
-  async installPackage(target?: vscode.Uri): Promise<void> {
+  async installPackage(target?: vscode.Uri, upgrade = false): Promise<void> {
     const setup = this.setup;
     const folder = target ?? this.interpreterFolder();
     if (!setup || !folder) return;
     const python = await describeInterpreter(folder);
     if (!python) return;
-    const done = await setup.installer.install(folder, python.path);
+    const done = await setup.installer.install(folder, python.path, upgrade || setup.health?.package.issue?.kind === "older");
     if (done) {
       try {
         await this.servers.restartUsingInterpreter(python.path);

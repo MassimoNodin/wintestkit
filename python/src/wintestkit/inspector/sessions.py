@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ctypes
+import hashlib
 import os
 import threading
 import time
@@ -50,6 +51,18 @@ def _agent_active(pid: int) -> bool:
         return probe.agent_active(pid)
     except InspectorError:
         return False
+
+
+def _loaded_agent_mismatch(pid: int, agent: Path) -> bool:
+    try:
+        expected = hashlib.sha256(agent.read_bytes()).digest()
+        for module in probe.loaded_modules(pid):
+            loaded = Path(module)
+            if loaded.name.casefold() == agent.name.casefold():
+                return hashlib.sha256(loaded.read_bytes()).digest() != expected
+    except (OSError, InspectorError):
+        return False
+    return False
 
 
 def _validate_hwnd(hwnd: int | None, pid: int) -> None:
@@ -221,10 +234,16 @@ class SessionRegistry:
         _validate_facts(facts, identity)
         _validate_hwnd(target_hwnd, identity.pid)
         _remaining(deadline, entry.cancel)
-        if probe.agent_active(identity.pid):
-            raise InspectorUnavailableError(
-                "An inspector is already attached to this process", code="alreadyAttached"
-            )
+        # A disconnected controller can leave the agent disposing its pipe briefly.
+        # Give that cleanup time to finish without taking over a live session.
+        cleanup_deadline = min(deadline, time.monotonic() + 1.0)
+        while probe.agent_active(identity.pid):
+            if time.monotonic() >= cleanup_deadline:
+                raise InspectorUnavailableError(
+                    "An inspector is already attached to this process", code="alreadyAttached"
+                )
+            if entry.cancel.wait(max(0.0, min(0.05, cleanup_deadline - time.monotonic()))):
+                _remaining(deadline, entry.cancel)
         payload = self._payload_loader()
         payload.verify()
         executable = _payload_path(payload, payload.launcher_for(cast(Any, facts.architecture)))
@@ -296,6 +315,17 @@ class SessionRegistry:
                 # mutex, so a session that attached after our check looks like a timeout.
                 raise InspectorUnavailableError(
                     "An inspector is already attached to this process", code="alreadyAttached"
+                ) from error
+            if (
+                isinstance(error, InspectorError)
+                and error.code == "timeout"
+                and pipe is None
+                and _loaded_agent_mismatch(identity.pid, agent)
+            ):
+                raise InspectorUnavailableError(
+                    "A different inspector build is already loaded; "
+                    "restart the application to load the matching inspector",
+                    code="agentVersionMismatch",
                 ) from error
             raise
         finally:

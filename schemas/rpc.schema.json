@@ -42,6 +42,8 @@
         "message": {
           "type": "string"
         },
+        "code": { "type": "string" },
+        "hint": { "type": "string" },
         "durationMs": {
           "type": "number",
           "minimum": 0
@@ -156,6 +158,8 @@
         "message": {
           "type": "string"
         },
+        "code": { "type": "string" },
+        "hint": { "type": "string" },
         "durationMs": {
           "type": "number",
           "minimum": 0

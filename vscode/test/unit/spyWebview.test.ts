@@ -70,3 +70,35 @@ it("rebuilds expanded branches and clears old selections when roots are replaced
   expect(dom.window.document.querySelector("#object-preview-status")?.textContent).toContain("Retry");
   dom.window.close();
 });
+
+
+it("offers an upgrade while compatibility blocks Spy", () => {
+  const dom = new JSDOM(readFileSync("media/spy/spy.html", "utf8").replace("{{viewClass}}", "spy-view"), { runScripts: "outside-only" });
+  const posts: unknown[] = [];
+  Object.assign(dom.window, { acquireVsCodeApi: () => ({ postMessage: (message: unknown) => posts.push(message) }), matchMedia: () => ({ matches: false, addEventListener() {} }), requestAnimationFrame: (fn: () => void) => fn() });
+  dom.window.eval(readFileSync("media/spy/spy.js", "utf8"));
+  const send = (data: unknown) => dom.window.dispatchEvent(new dom.window.MessageEvent("message", { data }));
+  send({ type: "compatibilityBlocked", message: "Package is too old", label: "Upgrade now" });
+  const button = dom.window.document.querySelector("#upgrade-package") as HTMLButtonElement;
+  expect(dom.window.document.querySelector("#tree-empty")?.textContent).toContain("Package is too old");
+  expect(button.hidden).toBe(false);
+  expect(button.textContent).toBe("Upgrade now");
+  button.click();
+  expect(posts).toContainEqual({ type: "upgradePackage" });
+  send({ type: "roots", nodes: [] });
+  expect(button.hidden).toBe(true);
+  dom.window.close();
+});
+
+
+it("renders managed failure codes and hints", () => {
+  const dom = new JSDOM(readFileSync("media/spy/spy.html", "utf8").replace("{{viewClass}}", "properties-view"), { runScripts: "outside-only" });
+  Object.assign(dom.window, { acquireVsCodeApi: () => ({ postMessage() {} }), matchMedia: () => ({ matches: false, addEventListener() {} }), requestAnimationFrame: (fn: () => void) => fn() });
+  dom.window.eval(readFileSync("media/spy/spy.js", "utf8"));
+  for (const [code, state, hint] of [["alreadyAttached", "attach failed", "Another session owns the agent."], ["inspectorDisabled", "not enabled", "Enable the inspector."], ["newCode", "attach failed", "Unknown reason."]]) {
+    dom.window.dispatchEvent(new dom.window.MessageEvent("message", { data: { type: "managedPanel", sequence: 1, visible: true, state, failure: { code, hint, message: "failure" } } }));
+    expect(dom.window.document.querySelector("#managed-state")?.textContent).toBe(`${state.charAt(0).toUpperCase() + state.slice(1)}: ${code}.`);
+    expect(dom.window.document.querySelector("#managed-explanation")?.textContent).toBe(`${hint} Run ` + "`wtk doctor --agent`" + " for details.");
+  }
+  dom.window.close();
+});

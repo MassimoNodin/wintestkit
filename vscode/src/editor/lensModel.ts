@@ -59,7 +59,7 @@ function actionTooltip(
   fallback: string,
 ): string {
   if (!result || result.status === "running") return fallback;
-  return result.diagnostic?.message ?? result.message ?? fallback;
+  return result.message ?? result.diagnostic?.message ?? fallback;
 }
 const matcher = (value: Matcher): string =>
   typeof value === "string"

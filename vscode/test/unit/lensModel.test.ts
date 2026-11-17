@@ -62,6 +62,14 @@ describe("editor lens model", () => {
       }
     },
   );
+  it("shows the full check message in the lens tooltip", () => {
+    const message = "Not found: `clr:Name` needs the inspector; alreadyAttached. Close the other session.";
+    const check = { status: "error" as const, durationMs: 1, message, code: "alreadyAttached", hint: "Close the other session." };
+    const lens = buildLenses(discovery, page.file, new Map([[element.id, { check }]])).find(
+      (item) => item.command === "wintestkit.checkElement" && (item.args[0] as { qualname: string }).qualname === element.qualname,
+    );
+    expect(lens?.tooltip).toBe(message);
+  });
   it("keeps highlight and check feedback independent", () => {
     const lenses = buildLenses(
       discovery,

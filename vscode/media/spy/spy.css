@@ -594,6 +594,10 @@ ul {
     background: var(--raised);
     border-bottom: 1px solid var(--border);
 }
+#wpf-blocked, #wpf-details-note {
+    margin: 0;
+    padding: 8px 12px;
+}
 summary {
     cursor: pointer;
 }

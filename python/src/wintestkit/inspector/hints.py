@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 _HINTS = {
+    "inspectorDisabled": "Set [tool.wintestkit.inspector] enabled = true in the project config.",
     "alreadyAttached": "Another WinTestKit session owns the agent for this process; "
     "close that session or restart the application.",
     "blockedByPolicy": "Allow-list the WinTestKit payload directory in your security policy.",

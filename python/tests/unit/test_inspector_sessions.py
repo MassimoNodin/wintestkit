@@ -252,3 +252,18 @@ def test_status_rechecks_identity_after_pipe_closes_before_process_exit(
     assert registry.status(IDENTITY).state == "exited"
     assert registry.status(IDENTITY).error == failure
     assert entry.session.state == "exited"
+
+
+def test_loaded_agent_mismatch_compares_image_content(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    expected = tmp_path / "expected" / "agent.dll"
+    loaded = tmp_path / "loaded" / "agent.dll"
+    expected.parent.mkdir()
+    loaded.parent.mkdir()
+    expected.write_bytes(b"expected")
+    loaded.write_bytes(b"different")
+    monkeypatch.setattr(probe, "loaded_modules", lambda pid: (str(loaded),))
+    assert sessions._loaded_agent_mismatch(42, expected)
+    loaded.write_bytes(b"expected")
+    assert not sessions._loaded_agent_mismatch(42, expected)

@@ -228,7 +228,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
   const tests = new TestController(projects, discovery, log, reports, {
     cleared: (project) => status.clearAttachFailure(project),
     notRunning: (project) => status.recordAttachFailure(project),
-  });
+  }, servers);
   context.subscriptions.push(
     new PytestConflict(projects, context.workspaceState, log),
   );
@@ -402,7 +402,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     "wintestkit.chooseApp": () => setup.chooseApp(),
     "wintestkit.openSetup": () => setupMonitor.show(),
     "wintestkit.setup.recheck": () => setupMonitor.recheck(),
-    "wintestkit.installCompatiblePackage": (target: unknown) => setup.installPackage(target instanceof vscode.Uri ? target : undefined),
+    "wintestkit.installCompatiblePackage": (target: unknown) => setup.installPackage(target instanceof vscode.Uri ? target : undefined, true),
     "wintestkit.selectInterpreter": (target: unknown) => setup.pickInterpreter(target instanceof vscode.Uri ? target : undefined),
     "wintestkit.updateExtension": () => vscode.commands.executeCommand(
       "workbench.extensions.action.showExtensionsWithIds", ["wintestkit.wintestkit"],

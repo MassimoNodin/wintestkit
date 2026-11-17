@@ -32,10 +32,15 @@ async function confirmProcess(facts: InspectManagedIdentifyResult): Promise<bool
   }
   try { return await pending; } finally { if (confirmations.get(identity) === pending) confirmations.delete(identity); }
 }
+export type ManagedFailure = { code: string; hint: string; message: string };
+export function managedFailure(error: unknown): ManagedFailure {
+  const detail = error as { message?: unknown; data?: { code?: unknown; hint?: unknown } } | undefined;
+  return { code: typeof detail?.data?.code === "string" && detail.data.code || "attachFailed", hint: typeof detail?.data?.hint === "string" ? detail.data.hint : typeof detail?.message === "string" ? detail.message : "", message: typeof detail?.message === "string" ? detail.message : "Inspector attachment failed" };
+}
 export function managedErrorState(error: unknown): ManagedState {
   const data = (error as { data?: { code?: string } })?.data;
   switch (data?.code) {
-    case "notAttached": return "not enabled";
+    case "inspectorDisabled": case "notAttached": return "not enabled";
     case "payloadMissing": return "not installed";
     case "unsupportedTarget": case "unsupportedProtocol": return "unsupported target";
     case "accessDenied": case "blockedByPolicy": return "blocked by policy";
@@ -50,14 +55,24 @@ export function managedErrorState(error: unknown): ManagedState {
 export class ManagedInspector {
   readonly visible: boolean;
   state: ManagedState = "not enabled";
+  failure?: ManagedFailure;
+  private lastFailureKey?: string;
   private session?: InspectManagedAttachResult;
   private nodeId?: string;
   private sequence = 0;
   private handles = new Set<string>();
   private releasing: Promise<void> = Promise.resolve();
   get sessionInfo(): InspectManagedAttachResult | undefined { return this.session; }
-  constructor(private readonly client: JsonRpcClient, initialized: InitializeResult, private readonly onStale?: (process?: { pid: number; creationTimeUtc: string }) => void) {
+  constructor(private readonly client: JsonRpcClient, initialized: InitializeResult, private readonly onStale?: (process?: { pid: number; creationTimeUtc: string }) => void, private readonly logFailure?: (line: string) => void) {
     this.visible = initialized.capabilities?.managedInspector === true;
+  }
+  private fail(error: unknown, facts?: { executable: string; process: { pid: number; creationTimeUtc?: string } }): ManagedFailure {
+    const failure = managedFailure(error); this.failure = failure; this.state = managedErrorState(error);
+    const sentence = (value: string) => value.replace(/[.\s]+$/, "");
+    const key = `${facts?.process.pid ?? "unknown"}:${facts?.process.creationTimeUtc ?? "unknown"}:${failure.code}`;
+    if (key !== this.lastFailureKey) this.logFailure?.(`Spy .NET attach failed for ${facts?.executable ?? "unknown"} (PID ${facts?.process.pid ?? "unknown"}): ${failure.code}: ${sentence(failure.message)}. ${failure.hint}`.trim());
+    this.lastFailureKey = key;
+    return failure;
   }
   private current(sequence: number, nodeId: string | undefined, sessionId?: string): boolean {
     return sequence === this.sequence && nodeId === this.nodeId && sessionId === this.session?.sessionId;
@@ -72,6 +87,7 @@ export class ManagedInspector {
   async select(nodeId?: string): Promise<void> {
     if (nodeId === this.nodeId) return this.releasing;
     this.sequence++;
+    this.failure = undefined;
     this.nodeId = nodeId;
     const ids = [...this.handles]; this.handles.clear();
     if (ids.length && this.session) this.releasing = this.releaseIds(this.session.sessionId, ids);
@@ -87,25 +103,33 @@ export class ManagedInspector {
     if (!this.visible || !this.nodeId) return;
     if (!vscode.workspace.isTrusted) { this.state = "blocked by policy"; return; }
     const seq = this.sequence, node = this.nodeId, oldSession = this.session?.sessionId;
+    this.failure = undefined;
+    let facts: InspectManagedIdentifyResult | undefined;
     try {
-      const facts = await this.client.request<InspectManagedIdentifyResult>("inspect.managed.identify", { nodeId: node });
+      facts = await this.client.request<InspectManagedIdentifyResult>("inspect.managed.identify", { nodeId: node });
       if (!this.current(seq, node, oldSession)) return;
-      if (this.session?.state === "ready" && identityKey(this.session.process) === identityKey(facts.process)) { this.state = "ready"; return this.session; }
+      if (this.session?.state === "ready" && identityKey(this.session.process) === identityKey(facts.process)) { this.state = "ready"; this.lastFailureKey = undefined; return this.session; }
       if (!await confirmProcess(facts) || !this.current(seq, node, oldSession)) return;
       const session = await this.client.request<InspectManagedAttachResult>("inspect.managed.attach", { process: facts.process });
       if (!this.current(seq, node, oldSession)) { await this.client.request("inspect.managed.detach", { sessionId: session.sessionId }).catch(() => {}); return; }
-      this.session = session; this.state = session.state === "ready" ? "ready" : "attach failed";
+      if (session.state !== "ready") { this.fail({ message: `Inspector attachment ended in state ${session.state}`, data: { code: session.error || "attachFailed" } }, facts); return; }
+      this.session = session; this.state = "ready"; this.lastFailureKey = undefined;
       if (oldSession && oldSession !== session.sessionId) await this.client.request("inspect.managed.detach", { sessionId: oldSession }).catch(() => {});
       return session;
-    } catch (error) { if (this.current(seq, node, oldSession)) this.state = managedErrorState(error); return; }
+    } catch (error) { if (this.current(seq, node, oldSession)) this.fail(error, facts); return; }
   }
   treeFailure?: { code: string; hint: string };
+  async reportTreeFailure(nodeId: string, blocked: { code: string; hint: string }): Promise<void> {
+    const facts = await this.client.request<InspectManagedIdentifyResult>("inspect.managed.identify", { nodeId }).catch(() => undefined);
+    this.fail({ message: "Inspector attachment failed", data: blocked }, facts?.process ? facts : undefined);
+  }
   async attachTree(nodeId: string, process: { pid: number; creationTimeUtc: string }, automatic = false): Promise<boolean> {
     this.treeFailure = undefined;
     if (!this.visible || !vscode.workspace.isTrusted) { this.treeFailure = { code: "blockedByPolicy", hint: "Enable the inspector and trust the workspace." }; return false; }
-    if (this.session?.state === "ready" && identityKey(this.session.process) === identityKey(process)) return true;
+    if (this.session?.state === "ready" && identityKey(this.session.process) === identityKey(process)) { this.lastFailureKey = undefined; return true; }
+    let facts: InspectManagedIdentifyResult | undefined;
     try {
-      const facts = await this.client.request<InspectManagedIdentifyResult>("inspect.managed.identify", { nodeId });
+      facts = await this.client.request<InspectManagedIdentifyResult>("inspect.managed.identify", { nodeId });
       if (identityKey(facts.process) !== identityKey(process)) {
         this.treeFailure = { code: "processChanged", hint: "The target process changed. Refresh the object tree and try again." };
         return false;
@@ -113,26 +137,27 @@ export class ManagedInspector {
       if (automatic && !facts.appUnderTest && !isManagedProcessConfirmed(process)) return false;
       if (!await confirmProcess(facts)) return false;
       const result = await this.client.request<InspectManagedAttachResult>("inspect.managed.attach", { process });
-      if (result.state === "ready") { this.session = { ...result, process: { ...result.process } }; this.state = "ready"; }
-      if (result.state !== "ready") this.treeFailure = { code: "attachFailed", hint: "Run wtk doctor --agent for guidance." };
+      if (result.state === "ready") { this.session = { ...result, process: { ...result.process } }; this.state = "ready"; this.failure = undefined; this.lastFailureKey = undefined; }
+      if (result.state !== "ready") { const { code, hint } = this.fail({ message: `Inspector attachment ended in state ${result.state}`, data: { code: result.error || "attachFailed" } }, facts); this.treeFailure = { code, hint }; }
       return result.state === "ready";
     } catch (error) {
-      const detail = error as { message?: string; data?: { code?: string; hint?: string } };
-      this.treeFailure = { code: detail.data?.code || "attachFailed", hint: detail.data?.hint || detail.message || "Run wtk doctor --agent for guidance." };
+      const { code, hint } = this.fail(error, facts ?? { executable: "unknown", process }); this.treeFailure = { code, hint };
       return false;
     }
   }
   async reuseTreeSession(nodeId: string): Promise<void> {
     if (!this.visible || nodeId !== this.nodeId) return;
     const sequence = this.sequence, oldSession = this.session?.sessionId;
+    let facts: InspectManagedIdentifyResult | undefined;
     try {
-      const facts = await this.client.request<InspectManagedIdentifyResult>("inspect.managed.identify", { nodeId });
+      facts = await this.client.request<InspectManagedIdentifyResult>("inspect.managed.identify", { nodeId });
       if (!this.current(sequence, nodeId, oldSession)) return;
       if (this.session?.state === "ready" && identityKey(this.session.process) === identityKey(facts.process)) return;
       const session = await this.client.request<InspectManagedAttachResult>("inspect.managed.status", { process: facts.process });
       if (!this.current(sequence, nodeId, oldSession)) return;
-      if (session.state === "ready" && identityKey(session.process) === identityKey(facts.process)) { this.session = session; this.state = "ready"; }
-    } catch (error) { if (this.current(sequence, nodeId, oldSession)) this.state = managedErrorState(error); }
+      if (session.state === "ready" && identityKey(session.process) === identityKey(facts.process)) { this.session = session; this.state = "ready"; this.lastFailureKey = undefined; this.failure = undefined; }
+      else if (session.error) this.fail({ message: `Inspector session ended in state ${session.state}`, data: { code: session.error } }, facts);
+    } catch (error) { if (this.current(sequence, nodeId, oldSession)) this.fail(error, facts); }
   }
   async keepalive(): Promise<void> {
     const sessionId = this.session?.sessionId;

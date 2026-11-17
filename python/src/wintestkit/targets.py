@@ -26,6 +26,7 @@ from wintestkit.config import WtkConfig
 from wintestkit.discovery import EXCLUDED_DIRS
 from wintestkit.errors import (
     AmbiguousElementError,
+    InspectorError,
     LocatorError,
     WtkError,
 )
@@ -85,6 +86,8 @@ class ElementResult:
     diagnostic: Diagnostic | None = None
     message: str | None = None
     uia: UIAElement | None = None  # the live element; never serialized
+    code: str | None = None
+    hint: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         data: dict[str, Any] = {"status": self.status, "durationMs": round(self.duration_ms, 1)}
@@ -94,6 +97,10 @@ class ElementResult:
             data["diagnostic"] = self.diagnostic.to_dict()
         if self.message is not None:
             data["message"] = self.message
+        if self.code is not None:
+            data["code"] = self.code
+        if self.hint is not None:
+            data["hint"] = self.hint
         return data
 
 
@@ -391,6 +398,70 @@ def _bound_for(app: App, page_class: type[Page], attribute: str) -> Any:
     return page_class(app).bound_at(attribute)
 
 
+def _check_diagnostic(diagnostic: Any, bound: Any) -> str:
+    """Summarize the existing resolver diagnosis for check-result surfaces."""
+    inner = diagnostic
+    while inner.within is not None:
+        inner = inner.within
+    if inner.kind == "window_not_found":
+        text = f"Not found: the window matched nothing: {inner.message}"
+    elif diagnostic.kind == "within_failed":
+        text = f"Not found: the scope or root matched nothing: {inner.message}"
+    else:
+        locator = getattr(bound, "locator", None)
+        automation_id = getattr(locator, "automation_id", None)
+        if (
+            inner.kind == "not_found"
+            and automation_id is not None
+            and getattr(locator, "name", None) is None
+            and getattr(locator, "class_name", None) is None
+            and not getattr(locator, "where", ())
+            and not getattr(locator, "any_of", ())
+            and getattr(locator, "has", None) is None
+        ):
+            text = (
+                "Not found: the window matched, but no descendant has automation_id "
+                f"{automation_id!r}."
+            )
+        else:
+            text = f"Not found: {inner.message}."
+    candidates = inner.candidates[:3]
+    if candidates:
+        names: list[str] = []
+        for candidate in candidates:
+            info = candidate.info
+            label = info.automation_id or info.name or info.class_name or info.control_type
+            detail = f" ({info.name})" if info.name and info.name != label else ""
+            names.append(f"{label!r}{detail}")
+        text += " Nearest: " + ", ".join(names) + "."
+    return text
+
+
+def _managed_keys(bound: Any) -> list[str]:
+    from wintestkit.engine.managed import ManagedCondition
+    from wintestkit.engine.properties import resolve_where
+
+    locator = getattr(bound, "locator", None)
+    if locator is None:
+        return []
+    keys: list[str] = []
+
+    def visit(item: Any) -> None:
+        if item is None:
+            return
+        for condition in resolve_where(item.where, item.describe(), item.taken()):
+            if isinstance(condition, ManagedCondition):
+                keys.append(condition.alias or condition.key)
+        visit(getattr(item, "window", None))
+        visit(getattr(item, "within", None))
+        visit(getattr(item, "has", None))
+        for alternative in getattr(item, "any_of", ()):
+            visit(alternative)
+
+    visit(locator)
+    return list(dict.fromkeys(keys))
+
+
 def resolve_bound(
     bound: Any, timeout: float, started: float | None = None, *, capture: bool = False
 ) -> ElementResult:
@@ -406,7 +477,10 @@ def resolve_bound(
         if isinstance(bound, BoundElements):
             capture = False
             bound = bound.first()
-        element = bound.resolve(timeout)
+        from wintestkit.engine.managed import instant_resolution
+
+        with instant_resolution(timeout == 0):
+            element = bound.resolve(timeout)
         result = ElementResult("found", elapsed(), element=element.info(), uia=element)
         if capture and runtime.get_config().object_previews:
             with suppress(Exception):
@@ -417,7 +491,28 @@ def resolve_bound(
     except AmbiguousElementError as exc:
         return ElementResult("ambiguous", elapsed(), diagnostic=exc.diagnostic, message=str(exc))
     except LocatorError as exc:
-        return ElementResult("not_found", elapsed(), diagnostic=exc.diagnostic, message=str(exc))
+        return ElementResult(
+            "not_found",
+            elapsed(),
+            diagnostic=exc.diagnostic,
+            message=_check_diagnostic(exc.diagnostic, bound) if timeout == 0 else str(exc),
+        )
+    except InspectorError as exc:
+        from wintestkit.inspector.hints import inspector_error_hint
+
+        hint = inspector_error_hint(exc.code)
+        keys = _managed_keys(bound)
+        message = str(exc)
+        if keys:
+            names = ", ".join(f"`{key}`" for key in keys)
+            verb = "needs" if len(keys) == 1 else "need"
+            reason = (
+                "which is disabled"
+                if exc.code == "inspectorDisabled"
+                else f"and attach failed: {exc.code}"
+            )
+            message = f"Not found: {names} {verb} the .NET inspector, {reason}. {hint}"
+        return ElementResult("error", elapsed(), message=message, code=exc.code, hint=hint)
     except WtkError as exc:
         return ElementResult("error", elapsed(), message=str(exc))
 
@@ -490,6 +585,8 @@ def _check_page(
                     element=outcome.element,
                     diagnostic=outcome.diagnostic,
                     message=outcome.message,
+                    code=outcome.code,
+                    hint=outcome.hint,
                     uia=outcome.uia,
                     qualname=f"{name}.{attribute}",
                     locator=locator.describe() if locator is not None else "",

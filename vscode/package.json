@@ -259,7 +259,7 @@
           "id": "wintestkit.properties",
           "name": "Properties",
           "type": "webview",
-          "when": "wintestkit.enabled && !wintestkit.setupBlocked"
+          "when": "wintestkit.enabled"
         }
       ],
       "wintestkit-spy": [
@@ -267,7 +267,7 @@
           "id": "wintestkit.spy",
           "name": "Spy",
           "type": "webview",
-          "when": "wintestkit.enabled && !wintestkit.setupBlocked"
+          "when": "wintestkit.enabled"
         }
       ]
     },

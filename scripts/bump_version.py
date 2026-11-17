@@ -109,6 +109,11 @@ def bump(version: str, extension_version: str | None = None) -> None:
     _set_json_version(LOCK, numeric, lock=True)
     policy = json.loads(POLICY.read_text(encoding="utf-8"))
     policy["extensionVersion"] = numeric
+    policy["python"]["minimum"] = version
+    release, _ = release_version(version)
+    maximum, _ = release_version(policy["python"]["maximumExclusive"])
+    if release >= maximum:
+        policy["python"]["maximumExclusive"] = f"{release[0]}.{release[1] + 1}.0"
     if prerelease:
         policy["channel"] = "prerelease"
     else:
@@ -142,6 +147,12 @@ def main(argv: list[str] | None = None) -> int:
         "prerelease" if release_version(version)[1] else "stable"
     ):
         print("Compatibility channel does not match the Python release", file=sys.stderr)
+        return 1
+    if policy["python"]["minimum"] != version:
+        print(
+            f"Compatibility minimum {policy['python']['minimum']} is stale (expected {version})",
+            file=sys.stderr,
+        )
         return 1
     if not mismatched and not args.check:
         print(f"Version set to {version}")

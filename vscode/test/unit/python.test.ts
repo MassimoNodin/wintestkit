@@ -6,38 +6,38 @@ vi.mock("vscode", () => ({}));
 vi.mock("@vscode/python-extension", () => ({ PythonExtension: {} }));
 
 import { installArguments, requirePip } from "../../src/python";
-import { ALLOW_PRERELEASE, PYTHON_REQUIREMENT } from "../../src/compatibility";
+import { ALLOW_PRERELEASE, PYTHON_REQUIREMENT, UPGRADE_REQUIREMENT } from "../../src/compatibility";
 
 beforeEach(() => vi.clearAllMocks());
 
 it("constrains production package installation to the supported range", async () => {
   expect(await installArguments()).toEqual([
-    "-m", "pip", "install", "--upgrade", "--force-reinstall", ...(ALLOW_PRERELEASE ? ["--pre"] : []), PYTHON_REQUIREMENT,
+    "-m", "pip", "install", "--upgrade", "--force-reinstall", ...(ALLOW_PRERELEASE ? ["--pre"] : []), UPGRADE_REQUIREMENT,
   ]);
 });
 
-describe("pip availability", () => {
-  it("probes only the selected interpreter, without a shell or mutation", async () => {
+describe("installer selection", () => {
+  it("uses pip when available", async () => {
     mocks.execFile.mockImplementation((_file, _args, _options, callback) => callback(null));
-    await requirePip("C:/Python env/python.exe", await installArguments());
-    expect(mocks.execFile).toHaveBeenCalledExactlyOnceWith(
-      "C:/Python env/python.exe", ["-I", "-m", "pip", "--version"],
-      { timeout: 10000, windowsHide: true }, expect.any(Function),
-    );
+    const args = await installArguments();
+    expect(await requirePip("python.exe", args)).toEqual({ executable: "python.exe", args });
+    expect(mocks.execFile).toHaveBeenCalledExactlyOnceWith("python.exe", ["-I", "-m", "pip", "--version"], { timeout: 10000, windowsHide: true }, expect.any(Function));
   });
-  it.each(["No module named pip", "spawn ENOENT", "timed out"])("offers actionable guidance for %s without bootstrapping", async (reason) => {
-    mocks.execFile.mockImplementation((_file, _args, _options, callback) => callback(new Error(reason)));
-    await expect(requirePip("C:/O'Brien $env/python.exe", await installArguments())).rejects.toThrow(
-      "uv pip install --python 'C:/O''Brien $env/python.exe' --upgrade " + (ALLOW_PRERELEASE ? "--prerelease allow " : "") + "'" + PYTHON_REQUIREMENT + "'",
-    );
-    expect(mocks.execFile).toHaveBeenCalledOnce();
+  it.each([false, true])("uses uv with prerelease=%s", async (prerelease) => {
+    mocks.execFile.mockImplementation((file, _args, _options, callback) => callback(file === "uv" ? null : new Error("missing")));
+    const args = ["-m", "pip", "install", ...(prerelease ? ["--pre"] : []), UPGRADE_REQUIREMENT];
+    expect(await requirePip("python.exe", args)).toEqual({ executable: "uv", args: ["pip", "install", "--python", "python.exe", "--upgrade", "--reinstall-package", "wintestkit", "--reinstall-package", "wintestkit-inspector", ...(prerelease ? ["--prerelease", "allow"] : []), UPGRADE_REQUIREMENT] });
   });
-  it("preserves prerelease opt-in in uv guidance", async () => {
-    mocks.execFile.mockImplementation((_file, _args, _options, callback) => callback(new Error("No module named pip")));
-    await expect(requirePip("python.exe", ["--pre", PYTHON_REQUIREMENT])).rejects.toThrow("--prerelease allow");
+  it("checks profile locations after PATH", async () => {
+    vi.stubEnv("USERPROFILE", "C:/Users/test");
+    mocks.execFile.mockImplementation((file, _args, _options, callback) => callback(String(file).includes(".cargo") ? null : new Error("missing")));
+    const result = await requirePip("python.exe", await installArguments());
+    expect(result.executable).toContain(".cargo");
+    expect(mocks.execFile.mock.calls.map((call) => call[0])).toHaveLength(4);
+    vi.unstubAllEnvs();
   });
-  it("names the selected local wheel in guidance", async () => {
-    mocks.execFile.mockImplementation((_file, _args, _options, callback) => callback(new Error("No module named pip")));
-    await expect(requirePip("python.exe", ["-m", "pip", "install", "C:/Local wheels/wintestkit.whl"])).rejects.toThrow("'C:/Local wheels/wintestkit.whl'");
+  it("keeps manual guidance when neither is available", async () => {
+    mocks.execFile.mockImplementation((_file, _args, _options, callback) => callback(new Error("missing")));
+    await expect(requirePip("C:/O'Brien/python.exe", ["--pre", PYTHON_REQUIREMENT])).rejects.toThrow("uv pip install --python 'C:/O''Brien/python.exe' --upgrade --prerelease allow '" + PYTHON_REQUIREMENT + "'");
   });
 });

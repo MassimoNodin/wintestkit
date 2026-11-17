@@ -20,17 +20,9 @@ whether the application is running; click it for **Launch App**, **Close App**, 
 
 ### Package compatibility
 
-Extension 0.1.1 requires a stable `wintestkit>=0.1.1,<0.2.0` Python package and RPC
-protocol 1. The package version is checked before launching the server and both values
-are checked during initialization. Unsupported versions stop the connection rather than
-retrying it repeatedly. The message identifies the interpreter, installed version,
-supported range, and recommended fix.
+The extension requires `wintestkit>=0.1.1rc3,<0.2.0` and RPC protocol 1. Its minimum is the Python version released with the extension. If installed, `wintestkit-inspector` must match the core package. Prereleases are accepted on the prerelease channel; stable releases reject them.
 
-Use **Update Extension** for a newer backend, **Install Compatible Package** to repair the
-selected environment (this may downgrade a newer package), or **Choose Interpreter** to
-keep a different environment untouched. The installer verifies the resulting version and
-restarts affected servers. After repairing a package manually, use **Restart Server**.
-Development wheels obey the same policy; prerelease and development versions are not supported.
+An older or mismatched package blocks Spy and test runs. Select **Upgrade wintestkit to 0.1.1rc3** to install `wintestkit[inspector]==0.1.1rc3` in the selected interpreter and restart the server. A newer backend offers **Update Extension**. After a manual repair, use **Restart Server**.
 
 ### Application controls
 

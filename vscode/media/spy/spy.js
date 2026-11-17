@@ -15,7 +15,7 @@
     "unsupported target": "Select a supported WPF target and try again.",
     "blocked by policy": "Trust the workspace or ask your administrator about the blocking policy.",
     "restart required": "Restart the target application to load the matching inspector version.",
-    "attach failed": "Check the target and try attaching again.",
+    "attach failed": "Run `wtk doctor --agent` for details.",
     "mapping unavailable": "Select a control with an exact managed mapping and refresh.",
     "detached (idle)": "The session is detached. Attach again to inspect.",
     "ready": "Attached. Values are read only when requested. Name-based redaction cannot identify every secret.",
@@ -26,8 +26,8 @@
   function renderManaged() {
     const data = managedSnapshot; if (!data) return;
     element("managed-panel").hidden = !data.visible || !selectedWpf;
-    element("managed-state").textContent = data.state;
-    element("managed-explanation").textContent = (managedMessages[data.state] || "") + (data.state === "not installed" ? " " + data.install : "");
+    element("managed-state").textContent = data.failure ? data.state.charAt(0).toUpperCase() + data.state.slice(1) + ": " + data.failure.code + "." : data.state;
+    element("managed-explanation").textContent = data.failure ? [data.failure.hint, "Run `wtk doctor --agent` for details."].filter(Boolean).join(" ") : (managedMessages[data.state] || "") + (data.state === "not installed" ? " " + data.install : "");
     element("managed-install-copy").hidden = data.state !== "not installed";
     const root = element("managed-groups"), wpfRoot = element("wpf-managed-groups"); root.replaceChildren(); wpfRoot.replaceChildren();
     if (!data.object) return;
@@ -1051,7 +1051,7 @@
     const entry = nodes.get(nodeId);
     element("wpf-details-note").hidden = !entry?.wpfMissing;
     element("wpf-blocked").hidden = !entry?.wpfBlocked;
-    element("wpf-blocked").textContent = entry?.wpfBlocked ? `${entry.wpfBlocked.code}: ${entry.wpfBlocked.hint} Run wtk doctor --agent.` : "";
+    element("wpf-blocked").textContent = entry?.wpfBlocked ? `${entry.wpfBlocked.code}: ${entry.wpfBlocked.hint} Run ` + "`wtk doctor --agent`" + " for details." : "";
   };
   element("wpf-details-attach").addEventListener("click", () => { if (selected) post("treeAttach", { nodeId: selected }); });
   const showProperties = (properties) => {
@@ -1467,10 +1467,20 @@
     }
   });
   element("show-properties").addEventListener("click", () => post("showProperties"));
+  element("upgrade-package").addEventListener("click", () => vscode.postMessage({ type: "upgradePackage" }));
   window.addEventListener("message", (event) => {
     const message = event.data;
+    if (message.type === "compatibilityBlocked") {
+      element("tree-empty").hidden = false;
+      emptyState("tree", "warning", "Spy is blocked", message.message);
+      const button = element("upgrade-package");
+      button.textContent = message.label;
+      button.hidden = false;
+      return;
+    }
+    if (message.type === "roots") element("upgrade-package").hidden = true;
     if (message.type === "propertiesVisibility") { element("properties-elsewhere").hidden = message.visible; return; }
-    if (message.type === "selectionPending") { element("properties-view-status").textContent = "Loading properties?"; element("properties-view-status").hidden = false; clearProperties(); focusSelected(message.nodeId); hasDetails = false; selecting = true; renderStatus(); return; }
+    if (message.type === "selectionPending") { element("properties-view-status").textContent = "Loading properties\u2026"; element("properties-view-status").hidden = false; clearProperties(); focusSelected(message.nodeId); hasDetails = false; selecting = true; renderStatus(); return; }
     if (message.type === "progress") {
       if (!message.done && message.completed === 0 && message.target === "tree")
         element("enumeration-status").hidden = true;
@@ -1575,7 +1585,7 @@
           const item = document.createElement("li");
           item.className = "tree-message";
           item.setAttribute("role", "none");
-          item.textContent = `${message.blocked.code}: ${message.blocked.hint} `;
+          item.textContent = `${message.blocked.code}: ${message.blocked.hint} Run ` + "`wtk doctor --agent`" + " for details. ";
           const retry = document.createElement("button"); retry.textContent = "Retry";
           retry.addEventListener("click", () => post("treeAttach", { nodeId: message.nodeId }));
           item.append(retry); entry.children.append(item);

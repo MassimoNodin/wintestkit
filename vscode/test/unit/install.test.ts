@@ -4,7 +4,7 @@ const mocks = vi.hoisted(() => ({
   trusted: true,
   localArgs: vi.fn(async () => ["-m", "pip", "install", "--upgrade", "C:/dev/wintestkit-0.1.2-py3-none-any.whl"]),
   execFile: vi.fn(),
-  requirePip: vi.fn(async () => {}),
+  requirePip: vi.fn(async (executable: string, args: string[]) => ({ executable, args })),
   check: vi.fn(async (): Promise<{ installed: boolean; version?: string }> => ({ installed: true, version: "0.1.1" })),
   args: vi.fn(async (): Promise<string[] | undefined> => ["-m", "pip", "install", "--upgrade", "--force-reinstall", "wintestkit>=0.1.1,<0.2.0"]),
 }));
@@ -72,7 +72,7 @@ describe("installing the package", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.trusted = true;
-    mocks.requirePip.mockResolvedValue(undefined);
+    mocks.requirePip.mockImplementation(async (executable, args) => ({ executable, args }));
     mocks.check.mockResolvedValue({ installed: true, version: "0.1.1" });
     mocks.args.mockResolvedValue(["-m", "pip", "install", "--upgrade", "--force-reinstall", "wintestkit>=0.1.1,<0.2.0"]);
   });
@@ -100,6 +100,17 @@ describe("installing the package", () => {
     expect(mocks.requirePip).toHaveBeenCalledWith("C:/py/python.exe", mocks.execFile.mock.calls[0][1]);
     expect(mocks.execFile.mock.calls[0][1]).toEqual(["-m", "pip", "install", "--upgrade", "--force-reinstall", "wintestkit>=0.1.1,<0.2.0"]);
     expect(changed).toHaveBeenCalledTimes(2);
+  });
+
+  it("runs and logs the selected uv command", async () => {
+    const args = ["pip", "install", "--python", "C:/py/python.exe", "wintestkit"];
+    mocks.requirePip.mockResolvedValue({ executable: "C:/uv.exe", args });
+    finish(null, "installed");
+    const installer = new PackageInstaller(log);
+    expect(await installer.install(folder, "C:/py/python.exe")).toBe(true);
+    expect(mocks.execFile).toHaveBeenCalledWith("C:/uv.exe", args, expect.any(Object), expect.any(Function));
+    expect((log as { info: ReturnType<typeof vi.fn> }).info).toHaveBeenCalledWith(expect.stringContaining('"C:/uv.exe" "pip" "install"'));
+    expect((log as { info: ReturnType<typeof vi.fn> }).info).toHaveBeenCalledWith(expect.stringContaining("Install succeeded"));
   });
 
   it("keeps the reason when pip fails, and clears it on the next attempt", async () => {

@@ -1,3 +1,4 @@
+import { CompatibilityError, UPGRADE_LABEL } from "../compatibility";
 import { ManagedPanel } from "./managedPanel";
 import { ManagedInspector } from "./managedSession";
 import { randomBytes } from "node:crypto";
@@ -593,7 +594,9 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
       await action();
     } catch (error) {
       this.log.error(String(error));
-      if (error instanceof RpcError && error.code === -32005) {
+      if (error instanceof CompatibilityError && error.issue.kind === "older") {
+        this.post({ type: "compatibilityBlocked", message: error.message, label: UPGRADE_LABEL });
+      } else if (error instanceof RpcError && error.code === -32005) {
         // Reloading is the user's call: the tree may be what they were reading.
         this.post({
           type: "error",
@@ -671,7 +674,7 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
       ? path.win32.basename(appProcess).replace(/\.exe$/i, "")
       : undefined;
     this.client = client;
-    this.managedInspector = new ManagedInspector(client, connection.initialized, (process) => void this.safe(() => this.recoverStale(process)));
+    this.managedInspector = new ManagedInspector(client, connection.initialized, (process) => void this.safe(() => this.recoverStale(process)), (line) => this.log.error(line));
     this.managedPanel = new ManagedPanel(this.managedInspector, (message) => {
       if (this.managedInspector?.visible && !this.tutorialActive()) {
         this.managedSnapshot = message;
@@ -705,6 +708,8 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
             this.deferIcons(client, roots, revision);
             const windowNode = roots.find((root) => root.nodeId === picked.node.nodeId || root.info.processId === picked.node.info.processId);
             if (windowNode && picked.blocked) {
+              await this.managedInspector?.reportTreeFailure(windowNode.nodeId, picked.blocked);
+              this.post({ type: "wpfDetails", nodeId: windowNode.nodeId, missing: false, blocked: picked.blocked });
               this.post({ type: "children", nodeId: windowNode.nodeId, nodes: [], expanded: true, blocked: picked.blocked });
             } else if (windowNode && picked.process) {
               this.treeProcesses.set(windowNode.nodeId, picked.process);
@@ -1246,7 +1251,10 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
         }
         if (this.recovering) this.recoveryAttempts.set(key, Date.now());
         const attached = await this.managedInspector.attachTree(nodeId, result.process);
-        if (!attached && this.managedInspector.treeFailure) return { blocked: this.managedInspector.treeFailure };
+        if (!attached && this.managedInspector.treeFailure) {
+          this.post({ type: "wpfDetails", nodeId, missing: false, blocked: this.managedInspector.treeFailure });
+          return { blocked: this.managedInspector.treeFailure };
+        }
         result = await client.request<InspectChildrenResult>("inspect.children", params);
         if (!Array.isArray(result) && "attachRequired" in result && this.managedInspector.treeFailure) {
           result = { blocked: this.managedInspector.treeFailure };
@@ -1258,6 +1266,7 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
         return fallback;
       }
     }
+    if (!Array.isArray(result) && "blocked" in result) await this.managedInspector?.reportTreeFailure(nodeId, result.blocked);
     this.post({ type: "wpfDetails", nodeId, missing: false, ...(!Array.isArray(result) && "blocked" in result ? { blocked: result.blocked } : {}) });
     return result;
   }
@@ -1352,6 +1361,15 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
     }
   }
   private async handle(message: SpyRequest): Promise<void> {
+    if (message.type === "upgradePackage") {
+      const project = this.currentProject();
+      if (project) {
+        await vscode.commands.executeCommand("wintestkit.installCompatiblePackage", project.root);
+        await vscode.commands.executeCommand("wintestkit.spy.focus");
+        await this.refresh();
+      }
+      return;
+    }
     if (message.type === "expandedPaths") { this.expandedPaths = message.paths; return; }
     if (message.type === "showProperties") {
       if (this.propertiesView) this.propertiesView.show?.(true);

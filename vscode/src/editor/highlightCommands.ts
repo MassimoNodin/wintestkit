@@ -279,7 +279,7 @@ export class HighlightCommands implements vscode.Disposable {
         vscode.window.setStatusBarMessage("$(check) Check: Found " + target.qualname, 5000);
       } else {
         await vscode.window.showWarningMessage(
-          "Check " + target.qualname + ": " + (checked.diagnostic?.message ?? checked.message ?? checked.status),
+          "Check " + target.qualname + ": " + (checked.message ?? checked.diagnostic?.message ?? checked.status),
         );
       }
     } catch (error) {

@@ -64,6 +64,7 @@ function renderItem(
   const accessible = node.description
     ? node.label + ", " + node.description
     : node.label;
+  const tooltip = [...new Set([node.label, node.description, node.tooltip].filter(Boolean))].join("\n");
   const twist = node.children.length
     ? `<button type="button" class="twist" tabindex="-1" data-twist="true" aria-label="${escapeAttribute(
         (open ? "Collapse " : "Expand ") + node.label,
@@ -88,17 +89,17 @@ function renderItem(
   return (
     `<div role="treeitem" class="item${rowClass(node.context.webviewSection)}${node.children.length ? "" : " leaf"}" data-id="${escapeAttribute(node.id)}" ` +
     `aria-label="${escapeAttribute(accessible)}" ` +
-    `title="${escapeAttribute(node.tooltip)}" ` +
+    `title="${escapeAttribute(tooltip)}" ` +
     (node.children.length
       ? `aria-expanded="${open ? "true" : "false"}" `
       : "") +
     `aria-selected="${selected ? "true" : "false"}" tabindex="${selected ? "0" : "-1"}" ` +
     `data-vscode-context="${escapeAttribute(JSON.stringify(node.context))}">` +
-    `<div class="line">${twist}` +
+    `<div class="line" title="${escapeAttribute(tooltip)}">${twist}` +
     `<span class="codicon codicon-${escapeAttribute(node.icon)}${node.icon === "loading" ? " codicon-modifier-spin" : ""} icon${color}" aria-hidden="true"></span>` +
     `<span class="label">${escapeText(node.label)}</span>` +
     (node.description
-      ? `<span class="desc">${escapeText(node.description)}</span>`
+      ? `<span class="desc" title="${escapeAttribute(node.description)}">${escapeText(node.description)}</span>`
       : "") +
     (actions ? `<span class="actions">${actions}</span>` : "") +
     `</div>${children}</div>`
@@ -249,7 +250,7 @@ ${CAPTURE_PREVIEW_STYLE}
   display: flex;
   align-items: center;
   height: 22px;
-  min-width: 0;
+  min-width: 120px;
   cursor: pointer;
 }
 .item:hover > .line { background: var(--vscode-list-hoverBackground); }
@@ -287,8 +288,9 @@ ${CAPTURE_PREVIEW_STYLE}
 .icon.testing-iconPassed { color: var(--vscode-testing-iconPassed); }
 .icon.list-warningForeground { color: var(--vscode-list-warningForeground); }
 .icon.testing-iconFailed { color: var(--vscode-testing-iconFailed); }
-.label, .desc { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.desc { margin-left: 6px; color: var(--vscode-descriptionForeground); font-size: 12px; }
+.label, .desc { overflow: hidden; white-space: nowrap; }
+.label { flex: 0 1 auto; min-width: 0; text-overflow: ellipsis; }
+.desc { flex: 1 1 0; min-width: 0; margin-left: 6px; color: var(--vscode-descriptionForeground); font-size: 12px; }
 .item[aria-selected="true"] > .line .desc { color: inherit; }
 .actions { display: none; margin-left: auto; flex: 0 0 auto; }
 .item:hover > .line .actions, .item:focus-within > .line .actions,
@@ -317,6 +319,38 @@ const actions = ["highlight", "check", "checkPage", "run"];
 const named = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Home", "End", "Enter", " "]);
 const segments = document.getElementById("segments");
 const tree = document.getElementById("tree");
+function middleEllipsis(text, width, measure) {
+  if (measure(text) <= width) return text;
+  const chars = Array.from(text);
+  if (measure("\u2026") > width) return "";
+  let low = 0, high = chars.length;
+  while (low < high) {
+    const count = Math.ceil((low + high) / 2);
+    const start = Math.ceil(count / 2), end = Math.floor(count / 2);
+    const candidate = chars.slice(0, start).join("") + "\u2026" + (end ? chars.slice(-end).join("") : "");
+    if (measure(candidate) <= width) low = count;
+    else high = count - 1;
+  }
+  const start = Math.ceil(low / 2), end = Math.floor(low / 2);
+  return chars.slice(0, start).join("") + "\u2026" + (end ? chars.slice(-end).join("") : "");
+}
+const descriptionObserver = typeof ResizeObserver === "function" ? new ResizeObserver((entries) => {
+  const canvas = document.createElement("canvas");
+  const context = canvas.getContext("2d");
+  if (!context) return;
+  for (const entry of entries) {
+    const desc = entry.target;
+    const style = getComputedStyle(desc);
+    context.font = style.font || [style.fontStyle, style.fontWeight, style.fontSize, style.fontFamily].join(" ");
+    desc.textContent = middleEllipsis(desc.title, entry.contentRect.width, (value) => context.measureText(value).width);
+  }
+}) : null;
+function observeDescriptions() {
+  if (!descriptionObserver) return;
+  descriptionObserver.disconnect();
+  tree.querySelectorAll(".desc").forEach((desc) => descriptionObserver.observe(desc));
+}
+observeDescriptions();
 ${CAPTURE_PREVIEW_SCRIPT}
 const unusedTools = document.getElementById("unused-tools");
 const unusedScan = document.getElementById("unused-scan");
@@ -369,6 +403,7 @@ function paint(message) {
   const segmentFocused = webviewFocused && segments.contains(active);
   const treeFocused = webviewFocused && tree.contains(active);
   const scroll = tree.scrollTop;
+  const scrollLeft = tree.scrollLeft;
   const reveal = message.reveal === true;
   for (const tab of segments.querySelectorAll("[data-section]")) {
     const selected = tab.getAttribute("data-section") === message.section;
@@ -382,6 +417,7 @@ function paint(message) {
   tree.setAttribute("aria-label", labels[message.section]);
   paintUnused(message.section === "pages" ? message.unused : undefined);
   tree.innerHTML = message.html;
+  observeDescriptions();
   const focusable = tree.querySelector("[role='treeitem'][tabindex='0']");
   tree.tabIndex = focusable ? -1 : 0;
   if (treeFocused) {
@@ -389,6 +425,7 @@ function paint(message) {
     else tree.focus({ preventScroll: true });
   }
   tree.scrollTop = scroll;
+  tree.scrollLeft = scrollLeft;
   if (reveal && treeFocused && focusable instanceof HTMLElement) revealRow(focusable);
 }
 window.addEventListener("message", (event) => paint(event.data));

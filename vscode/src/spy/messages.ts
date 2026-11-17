@@ -25,7 +25,7 @@ export type ManagedRequest =
 
 export type SpyRequest =
   | ManagedRequest
-  | { type: "showProperties" | "propertiesReady" }
+  | { type: "showProperties" | "propertiesReady" | "upgradePackage" }
   | { type: "expandedPaths"; paths: PathSegment[][] }
   | { type: "treeAttach"; nodeId: string }
   | { type: "treeMore"; nodeId: string; pageToken: string }
@@ -53,6 +53,7 @@ export type SpyRequest =
   | { type: "openPreview"; view: "element" | "window"; dataUrl: string }
   | { type: "openDefinition"; id: string };
 export type SpyResponse =
+  | { type: "compatibilityBlocked"; message: string; label: string }
   | { type: "propertiesVisibility"; visible: boolean }
   | { type: "selectionPending"; nodeId: string }
   | { type: "wpfDetails"; nodeId: string; missing: boolean; blocked?: { code: string; hint: string } }
@@ -147,7 +148,7 @@ export function parseSpyRequest(value: unknown): SpyRequest | undefined {
     return SPY_TOUR_ACTIONS.includes(message.action as (typeof SPY_TOUR_ACTIONS)[number])
       ? { type: "tour", action: message.action as (typeof SPY_TOUR_ACTIONS)[number] }
       : undefined;
-  if (message.type === "showProperties" || message.type === "propertiesReady") return { type: message.type };
+  if (message.type === "showProperties" || message.type === "propertiesReady" || message.type === "upgradePackage") return { type: message.type };
   if (message.type === "ready")
     return typeof message.showOtherApps === "boolean"
       ? { type: "ready", showOtherApps: message.showOtherApps }

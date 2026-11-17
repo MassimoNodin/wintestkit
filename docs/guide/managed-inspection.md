@@ -181,6 +181,7 @@ requires `--managed`. `--json` emits JSON. Inspection may expose sensitive data:
 | `payloadMissing`, `payloadMismatch` | Install or repair the matching inspector payload. |
 | `agentVersionMismatch` | Restart the target after upgrading, then attach again. |
 | `alreadyAttached` | Another WinTestKit session owns the agent; close that session or restart the application. |
+| `inspectorDisabled` | Set `[tool.wintestkit.inspector] enabled = true` in the project config. |
 | `notAttached` | Explicitly attach to the target. |
 | `attachFailed` | Check target compatibility, permissions and `wtk doctor`. |
 | `processExited`, `processReused`, `sessionStale`, `objectStale` | Reselect the live process or element and reattach. |

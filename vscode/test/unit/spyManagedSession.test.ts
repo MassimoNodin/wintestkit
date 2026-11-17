@@ -3,7 +3,7 @@ import type { InitializeResult } from "../../src/protocol/generated";
 import type { JsonRpcClient } from "../../src/server/jsonrpc";
 const mock = vi.hoisted(() => ({ trusted: true, warning: vi.fn(), open: vi.fn() }));
 vi.mock("vscode", () => ({ workspace: { get isTrusted() { return mock.trusted; } }, window: { showWarningMessage: mock.warning }, env: { openExternal: mock.open }, Uri: { parse: (url: string) => url } }));
-import { ManagedInspector, managedErrorState } from "../../src/spy/managedSession";
+import { ManagedInspector, managedErrorState, managedFailure } from "../../src/spy/managedSession";
 import { parseSpyRequest } from "../../src/spy/messages";
 const initialized = (enabled: boolean) => ({ capabilities: enabled ? { managedInspector: true } : undefined }) as InitializeResult;
 const facts = { process: { pid: 271, creationTimeUtc: "one" }, executable: "C:/App.exe", runtime: "net8", architecture: "x64", wpfLoaded: true, appUnderTest: false };
@@ -13,6 +13,14 @@ function setup() {
   return { request, inspector: new ManagedInspector({ request } as unknown as JsonRpcClient, initialized(true)) };
 }
 describe("managed Spy host", () => {
+  it("logs server-blocked tree failures once per process and code", async () => {
+    const request = vi.fn(async () => facts), log = vi.fn();
+    const inspector = new ManagedInspector({ request } as unknown as JsonRpcClient, initialized(true), undefined, log);
+    const blocked = { code: "inspectorDisabled", hint: "Set [tool.wintestkit.inspector] enabled = true in the project config." };
+    await inspector.reportTreeFailure("n", blocked);
+    await inspector.reportTreeFailure("n", blocked);
+    expect(log.mock.calls).toEqual([["Spy .NET attach failed for C:/App.exe (PID 271): inspectorDisabled: Inspector attachment failed. Set [tool.wintestkit.inspector] enabled = true in the project config."]]);
+  });
   it("hides absent capability and maps server codes", () => {
     expect(new ManagedInspector({} as JsonRpcClient, initialized(false)).visible).toBe(false);
     for (const [code, state] of Object.entries({ notAttached: "not enabled", payloadMissing: "not installed", unsupportedTarget: "unsupported target", blockedByPolicy: "blocked by policy", agentVersionMismatch: "restart required", attachFailed: "attach failed", mappingFailed: "mapping unavailable", sessionStale: "detached (idle)" })) expect(managedErrorState({ data: { code } })).toBe(state);
@@ -128,4 +136,39 @@ describe("managed Spy host", () => {
   it("checks the selected process identity before resolving", async () => {
     const { inspector, request } = setup(); mock.trusted = true; mock.warning.mockResolvedValue("Attach"); await inspector.select("one"); await inspector.attach(); await inspector.select("two"); request.mockImplementationOnce(async () => ({ ...facts, process: { ...facts.process, creationTimeUtc: "reused" } })); expect(await inspector.resolve("two")).toBeUndefined(); expect(inspector.state).toBe("not attached to this process"); expect(request.mock.calls.filter((call) => call[0] === "inspect.managed.attach")).toHaveLength(1); expect(request.mock.calls.filter((call) => call[0] === "inspect.managed.resolve")).toHaveLength(0);
   });
+});
+
+
+it("extracts errors and logs each attachment attempt once", async () => {
+  expect(managedFailure({ message: "reason", data: { code: "alreadyAttached", hint: "hint" } })).toEqual({ code: "alreadyAttached", hint: "hint", message: "reason" });
+  expect(managedFailure({ message: "reason", data: { code: "newCode", hint: "hint" } }).code).toBe("newCode");
+  expect(managedFailure({ message: "reason" }).code).toBe("attachFailed");
+  const log = vi.fn();
+  const request = vi.fn(async (method: string) => { if (method.endsWith("identify")) return { ...facts, appUnderTest: true }; throw { message: "An inspector is already attached to this process", data: { code: "alreadyAttached", hint: "Close the other session." } }; });
+  const inspector = new ManagedInspector({ request } as unknown as JsonRpcClient, initialized(true), undefined, log);
+  await inspector.select("n"); await inspector.attach(); await inspector.attach();
+  expect(log.mock.calls).toEqual(Array(1).fill(["Spy .NET attach failed for C:/App.exe (PID 271): alreadyAttached: An inspector is already attached to this process. Close the other session."]));
+});
+
+
+it("logs again after a different error, process, or successful session", async () => {
+  let process = { pid: 99001, creationTimeUtc: "one" };
+  let code = "inspectorDisabled";
+  let ready = false;
+  const log = vi.fn();
+  const request = vi.fn(async (method: string) => {
+    if (method.endsWith("identify")) return { ...facts, process, appUnderTest: true };
+    if (ready) return { ...session, process };
+    throw { message: "failure", data: { code } };
+  });
+  const inspector = new ManagedInspector({ request } as unknown as JsonRpcClient, initialized(true), undefined, log);
+  await inspector.select("n");
+  await inspector.reuseTreeSession("n"); await inspector.reuseTreeSession("n");
+  expect(log).toHaveBeenCalledTimes(1);
+  code = "alreadyAttached"; await inspector.reuseTreeSession("n");
+  process = { ...process, creationTimeUtc: "two" }; await inspector.reuseTreeSession("n");
+  expect(log).toHaveBeenCalledTimes(3);
+  ready = true; await inspector.reuseTreeSession("n");
+  inspector.invalidate(); ready = false; await inspector.reuseTreeSession("n");
+  expect(log).toHaveBeenCalledTimes(4);
 });

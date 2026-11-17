@@ -206,7 +206,7 @@ def require_managed(*, values: bool = True) -> None:
     config = get_config().inspector
     if not config.enabled:
         raise InspectorUnavailableError(
-            "Set inspector.enabled to true to use managed inspection", code="notAttached"
+            "Set inspector.enabled to true to use managed inspection", code="inspectorDisabled"
         )
 
 
