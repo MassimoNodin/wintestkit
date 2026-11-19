@@ -7,6 +7,9 @@ Unreleased changes must be moved to a dated candidate section before a release c
 
 ## [Unreleased]
 
+- **Spy:** WinForms (.NET Framework 4.8, .NET 8 and .NET 10) applications now attach like WPF ones. The tree follows `Control.Controls` and the items of a `ToolStrip` or menu, rows read `WinFormsObject("button1")` (the control's `Name`, else type, text and place among siblings) with a **WinForms** badge, and the Properties sidebar's Properties, Fields and Methods tabs, automatic reads, method calls and redaction work as for WPF. The text of a password box is never read. WinForms windows whose process the inspector cannot attach to keep the UI Automation tree. Spy attaches to a WinForms application on demand; launching an application for tests still attaches the agent only for WPF. `wtk doctor --agent` checks WinForms applications too.
+- **Spy:** Selecting a control with a native window handle (Win32, MFC, WinForms, dialogs) now shows a **Win32 Window** group: window class, decoded window, extended and class-specific styles (`BS_*`, `ES_*`, `SS_*`, `CBS_*`, `LBS_*`, `DS_*` and the common list, tree and tab styles) with the raw values, control ID, text, process and thread, owner and parent, window and client rectangles, visibility, enabled and topmost state, and DPI. The Basic view shows the class, control ID, text, handle and styles. Such controls are labelled `Window("Class", "text", index)` in the tree. Every UI Automation property and supported pattern now loads with the selection, so the **Load all properties** button is gone.
+
 ## [0.1.1rc3] - 2026-11-17
 
 Third prerelease. Install the extension's pre-release channel together with `pip install --pre "wintestkit==0.1.1rc3"`.

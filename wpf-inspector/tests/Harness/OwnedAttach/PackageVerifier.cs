@@ -125,7 +125,9 @@ internal static class PackageVerifier
                 "System.Diagnostics.Process", "System.IO.Pipes", "System.Security.Principal.Windows", "System.Threading",
                 "WindowsBase", "PresentationCore", "PresentationFramework", "UIAutomationProvider", "UIAutomationTypes", "System.Security.Cryptography", "System.ComponentModel.TypeConverter",
                 "System.Text.RegularExpressions", "System.Threading.Thread", "System.Diagnostics.TraceSource", "System.Runtime.InteropServices",
-                "Microsoft.Win32.Primitives", "System.Linq"
+                "Microsoft.Win32.Primitives", "System.Linq",
+                // WinForms support: the agent reads a WinForms target's controls and nothing else from these.
+                "System.Windows.Forms", "System.Drawing", "System.Drawing.Primitives", "System.Collections.NonGeneric"
             };
             if (tfm != ".NETFramework,Version=v4.8") frameworkReferences.Add("System.Memory");
             foreach (var handle in md.AssemblyReferences)

@@ -18,7 +18,11 @@ def setup_agent(tmp_path, monkeypatch):
     cfg = replace(cfg, inspector=replace(cfg.inspector, enabled=True))
     monkeypatch.setattr(doctor, "_app_pids", lambda cfg: ("app.exe", [123]))
     facts = SimpleNamespace(
-        wpf_loaded=True, identity=SimpleNamespace(pid=123), runtime="net10", architecture="x64"
+        wpf_loaded=True,
+        winforms_loaded=False,
+        identity=SimpleNamespace(pid=123),
+        runtime="net10",
+        architecture="x64",
     )
     monkeypatch.setattr(probe, "identify", lambda pid: facts)
     state = SimpleNamespace(agent_version="1.2", architecture="x64", features=("query", "state"))
@@ -39,7 +43,7 @@ def test_not_running(setup_agent, monkeypatch):
 def test_non_wpf(setup_agent):
     cfg, facts, _ = setup_agent
     facts.wpf_loaded = False
-    assert "not a WPF application" in doctor._check_wpf_agent(cfg).detail
+    assert "not a WPF or WinForms application" in doctor._check_wpf_agent(cfg).detail
 
 
 def test_ok_and_closed(setup_agent):

@@ -33,10 +33,14 @@ async function confirmProcess(facts: InspectManagedIdentifyResult): Promise<bool
   }
   try { return await pending; } finally { if (confirmations.get(identity) === pending) confirmations.delete(identity); }
 }
-/** The session a WPF node id was issued by: `wpf:["<sessionId>","<objectId>",<generation>]`. */
+/** True for an object of the target's WPF or WinForms tree, as opposed to a UI Automation element. */
+export function isManagedSource(source: unknown): boolean { return source === "wpf" || source === "winforms"; }
+/** True for the node id of a WPF or WinForms object: "wpf:[...]" or "winforms:[...]". */
+export function isManagedNodeId(nodeId: string | undefined): boolean { return !!nodeId && (nodeId.startsWith("wpf:") || nodeId.startsWith("winforms:")); }
+/** The session a managed node id was issued by: `wpf:["<sessionId>","<objectId>",<generation>]` (or `winforms:`). */
 export function wpfNodeSession(nodeId: string | undefined): string | undefined {
-  if (!nodeId?.startsWith("wpf:")) return;
-  try { const parts: unknown = JSON.parse(nodeId.slice(4)); return Array.isArray(parts) && typeof parts[0] === "string" ? parts[0] : undefined; } catch { return; }
+  if (!nodeId || !isManagedNodeId(nodeId)) return;
+  try { const parts: unknown = JSON.parse(nodeId.slice(nodeId.indexOf(":") + 1)); return Array.isArray(parts) && typeof parts[0] === "string" ? parts[0] : undefined; } catch { return; }
 }
 export type ManagedFailure = { code: string; hint: string; message: string };
 export function managedFailure(error: unknown): ManagedFailure {

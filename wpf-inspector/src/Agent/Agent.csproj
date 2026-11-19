@@ -2,11 +2,16 @@
   <PropertyGroup>
     <TargetFrameworks>net48;net8.0-windows;net10.0-windows</TargetFrameworks>
     <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
     <AssemblyName>WinTestKit.Inspector.Agent</AssemblyName>
     <RootNamespace>WinTestKit.Inspector.Agent</RootNamespace>
     <SignAssembly>true</SignAssembly>
     <AssemblyOriginatorKeyFile>../../WinTestKit.Inspector.snk</AssemblyOriginatorKeyFile>
   </PropertyGroup>
+  <ItemGroup Condition="'$(TargetFramework)' == 'net48'">
+    <Reference Include="System.Windows.Forms" />
+    <Reference Include="System.Drawing" />
+  </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../Protocol/Protocol.csproj" />
     <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" PrivateAssets="all" Condition="'$(TargetFramework)' == 'net48'" />

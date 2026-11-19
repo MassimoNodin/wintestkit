@@ -152,7 +152,7 @@ class WpfElement:
 
     @property
     def framework_id(self) -> str:
-        return "WPF"
+        return "WinForms" if self.ref.is_winforms else "WPF"
 
     @property
     def process_id(self) -> int:

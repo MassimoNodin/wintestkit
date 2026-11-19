@@ -813,7 +813,6 @@ describe("Spy view bridge", () => {
         "select",
         "expand",
         "highlight",
-        "loadProperties",
         "openDefinition",
         "showOtherApps",
         "bringToFront",
@@ -2214,55 +2213,62 @@ describe("Spy view bridge", () => {
     expect(mocks.icons).toHaveBeenCalledWith([123]);
     fixture.provider.dispose();
   });
-  it("loads full properties only for the explicit button request", async () => {
-    mocks.request.mockResolvedValue({
-      info: {},
-      properties: { Name: "Save" },
-      ancestors: [],
-    });
-    const fixture = await create();
-    expect(mocks.request).not.toHaveBeenCalled();
-    fixture.receive({ type: "loadProperties", nodeId: "control" });
-    await vi.waitFor(() =>
-      expect(
-        fixture.sent.some((message) => message.type === "allProperties"),
-      ).toBe(true),
-    );
-    expect(mocks.request).toHaveBeenCalledWith("inspect.properties", {
-      nodeId: "control",
-      full: true,
-    });
-    expect(
-      fixture.sent.filter((message) => message.type === "propertiesLoading"),
-    ).toEqual([
-      { type: "propertiesLoading", nodeId: "control", loading: true },
-      { type: "propertiesLoading", nodeId: "control", loading: false },
-    ]);
-    fixture.provider.dispose();
-  });
-  it("allows retrying a failed full-property request", async () => {
-    mocks.request.mockRejectedValue(new Error("properties unavailable"));
-    const fixture = await create();
-    fixture.receive({ type: "loadProperties", nodeId: "control" });
-    await vi.waitFor(() =>
-      expect(fixture.sent.some((message) => message.type === "error")).toBe(
-        true,
+  it("reads the basic properties first, then every property without a button press", async () => {
+    mocks.request.mockImplementation((method: string, params: { full?: boolean }) =>
+      Promise.resolve(
+        method === "inspect.properties"
+          ? { info: {}, properties: { Name: params.full ? "full" : "basic" }, ancestors: [] }
+          : method === "suggest.locator"
+            ? { helpers: [], code: "Element()" }
+            : undefined,
       ),
     );
+    const fixture = await create();
+    fixture.receive({ type: "select", nodeId: "control" });
+    await vi.waitFor(() =>
+      expect(fixture.sent.some((message) => message.type === "allProperties")).toBe(true),
+    );
+    const requests = mocks.request.mock.calls.filter(([method]) => method === "inspect.properties");
+    expect(requests.map(([, params]) => params.full === true)).toEqual([false, true]);
+    expect(requests[1][1]).toEqual({ nodeId: "control", full: true });
+    const order = fixture.sent
+      .map((message) => message.type)
+      .filter((type) => ["selected", "propertiesLoading", "allProperties"].includes(type));
+    expect(order).toEqual(["selected", "propertiesLoading", "allProperties", "propertiesLoading"]);
     expect(
-      fixture.sent
-        .filter((message) => message.type === "propertiesLoading")
-        .at(-1),
-    ).toMatchObject({ loading: false, nodeId: "control" });
+      fixture.sent.filter((message) => message.type === "propertiesLoading").map((message) => message.loading),
+    ).toEqual([true, false]);
+    fixture.provider.dispose();
+  });
+  it("keeps the basic properties when reading every property fails", async () => {
+    mocks.request.mockImplementation((method: string, params: { full?: boolean }) =>
+      method === "inspect.properties" && params.full
+        ? Promise.reject(new Error("properties unavailable"))
+        : Promise.resolve(
+            method === "inspect.properties"
+              ? { info: {}, properties: { Name: "basic" }, ancestors: [] }
+              : { helpers: [], code: "Element()" },
+          ),
+    );
+    const fixture = await create();
+    fixture.receive({ type: "select", nodeId: "control" });
+    await vi.waitFor(() =>
+      expect(
+        fixture.sent.filter((message) => message.type === "propertiesLoading").at(-1),
+      ).toMatchObject({ loading: false, nodeId: "control" }),
+    );
+    expect(fixture.sent.some((message) => message.type === "selected")).toBe(true);
+    expect(fixture.sent.some((message) => message.type === "allProperties")).toBe(false);
+    expect(fixture.sent.some((message) => message.type === "error")).toBe(false);
     fixture.provider.dispose();
   });
   it("discards full properties after another object is selected", async () => {
-    let finishProperties: (value: unknown) => void = () => {};
+    const finishers: ((value: unknown) => void)[] = [];
     mocks.request.mockImplementation(
-      (method: string, params: { full?: boolean }) => {
-        if (method === "inspect.properties" && params.full)
+      (method: string, params: { full?: boolean; nodeId?: string }) => {
+        if (method === "inspect.properties" && params.full && params.nodeId === "old")
           return new Promise((resolve) => {
-            finishProperties = resolve;
+            finishers.push(resolve);
           });
         return Promise.resolve(
           method === "inspect.properties"
@@ -2272,7 +2278,7 @@ describe("Spy view bridge", () => {
       },
     );
     const fixture = await create();
-    fixture.receive({ type: "loadProperties", nodeId: "old" });
+    fixture.receive({ type: "select", nodeId: "old" });
     await vi.waitFor(() =>
       expect(mocks.request).toHaveBeenCalledWith("inspect.properties", {
         nodeId: "old",
@@ -2281,14 +2287,14 @@ describe("Spy view bridge", () => {
     );
     fixture.receive({ type: "select", nodeId: "new" });
     await vi.waitFor(() =>
-      expect(fixture.sent.some((message) => message.type === "selected")).toBe(
-        true,
-      ),
+      expect(
+        fixture.sent.some((message) => message.type === "selected" && message.nodeId === "new"),
+      ).toBe(true),
     );
-    finishProperties({ info: {}, properties: {}, ancestors: [] });
+    for (const finish of finishers) finish({ info: {}, properties: {}, ancestors: [] });
     await new Promise((resolve) => setTimeout(resolve, 10));
     expect(
-      fixture.sent.some((message) => message.type === "allProperties"),
+      fixture.sent.some((message) => message.type === "allProperties" && message.nodeId === "old"),
     ).toBe(false);
     fixture.provider.dispose();
   });
@@ -3173,8 +3179,9 @@ describe("Spy view bridge", () => {
   describe("pinned properties", () => {
     const properties = () =>
       Promise.resolve({ info: { name: "Save", controlType: "Button" }, properties: {}, ancestors: [] });
+    // The basic read; the full read that follows every selection is covered where it is specified.
     const propertyRequests = () =>
-      mocks.request.mock.calls.filter(([method]) => method === "inspect.properties").map(([, params]) => params);
+      mocks.request.mock.calls.filter(([method, params]) => method === "inspect.properties" && !params.full).map(([, params]) => params);
     const lastState = (fixture: Awaited<ReturnType<typeof create>>) =>
       fixture.sent.filter((message) => message.type === "state").at(-1);
 

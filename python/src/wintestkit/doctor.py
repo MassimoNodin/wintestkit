@@ -418,7 +418,7 @@ def _check_wpf_agent(cfg: WtkConfig | None, *, launch: bool = False) -> Check:
     """Probe an isolated agent session without querying application data."""
     from wintestkit.errors import InspectorError
 
-    title = "WPF agent"
+    title = "WPF/WinForms agent"
     check_id = "wpf_agent"
     if cfg is None:
         return Check(check_id, title, "skip", "no application configured")
@@ -479,7 +479,9 @@ def _check_wpf_agent(cfg: WtkConfig | None, *, launch: bool = False) -> Check:
         deadline = time.monotonic() + min(cfg.app.startup_timeout, 30.0) if app and cfg.app else 0
         while True:
             facts_list = [probe.identify(pid) for pid in pids]
-            facts = next((item for item in facts_list if item.wpf_loaded), None)
+            facts = next(
+                (item for item in facts_list if item.wpf_loaded or item.winforms_loaded), None
+            )
             if app is None or (facts is not None and win32.top_level_windows({facts.identity.pid})):
                 break
             if time.monotonic() >= deadline:
@@ -487,12 +489,17 @@ def _check_wpf_agent(cfg: WtkConfig | None, *, launch: bool = False) -> Check:
                     check_id,
                     title,
                     "fail",
-                    "launched application did not show a WPF window",
+                    "launched application did not show a WPF or WinForms window",
                     "Check the configured application and startup timeout.",
                 )
             time.sleep(0.1)
         if facts is None:
-            return Check(check_id, title, "skip", "not a WPF application; the UIA backend is used")
+            return Check(
+                check_id,
+                title,
+                "skip",
+                "not a WPF or WinForms application; the UIA backend is used",
+            )
         registry = SessionRegistry(
             request_timeout=cfg.inspector.request_timeout,
             redact_names=cfg.inspector.redact_names,

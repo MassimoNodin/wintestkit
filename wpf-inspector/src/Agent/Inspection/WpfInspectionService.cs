@@ -22,7 +22,7 @@ using WinTestKit.Inspector.Protocol;
 
 namespace WinTestKit.Inspector.Agent.Inspection
 {
-    public sealed class WpfInspectionService : IInspectionService, ISpyFieldInspectionService, ISpyMethodInspectionService, IExactMappingCapability, IQueryInspectionService, IStateInspectionService, IWaitInspectionService, IActionInspectionService, IRealizeInspectionService, IHitTestInspectionService, IWriteInspectionService, ISpyInvokeInspectionService, Events.IEventInspectionService
+    public sealed partial class WpfInspectionService : IInspectionService, ISpyFieldInspectionService, ISpyMethodInspectionService, IExactMappingCapability, IQueryInspectionService, IStateInspectionService, IWaitInspectionService, IActionInspectionService, IRealizeInspectionService, IHitTestInspectionService, IWriteInspectionService, ISpyInvokeInspectionService, Events.IEventInspectionService
     {
         private readonly DispatcherExecutor executor;
         private readonly ObjectRegistry registry;
@@ -91,7 +91,7 @@ namespace WinTestKit.Inspector.Agent.Inspection
             if (GetWindowThreadProcessId(hwnd, out uint processId) == 0 || processId != (uint)Process.GetCurrentProcess().Id)
                 throw new ProtocolException(ErrorCodes.MappingFailed, "Invalid window handle.");
             HwndSource? source = HwndSource.FromHwnd(hwnd);
-            if (source == null) throw new ProtocolException(ErrorCodes.MappingFailed, "Window is not a WPF source.");
+            if (source == null) return await HitTestWinFormsAsync(hwnd, point, deadline, timeoutMs, includePath, token).ConfigureAwait(false);
             DateTime end = DateTime.UtcNow.AddMilliseconds(timeoutMs);
             if (deadline < end) end = deadline;
             int remaining = (int)Math.Max(0, (end - DateTime.UtcNow).TotalMilliseconds);
@@ -200,7 +200,8 @@ namespace WinTestKit.Inspector.Agent.Inspection
             RunAsync(token => query.FindAllAsync(locator, deadline, timeoutMs, token), ct);
 
         public Task<MappingDto> ResolveAsync(int[] runtimeId, long? nativeWindowHandle, CancellationToken ct) =>
-            RunAsync(token => mapper.ResolveAsync(runtimeId, nativeWindowHandle, token), ct);
+            RunAsync(async token => await TryResolveWinFormsAsync(runtimeId, nativeWindowHandle, token).ConfigureAwait(false)
+                ?? await mapper.ResolveAsync(runtimeId, nativeWindowHandle, token).ConfigureAwait(false), ct);
 
         public Task<ReadBatchResult> ReadBatchAsync(IReadOnlyList<CandidateRequest> candidates,
             IReadOnlyList<IReadOnlyList<PathSegment>> paths, CancellationToken ct) => RunAsync(async token =>
@@ -230,6 +231,7 @@ namespace WinTestKit.Inspector.Agent.Inspection
             ScanBudget budget = walker.NewBudget();
             foreach (Dispatcher dispatcher in dispatchers)
                 await CollectNodesAsync(dispatcher, () => TreeWalker.EnumerateRoots(dispatcher), nodes, seen, budget, token).ConfigureAwait(false);
+            await CollectWinFormsRootsAsync(nodes, token).ConfigureAwait(false);
             nodes.Sort(CompareNodes);
             return NewPage("", 0, "roots", "", nodes, Array.Empty<Diagnostic>(), size, token);
         }, ct);
@@ -251,6 +253,8 @@ namespace WinTestKit.Inspector.Agent.Inspection
             if (target is DependencyObject dependencyObject)
                 await CollectNodesAsync(dispatcher, () => TreeWalker.EnumerateChildren(dependencyObject, tree),
                     nodes, new HashSet<object>(ReferenceComparer.Instance), walker.NewBudget(), token).ConfigureAwait(false);
+            else if (WinFormsNative.IsWinFormsObject(target))
+                await CollectWinFormsChildrenAsync(target, dispatcher, nodes, token).ConfigureAwait(false);
             page = NewPage(objectId, generation, "children", tree, nodes, Array.Empty<Diagnostic>(), size, token);
             return await AddPageIdentityAsync(page, dispatcher, token).ConfigureAwait(false);
         }, ct);
@@ -357,6 +361,7 @@ namespace WinTestKit.Inspector.Agent.Inspection
                         token.ThrowIfCancellationRequested();
                         ManagedNodeDto node = page.Items[index];
                         if (!registry.TryGetWeak(node.Object.ObjectId, node.Object.Generation, out object target)) continue;
+                        if (WinFormsNative.IsWinFormsObject(target)) { node.Identity = WinFormsIdentity(target); continue; }
                         var identity = new NodeIdentityDto();
                         if (target is FrameworkElement || target is FrameworkContentElement)
                         {

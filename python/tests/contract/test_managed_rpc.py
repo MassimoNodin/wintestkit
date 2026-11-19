@@ -29,6 +29,7 @@ CASES: dict[str, tuple[dict[str, Any], dict[str, Any]]] = {
             "runtime": None,
             "architecture": "x64",
             "wpfLoaded": True,
+            "winformsLoaded": False,
             "appUnderTest": False,
         },
     ),

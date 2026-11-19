@@ -121,6 +121,11 @@
         "runtimeId": {
           "type": "string"
         },
+        "nativeWindowHandle": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "The HWND behind the element; omitted when it has none."
+        },
         "patterns": {
           "type": "array",
           "items": {

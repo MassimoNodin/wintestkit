@@ -70,3 +70,13 @@ def test_short_forms() -> None:
         "ComboBox #Color"
     )
     assert make_info(name="", class_name="", control_type="Pane").short() == "Pane"
+
+
+def test_native_window_handle_is_reported_only_when_there_is_one() -> None:
+    assert "nativeWindowHandle" not in make_info().to_dict()
+    info = make_info(native_window_handle=199242)
+    data = info.to_dict()
+    assert data["nativeWindowHandle"] == 199242
+    assert ElementInfo.from_dict(data) == info
+    # Older payloads have no such key; they read as "no window".
+    assert ElementInfo.from_dict(make_info().to_dict()).native_window_handle == 0

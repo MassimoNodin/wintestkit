@@ -888,7 +888,9 @@ def test_wpf_control_text_uses_bounded_actual_value(managed_server: Any, value: 
         return [SimpleNamespace(value=SimpleNamespace(status="ok", scalar=value))], None
 
     client = SimpleNamespace(read=read)
-    ref = SimpleNamespace(object_id="object", generation=1, type=SimpleNamespace(name="TextBox"))
+    ref = SimpleNamespace(
+        object_id="object", generation=1, is_winforms=False, type=SimpleNamespace(name="TextBox")
+    )
     assert (
         server._wpf_control_text(client, ref, ("Example.TextBox",), time.monotonic() + 1) == value
     )
@@ -908,7 +910,9 @@ def test_wpf_control_text_prefers_non_empty_content_after_empty_header(managed_s
         return [SimpleNamespace(value=SimpleNamespace(status="ok", scalar=next(values)))], None
 
     client = SimpleNamespace(read=read)
-    ref = SimpleNamespace(object_id="object", generation=1, type=SimpleNamespace(name="TabItem"))
+    ref = SimpleNamespace(
+        object_id="object", generation=1, is_winforms=False, type=SimpleNamespace(name="TabItem")
+    )
     assert server._wpf_control_text(client, ref, (None,), time.monotonic() + 1) == "Tab content"
 
 
@@ -1356,3 +1360,287 @@ def test_resolve_of_a_node_from_a_detached_session_is_stale_not_unavailable(
     )["error"]
     assert error["data"]["code"] == "objectStale"
     node.forget_release()
+
+
+WINFORMS_BASES = (
+    "System.Windows.Forms.ButtonBase",
+    "System.Windows.Forms.Control",
+    "System.ComponentModel.Component",
+    "System.Object",
+)
+WINFORMS_TYPE = TypeInfo(
+    "Button",
+    "System.Windows.Forms.Button",
+    "System.Windows.Forms",
+    "System.Windows.Forms.Button, System.Windows.Forms",
+    WINFORMS_BASES,
+)
+WINFORMS_REF = ObjectRef("session", "button", 1, WINFORMS_TYPE, "dispatcher")
+
+
+def _winforms_facts(
+    pid: int, runtime_name: Any = "net10", architecture: str = "x64"
+) -> ProcessFacts:
+    return ProcessFacts(
+        IDENTITY, "app.exe", architecture, runtime_name, False, 1, "sid", "medium", True
+    )
+
+
+def test_object_ref_tells_winforms_objects_from_wpf_objects() -> None:
+    assert WINFORMS_REF.is_winforms and not WINFORMS_REF.is_winforms_item
+    item_type = TypeInfo(
+        "ToolStripMenuItem",
+        "System.Windows.Forms.ToolStripMenuItem",
+        "System.Windows.Forms",
+        "System.Windows.Forms.ToolStripMenuItem, System.Windows.Forms",
+        ("System.Windows.Forms.ToolStripDropDownItem", "System.Windows.Forms.ToolStripItem"),
+    )
+    item = ObjectRef("session", "item", 1, item_type, "dispatcher")
+    assert item.is_winforms and item.is_winforms_item
+    assert not REF.is_winforms and not REF.is_winforms_item
+
+
+def test_winforms_control_text_reads_text_and_skips_sensitive_names(managed_server: Any) -> None:
+    server, _, _ = managed_server
+    paths: list[Any] = []
+
+    def read(*args: Any, **kwargs: Any) -> Any:
+        paths.append(args[2][0][0].name)
+        return [SimpleNamespace(value=SimpleNamespace(status="ok", scalar="OK"))], None
+
+    client = SimpleNamespace(read=read)
+    assert (
+        server._wpf_control_text(client, WINFORMS_REF, ("button1",), time.monotonic() + 1) == "OK"
+    )
+    assert paths == ["Text"]
+    assert (
+        server._wpf_control_text(client, WINFORMS_REF, ("passwordBox",), time.monotonic() + 1)
+        is None
+    )
+    assert paths == ["Text"]
+
+
+def test_managed_kind_takes_over_winforms_only_when_the_agent_can_attach(
+    managed_server: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    server, _, _ = managed_server
+    form = SimpleNamespace(process_id=42, framework_id="WinForm")
+    assert server._managed_kind(SimpleNamespace(process_id=7, framework_id="WPF")) == "wpf"
+    assert server._managed_kind(SimpleNamespace(process_id=7, framework_id="Win32")) is None
+    monkeypatch.setattr(probe, "identify", _winforms_facts)
+    assert server._managed_kind(form) == "winforms"
+    assert server._wpf_enabled(form)
+    for facts in (_winforms_facts(42, None), _winforms_facts(42, "net10", "arm64")):
+        server._winforms_support.clear()
+        monkeypatch.setattr(probe, "identify", lambda pid, facts=facts: facts)
+        assert server._managed_kind(form) is None
+
+    def broken(pid: int) -> Any:
+        raise InspectorUnavailableError("denied", code="accessDenied")
+
+    server._winforms_support.clear()
+    monkeypatch.setattr(probe, "identify", broken)
+    assert server._managed_kind(form) is None
+    # One answer per process and refresh: no second probe.
+    monkeypatch.setattr(probe, "identify", _unexpected_probe)
+    assert server._managed_kind(form) is None
+    server.cfg = load_config(server.cfg.root, {"backend": "uia"})
+    assert server._managed_kind(SimpleNamespace(process_id=7, framework_id="WPF")) is None
+
+
+def test_roots_of_a_winforms_application_use_the_winforms_source(
+    managed_server: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from wintestkit.uia import win32
+
+    server, _, _ = managed_server
+    monkeypatch.setattr(probe, "identify", _winforms_facts)
+    monkeypatch.setattr(win32, "list_processes", lambda: [(42, "app.exe")])
+    server.nodes["form"] = SimpleNamespace(process_id=42, framework_id="WinForm")
+    server.nodes["native"] = SimpleNamespace(process_id=43, framework_id="Win32")
+    nodes = [
+        {"nodeId": "form", "info": {"processId": 42}},
+        {"nodeId": "native", "info": {"processId": 43}},
+    ]
+    server._mark_roots(nodes)
+    assert [node["source"] for node in nodes[:1]] == ["winforms"]
+    assert "source" not in nodes[1]
+    assert server._wpf_windows == {"form"}
+
+
+def test_identify_reports_whether_winforms_is_loaded(
+    managed_server: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    server, output, _ = managed_server
+    monkeypatch.setattr(probe, "identify", _winforms_facts)
+    facts = request(server, output, "inspect.managed.identify", {"nodeId": "n"})["result"]
+    assert facts["winformsLoaded"] is True and facts["wpfLoaded"] is False
+    monkeypatch.setattr(probe, "identify", _facts)
+    facts = request(server, output, "inspect.managed.identify", {"nodeId": "n"})["result"]
+    assert facts["winformsLoaded"] is False and facts["wpfLoaded"] is True
+
+
+def test_winforms_children_get_winforms_ids_names_and_text(
+    managed_server: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    server, output, client = managed_server
+    node = ManagedNode(
+        WINFORMS_REF, "Button", False, False, identity=NodeIdentity("button1", "button1")
+    )
+    monkeypatch.setattr(client, "children", lambda *a, **kw: Page((node,), True, "snapshot", ()))
+    read_names: list[str] = []
+
+    def read(object_id: str, generation: int, paths: Any, **kwargs: Any) -> Any:
+        read_names.append(paths[0][0].name)
+        return (PathValue(paths[0], Value("ok", "string", "String", "String", "OK")),), "read"
+
+    monkeypatch.setattr(client, "read", read)
+    server.nodes["window"] = SimpleNamespace(process_id=42)
+    server._wpf_windows.add("window")
+    item = request(server, output, "inspect.children", {"nodeId": "window", "tree": "visual"})[
+        "result"
+    ]["nodes"][0]
+    assert item["nodeId"].startswith("winforms:") and item["source"] == "winforms"
+    assert item["identity"] == {
+        "type": "System.Windows.Forms.Button",
+        "xName": "button1",
+        "automationId": "button1",
+    }
+    assert item["info"]["name"] == "OK"
+    assert item["info"]["frameworkId"] == "WinForms"
+    assert item["info"]["controlType"] == "Button"
+    assert read_names == ["Text"]
+    server._release_managed_objects()
+
+
+def test_picker_resolves_winforms_controls_through_the_agent(
+    managed_server: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from wintestkit.uia import element as uia_element
+    from wintestkit.uia import win32
+
+    server, _, client = managed_server
+    window = SimpleNamespace(process_id=42, framework_id="WinForm")
+    monkeypatch.setattr(probe, "identify", _winforms_facts)
+    monkeypatch.setattr(win32, "WindowFromPoint", lambda point: 321)
+    monkeypatch.setattr(win32, "root_window", lambda hwnd: 999)
+    monkeypatch.setattr(uia_element, "from_handle", lambda hwnd: window)
+    monkeypatch.setattr(
+        server,
+        "_register",
+        lambda element, **kwargs: {
+            "nodeId": "window",
+            "info": {"controlType": "Window", "name": "Fixture"},
+            "hasChildren": True,
+        },
+    )
+    form_type = TypeInfo(
+        "Form",
+        "System.Windows.Forms.Form",
+        "System.Windows.Forms",
+        "System.Windows.Forms.Form, System.Windows.Forms",
+        ("System.Windows.Forms.ContainerControl", "System.Windows.Forms.Control"),
+    )
+    form = ObjectRef("session", "form", 1, form_type, "dispatcher")
+    path = (
+        ManagedNode(form, "Form", True, True, identity=NodeIdentity("mainForm", "mainForm")),
+        ManagedNode(
+            WINFORMS_REF, "Button", False, False, identity=NodeIdentity("button1", "button1")
+        ),
+    )
+    client.hit_test = lambda hwnd, x, y, **kw: HitTestResult(
+        WINFORMS_REF, path if kw["include_path"] else None
+    )
+    client.state_get = lambda *a, **kw: SimpleNamespace(
+        bounds=SimpleNamespace(x=1, y=2, width=30, height=40, to_json=lambda: {}),
+        enabled=True,
+        offscreen=False,
+        focused=False,
+        visible=True,
+        uia_runtime_id=None,
+        window_handle=321,
+    )
+    hover = server._spy_resolve(SimpleNamespace(), 10, 20, False, "visual")
+    assert hover.node["source"] == "winforms" and hover.node["nodeId"].startswith("winforms:")
+    picked = server._spy_resolve(SimpleNamespace(), 10, 20, True, "visual")
+    assert picked.node["identity"] == {
+        "type": "System.Windows.Forms.Button",
+        "xName": "button1",
+        "automationId": "button1",
+    }
+    assert picked.node["info"]["frameworkId"] == "WinForms"
+    parent = server._wpf_parents[picked.node["nodeId"]]
+    assert server._wpf_descriptions[parent]["source"] == "winforms" or parent == "window"
+    assert server._wpf_descriptions["window"]["source"] == "winforms"
+
+
+def test_winforms_properties_name_the_control_and_its_text(
+    managed_server: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from wintestkit.backends.element import WpfElement
+
+    server, output, client = managed_server
+    node = WpfElement(client, WINFORMS_REF, 42)
+    server.nodes["winforms:node"] = node
+    state = SimpleNamespace(
+        bounds=SimpleNamespace(x=10, y=20, width=30, height=40, to_json=lambda: {"left": 10}),
+        enabled=True,
+        offscreen=False,
+        focused=False,
+        visible=True,
+        uia_runtime_id=None,
+        window_handle=0,
+    )
+    monkeypatch.setattr(WpfElement, "is_alive", lambda self: True)
+    monkeypatch.setattr(WpfElement, "as_live", lambda self: self)
+    monkeypatch.setattr(WpfElement, "_get_state", lambda self: state)
+    values = {
+        "Name": "button1",
+        "automation_id": "button1",
+        "name": "OK",
+        "control_type": "Button",
+        "Text": "OK",
+    }
+    owners: list[Any] = []
+
+    def read(object_id: str, generation: int, paths: Any, **kwargs: Any) -> Any:
+        owners.extend(path[0].declaring_type for path in paths if path[0].kind == "property")
+        return (
+            tuple(
+                PathValue(path, Value("ok", "string", "String", "String", values[path[0].name]))
+                for path in paths
+            ),
+            "read",
+        )
+
+    monkeypatch.setattr(client, "read", read)
+    result = request(server, output, "inspect.properties", {"nodeId": "winforms:node"})["result"]
+    assert result["source"] == "winforms" and result["uiaMapped"] is False
+    properties = result["properties"]
+    assert properties["ControlName"] == "button1" and "x:Name" not in properties
+    assert properties["WinFormsControlText"] == "OK" and "WPFControlText" not in properties
+    assert properties["ClrFullClassName"] == "System.Windows.Forms.Button"
+    assert result["info"]["frameworkId"] == "WinForms"
+    assert owners[0] == "System.Windows.Forms.Control"
+    error = request(server, output, "suggest.locator", {"nodeId": "winforms:node"})["error"]
+    assert error["code"] == -32006
+    server._release_managed_objects()
+
+
+def test_resolve_names_the_source_of_a_winforms_selection(managed_server: Any) -> None:
+    from wintestkit.backends.element import WpfElement
+
+    server, output, client = managed_server
+    request(server, output, "inspect.managed.attach", {"process": IDENTITY.to_json()})
+    node = WpfElement(client, ObjectRef("session", "button", 1, WINFORMS_TYPE, "dispatcher"), 42)
+    server.nodes["winforms:node"] = node
+    node.is_alive = lambda: True  # type: ignore[method-assign]
+    result = request(
+        server,
+        output,
+        "inspect.managed.resolve",
+        {"sessionId": "session", "nodeId": "winforms:node"},
+    )["result"]
+    assert result["source"] == "winforms" and result["status"] == "exact"
+    assert node.framework_id == "WinForms"
+    server._release_managed_objects()

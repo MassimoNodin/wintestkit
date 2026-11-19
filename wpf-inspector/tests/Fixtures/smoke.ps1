@@ -31,4 +31,24 @@ foreach ($cell in @('net48-x86','net48-x64','net8.0-windows-x86','net8.0-windows
   } finally { $p.Refresh(); if (-not $p.HasExited) { Stop-Process -Id $p.Id -Force }; $p.Dispose() }
 }
 
+$winFormsRoot = Join-Path $PSScriptRoot 'WinFormsFixture/bin/cells'
+foreach ($cell in @('net48-x86','net48-x64','net8.0-windows-x86','net8.0-windows-x64','net10.0-windows-x86','net10.0-windows-x64')) {
+  if ($cell -like '*-x64') { $env:DOTNET_ROOT_X64 = Split-Path $dotnet -Parent }
+  $exe = Join-Path $winFormsRoot "$cell/WinTestKit.WinFormsFixture.exe"
+  if (-not (Test-Path -LiteralPath $exe)) { Write-Output "$cell WinForms fixture not published"; continue }
+  $p = Start-Process -FilePath $exe -PassThru
+  try {
+    $found = $null
+    for ($i=0; $i -lt 40; $i++) {
+      Start-Sleep -Milliseconds 250
+      $p.Refresh(); if ($p.HasExited) { break }
+      $condition = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ProcessIdProperty, $p.Id)
+      $found = [System.Windows.Automation.AutomationElement]::RootElement.FindFirst([System.Windows.Automation.TreeScope]::Children, $condition)
+      if ($found -and $found.Current.Name -eq "WinForms Fixture") { break }; $found = $null
+    }
+    if (!$found) { $failed = $true }
+    Write-Output "$cell winforms pid=$($p.Id) window=$([bool]$found) hash=$((Get-FileHash $exe -Algorithm SHA256).Hash)"
+  } finally { $p.Refresh(); if (-not $p.HasExited) { Stop-Process -Id $p.Id -Force }; $p.Dispose() }
+}
+
 if ($failed) { exit 1 }

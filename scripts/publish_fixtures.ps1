@@ -7,6 +7,7 @@ $inspectorRoot = Join-Path $root 'wpf-inspector'
 . (Join-Path $PSScriptRoot 'resolve_dotnet.ps1')
 $dotnet = Resolve-InspectorDotnet -DotnetRoot $DotnetRoot -InspectorRoot $inspectorRoot
 $fixture = Join-Path $inspectorRoot 'tests/Fixtures/WpfFixture/WpfFixture.csproj'
+$winFormsFixture = Join-Path $inspectorRoot 'tests/Fixtures/WinFormsFixture/WinFormsFixture.csproj'
 $harness = Join-Path $inspectorRoot 'tests/Harness/OwnedAttach/OwnedAttach.csproj'
 Push-Location $inspectorRoot
 try {
@@ -18,6 +19,16 @@ try {
             $output = Join-Path $inspectorRoot "tests/Fixtures/WpfFixture/bin/cells/$tfm-$architecture"
             & $dotnet publish $fixture -c Release -f $tfm -r $runtime --self-contained false --no-restore "-p:PlatformTarget=$architecture" -o $output
             if ($LASTEXITCODE -ne 0) { throw "Fixture publish failed for $tfm/$architecture ($LASTEXITCODE)." }
+        }
+    }
+    & $dotnet restore $winFormsFixture --locked-mode
+    if ($LASTEXITCODE -ne 0) { throw "WinForms fixture restore failed ($LASTEXITCODE)." }
+    foreach ($tfm in @('net48', 'net8.0-windows', 'net10.0-windows')) {
+        foreach ($architecture in @('x86', 'x64')) {
+            $runtime = "win-$architecture"
+            $output = Join-Path $inspectorRoot "tests/Fixtures/WinFormsFixture/bin/cells/$tfm-$architecture"
+            & $dotnet publish $winFormsFixture -c Release -f $tfm -r $runtime --self-contained false --no-restore "-p:PlatformTarget=$architecture" -o $output
+            if ($LASTEXITCODE -ne 0) { throw "WinForms fixture publish failed for $tfm/$architecture ($LASTEXITCODE)." }
         }
     }
     & $dotnet restore $harness --locked-mode

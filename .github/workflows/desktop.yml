@@ -91,7 +91,7 @@ jobs:
             $workspace = [IO.Path]::GetFullPath($env:GITHUB_WORKSPACE).TrimEnd('\') + '\'
             Get-CimInstance Win32_Process | Where-Object {
               $_.ExecutablePath -and $_.ExecutablePath.StartsWith($workspace, [StringComparison]::OrdinalIgnoreCase) -and
-              $_.Name -match '^(WinTestKit\.Fixture|Snoop\.InjectorLauncher\.(x86|x64))\.exe$' -and
+              $_.Name -match '^(WinTestKit\.Fixture|WinTestKit\.WinFormsFixture|Snoop\.InjectorLauncher\.(x86|x64))\.exe$' -and
               $_.CreationDate.ToUniversalTime() -ge $started
             } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
           }

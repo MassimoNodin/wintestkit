@@ -104,9 +104,10 @@ Automation elements) open in place. Pin a property there to show it for every ob
 the user setting `wintestkit.spy.shownProperties` and never in a project. Locator quality is
 beside **Suggested locator**.
 Selection first reads only the essential identity, state and geometry information and displays
-it before locator generation finishes. Click **Load all properties** under **All properties**
-to fetch the complete property list and supported patterns. These expensive reads are not
-performed on ordinary selection; ancestor collection is reserved for revealing picked objects.
+it before locator generation finishes; the complete property list and supported patterns follow
+on their own, with nothing to press. A control with a window handle also shows its **Win32
+Window** facts (class, control ID, text, handle, decoded styles and more) right away.
+Ancestor collection is reserved for revealing picked objects.
 
 Root windows show their application's executable icon when Windows permits access
 to the process, with control-type icons as a fallback. Icons load separately so the

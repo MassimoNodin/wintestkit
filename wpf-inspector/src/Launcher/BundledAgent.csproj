@@ -5,6 +5,7 @@
   <PropertyGroup>
     <TargetFrameworks>net48;net8.0-windows;net10.0-windows</TargetFrameworks>
     <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
     <AssemblyName>WinTestKit.Inspector.Agent</AssemblyName>
     <RootNamespace>WinTestKit.Inspector.Agent</RootNamespace>
     <SignAssembly>true</SignAssembly>
@@ -16,6 +17,8 @@
   <ItemGroup>
     <Compile Include="../Agent/**/*.cs" Exclude="../Agent/bin/**/*.cs;../Agent/obj/**/*.cs" />
     <Compile Include="../Protocol/**/*.cs" Exclude="../Protocol/bin/**/*.cs;../Protocol/obj/**/*.cs" />
+    <Reference Include="System.Windows.Forms" Condition="'$(TargetFramework)' == 'net48'" />
+    <Reference Include="System.Drawing" Condition="'$(TargetFramework)' == 'net48'" />
     <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" PrivateAssets="all" Condition="'$(TargetFramework)' == 'net48'" />
   </ItemGroup>
 </Project>

@@ -96,10 +96,11 @@ def _validate_facts(facts: ProcessFacts, identity: ProcessIdentity) -> None:
     if (
         facts.architecture not in {"x86", "x64"}
         or facts.runtime not in {"net48", "net8", "net10"}
-        or not facts.wpf_loaded
+        or not (facts.wpf_loaded or facts.winforms_loaded)
     ):
         raise InspectorUnavailableError(
-            "Target runtime, architecture, or WPF is unsupported", code="unsupportedTarget"
+            "Target runtime, architecture, or WPF/WinForms UI is unsupported",
+            code="unsupportedTarget",
         )
     user, integrity, session = probe.current_security()
     if (facts.user_sid, facts.integrity, facts.session_id) != (user, integrity, session):

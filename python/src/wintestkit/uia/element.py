@@ -189,6 +189,8 @@ class ElementInfo:
     has_keyboard_focus: bool
     runtime_id: str
     patterns: tuple[str, ...] | None = None
+    #: The HWND behind the element; 0 when it has none (only windows and Win32 controls do).
+    native_window_handle: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         __tracebackhide__ = True
@@ -207,6 +209,8 @@ class ElementInfo:
         }
         if self.patterns is not None:
             data["patterns"] = list(self.patterns)
+        if self.native_window_handle:
+            data["nativeWindowHandle"] = self.native_window_handle
         return data
 
     @classmethod
@@ -227,6 +231,7 @@ class ElementInfo:
             has_keyboard_focus=d["hasKeyboardFocus"],
             runtime_id=d["runtimeId"],
             patterns=tuple(patterns) if patterns is not None else None,
+            native_window_handle=d.get("nativeWindowHandle", 0),
         )
 
     def short(self) -> str:
@@ -443,6 +448,10 @@ class UIAElement:
             runtime_id = self.runtime_id
         except Exception:
             runtime_id = ""
+        try:
+            handle = self.native_window_handle
+        except Exception:
+            handle = 0
         return ElementInfo(
             automation_id=self.automation_id,
             name=self.name,
@@ -456,6 +465,7 @@ class UIAElement:
             has_keyboard_focus=self.has_keyboard_focus,
             runtime_id=runtime_id,
             patterns=tuple(self.supported_patterns()) if with_patterns else None,
+            native_window_handle=handle,
         )
 
     # -- tree navigation ----------------------------------------------------------------------

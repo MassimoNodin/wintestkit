@@ -264,6 +264,7 @@ class ProcessFacts:
     session_id: int
     user_sid: str
     integrity: str
+    winforms_loaded: bool = False
 
 
 @dataclass(frozen=True)
@@ -327,6 +328,19 @@ class ObjectRef(WireModel):
     generation: int
     type: TypeInfo
     dispatcher_id: str
+
+    @property
+    def is_winforms(self) -> bool:
+        """True for a WinForms control or tool strip item, false for a WPF object."""
+        names = (self.type.full_name, *self.type.base_types)
+        return (
+            "System.Windows.Forms.Control" in names or "System.Windows.Forms.ToolStripItem" in names
+        )
+
+    @property
+    def is_winforms_item(self) -> bool:
+        """True for a tool strip item, which has no window of its own."""
+        return "System.Windows.Forms.ToolStripItem" in (self.type.full_name, *self.type.base_types)
 
     @classmethod
     def from_json(cls, value: object) -> ObjectRef:
