@@ -214,6 +214,7 @@ class Bootstrap:
     directory: Path
     root: Path
     token: str = field(repr=False)
+    spy_invoke_capability: str | None = field(default=None, repr=False)
 
     def cleanup(self) -> None:
         try:
@@ -235,6 +236,7 @@ def create_bootstrap(
     idle_timeout_ms: int = 300000,
     redact_names: tuple[str, ...] = (),
     writes_allow: tuple[str, ...] = (),
+    spy_invoke: bool = False,
 ) -> Bootstrap:
     if not 1 <= request_timeout_ms <= 2000 or not 1 <= idle_timeout_ms <= 300000:
         raise InspectorUnavailableError("Invalid bootstrap timeout", code="invalidParams")
@@ -262,7 +264,8 @@ def create_bootstrap(
     path = directory / (secrets.token_hex(16) + ".json")
     token = base64.b64encode(secrets.token_bytes(32)).decode("ascii")
     pipe_name = f"WinTestKit.Inspector.{identity.pid}.{session_id}"
-    bootstrap = Bootstrap(session_id, pipe_name, path, directory, local, token)
+    capability = base64.b64encode(secrets.token_bytes(32)).decode("ascii") if spy_invoke else None
+    bootstrap = Bootstrap(session_id, pipe_name, path, directory, local, token, capability)
     descriptor = _descriptor(sid, directory=True)
     try:
         attributes = _SecurityAttributes(ctypes.sizeof(_SecurityAttributes), descriptor, False)
@@ -297,6 +300,8 @@ def create_bootstrap(
             "redactNames": list(rules),
             "writeAllowlist": write_allowlist,
         }
+        if capability is not None:
+            settings["spyInvokeCapability"] = capability
         payload = json.dumps(settings, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
         if len(payload) > 16384:
             raise InspectorUnavailableError("Bootstrap exceeds size limit", code="limitExceeded")

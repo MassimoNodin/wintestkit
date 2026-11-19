@@ -160,7 +160,12 @@ class SessionRegistry:
         self._entries: dict[ProcessIdentity, _Entry] = {}
 
     def attach(
-        self, identity: ProcessIdentity, *, target_hwnd: int | None, deadline: float
+        self,
+        identity: ProcessIdentity,
+        *,
+        target_hwnd: int | None,
+        deadline: float,
+        spy_invoke: bool = False,
     ) -> InspectorClient:
         deadline = min(deadline, time.monotonic() + 10.0)
         if time.monotonic() >= deadline:
@@ -194,7 +199,10 @@ class SessionRegistry:
                 "Inspector attach failed", code="attachFailed"
             )
         try:
-            client = self._attach_owned(identity, target_hwnd, deadline, entry)
+            if spy_invoke:
+                client = self._attach_owned(identity, target_hwnd, deadline, entry, spy_invoke=True)
+            else:
+                client = self._attach_owned(identity, target_hwnd, deadline, entry)
             with self._lock:
                 if entry.cancel.is_set():
                     client.close()
@@ -227,7 +235,13 @@ class SessionRegistry:
             entry.done.set()
 
     def _attach_owned(
-        self, identity: ProcessIdentity, target_hwnd: int | None, deadline: float, entry: _Entry
+        self,
+        identity: ProcessIdentity,
+        target_hwnd: int | None,
+        deadline: float,
+        entry: _Entry,
+        *,
+        spy_invoke: bool = False,
     ) -> InspectorClient:
         _remaining(deadline, entry.cancel)
         facts = probe.identify(identity.pid)
@@ -256,6 +270,7 @@ class SessionRegistry:
             request_timeout_ms=max(1, int(self._request_timeout * 1000)),
             redact_names=self._redact_names,
             writes_allow=self._writes_allow,
+            **({"spy_invoke": True} if spy_invoke else {}),
         )
         process = None
         client = None
@@ -287,6 +302,7 @@ class SessionRegistry:
                 deadline=deadline,
                 request_timeout=self._request_timeout,
                 on_closed=lambda closed: self._client_closed(identity, entry, closed),
+                **({"spy_invoke_capability": settings.spy_invoke_capability} if spy_invoke else {}),
             )
             _remaining(deadline, entry.cancel)
             if settings.path.exists():

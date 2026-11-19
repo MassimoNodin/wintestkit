@@ -148,7 +148,7 @@ namespace WinTestKit.Inspector.Agent.Writes
             declared = method.ReturnType;
             return method.Invoke(target, args);
         }
-        private static object? CallScalar(JsonNode node, Type expected)
+        internal static object? CallScalar(JsonNode node, Type expected)
         {
             if (!(node is JsonObjectNode arg)) return Scalar(node, expected);
             if (arg.Members.Count != 2 || arg.Members.Any(item => item.Key != "type" && item.Key != "value" && item.Key != "enum" && item.Key != "null")) throw Invalid();

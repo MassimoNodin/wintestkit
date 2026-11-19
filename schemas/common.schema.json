@@ -7,6 +7,7 @@
     "ManagedMapping": {"$ref": "../wpf-inspector/protocol/inspector.schema.json#/$defs/Mapping"},
     "ManagedInspectorNodePage": {"$ref": "../wpf-inspector/protocol/inspector.schema.json#/$defs/ManagedNodePage"},
     "ManagedMemberPage": {"$ref": "../wpf-inspector/protocol/inspector.schema.json#/$defs/MemberPage"},
+    "ManagedMethodPage": {"$ref": "../wpf-inspector/protocol/inspector.schema.json#/$defs/MethodPage"},
     "ManagedPath": {"$ref": "../wpf-inspector/protocol/inspector.schema.json#/$defs/Path"},
     "ManagedPathValue": {"$ref": "../wpf-inspector/protocol/inspector.schema.json#/$defs/PathValue"},
     "ManagedBindingInfo": {"$ref": "../wpf-inspector/protocol/inspector.schema.json#/$defs/BindingInfo"},

@@ -183,7 +183,7 @@ namespace WinTestKit.Inspector.Agent.Session
             if (!(node is JsonObjectNode input) || !input.TryGet("method", out var methodNode) || !(methodNode is JsonStringNode method))
                 return RequestEnvelope.FromJson(node);
             var normalized = new JsonObjectNode();
-            bool write = method.Value == PipeMethods.WriteSetProperty || method.Value == PipeMethods.WriteCall;
+            bool write = method.Value == PipeMethods.WriteSetProperty || method.Value == PipeMethods.WriteCall || method.Value == SpyPipeMethods.Invoke;
             bool hasParams = false;
             foreach (var member in input.Members)
             {

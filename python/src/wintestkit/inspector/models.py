@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
 import json
 import math
 import re
@@ -81,6 +83,7 @@ _INT_PATTERN = re.compile(r"-?(?:0|[1-9][0-9]*)\Z")
 _NUMBER_PATTERN = re.compile(
     r"(?:NaN|Infinity|-Infinity|-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?)\Z"
 )
+_DECIMAL_PATTERN = re.compile(r"-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?\Z")
 _TIMESTAMP = re.compile(
     r"(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d)(?:\.(\d+))?(Z|[+-]\d\d:\d\d)\Z", re.IGNORECASE
 )
@@ -105,6 +108,9 @@ def _str(value: object, maximum: int = 128, *, empty: bool = False) -> str:
     if any(0xD800 <= ord(char) <= 0xDFFF for char in value):
         raise ValueError("Invalid Unicode string")
     return value
+
+
+string_value = _str
 
 
 def _int(value: object, minimum: int = 0, maximum: int = 9_223_372_036_854_775_807) -> int:
@@ -432,6 +438,60 @@ class DependencyMetadata(WireModel):
 
 
 @dataclass(frozen=True)
+class MethodParameter(WireModel):
+    name: str
+    type: str
+    is_out: bool
+
+    @classmethod
+    def from_json(cls, value: object) -> MethodParameter:
+        data = _obj(value, "name type isOut")
+        return cls(
+            _str(data["name"], 1024, empty=True), _str(data["type"], 1024), _bool(data["isOut"])
+        )
+
+
+@dataclass(frozen=True)
+class MethodMetadata(WireModel):
+    key: str
+    name: str
+    declaring_type: str
+    return_type: str
+    visibility: str
+    is_static: bool
+    parameters: tuple[MethodParameter, ...]
+    unsupported_reason: str | None = None
+
+    @classmethod
+    def from_json(cls, value: object) -> MethodMetadata:
+        data = _obj(
+            value,
+            "key name declaringType returnType visibility isStatic parameters",
+            "unsupportedReason",
+        )
+        return cls(
+            _str(data["key"], 8192),
+            _str(data["name"], 1024),
+            _str(data["declaringType"], 1024),
+            _str(data["returnType"], 1024),
+            _choice(
+                data["visibility"],
+                {
+                    "public",
+                    "private",
+                    "protected",
+                    "internal",
+                    "protectedInternal",
+                    "privateProtected",
+                },
+            ),
+            _bool(data["isStatic"]),
+            _array(data["parameters"], MethodParameter.from_json, 128),
+            _optional(data, "unsupportedReason", lambda item: _str(item, 1024)),
+        )
+
+
+@dataclass(frozen=True)
 class Member(WireModel):
     member_key: str
     name: str
@@ -673,7 +733,8 @@ class Value(WireModel):
         ):
             raise ValueError("Invalid value metadata")
         numeric = _optional(data, "numericValue", _key)
-        if numeric is not None and not _INT_PATTERN.fullmatch(numeric):
+        numeric_pattern = _DECIMAL_PATTERN if kind == "number" else _INT_PATTERN
+        if numeric is not None and not numeric_pattern.fullmatch(numeric):
             raise ValueError("Invalid numeric value")
         return cls(
             status,
@@ -968,6 +1029,7 @@ class BootstrapSettings(WireModel):
     agent_version: str
     redact_names: tuple[str, ...] = field(repr=False)
     write_allowlist: WriteAllowlist
+    spy_invoke_capability: str | None = field(default=None, repr=False)
 
     @classmethod
     def from_json(cls, value: object) -> BootstrapSettings:
@@ -976,6 +1038,7 @@ class BootstrapSettings(WireModel):
             "schemaVersion protocolMajor protocolMinor sessionId process pipeName token "
             "clientSid expiresUtc requestTimeoutMs idleTimeoutMs agentVersion "
             "redactNames writeAllowlist",
+            "spyInvokeCapability",
         )
         session_id = _identifier(data["sessionId"])
         try:
@@ -987,6 +1050,16 @@ class BootstrapSettings(WireModel):
             raise ValueError("Invalid bootstrap token")
         if not isinstance(data["redactNames"], list):
             raise ValueError("Invalid redaction names")
+        capability = data.get("spyInvokeCapability")
+        if "spyInvokeCapability" in data:
+            try:
+                if not isinstance(capability, str):
+                    raise ValueError("Invalid capability")
+                decoded = base64.b64decode(capability, validate=True)
+                if len(decoded) != 32 or base64.b64encode(decoded).decode("ascii") != capability:
+                    raise ValueError("Invalid capability")
+            except (ValueError, binascii.Error) as error:
+                raise ValueError("Invalid capability") from error
         return cls(
             _int(data["schemaVersion"], 1, 1),
             _int(data["protocolMajor"], 2, 2),
@@ -1002,6 +1075,7 @@ class BootstrapSettings(WireModel):
             _identifier(data["agentVersion"]),
             validate_redact_names(cast("list[object]", data["redactNames"])),
             WriteAllowlist.from_json(data["writeAllowlist"]),
+            capability,
         )
 
 
@@ -1026,6 +1100,8 @@ class RequestEnvelope:
                 "children",
                 "members",
                 "read",
+                "spy.fieldRead",
+                "spy.methods",
                 "bindings",
                 "release",
             },
@@ -1490,7 +1566,7 @@ class WriteAudit(WireModel):
         return cls(
             _choice(d["operation"], {"setProperty", "call"}),
             _key(d["typeFullName"]),
-            _key(d["memberKey"]),
+            _str(d["memberKey"], 8192),
             _choice(d["outcome"], {"performed", "denied", "failed"}),
             _timestamp(d["timestampUtc"]),
             _optional(d, "reason", lambda x: _str(x, 1024, empty=True)),

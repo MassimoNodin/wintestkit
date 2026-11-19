@@ -400,6 +400,12 @@
           },
           "markdownDescription": "UI Automation properties Spy shows for every selected object, in addition to the built-in ones, in the order listed. Add one with the pin button beside a property under **All properties**. This is a user setting: it is kept with your VS Code settings and never in a project or its git repository."
         },
+        "wintestkit.spy.suppressGetterWarning": {
+          "type": "boolean",
+          "default": false,
+          "scope": "application",
+          "description": "Allow Spy to automatically read public WPF getters without asking. Getters can have side effects or hang the application."
+        },
         "wintestkit.spy.traceFile": {
           "type": "string",
           "default": "",

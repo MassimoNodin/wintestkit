@@ -22,7 +22,7 @@ using WinTestKit.Inspector.Protocol;
 
 namespace WinTestKit.Inspector.Agent.Inspection
 {
-    public sealed class WpfInspectionService : IInspectionService, IExactMappingCapability, IQueryInspectionService, IStateInspectionService, IWaitInspectionService, IActionInspectionService, IRealizeInspectionService, IHitTestInspectionService, IWriteInspectionService, Events.IEventInspectionService
+    public sealed class WpfInspectionService : IInspectionService, ISpyFieldInspectionService, ISpyMethodInspectionService, IExactMappingCapability, IQueryInspectionService, IStateInspectionService, IWaitInspectionService, IActionInspectionService, IRealizeInspectionService, IHitTestInspectionService, IWriteInspectionService, ISpyInvokeInspectionService, Events.IEventInspectionService
     {
         private readonly DispatcherExecutor executor;
         private readonly ObjectRegistry registry;
@@ -33,6 +33,8 @@ namespace WinTestKit.Inspector.Agent.Inspection
         private readonly TreeWalker walker;
         private readonly QueryEngine query;
         private readonly WriteEngine writes;
+        private readonly MethodInvocationExecutor invocations;
+        private readonly string sessionId;
         private readonly CancellationTokenSource lifetime = new CancellationTokenSource();
         private int disposed;
         private Events.WpfEventHooks? eventHooks;
@@ -45,6 +47,7 @@ namespace WinTestKit.Inspector.Agent.Inspection
         internal WpfInspectionService(string sessionId, IObjectInspector inspector,
             PageSnapshotStore? snapshots = null, IPeerRuntimeIdAdapter? adapter = null, WriteAllowlist? allowlist = null, IReadOnlyList<string>? redactNames = null)
         {
+            this.sessionId = sessionId;
             this.inspector = inspector ?? throw new ArgumentNullException(nameof(inspector));
             executor = new DispatcherExecutor();
             registry = new ObjectRegistry(sessionId, executor);
@@ -54,6 +57,7 @@ namespace WinTestKit.Inspector.Agent.Inspection
             mapper = new ElementMapper(executor, this.adapter, registry, walker);
             query = new QueryEngine(executor, registry, inspector as ObjectInspector);
             writes = new WriteEngine(executor, allowlist ?? new WriteAllowlist(), redactNames ?? Array.Empty<string>());
+            invocations = new MethodInvocationExecutor(executor, redactNames ?? Array.Empty<string>());
         }
 
         public bool ExactMappingAvailable => mapper.IsAvailable;
@@ -65,6 +69,15 @@ namespace WinTestKit.Inspector.Agent.Inspection
             if (actual.SessionId != handle.SessionId || actual.DispatcherId != handle.DispatcherId)
                 throw new ProtocolException(ErrorCodes.ObjectStale, "Unknown or stale object handle.");
             return await writes.ExecuteWithResultAsync(dispatcher, target, operation, memberKey, values, deadline, timeoutMs, token, registry).ConfigureAwait(false);
+        }, ct);
+
+        public Task<WriteCallResult> InvokeAsync(ObjectRef handle, string memberKey, IReadOnlyList<JsonNode> values, DateTime deadline, CancellationToken ct) => RunAsync(async token =>
+        {
+            if (handle.SessionId != sessionId) throw new ProtocolException(ErrorCodes.SessionStale, "Session mismatch.");
+            object target = GetObject(handle.ObjectId, handle.Generation, out Dispatcher dispatcher);
+            ObjectRef actual = registry.Register(target, dispatcher, inspector.DescribeType(target.GetType()));
+            if (actual.DispatcherId != handle.DispatcherId) throw new ProtocolException(ErrorCodes.ObjectStale, "Unknown or stale object handle.");
+            return await invocations.ExecuteAsync(target, dispatcher, memberKey, values, deadline, token, registry).ConfigureAwait(false);
         }, ct);
 
         [DllImport("user32.dll")]
@@ -258,6 +271,21 @@ namespace WinTestKit.Inspector.Agent.Inspection
             return NewPage(objectId, generation, "members", "", sorted, diagnostics.ToArray(), size, token);
         }, ct);
 
+        public Task<PageDto<MethodMetadataDto>> SpyMethodsAsync(string objectId, long generation, int? pageSize, string? pageToken, CancellationToken ct) => RunAsync(async token =>
+        {
+            int size = PageSize(pageSize);
+            object target = GetObject(objectId, generation, out Dispatcher dispatcher);
+            if (pageToken != null) return Page<MethodMetadataDto>(objectId, generation, "spy.methods", "", size, pageToken);
+            MethodMetadataDto[] methods = await executor.ExecuteAsync(dispatcher, () => MethodCatalog.Get(target.GetType()).Select(method => new MethodMetadataDto
+            {
+                Key = method.Key, Name = method.Name, DeclaringType = method.DeclaringType.FullName ?? method.DeclaringType.ToString(),
+                ReturnType = method.ReturnType.FullName ?? method.ReturnType.ToString(), Visibility = method.Visibility == "protected internal" ? "protectedInternal" : method.Visibility == "private protected" ? "privateProtected" : method.Visibility, IsStatic = method.IsStatic,
+                Parameters = method.Parameters.Select(parameter => new MethodParameterDto { Name = parameter.Name, Type = parameter.ParameterType.FullName ?? parameter.ParameterType.ToString(), IsOut = parameter.IsOut }).ToArray(),
+                UnsupportedReason = method.UnsupportedReason
+            }).ToArray(), token).ConfigureAwait(false);
+            return NewPage(objectId, generation, "spy.methods", "", methods, Array.Empty<Diagnostic>(), size, token);
+        }, ct);
+
         public Task<ReadResult> ReadAsync(string objectId, long generation,
             IReadOnlyList<IReadOnlyList<PathSegment>> paths, CancellationToken ct) => RunAsync(async token =>
         {
@@ -267,6 +295,16 @@ namespace WinTestKit.Inspector.Agent.Inspection
                 Values = await ReadValuesAsync(objectId, generation, paths, token).ConfigureAwait(false),
                 ReadId = Guid.NewGuid().ToString("N")
             };
+        }, ct);
+
+        public Task<ReadResult> ReadSpyFieldAsync(string objectId, long generation, IReadOnlyList<IReadOnlyList<PathSegment>> paths, CancellationToken ct) => RunAsync(async token =>
+        {
+            if (paths.Count != 1 || paths[0].Count != 1 || paths[0][0].Kind != "field" || string.IsNullOrEmpty(paths[0][0].MemberKey) || string.IsNullOrEmpty(paths[0][0].DeclaringType))
+                throw new ProtocolException(ErrorCodes.InvalidParams, "Spy field reads require one exact field");
+            if (!(inspector is ObjectInspector spyInspector)) throw new ProtocolException(ErrorCodes.UnsupportedTarget, "Spy field reads unavailable");
+            object target = GetObject(objectId, generation, out Dispatcher dispatcher);
+            ValueDto value = await executor.ExecuteAsync(dispatcher, t => spyInspector.ReadSpyField(target, paths[0], registry, dispatcher, t), token).ConfigureAwait(false);
+            return new ReadResult { Values = new[] { new PathValue { Path = paths[0], Value = value } }, ReadId = Guid.NewGuid().ToString("N") };
         }, ct);
 
         public Task<IReadOnlyList<BindingInfoDto>> BindingsAsync(string objectId, long generation,

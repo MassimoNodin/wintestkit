@@ -129,6 +129,26 @@ def test_exact_numeric_conversions() -> None:
     assert decimal.as_python() == Decimal("1.00000000000000001")
 
 
+@pytest.mark.parametrize(
+    ("kind", "scalar", "metadata"),
+    [("enum", "Named", "1.5"), ("integer", 1, "1.5"), ("number", "1.5", "NaN")],
+)
+def test_invalid_exact_numeric_metadata_is_rejected(
+    kind: str, scalar: object, metadata: str
+) -> None:
+    with pytest.raises(ValueError, match="Invalid numeric value"):
+        Value.from_json(
+            {
+                "status": "ok",
+                "kind": kind,
+                "declaredType": "",
+                "runtimeType": "",
+                "scalar": scalar,
+                "numericValue": metadata,
+            }
+        )
+
+
 @pytest.mark.parametrize("kind", ["value", "attribute"])
 def test_enormous_numeric_values_are_rejected(kind: str) -> None:
     with pytest.raises(ValueError):

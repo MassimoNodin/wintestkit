@@ -44,9 +44,10 @@ public sealed class CountedAttribute : Attribute
 
 public class BaseControl : Button
 {
+    private readonly string _baseOnly = "base";
     [Counted("base")] public virtual string Overridden { get { Counts.Hit("Base.Overridden"); return "base"; } }
     public string Hidden { get { Counts.Hit("Base.Hidden"); return "base"; } }
-    public string BaseOnly { get { Counts.Hit("Base.BaseOnly"); return "base"; } }
+    public string BaseOnly { get { Counts.Hit("Base.BaseOnly"); return _baseOnly; } }
 }
 public class MiddleControl : BaseControl
 {
@@ -65,7 +66,12 @@ public sealed class FixtureControl : MiddleControl, ICustomTypeDescriptor
     public string LocalValue { get => (string)GetValue(LocalValueProperty); set => SetValue(LocalValueProperty, value); }
     public double CoercedValue { get => (double)GetValue(CoercedValueProperty); set => SetValue(CoercedValueProperty, value); }
     public string WritableText { get; set; } = "initial";
-    public string RecordWrite(string value, long number) { Counts.Hit("RecordWrite"); return value; }
+    public string RecordWrite(string value, long number)
+    {
+        Counts.Hit(nameof(RecordWrite));
+        Content = value;
+        return value;
+    }
     [System.Diagnostics.Contracts.Pure]
     public string DescribeState() => "fixture-ready";
     public string UnlistedMethod() => "unlisted";

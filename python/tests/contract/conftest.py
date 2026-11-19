@@ -10,6 +10,7 @@ from jsonschema import Draft202012Validator
 from referencing import Registry, Resource
 
 SCHEMAS_DIRECTORY = Path(__file__).resolve().parents[3] / "schemas"
+INSPECTOR_SCHEMA = SCHEMAS_DIRECTORY.parent / "wpf-inspector/protocol/inspector.schema.json"
 
 
 @pytest.fixture(scope="session")
@@ -22,9 +23,10 @@ def schema_documents() -> dict[str, dict[str, Any]]:
 
 @pytest.fixture(scope="session")
 def validate(schema_documents: dict[str, dict[str, Any]]) -> Callable[[str, str, Any], None]:
+    inspector = json.loads(INSPECTOR_SCHEMA.read_text(encoding="utf-8"))
     registry = Registry().with_resources(
         (document["$id"], Resource.from_contents(document))
-        for document in schema_documents.values()
+        for document in (*schema_documents.values(), inspector)
     )
 
     def validate_definition(schema_file: str, def_name: str, data: Any) -> None:

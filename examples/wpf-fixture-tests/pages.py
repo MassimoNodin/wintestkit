@@ -10,6 +10,7 @@ class FixturePage(Page):
     window = Window(where={"type:FullName": "WinTestKit.Fixture.MainWindow"})
     left = SuggestionBox()
     right = SuggestionBox(root=Element(automation_id="SuggestionRight"))
+    fixture_control = Button(automation_id="FixtureControl")
     fancy = Button(
         automation_id="FancyAutomationId",
         where={"type:Is": "WinTestKit.Fixture.FancyButton", "clr:DataContext.Label": "fixture"},

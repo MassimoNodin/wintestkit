@@ -41,6 +41,72 @@ namespace WinTestKit.Inspector.Agent.Mapping.Tests
             Assert.Equal(code, (await Assert.ThrowsAsync<ProtocolException>(action)).Code);
 
         [Fact]
+        public async Task SpyMethodCatalogUsesBoundSnapshotsAndValidHandles()
+        {
+            var ready = new TaskCompletionSource<Dispatcher>();
+            var thread = new Thread(() => { var dispatcher = Dispatcher.CurrentDispatcher; ready.SetResult(dispatcher); Dispatcher.Run(); });
+            thread.SetApartmentState(ApartmentState.STA);
+            thread.Start();
+            Dispatcher dispatcher = await ready.Task;
+            try
+            {
+                using (var service = new WpfInspectionService("methods", new WinTestKit.Inspector.Agent.Inspection.Members.ObjectInspector()))
+                {
+                    var registry = (ObjectRegistry)typeof(WpfInspectionService).GetField("registry", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(service)!;
+                    var target = new MethodTarget();
+                    var handle = registry.Register(target, dispatcher, new WinTestKit.Inspector.Agent.Inspection.Members.ObjectInspector().DescribeType(target.GetType()));
+                    var first = await service.SpyMethodsAsync(handle.ObjectId, handle.Generation, 1, null, None);
+                    Assert.Equal("Execute", Assert.Single(first.Items).Name);
+                    Assert.NotNull(first.NextToken);
+                    var second = await service.SpyMethodsAsync(handle.ObjectId, handle.Generation, 1, first.NextToken, None);
+                    Assert.Equal(first.SnapshotId, second.SnapshotId);
+                    Assert.Equal("Generic", Assert.Single(second.Items).Name);
+                    var all = await service.SpyMethodsAsync(handle.ObjectId, handle.Generation, 200, null, None);
+                    var generic = Assert.Single(all.Items, item => item.Name == "Generic");
+                    Assert.NotNull(generic.UnsupportedReason);
+                    PageDto<MethodMetadataDto>.FromJson(all.ToJson(), MethodMetadataDto.FromJson);
+                    await Error(ErrorCodes.InvalidPageToken, () => service.MembersAsync(handle.ObjectId, handle.Generation, 1, first.NextToken, None));
+                    await Error(ErrorCodes.ObjectStale, () => service.SpyMethodsAsync(handle.ObjectId, handle.Generation + 1, 1, null, None));
+                    await service.ReleaseAsync(new[] { handle.ObjectId }, None);
+                    await Error(ErrorCodes.ObjectStale, () => service.SpyMethodsAsync(handle.ObjectId, handle.Generation, 1, first.NextToken, None));
+                }
+            }
+            finally { dispatcher.InvokeShutdown(); thread.Join(); }
+        }
+
+        private sealed class MethodTarget { public T Generic<T>(T value) => value; public int Calls; public int Execute() { Calls++; return Calls; } }
+
+        [Fact]
+        public async Task InvokeRequiresLiveObjectAndMatchingSession()
+        {
+            var ready = new TaskCompletionSource<Dispatcher>();
+            var thread = new Thread(() => { var current = Dispatcher.CurrentDispatcher; ready.SetResult(current); Dispatcher.Run(); });
+            thread.SetApartmentState(ApartmentState.STA); thread.Start();
+            var dispatcher = await ready.Task;
+            try
+            {
+                using (var service = new WpfInspectionService("methods", new WinTestKit.Inspector.Agent.Inspection.Members.ObjectInspector()))
+                {
+                    var registry = (ObjectRegistry)typeof(WpfInspectionService).GetField("registry", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(service)!;
+                    var target = new MethodTarget();
+                    var handle = registry.Register(target, dispatcher, new WinTestKit.Inspector.Agent.Inspection.Members.ObjectInspector().DescribeType(target.GetType()));
+                    var catalog = await service.SpyMethodsAsync(handle.ObjectId, handle.Generation, 200, null, None);
+                    string key = Assert.Single(catalog.Items, item => item.Name == "Execute").Key;
+                    var wrongSession = ObjectRef.FromJson(handle.ToJson()); wrongSession.SessionId = "other";
+                    await Error(ErrorCodes.SessionStale, () => service.InvokeAsync(wrongSession, key, Array.Empty<JsonNode>(), DateTime.UtcNow.AddSeconds(2), None));
+                    var wrongId = ObjectRef.FromJson(handle.ToJson()); wrongId.ObjectId = "missing";
+                    await Error(ErrorCodes.ObjectStale, () => service.InvokeAsync(wrongId, key, Array.Empty<JsonNode>(), DateTime.UtcNow.AddSeconds(2), None));
+                    var wrongGeneration = ObjectRef.FromJson(handle.ToJson()); wrongGeneration.Generation++;
+                    await Error(ErrorCodes.ObjectStale, () => service.InvokeAsync(wrongGeneration, key, Array.Empty<JsonNode>(), DateTime.UtcNow.AddSeconds(2), None));
+                    Assert.Equal(0, target.Calls);
+                    var result = await service.InvokeAsync(handle, key, Array.Empty<JsonNode>(), DateTime.UtcNow.AddSeconds(2), None);
+                    Assert.Equal(1, target.Calls); Assert.StartsWith("sha256:", result.Audit.MemberKey);
+                }
+            }
+            finally { dispatcher.InvokeShutdown(); thread.Join(); }
+        }
+
+        [Fact]
         public async Task HitTestUsesScreenCoordinatesAndRejectsMissingWindows()
         {
             using (var window = new MappingWindow())

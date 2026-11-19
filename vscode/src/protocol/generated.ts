@@ -344,6 +344,11 @@ export type InspectChildrenResult =
  */
 export type InspectHighlightResult = null;
 /**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "SpyHostCapability".
+ */
+export type SpyHostCapability = string;
+/**
  * Recursive binding trees have maximum depth 8 and 32 total entries.
  */
 export type ManagedBindingInfo = {
@@ -477,6 +482,27 @@ export type InspectManagedRootsResult = {
   diagnostics: ManagedDiagnostic[];
   nextToken?: Identifier;
 };
+export type InspectManagedSpyMethodsResult = {
+  /**
+   * @maxItems 200
+   */
+  items: MethodMetadata[];
+  complete: boolean;
+  snapshotId: Identifier;
+  /**
+   * @maxItems 200
+   */
+  diagnostics: ManagedDiagnostic[];
+  nextToken?: Identifier;
+};
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "SpyInvokeArgument".
+ */
+export type SpyInvokeArgument = SpyInvokeArgument1 & SpyInvokeArgument2;
+export type SpyInvokeArgument1 = {
+  [k: string]: unknown;
+};
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
  * via the `definition` "InspectRootsResult".
@@ -554,6 +580,19 @@ export type ManagedMemberPage = {
   diagnostics: ManagedDiagnostic[];
   nextToken?: Identifier;
 };
+export type ManagedMethodPage = {
+  /**
+   * @maxItems 200
+   */
+  items: MethodMetadata[];
+  complete: boolean;
+  snapshotId: Identifier;
+  /**
+   * @maxItems 200
+   */
+  diagnostics: ManagedDiagnostic[];
+  nextToken?: Identifier;
+};
 /**
  * nextToken is present iff further items exist; incomplete pages may instead indicate partial failure.
  *
@@ -568,6 +607,11 @@ export type ManagedNodePage = ManagedNodePage1;
  * via the `definition` "MemberPage".
  */
 export type MemberPage = MemberPage1;
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "MethodPage".
+ */
+export type MethodPage = MethodPage1;
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
  * via the `definition` "ResponseEnvelope".
@@ -734,6 +778,11 @@ export type Mapping2 = ManagedMapping1;
  */
 export type MemberPage2 = ManagedMemberPage1;
 /**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "ManagedMethodPage".
+ */
+export type MethodPage2 = ManagedMethodPage1;
+/**
  * Type and UIA segments must be alone. Serialized paths must not exceed 1024 UTF-8 bytes.
  *
  * @minItems 1
@@ -797,6 +846,11 @@ export type ManagedMemberPage2 = InspectManagedMembersResult1;
  * via the `definition` "InspectManagedRootsResult".
  */
 export type ManagedInspectorNodePage3 = InspectManagedRootsResult1;
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "InspectManagedSpyMethodsResult".
+ */
+export type ManagedMethodPage2 = InspectManagedSpyMethodsResult1;
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
  * via the `definition` "WaitUntilResult".
@@ -924,6 +978,14 @@ export interface ProtocolContracts {
   InspectManagedResolveResult?: InspectManagedResolveResult;
   InspectManagedRootsParams?: InspectManagedRootsParams;
   InspectManagedRootsResult?: InspectManagedRootsResult;
+  InspectManagedSpyInvokeParams?: InspectManagedSpyInvokeParams;
+  InspectManagedSpyInvokeResult?: InspectManagedSpyInvokeResult;
+  InspectManagedSpyMethodsParams?: InspectManagedSpyMethodsParams;
+  InspectManagedSpyMethodsResult?: InspectManagedSpyMethodsResult;
+  InspectManagedSpyPrepareInvokeParams?: InspectManagedSpyPrepareInvokeParams;
+  InspectManagedSpyPrepareInvokeResult?: InspectManagedSpyPrepareInvokeResult;
+  InspectManagedSpySelectParams?: InspectManagedSpySelectParams;
+  InspectManagedSpySelectResult?: InspectManagedSpySelectResult;
   InspectManagedStatusParams?: InspectManagedStatusParams;
   InspectManagedStatusResult?: InspectManagedStatusResult;
   InspectPartialErrorData?: InspectPartialErrorData;
@@ -950,6 +1012,7 @@ export interface ProtocolContracts {
   ManagedInspectorNodePage?: ManagedInspectorNodePage;
   ManagedMapping?: ManagedMapping;
   ManagedMemberPage?: ManagedMemberPage;
+  ManagedMethodPage?: ManagedMethodPage;
   ManagedNode?: ManagedNode;
   ManagedNodePage?: ManagedNodePage;
   ManagedPath?: ManagedPath;
@@ -963,6 +1026,9 @@ export interface ProtocolContracts {
   Member?: Member;
   MemberPage?: MemberPage;
   MembersParams?: MembersParams;
+  MethodMetadata?: MethodMetadata;
+  MethodPage?: MethodPage;
+  MethodParameter?: MethodParameter;
   Mismatch?: Mismatch;
   NodeCoverage?: NodeCoverage;
   NodeInfo?: NodeInfo;
@@ -1011,7 +1077,11 @@ export interface ProtocolContracts {
   ShutdownParams?: ShutdownParams;
   ShutdownResult?: ShutdownResult;
   SpyCancelledNotification?: SpyCancelledNotification;
+  SpyHostCapability?: SpyHostCapability;
   SpyHoverNotification?: SpyHoverNotification;
+  SpyInvokeArgument?: SpyInvokeArgument;
+  SpyInvokeParams?: SpyInvokeParams;
+  SpyInvokeResult?: SpyInvokeResult;
   SpyPickedNotification?: SpyPickedNotification;
   SpyStartParams?: SpyStartParams;
   SpyStartResult?: SpyStartResult;
@@ -1360,6 +1430,7 @@ export interface BootstrapSettings {
   process: ProcessIdentity;
   pipeName: Key;
   token: string;
+  spyInvokeCapability?: string;
   clientSid: Identifier;
   expiresUtc: string;
   requestTimeoutMs: number;
@@ -2259,6 +2330,7 @@ export interface InspectHighlightParams {
  */
 export interface InspectManagedAttachParams {
   process: ManagedProcessIdentity;
+  hostCapability?: SpyHostCapability;
 }
 export interface InspectManagedAttachResult {
   sessionId: Identifier;
@@ -2485,6 +2557,281 @@ export interface InspectManagedRootsParams {
   sessionId: string;
   pageSize?: number;
   pageToken?: string;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "InspectManagedSpyInvokeParams".
+ */
+export interface InspectManagedSpyInvokeParams {
+  hostCapability: SpyHostCapability;
+  ticket: string;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "InspectManagedSpyInvokeResult".
+ */
+export interface InspectManagedSpyInvokeResult {
+  audit: WriteAudit;
+  result: Value;
+}
+/**
+ * Never include values; redacted identifiers use the applicable rule. Deadline failures are audited immediately with reason timeout.
+ *
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "WriteAudit".
+ */
+export interface WriteAudit {
+  operation: "setProperty" | "call";
+  typeFullName: Key;
+  memberKey: Key;
+  outcome: "performed" | "denied" | "failed";
+  timestampUtc: string;
+  authorization?: "allowlist" | "pure";
+  reason?: string;
+}
+export interface InspectManagedSpyMethodsParams {
+  sessionId: string;
+  objectId: string;
+  generation: number;
+  pageSize?: number;
+  pageToken?: string;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "MethodMetadata".
+ */
+export interface MethodMetadata {
+  key: string;
+  name: Key;
+  declaringType: TypeName;
+  returnType: TypeName;
+  visibility:
+    | "public"
+    | "private"
+    | "protected"
+    | "internal"
+    | "protectedInternal"
+    | "privateProtected";
+  isStatic: boolean;
+  /**
+   * @maxItems 128
+   */
+  parameters: MethodParameter[];
+  unsupportedReason?: string;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "MethodParameter".
+ */
+export interface MethodParameter {
+  name: string;
+  type: TypeName;
+  isOut: boolean;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "InspectManagedSpyPrepareInvokeParams".
+ */
+export interface InspectManagedSpyPrepareInvokeParams {
+  hostCapability: SpyHostCapability;
+  sessionId: string;
+  objectId: string;
+  generation: number;
+  memberKey: string;
+  /**
+   * @maxItems 16
+   */
+  arguments:
+    | []
+    | [SpyInvokeArgument]
+    | [SpyInvokeArgument, SpyInvokeArgument]
+    | [SpyInvokeArgument, SpyInvokeArgument, SpyInvokeArgument]
+    | [
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument
+      ]
+    | [
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument
+      ]
+    | [
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument
+      ]
+    | [
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument
+      ]
+    | [
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument
+      ]
+    | [
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument
+      ]
+    | [
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument
+      ]
+    | [
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument
+      ]
+    | [
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument
+      ]
+    | [
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument
+      ]
+    | [
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument
+      ]
+    | [
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument
+      ]
+    | [
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument,
+        SpyInvokeArgument
+      ];
+}
+export interface SpyInvokeArgument2 {
+  type: string;
+  value?: string | boolean | number;
+  enum?: string | number;
+  null?: true;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "InspectManagedSpyPrepareInvokeResult".
+ */
+export interface InspectManagedSpyPrepareInvokeResult {
+  ticket: string;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "InspectManagedSpySelectParams".
+ */
+export interface InspectManagedSpySelectParams {
+  hostCapability: SpyHostCapability;
+  sessionId?: string;
+  nodeId?: string;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "InspectManagedSpySelectResult".
+ */
+export interface InspectManagedSpySelectResult {
+  canInvoke: boolean;
+  mapping?: InspectManagedResolveResult;
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
@@ -2760,6 +3107,19 @@ export interface MembersParams {
   pageSize?: number;
   pageToken?: Identifier;
 }
+export interface MethodPage1 {
+  /**
+   * @maxItems 200
+   */
+  items: MethodMetadata[];
+  complete: boolean;
+  snapshotId: Identifier;
+  /**
+   * @maxItems 200
+   */
+  diagnostics: ManagedDiagnostic[];
+  nextToken?: Identifier;
+}
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
  * via the `definition` "PageCheckParams".
@@ -2909,6 +3269,8 @@ export interface RequestEnvelope {
     | "children"
     | "members"
     | "read"
+    | "spy.fieldRead"
+    | "spy.methods"
     | "bindings"
     | "release"
     | "query.find"
@@ -2930,6 +3292,7 @@ export interface RequestEnvelope {
     | "hitTest"
     | "write.setProperty"
     | "write.call"
+    | "spy.invoke"
     | "events.subscribe"
     | "events.unsubscribe";
   params: Record<string, never>;
@@ -3098,6 +3461,24 @@ export interface SpyHoverNotification {
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "SpyInvokeParams".
+ */
+export interface SpyInvokeParams {
+  capability: string;
+  handle: ObjectRef;
+  memberKey: string;
+  /**
+   * @maxItems 16
+   */
+  arguments: SpyInvokeArgument[];
+  timeoutMs: number;
+}
+export interface SpyInvokeResult {
+  audit: WriteAudit;
+  result: Value;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
  * via the `definition` "SpyPickedNotification".
  */
 export interface SpyPickedNotification {
@@ -3196,21 +3577,6 @@ export interface WaitResult1 {
 export interface WaitUntilParams {
   condition: WaitCondition;
   timeoutMs: number;
-}
-/**
- * Never include values; redacted identifiers use the applicable rule. Deadline failures are audited immediately with reason timeout.
- *
- * This interface was referenced by `ProtocolContracts`'s JSON-Schema
- * via the `definition` "WriteAudit".
- */
-export interface WriteAudit {
-  operation: "setProperty" | "call";
-  typeFullName: Key;
-  memberKey: Key;
-  outcome: "performed" | "denied" | "failed";
-  timestampUtc: string;
-  authorization?: "allowlist" | "pure";
-  reason?: string;
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
@@ -3457,6 +3823,19 @@ export interface ManagedMemberPage1 {
   diagnostics: ManagedDiagnostic[];
   nextToken?: Identifier;
 }
+export interface ManagedMethodPage1 {
+  /**
+   * @maxItems 200
+   */
+  items: MethodMetadata[];
+  complete: boolean;
+  snapshotId: Identifier;
+  /**
+   * @maxItems 200
+   */
+  diagnostics: ManagedDiagnostic[];
+  nextToken?: Identifier;
+}
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
  * via the `definition` "ManagedPathValue".
@@ -3588,6 +3967,30 @@ export interface InspectManagedRootsResult1 {
    * @maxItems 200
    */
   items: ManagedNode[];
+  complete: boolean;
+  snapshotId: Identifier;
+  /**
+   * @maxItems 200
+   */
+  diagnostics: ManagedDiagnostic[];
+  nextToken?: Identifier;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "InspectManagedSpyMethodsParams".
+ */
+export interface InspectManagedMembersParams1 {
+  sessionId: string;
+  objectId: string;
+  generation: number;
+  pageSize?: number;
+  pageToken?: string;
+}
+export interface InspectManagedSpyMethodsResult1 {
+  /**
+   * @maxItems 200
+   */
+  items: MethodMetadata[];
   complete: boolean;
   snapshotId: Identifier;
   /**
@@ -3807,6 +4210,14 @@ export interface ActResult11 {
 export interface QueryFindParams1 {
   locator: Locator;
   timeoutMs: number;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "SpyInvokeResult".
+ */
+export interface WriteCallResult1 {
+  audit: WriteAudit;
+  result: Value;
 }
 export interface WaitUntilResult1 {
   satisfied: boolean;
