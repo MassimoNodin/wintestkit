@@ -19,6 +19,16 @@ namespace WinTestKit.Inspector.Agent.Contracts
         Task<int> ReleaseAsync(IReadOnlyList<string> objectIds, CancellationToken ct);
     }
 
+    public interface ISpyFieldInspectionService
+    {
+        Task<ReadResult> ReadSpyFieldAsync(string objectId, long generation, IReadOnlyList<IReadOnlyList<PathSegment>> paths, CancellationToken ct);
+    }
+
+    public interface ISpyMethodInspectionService
+    {
+        Task<PageDto<MethodMetadataDto>> SpyMethodsAsync(string objectId, long generation, int? pageSize, string? pageToken, CancellationToken ct);
+    }
+
     public sealed class CandidateRequest
     {
         public CandidateRequest(int[] runtimeId, long? nativeWindowHandle) { RuntimeId = runtimeId; NativeWindowHandle = nativeWindowHandle; }
@@ -45,6 +55,11 @@ namespace WinTestKit.Inspector.Agent.Contracts
     public interface IActionInspectionService
     {
         Task<ActResult> ActAsync(string method, ObjectRef handle, DateTime deadline, int timeoutMs, CancellationToken ct, object? parameters = null);
+    }
+
+    public interface ISpyInvokeInspectionService
+    {
+        Task<WriteCallResult> InvokeAsync(ObjectRef handle, string memberKey, IReadOnlyList<JsonNode> values, DateTime deadline, CancellationToken ct);
     }
 
     public interface IWriteInspectionService

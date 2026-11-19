@@ -8,6 +8,7 @@ import threading
 import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
+from decimal import Decimal
 from typing import Any
 
 import pytest
@@ -336,6 +337,49 @@ def session() -> Session:
     return Session("session", IDENTITY, "ready", 2, 0, tuple(FEATURES), "10.0.11", "x64", "1")
 
 
+def test_spy_method_catalog_transport_and_validation() -> None:
+    def handler(request: dict[str, Any]) -> object:
+        return {
+            "id": request["id"],
+            "result": {
+                "items": [
+                    {
+                        "key": "method|key",
+                        "name": "Run",
+                        "declaringType": "Test.Type",
+                        "returnType": "System.Void",
+                        "visibility": "public",
+                        "isStatic": False,
+                        "parameters": [{"name": "x", "type": "System.Int32&", "isOut": True}],
+                    }
+                ],
+                "complete": False,
+                "snapshotId": "snapshot",
+                "diagnostics": [],
+                "nextToken": "next",
+            },
+        }
+
+    transport = ScriptedTransport(handler)
+    client = InspectorClient(transport, session())
+    try:
+        page = client.spy_methods(
+            "object", 1, page_size=1, page_token="cursor", deadline=time.monotonic() + 1
+        )
+        assert page.items[0].parameters[0].is_out
+        assert page.next_token == "next"
+        assert transport.requests[0]["method"] == "spy.methods"
+        assert transport.requests[0]["params"] == {
+            "sessionId": "session",
+            "objectId": "object",
+            "generation": 1,
+            "pageSize": 1,
+            "pageToken": "cursor",
+        }
+    finally:
+        client.close()
+
+
 def test_event_subscriptions_route_and_close() -> None:
     def handler(request: dict[str, Any]) -> object:
         if request["method"] == "events.subscribe":
@@ -627,6 +671,46 @@ def test_read_uia_path() -> None:
         assert transport.requests[0]["params"]["paths"] == [[path.to_json()]]
         with pytest.raises(InspectorError):
             client.read("object", 1, [(path, path)], deadline=time.monotonic() + 2)
+    finally:
+        client.close()
+
+
+def test_decimal_read_preserves_precision_and_keeps_session_ready() -> None:
+    from wintestkit.inspector.paths import PathSegment
+
+    def handler(request: dict[str, Any]) -> object:
+        if request["method"] == "session.close":
+            return {"id": request["id"], "result": {"closed": True}}
+        paths = request["params"]["paths"]
+        is_decimal = paths[0][0]["name"] == "Decimal"
+        type_name = "System.Decimal" if is_decimal else "System.String"
+        value = {
+            "status": "ok",
+            "kind": "number" if is_decimal else "string",
+            "declaredType": type_name,
+            "runtimeType": type_name,
+            "scalar": "123.4500000000000000001" if is_decimal else "still ready",
+        }
+        if is_decimal:
+            value["numericValue"] = value["scalar"]
+        return {
+            "id": request["id"],
+            "result": {"readId": "read", "values": [{"path": paths[0], "value": value}]},
+        }
+
+    client = InspectorClient(ScriptedTransport(handler), session())
+    try:
+        deadline = time.monotonic() + 2
+        decimals, _ = client.read(
+            "object", 1, [(PathSegment("property", "Decimal"),)], deadline=deadline
+        )
+        assert decimals[0].value.as_python() == Decimal("123.4500000000000000001")
+        assert decimals[0].value.to_json()["numericValue"] == "123.4500000000000000001"
+        assert client.session.state == "ready"
+        following, _ = client.read(
+            "object", 1, [(PathSegment("property", "Name"),)], deadline=deadline
+        )
+        assert following[0].value.scalar == "still ready"
     finally:
         client.close()
 

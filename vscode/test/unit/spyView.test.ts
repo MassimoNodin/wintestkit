@@ -132,6 +132,19 @@ import { SpyView } from "../../src/spy/spyView";
 import { RpcError } from "../../src/server/jsonrpc";
 
 describe("Spy view bridge", () => {
+  const openProperties = async () => {
+    const sent: Array<{ type: string; [key: string]: unknown }> = [];
+    let receive: (value: unknown) => void = () => {};
+    const view = { visible: true, webview: {
+      html: "", options: {}, cspSource: "source", asWebviewUri: (uri: unknown) => uri,
+      postMessage: (message: { type: string }) => { sent.push(message); return Promise.resolve(true); },
+      onDidReceiveMessage: (callback: typeof receive) => { receive = callback; return { dispose() {} }; },
+    }, onDidChangeVisibility: () => ({ dispose() {} }), onDidDispose: () => ({ dispose() {} }) };
+    const registration = mocks.providerRegistrations.find(([id]) => id === "wintestkit.properties")!;
+    await (registration[1] as vscode.WebviewViewProvider).resolveWebviewView(view as unknown as vscode.WebviewView, {} as never, {} as never);
+    receive({ type: "propertiesReady" });
+    return { sent, receive };
+  };
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.notifications.clear();
@@ -325,6 +338,7 @@ describe("Spy view bridge", () => {
     setup?: SetupMonitor,
     memory?: unknown,
     managed = false,
+    visible = true,
   ) => {
     const project = {
       root: { fsPath: "C:/demo", toString: () => "demo" },
@@ -388,7 +402,7 @@ describe("Spy view bridge", () => {
     };
     const view = {
       webview,
-      visible: true,
+      visible,
       onDidChangeVisibility: (callback: () => void) => {
         visibility = callback;
         return { dispose() {} };
@@ -415,6 +429,122 @@ describe("Spy view bridge", () => {
       },
     };
   };
+  describe("revealing the Properties view", () => {
+    const answers = () => mocks.request.mockImplementation(async (method: string) => method === "inspect.refresh"
+      ? { nodes: [], status: { running: false } } : method === "inspect.properties"
+      ? { info: { name: "Save", controlType: "Button" }, properties: {}, ancestors: [] }
+      : method === "inspect.definitions" ? { definitions: [], errors: [], pageCount: 0 } : undefined);
+    const focusCalls = () => mocks.command.mock.calls.map(([name]) => name).filter((name) => name === "wintestkit.properties.focus" || name === "wintestkit.spy.focus");
+    const resolveProperties = async (visible: boolean) => {
+      let changed = () => {};
+      const show = vi.fn();
+      const view = { visible, show, webview: {
+        html: "", options: {}, cspSource: "source", asWebviewUri: (uri: unknown) => uri,
+        postMessage: () => Promise.resolve(true), onDidReceiveMessage: () => ({ dispose() {} }),
+      }, onDidChangeVisibility: (callback: () => void) => { changed = callback; return { dispose() {} }; }, onDidDispose: () => ({ dispose() {} }) };
+      const registration = mocks.providerRegistrations.find(([id]) => id === "wintestkit.properties")!;
+      await (registration[1] as vscode.WebviewViewProvider).resolveWebviewView(view as unknown as vscode.WebviewView, {} as never, {} as never);
+      return { view, show, changed: () => changed() };
+    };
+    const select = async (fixture: Awaited<ReturnType<typeof create>>, nodeId: string) => {
+      fixture.receive({ type: "select", nodeId });
+      await vi.waitFor(() => expect(fixture.sent).toContainEqual({ type: "selectionPending", nodeId }));
+    };
+    it("creates the view when Spy becomes visible, hands the focus back to Spy and never repeats", async () => {
+      answers();
+      const fixture = await create();
+      await vi.waitFor(() => expect(focusCalls()).toEqual(["wintestkit.properties.focus", "wintestkit.spy.focus"]));
+      fixture.visibility();
+      await select(fixture, "one");
+      await select(fixture, "two");
+      await Promise.resolve();
+      expect(focusCalls()).toEqual(["wintestkit.properties.focus", "wintestkit.spy.focus"]);
+      fixture.provider.dispose();
+    });
+    it("reveals the view once on the first selection when Spy opened hidden", async () => {
+      answers();
+      const fixture = await create(undefined, undefined, undefined, false, false);
+      expect(focusCalls()).toEqual([]);
+      await select(fixture, "one");
+      await vi.waitFor(() => expect(focusCalls()).toEqual(["wintestkit.properties.focus", "wintestkit.spy.focus"]));
+      await select(fixture, "two");
+      await Promise.resolve();
+      expect(focusCalls()).toHaveLength(2);
+      fixture.provider.dispose();
+    });
+    it("shows a resolved but hidden view with the focus preserved, once per hidden period", async () => {
+      answers();
+      const fixture = await create(undefined, undefined, undefined, false, false);
+      const properties = await resolveProperties(false);
+      await select(fixture, "one");
+      await select(fixture, "two");
+      expect(properties.show).toHaveBeenCalledTimes(1);
+      expect(properties.show).toHaveBeenCalledWith(true);
+      expect(focusCalls()).toEqual([]);
+      properties.changed();
+      await select(fixture, "three");
+      expect(properties.show).toHaveBeenCalledTimes(2);
+      fixture.provider.dispose();
+    });
+    it("does nothing while the view is visible", async () => {
+      answers();
+      const fixture = await create(undefined, undefined, undefined, false, false);
+      const properties = await resolveProperties(true);
+      fixture.view.visible = true; fixture.visibility();
+      await select(fixture, "one");
+      expect(properties.show).not.toHaveBeenCalled();
+      expect(focusCalls()).toEqual([]);
+      fixture.provider.dispose();
+    });
+    it("leaves a sidebar the user hid alone, and the Show properties button still works", async () => {
+      answers();
+      const fixture = await create(undefined, undefined, undefined, false, false);
+      const properties = await resolveProperties(true);
+      properties.view.visible = false; properties.changed();
+      await select(fixture, "one");
+      fixture.view.visible = true; fixture.visibility();
+      await select(fixture, "two");
+      expect(properties.show).not.toHaveBeenCalled();
+      expect(focusCalls()).toEqual([]);
+      fixture.receive({ type: "showProperties" });
+      await vi.waitFor(() => expect(properties.show).toHaveBeenCalledWith(true));
+      properties.view.visible = true; properties.changed();
+      properties.view.visible = false; properties.changed();
+      await select(fixture, "three");
+      expect(properties.show).toHaveBeenCalledTimes(1);
+      fixture.provider.dispose();
+    });
+    it("gives up after three seconds when the focus command hangs and never tries again", async () => {
+      answers();
+      const fixture = await create(undefined, undefined, undefined, false, false);
+      mocks.command.mockImplementation((name: string) => name === "wintestkit.properties.focus" ? new Promise(() => {}) : Promise.resolve());
+      vi.useFakeTimers();
+      try {
+        await select(fixture, "one");
+        await vi.advanceTimersByTimeAsync(2900);
+        expect(focusCalls()).toEqual(["wintestkit.properties.focus"]);
+        await vi.advanceTimersByTimeAsync(200);
+        expect(focusCalls()).toEqual(["wintestkit.properties.focus", "wintestkit.spy.focus"]);
+        await select(fixture, "two");
+        fixture.visibility();
+        await vi.advanceTimersByTimeAsync(10_000);
+        expect(focusCalls()).toHaveLength(2);
+      } finally { vi.useRealTimers(); mocks.command.mockReset(); fixture.provider.dispose(); }
+    });
+    it("logs a failing focus command once and does not retry", async () => {
+      answers();
+      const fixture = await create(undefined, undefined, undefined, false, false);
+      mocks.command.mockImplementation((name: string) => name === "wintestkit.properties.focus" ? Promise.reject(new Error("no view")) : Promise.resolve());
+      try {
+        await select(fixture, "one");
+        await vi.waitFor(() => expect(focusCalls()).toEqual(["wintestkit.properties.focus"]));
+        await select(fixture, "two");
+        fixture.visibility();
+        await Promise.resolve();
+        expect(focusCalls()).toEqual(["wintestkit.properties.focus"]);
+      } finally { mocks.command.mockReset(); fixture.provider.dispose(); }
+    });
+  });
   it("replays selection into a late properties view and tracks its visibility without fetching again", async () => {
     mocks.request.mockImplementation(async (method: string) => method === "inspect.refresh"
       ? { nodes: [], status: { running: false } } : method === "inspect.properties"
@@ -454,6 +584,53 @@ describe("Spy view bridge", () => {
     expect(sent).toContainEqual({ type: "roots", nodes: [] });
     dispose();
     expect(fixture.sent.at(-1)).toEqual({ type: "propertiesVisibility", visible: false });
+    fixture.provider.dispose();
+  });
+  it("keeps the properties view's tree in step with in-place refreshes and picks", async () => {
+    const root = { nodeId: "root", source: "wpf", hasChildren: true, info: { name: "App", controlType: "Window", processId: 42 } };
+    const host = { nodeId: "host", source: "wpf", hasChildren: true, info: { name: "Host", controlType: "Pane" } };
+    const picked = { nodeId: "native", source: "uia", info: { name: "Native", controlType: "Text" } };
+    mocks.request.mockImplementation(async (method: string, params?: { nodeId?: string; pageToken?: string }) => {
+      if (method === "inspect.refresh") return { nodes: [root], status: { running: true, pids: [42] } };
+      if (method === "inspect.roots") return [root];
+      if (method === "inspect.properties") return { info: picked.info, properties: {}, ancestors: [root, host] };
+      if (method === "inspect.children") return params?.nodeId === "root" ? { nodes: [host] } : params?.pageToken ? { nodes: [picked] } : { nodes: [], nextPageToken: "page2" };
+      return {};
+    });
+    const fixture = await create();
+    await fixture.provider.refresh();
+    const sent: Array<{ type: string; [key: string]: unknown }> = [];
+    let receive: (value: unknown) => void = () => {};
+    const view = { visible: true, webview: {
+      html: "", options: {}, cspSource: "source", asWebviewUri: (uri: unknown) => uri,
+      postMessage: (message: { type: string }) => { sent.push(message); return Promise.resolve(true); },
+      onDidReceiveMessage: (callback: typeof receive) => { receive = callback; return { dispose() {} }; },
+    }, onDidChangeVisibility: () => ({ dispose() {} }), onDidDispose: () => ({ dispose() {} }) };
+    const registration = mocks.providerRegistrations.find(([id]) => id === "wintestkit.properties")!;
+    await (registration[1] as vscode.WebviewViewProvider).resolveWebviewView(view as unknown as vscode.WebviewView, {} as never, {} as never);
+    // The sidebar page is the Properties surface, with every placeholder filled.
+    expect(view.webview.html).toContain('<body class="properties-view">');
+    expect(view.webview.html).not.toContain("{{");
+    receive({ type: "propertiesReady" });
+    expect(sent.map((message) => message.type)).toContain("roots");
+    // An in-place refresh and a pick change the tree through diffs; the properties view must get them too.
+    await fixture.provider.refresh();
+    fixture.receive({ type: "pick" });
+    await vi.waitFor(() => expect(latestSession()).toBeTypeOf("string"));
+    mocks.notifications.get("spy.picked")?.({ sessionId: latestSession(), node: picked });
+    await vi.waitFor(() => expect(sent).toContainEqual(expect.objectContaining({ type: "childrenDiff", nodeId: "host", nodes: [picked] })));
+    expect(sent).toContainEqual(expect.objectContaining({ type: "rootsDiff", nodes: [root] }));
+    expect(sent).toContainEqual(expect.objectContaining({ type: "childrenDiff", nodeId: "root", nodes: [host] }));
+    // A view opened later replays the same tree in the same order.
+    const late: Array<{ type: string }> = [];
+    let lateReceive: (value: unknown) => void = () => {};
+    const lateView = { ...view, webview: { ...view.webview, postMessage: (message: { type: string }) => { late.push(message); return Promise.resolve(true); }, onDidReceiveMessage: (callback: typeof lateReceive) => { lateReceive = callback; return { dispose() {} }; } } };
+    await (registration[1] as vscode.WebviewViewProvider).resolveWebviewView(lateView as unknown as vscode.WebviewView, {} as never, {} as never);
+    lateReceive({ type: "propertiesReady" });
+    const types = late.map((message) => message.type);
+    expect(types.indexOf("roots")).toBeGreaterThanOrEqual(0);
+    expect(types.indexOf("rootsDiff")).toBeGreaterThan(types.indexOf("roots"));
+    expect(types.indexOf("childrenDiff")).toBeGreaterThan(types.indexOf("rootsDiff"));
     fixture.provider.dispose();
   });
   const tutorialView = (): TourView => ({
@@ -532,7 +709,9 @@ describe("Spy view bridge", () => {
       close,
     } as unknown as SetupMonitor;
     const fixture = await create(undefined, setup);
-    expect(mocks.command).not.toHaveBeenCalledWith("wintestkit.spy.focus");
+    // Showing Spy first creates the right-hand Properties view and returns the focus to Spy; that is not the tutorial.
+    await vi.waitFor(() => expect(mocks.command).toHaveBeenCalledWith("wintestkit.spy.focus"));
+    mocks.command.mockClear();
     tutorial = {
       step: "spy",
       phase: "extras",
@@ -1530,7 +1709,8 @@ describe("Spy view bridge", () => {
     it("loads definitions and the preview without waiting for a locator", async () => {
       answer(() => new Promise(() => {}));
       const fixture = await select();
-      await vi.waitFor(() => expect(fixture.sent.some((message) => message.type === "objectPreview")).toBe(true));
+      const properties = await openProperties();
+      await vi.waitFor(() => expect(properties.sent.some((message) => message.type === "objectPreview")).toBe(true));
       expect(fixture.sent.some((message) => message.type === "definitions" && message.state !== "loading")).toBe(true);
       fixture.provider.dispose();
     });
@@ -1545,6 +1725,35 @@ describe("Spy view bridge", () => {
       finish({ helpers: [], code: "Element()" });
       await vi.waitFor(() => expect(fixture.sent.some((message) => message.type === "suggestion" && message.nodeId === "control")).toBe(true));
       expect(locatorRequests()).toHaveLength(1);
+      fixture.provider.dispose();
+    });
+
+    it("delivers current Standard property data to the sidebar and replays it on reopen", async () => {
+      const suggestion = { helpers: [], code: "Button(automation_id='save')", unique: true };
+      const definition = { id: "save", kind: "element", qualname: "MainPage.save" };
+      mocks.request.mockImplementation(async (method: string) => {
+        if (method === "inspect.properties") return { info: { name: "Save", controlType: "Button" }, properties: {}, ancestors: [] };
+        if (method === "inspect.definitions") return { definitions: [definition], errors: [], pageCount: 1 };
+        if (method === "suggest.locator") return suggestion;
+      });
+      const fixture = await select();
+      const props = await openProperties();
+      props.receive({ type: "generateLocator", nodeId: "control" });
+      const locator = { type: "suggestion", nodeId: "control", suggestion };
+      const mapped = expect.objectContaining({ type: "definitions", nodeId: "control", state: "ready", definitions: [definition] });
+      await vi.waitFor(() => expect(props.sent).toContainEqual(locator));
+      expect(props.sent).toContainEqual(mapped);
+      const reopened = await openProperties();
+      expect(reopened.sent).toContainEqual(locator);
+      expect(reopened.sent).toContainEqual(mapped);
+      reopened.receive({ type: "generateLocator", nodeId: "control" });
+      expect(locatorRequests()).toHaveLength(1);
+
+      fixture.receive({ type: "select", nodeId: "other" });
+      await vi.waitFor(() => expect(reopened.sent).toContainEqual(expect.objectContaining({ type: "selected", nodeId: "other" })));
+      const next = await openProperties();
+      expect(next.sent).not.toContainEqual(locator);
+      expect(next.sent).not.toContainEqual(mapped);
       fixture.provider.dispose();
     });
 
@@ -2114,6 +2323,38 @@ describe("Spy view bridge", () => {
       failed: false,
     });
     fixture.provider.dispose();
+  });
+  it("stops the automatic Properties read when the picker starts and resumes it when the pick is cancelled", async () => {
+    const { ManagedPanel } = await import("../../src/spy/managedPanel");
+    const pause = vi.spyOn(ManagedPanel.prototype, "pauseAutoRead");
+    const resume = vi.spyOn(ManagedPanel.prototype, "resumeAutoRead");
+    mocks.request.mockImplementation((method: string) =>
+      Promise.resolve(method === "inspect.refresh" ? { nodes: [], status: { running: true } } : []),
+    );
+    const fixture = await create();
+    fixture.receive({ type: "ready" });
+    await vi.waitFor(() =>
+      expect(fixture.sent.some((message) => message.type === "roots")).toBe(true),
+    );
+    fixture.receive({ type: "pick" });
+    await vi.waitFor(() =>
+      expect(mocks.request).toHaveBeenCalledWith("spy.start", expect.anything()),
+    );
+    expect(pause).toHaveBeenCalledOnce();
+    expect(pause.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.request.mock.invocationCallOrder[
+        mocks.request.mock.calls.findIndex(([method]) => method === "spy.start")
+      ],
+    );
+    await vi.waitFor(() =>
+      expect(fixture.sent.some((message) => message.type === "state" && message.picking === true)).toBe(true),
+    );
+    expect(resume).not.toHaveBeenCalled();
+    fixture.receive({ type: "stopPick" });
+    await vi.waitFor(() => expect(resume).toHaveBeenCalledOnce());
+    fixture.provider.dispose();
+    pause.mockRestore();
+    resume.mockRestore();
   });
   it("refreshes roots, stops picking when hidden, and releases notifications", async () => {
     mocks.request.mockImplementation((method: string) =>
@@ -2696,12 +2937,13 @@ describe("Spy view bridge", () => {
         return {};
       });
       const fixture = await create();
+      const properties = await openProperties();
       fixture.receive({ type: "select", nodeId: "wpf:old-save", path: route });
-      await vi.waitFor(() => expect(fixture.sent).toContainEqual(expect.objectContaining({ type: "objectPreview", nodeId: "wpf:old-save", reason: expect.stringContaining("Reconnecting") })));
+      await vi.waitFor(() => expect(properties.sent).toContainEqual(expect.objectContaining({ type: "objectPreview", nodeId: "wpf:old-save", reason: expect.stringContaining("Reconnecting") })));
       if (fail) {
         await vi.waitFor(() => expect(fixture.sent).toContainEqual(expect.objectContaining({ type: "error", message: expect.stringContaining("server unavailable") })));
       } else {
-        await vi.waitFor(() => expect(fixture.sent).toContainEqual(expect.objectContaining({ type: "objectPreview", nodeId: "wpf:fresh-save", reason: "New capture" })));
+        await vi.waitFor(() => expect(properties.sent).toContainEqual(expect.objectContaining({ type: "objectPreview", nodeId: "wpf:fresh-save", reason: "New capture" })));
         expect(fixture.sent).toContainEqual({ type: "selectionRestored", nodeId: "wpf:fresh-save" });
       }
       expect(refreshCalls).toBe(1);
@@ -3091,40 +3333,95 @@ describe("Spy view bridge", () => {
             ? { helpers: [], code: "Element()" } : method === "inspect.definitions"
               ? { definitions: [], errors: [], pageCount: 1, appRunning: true } : undefined));
       const fixture = await create();
+      const properties = await openProperties();
       fixture.receive({ type: "select", nodeId: "control" });
-      await vi.waitFor(() => expect(fixture.sent.some((message) => message.type === "objectPreview")).toBe(true));
-      return fixture;
+      await vi.waitFor(() => expect(properties.sent.some((message) => message.type === "objectPreview")).toBe(true));
+      return { ...fixture, properties };
     };
+    it("routes only the current capture to the sidebar and replays it after reopening", async () => {
+      const pending: Array<(value: unknown) => void> = [];
+      mocks.request.mockImplementation((method: string) => method === "inspect.preview"
+        ? new Promise((resolve) => pending.push(resolve))
+        : Promise.resolve(method === "inspect.properties" ? { info: {}, properties: {}, ancestors: [] } : {}));
+      const fixture = await create();
+      const first = await openProperties();
+      fixture.receive({ type: "select", nodeId: "a" });
+      await vi.waitFor(() => expect(pending).toHaveLength(1));
+      fixture.receive({ type: "select", nodeId: "b" });
+      await vi.waitFor(() => expect(pending).toHaveLength(2));
+      pending[0]({ reason: "old selection" });
+      pending[1]({ reason: "current selection" });
+      await vi.waitFor(() => expect(first.sent).toContainEqual({ type: "objectPreview", nodeId: "b", reason: "current selection" }));
+      expect(first.sent.some((message) => message.reason === "old selection")).toBe(false);
+      expect(fixture.sent.some((message) => message.type === "objectPreview")).toBe(false);
+      const reopened = await openProperties();
+      expect(reopened.sent.filter((message) => message.type === "objectPreview")).toEqual([{ type: "objectPreview", nodeId: "b", reason: "current selection" }]);
+      reopened.receive({ type: "retryPreview" });
+      await vi.waitFor(() => expect(pending).toHaveLength(3));
+      reopened.receive({ type: "retryPreview" });
+      await vi.waitFor(() => expect(pending).toHaveLength(4));
+      pending[2]({ reason: "old retry" });
+      pending[3]({ reason: "latest retry" });
+      await vi.waitFor(() => expect(reopened.sent).toContainEqual({ type: "objectPreview", nodeId: "b", reason: "latest retry" }));
+      expect(reopened.sent.some((message) => message.reason === "old retry")).toBe(false);
+      fixture.receive({ type: "selectionRemoved" });
+      const cleared = await openProperties();
+      expect(cleared.sent.some((message) => message.type === "objectPreview")).toBe(false);
+      fixture.provider.dispose();
+    });
+    it("discards a capture started before a tree refresh", async () => {
+      const pending: Array<(value: unknown) => void> = [];
+      mocks.request.mockImplementation((method: string) => {
+        if (method === "inspect.preview") return new Promise((resolve) => pending.push(resolve));
+        if (method === "inspect.refresh") return Promise.resolve({ nodes: [], status: { running: false } });
+        if (method === "inspect.properties") return Promise.resolve({ info: {}, properties: {}, ancestors: [] });
+        return Promise.resolve({});
+      });
+      const fixture = await create();
+      await fixture.provider.refresh();
+      const properties = await openProperties();
+      fixture.receive({ type: "select", nodeId: "control" });
+      await vi.waitFor(() => expect(pending).toHaveLength(1));
+      await fixture.provider.refresh();
+      await vi.waitFor(() => expect(pending).toHaveLength(2));
+      pending[0]({ reason: "before refresh" });
+      pending[1]({ reason: "after refresh" });
+      await vi.waitFor(() => expect(properties.sent).toContainEqual({ type: "objectPreview", nodeId: "control", reason: "after refresh" }));
+      expect(properties.sent.some((message) => message.reason === "before refresh")).toBe(false);
+      const reopened = await openProperties();
+      expect(reopened.sent.filter((message) => message.type === "objectPreview")).toEqual([{ type: "objectPreview", nodeId: "control", reason: "after refresh" }]);
+      fixture.provider.dispose();
+    });
     it("asks the server for the selected object's crop and window and forwards validated images", async () => {
       const entry = { data: webp, width: 1, height: 1 };
       const fixture = await select(() => Promise.resolve({ element: entry, window: entry }));
       expect(mocks.request).toHaveBeenCalledWith("inspect.preview", { nodeId: "control" });
       const url = "data:image/webp;base64," + webp;
-      expect(fixture.sent).toContainEqual({ type: "objectPreview", nodeId: "control",
+      expect(fixture.properties.sent).toContainEqual({ type: "objectPreview", nodeId: "control",
         preview: { elementDataUrl: url, windowDataUrl: url } });
       expect(mocks.previews).not.toHaveBeenCalled();
       fixture.provider.dispose();
     });
     it("forwards the reason when the server cannot capture", async () => {
       const fixture = await select(() => Promise.resolve({ reason: "The window cannot be captured." }));
-      expect(fixture.sent).toContainEqual({ type: "objectPreview", nodeId: "control", reason: "The window cannot be captured." });
+      expect(fixture.properties.sent).toContainEqual({ type: "objectPreview", nodeId: "control", reason: "The window cannot be captured." });
       fixture.provider.dispose();
     });
     it("rejects a malformed capture instead of forwarding it", async () => {
       const fixture = await select(() => Promise.resolve({ element: { data: "AAAA", width: 1, height: 1 }, window: {} }));
-      const message = fixture.sent.find((entry) => entry.type === "objectPreview");
+      const message = fixture.properties.sent.find((entry) => entry.type === "objectPreview");
       expect(message).toMatchObject({ reason: "The automation server returned an invalid preview." });
       expect(message).not.toHaveProperty("preview");
       fixture.provider.dispose();
     });
     it("explains that an older wintestkit package cannot capture previews", async () => {
       const fixture = await select(() => Promise.reject(new RpcError(-32601, "method not found")));
-      expect(fixture.sent).toContainEqual(expect.objectContaining({ type: "objectPreview", reason: expect.stringContaining("newer wintestkit") }));
+      expect(fixture.properties.sent).toContainEqual(expect.objectContaining({ type: "objectPreview", reason: expect.stringContaining("newer wintestkit") }));
       fixture.provider.dispose();
     });
     it("reports a failed capture without disturbing the selection", async () => {
       const fixture = await select(() => Promise.reject(new Error("pipe closed")));
-      expect(fixture.sent).toContainEqual(expect.objectContaining({ type: "objectPreview", reason: expect.stringContaining("pipe closed") }));
+      expect(fixture.properties.sent).toContainEqual(expect.objectContaining({ type: "objectPreview", reason: expect.stringContaining("pipe closed") }));
       expect(fixture.sent.some((message) => message.type === "selected")).toBe(true);
       fixture.provider.dispose();
     });

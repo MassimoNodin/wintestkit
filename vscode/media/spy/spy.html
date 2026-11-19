@@ -249,7 +249,7 @@
                         id="properties-pane"
                         aria-label="Object properties"
                     >
-                        <div class="pane-heading"><h2>Preview</h2></div>
+                        <div class="pane-heading"><h2>Properties</h2></div>
                         <p id="properties-elsewhere" class="muted">Properties are shown in the right sidebar. <button id="show-properties" class="secondary">Show properties</button></p>
                         <div class="properties-scroll">
                             <section id="object-preview" class="property-group" hidden aria-label="Object preview">
@@ -258,6 +258,7 @@
                                     <button id="preview-open" class="icon-button secondary" disabled aria-label="Open the image in VS Code's image viewer" title="Open in VS Code's image viewer to zoom and pan">
                                         <span class="codicon codicon-link-external" aria-hidden="true"></span>
                                     </button>
+                                    <button id="preview-retry" class="icon-button secondary" aria-label="Refresh preview" title="Refresh preview"><span class="codicon codicon-refresh" aria-hidden="true"></span></button>
                                     <div id="preview-mode" role="group" aria-label="Preview view">
                                         <button id="preview-element" class="secondary" aria-pressed="true" title="Show just the object">Element</button>
                                         <button id="preview-context" class="secondary" aria-pressed="false" title="Show the object outlined in its window">In App context</button>
@@ -272,9 +273,35 @@
                             <p id="properties-empty" class="muted">
                                 Select an object to inspect its properties.
                             </p>
+                            <div id="sidebar-inspector" hidden>
+                                <p id="wpf-details-note" hidden><span id="sidebar-attach-status"></span> <button id="wpf-details-attach" class="secondary">Attach</button></p><p id="wpf-blocked" hidden></p><details id="sidebar-actions"><summary class="icon-button secondary" aria-label="Properties actions" title="Properties actions"><span class="codicon codicon-kebab-horizontal" aria-hidden="true"></span></summary><button id="sidebar-detach">Detach</button><button id="sidebar-refresh">Refresh metadata</button><button id="sidebar-export">Export metadata</button></details>
+                                <div class="sidebar-tabs" role="tablist" aria-label="Inspection categories"><button role="tab" id="sidebar-tab-properties" data-sidebar-tab="properties">Properties</button><button role="tab" id="sidebar-tab-fields" data-sidebar-tab="fields">Fields</button><button role="tab" id="sidebar-tab-methods" data-sidebar-tab="methods">Methods</button></div>
+                                <label class="sidebar-search">Search <input id="sidebar-search" type="search" /></label>
+                                <button id="sidebar-mode" class="secondary" aria-pressed="false">Basic</button>
+                                <table id="sidebar-table" class="sidebar-table"><thead><tr><th>Name</th><th>Value</th><th></th></tr></thead><tbody id="sidebar-rows"></tbody></table>
+                                <div id="sidebar-row-menu" class="row-menu" role="menu" aria-label="Row actions" hidden></div><p id="sidebar-empty" class="muted" hidden></p><section id="sidebar-description" aria-label="Description"><h3>Description</h3><div id="sidebar-description-content">Select a row to see its description.</div></section>
+                                    <div class="property-loading-actions">
+                                        <button
+                                            id="load-properties"
+                                            class="secondary"
+                                            disabled
+                                        >
+                                            Load all properties
+                                        </button>
+                                        <p
+                                            id="properties-status"
+                                            class="muted"
+                                            role="status"
+                                        >
+                                            Additional properties and supported
+                                            patterns load on demand.
+                                        </p>
+                                    </div>
+
+                            </div>
                             <div id="property-groups" hidden>
                                 <section class="property-group">
-                                    <h3>General</h3><p id="wpf-details-note" hidden>WPF details not loaded <button id="wpf-details-attach" class="secondary">Attach</button></p><p id="wpf-blocked" hidden></p>
+                                    <h3>General</h3>
                                     <table>
                                         <tbody id="properties"></tbody>
                                     </table>
@@ -326,23 +353,6 @@
                                     aria-label="All properties"
                                 >
                                     <h3>All properties</h3>
-                                    <div class="property-loading-actions">
-                                        <button
-                                            id="load-properties"
-                                            class="secondary"
-                                            disabled
-                                        >
-                                            Load all properties
-                                        </button>
-                                        <p
-                                            id="properties-status"
-                                            class="muted"
-                                            role="status"
-                                        >
-                                            Additional properties and supported
-                                            patterns load on demand.
-                                        </p>
-                                    </div>
                                     <table>
                                         <colgroup>
                                             <col class="property-name-column" />
@@ -357,7 +367,7 @@
                                 <h3>.NET <span id="managed-state"></span></h3>
                                 <p id="managed-explanation" class="muted"></p>
                                 <div class="actions managed-actions"><button id="managed-attach">Attach</button><button id="managed-detach" class="secondary">Detach</button><button id="managed-refresh" class="secondary">Refresh metadata</button><button id="managed-install-copy" class="secondary" hidden>Copy install command</button></div>
-                                <label class="managed-search">Search loaded rows only <input id="managed-search" type="search" /></label>
+                                <input id="managed-search" type="search" hidden />
                                 <button id="managed-read-visible" class="secondary">Read visible</button><button id="managed-export" class="secondary">Export metadata</button>
                                 <div id="managed-groups"></div>
                             </section>

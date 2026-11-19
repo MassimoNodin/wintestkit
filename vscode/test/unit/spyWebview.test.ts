@@ -44,7 +44,7 @@ it("renders returned visual children in the Spy tree", () => {
 });
 
 it("rebuilds expanded branches and clears old selections when roots are replaced", () => {
-  const dom = new JSDOM(readFileSync("media/spy/spy.html", "utf8").replace("{{viewClass}}", "spy-view"), { runScripts: "outside-only" });
+  const dom = new JSDOM(readFileSync("media/spy/spy.html", "utf8").replace("{{viewClass}}", "properties-view"), { runScripts: "outside-only" });
   const posts: unknown[] = [];
   Object.assign(dom.window, { acquireVsCodeApi: () => ({ postMessage: (message: unknown) => posts.push(message) }), matchMedia: () => ({ matches: false, addEventListener() {} }), requestAnimationFrame: (fn: () => void) => fn() });
   dom.window.eval((readFileSync("media/spy/treeLabels.js", "utf8") + "\n" + readFileSync("media/spy/spy.js", "utf8")));
@@ -347,5 +347,140 @@ it("does not reconcile ambiguous WPF sibling identities", () => {
   expect(doc.querySelector('[data-node-id="old-second"]')).toBe(second);
   expect(doc.querySelector('[data-node-id="new-first"]')).not.toBe(first);
   expect(doc.querySelector('[data-node-id="new-second"]')).not.toBe(second);
+  dom.window.close();
+});
+
+
+it("places the live preview first in the sidebar and gates it to that surface", () => {
+  const html = readFileSync("media/spy/spy.html", "utf8");
+  const css = readFileSync("media/spy/spy.css", "utf8");
+  expect(css).toContain("body.spy-view #object-preview { display: none !important; }");
+  for (const surface of ["spy-view", "properties-view"]) {
+    const dom = new JSDOM(html.replace("{{viewClass}}", surface), { runScripts: "outside-only" });
+    const posts: unknown[] = [];
+    Object.assign(dom.window, { acquireVsCodeApi: () => ({ postMessage: (message: unknown) => posts.push(message) }), matchMedia: () => ({ matches: false, addEventListener() {} }), requestAnimationFrame: (fn: () => void) => fn() });
+    dom.window.eval(readFileSync("media/spy/treeLabels.js", "utf8") + "\n" + readFileSync("media/spy/spy.js", "utf8"));
+    const doc = dom.window.document;
+    expect(doc.querySelector(".properties-scroll")?.firstElementChild?.id).toBe("object-preview");
+    const send = (data: unknown) => dom.window.dispatchEvent(new dom.window.MessageEvent("message", { data }));
+    send({ type: "propertiesVisibility", visible: true });
+    expect((doc.querySelector("#properties-pane") as HTMLElement).hidden).toBe(surface === "spy-view");
+    send({ type: "propertiesVisibility", visible: false });
+    expect((doc.querySelector("#properties-pane") as HTMLElement).hidden).toBe(false);
+    send({ type: "selected", nodeId: "a", properties: { info: { controlType: "Button", name: "A" }, properties: {} } });
+    send({ type: "objectPreview", nodeId: "a", reason: "Unavailable" });
+    expect((doc.querySelector("#object-preview") as HTMLElement).hidden).toBe(surface !== "properties-view");
+    if (surface === "properties-view") {
+      (doc.querySelector("#preview-retry") as HTMLButtonElement).click();
+      expect(posts).toContainEqual({ type: "retryPreview" });
+      send({ type: "selectionCleared" });
+      expect((doc.querySelector("#object-preview") as HTMLElement).hidden).toBe(true);
+    }
+    dom.window.close();
+  }
+});
+
+it("renders searchable sidebar tabs and remembers the property mode", () => {
+  const dom = new JSDOM(readFileSync("media/spy/spy.html", "utf8").replace("{{viewClass}}", "properties-view"), { runScripts: "outside-only" });
+  const posts: unknown[] = []; let state: Record<string, unknown> = { sidebarAdvanced: false };
+  Object.assign(dom.window, { acquireVsCodeApi: () => ({ postMessage: (message: unknown) => posts.push(message), getState: () => state, setState: (next: Record<string, unknown>) => { state = next; } }), matchMedia: () => ({ matches: false, addEventListener() {} }), requestAnimationFrame: (fn: () => void) => fn() });
+  dom.window.eval(readFileSync("media/spy/treeLabels.js", "utf8") + "\n" + readFileSync("media/spy/spy.js", "utf8"));
+  const send = (data: unknown) => dom.window.dispatchEvent(new dom.window.MessageEvent("message", { data }));
+  const doc = dom.window.document;
+  const win = { nodeId: "win", source: "wpf", hasChildren: true, info: { controlType: "Window", name: "Fixture", processId: 1 } };
+  const child = { nodeId: "child", source: "wpf", hasChildren: false, info: { controlType: "Button", name: "Save", isEnabled: true, rect: { left: 10, top: 20, width: 30, height: 40 } } };
+  send({ type: "roots", nodes: [win] });
+  send({ type: "children", nodeId: "win", nodes: [child], expanded: true });
+  send({ type: "selected", nodeId: "child", properties: { source: "wpf", info: child.info, properties: { ClrFullClassName: "Example.Button", Visible: "True", Custom: "custom value" }, uiaMapped: false } });
+  const names = () => [...doc.querySelectorAll<HTMLTableRowElement>("#sidebar-rows tr[data-name]")].map((row) => row.dataset.name);
+  expect(names()).toEqual(["Enabled", "Height", "MappedName", "Name", "Parent", "Visible", "Width", "ClrFullClassName", "WPFControlText"]);
+  expect(doc.querySelector('[data-name="WPFControlText"] td')?.textContent).toBe("Unknown");
+  send({ type: "definitions", nodeId: "child", state: "ready", definitions: [{ kind: "element", qualname: "Page.save", file: "page.py", line: 1, pages: [], pageCount: 1 }] });
+  expect(doc.querySelector('[data-name="MappedName"] td')?.textContent).toBe("Page.save");
+  (doc.querySelector('[data-name="Parent"] button') as HTMLButtonElement).click();
+  expect(posts).toContainEqual(expect.objectContaining({ type: "select", nodeId: "win" }));
+  send({ type: "selected", nodeId: "child", properties: { source: "wpf", info: child.info, properties: { ClrFullClassName: "Example.Button", Custom: "custom value" }, uiaMapped: false } });
+  (doc.querySelector("#sidebar-mode") as HTMLButtonElement).click();
+  expect(state.sidebarAdvanced).toBe(true);
+  // Until a unique locator arrives the path from the window is built from the tree.
+  expect(doc.querySelector('[data-name="FullName"] td')?.textContent).toBe('Window("").WPFObject("Button", "Save")');
+  expect(posts).toContainEqual({ type: "generateLocator", nodeId: "child" });
+  const locator = { unique: true, strategy: "automationId", helpers: [], window: { code: "Window(title='Fixture')" }, code: "Button(automation_id='save')" };
+  send({ type: "suggestion", nodeId: "child", suggestion: locator });
+  expect(doc.querySelector('[data-name="FullName"] td')?.textContent).toContain("Button(automation_id='save')");
+  send({ type: "selectionPending", nodeId: "win" });
+  send({ type: "suggestion", nodeId: "child", suggestion: locator });
+  send({ type: "selected", nodeId: "win", properties: { source: "wpf", info: win.info, properties: { WPFControlText: "" }, uiaMapped: false } });
+  expect(doc.querySelector('[data-name="FullName"] td')?.textContent).toBe('Window("")');
+  (doc.querySelector("#sidebar-mode") as HTMLButtonElement).click();
+  expect(doc.querySelector('[data-name="WPFControlText"] td')?.textContent).toBe("(empty)");
+  (doc.querySelector("#sidebar-mode") as HTMLButtonElement).click();
+  send({ type: "selected", nodeId: "child", properties: { source: "wpf", info: child.info, properties: { ClrFullClassName: "Example.Button", Custom: "custom value" }, uiaMapped: false } });
+  expect(doc.querySelector("#sidebar-rows")?.textContent).not.toContain("UI Automation");
+  const search = doc.querySelector("#sidebar-search") as HTMLInputElement; search.value = "custom value"; search.dispatchEvent(new dom.window.Event("input"));
+  expect(names()).toEqual(["Custom"]);
+  send({ type: "managedPanel", sequence: 2, visible: true, state: "ready", object: { objectId: "o", type: { fullName: "Example", assemblyName: "A", baseTypes: [] } }, rows: [{ member: { memberKey: "field:Count", name: "Count", category: "clrField", visibility: "public", readable: true, pathSegment: {}, declaringType: "Example", declaredType: "Int32" }, value: { status: "ok", scalar: 7 } }] });
+  (doc.querySelector('[data-sidebar-tab="fields"]') as HTMLButtonElement).click();
+  expect(names()).toEqual([]);
+  search.value = "7"; search.dispatchEvent(new dom.window.Event("input")); expect(names()).toEqual(["Count"]);
+  (doc.querySelector('[data-sidebar-tab="methods"]') as HTMLButtonElement).click();
+  expect(posts).toContainEqual({ type: "managedMethods", action: "activate" });
+  expect(doc.querySelector("#sidebar-empty")?.textContent).toContain("not loaded");
+  const method = { name: "<Run>", declaringType: "Example.Base", returnType: "System.Void", visibility: "public", isStatic: true, unsupportedReason: "generic", parameters: [{ name: "count", type: "System.Int32" }] };
+  send({ type: "managedPanel", sequence: 3, visible: true, state: "ready", object: { objectId: "o", type: { fullName: "Example", assemblyName: "A", baseTypes: [] } }, rows: [], methods: { status: "ready", items: [method, { ...method, parameters: [{ name: "text", type: "System.String" }] }], page: { complete: false, nextToken: true } } });
+  search.value = ""; search.dispatchEvent(new dom.window.Event("input"));
+  expect(names()).toEqual(["<Run>(System.Int32 count)", "<Run>(System.String text)"]);
+  expect(doc.querySelector("#sidebar-rows")?.textContent).toContain("Example.Base; public; static; generic");
+  expect(doc.querySelector("#sidebar-rows img")).toBeNull();
+  expect(doc.querySelector("#sidebar-rows")?.textContent).toContain("Partial list");
+  [...doc.querySelectorAll<HTMLButtonElement>("#sidebar-rows button")].find((button) => button.textContent === "Load more methods")!.click();
+  expect(posts).toContainEqual({ type: "managedMethods", action: "more" });
+  search.value = "string"; search.dispatchEvent(new dom.window.Event("input")); expect(names()).toEqual(["<Run>(System.String text)"]);
+  search.value = ""; search.dispatchEvent(new dom.window.Event("input"));
+  const supported = { ...method, key: "safe-key", unsupportedReason: undefined, parameters: [{ name: "count", type: "System.Int64" }] };
+  send({ type: "managedPanel", sequence: 4, visible: true, state: "ready", object: { objectId: "o", type: { fullName: "Example", assemblyName: "A", baseTypes: [] } }, rows: [], methods: { status: "ready", canInvoke: true, items: [supported, method] } });
+  const input = doc.querySelector<HTMLInputElement>("#sidebar-rows input")!; input.value = "9223372036854775807";
+  const invoke = [...doc.querySelectorAll<HTMLButtonElement>("#sidebar-rows button")].find((button) => button.textContent === "Invoke")!;
+  invoke.click(); expect(posts).toContainEqual({ type: "managedInvoke", memberKey: "safe-key", arguments: [{ kind: "value", text: "9223372036854775807" }] }); expect(invoke.disabled).toBe(true);
+  expect(doc.querySelectorAll("#sidebar-rows details")).toHaveLength(1);
+  send({ type: "managedPanel", sequence: 5, visible: true, state: "ready", object: { objectId: "o", type: { fullName: "Example", assemblyName: "A", baseTypes: [] } }, rows: [], methods: { status: "error", items: [], page: { complete: false, nextToken: true } } });
+  [...doc.querySelectorAll<HTMLButtonElement>("#sidebar-rows button")].find((button) => button.textContent === "Retry methods")!.click();
+  expect(posts).toContainEqual({ type: "managedMethods", action: "retry" });
+  dom.window.close();
+});
+
+it("offers managed row actions, descriptions, pins, and readiness controls", () => {
+  const dom = new JSDOM(readFileSync("media/spy/spy.html", "utf8").replace("{{viewClass}}", "properties-view"), { runScripts: "outside-only" });
+  const posts: unknown[] = []; let state: Record<string, unknown> = { sidebarAdvanced: true };
+  Object.assign(dom.window, { acquireVsCodeApi: () => ({ postMessage: (message: unknown) => posts.push(message), getState: () => state, setState: (next: Record<string, unknown>) => { state = next; } }), matchMedia: () => ({ matches: false, addEventListener() {} }), requestAnimationFrame: (fn: () => void) => fn() });
+  dom.window.eval(readFileSync("media/spy/treeLabels.js", "utf8") + "\n" + readFileSync("media/spy/spy.js", "utf8"));
+  const send = (data: unknown) => dom.window.dispatchEvent(new dom.window.MessageEvent("message", { data }));
+  const doc = dom.window.document;
+  const node = { nodeId: "n", source: "wpf", hasChildren: false, info: { controlType: "Button", name: "Save", processId: 1 } };
+  send({ type: "roots", nodes: [node] });
+  send({ type: "selected", nodeId: "n", properties: { source: "wpf", info: node.info, properties: {} } });
+  send({ type: "managedPanel", sequence: 1, visible: true, state: "attach failed", failure: { code: "attachFailed", hint: "Try again" } });
+  expect(doc.querySelector("#wpf-details-note")?.textContent).toContain("attachFailed: Try again");
+  (doc.querySelector("#wpf-details-attach") as HTMLButtonElement).click(); expect(posts).toContainEqual({ type: "managedAttach" });
+  const member = { memberKey: "clr:Title", name: "Title", category: "clrProperty", visibility: "public", readable: true, pathSegment: { kind: "property", name: "Title" }, declaringType: "Example", declaredType: "String" };
+  const snapshot = { type: "managedPanel", sequence: 2, visible: true, state: "ready", object: { objectId: "o", type: { fullName: "Example", assemblyName: "A", baseTypes: [] } }, bindings: [{ memberKey: "clr:Title", kind: "Binding", status: "active", path: "Name" }], rows: [{ member, value: { status: "ok", kind: "string", scalar: "Hello", runtimeType: "System.String" } }, { member: { ...member, memberKey: "clr:Secret", name: "Secret", pathSegment: { kind: "property", name: "Secret" } }, value: { status: "redacted", scalar: "secret" } }] };
+  send(snapshot);
+  expect((doc.querySelector("#wpf-details-note") as HTMLElement).hidden).toBe(true);
+  expect((doc.querySelector("#sidebar-actions") as HTMLElement).hidden).toBe(false);
+  const row = doc.querySelector('[data-name="Title"]') as HTMLTableRowElement; row.click();
+  expect(doc.querySelector("#sidebar-description")?.textContent).toContain("Runtime type: System.String");
+  expect(doc.querySelector("#sidebar-description")?.textContent).toContain("Binding: Binding; active; Name");
+  // The row's menu opens from its context menu; its items are never missing, only disabled.
+  const action = (label: string, target: Element = row) => {
+    target.dispatchEvent(new dom.window.MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
+    return [...doc.querySelectorAll("#sidebar-row-menu button")].find((button) => button.textContent === label) as HTMLButtonElement;
+  };
+  action("Copy locator key").click(); expect(posts).toContainEqual({ type: "managedCopy", kind: "path", memberKey: "clr:Title" });
+  action("Show in Basic view").click(); expect(state.sidebarManagedPins).toHaveLength(1);
+  (doc.querySelector("#sidebar-mode") as HTMLButtonElement).click(); expect(doc.querySelector('[data-name="Title"]')).not.toBeNull();
+  (doc.querySelector("#sidebar-mode") as HTMLButtonElement).click();
+  const secret = doc.querySelector('[data-name="Secret"]') as HTMLTableRowElement;
+  expect(secret.textContent).not.toContain("secret"); expect(action("Copy value", secret).disabled).toBe(true);
+  (doc.querySelector("#sidebar-export") as HTMLButtonElement).click(); expect(posts).toContainEqual({ type: "managedCopy", kind: "export" });
   dom.window.close();
 });

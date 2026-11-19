@@ -87,7 +87,12 @@ def definition_examples() -> dict[str, dict[str, Any]]:
     events = run_events()
     node = {"nodeId": element["runtimeId"], "info": element, "hasChildren": False}
     element_result = {"status": "found", "element": element, "durationMs": 12.5}
+    spy_target = {"sessionId": "session-1", "objectId": "object-1", "generation": 1}
+    spy_proof = "A" * 43 + "="
+    spy_argument = {"type": "System.String", "value": "label"}
+    method_page = {"items": [], "complete": True, "snapshotId": "snapshot-1", "diagnostics": []}
     common = {
+        "ManagedMethodPage": method_page,
         "InspectionProperty": {
             "name": "Name",
             "typeName": "str",
@@ -174,6 +179,40 @@ def definition_examples() -> dict[str, dict[str, Any]]:
         "InspectRootsParams": {},
         "InspectManagedKeepaliveParams": {"sessionId": "session-1"},
         "InspectManagedKeepaliveResult": {"alive": True},
+        "SpyHostCapability": spy_proof,
+        "SpyInvokeArgument": spy_argument,
+        "InspectManagedSpyMethodsParams": {**spy_target, "pageSize": 1},
+        "InspectManagedSpyMethodsResult": method_page,
+        "InspectManagedSpySelectParams": {
+            "hostCapability": spy_proof,
+            "sessionId": "session-1",
+            "nodeId": node["nodeId"],
+        },
+        "InspectManagedSpySelectResult": {"canInvoke": True},
+        "InspectManagedSpyPrepareInvokeParams": {
+            **spy_target,
+            "hostCapability": spy_proof,
+            "memberKey": "SetLabel",
+            "arguments": [spy_argument],
+        },
+        "InspectManagedSpyPrepareInvokeResult": {"ticket": "ticket-1"},
+        "InspectManagedSpyInvokeParams": {"hostCapability": spy_proof, "ticket": "ticket-1"},
+        "InspectManagedSpyInvokeResult": {
+            "audit": {
+                "operation": "call",
+                "typeFullName": "Fixture.Control",
+                "memberKey": "SetLabel",
+                "outcome": "performed",
+                "timestampUtc": "2026-01-01T00:00:00Z",
+            },
+            "result": {
+                "status": "ok",
+                "kind": "string",
+                "declaredType": "System.String",
+                "runtimeType": "System.String",
+                "scalar": "label",
+            },
+        },
         "InspectRootsResult": [node],
         "InspectRefreshParams": {},
         "InspectRefreshResult": {

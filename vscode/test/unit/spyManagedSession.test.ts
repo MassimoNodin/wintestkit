@@ -13,6 +13,49 @@ function setup() {
   return { request, inspector: new ManagedInspector({ request } as unknown as JsonRpcClient, initialized(true)) };
 }
 describe("managed Spy host", () => {
+  it("keeps the proof at the host boundary and binds the exact selection before preparing a single ticket", async () => {
+    const object = { sessionId: "s", objectId: "o", generation: 4 };
+    const request = vi.fn(async (method: string) => {
+      if (method.endsWith("identify")) return { ...facts, appUnderTest: true };
+      if (method.endsWith("attach")) return session;
+      if (method.endsWith("spySelect")) return { canInvoke: true, mapping: { status: "exact", object } };
+      if (method.endsWith("spyPrepareInvoke")) return { ticket: "single-use" };
+      return { audit: { outcome: "performed" }, result: {} };
+    });
+    const inspector = new ManagedInspector({ request } as unknown as JsonRpcClient, initialized(true), undefined, undefined, "host-secret");
+    mock.trusted = true; await inspector.select("node"); await inspector.attach();
+    expect(request).toHaveBeenCalledWith("inspect.managed.attach", { process: facts.process, hostCapability: "host-secret" });
+    expect(await inspector.bindSpy("node", object as never)).toBe(true);
+    const ticket = await inspector.prepareSpy(object as never, "key", [{ type: "System.String", value: "private" }]);
+    await inspector.invokeSpy(ticket!);
+    expect(request).toHaveBeenCalledWith("inspect.managed.spySelect", { hostCapability: "host-secret", sessionId: "s", nodeId: "node" });
+    expect(request).toHaveBeenCalledWith("inspect.managed.spyPrepareInvoke", { hostCapability: "host-secret", sessionId: "s", objectId: "o", generation: 4, memberKey: "key", arguments: [{ type: "System.String", value: "private" }] });
+    expect(request).toHaveBeenCalledWith("inspect.managed.spyInvoke", { hostCapability: "host-secret", ticket: "single-use" });
+    expect(await inspector.bindSpy("node", { ...object, generation: 5 } as never)).toBe(false);
+    await inspector.select(undefined);
+    await vi.waitFor(() => expect(request).toHaveBeenCalledWith("inspect.managed.spySelect", { hostCapability: "host-secret" }));
+  });
+  it("sends method metadata requests with host session identity", async () => {
+    const process = { pid: 87010, creationTimeUtc: "methods" };
+    const request = vi.fn(async (method: string) => method.endsWith("identify") ? { ...facts, process } : { ...session, process });
+    const inspector = new ManagedInspector({ request } as unknown as JsonRpcClient, initialized(true)); mock.trusted = true; mock.warning.mockResolvedValue("Attach");
+    await inspector.select("n"); await inspector.attach();
+    await inspector.spyMethods({ objectId: "object", generation: 4, pageSize: 25, pageToken: "token" });
+    expect(request).toHaveBeenLastCalledWith("inspect.managed.spyMethods", { sessionId: "s", objectId: "object", generation: 4, pageSize: 25, pageToken: "token" });
+    expect(parseSpyRequest({ type: "managedMethods", action: "more" })).toEqual({ type: "managedMethods", action: "more" });
+    expect(parseSpyRequest({ type: "managedMethods", action: "more", objectId: "forged" })).toBeUndefined();
+  });
+  it("keeps the attachment ready when a Methods cursor expires", async () => {
+    const process = { pid: 87011, creationTimeUtc: "expired-methods" };
+    const request = vi.fn(async (method: string) => {
+      if (method.endsWith("spyMethods")) throw { data: { code: "invalidPageToken" } };
+      return method.endsWith("identify") ? { ...facts, process } : { ...session, process };
+    });
+    const inspector = new ManagedInspector({ request } as unknown as JsonRpcClient, initialized(true)); mock.trusted = true; mock.warning.mockResolvedValue("Attach");
+    await inspector.select("n"); await inspector.attach();
+    await expect(inspector.spyMethods({ objectId: "object", generation: 4, pageToken: "expired" })).resolves.toBeUndefined();
+    expect(inspector.state).toBe("ready");
+  });
   it("logs server-blocked tree failures once per process and code", async () => {
     const request = vi.fn(async () => facts), log = vi.fn();
     const inspector = new ManagedInspector({ request } as unknown as JsonRpcClient, initialized(true), undefined, log);
@@ -37,7 +80,8 @@ describe("managed Spy host", () => {
     expect(mock.warning.mock.calls.at(-1)?.[0]).toContain("C:/App.exe");
     for (const term of ["271", "net8", "x64", "getters", "until the application exits"]) expect(mock.warning.mock.calls.at(-1)?.[1].detail).toContain(term);
     expect(mock.warning.mock.calls.at(-1)?.[1].modal).toBe(true);
-    expect(mock.warning.mock.calls.at(-1)?.slice(2)).toEqual(["Attach", "Learn more", "Cancel"]);
+    // The modal's built-in Cancel is the only cancel path.
+    expect(mock.warning.mock.calls.at(-1)?.slice(2)).toEqual(["Attach", "Learn more"]);
     await inspector.detach(); const prompts = mock.warning.mock.calls.length; await inspector.attach(); expect(mock.warning).toHaveBeenCalledTimes(prompts);
     await inspector.detach();
     request.mockImplementationOnce(async () => ({ ...facts, process: { ...facts.process, creationTimeUtc: "two" } }));
@@ -57,7 +101,7 @@ describe("managed Spy host", () => {
     const process = { pid: 87004, creationTimeUtc: "first" };
     const request = vi.fn(async () => ({ ...facts, process }));
     const inspector = new ManagedInspector({ request } as unknown as JsonRpcClient, initialized(true));
-    mock.warning.mockReset().mockResolvedValueOnce("Learn more").mockResolvedValueOnce("Cancel");
+    mock.warning.mockReset().mockResolvedValueOnce("Learn more").mockResolvedValueOnce(undefined);
     mock.open.mockReset();
     expect(await inspector.attachTree("window", process)).toBe(false);
     expect(mock.open).toHaveBeenCalledWith(expect.stringContaining("managed-inspection.md"));
@@ -171,4 +215,88 @@ it("logs again after a different error, process, or successful session", async (
   ready = true; await inspector.reuseTreeSession("n");
   inspector.invalidate(); ready = false; await inspector.reuseTreeSession("n");
   expect(log).toHaveBeenCalledTimes(4);
+});
+
+describe("honest managed failures", () => {
+  const trustedApp = { ...facts, appUnderTest: true };
+  const denied = { message: "Inspector request failed: accessDenied", data: { code: "accessDenied", hint: "Check the inspector payload, target permissions, and application compatibility." } };
+  async function attached(handler: (method: string) => unknown, log = vi.fn()) {
+    mock.trusted = true;
+    const request = vi.fn(async (method: string) => {
+      if (method.endsWith("identify")) return trustedApp;
+      if (method.endsWith("attach")) return session;
+      return handler(method);
+    });
+    const inspector = new ManagedInspector({ request } as unknown as JsonRpcClient, initialized(true), undefined, log);
+    await inspector.select("node"); await inspector.attach();
+    expect(inspector.state).toBe("ready");
+    return { inspector, request, log };
+  }
+  it("keeps the attachment ready when the inspector withholds data about a protected object", async () => {
+    // A Border or ContentPresenter has no automation peer of its own, so the agent refuses its binding metadata.
+    const { inspector, log } = await attached((method) => { if (method.endsWith("bindings")) throw denied; return { items: [] }; });
+    const params = { objectId: "o", generation: 1, memberKeys: ["k"] as [string] };
+    expect(await inspector.bindings(params)).toBeUndefined();
+    expect(await inspector.bindings(params)).toBeUndefined();
+    expect(inspector.state).toBe("ready");
+    expect(inspector.failure).toBeUndefined();
+    expect(await inspector.members({ objectId: "o", generation: 1 })).toEqual({ items: [] });
+    expect(log).toHaveBeenCalledTimes(1);
+    expect(log.mock.calls[0][0]).toContain("bindings withheld for the selected object");
+    expect(log.mock.calls[0][0]).toContain("accessDenied");
+  });
+  it("reports the real code, hint and a single log line when a request really fails", async () => {
+    const mapping = { message: "Mapping failed", data: { code: "mappingFailed", hint: "Refresh the tree." } };
+    const { inspector, log } = await attached((method) => { if (method.endsWith("members")) throw mapping; return {}; });
+    await inspector.members({ objectId: "o", generation: 1 }); await inspector.members({ objectId: "o", generation: 1 });
+    expect(inspector.state).toBe("mapping unavailable");
+    expect(inspector.failure).toMatchObject({ code: "mappingFailed", hint: "Refresh the tree." });
+    expect(log).toHaveBeenCalledTimes(1);
+    expect(log.mock.calls[0][0]).toContain("mappingFailed: Mapping failed. Refresh the tree.");
+  });
+  it("blames an access-denied resolve on the attachment and says so", async () => {
+    const { inspector, log } = await attached((method) => { if (method.endsWith("resolve")) throw denied; return {}; });
+    await inspector.resolve("node");
+    expect(inspector.state).toBe("blocked by policy");
+    expect(inspector.failure).toMatchObject({ code: "accessDenied", hint: denied.data.hint });
+    expect(log).toHaveBeenCalledTimes(1);
+  });
+  it("names an untrusted workspace instead of a generic policy message, once", async () => {
+    mock.trusted = false;
+    const request = vi.fn(), log = vi.fn();
+    const inspector = new ManagedInspector({ request } as unknown as JsonRpcClient, initialized(true), undefined, log);
+    await inspector.select("node"); await inspector.attach(); await inspector.attach();
+    expect(inspector.state).toBe("blocked by policy");
+    expect(inspector.failure).toEqual({ code: "workspaceNotTrusted", hint: "Trust this workspace to attach the inspector.", message: "The workspace is not trusted" });
+    expect(log).toHaveBeenCalledTimes(1);
+    expect(log.mock.calls[0][0]).toContain("workspaceNotTrusted: The workspace is not trusted. Trust this workspace");
+    // Choosing another object keeps the reason visible until the next attach attempt.
+    await inspector.select("other");
+    expect(inspector.failure?.code).toBe("workspaceNotTrusted");
+    expect(await inspector.attachTree("node", facts.process)).toBe(false);
+    expect(inspector.treeFailure).toEqual({ code: "workspaceNotTrusted", hint: "Trust this workspace to attach the inspector." });
+    expect(request).not.toHaveBeenCalled();
+    mock.trusted = true;
+  });
+  it("tells a missing inspector payload from a policy block when the tree cannot attach", async () => {
+    mock.trusted = true;
+    const log = vi.fn();
+    const inspector = new ManagedInspector({ request: vi.fn() } as unknown as JsonRpcClient, initialized(false), undefined, log);
+    expect(await inspector.attachTree("node", facts.process)).toBe(false);
+    expect(inspector.treeFailure?.code).toBe("payloadMissing");
+    expect(inspector.treeFailure?.hint).toContain("wintestkit[inspector]");
+    expect(inspector.state).toBe("not installed");
+  });
+  it("shows the attach error the server returned, distinguishing accessDenied from blockedByPolicy", async () => {
+    mock.trusted = true;
+    for (const code of ["accessDenied", "blockedByPolicy"]) {
+      const log = vi.fn();
+      const request = vi.fn(async (method: string) => { if (method.endsWith("identify")) return trustedApp; throw { message: "Denied", data: { code, hint: `hint for ${code}` } }; });
+      const inspector = new ManagedInspector({ request } as unknown as JsonRpcClient, initialized(true), undefined, log);
+      await inspector.select("node"); await inspector.attach();
+      expect(inspector.state).toBe("blocked by policy");
+      expect(inspector.failure).toMatchObject({ code, hint: `hint for ${code}` });
+      expect(log.mock.calls[0][0]).toContain(`${code}: Denied. hint for ${code}`);
+    }
+  });
 });

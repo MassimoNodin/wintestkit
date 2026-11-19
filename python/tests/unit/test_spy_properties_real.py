@@ -1,0 +1,325 @@
+"""Live Properties selection: the request sequence the extension host sends for one selected object.
+
+The Properties sidebar attaches the tree, then for each selection resolves the object, binds it for Spy,
+pages its members and reads values. The inspector withholds a few things about elements that have no
+automation peer of their own (ContentPresenter, Border, Grid, ...), such as binding metadata. That must
+never look like a blocked session: every call the sidebar depends on has to keep succeeding.
+"""
+
+import base64
+import io
+import json
+import os
+import queue
+import subprocess
+import sys
+import threading
+from collections.abc import Iterator
+from contextlib import contextmanager, suppress
+from pathlib import Path
+from typing import Any, Protocol
+
+import pytest
+
+from wintestkit.config import load_config
+from wintestkit.server import Server
+
+pytest_plugins = ("test_wpf_query_gate_real",)
+pytestmark = [
+    pytest.mark.integration,
+    pytest.mark.skipif(
+        os.name != "nt" or os.environ.get("WTK_INSPECTOR_REAL") != "1",
+        reason="requires owned Windows fixture",
+    ),
+]
+
+CAPABILITY = base64.b64encode(bytes(range(32))).decode("ascii")
+PEERLESS = "ContentPresenter"
+PEERED = "ScrollViewer"
+
+
+class Rpc(Protocol):
+    def call(self, method: str, params: dict[str, Any]) -> dict[str, Any]: ...
+
+
+class InProcess:
+    def __init__(self, path: Path, app: Any) -> None:
+        self.output = io.BytesIO()
+        self.server = Server(self.output, spy_host_capability=CAPABILITY)
+        self.call("initialize", {"root": str(path)})
+        self.server.cfg = load_config(path, {"inspector.enabled": True})
+        self.server.app = app
+
+    def call(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
+        self.output.seek(0)
+        self.output.truncate()
+        self.server.handle({"jsonrpc": "2.0", "id": 1, "method": method, "params": params})
+        return json.loads(self.output.getvalue().splitlines()[-1])
+
+
+class Stdio:
+    """The real `python -m wintestkit serve --stdio`, with the capability in its environment."""
+
+    def __init__(self, path: Path) -> None:
+        (path / "pyproject.toml").write_text(
+            "[tool.wintestkit.inspector]\nenabled = true\n", encoding="utf-8"
+        )
+        env = {**os.environ, "WINTESTKIT_SPY_HOST_CAPABILITY": CAPABILITY, "PYTHONUTF8": "1"}
+        self.process = subprocess.Popen(
+            [sys.executable, "-m", "wintestkit", "serve", "--stdio"],
+            cwd=path,
+            env=env,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+        )
+        self.lines: queue.Queue[bytes] = queue.Queue()
+        threading.Thread(target=self._pump, daemon=True).start()
+        self.sequence = 0
+        self.call("initialize", {"root": str(path)})
+
+    def _pump(self) -> None:
+        assert self.process.stdout is not None
+        for line in self.process.stdout:
+            self.lines.put(line)
+
+    def call(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
+        assert self.process.stdin is not None
+        self.sequence += 1
+        request = {"jsonrpc": "2.0", "id": self.sequence, "method": method, "params": params}
+        self.process.stdin.write((json.dumps(request) + "\n").encode())
+        self.process.stdin.flush()
+        while True:
+            message = json.loads(self.lines.get(timeout=60))
+            if message.get("id") == self.sequence:
+                return message
+
+    def close(self) -> None:
+        with suppress(Exception):
+            self.call("shutdown", {})
+        self.process.kill()
+        self.process.wait(timeout=10)
+
+
+def result(rpc: Rpc, method: str, params: dict[str, Any]) -> Any:
+    response = rpc.call(method, params)
+    assert "result" in response, (method, response)
+    return response["result"]
+
+
+def pages(rpc: Rpc, method: str, base: dict[str, Any]) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    token = None
+    while True:
+        page = result(rpc, method, {**base, **({"pageToken": token} if token else {})})
+        items += page["items"]
+        token = page.get("nextToken")
+        if not token:
+            return items
+
+
+def find(rpc: Rpc, window: dict[str, Any], names: set[str]) -> dict[str, dict[str, Any]]:
+    found: dict[str, dict[str, Any]] = {}
+    pending = [window]
+    while pending and not names <= found.keys():
+        node = pending.pop(0)
+        children = result(rpc, "inspect.children", {"nodeId": node["nodeId"], "tree": "visual"})
+        for child in children["nodes"]:
+            pending.append(child)
+            found.setdefault(child["info"]["className"].rsplit(".", 1)[-1], child)
+    assert names <= found.keys(), sorted(found)
+    return found
+
+
+def select_like_the_host(rpc: Rpc, session: dict[str, Any], node: dict[str, Any]) -> dict[str, Any]:
+    """The calls ManagedPanel.select makes, in the order it makes them."""
+    cleared = result(rpc, "inspect.managed.spySelect", {"hostCapability": CAPABILITY})
+    assert cleared == {"canInvoke": False}
+    result(rpc, "inspect.properties", {"nodeId": node["nodeId"], "includeAncestors": True})
+    facts = result(rpc, "inspect.managed.identify", {"nodeId": node["nodeId"]})
+    assert facts["process"] == session["process"]
+    mapping = result(
+        rpc,
+        "inspect.managed.resolve",
+        {"sessionId": session["sessionId"], "nodeId": node["nodeId"]},
+    )
+    assert mapping["status"] == "exact"
+    ref = mapping["object"]
+    bound = result(
+        rpc,
+        "inspect.managed.spySelect",
+        {"hostCapability": CAPABILITY, "sessionId": session["sessionId"], "nodeId": node["nodeId"]},
+    )
+    assert bound["canInvoke"] is True
+    assert bound["mapping"]["object"] == ref
+    return ref
+
+
+@contextmanager
+def attached(rpc: Rpc, pid: int) -> Iterator[tuple[dict[str, Any], dict[str, Any]]]:
+    roots = result(rpc, "inspect.roots", {})
+    window = next(node for node in roots if node["info"]["processId"] == pid)
+    first = result(rpc, "inspect.children", {"nodeId": window["nodeId"], "tree": "visual"})
+    assert first.get("attachRequired") is True
+    facts = result(rpc, "inspect.managed.identify", {"nodeId": window["nodeId"]})
+    session = result(
+        rpc,
+        "inspect.managed.attach",
+        {"process": facts["process"], "hostCapability": CAPABILITY},
+    )
+    assert session["state"] == "ready"
+    yield window, session
+
+
+def read_value(rpc: Rpc, base: dict[str, Any], row: dict[str, Any]) -> dict[str, Any]:
+    response = result(rpc, "inspect.managed.spyRead", {**base, "paths": [[row["pathSegment"]]]})
+    return response["values"][0]["value"]
+
+
+def check_selection(rpc: Rpc, pid: int) -> None:
+    with attached(rpc, pid) as (window, session):
+        found = find(rpc, window, {PEERLESS, PEERED})
+        for name, protected in ((PEERLESS, True), (PEERED, False)):
+            node = found[name]
+            ref = select_like_the_host(rpc, session, node)
+            base = {
+                "sessionId": session["sessionId"],
+                "objectId": ref["objectId"],
+                "generation": ref["generation"],
+            }
+            # The Standard rows: identity and ancestry from the UIA side.
+            properties = result(
+                rpc, "inspect.properties", {"nodeId": node["nodeId"], "includeAncestors": True}
+            )
+            assert properties["source"] == "wpf"
+            assert properties["properties"]["ClrFullClassName"].endswith(name)
+            assert properties["properties"]["Visible"] == "True"
+            assert properties["ancestors"], "Parent needs the ancestors"
+            # The Properties tab: members, then public getters read one by one after consent.
+            members = pages(rpc, "inspect.managed.members", base)
+            assert members
+            by_name = {item["name"]: item for item in members if item["category"] == "clrProperty"}
+            for member in ("ActualWidth", "ActualHeight", "Name", "IsEnabled", "Visibility"):
+                value = read_value(rpc, base, by_name[member])
+                assert value["status"] == "ok", (name, member, value)
+            assert read_value(rpc, base, by_name["ActualWidth"])["scalar"] > 0
+            others = [read_value(rpc, base, by_name[m])["status"] for m in ("Margin", "Cursor")]
+            # Peered elements return every public getter; peerless ones only the safe base-class ones.
+            assert others == (["redacted"] * 2 if protected else ["ok"] * 2), (name, others)
+            result(rpc, "inspect.managed.spyMethods", base)
+            # Binding metadata is withheld for peerless elements: accessDenied for that one request only.
+            keys = [
+                item["memberKey"]
+                for item in members
+                if item["category"] in ("dependencyProperty", "attachedProperty")
+            ][:32]
+            bindings = rpc.call("inspect.managed.bindings", {**base, "memberKeys": keys})
+            if protected:
+                assert bindings["error"]["data"]["code"] == "accessDenied"
+            else:
+                assert "result" in bindings, bindings
+            # The session and the bound selection are untouched, so nothing else is blocked.
+            keepalive = result(
+                rpc, "inspect.managed.keepalive", {"sessionId": session["sessionId"]}
+            )
+            assert keepalive == {"alive": True}
+            assert result(rpc, "inspect.managed.members", base)["items"]
+            rebound = result(
+                rpc,
+                "inspect.managed.spySelect",
+                {
+                    "hostCapability": CAPABILITY,
+                    "sessionId": session["sessionId"],
+                    "nodeId": node["nodeId"],
+                },
+            )
+            assert rebound["canInvoke"] is True
+
+
+def test_selection_sequence_in_process(owned: Any) -> None:
+    scope, path = owned
+    check_selection(InProcess(path, scope.app), scope.app.main_window().process_id)
+
+
+def test_selection_sequence_over_stdio(owned: Any) -> None:
+    scope, path = owned
+    server = Stdio(path)
+    try:
+        check_selection(server, scope.app.main_window().process_id)
+    finally:
+        server.close()
+
+
+def auto_eligible(member: dict[str, Any]) -> bool:
+    """The rows ManagedPanel reads without a click: public CLR properties, dependency and attached properties."""
+    segment = member.get("pathSegment")
+    if not segment or not member["readable"] or member["visibility"] != "public":
+        return False
+    category = member["category"]
+    return (category == "clrProperty" and segment["kind"] == "property") or (
+        category in ("dependencyProperty", "attachedProperty") and segment["kind"] == "dependency"
+    )
+
+
+def check_every_row_is_read(rpc: Rpc, pid: int) -> None:
+    """Each automatic row ends with a value, "timed out" or "threw X" - never left unread."""
+    with attached(rpc, pid) as (window, session):
+        found = find(rpc, window, {PEERLESS, PEERED})
+        for name, protected in ((PEERED, False), (PEERLESS, True)):
+            node = found[name]
+            ref = select_like_the_host(rpc, session, node)
+            base = {
+                "sessionId": session["sessionId"],
+                "objectId": ref["objectId"],
+                "generation": ref["generation"],
+            }
+            rows = [m for m in pages(rpc, "inspect.managed.members", base) if auto_eligible(m)]
+            categories = {m["category"] for m in rows}
+            assert {"clrProperty", "dependencyProperty", "attachedProperty"} <= categories, (
+                categories
+            )
+            outcomes: dict[str, int] = {}
+            unread: list[str] = []
+            for member in rows:
+                response = rpc.call(
+                    "inspect.managed.spyRead", {**base, "paths": [[member["pathSegment"]]]}
+                )
+                if "error" in response:
+                    # A getter over the 250 ms limit: the host shows "(timed out)" in that row.
+                    code = response["error"].get("data", {}).get("code")
+                    if code != "timeout":
+                        unread.append(f"{member['category']}:{member['name']}: {response['error']}")
+                    outcomes["timed out"] = outcomes.get("timed out", 0) + 1
+                    continue
+                value = response["result"]["values"][0]["value"]
+                status = value["status"]
+                outcomes[status] = outcomes.get(status, 0) + 1
+                if status == "exception":
+                    assert value.get("message"), "the row shows (threw X): X is the exception type"
+                elif status == "redacted":
+                    assert protected, (name, member["name"], value)
+                    assert value["redactionRule"] == "identity", value
+                elif status not in ("ok", "timeout", "truncated", "unsupported", "cycle"):
+                    unread.append(f"{member['category']}:{member['name']}: {status}")
+            assert not unread, (name, unread)
+            assert sum(outcomes.values()) == len(rows)
+            if protected:
+                # No peer: most getters are redacted by design and say why; the base ones still read.
+                assert outcomes.get("redacted", 0) > 0 and outcomes.get("ok", 0) > 0, outcomes
+            else:
+                assert outcomes.get("redacted", 0) == 0, outcomes
+                assert outcomes.get("ok", 0) >= len(rows) * 0.9, outcomes
+
+
+def test_every_property_row_is_read_in_process(owned: Any) -> None:
+    scope, path = owned
+    check_every_row_is_read(InProcess(path, scope.app), scope.app.main_window().process_id)
+
+
+def test_every_property_row_is_read_over_stdio(owned: Any) -> None:
+    scope, path = owned
+    server = Stdio(path)
+    try:
+        check_every_row_is_read(server, scope.app.main_window().process_id)
+    finally:
+        server.close()

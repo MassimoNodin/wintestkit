@@ -44,7 +44,18 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
   private propertiesView?: vscode.WebviewView;
   private propertiesSubscriptions: vscode.Disposable[] = [];
   private propertiesReady = false;
+  // Auto-reveal bookkeeping for the right sidebar. VS Code only creates that webview once it is shown, and a
+  // collapsed secondary sidebar never resolves it, so Spy reveals it once itself, without keeping the focus.
+  private propertiesRevealed = false;
+  private propertiesRevealing?: Promise<void>;
+  private propertiesWasVisible = false;
+  private propertiesShowRequested = false;
+  /** The user hid or closed the sidebar after seeing it, so Spy must leave it alone until they show it again. */
+  private propertiesDismissed = false;
   private propertiesHistory: SpyResponse[] = [];
+  private currentPreview?: Extract<SpyResponse, { type: "objectPreview" }>;
+  private currentTour?: Extract<SpyResponse, { type: "tour" }>;
+  private previewRevision = 0;
   private managedSnapshot?: unknown;
   private extrasActive = false;
   private tutorialEpoch = 0;
@@ -92,6 +103,7 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
   };
   private disposed = false;
   private suggestion?: Suggestion;
+  private generatingLocatorFor?: number;
   // The definitions last shown for the selected object, so the panel can ask to open one by id.
   private definitionTargets = new Map<string, DefinitionMatch>();
   // Tree nodes the panel currently shows, so markers can be refreshed after a page file is saved.
@@ -208,21 +220,23 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
     if (this.disposed || this.view !== view) return;
     view.webview.html = html;
     this.updateKeepalive();
+    if (view.visible) void this.revealProperties();
     this.viewSubscriptions = [
       view.webview.onDidReceiveMessage((value) => {
         const message = parseSpyRequest(value);
         if (message) {
-          this.trace.message("toHost", message);
+          if (message.type !== "managedInvoke") this.trace.message("toHost", message);
           void this.safe(() => this.handle(message));
         }
       }),
       view.onDidChangeVisibility(() => {
         this.updateKeepalive();
-        if (view.visible)
+        if (view.visible) {
+          void this.revealProperties();
           void this.safe(() =>
             this.tutorialActive() ? this.restoreTutorial() : this.refreshIfStale(),
           );
-        else void this.safe(() => this.stopPick());
+        } else void this.safe(() => this.stopPick());
       }),
       view.onDidDispose(() => {
         if (this.view !== view) return;
@@ -236,6 +250,9 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
     this.propertiesSubscriptions.forEach((subscription) => subscription.dispose());
     this.propertiesView = view;
     this.propertiesReady = false;
+    this.propertiesShowRequested = false;
+    this.propertiesDismissed = false;
+    this.propertiesWasVisible = view.visible;
     this.postPropertiesVisibility();
     const assets = vscode.Uri.joinPath(this.extensionUri, "media", "spy");
     const icons = vscode.Uri.joinPath(this.extensionUri, "media", "codicons");
@@ -256,13 +273,21 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
         if (!message) return;
         if (message.type === "propertiesReady") {
           this.propertiesReady = true;
+          if (this.currentTour) void view.webview.postMessage(this.currentTour);
           for (const item of this.propertiesHistory) void view.webview.postMessage(item);
+          if (this.currentPreview) void view.webview.postMessage(this.currentPreview);
           if (this.managedSnapshot) void view.webview.postMessage(this.managedSnapshot);
         } else void this.safe(() => this.handle(message));
       }),
-      view.onDidChangeVisibility(() => { this.postPropertiesVisibility(); this.updateKeepalive(); }),
+      view.onDidChangeVisibility(() => {
+        this.propertiesShowRequested = false;
+        if (view.visible) { this.propertiesWasVisible = true; this.propertiesDismissed = false; }
+        else if (this.propertiesWasVisible && !this.propertiesRevealing) this.propertiesDismissed = true;
+        this.postPropertiesVisibility(); this.updateKeepalive();
+      }),
       view.onDidDispose(() => {
         if (this.propertiesView !== view) return;
+        this.propertiesDismissed = true;
         this.propertiesView = undefined;
         this.updateKeepalive();
         this.propertiesReady = false;
@@ -271,6 +296,40 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
     ];
     view.webview.html = html;
     this.updateKeepalive();
+  }
+  /**
+   * Makes the Properties view exist and be visible without taking the focus from Spy. A view VS Code never
+   * resolved is created once through its focus command, followed by focusing Spy again; a resolved but hidden
+   * one is shown with the focus preserved, once per hidden period. Nothing happens after the user hid it.
+   */
+  private async revealProperties(): Promise<void> {
+    if (this.disposed || this.tutorialActive() || this.propertiesDismissed || this.propertiesRevealing) return;
+    const existing = this.propertiesView;
+    if (existing) {
+      if (existing.visible || this.propertiesShowRequested) return;
+      this.propertiesShowRequested = true;
+      existing.show?.(true);
+      return;
+    }
+    if (this.propertiesRevealed) return;
+    this.propertiesRevealed = true;
+    let timer: NodeJS.Timeout | undefined;
+    const reveal = (async () => {
+      try {
+        await Promise.race([
+          Promise.resolve(vscode.commands.executeCommand("wintestkit.properties.focus")),
+          new Promise<void>((resolve) => { timer = setTimeout(resolve, 3000); }),
+        ]);
+        if (!this.disposed) await vscode.commands.executeCommand("wintestkit.spy.focus");
+      } catch (error) {
+        this.log.error(`Could not show the Properties view: ${String(error)}`);
+      } finally {
+        clearTimeout(timer);
+        this.propertiesRevealing = undefined;
+      }
+    })();
+    this.propertiesRevealing = reveal;
+    await reveal;
   }
   private updateKeepalive(): void {
     clearInterval(this.keepaliveTimer);
@@ -342,6 +401,17 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
   private post(message: SpyResponse, tutorial = false): void {
     if (this.tutorialActive() && !tutorial && message.type !== "tour") return;
     if (this.disposed) return;
+    if (message.type === "tour") {
+      if (message.tutorial) { this.previewRevision++; this.currentPreview = undefined; }
+      this.currentTour = message;
+      if (this.propertiesReady) void this.propertiesView?.webview.postMessage(message);
+    }
+    if (message.type === "objectPreview") {
+      if (message.nodeId !== this.selectedNodeId || tutorial) return;
+      this.currentPreview = message;
+      if (this.propertiesReady) void this.propertiesView?.webview.postMessage(message);
+      return;
+    }
     if (this.view) {
       this.trace.message("toWebview", message);
       void this.view.webview.postMessage(message);
@@ -349,15 +419,34 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
     if (message.type === "propertiesVisibility") return;
     if (message.type === "roots" || message.type === "selectionCleared") {
       this.selectedNodeId = undefined;
+      this.previewRevision++;
+      this.currentPreview = undefined;
       this.managedSnapshot = undefined;
       this.managedPanel?.select(undefined);
       this.propertiesHistory = this.propertiesHistory.filter((item) => item.type === "state");
     }
+    const locatorTypes = ["suggestion", "suggestionLoading", "suggestionUnavailable"];
     if (message.type === "selectionPending" || message.type === "selected") {
-      this.propertiesHistory = this.propertiesHistory.filter((item) => !["selected", "selectionPending", "allProperties", "propertiesLoading", "progress", "error"].includes(item.type));
-      if (message.type === "selectionPending") this.managedSnapshot = undefined;
+      this.propertiesHistory = this.propertiesHistory.filter((item) => !["selected", "selectionPending", "allProperties", "propertiesLoading", "progress", "error", "definitions", ...locatorTypes].includes(item.type));
+      if (message.type === "selectionPending") {
+        void this.revealProperties();
+        this.managedPanel?.select(message.nodeId);
+        this.previewRevision++;
+        this.currentPreview = undefined;
+        this.managedSnapshot = undefined;
+      }
     }
-    if (["roots", "children", "wpfDetails", "state", "selected", "selectionCleared", "selectionPending", "allProperties", "propertiesLoading", "progress", "error"].includes(message.type)) {
+    if (message.type === "definitions" || message.type === "suggestion" || message.type === "suggestionLoading" || message.type === "suggestionUnavailable") {
+      if (message.nodeId !== this.selectedNodeId) return;
+      const replace = message.type === "definitions" ? ["definitions"] : locatorTypes;
+      this.propertiesHistory = this.propertiesHistory.filter((item) => !replace.includes(item.type));
+      this.propertiesHistory.push(message);
+      if (this.propertiesReady) void this.propertiesView?.webview.postMessage(message);
+      return;
+    }
+    // The Properties view keeps its own copy of the tree (labels, parents, paths), so every message that
+    // changes the tree shape must reach it too; a diff it never saw leaves selected objects without a parent.
+    if (["roots", "rootsDiff", "children", "childrenDiff", "wpfDetails", "state", "selected", "selectionCleared", "selectionPending", "allProperties", "propertiesLoading", "progress", "error"].includes(message.type)) {
       if (message.type === "state") this.propertiesHistory = this.propertiesHistory.filter((item) => item.type !== "state");
       if (message.type === "progress") this.propertiesHistory = this.propertiesHistory.filter((item) => item.type !== "progress" || item.taskId !== message.taskId);
       if (message.type !== "progress" || !message.done) this.propertiesHistory.push(message);
@@ -694,7 +783,7 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
       ? path.win32.basename(appProcess).replace(/\.exe$/i, "")
       : undefined;
     this.client = client;
-    this.managedInspector = new ManagedInspector(client, connection.initialized, (process) => void this.safe(() => this.recoverStale(process)), (line) => this.log.error(line));
+    this.managedInspector = new ManagedInspector(client, connection.initialized, (process) => void this.safe(() => this.recoverStale(process)), (line) => this.log.error(line), connection.hostCapability);
     this.managedPanel = new ManagedPanel(this.managedInspector, (message) => {
       if (this.managedInspector?.visible && !this.tutorialActive()) {
         this.managedSnapshot = message;
@@ -713,6 +802,7 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
         this.pickRevision++;
         this.picking = false;
         this.state();
+        this.managedPanel?.resumeAutoRead();
       }),
       client.onNotification("spy.picked", (value) => {
         void this.safe(async () => {
@@ -873,6 +963,14 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
   }
   async refresh(): Promise<void> {
     if (this.tutorialActive()) return this.ensureTutorial();
+    const nodeId = this.selectedNodeId;
+    const selection = this.selection;
+    // A refresh can invalidate server-side object handles even when the tree is
+    // updated in place. Stop any pending invocation before starting the RPC.
+    this.managedPanel?.select(undefined);
+    const previewRevision = ++this.previewRevision;
+    this.currentPreview = undefined;
+    if (nodeId) this.post({ type: "objectPreview", nodeId, reason: "Refreshing preview\u2026" });
     const key = this.scopeRevision + ":" + this.currentProject()?.root.toString();
     // Each explicit refresh starts a new revision; late responses are ignored.
     this.refreshKey = key;
@@ -880,6 +978,11 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
     this.refreshing = pending;
     try {
       await pending;
+      if (this.refreshing === pending && nodeId && nodeId === this.selectedNodeId && selection === this.selection && this.client && this.loaded) this.managedPanel?.select(nodeId);
+      if (nodeId && nodeId === this.selectedNodeId && selection === this.selection &&
+          previewRevision === this.previewRevision && this.client) {
+        void this.loadPreview(this.client, nodeId, selection);
+      }
     } finally {
       if (this.refreshing === pending) this.refreshing = undefined;
     }
@@ -1204,6 +1307,8 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
   }
   private async startPick(): Promise<void> {
     if (this.tutorialActive()) return;
+    // The picker comes first: the automatic Properties read stops sending batches until the pick ends.
+    this.managedPanel?.pauseAutoRead();
     const token = ++this.pickRevision;
     const view = this.view;
     await this.loading("Starting picker", 2, async (phase) => {
@@ -1417,9 +1522,15 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
     const client = this.client;
     if (!client || nodeId !== this.selectedNodeId || this.tutorialActive()) return;
     const selection = this.selection;
+    if (this.suggestion?.unique) {
+      this.post({ type: "suggestion", nodeId, suggestion: this.suggestion });
+      return;
+    }
+    if (this.generatingLocatorFor === selection) return;
+    this.generatingLocatorFor = selection;
     const current = () =>
       !this.disposed && !this.tutorialActive() &&
-      client === this.client && selection === this.selection;
+      client === this.client && selection === this.selection && nodeId === this.selectedNodeId;
     this.post({ type: "suggestionLoading", nodeId });
     try {
       const suggestion = await client.request<Suggestion>("suggest.locator", { nodeId });
@@ -1430,6 +1541,8 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
       if (!current()) return;
       if (!(error instanceof RpcError && error.code === -32006)) this.log.error(String(error));
       this.post({ type: "suggestionUnavailable", nodeId, reason: error instanceof Error ? error.message : String(error) });
+    } finally {
+      if (this.generatingLocatorFor === selection) this.generatingLocatorFor = undefined;
     }
   }
   private async handle(message: SpyRequest): Promise<void> {
@@ -1547,13 +1660,21 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
     }
     if (message.type === "refresh") return this.refresh();
     if (message.type === "pick") return this.startPick();
-    if (message.type === "stopPick") return this.stopPick();
+    if (message.type === "stopPick") { await this.stopPick(); this.managedPanel?.resumeAutoRead(); return; }
     if (message.type === "pinProperty") {
       await this.pinProperty(message.name, message.pinned);
       return;
     }
     if (message.type === "generateLocator") {
       await this.generateLocator(message.nodeId);
+      return;
+    }
+    if (message.type === "retryPreview") {
+      if (this.client && this.selectedNodeId) {
+        const nodeId = this.selectedNodeId;
+        this.post({ type: "objectPreview", nodeId, reason: "Capturing preview\u2026" });
+        void this.loadPreview(this.client, nodeId, this.selection);
+      }
       return;
     }
     if (message.type === "openPreview") {
@@ -1681,9 +1802,10 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
   }
   /** A live capture of the selected object and its window; nothing is saved. */
   private async loadPreview(client: JsonRpcClient, nodeId: string, selection: number): Promise<void> {
+    const previewRevision = ++this.previewRevision;
     const current = () =>
-      !this.disposed && !this.tutorialActive() &&
-      selection === this.selection && client === this.client;
+      !this.disposed && !this.tutorialActive() && nodeId === this.selectedNodeId &&
+      previewRevision === this.previewRevision && selection === this.selection && client === this.client;
     try {
       const result = livePreviewImages(await client.request("inspect.preview", { nodeId }));
       if (!current()) return;

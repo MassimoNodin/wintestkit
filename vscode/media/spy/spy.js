@@ -14,19 +14,22 @@
     "not enabled": "Enable the inspector in repository settings, then attach.",
     "not installed": "Install the inspector in the selected Python environment:",
     "unsupported target": "Select a supported WPF target and try again.",
-    "blocked by policy": "Trust the workspace or ask your administrator about the blocking policy.",
+    "blocked by policy": "Windows policy, the workspace or the target's permissions blocked the inspector.",
     "restart required": "Restart the target application to load the matching inspector version.",
     "attach failed": "Run `wtk doctor --agent` for details.",
     "mapping unavailable": "Select a control with an exact managed mapping and refresh.",
     "detached (idle)": "The session is detached. Attach again to inspect.",
-    "ready": "Attached. Values are read only when requested. Name-based redaction cannot identify every secret.",
+    "ready": "Attached. Public getters can be read automatically after confirmation. Name-based redaction cannot identify every secret.",
     "not attached to this process": "The selected node belongs to another process. Attach to inspect it.",
   };
+  // The same header the tree shows for a blocked attach: the real code and hint, then where to look.
+  const attachHeader = (failure) => `${failure.code}: ${failure.hint} Run ` + "`wtk doctor --agent`" + " for details.";
   const managedNode = (tag, text) => { const node = document.createElement(tag); node.textContent = text; return node; };
   const managedButton = (label, action) => { const button = managedNode("button", label); button.className = "secondary"; button.addEventListener("click", action); return button; };
+  function managedReadable(member) { return !!member.pathSegment && ((member.readable && member.visibility === "public") || (member.category === "clrField" && member.reason === "nonPublic" && member.pathSegment.kind === "field" && !!member.pathSegment.memberKey && !!member.pathSegment.declaringType)); }
   function renderManaged() {
     const data = managedSnapshot; if (!data) return;
-    element("managed-panel").hidden = !data.visible || !selectedWpf;
+    element("managed-panel").hidden = propertiesView || !data.visible || !selectedWpf;
     element("managed-state").textContent = data.failure ? data.state.charAt(0).toUpperCase() + data.state.slice(1) + ": " + data.failure.code + "." : data.state;
     element("managed-explanation").textContent = data.failure ? [data.failure.hint, "Run `wtk doctor --agent` for details."].filter(Boolean).join(" ") : (managedMessages[data.state] || "") + (data.state === "not installed" ? " " + data.install : "");
     element("managed-install-copy").hidden = data.state !== "not installed";
@@ -46,7 +49,7 @@
       box.append(managedNode("div", `Declared: ${m.declaredType}; runtime: ${v?.runtimeType || "—"}; declaring: ${m.declaringType}; category: ${m.category}; visibility: ${m.visibility}; ${m.readable ? "readable" : "unreadable"}${m.reason ? ` (${m.reason})` : ""}`));
       if (m.compatibilityAlias || m.memberKey === "type:FullName") box.append(managedNode("div", `${m.compatibilityAlias || "ClrFullClassName"} is a compatibility alias of type:FullName`));
       if (m.dependency) box.append(managedNode("div", `Owner: ${m.dependency.ownerType}; ${m.dependency.hasLocalValue ? "local value" : "effective value"}`));
-      let label = v?.status || "not read";
+      let label = row.autoStatus || (v?.kind === "null" && v?.status === "ok" ? "null" : v?.status === "exception" ? "getter threw" : v?.status === "timeout" ? "timed out" : v?.status || "not read");
       if (v?.status === "redacted") label += ` (rule: ${v.redactionRule || "unknown"})`;
       if (v?.scalar !== undefined && v.status !== "redacted") label += `: ${String(v.scalar)}`;
       if (v?.status === "truncated") label += ` (truncated at ${v.truncatedAt})`;
@@ -55,7 +58,7 @@
       if (v?.status === "cycle" && v.cycleTo) { const link = managedButton("Go to ancestor", () => { const target = ancestors.get(v.cycleTo.objectId); target?.scrollIntoView(); target?.focus(); }); box.append(link); }
       const address = { memberKey: m.memberKey, ...(scope ? { scope } : {}) };
       if (m.readable && m.visibility === "public" && m.pathSegment) { box.append(managedButton("Read", () => post("managedRead", address))); if (!v || v.kind === "object" || v.kind === "array") box.append(managedButton("Expand", () => post("managedExpand", address))); }
-      if (m.readable && m.visibility === "public" && v?.status === "ok" && v.scalar !== undefined && !["object", "array", "unavailable"].includes(v.kind)) box.append(managedButton("Copy value", () => post("managedCopy", { kind: "value", ...address })));
+      if (managedReadable(m) && v?.status === "ok" && v.scalar !== undefined && !["object", "array", "unavailable"].includes(v.kind)) box.append(managedButton("Copy value", () => post("managedCopy", { kind: "value", ...address })));
       box.append(managedButton("Copy canonical path", () => post("managedCopy", { kind: "path", ...address })));
       const locator = managedButton("Copy locator", () => {}); locator.disabled = true; locator.title = "Needs uniqueness check — not available yet"; box.append(locator);
       box.tabIndex = -1;
@@ -76,8 +79,8 @@
   element("managed-export").addEventListener("click", () => post("managedCopy", { kind: "export" }));
   element("managed-install-copy").addEventListener("click", () => post("copy", { text: 'pip install "wintestkit[inspector]"' }));
   element("managed-search").addEventListener("input", renderManaged);
-  element("managed-read-visible").addEventListener("click", () => { const checks = [...document.querySelectorAll(".managed-check:checked")].filter((check) => !check.disabled && check.closest("details")?.open).slice(0, 32); if (checks.length) post("managedReadVisible", { memberKeys: checks.map((check) => check.dataset.key), scopes: checks.map((check) => check.dataset.scope) }); });
-  window["addEventListener"]("message", (event) => { const data = event.data; if (data?.type !== "managedPanel" || data.sequence < managedSequence) return; managedSequence = data.sequence; managedSnapshot = data; renderManaged(); });
+  element("managed-read-visible").addEventListener("click", () => { const checks = [...document.querySelectorAll("#sidebar-rows .managed-check:checked")].filter((check) => !check.disabled).slice(0, 32); if (checks.length) post("managedReadVisible", { memberKeys: checks.map((check) => check.dataset.key), scopes: checks.map((check) => check.dataset.scope) }); });
+  window["addEventListener"]("message", (event) => { const data = event.data; if (data?.type !== "managedPanel" || data.sequence < managedSequence) return; managedSequence = data.sequence; managedSnapshot = data; renderManaged(); renderSidebar(); });
 
   let tutorialView;
   let tutorialTarget;
@@ -652,6 +655,7 @@
         );
     }
     element("property-groups").hidden = !hasDetails;
+    element("sidebar-inspector").hidden = !hasDetails;
     element("definitions-group").hidden = !hasDetails;
     element("properties-empty").hidden = hasDetails;
     element("locator-panel").hidden = !hasDetails;
@@ -800,6 +804,9 @@
         ? "magnified"
         : "";
   });
+  element("preview-retry").addEventListener("click", () => {
+    if (propertiesView && selected) { loadingPreview(); post("retryPreview"); }
+  });
   element("preview-open").addEventListener("click", openPreview);
   element("object-preview-image").addEventListener("click", openPreview);
   for (const [id, mode] of [["preview-element", "element"], ["preview-context", "context"]])
@@ -809,6 +816,9 @@
     });
   // -- All properties: one list, sorted by name, in which nested values fold open ------------
   let currentProperties;
+  let selectedProperties;
+  let selectedDefinitions;
+  let definitionsState;
   let shownProperties = [];
   const expandedProperties = new Set();
   let propertiesNodeId;
@@ -864,6 +874,7 @@
       : shownProperties.filter((item) => item !== name);
     renderPinned();
     renderAllProperties();
+    renderSidebar();
     post("pinProperty", { name, pinned });
   };
   const pinButton = (name) => {
@@ -995,18 +1006,326 @@
   };
   const renderWpfDetails = (nodeId) => {
     const entry = nodes.get(nodeId);
-    element("wpf-details-note").hidden = !entry?.wpfMissing;
-    element("wpf-blocked").hidden = !entry?.wpfBlocked;
+    element("wpf-details-note").hidden = !entry?.wpfMissing || managedSnapshot?.state === "ready";
+    element("sidebar-attach-status").textContent = entry?.wpfBlocked ? attachHeader(entry.wpfBlocked) : managedSnapshot?.failure ? attachHeader(managedSnapshot.failure) : "WPF details not loaded";
+    element("wpf-blocked").hidden = true;
     element("wpf-blocked").textContent = entry?.wpfBlocked ? `${entry.wpfBlocked.code}: ${entry.wpfBlocked.hint} Run ` + "`wtk doctor --agent`" + " for details." : "";
   };
-  element("wpf-details-attach").addEventListener("click", () => { if (selected) post("treeAttach", { nodeId: selected }); });
+  element("wpf-details-attach").addEventListener("click", () => { if (selected && (nodes.get(selected)?.wpfMissing || nodes.get(selected)?.wpfBlocked)) post("treeAttach", { nodeId: selected }); else post("managedAttach"); });
   const showProperties = (properties) => {
     currentProperties = properties;
     renderPinned();
     renderAllProperties();
   };
+  // The same filter applies to all rows of the active category, including managed values.
+  let sidebarTab = "properties";
+  let sidebarPins = vscode.getState?.()?.sidebarManagedPins || [];
+  // The row last described, by key, so a redraw (values arrive while it is selected) keeps its description.
+  let describedKey;
+  const rowItems = new Map();
+  const displayValue = (item) => item.value === undefined || item.value === null ? "Unknown" : item.value === "" ? (item.name === "WPFControlText" ? "(empty)" : '""') : String(item.value);
+  const describeSidebar = (item, key) => {
+    const content = element("sidebar-description-content"); content.replaceChildren();
+    describedKey = key;
+    const lines = item.description || [["Name", item.name], ["Value", displayValue(item)], ["Group", item.group]];
+    for (const [label, value] of lines) if (value !== undefined && value !== null && value !== "") content.append(managedNode("div", `${label}: ${value}`));
+    for (const row of element("sidebar-rows").querySelectorAll("tr.sidebar-row")) { const on = row.dataset.key === key; row.classList.toggle("described", on); if (on) row.setAttribute("aria-current", "true"); else row.removeAttribute("aria-current"); }
+  };
+  // What each Standard row means, in one line.
+  const STANDARD_MEANING = {
+    ChildCount: "How many direct children the object has in the tree.",
+    Enabled: "Whether the control accepts input (UI Automation IsEnabled).",
+    Exists: "True while the object is alive in the target application.",
+    FullName: "The locator path from the window down to this object.",
+    Height: "Height of the bounding rectangle, in pixels.",
+    Left: "Distance from the left edge of the containing window to this object's left edge, in pixels. A window reports its position on the screen.",
+    MappedName: "The name your page definitions give this object (the qualified name of its element).",
+    Name: "The x:Name of a WPF object, otherwise its UI Automation name.",
+    Parent: "The object this one belongs to in the tree.",
+    ScreenLeft: "Distance from the left edge of the screen to the object's left edge, in pixels.",
+    ScreenTop: "Distance from the top edge of the screen to the object's top edge, in pixels.",
+    Top: "Distance from the top edge of the containing window to this object's top edge, in pixels. A window reports its position on the screen.",
+    Visible: "Whether the object is shown (its Visibility is Visible).",
+    VisibleOnScreen: "Whether the object is inside the visible part of the screen.",
+    Width: "Width of the bounding rectangle, in pixels.",
+    ClrFullClassName: "The full .NET type name of the object.",
+    WPFControlText: "The text the control shows.",
+  };
+  const standardDescription = (name, value) => [["Name", name], ["Value", value === undefined || value === null ? "Unknown" : value === "" ? '""' : String(value)], ["Group", "Standard"], ["Meaning", STANDARD_MEANING[name]]];
+  const redactedLabel = (name, value) => value.redactionRule === "identity" ? (name === "Password" || name === "SecurePassword" ? "Redacted: password" : "Redacted: element has no automation peer") : `Redacted (rule: ${value.redactionRule || "unknown"})`;
+  /** What a .NET row shows as its value: the value itself, or the real reason there is none. */
+  function managedValueText(row) {
+    const v = row.value;
+    if (!v) return row.autoStatus === "timed out" ? "(timed out)" : row.autoStatus === "unavailable" ? "(unavailable)" : row.autoStatus === "declined" ? "Not read (automatic reading is off)" : row.autoStatus ? `(${row.autoStatus})` : "Not read";
+    if (v.status === "ok") return v.scalar !== undefined ? (v.scalar === "" ? '""' : String(v.scalar)) : v.kind === "null" ? "null" : v.runtimeType || v.kind || "ok";
+    if (v.status === "exception") return `(threw ${String(v.message || "an exception").split(".").pop()})`;
+    if (v.status === "timeout") return "(timed out)";
+    if (v.status === "redacted") return redactedLabel(row.member.name, v);
+    if (v.status === "truncated") return `${v.scalar ?? ""} (truncated at ${v.truncatedAt})`;
+    if (v.status === "cycle") return "(cycle)";
+    if (v.status === "nullIntermediate") return "null";
+    return `(${v.status})`;
+  }
+  const togglePin = (key) => { sidebarPins = sidebarPins.includes(key) ? sidebarPins.filter((item) => item !== key) : [...sidebarPins, key]; vscode.setState?.({ ...(vscode.getState?.() || {}), sidebarManagedPins: sidebarPins }); renderSidebar(); };
+  // One popup serves the "more actions" button and the context menu of every row, on every tab.
+  const rowMenu = element("sidebar-row-menu");
+  let rowMenuOwner;
+  let renderDeferred = false;
+  const rowMenuItems = (item) => {
+    const menu = item.menu || {};
+    const hasValue = item.value !== undefined && item.value !== null;
+    return [
+      { label: "Copy value", enabled: menu.copyValue !== undefined ? menu.copyValue : hasValue, run: () => (menu.address ? post("managedCopy", { kind: "value", ...menu.address }) : post("copy", { text: displayValue(item) })) },
+      { label: "Copy name", enabled: true, run: () => post("copy", { text: menu.name ?? item.name }) },
+      { label: "Copy locator key", enabled: !!menu.locatorKey, run: () => post("managedCopy", { kind: "path", ...menu.address }) },
+      { label: "Expand", enabled: !!menu.expand, run: () => post("managedExpand", menu.address) },
+      { label: "Read again", enabled: !!menu.read, run: () => post("managedRead", menu.address) },
+      { label: menu.pinned ? "Remove from Basic view" : "Show in Basic view", enabled: !!menu.pinKey, run: () => togglePin(menu.pinKey) },
+    ];
+  };
+  const rowByKey = (key) => [...element("sidebar-rows").querySelectorAll("tr.sidebar-row")].find((row) => row.dataset.key === key);
+  function closeRowMenu(restore = true) {
+    if (rowMenu.hidden) return;
+    const owner = rowMenuOwner; rowMenuOwner = undefined;
+    rowMenu.hidden = true; rowMenu.replaceChildren();
+    for (const button of element("sidebar-rows").querySelectorAll(".row-menu-button")) button.removeAttribute("aria-expanded");
+    if (renderDeferred) { renderDeferred = false; renderSidebar(); }
+    if (restore && owner) rowByKey(owner.key)?.focus();
+  }
+  function openRowMenu(row, point, opener) {
+    const key = row.dataset.key, item = rowItems.get(key);
+    if (!item) return;
+    closeRowMenu(false);
+    describeSidebar(item, key);
+    for (const entry of rowMenuItems(item)) {
+      const button = document.createElement("button");
+      button.type = "button"; button.className = "secondary"; button.setAttribute("role", "menuitem"); button.textContent = entry.label; button.disabled = !entry.enabled;
+      button.addEventListener("click", () => { closeRowMenu(); entry.run(); });
+      rowMenu.append(button);
+    }
+    rowMenu.hidden = false;
+    const anchor = point ? undefined : (opener || row).getBoundingClientRect();
+    const width = rowMenu.offsetWidth || 180, height = rowMenu.offsetHeight || 140;
+    const x = point ? point.x : anchor.right - width, y = point ? point.y : anchor.bottom;
+    rowMenu.style.left = Math.max(4, Math.min(x, window.innerWidth - width - 4)) + "px";
+    rowMenu.style.top = Math.max(4, Math.min(y, window.innerHeight - height - 4)) + "px";
+    opener?.setAttribute("aria-expanded", "true");
+    rowMenuOwner = { key, selected, object: managedSnapshot?.object?.objectId };
+    rowMenu.querySelector("button:not(:disabled)")?.focus();
+  }
+  rowMenu.addEventListener("keydown", (event) => {
+    const buttons = [...rowMenu.querySelectorAll("button:not(:disabled)")], at = buttons.indexOf(document.activeElement);
+    if (event.key === "Escape" || event.key === "Tab") { event.preventDefault(); event.stopPropagation(); closeRowMenu(); }
+    else if (event.key === "ArrowDown") { event.preventDefault(); buttons[(at + 1) % buttons.length]?.focus(); }
+    else if (event.key === "ArrowUp") { event.preventDefault(); buttons[(at - 1 + buttons.length) % buttons.length]?.focus(); }
+    else if (event.key === "Home") { event.preventDefault(); buttons[0]?.focus(); }
+    else if (event.key === "End") { event.preventDefault(); buttons.at(-1)?.focus(); }
+  });
+  rowMenu.addEventListener("focusout", (event) => { if (!event.relatedTarget || !rowMenu.contains(event.relatedTarget)) closeRowMenu(false); });
+  document.addEventListener("mousedown", (event) => { if (!rowMenu.hidden && !rowMenu.contains(event.target)) closeRowMenu(false); }, true);
+  const menuButton = () => {
+    const button = document.createElement("button"), glyph = document.createElement("span");
+    button.type = "button"; button.className = "icon-button secondary row-menu-button"; button.title = "Row actions";
+    button.setAttribute("aria-label", "Row actions"); button.setAttribute("aria-haspopup", "menu");
+    glyph.className = "codicon codicon-kebab-horizontal"; glyph.setAttribute("aria-hidden", "true"); button.append(glyph);
+    return button;
+  };
+  // The rows are redrawn as values arrive, so the handlers live on the table body, not on a row.
+  const sidebarBody = element("sidebar-rows");
+  const rowOf = (event) => event.target.closest?.("tr.sidebar-row") || null;
+  sidebarBody.addEventListener("click", (event) => {
+    const row = rowOf(event), item = row && rowItems.get(row.dataset.key);
+    if (!item) return;
+    const opener = event.target.closest(".row-menu-button");
+    if (opener) openRowMenu(row, undefined, opener); else describeSidebar(item, row.dataset.key);
+  });
+  sidebarBody.addEventListener("contextmenu", (event) => {
+    const row = rowOf(event);
+    if (!row || event.target.closest("input, textarea, select")) return;
+    event.preventDefault();
+    openRowMenu(row, { x: event.clientX, y: event.clientY });
+  });
+  sidebarBody.addEventListener("keydown", (event) => {
+    const row = rowOf(event);
+    if (!row || event.target.closest("input, textarea, select")) return;
+    if ((event.key === "F10" && event.shiftKey) || event.key === "ContextMenu") { event.preventDefault(); openRowMenu(row, undefined, row.querySelector(".row-menu-button") || undefined); }
+    else if ((event.key === "Enter" || event.key === " ") && event.target === row) { event.preventDefault(); const item = rowItems.get(row.dataset.key); if (item) describeSidebar(item, row.dataset.key); }
+  });
+  element("sidebar-detach").addEventListener("click", () => post("managedDetach"));
+  element("sidebar-refresh").addEventListener("click", () => post("managedRefresh"));
+  element("sidebar-export").addEventListener("click", () => post("managedCopy", { kind: "export" }));
+  let sidebarAdvanced = vscode.getState?.()?.sidebarAdvanced === true;
+  const sidebarSearch = element("sidebar-search");
+  const sidebarTabs = ["properties", "fields", "methods"].map((name) => element("sidebar-tab-" + name));
+  function renderSidebar() {
+    if (!rowMenu.hidden) {
+      if (rowMenuOwner?.selected === selected && rowMenuOwner.object === managedSnapshot?.object?.objectId) { renderDeferred = true; return; }
+      closeRowMenu(false);
+    }
+    const body = element("sidebar-rows"), empty = element("sidebar-empty");
+    const focusedKey = document.activeElement?.closest?.("tr.sidebar-row")?.dataset?.key;
+    rowItems.clear();
+    body.replaceChildren();
+    sidebarTabs.forEach((button) => button.setAttribute("aria-selected", String(button.dataset.sidebarTab === sidebarTab)));
+    const mode = element("sidebar-mode"); mode.hidden = sidebarTab !== "properties"; mode.textContent = sidebarAdvanced ? "Advanced" : "Basic"; mode.setAttribute("aria-pressed", String(sidebarAdvanced));
+    const entry = nodes.get(selected);
+    const status = element("wpf-details-note");
+    status.hidden = !selectedWpf || managedSnapshot?.state === "ready" || !(entry?.wpfMissing || entry?.wpfBlocked || (managedSnapshot?.visible && managedSnapshot.state !== "ready"));
+    element("sidebar-attach-status").textContent = entry?.wpfBlocked ? attachHeader(entry.wpfBlocked) : managedSnapshot?.failure ? attachHeader(managedSnapshot.failure) : (managedSnapshot?.state ? `${managedSnapshot.state}: ${managedMessages[managedSnapshot.state] || ""}` : "WPF details not loaded");
+    element("sidebar-actions").hidden = !selectedWpf || managedSnapshot?.state !== "ready";
+    const query = sidebarSearch.value.trim().toLowerCase();
+    let count = 0;
+    const matches = (...parts) => !query || parts.some((part) => String(part ?? "").toLowerCase().includes(query));
+    const group = (name, rows) => {
+      const matched = rows.filter((row) => matches(row.name, row.value));
+      if (!matched.length) return;
+      if (sidebarAdvanced || sidebarTab !== "properties") { const heading = document.createElement("tr"); heading.className = "sidebar-group"; const th = document.createElement("th"); th.colSpan = 3; th.textContent = name; heading.append(th); body.append(heading); }
+      for (const item of matched) {
+        const key = name + "/" + item.name;
+        item.group = name; rowItems.set(key, item);
+        const row = document.createElement("tr"); row.className = "property-row sidebar-row"; row.dataset.name = item.name; row.dataset.key = key;
+        const th = document.createElement("th"); th.scope = "row"; th.textContent = item.name; th.title = item.name;
+        const value = document.createElement("td");
+        if (item.select) { const button = managedButton(String(item.value), () => nodes.has(item.select) ? choose(item.select) : post("select", { nodeId: item.select })); value.append(button); }
+        else value.textContent = displayValue(item);
+        const actions = document.createElement("td"); actions.className = "property-actions";
+        if (item.action) actions.append(item.action());
+        else if (item.pin && PINNABLE.test(item.name)) actions.append(pinButton(item.name));
+        if (!item.noMenu) actions.append(menuButton());
+        row.tabIndex = 0;
+        row.append(th, value, actions); body.append(row); count++;
+      }
+    };
+    if (sidebarTab === "methods") {
+      const methods = managedSnapshot?.methods;
+      const items = (methods?.items || []).map((method) => ({
+        name: method.name + "(" + (method.parameters || []).map((parameter) => (parameter.isOut ? "out " : "") + parameter.type + " " + parameter.name).join(", ") + ")",
+        value: [method.returnType, method.declaringType, method.visibility, method.isStatic ? "static" : "instance", method.unsupportedReason, methods.invocation && methods.invocation.key === method.key ? methods.invocation.text : ""].filter(Boolean).join("; "),
+        ...(methods.canInvoke && methods.status === "ready" && !method.unsupportedReason && method.parameters.length <= 16 ? { action: () => {
+          const menu = document.createElement("details"), summary = managedNode("summary", "Invoke");
+          menu.className = "sidebar-row-menu"; menu.append(summary);
+          const inputs = method.parameters.map((parameter) => {
+            const label = document.createElement("label"), select = document.createElement("select"), input = document.createElement("input");
+            label.textContent = `${parameter.name || "argument"} (${parameter.type}) `;
+            const choices = parameter.type === "System.String" ? [["value", "String"], ["null", "Null"]] : parameter.type === "System.Boolean" ? [["value", "Boolean"]] : ["System.Int32", "System.Int64", "System.Single", "System.Double", "System.Decimal"].includes(parameter.type) ? [["value", "Number"]] : [["enum", "Enum name or flags"]];
+            choices.forEach(([value, text]) => { const option = document.createElement("option"); option.value = value; option.textContent = text; select.append(option); });
+            if (parameter.type === "System.Boolean") { const bool = document.createElement("select"); ["false", "true"].forEach((value) => { const option = document.createElement("option"); option.value = value; option.textContent = value; bool.append(option); }); label.append(select, bool); menu.append(label); return () => ({ kind: select.value, text: bool.value }); }
+            input.type = "text"; input.maxLength = 4096; select.addEventListener("change", () => { input.disabled = select.value === "null"; });
+            label.append(select, input); menu.append(label); return () => ({ kind: select.value, text: select.value === "null" ? "" : input.value });
+          });
+          const submit = managedButton("Invoke", () => { submit.disabled = true; post("managedInvoke", { memberKey: method.key, arguments: inputs.map((read) => read()) }); });
+          submit.disabled = !!methods.invoking; menu.append(submit); return menu;
+        } } : {}),
+      }));
+      group("Methods", items);
+      if (!managedSnapshot?.object) empty.textContent = "Methods unavailable for this selection.";
+      else if (methods?.status === "loading") empty.textContent = "Loading methods…";
+      else if (methods?.status === "error") empty.textContent = "Methods unavailable. Retry to load methods.";
+      else if (methods?.status !== "ready") empty.textContent = "Methods not loaded.";
+      else empty.textContent = query ? "No matching methods." : "No methods found.";
+      if ((methods?.status === "loading" && items.length) || methods?.status === "error" || (methods?.page && !methods.page.complete)) {
+        const row = document.createElement("tr"), cell = document.createElement("td"); cell.colSpan = 3;
+        if (methods.page && !methods.page.complete) cell.append(document.createTextNode("Partial list. "));
+        if (methods.status === "loading") cell.append(document.createTextNode("Loading methods…"));
+        if (methods.status === "error") cell.append(managedButton("Retry methods", () => post("managedMethods", { action: "retry" })));
+        else if (methods.page.nextToken && methods.status !== "loading") cell.append(managedButton("Load more methods", () => post("managedMethods", { action: "more" })));
+        row.append(cell); body.append(row);
+      }
+    }
+    else if (sidebarTab === "fields") {
+      group("Fields", managedRows(true)); empty.textContent = query ? "No matching fields." : "No fields loaded.";
+    } else if (selectedProperties) {
+      const p = selectedProperties, info = p.info || {}, raw = p.properties || {}, entry = nodes.get(selected), parent = nodes.get(entry?.parentId);
+      // The loaded tree is the first source; the ancestors the host sent with the selection are the fallback.
+      const ancestry = [];
+      for (let up = entry; up && ancestry.length < 64; up = nodes.get(up.parentId)) ancestry.unshift({ nodeId: up.node.nodeId, label: up.name, node: up.node });
+      const fromHost = (p.ancestors || []).map((ancestor) => ({ nodeId: ancestor.nodeId, node: ancestor, label: WtkTreeLabels.labelsFor([ancestor])[0] }));
+      const route = (entry && ancestry.length > 1 ? ancestry.slice(0, -1) : fromHost).filter((item) => item.node.info.controlType !== "Process");
+      const actualParent = parent && parent.node.info.controlType !== "Process" ? { nodeId: parent.node.nodeId, label: parent.name } : route.at(-1);
+      const ownLabel = entry?.name || WtkTreeLabels.labelsFor([{ nodeId: selected, source: p.source, info, identity: { type: raw.ClrFullClassName, xName: raw["x:Name"] } }])[0];
+      const locatorPath = suggestion?.unique && suggestion.window ? [suggestion.window.code, ...suggestion.helpers.map((helper) => helper.attributeName + " = " + helper.code), suggestion.code].join("\n") : [...route.map((item) => item.label), ownLabel].join(".");
+      // Left and Top are measured from the containing window; a window reports its place on the screen.
+      const windowRect = route[0]?.node?.info?.rect;
+      const offset = (own, origin) => typeof own !== "number" ? undefined : typeof origin === "number" ? own - origin : own;
+      const standard = {
+        ChildCount: entry?.node.hasChildren === false ? 0 : entry?.loaded ? entry.children.children.length : undefined,
+        Enabled: info.isEnabled, Exists: true, FullName: locatorPath,
+        Height: info.rect?.height, Left: offset(info.rect?.left, windowRect?.left), MappedName: definitionsState === "ready" ? (selectedDefinitions?.find((d) => d.kind === "element" || d.kind === "elements")?.qualname ?? "(not defined in any page)") : definitionsState === "loading" ? "Checking pages\u2026" : undefined,
+        Name: (p.source === "wpf" && raw["x:Name"]) || info.name, Parent: actualParent?.label, ScreenLeft: info.rect?.left, ScreenTop: info.rect?.top,
+        Top: offset(info.rect?.top, windowRect?.top), Visible: p.source === "wpf" ? raw.Visible : undefined, VisibleOnScreen: info.isOffscreen === undefined ? undefined : !info.isOffscreen, Width: info.rect?.width,
+        ClrFullClassName: raw.ClrFullClassName, WPFControlText: raw.WPFControlText,
+      };
+      const rowFor = (name) => ({ name, value: standard[name], description: standardDescription(name, standard[name]), ...(name === "Parent" && actualParent ? { select: actualParent.nodeId } : {}) });
+      const basic = ["Enabled", "Height", "MappedName", "Name", "Parent", "Visible", "Width", ...(p.source === "wpf" ? ["ClrFullClassName", "WPFControlText"] : [])];
+      if (!sidebarAdvanced) { group("Standard", basic.map(rowFor)); group("Pinned", [...managedRows(false), ...managedRows(true)].filter((row) => sidebarPins.includes(row.pinKey))); }
+      else {
+        const names = ["ChildCount", "Enabled", "Exists", "FullName", "Height", "Left", "MappedName", "Name", "Parent", "ScreenLeft", "ScreenTop", "Top", "Visible", "VisibleOnScreen", "Width"];
+        group("Standard", names.map(rowFor));
+        // Each value appears once: x:Name is Name, IsEnabled is Enabled, Bounds is the rectangle rows above.
+        const represented = new Set([...names, "x:Name", "IsEnabled", "Bounds", "ClrFullClassName"]);
+        if (p.source === "wpf") {
+          // AutomationId is the attached AutomationProperties.AutomationId, or empty.
+          const extended = Object.entries(raw).filter(([name]) => !represented.has(name)).map(([name, value]) => ({ name, value: name === "AutomationId" ? (value ?? info.automationId ?? "") : value }));
+          if (!extended.some((row) => row.name === "AutomationId")) extended.unshift({ name: "AutomationId", value: info.automationId ?? "" });
+          group("Extended", extended);
+        }
+        const managed = managedRows(false).filter((row) => !["Name", "IsEnabled"].includes(row.name)).map((row) => represented.has(row.name) && row.name !== "ClrFullClassName" ? { ...row, name: "CLR " + row.name } : row);
+        if (p.source === "wpf" && !managed.some((r) => r.name === "ClrFullClassName")) managed.unshift(rowFor("ClrFullClassName"));
+        for (const binding of managedSnapshot?.bindings || []) managed.push({ name: "Binding " + binding.memberKey, value: [binding.kind, binding.status, binding.path].filter(Boolean).join("; ") });
+        group(".NET", managed);
+        const uia = p.source === "wpf" ? p.uia : p;
+        if (uia && (p.source !== "wpf" || p.uiaMapped)) {
+          const flatten = (item, prefix = "") => [{ name: prefix + item.name, value: propertySummary(item), pin: !prefix }, ...nestedEntries(item).flatMap((child) => flatten(child, prefix + item.name + "."))];
+          group("UI Automation", propertyEntries(uia.properties, uia.inspection).filter((item) => !represented.has(item.name) && (p.source !== "wpf" || (!Object.hasOwn(raw, item.name) && item.name !== "AutomationId"))).flatMap((item) => flatten(item)));
+        }
+      }
+      empty.textContent = query ? "No matching properties." : "No properties loaded.";
+    }
+    empty.hidden = count > 0;
+    // The name column is as wide as the longest name, up to 24 characters; longer names get an ellipsis and a tooltip.
+    element("sidebar-table").style.setProperty("--name-ch", String(Math.min(24, Math.max(6, ...[...rowItems.values()].map((item) => item.name.length)))));
+    const described = describedKey !== undefined ? rowItems.get(describedKey) : undefined;
+    if (described) describeSidebar(described, describedKey);
+    if (focusedKey !== undefined) rowByKey(focusedKey)?.focus({ preventScroll: true });
+    if (sidebarTab !== "methods" && managedSnapshot?.page && !managedSnapshot.page.complete && managedSnapshot.page.nextToken) {
+      const more = document.createElement("tr"), cell = document.createElement("td"); cell.colSpan = 3;
+      cell.append(managedButton("Load more managed members", () => post("managedLoadMore", { group: sidebarTab === "fields" ? "CLR fields" : "CLR properties" }))); more.append(cell); body.append(more);
+    }
+  }
+  function managedRows(fields) {
+    const flatten = (rows, scope, prefix = "", segments = []) => (rows || []).flatMap((row) => {
+      const m = row.member, v = row.value, path = [...segments, m.pathSegment];
+      const address = { memberKey: m.memberKey, ...(scope ? { scope } : {}) };
+      const pinKey = path.map((segment) => JSON.stringify(segment)).join("/");
+      const first = path[0];
+      const validKey = path.every(Boolean) && (first?.kind === "property" || first?.kind === "dependency") && path.slice(1).every((segment) => segment.kind === "property") && (first.kind !== "dependency" || ![first.ownerAssembly, first.ownerType, first.name].some((part) => /[|:/]/.test(part)));
+      const binding = (managedSnapshot?.bindings || []).find((item) => item.memberKey === m.memberKey);
+      const text = managedValueText(row);
+      const result = { name: prefix + (m.compatibilityAlias || m.name) + (fields && (rows || []).filter((item) => item.member.category === "clrField" && item.member.name === m.name).length > 1 ? ` (${m.declaringType})` : ""), pinKey,
+        value: text,
+        description: [["Name", m.name], ["Value", text], ["Declared type", m.declaredType], ["Runtime type", v?.runtimeType], ["Declaring type", m.declaringType], ["Category", m.category], ["Value source", v?.dependencySource?.baseValueSource], ["Binding", binding && [binding.kind, binding.status, binding.path].filter(Boolean).join("; ")]],
+        menu: { address, name: m.name, pinKey, pinned: sidebarPins.includes(pinKey), locatorKey: validKey, read: managedReadable(m),
+          copyValue: managedReadable(m) && v?.status === "ok" && v.scalar !== undefined && !["object", "array", "unavailable"].includes(v.kind),
+          expand: v?.status === "ok" && (v.kind === "object" || v.kind === "array") } };
+      const more = row.page?.nextToken ? [{ name: prefix + m.name + ".Load more", value: "Partial list", noMenu: true, action: () => managedButton("Load more", () => post("managedLoadMore", { group: row.id })) }] : [];
+      return [(m.category === "clrField") === fields ? result : undefined, ...flatten(row.children, row.id, prefix + m.name + ".", path), ...more].filter(Boolean);
+    });
+    return flatten(managedSnapshot?.rows);
+  }
+  sidebarTabs.forEach((button) => button.addEventListener("click", () => { const previous = sidebarTab; sidebarTab = button.dataset.sidebarTab; if (sidebarTab === "methods" && previous !== "methods") post("managedMethods", { action: "activate" }); else if (previous === "methods" && sidebarTab !== "methods") post("managedMethods", { action: "deactivate" }); renderSidebar(); requestStandardLocator(); }));
+  sidebarSearch.addEventListener("input", renderSidebar);
+  let standardLocatorRequested;
+  const requestStandardLocator = () => {
+    if (!propertiesView || sidebarTab !== "properties" || !sidebarAdvanced || !selected || !selectedProperties || suggestion || standardLocatorRequested === selected || tutorialView) return;
+    standardLocatorRequested = selected;
+    post("generateLocator", { nodeId: selected });
+  };
+  element("sidebar-mode").addEventListener("click", () => { sidebarAdvanced = !sidebarAdvanced; vscode.setState?.({ ...(vscode.getState?.() || {}), sidebarAdvanced }); renderSidebar(); requestStandardLocator(); });
   const clearProperties = () => {
     currentProperties = undefined;
+    selectedProperties = undefined; selectedDefinitions = undefined; definitionsState = undefined;
+    closeRowMenu(false);
+    standardLocatorRequested = undefined;
     propertiesNodeId = undefined;
     expandedProperties.clear();
     renderPinned();
@@ -1035,7 +1354,7 @@
     return path.length ? path : undefined;
   };
   const choose = (nodeId) => {
-    loadingPreview();
+    if (propertiesView && !tutorialView) loadingPreview();
     clearProperties();
     focusSelected(nodeId);
     suggestion = undefined;
@@ -1591,7 +1910,7 @@
       return;
     }
     if (message.type === "roots") element("upgrade-package").hidden = true;
-    if (message.type === "propertiesVisibility") { element("properties-elsewhere").hidden = message.visible; return; }
+    if (message.type === "propertiesVisibility") { if (!propertiesView) element("properties-pane").hidden = message.visible; return; }
     if (message.type === "selectionCleared") {
       selected = undefined;
       hasDetails = false;
@@ -1603,12 +1922,13 @@
       renderStatus();
       return;
     }
-    if (message.type === "selectionPending") { element("properties-view-status").textContent = "Loading properties\u2026"; element("properties-view-status").hidden = false; clearProperties(); focusSelected(message.nodeId); hasDetails = false; selecting = true; renderStatus(); return; }
+    if (message.type === "selectionPending") { if (propertiesView && !tutorialView) loadingPreview(); else element("object-preview").hidden = true; element("properties-view-status").textContent = "Loading properties\u2026"; element("properties-view-status").hidden = false; clearProperties(); suggestion = undefined; focusSelected(message.nodeId); hasDetails = false; selecting = true; renderStatus(); return; }
     if (message.type === "progress") {
       if (!message.done && message.completed === 0 && message.target === "tree")
         element("enumeration-status").hidden = true;
       if (!tutorialView) progress(message);
     } else if (message.type === "tour") {
+      if (message.tutorial) element("object-preview").hidden = true;
       if (!!message.tutorial !== !!tutorialView) {
         tasks.clear();
         selecting = false;
@@ -1811,15 +2131,18 @@
     } else if (message.type === "suggestion") {
       if (message.nodeId !== selected) return;
       renderSuggestion(message.suggestion);
+      renderSidebar();
     } else if (message.type === "suggestionLoading") {
       if (message.nodeId === selected) locatorState("generating");
     } else if (message.type === "suggestionUnavailable") {
       if (message.nodeId !== selected) return;
       suggestion = undefined;
       locatorState("idle", message.reason);
+      renderSidebar();
     } else if (message.type === "definitions") {
       if (message.nodeId !== selected) return;
       renderDefinitions(message);
+      selectedDefinitions = message.state === "ready" ? message.definitions : undefined; definitionsState = message.state; renderSidebar();
     } else if (message.type === "coverage") {
       for (const id of message.nodeIds) {
         const info = message.covered[id];
@@ -1836,6 +2159,7 @@
       if (message.nodeId !== selected) return;
       fullPropertiesLoaded = true;
       fullPropertiesLoading = false;
+      selectedProperties = message.properties; renderSidebar();
       showProperties(message.properties.source === "wpf" && message.properties.uia ? message.properties.uia : message.properties);
       if (message.properties.source === "wpf" && message.properties.uiaMapped) table("wpf-uia-properties", { "Control type": message.properties.info.controlType, "Class name": message.properties.uia?.properties?.ClassName, Patterns: message.properties.info.patterns?.join(", ") || "None", ...message.properties.uia?.properties });
       const info = message.properties.info;
@@ -1850,10 +2174,10 @@
     } else if (message.type === "selected") {
       element("properties-view-status").hidden = true;
       // The tutorial has no live app to capture; otherwise the host sends the preview next.
-      if (tutorialView) element("object-preview").hidden = true;
+      if (!propertiesView || tutorialView) element("object-preview").hidden = true;
       else loadingPreview();
       // What was open belongs to the object it was opened on; picking another starts closed.
-      if (message.nodeId !== propertiesNodeId) expandedProperties.clear();
+      if (message.nodeId !== propertiesNodeId) { expandedProperties.clear(); describedKey = undefined; element("sidebar-description-content").textContent = "Select a row to see its description."; }
       propertiesNodeId = message.nodeId;
       hint("");
       focusSelected(message.nodeId);
@@ -1862,6 +2186,7 @@
       fullPropertiesLoaded = false;
       fullPropertiesLoading = false;
       detailsError = "";
+      selectedProperties = message.properties; selectedDefinitions = undefined; definitionsState = undefined;
       const info = message.properties.info;
       const isWpf = message.properties.source === "wpf";
       selectedWpf = isWpf;
@@ -1915,8 +2240,11 @@
       });
       showProperties(isWpf && message.properties.uia ? message.properties.uia : message.properties);
       if (isWpf) element("pinned-group").hidden = true;
+      renderSidebar();
       // A locator the user already asked for keeps its spinner while the details arrive.
       if (message.suggestion || !locatorBusy) renderSuggestion(message.suggestion);
+      renderSidebar();
+      requestStandardLocator();
       renderStatus();
     } else if (message.type === "selectionRestored") {
       const restored = nodes.get(message.nodeId);
@@ -1928,7 +2256,7 @@
         revealLabels([restored.row]);
       }
     } else if (message.type === "objectPreview") {
-      if (message.nodeId === selected) renderObjectPreview(message.preview, message.reason);
+      if (propertiesView && !tutorialView && message.nodeId === selected) renderObjectPreview(message.preview, message.reason);
     } else if (message.type === "enumerationIncomplete") {
       element("enumeration-status").textContent = message.message;
       element("enumeration-status").hidden = false;

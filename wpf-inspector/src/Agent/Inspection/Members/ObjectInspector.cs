@@ -104,6 +104,16 @@ namespace WinTestKit.Inspector.Agent.Inspection.Members
             return method.IsPublic ? "public" : method.IsFamilyOrAssembly ? "protectedInternal" : method.IsFamilyAndAssembly ? "privateProtected" : method.IsFamily ? "protected" : method.IsAssembly ? "internal" : "private";
         }
         public ValueDto ReadPath(object root, IReadOnlyList<PathSegment> path, IObjectRegistry registry, Dispatcher dispatcher, CancellationToken ct)
+            => ReadPathCore(root, path, registry, dispatcher, ct, false);
+
+        public ValueDto ReadSpyField(object root, IReadOnlyList<PathSegment> path, IObjectRegistry registry, Dispatcher dispatcher, CancellationToken ct)
+        {
+            if (path.Count != 1 || path[0].Kind != "field" || string.IsNullOrEmpty(path[0].MemberKey) || string.IsNullOrEmpty(path[0].DeclaringType))
+                throw new ProtocolException(ErrorCodes.InvalidParams, "Spy field reads require one exact field");
+            return ReadPathCore(root, path, registry, dispatcher, ct, true);
+        }
+
+        private ValueDto ReadPathCore(object root, IReadOnlyList<PathSegment> path, IObjectRegistry registry, Dispatcher dispatcher, CancellationToken ct, bool spyField)
         {
             if (path.Count == 0 || path.Count > ProtocolLimits.MaxPathSegments || (path.Count != 1 && path.Any(x => x.Kind == "type" || x.Kind == "uia"))) throw new ProtocolException(ErrorCodes.InvalidParams, "Invalid path");
             foreach (PathSegment segment in path) segment.ToJson();
@@ -164,7 +174,7 @@ namespace WinTestKit.Inspector.Agent.Inspection.Members
                 Declaration? declaration = ReflectionCatalog.Get(current!.GetType()).FirstOrDefault(d => d.Key == selected.MemberKey);
                 if (protectedIdentity && !RedactionPolicy.IsAllowedOnProtected(path, declaration)) return new ValueDto { Status = "redacted", Kind = "unavailable", RedactionRule = "identity" };
                 if (declaration != null && RedactionPolicy.IsPasswordIdentity(declaration.DeclaringType, declaration.Name)) return new ValueDto { Status = "redacted", Kind = "unavailable", RedactionRule = "identity" };
-                if (!selected.Readable) return new ValueDto { Status = selected.Reason == "unsupportedType" ? "unsupported" : "notReadable", Kind = "unavailable", DeclaredType = selected.DeclaredType };
+                if (!selected.Readable && !(spyField && selected.Category == "clrField" && selected.Reason == "nonPublic" && declaration?.Field != null && !Declaration.Unsupported(declaration.ValueType))) return new ValueDto { Status = selected.Reason == "unsupportedType" ? "unsupported" : "notReadable", Kind = "unavailable", DeclaredType = selected.DeclaredType };
                 try
                 {
                     object? next;

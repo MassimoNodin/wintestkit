@@ -86,13 +86,14 @@ class Node {
   }
 }
 
-function client(file: "setup" | "spy", viewport: { width?: number } = {}) {
+function client(file: "setup" | "spy", viewport: { width?: number; propertiesView?: boolean } = {}) {
   const nodes = new Map<string, Node>();
   const element = (id: string) => {
     if (!nodes.has(id)) nodes.set(id, new Node());
     return nodes.get(id)!;
   };
   const body = new Node();
+  if (viewport.propertiesView) body.className = "properties-view";
   const scroll = new Node(); scroll.append(element("property-groups"), element("managed-panel")); element("property-groups").append(element("wpf-uia-group"), element("wpf-uia-empty"));
   let receive = (event: { data: unknown }) => {
     void event;
@@ -963,7 +964,7 @@ describe("introduction clients", () => {
     const click = (page: ReturnType<typeof client>, id: string) => page.element(id).listeners.click();
 
     it("shows the element by default and switches to the outlined window and back", () => {
-      const page = client("spy");
+      const page = client("spy", { propertiesView: true });
       select(page);
       expect(page.element("object-preview").hidden).toBe(false);
       expect(page.element("object-preview-image").hidden).toBe(true);
@@ -980,7 +981,7 @@ describe("introduction clients", () => {
     });
 
     it("enlarges a small capture without smoothing and leaves a large one to the browser", () => {
-      const page = client("spy");
+      const page = client("spy", { propertiesView: true });
       select(page);
       page.send({ type: "objectPreview", nodeId: "control", preview: { elementDataUrl: element, windowDataUrl: context } });
       const image = page.element("object-preview-image");
@@ -1003,7 +1004,7 @@ describe("introduction clients", () => {
     });
 
     it("keeps the chosen view when another object is selected", () => {
-      const page = client("spy");
+      const page = client("spy", { propertiesView: true });
       select(page);
       page.send({ type: "objectPreview", nodeId: "control", preview: { elementDataUrl: element, windowDataUrl: context } });
       click(page, "preview-context");
@@ -1013,7 +1014,7 @@ describe("introduction clients", () => {
     });
 
     it("opens whichever view is showing in the image viewer, and only once there is an image", () => {
-      const page = client("spy");
+      const page = client("spy", { propertiesView: true });
       select(page);
       expect(page.element("preview-open").disabled).toBe(true);
       click(page, "preview-open");
@@ -1028,14 +1029,14 @@ describe("introduction clients", () => {
     });
 
     it("ignores a preview for an object that is no longer selected", () => {
-      const page = client("spy");
+      const page = client("spy", { propertiesView: true });
       select(page, "next");
       page.send({ type: "objectPreview", nodeId: "control", preview: { elementDataUrl: element, windowDataUrl: context } });
       expect(page.element("object-preview-image").hidden).toBe(true);
     });
 
     it("explains why there is no image and rejects anything that is not a WebP data URL", () => {
-      const page = client("spy");
+      const page = client("spy", { propertiesView: true });
       select(page);
       page.send({ type: "objectPreview", nodeId: "control", reason: "The window cannot be captured." });
       expect(page.element("object-preview-image").hidden).toBe(true);

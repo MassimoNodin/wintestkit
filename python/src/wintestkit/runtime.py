@@ -211,15 +211,26 @@ def require_managed(*, values: bool = True) -> None:
 
 
 def attach_managed(
-    identity: ProcessIdentity, *, deadline: float, target_hwnd: int | None = None
+    identity: ProcessIdentity,
+    *,
+    deadline: float,
+    target_hwnd: int | None = None,
+    spy_invoke: bool = False,
 ) -> InspectorClient:
     """Explicitly attach or retry a process after a previous on-demand failure."""
     __tracebackhide__ = True
-    return _attach_managed(identity, deadline=deadline, target_hwnd=target_hwnd, explicit=True)
+    return _attach_managed(
+        identity, deadline=deadline, target_hwnd=target_hwnd, explicit=True, spy_invoke=spy_invoke
+    )
 
 
 def _attach_managed(
-    identity: ProcessIdentity, *, deadline: float, target_hwnd: int | None, explicit: bool
+    identity: ProcessIdentity,
+    *,
+    deadline: float,
+    target_hwnd: int | None,
+    explicit: bool,
+    spy_invoke: bool = False,
 ) -> InspectorClient:
     __tracebackhide__ = True
     from wintestkit.errors import InspectorUnavailableError
@@ -260,6 +271,7 @@ def _attach_managed(
                 identity,
                 target_hwnd=target_hwnd,
                 deadline=min(deadline, time.monotonic() + config.attach_timeout),
+                **({"spy_invoke": True} if spy_invoke else {}),
             )
         except Exception as exc:
             with _inspector_lock:

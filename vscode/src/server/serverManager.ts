@@ -1,4 +1,5 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import * as vscode from "vscode";
 import { checkWintestkit, getInterpreter } from "../python";
 import { CompatibilityError, packageCompatibility, protocolCompatibility, UPGRADE_LABEL, type CompatibilityIssue } from "../compatibility";
@@ -13,6 +14,7 @@ export interface ServerConnection {
   client: JsonRpcClient;
   python: string;
   initialized: InitializeResult;
+  hostCapability?: string;
 }
 export type ServerState = "ready" | "error" | "not-installed" | "stopped";
 interface Entry {
@@ -123,6 +125,7 @@ export class ServerManager implements vscode.Disposable {
     const level = vscode.workspace
       .getConfiguration("wintestkit", entry.project.root)
       .get<string>("server.logLevel", "info");
+    const hostCapability = randomBytes(32).toString("base64");
     const processHandle = spawn(
       python,
       [
@@ -137,6 +140,7 @@ export class ServerManager implements vscode.Disposable {
         cwd: entry.project.root.fsPath,
         env: {
           ...process.env,
+          WINTESTKIT_SPY_HOST_CAPABILITY: hostCapability,
           PYTHONUNBUFFERED: "1",
           PYTHONIOENCODING: "utf-8",
         },
@@ -260,7 +264,7 @@ export class ServerManager implements vscode.Disposable {
       processHandle.kill();
       throw new Error("server start cancelled");
     }
-    entry.connection = { client, python, initialized };
+    entry.connection = { client, python, initialized, hostCapability };
     entry.state = "ready";
     this.changed.fire(entry.project);
     return entry.connection;

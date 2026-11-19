@@ -91,6 +91,24 @@ afterEach(async () => {
   vi.useRealTimers();
 });
 describe("server manager", () => {
+  it("creates a fresh private capability for each spawned server", async () => {
+    const old = process.env.WINTESTKIT_SPY_HOST_CAPABILITY;
+    process.env.WINTESTKIT_SPY_HOST_CAPABILITY = "inherited-secret";
+    try {
+      const first = await manager.get(project);
+      await manager.release(project);
+      const second = await manager.get(project);
+      const capabilities = mocks.spawn.mock.calls.map((call) => call[2].env.WINTESTKIT_SPY_HOST_CAPABILITY as string);
+      expect(capabilities).toHaveLength(2);
+      expect(Buffer.from(capabilities[0], "base64")).toHaveLength(32);
+      expect(capabilities[0]).not.toBe(capabilities[1]);
+      expect(capabilities).not.toContain("inherited-secret");
+      expect(first.hostCapability).toBe(capabilities[0]); expect(second.hostCapability).toBe(capabilities[1]);
+      expect(JSON.stringify(vi.mocked(log.info).mock.calls)).not.toContain(capabilities[0]);
+    } finally {
+      if (old === undefined) delete process.env.WINTESTKIT_SPY_HOST_CAPABILITY; else process.env.WINTESTKIT_SPY_HOST_CAPABILITY = old;
+    }
+  });
   it.each(["0.1.0", "0.2.0", "1.0.0", ...(ALLOW_PRERELEASE ? [] : ["0.1.2rc1"]), "bad", undefined])("blocks incompatible probed package %s without retrying", async (version) => {
     vi.useFakeTimers();
     mocks.installed.mockResolvedValue({ installed: true, version });

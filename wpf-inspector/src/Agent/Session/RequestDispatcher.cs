@@ -24,6 +24,7 @@ namespace WinTestKit.Inspector.Agent.Session
     public sealed class RequestDispatcher : ISessionRequestHandler
     {
         private readonly string sessionId;
+        private readonly string? invokeCapability;
         private readonly IInspectionService service;
         private readonly IRequestScheduler scheduler;
         private readonly Queue<long> writeAttempts = new Queue<long>();
@@ -32,9 +33,10 @@ namespace WinTestKit.Inspector.Agent.Session
 
         internal void Publish(string kind, ObjectRef? handle) => Subscriptions.Publish(kind, handle);
 
-        public RequestDispatcher(string sessionId, IInspectionService service, IRequestScheduler? scheduler = null, IEnumerable<string>? redactNames = null)
+        public RequestDispatcher(string sessionId, IInspectionService service, IRequestScheduler? scheduler = null, IEnumerable<string>? redactNames = null, string? invokeCapability = null)
         {
             this.sessionId = sessionId;
+            this.invokeCapability = invokeCapability;
             this.service = service;
             this.scheduler = scheduler ?? new RequestScheduler(ProtocolLimits.RequestTimeoutMs);
             redaction = new RedactionPolicy(redactNames ?? Array.Empty<string>());
@@ -72,7 +74,15 @@ namespace WinTestKit.Inspector.Agent.Session
             }
         }
 
-        private static bool IsWrite(string method) => method == PipeMethods.WriteCall || method == PipeMethods.WriteSetProperty;
+        private static bool IsWrite(string method) => method == PipeMethods.WriteCall || method == PipeMethods.WriteSetProperty || method == SpyPipeMethods.Invoke;
+
+        private static bool CapabilityEquals(string first, string second)
+        {
+            byte[] left = System.Text.Encoding.UTF8.GetBytes(first), right = System.Text.Encoding.UTF8.GetBytes(second);
+            int difference = left.Length ^ right.Length;
+            for (int index = 0; index < Math.Max(left.Length, right.Length); index++) difference |= (index < left.Length ? left[index] : 0) ^ (index < right.Length ? right[index] : 0);
+            return difference == 0;
+        }
 
         private bool AdmitWriteAttempt()
         {
@@ -90,15 +100,15 @@ namespace WinTestKit.Inspector.Agent.Session
         private JsonObjectNode WriteErrorDetails(RequestEnvelope request, ProtocolException error)
         {
             var existing = SafeErrorDetails(error, request.Method);
-            if (existing != null && existing.TryGet("audit", out _)) return existing;
+            if (existing != null && existing.TryGet("audit", out _) && (request.Method != SpyPipeMethods.Invoke || invokeCapability == null || !System.Text.Encoding.UTF8.GetString(StrictJson.Serialize(existing)).Contains(invokeCapability))) return existing;
             string typeName = "<unknown>";
             string memberKey = "<unknown>";
-            if (request.Params is JsonObjectNode parameters && parameters.TryGet("handle", out var handle))
+            if (request.Method != SpyPipeMethods.Invoke && request.Params is JsonObjectNode parameters && parameters.TryGet("handle", out var handle))
             {
                 try { var name = ObjectRef.FromJson(handle).Type.FullName; if (!string.IsNullOrEmpty(name)) typeName = name; }
                 catch (ProtocolException) { }
             }
-            if (request.Params is JsonObjectNode input && input.TryGet("memberKey", out var member) && member is JsonStringNode key && key.Value.Length > 0 && key.Value.Length <= ProtocolLimits.MaxKeyLength)
+            if (request.Method != SpyPipeMethods.Invoke && request.Params is JsonObjectNode input && input.TryGet("memberKey", out var member) && member is JsonStringNode key && key.Value.Length > 0 && key.Value.Length <= ProtocolLimits.MaxKeyLength)
             {
                 string name = key.Value;
                 if (request.Method == PipeMethods.WriteCall) { int index = name.IndexOf('('); if (index >= 0) name = name.Substring(0, index); }
@@ -106,13 +116,13 @@ namespace WinTestKit.Inspector.Agent.Session
                 memberKey = redaction.Match(name) ?? key.Value;
             }
             string reason = error.Code == ErrorCodes.WriteRateExceeded ? "rateLimited" : error.Code == ErrorCodes.Busy ? "admission" : error.Code;
-            var audit = new WriteAudit { Operation = request.Method == PipeMethods.WriteCall ? "call" : "setProperty", TypeFullName = typeName, MemberKey = memberKey, Outcome = error.Code == ErrorCodes.WriteRateExceeded || error.Code == ErrorCodes.WriteDenied || error.Code == ErrorCodes.Busy ? "denied" : "failed", TimestampUtc = DateTime.UtcNow.ToString("O"), Reason = reason };
+            var audit = new WriteAudit { Operation = request.Method == PipeMethods.WriteCall || request.Method == SpyPipeMethods.Invoke ? "call" : "setProperty", TypeFullName = typeName, MemberKey = memberKey, Outcome = error.Code == ErrorCodes.WriteRateExceeded || error.Code == ErrorCodes.WriteDenied || error.Code == ErrorCodes.Busy ? "denied" : "failed", TimestampUtc = DateTime.UtcNow.ToString("O"), Reason = reason };
             var details = new JsonObjectNode(); details.Add("audit", audit.ToJson()); return details;
         }
 
         private static JsonObjectNode? SafeErrorDetails(ProtocolException error, string method)
         {
-            if ((method == PipeMethods.WriteCall || method == PipeMethods.WriteSetProperty) && error.Details != null && error.Details.TryGet("audit", out var audit))
+            if (IsWrite(method) && error.Details != null && error.Details.TryGet("audit", out var audit))
             {
                 try { var safe = new JsonObjectNode(); safe.Add("audit", WriteAudit.FromJson(audit).ToJson()); return safe; }
                 catch (ProtocolException) { return null; }
@@ -162,6 +172,14 @@ namespace WinTestKit.Inspector.Agent.Session
                 case PipeMethods.Read:
                     var read = ReadParams.FromJson(request.Params); CheckSession(read.SessionId);
                     return (await service.ReadAsync(read.ObjectId, read.Generation, read.Paths, ct).ConfigureAwait(false)).ToJson();
+                case PipeMethods.SpyFieldRead:
+                    var spyRead = ReadParams.FromJson(request.Params); CheckSession(spyRead.SessionId);
+                    if (!(service is ISpyFieldInspectionService spyService)) throw new ProtocolException(ErrorCodes.UnsupportedTarget, "Spy field reads unavailable");
+                    return (await spyService.ReadSpyFieldAsync(spyRead.ObjectId, spyRead.Generation, spyRead.Paths, ct).ConfigureAwait(false)).ToJson();
+                case SpyPipeMethods.Methods:
+                    var spyMethods = MembersParams.FromJson(request.Params); CheckSession(spyMethods.SessionId);
+                    if (!(service is ISpyMethodInspectionService methodService)) throw new ProtocolException(ErrorCodes.UnsupportedTarget, "Spy method catalog unavailable");
+                    return (await methodService.SpyMethodsAsync(spyMethods.ObjectId, spyMethods.Generation, spyMethods.PageSize, spyMethods.PageToken, ct).ConfigureAwait(false)).ToJson();
                 case PipeMethods.Bindings:
                     var bindings = BindingsParams.FromJson(request.Params); CheckSession(bindings.SessionId);
                     return new BindingsResult { Bindings = await service.BindingsAsync(bindings.ObjectId, bindings.Generation, bindings.MemberKeys, ct).ConfigureAwait(false) }.ToJson();
@@ -218,6 +236,16 @@ namespace WinTestKit.Inspector.Agent.Session
                     if (!(service is IHitTestInspectionService hitTestService)) throw new ProtocolException(ErrorCodes.UnsupportedTarget, "Feature not available.");
                     var hitTest = HitTestParams.FromJson(request.Params);
                     return (await hitTestService.HitTestAsync(hitTest.NativeWindowHandle, hitTest.Point, deadline, hitTest.TimeoutMs, ct, hitTest.IncludePath).ConfigureAwait(false)).ToJson();
+                case SpyPipeMethods.Invoke:
+                    if (invokeCapability == null || !(request.Params is JsonObjectNode invokeInput) || !invokeInput.TryGet("capability", out var proofNode) || !(proofNode is JsonStringNode proof) || !CapabilityEquals(proof.Value, invokeCapability))
+                        throw new ProtocolException(ErrorCodes.WriteDenied, "Invocation denied.");
+                    var invocation = SpyInvokeParams.FromJson(request.Params);
+                    if (invocation.Handle.SessionId != sessionId) throw new ProtocolException(ErrorCodes.SessionStale, "Session mismatch.");
+                    if (!(service is ISpyInvokeInspectionService invokeService)) throw new ProtocolException(ErrorCodes.UnsupportedTarget, "Feature not available.");
+                    var invokeDeadline = DateTime.UtcNow.AddMilliseconds(invocation.TimeoutMs);
+                    var invocationResult = (await invokeService.InvokeAsync(invocation.Handle, invocation.MemberKey, invocation.Arguments, invokeDeadline < deadline ? invokeDeadline : deadline, ct).ConfigureAwait(false)).ToJson();
+                    if (System.Text.Encoding.UTF8.GetString(StrictJson.Serialize(invocationResult)).Contains(invokeCapability)) throw new ProtocolException(ErrorCodes.WriteDenied, "Invocation result suppressed.");
+                    return invocationResult;
                 case PipeMethods.WriteSetProperty:
                     var set = WriteSetPropertyParams.FromJson(request.Params, false);
                     if (!(service is IWriteInspectionService setService)) throw new ProtocolException(ErrorCodes.UnsupportedTarget, "Feature not available.");

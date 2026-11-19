@@ -80,6 +80,17 @@ public class SessionTests
             AgentVersion = typeof(EntryPoint).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()!.InformationalVersion };
     }
 
+    [Fact]
+    public void InvokeCapabilityIsOptionalAndCanonical()
+    {
+        var settings = Settings();
+        Assert.False(settings.ToJson().TryGet("spyInvokeCapability", out _));
+        settings.SpyInvokeCapability = Convert.ToBase64String(new byte[32]);
+        Assert.Equal(settings.SpyInvokeCapability, BootstrapSettings.FromJson(settings.ToJson()).SpyInvokeCapability);
+        settings.SpyInvokeCapability = "not-a-capability";
+        Assert.Throws<ProtocolException>(() => settings.ToJson());
+    }
+
     [Trait("Category", "Unit")]
     [Fact]
     public void ValidBootstrapIsDeleted()

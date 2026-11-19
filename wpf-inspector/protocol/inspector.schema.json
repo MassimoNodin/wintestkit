@@ -2,6 +2,9 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://wintestkit.dev/wpf-inspector/protocol/inspector.schema.json",
   "$defs": {
+    "MethodParameter": {"type":"object","properties":{"name":{"type":"string","maxLength":1024},"type":{"$ref":"#/$defs/TypeName"},"isOut":{"type":"boolean"}},"required":["name","type","isOut"],"additionalProperties":false},
+    "MethodMetadata": {"type":"object","properties":{"key":{"type":"string","minLength":1,"maxLength":8192},"name":{"$ref":"#/$defs/Key"},"declaringType":{"$ref":"#/$defs/TypeName"},"returnType":{"$ref":"#/$defs/TypeName"},"visibility":{"enum":["public","private","protected","internal","protectedInternal","privateProtected"]},"isStatic":{"type":"boolean"},"parameters":{"type":"array","maxItems":128,"items":{"$ref":"#/$defs/MethodParameter"}},"unsupportedReason":{"type":"string","minLength":1,"maxLength":1024}},"required":["key","name","declaringType","returnType","visibility","isStatic","parameters"],"additionalProperties":false},
+    "MethodPage": {"type":"object","properties":{"items":{"type":"array","maxItems":200,"items":{"$ref":"#/$defs/MethodMetadata"}},"complete":{"type":"boolean"},"snapshotId":{"$ref":"#/$defs/Identifier"},"diagnostics":{"type":"array","maxItems":200,"items":{"$ref":"#/$defs/Diagnostic"}},"nextToken":{"$ref":"#/$defs/Identifier"}},"required":["items","complete","snapshotId","diagnostics"],"additionalProperties":false,"allOf":[{"if":{"properties":{"complete":{"const":true}}},"then":{"not":{"required":["nextToken"]}}}]},
     "Identifier": {
       "type": "string",
       "minLength": 1,
@@ -786,8 +789,7 @@
         "numericValue": {
           "type": "string",
           "minLength": 1,
-          "maxLength": 1024,
-          "pattern": "^-?(0|[1-9][0-9]*)$"
+          "maxLength": 1024
         },
         "typeInfo": {
           "$ref": "#/$defs/TypeInfo"
@@ -821,6 +823,29 @@
       "additionalProperties": false,
       "description": "For truncated values truncatedAt is greater than the Unicode scalar length of scalar; dependencySource is present only for dependency reads.",
       "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "number"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "numericValue": {
+                "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "numericValue": {
+                "pattern": "^-?(0|[1-9][0-9]*)$"
+              }
+            }
+          }
+        },
         {
           "if": {
             "properties": {
@@ -1822,6 +1847,8 @@
             "children",
             "members",
             "read",
+            "spy.fieldRead",
+            "spy.methods",
             "bindings",
             "release",
             "query.find",
@@ -1843,6 +1870,7 @@
             "hitTest",
             "write.setProperty",
             "write.call",
+            "spy.invoke",
             "events.subscribe",
             "events.unsubscribe"
           ]
@@ -2260,6 +2288,10 @@
         "token": {
           "type": "string",
           "pattern": "^[A-Za-z0-9+/]{43}=$"
+        },
+        "spyInvokeCapability": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9+/]{42}[AEIMQUYcgkosw048]=$"
         },
         "clientSid": {
           "$ref": "#/$defs/Identifier"
@@ -3466,6 +3498,26 @@
       ],
       "additionalProperties": false
     },
+    "SpyInvokeParams": {
+      "type": "object",
+      "properties": {
+        "capability": { "type": "string", "pattern": "^[A-Za-z0-9+/]{42}[AEIMQUYcgkosw048]=$" },
+        "handle": { "$ref": "#/$defs/ObjectRef" },
+        "memberKey": { "type": "string", "minLength": 1, "maxLength": 8192 },
+        "arguments": {
+          "type": "array", "maxItems": 16,
+          "items": {
+            "type": "object",
+            "properties": { "type": { "type": "string", "minLength": 1, "maxLength": 1024 }, "value": { "$ref": "#/$defs/Scalar" }, "enum": { "oneOf": [{ "type": "string" }, { "type": "integer" }] }, "null": { "const": true } },
+            "required": ["type"], "oneOf": [{ "required": ["value"] }, { "required": ["enum"] }, { "required": ["null"] }], "additionalProperties": false
+          }
+        },
+        "timeoutMs": { "type": "integer", "minimum": 1, "maximum": 2000 }
+      },
+      "required": ["capability", "handle", "memberKey", "arguments", "timeoutMs"],
+      "additionalProperties": false
+    },
+    "SpyInvokeResult": { "$ref": "#/$defs/WriteCallResult" },
     "WriteCallParams": {
       "type": "object",
       "properties": {

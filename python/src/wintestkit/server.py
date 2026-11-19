@@ -2,18 +2,23 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
 import contextlib
 import dataclasses
+import hmac
 import json
 import logging
 import math
 import ntpath
 import platform
 import queue
+import secrets
 import sys
 import threading
 import time
 from collections import OrderedDict
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, BinaryIO, cast
 
@@ -29,7 +34,7 @@ if TYPE_CHECKING:
     from wintestkit.coverage import Coverage
     from wintestkit.engine.spy import SpySession
     from wintestkit.inspector.client import InspectorClient
-    from wintestkit.inspector.models import ProcessFacts, ProcessIdentity
+    from wintestkit.inspector.models import ObjectRef, ProcessFacts, ProcessIdentity
     from wintestkit.targets import ModuleLoader
     from wintestkit.uia.element import ElementInfo, Rect, UIAElement
 
@@ -50,7 +55,13 @@ _PARAMS: dict[str, tuple[set[str], set[str]]] = {
     "inspect.roots": (set(), {"includeOtherApps", "foregroundForProcessId"}),
     "inspect.refresh": (set(), {"includeOtherApps", "foregroundForProcessId"}),
     "inspect.managed.identify": ({"nodeId"}, set()),
-    "inspect.managed.attach": ({"process"}, set()),
+    "inspect.managed.attach": ({"process"}, {"hostCapability"}),
+    "inspect.managed.spySelect": ({"hostCapability"}, {"sessionId", "nodeId"}),
+    "inspect.managed.spyPrepareInvoke": (
+        {"hostCapability", "sessionId", "objectId", "generation", "memberKey", "arguments"},
+        set(),
+    ),
+    "inspect.managed.spyInvoke": ({"hostCapability", "ticket"}, set()),
     "inspect.managed.status": ({"process"}, set()),
     "inspect.managed.detach": ({"sessionId"}, set()),
     "inspect.managed.keepalive": ({"sessionId"}, set()),
@@ -61,7 +72,12 @@ _PARAMS: dict[str, tuple[set[str], set[str]]] = {
         {"pageSize", "pageToken"},
     ),
     "inspect.managed.members": ({"sessionId", "objectId", "generation"}, {"pageSize", "pageToken"}),
+    "inspect.managed.spyMethods": (
+        {"sessionId", "objectId", "generation"},
+        {"pageSize", "pageToken"},
+    ),
     "inspect.managed.read": ({"sessionId", "objectId", "generation", "paths"}, set()),
+    "inspect.managed.spyRead": ({"sessionId", "objectId", "generation", "paths"}, set()),
     "inspect.managed.bindings": ({"sessionId", "objectId", "generation", "memberKeys"}, set()),
     "inspect.managed.release": ({"sessionId", "objectIds"}, set()),
     "inspect.children": ({"nodeId"}, {"tree", "pageSize", "pageToken"}),
@@ -78,6 +94,30 @@ _PARAMS: dict[str, tuple[set[str], set[str]]] = {
 
 MAX_COVERAGE_NODES = 500
 MAX_INCLUDED_PROPERTIES = 64
+
+# The automatic Properties read: each getter gets 250 ms, one request gets 2 s.
+SPY_GETTER_LIMIT = 0.25
+SPY_READ_BUDGET = 2.0
+
+# Requests that wait on the inspected application's UI thread. They run on a small worker pool so
+# that a long read never holds up the short requests (picker, roots, coverage, keepalive) the
+# single ordered worker answers.
+_APPLICATION_READS = frozenset(
+    {
+        "inspect.managed.read",
+        "inspect.managed.spyRead",
+        "inspect.managed.members",
+        "inspect.managed.children",
+        "inspect.managed.bindings",
+        "inspect.managed.spyMethods",
+    }
+)
+_READ_WORKERS = 4
+_APPLICATION_SLOW = frozenset({"timeout", "dispatcherUnavailable", "busy"})
+# Changing which processes are attached is the only managed work that is serialized.
+_MANAGED_LIFECYCLE = frozenset(
+    {"inspect.managed.attach", "inspect.managed.status", "inspect.managed.detach"}
+)
 
 # Windows that XAML apps (UWP, WinUI) create to show a popup: they turn visible while a tooltip,
 # menu or flyout is open and hidden again afterwards, so they come and go in the roots list.
@@ -158,8 +198,20 @@ class _LogForwarder(logging.Handler):
 
 
 class Server:
-    def __init__(self, output: BinaryIO) -> None:
+    def __init__(self, output: BinaryIO, *, spy_host_capability: str | None = None) -> None:
         self.output = output
+        self._spy_host_capability: bytes | None = None
+        if spy_host_capability is not None:
+            try:
+                decoded = base64.b64decode(spy_host_capability, validate=True)
+                if (
+                    len(decoded) != 32
+                    or base64.b64encode(decoded).decode("ascii") != spy_host_capability
+                ):
+                    raise ValueError("invalid capability")
+                self._spy_host_capability = decoded
+            except (ValueError, binascii.Error):
+                raise ValueError("invalid Spy host capability") from None
         self.cfg: WtkConfig | None = None
         self.loader: ModuleLoader | None = None
         self.app: App | None = None
@@ -172,6 +224,7 @@ class Server:
         self.node_infos: dict[str, ElementInfo] = {}
         self._wpf_parents: dict[str, str] = {}
         self._wpf_descriptions: dict[str, dict[str, Any]] = {}
+        self._wpf_text: dict[str, str | None] = {}
         self.coverage: Coverage | None = None
         self.spy: SpySession | None = None
         self._write_lock = threading.Lock()
@@ -180,8 +233,32 @@ class Server:
         self._stopping = threading.Event()
         self._spy_epoch = 0
         self._managed_lock = threading.RLock()
+        self._managed_rpc_lock = threading.RLock()
         self._managed_clients: dict[str, InspectorClient] = {}
         self._managed_objects: dict[str, dict[str, int]] = {}
+        self._spy_selection: tuple[InspectorClient, ObjectRef] | None = None
+        self._spy_ticket: (
+            tuple[str, float, InspectorClient, ObjectRef, str, list[dict[str, object]]] | None
+        ) = None
+
+    def _clear_managed_spy(self) -> None:
+        with self._managed_lock:
+            self._spy_selection = None
+            self._spy_ticket = None
+
+    def _verify_spy_host(self, value: Any) -> None:
+        try:
+            if not isinstance(value, str):
+                raise ValueError
+            decoded = base64.b64decode(value, validate=True)
+            if len(decoded) != 32 or base64.b64encode(decoded).decode("ascii") != value:
+                raise ValueError
+        except (ValueError, binascii.Error):
+            raise RpcError(-32000, "Spy host access denied") from None
+        if self._spy_host_capability is None or not hmac.compare_digest(
+            self._spy_host_capability, decoded
+        ):
+            raise RpcError(-32000, "Spy host access denied")
 
     def _write(self, message: dict[str, Any]) -> None:
         encoded = (json.dumps(message, ensure_ascii=False, allow_nan=False) + "\n").encode("utf-8")
@@ -206,10 +283,22 @@ class Server:
         if not isinstance(params, dict):
             raise RpcError(-32602, "invalid params")
         params = cast("dict[str, Any]", params)
+        if method in {
+            "inspect.managed.spySelect",
+            "inspect.managed.spyPrepareInvoke",
+            "inspect.managed.spyInvoke",
+        } or (method == "inspect.managed.attach" and "hostCapability" in params):
+            self._verify_spy_host(params.get("hostCapability"))
+            if method == "inspect.managed.spySelect":
+                self._clear_managed_spy()
         if not required <= params.keys() or params.keys() - required - optional:
             raise RpcError(-32602, "invalid params")
         if method.startswith("inspect.managed.") or method == "inspect.children":
             self._managed_params(params)
+            if method == "inspect.managed.spySelect" and (
+                ("sessionId" in params) != ("nodeId" in params)
+            ):
+                raise RpcError(-32602, "invalid managed parameters")
             if (
                 method == "inspect.children"
                 and "tree" not in params
@@ -301,6 +390,16 @@ class Server:
                 elif key == "tree":
                     if value not in ("visual", "logical"):
                         raise ValueError("invalid tree")
+                elif key == "memberKey":
+                    from wintestkit.inspector.models import string_value
+
+                    string_value(value, 8192)
+                elif key == "arguments":
+                    from wintestkit.inspector.client import validate_spy_arguments
+
+                    validate_spy_arguments(value)
+                elif key == "ticket":
+                    identifier_value(value)
                 elif key in {"paths", "memberKeys", "objectIds"}:
                     maximum = 256 if key == "objectIds" else 32
                     if not isinstance(value, list) or not (
@@ -346,6 +445,9 @@ class Server:
                 self._write({"jsonrpc": "2.0", "id": request_id, "result": result})
         except Exception as exc:
             if notification or self._stopping.is_set():
+                return
+            if method == "inspect.managed.spyInvoke" and isinstance(exc, WtkError):
+                self._error(request_id, -32000, "Spy invocation failed")
                 return
             if isinstance(exc, RpcError):
                 self._error(request_id, exc.code, exc.message, exc.data)
@@ -530,6 +632,7 @@ class Server:
             if len(self.nodes) > 5000:
                 evicted, old_node = self.nodes.popitem(last=False)
                 self.node_infos.pop(evicted, None)
+                self._wpf_text.pop(evicted, None)
                 self._wpf_windows.discard(evicted)
                 self._release_tree_node(old_node)
         return {
@@ -557,8 +660,72 @@ class Server:
 
         if isinstance(node, WpfElement):
             with self._managed_lock:
+                if self._spy_selection and (
+                    self._spy_selection[1].session_id,
+                    self._spy_selection[1].object_id,
+                ) == (node.ref.session_id, node.ref.object_id):
+                    self._clear_managed_spy()
                 self._managed_objects.get(node.ref.session_id, {}).pop(node.ref.object_id, None)
             node.release()
+
+    def _wpf_control_text(
+        self, client: Any, ref: Any, names: tuple[str | None, ...], deadline: float
+    ) -> str | None:
+        """Read only the bounded text members used by the WPF tree labels."""
+        from wintestkit.inspector.paths import PathSegment
+
+        assert self.cfg is not None
+        sensitive = (
+            "password",
+            "passwd",
+            "pwd",
+            "secret",
+            "token",
+            "credential",
+            "connectionstring",
+            "apikey",
+            "privatekey",
+            *self.cfg.inspector.redact_names,
+        )
+        if any(
+            rule.lower() in name.lower() for rule in sensitive for name in names if rule and name
+        ):
+            return None
+        members = {
+            "TextBlock": ("Text",),
+            "TextBox": ("Text",),
+            "ListBoxItem": ("Content",),
+            "Button": ("Content",),
+            "CheckBox": ("Content",),
+            "RadioButton": ("Content",),
+            "Label": ("Content",),
+            "ContentControl": ("Content",),
+            "TabItem": ("Header", "Content"),
+            "MenuItem": ("Header",),
+            "Expander": ("Header",),
+            "GroupBox": ("Header",),
+            "Window": ("Title",),
+        }
+        text = None
+        for member in members.get(ref.type.name, ()):
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            try:
+                values, _ = client.read(
+                    ref.object_id,
+                    ref.generation,
+                    [[PathSegment("property", member)]],
+                    deadline=time.monotonic() + min(0.25, remaining),
+                )
+                value = values[0].value
+                if value.status == "ok" and isinstance(value.scalar, str):
+                    if value.scalar:
+                        return value.scalar
+                    text = ""
+            except Exception:
+                log.debug("Unable to read WPF tree text", exc_info=True)
+        return text
 
     def _wpf_properties(
         self, node: Any, params: dict[str, Any], peer: UIAElement | None = None
@@ -620,6 +787,20 @@ class Server:
             "ProcessId": str(node.process_id),
             "WindowHandle": str(state.window_handle or 0),
         }
+        with self._node_lock:
+            text_cached = params["nodeId"] in self._wpf_text
+            text = self._wpf_text.get(params["nodeId"])
+        if not text_cached:
+            text = self._wpf_control_text(
+                node.client,
+                node.ref,
+                (node.ref.type.full_name, x_name, automation_id),
+                time.monotonic() + 0.5,
+            )
+            with self._node_lock:
+                self._wpf_text[params["nodeId"]] = text
+        if text is not None:
+            properties["WPFControlText"] = text
         inspection = [inspection_property(name, value) for name, value in properties.items()]
         result: dict[str, Any] = {
             "info": info.to_dict(),
@@ -895,6 +1076,7 @@ class Server:
                         if len(self.nodes) > 5000:
                             evicted, old = self.nodes.popitem(last=False)
                             self.node_infos.pop(evicted, None)
+                            self._wpf_text.pop(evicted, None)
                             self._wpf_windows.discard(evicted)
                             self._release_tree_node(old)
                     parent_id = node_id
@@ -1039,64 +1221,16 @@ class Server:
             text_deadline = time.monotonic() + 5.0
             for child in page.items:
                 child_ref = child.object_ref
-                text = ""
-                text_members = {
-                    "TextBlock": ("Text",),
-                    "TextBox": ("Text",),
-                    "ListBoxItem": ("Content",),
-                    "Button": ("Content",),
-                    "CheckBox": ("Content",),
-                    "RadioButton": ("Content",),
-                    "Label": ("Content",),
-                    "ContentControl": ("Content",),
-                    "TabItem": ("Header", "Content"),
-                    "MenuItem": ("Header",),
-                    "Expander": ("Header",),
-                    "GroupBox": ("Header",),
-                    "Window": ("Title",),
-                }
-                from wintestkit.inspector.paths import PathSegment
-
-                sensitive_names = (
-                    "password",
-                    "passwd",
-                    "pwd",
-                    "secret",
-                    "token",
-                    "credential",
-                    "connectionstring",
-                    "apikey",
-                    "privatekey",
-                    *self.cfg.inspector.redact_names,
+                text = self._wpf_control_text(
+                    client,
+                    child_ref,
+                    (
+                        child_ref.type.full_name,
+                        child.identity.x_name if child.identity else "",
+                        child.identity.automation_id if child.identity else "",
+                    ),
+                    text_deadline,
                 )
-                identity_names = (
-                    child_ref.type.full_name,
-                    child.identity.x_name if child.identity else "",
-                    child.identity.automation_id if child.identity else "",
-                )
-                protected = any(
-                    rule.lower() in name.lower()
-                    for rule in sensitive_names
-                    for name in identity_names
-                    if rule and name
-                )
-                for member in () if protected else text_members.get(child_ref.type.name, ()):
-                    remaining = text_deadline - time.monotonic()
-                    if remaining <= 0:
-                        break
-                    try:
-                        values, _ = client.read(
-                            child_ref.object_id,
-                            child_ref.generation,
-                            [[PathSegment("property", member)]],
-                            deadline=time.monotonic() + min(0.25, remaining),
-                        )
-                        value = values[0].value
-                        if value.status == "ok" and isinstance(value.scalar, str) and value.scalar:
-                            text = value.scalar[:100]
-                            break
-                    except Exception:
-                        log.debug("Unable to read WPF tree text", exc_info=True)
                 self._remember_managed(client.session.session_id, child_ref.to_json())
                 identity_data: dict[str, str] = {"type": child_ref.type.full_name}
                 if child.identity is not None:
@@ -1110,7 +1244,7 @@ class Server:
                 )
                 info = ElementInfo(
                     identity_data.get("automationId", ""),
-                    text,
+                    (text or "")[:100],
                     child_ref.type.name,
                     child_ref.type.full_name,
                     "WPF",
@@ -1129,6 +1263,7 @@ class Server:
                     if len(self.nodes) > 5000:
                         evicted, evicted_node = self.nodes.popitem(last=False)
                         self.node_infos.pop(evicted, None)
+                        self._wpf_text.pop(evicted, None)
                         self._wpf_windows.discard(evicted)
                         self._release_tree_node(evicted_node)
                 description = {
@@ -1146,6 +1281,7 @@ class Server:
                 with self._node_lock:
                     self._wpf_parents[node_id] = parent_id
                     self._wpf_descriptions[node_id] = description
+                    self._wpf_text[node_id] = text
                 output.append(description)
             result: dict[str, Any] = {"nodes": output}
             if page.next_token is not None:
@@ -1187,6 +1323,8 @@ class Server:
             client = self._managed_clients.get(session_id)
         if client is None or runtime.inspector_sessions().get(client.session.process) is not client:
             with self._managed_lock:
+                if self._spy_selection and self._spy_selection[1].session_id == session_id:
+                    self._clear_managed_spy()
                 self._managed_clients.pop(session_id, None)
                 self._managed_objects.pop(session_id, None)
             raise InspectorUnavailableError(
@@ -1208,7 +1346,9 @@ class Server:
             self._wpf_windows.clear()
             self._wpf_parents.clear()
             self._wpf_descriptions.clear()
+            self._wpf_text.clear()
         with self._managed_lock:
+            self._clear_managed_spy()
             objects, self._managed_objects = self._managed_objects, {}
             clients = dict(self._managed_clients)
         for session_id, handles in objects.items():
@@ -1234,6 +1374,8 @@ class Server:
             if method == "inspect.managed.detach":
                 session_id = params["sessionId"]
                 with self._managed_lock:
+                    if self._spy_selection and self._spy_selection[1].session_id == session_id:
+                        self._clear_managed_spy()
                     client = self._managed_clients.pop(session_id, None)
                     self._managed_objects.pop(session_id, None)
                 if client is not None:
@@ -1264,8 +1406,11 @@ class Server:
                 identity = ProcessIdentity.from_json(params["process"])
                 registry = runtime.inspector_sessions()
                 if method == "inspect.managed.attach":
+                    options = {"spy_invoke": True} if "hostCapability" in params else {}
                     client = runtime.attach_managed(
-                        identity, deadline=time.monotonic() + self.cfg.inspector.attach_timeout
+                        identity,
+                        deadline=time.monotonic() + self.cfg.inspector.attach_timeout,
+                        **options,
                     )
                     session = client.session
                     if session.state != "ready":
@@ -1288,6 +1433,15 @@ class Server:
                     with self._managed_lock:
                         self._managed_clients[client.session.session_id] = client
                 return session.to_json()
+            if method.startswith("inspect.managed.spy") and method in {
+                "inspect.managed.spySelect",
+                "inspect.managed.spyPrepareInvoke",
+                "inspect.managed.spyInvoke",
+            }:
+                if method == "inspect.managed.spySelect":
+                    return self._dispatch_spy_invoke(method, params)
+                with self._managed_lock:
+                    return self._dispatch_spy_invoke(method, params)
             session_id = params["sessionId"]
             client = self._managed_client(session_id)
             deadline = time.monotonic() + self.cfg.inspector.request_timeout
@@ -1361,6 +1515,22 @@ class Server:
                         page_token=params.get("pageToken"),
                         deadline=deadline,
                     ).to_json()
+                elif method == "inspect.managed.spyMethods":
+                    result = client.spy_methods(
+                        object_id,
+                        params["generation"],
+                        page_size=params.get("pageSize"),
+                        page_token=params.get("pageToken"),
+                        deadline=deadline,
+                    ).to_json()
+                elif method == "inspect.managed.spyRead":
+                    result = self._spy_read(
+                        client,
+                        object_id,
+                        params["generation"],
+                        [parse_path(path) for path in params["paths"]],
+                        deadline,
+                    )
                 elif method == "inspect.managed.read":
                     values, read_id = client.read(
                         object_id,
@@ -1375,6 +1545,12 @@ class Server:
                     )
                     result = {"bindings": [binding.to_json() for binding in bindings]}
                 elif method == "inspect.managed.release":
+                    if (
+                        self._spy_selection
+                        and self._spy_selection[1].session_id == session_id
+                        and self._spy_selection[1].object_id in params["objectIds"]
+                    ):
+                        self._clear_managed_spy()
                     released = client.release(params["objectIds"], deadline=deadline)
                     with self._managed_lock:
                         for item in params["objectIds"]:
@@ -1384,6 +1560,157 @@ class Server:
                     raise RpcError(-32601, "method not found")
             self._remember_managed(session_id, result)
             return result
+
+    @staticmethod
+    def _spy_read(
+        client: InspectorClient,
+        object_id: str,
+        generation: int,
+        paths: list[tuple[Any, ...]],
+        deadline: float,
+    ) -> dict[str, Any]:
+        """Read the getters of one object for the Properties sidebar's automatic read.
+
+        Every getter gets ``SPY_GETTER_LIMIT``; the whole request gets ``SPY_READ_BUDGET``. The
+        properties go to the application as one batched request. If that batch runs into its
+        limit, a getter hangs or the application is busy, so the properties are read again one by
+        one: the slow ones answer "timeout" for their own row and the rest still arrive. Fields
+        are always read one by one, the inspector has no batched field read.
+        """
+        from wintestkit.errors import InspectorDeadlineError, InspectorError
+        from wintestkit.inspector.models import PathValue, Value
+
+        def slow(error: InspectorError) -> bool:
+            """The application did not answer in time: a hung getter or a busy UI thread."""
+            return isinstance(error, InspectorDeadlineError) or error.code in _APPLICATION_SLOW
+
+        budget = min(deadline, time.monotonic() + SPY_READ_BUDGET)
+        values: dict[int, PathValue] = {}
+        read_id = ""
+
+        def timeout(index: int) -> PathValue:
+            return PathValue(paths[index], Value("timeout", "unavailable", "", ""))
+
+        def one(index: int) -> PathValue:
+            if time.monotonic() >= budget:
+                return timeout(index)
+            single = (
+                client.spy_field_read
+                if len(paths[index]) == 1 and paths[index][0].kind == "field"
+                else client.read
+            )
+            limit = min(budget, time.monotonic() + SPY_GETTER_LIMIT)
+            try:
+                found, _ = single(object_id, generation, [paths[index]], deadline=limit)
+            except InspectorError as error:
+                if not slow(error):
+                    raise
+                return timeout(index)
+            return found[0]
+
+        batched = [
+            index
+            for index, path in enumerate(paths)
+            if not (len(path) == 1 and path[0].kind == "field")
+        ]
+        if len(batched) > 1 and time.monotonic() < budget:
+            limit = min(budget, time.monotonic() + SPY_GETTER_LIMIT + 0.02 * len(batched))
+            try:
+                found, read_id = client.read(
+                    object_id, generation, [paths[index] for index in batched], deadline=limit
+                )
+                values.update(zip(batched, found, strict=True))
+            except InspectorError as error:
+                if not slow(error):
+                    raise
+        for index in range(len(paths)):
+            if index not in values:
+                values[index] = one(index)
+        return {
+            "values": [values[index].to_json() for index in range(len(paths))],
+            "readId": read_id or secrets.token_hex(16),
+        }
+
+    def _dispatch_spy_invoke(self, method: str, params: dict[str, Any]) -> Any:
+        from wintestkit.inspector.client import validate_spy_arguments
+        from wintestkit.inspector.models import ObjectRef
+
+        assert self.cfg is not None
+        if method == "inspect.managed.spySelect":
+            if "sessionId" not in params:
+                return {"canInvoke": False}
+            mapping = self._dispatch_managed(
+                "inspect.managed.resolve",
+                {"sessionId": params["sessionId"], "nodeId": params["nodeId"]},
+            )
+            client = self._managed_client(params["sessionId"])
+            if mapping.get("status") == "exact" and "object" in mapping:
+                ref = ObjectRef.from_json(mapping["object"])
+                if ref.session_id != params["sessionId"]:
+                    raise RpcError(-32000, "Spy selection unavailable")
+                with self._managed_lock:
+                    if (
+                        self._managed_objects.get(ref.session_id, {}).get(ref.object_id)
+                        != ref.generation
+                    ):
+                        raise RpcError(-32000, "Spy selection unavailable")
+                    self._spy_selection = (client, ref)
+            return {
+                "canInvoke": self._spy_selection is not None
+                and bool(getattr(client, "_spy_invoke_available", False)),
+                "mapping": mapping,
+            }
+        selection = self._spy_selection
+        if selection is None:
+            raise RpcError(-32000, "Spy selection unavailable")
+        client, ref = selection
+        if (
+            self._managed_client(ref.session_id) is not client
+            or not getattr(client, "_spy_invoke_available", False)
+            or self._managed_objects.get(ref.session_id, {}).get(ref.object_id) != ref.generation
+        ):
+            self._clear_managed_spy()
+            raise RpcError(-32000, "Spy selection unavailable")
+        if method == "inspect.managed.spyPrepareInvoke":
+            self._spy_ticket = None
+            if (params["sessionId"], params["objectId"], params["generation"]) != (
+                ref.session_id,
+                ref.object_id,
+                ref.generation,
+            ):
+                raise RpcError(-32000, "Spy selection unavailable")
+            ticket = secrets.token_urlsafe(32)
+            self._spy_ticket = (
+                ticket,
+                time.monotonic() + 30,
+                client,
+                ref,
+                params["memberKey"],
+                validate_spy_arguments(params["arguments"]),
+            )
+            return {"ticket": ticket}
+        ticket_state = self._spy_ticket
+        self._spy_ticket = None
+        if (
+            ticket_state is None
+            or not hmac.compare_digest(ticket_state[0], params["ticket"])
+            or time.monotonic() >= ticket_state[1]
+            or ticket_state[2] is not client
+            or ticket_state[3] != ref
+        ):
+            raise RpcError(-32000, "Spy ticket unavailable")
+        deadline = time.monotonic() + self.cfg.inspector.request_timeout
+        invoke_method = "_spy_invoke"
+        audit, result = getattr(client, invoke_method)(
+            ref,
+            ticket_state[4],
+            ticket_state[5],
+            timeout_ms=min(2000, max(1, int(self.cfg.inspector.request_timeout * 1000))),
+            deadline=deadline,
+        )
+        response = {"audit": audit.to_json(), "result": result.to_json()}
+        self._remember_managed(ref.session_id, response)
+        return response
 
     def stop_spy(self, expected_epoch: int | None = None) -> None:
         with self._spy_lock:
@@ -1463,8 +1790,9 @@ class Server:
         if method == "shutdown":
             from wintestkit import runtime
 
-            runtime.reset()
-            with self._managed_lock:
+            with self._managed_rpc_lock, self._managed_lock:
+                runtime.reset()
+                self._clear_managed_spy()
                 self._managed_clients.clear()
                 self._managed_objects.clear()
             self.stop_spy()
@@ -1507,6 +1835,11 @@ class Server:
         if self.cfg is None or self.loader is None:
             raise RpcError(-32600, "not initialized")
         if method.startswith("inspect.managed."):
+            # Only changing the attachment is serialized. Reading an object, the keepalive and the
+            # rest must never queue behind a slow attach or another read.
+            if method in _MANAGED_LIFECYCLE:
+                with self._managed_rpc_lock:
+                    return self._dispatch_managed(method, params)
             return self._dispatch_managed(method, params)
         if method == "spy.stop":
             self.stop_spy()
@@ -2019,6 +2352,7 @@ class Server:
     def serve(self, source: BinaryIO) -> int:
         requests: queue.Queue[Any] = queue.Queue()
         finished = object()
+        reads = ThreadPoolExecutor(max_workers=_READ_WORKERS, thread_name_prefix="wtk-rpc-read")
 
         def work() -> None:
             while not self._stopping.is_set():
@@ -2050,6 +2384,11 @@ class Server:
                     self.handle(request)
                     if self._stopping.is_set():
                         break
+                elif (
+                    isinstance(request, dict)
+                    and cast("dict[str, Any]", request).get("method") in _APPLICATION_READS
+                ):
+                    reads.submit(self.handle, request)
                 else:
                     if isinstance(request, dict):
                         request["_spyEpoch"] = self._spy_epoch
@@ -2061,9 +2400,11 @@ class Server:
             from wintestkit import runtime
 
             runtime.close_inspector_sessions()
+            self._clear_managed_spy()
             self._stopping.set()
             self.stop_spy()
             requests.put(finished)
+            reads.shutdown(wait=False, cancel_futures=True)
             logger.removeHandler(handler)
             sys.stdout = previous_stdout
         return 0

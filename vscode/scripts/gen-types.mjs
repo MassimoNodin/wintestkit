@@ -62,6 +62,9 @@ for (const file of schemaFiles) {
       ...localizeReferences(schema.$defs[name], inspector),
       title: emittedName,
     };
+    // A bounded array of union arguments otherwise expands into an exponential
+    // tuple union that TypeScript cannot represent. Runtime validation keeps the bound.
+    if (inspector && name === "SpyInvokeParams") definition.properties.arguments.tsType = "SpyInvokeArgument[]";
     definitions[emittedName] = definition;
   }
 }

@@ -38,6 +38,7 @@ from wintestkit.inspector.models import (
     ManagedNode,
     Mapping,
     Member,
+    MethodMetadata,
     ObjectRef,
     Page,
     PathValue,
@@ -61,6 +62,7 @@ from wintestkit.inspector.models import key_value as _key
 from wintestkit.inspector.models import object_value as _obj
 from wintestkit.inspector.models import runtime_id_value as _runtime_id
 from wintestkit.inspector.models import scalar_value as _scalar
+from wintestkit.inspector.models import string_value as _str
 from wintestkit.inspector.paths import ManagedPath, PathSegment
 from wintestkit.inspector.transport import ByteTransport, read_frame, write_frame
 
@@ -79,6 +81,36 @@ def _write_scalar(value: object) -> str | bool | int | float:
     if type(scalar) is int and not -(2**63) <= scalar <= 2**63 - 1:
         raise ValueError("Invalid write integer")
     return scalar
+
+
+def validate_spy_arguments(arguments: object) -> list[dict[str, object]]:
+    if not isinstance(arguments, (list, tuple)):
+        raise ValueError("Invalid arguments")
+    arguments = cast("Sequence[object]", arguments)
+    if len(arguments) > 16:
+        raise ValueError("Invalid arguments")
+    values: list[dict[str, object]] = []
+    for arg in arguments:
+        if not isinstance(arg, dict):
+            raise ValueError("Invalid argument")
+        item = cast(dict[str, object], arg)
+        if set(item) not in ({"type", "value"}, {"type", "enum"}, {"type", "null"}):
+            raise ValueError("Invalid argument")
+        arg_type = _str(item["type"], 1024)
+        kind = next(key for key in item if key != "type")
+        raw = item[kind]
+        if kind == "null":
+            if raw is not True:
+                raise ValueError("Invalid null")
+        elif kind == "enum":
+            if isinstance(raw, str):
+                _str(raw, 4096, empty=True)
+            else:
+                _int(raw, -(2**63), 2**63 - 1)
+        else:
+            _write_scalar(raw)
+        values.append({"type": arg_type, kind: raw})
+    return values
 
 
 def _error(code: str, details: object = None) -> InspectorError:
@@ -202,6 +234,7 @@ class InspectorClient:
         *,
         request_timeout: float = 2.0,
         on_closed: Callable[[InspectorClient], None] | None = None,
+        spy_invoke_capability: str | None = None,
     ) -> None:
         if not 0 < request_timeout <= 2:
             raise ValueError("Request timeout must be between zero and two seconds")
@@ -209,6 +242,7 @@ class InspectorClient:
         self.session = session
         self._request_timeout = request_timeout
         self._on_closed = on_closed
+        self.__spy_invoke_capability = spy_invoke_capability
         self._lock = threading.RLock()
         self._write_lock = threading.Lock()
         self._pending: dict[int, _Pending] = {}
@@ -234,6 +268,7 @@ class InspectorClient:
         deadline: float,
         request_timeout: float = 2.0,
         on_closed: Callable[[InspectorClient], None] | None = None,
+        spy_invoke_capability: str | None = None,
     ) -> InspectorClient:
         try:
             write_frame(
@@ -291,7 +326,13 @@ class InspectorClient:
                 hello.architecture,
                 hello.agent_version,
             )
-            return cls(transport, session, request_timeout=request_timeout, on_closed=on_closed)
+            return cls(
+                transport,
+                session,
+                request_timeout=request_timeout,
+                on_closed=on_closed,
+                spy_invoke_capability=spy_invoke_capability,
+            )
         except InspectorError:
             transport.close()
             raise
@@ -441,6 +482,8 @@ class InspectorClient:
                 "children",
                 "members",
                 "read",
+                "spy.fieldRead",
+                "spy.methods",
                 "bindings",
                 "element.resolve",
                 "element.readBatch",
@@ -842,6 +885,54 @@ class InspectorClient:
             ),
         )
 
+    @property
+    def _spy_invoke_available(self) -> bool:
+        return self.__spy_invoke_capability is not None and not self._closed
+
+    def _spy_invoke(
+        self,
+        ref: ObjectRef,
+        member_key: str,
+        arguments: Sequence[object],
+        *,
+        timeout_ms: int,
+        deadline: float,
+    ) -> tuple[WriteAudit, Value]:
+        capability = self.__spy_invoke_capability
+        if capability is None:
+            raise InspectorUnavailableError("Spy invocation is unavailable", code="accessDenied")
+        try:
+            self._object_ref(ref)
+            handle = ObjectRef.from_json(ref.to_json()).to_json()
+            member = _str(member_key, 8192)
+            values = validate_spy_arguments(arguments)
+        except (ValueError, TypeError, AttributeError, OverflowError) as error:
+            raise InspectorError("Invalid Spy invocation", code="invalidParams") from error
+
+        def parse(value: object) -> tuple[WriteAudit, Value]:
+            data = _obj(value, "audit result")
+            audit = WriteAudit.from_json(data["audit"])
+            if audit.operation != "call" or audit.outcome != "performed":
+                raise ValueError("Invalid invocation audit")
+            result = Value.from_json(data["result"])
+            self._value(result)
+            return audit, result
+
+        return self._parse(
+            parse,
+            self._request(
+                "spy.invoke",
+                {
+                    "capability": capability,
+                    "handle": handle,
+                    "memberKey": member,
+                    "arguments": values,
+                    "timeoutMs": self._timed_params(timeout_ms, deadline),
+                },
+                deadline,
+            ),
+        )
+
     def write_set_property(
         self,
         ref: ObjectRef,
@@ -1125,6 +1216,23 @@ class InspectorClient:
             self._request("members", params, deadline),
         )
 
+    def spy_methods(
+        self,
+        object_id: str,
+        generation: int,
+        *,
+        page_size: int | None = None,
+        page_token: str | None = None,
+        deadline: float,
+    ) -> Page[MethodMetadata]:
+        self._feature("clrMembers")
+        params = self._page_params(page_size, page_token)
+        params.update(self._object_params(object_id, generation))
+        return self._parse(
+            lambda value: Page[MethodMetadata].from_json(value, MethodMetadata.from_json),
+            self._request("spy.methods", params, deadline),
+        )
+
     def read(
         self,
         object_id: str,
@@ -1132,6 +1240,37 @@ class InspectorClient:
         paths: Sequence[Sequence[PathSegment]],
         *,
         deadline: float,
+    ) -> tuple[tuple[PathValue, ...], str]:
+        return self._read_paths(object_id, generation, paths, deadline=deadline, method="read")
+
+    def spy_field_read(
+        self,
+        object_id: str,
+        generation: int,
+        paths: Sequence[Sequence[PathSegment]],
+        *,
+        deadline: float,
+    ) -> tuple[tuple[PathValue, ...], str]:
+        if (
+            len(paths) != 1
+            or len(paths[0]) != 1
+            or paths[0][0].kind != "field"
+            or not paths[0][0].member_key
+            or not paths[0][0].declaring_type
+        ):
+            raise InspectorError("Spy field reads require one exact field", code="invalidParams")
+        return self._read_paths(
+            object_id, generation, paths, deadline=deadline, method="spy.fieldRead"
+        )
+
+    def _read_paths(
+        self,
+        object_id: str,
+        generation: int,
+        paths: Sequence[Sequence[PathSegment]],
+        *,
+        deadline: float,
+        method: str,
     ) -> tuple[tuple[PathValue, ...], str]:
         if not 1 <= len(paths) <= 32:
             raise InspectorLimitError("Read requires 1 to 32 paths", code="limitExceeded")
@@ -1152,7 +1291,7 @@ class InspectorClient:
                 self._value(item.value)
             return values, _identifier(data["readId"])
 
-        return self._parse(parse, self._request("read", params, deadline))
+        return self._parse(parse, self._request(method, params, deadline))
 
     def bindings(
         self, object_id: str, generation: int, member_keys: Sequence[str], *, deadline: float

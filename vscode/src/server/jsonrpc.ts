@@ -1,4 +1,23 @@
 import { StringDecoder } from "node:string_decoder";
+import { randomBytes } from "node:crypto";
+
+/** A validated JSON number whose original text must survive JavaScript serialization. */
+export class RpcNumber {
+  constructor(readonly text: string) {
+    if (text.length > 4096 || !/^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?$/.test(text)) throw new Error("Invalid number");
+  }
+}
+function serialize(value: unknown): string {
+  const prefix = `__wtk_number_${randomBytes(16).toString("hex")}_`;
+  const numbers: string[] = [];
+  const json = JSON.stringify(value, (_key, item: unknown) => {
+    if (!(item instanceof RpcNumber)) return item;
+    const marker = prefix + numbers.length + "__";
+    numbers.push(item.text);
+    return marker;
+  });
+  return json.replace(new RegExp(`"${prefix}(\\d+)__"`, "g"), (_match, index: string) => numbers[Number(index)]);
+}
 
 export interface Disposable {
   dispose(): void;
@@ -39,12 +58,20 @@ interface Pending {
   resolve: (result: unknown) => void;
   reject: (error: unknown) => void;
   timer: ReturnType<typeof setTimeout>;
+  background: boolean;
+}
+
+export interface RequestOptions {
+  /** Low-priority work: it is not a user action, so other background work does not wait for it. */
+  background?: boolean;
 }
 
 export class JsonRpcClient implements Disposable {
   private nextId = 0;
   private stopped = false;
   private readonly pending = new Map<number, Pending>();
+  private foreground = 0;
+  private readonly idlers = new Set<() => void>();
   private readonly notifications = new Map<
     string,
     Set<(params: unknown) => void>
@@ -54,30 +81,60 @@ export class JsonRpcClient implements Disposable {
     method: string,
     params: unknown = {},
     timeoutMs = 30000,
+    options: RequestOptions = {},
   ): Promise<Result> {
     if (this.stopped) return Promise.reject(new RpcError(-1, "server stopped"));
     const requestId = ++this.nextId;
     return new Promise<Result>((resolve, reject) => {
       const timer = setTimeout(() => {
-        this.pending.delete(requestId);
+        this.forget(requestId);
         reject(new RpcError(-1, `request timed out: ${method}`));
       }, timeoutMs);
+      const background = options.background === true;
       this.pending.set(requestId, {
         resolve: (value) => resolve(value as Result),
         reject,
         timer,
+        background,
       });
+      if (!background) this.foreground++;
       try {
         this.write(
-          JSON.stringify({ jsonrpc: "2.0", id: requestId, method, params }) +
+          serialize({ jsonrpc: "2.0", id: requestId, method, params }) +
             "\n",
         );
       } catch (error) {
         clearTimeout(timer);
-        this.pending.delete(requestId);
+        this.forget(requestId);
         reject(error);
       }
     });
+  }
+  /** Requests a user action is still waiting for (anything not sent as background work). */
+  get foregroundPending(): number {
+    return this.foreground;
+  }
+  /** Wait until no user-action request is pending, at most `maxMs`; resolves with the time waited. */
+  foregroundIdle(maxMs: number): Promise<number> {
+    if (this.foreground === 0) return Promise.resolve(0);
+    const started = Date.now();
+    return new Promise<number>((resolve) => {
+      const done = (): void => {
+        clearTimeout(timer);
+        this.idlers.delete(done);
+        resolve(Date.now() - started);
+      };
+      const timer = setTimeout(done, maxMs);
+      this.idlers.add(done);
+    });
+  }
+  private forget(requestId: number): Pending | undefined {
+    const pending = this.pending.get(requestId);
+    if (!pending) return undefined;
+    this.pending.delete(requestId);
+    if (!pending.background && --this.foreground === 0)
+      for (const done of [...this.idlers]) done();
+    return pending;
   }
   handleLine(line: string): void {
     let message: unknown;
@@ -91,9 +148,8 @@ export class JsonRpcClient implements Disposable {
     const response = message as Record<string, unknown>;
     if (response.jsonrpc !== "2.0") return;
     if (typeof response.id === "number") {
-      const pending = this.pending.get(response.id);
+      const pending = this.forget(response.id);
       if (!pending) return;
-      this.pending.delete(response.id);
       clearTimeout(pending.timer);
       if (response.error && typeof response.error === "object") {
         const error = response.error as Record<string, unknown>;
@@ -137,6 +193,8 @@ export class JsonRpcClient implements Disposable {
       pending.reject(new RpcError(-1, "server stopped"));
     }
     this.pending.clear();
+    this.foreground = 0;
+    for (const done of [...this.idlers]) done();
     this.notifications.clear();
   }
 }

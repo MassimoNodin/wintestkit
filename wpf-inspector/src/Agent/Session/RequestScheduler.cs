@@ -33,7 +33,7 @@ namespace WinTestKit.Inspector.Agent.Session
 
         public Task<JsonNode> ExecuteAsync(RequestEnvelope request, Func<CancellationToken, Task<JsonNode>> operation, CancellationToken ct)
         {
-            var work = new Work { Id = request.Id, Operation = operation, IsWait = request.Method == PipeMethods.WaitUntil, IsWrite = request.Method == PipeMethods.WriteSetProperty || request.Method == PipeMethods.WriteCall };
+            var work = new Work { Id = request.Id, Operation = operation, IsWait = request.Method == PipeMethods.WaitUntil, IsWrite = request.Method == PipeMethods.WriteSetProperty || request.Method == PipeMethods.WriteCall || request.Method == SpyPipeMethods.Invoke };
             lock (gate)
             {
                 if (disposed || ct.IsCancellationRequested) return Task.FromCanceled<JsonNode>(new CancellationToken(true));

@@ -1,0 +1,11 @@
+{
+  "schema": "Value",
+  "instance": {
+    "status": "ok",
+    "kind": "number",
+    "declaredType": "System.Decimal",
+    "runtimeType": "System.Decimal",
+    "scalar": "123.4500000000000000001",
+    "numericValue": "123.4500000000000000001"
+  }
+}

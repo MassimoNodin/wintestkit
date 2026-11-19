@@ -2,6 +2,7 @@
 
 import io
 import json
+import time
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -81,6 +82,10 @@ class FakeClient:
         self.calls.append(("members", (object_id, generation, kwargs)))
         return Page((), True, "snapshot", ())
 
+    def spy_methods(self, object_id: str, generation: int, **kwargs: Any) -> Page[Any]:
+        self.calls.append(("spy_methods", (object_id, generation, kwargs)))
+        return Page((), True, "snapshot", ())
+
     def read(self, object_id: str, generation: int, paths: Any, **kwargs: Any) -> Any:
         self.calls.append(("read", (object_id, generation, paths)))
         return (
@@ -146,6 +151,45 @@ def managed_server(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Any:
     monkeypatch.setattr(probe, "identify", _facts)
     yield server, output, client
     runtime.reset()
+
+
+def test_spy_methods_requires_held_handle_and_validates_schema(
+    managed_server: Any, schema_registry: Registry[Any]
+) -> None:
+    server, output, client = managed_server
+    request(server, output, "inspect.managed.attach", {"process": IDENTITY.to_json()})
+    params = {
+        "sessionId": "session",
+        "objectId": "object",
+        "generation": 1,
+        "pageSize": 1,
+        "pageToken": "next",
+    }
+    assert (
+        request(server, output, "inspect.managed.spyMethods", params)["error"]["data"]["code"]
+        == "objectStale"
+    )
+    request(server, output, "inspect.managed.roots", {"sessionId": "session"})
+    result = request(server, output, "inspect.managed.spyMethods", params)["result"]
+    assert client.calls[-1][0] == "spy_methods"
+    uri = "https://wintestkit.dev/schemas/rpc.schema.json"
+    for name, value in (("Params", params), ("Result", result)):
+        validator = Draft202012Validator(
+            {"$ref": f"{uri}#/$defs/InspectManagedSpyMethods{name}"}, registry=schema_registry
+        )
+        assert validator.is_valid(value), list(validator.iter_errors(value))
+    assert (
+        request(server, output, "inspect.managed.spyMethods", {**params, "generation": 2})["error"][
+            "data"
+        ]["code"]
+        == "objectStale"
+    )
+    assert (
+        request(server, output, "inspect.managed.spyMethods", {**params, "pageSize": 201})["error"][
+            "code"
+        ]
+        == -32602
+    )
 
 
 def test_keepalive_releases_no_objects_or_values(managed_server: Any) -> None:
@@ -834,6 +878,40 @@ def test_spy_wpf_geometry_routes(
     node.forget_release()
 
 
+@pytest.mark.parametrize("value", ["", "Actual control text"])
+def test_wpf_control_text_uses_bounded_actual_value(managed_server: Any, value: str) -> None:
+    server, _, _ = managed_server
+    calls: list[Any] = []
+
+    def read(*args: Any, **kwargs: Any) -> Any:
+        calls.append((args, kwargs))
+        return [SimpleNamespace(value=SimpleNamespace(status="ok", scalar=value))], None
+
+    client = SimpleNamespace(read=read)
+    ref = SimpleNamespace(object_id="object", generation=1, type=SimpleNamespace(name="TextBox"))
+    assert (
+        server._wpf_control_text(client, ref, ("Example.TextBox",), time.monotonic() + 1) == value
+    )
+    assert len(calls) == 1
+    assert (
+        server._wpf_control_text(client, ref, ("Example.PasswordBox",), time.monotonic() + 1)
+        is None
+    )
+    assert len(calls) == 1
+
+
+def test_wpf_control_text_prefers_non_empty_content_after_empty_header(managed_server: Any) -> None:
+    server, _, _ = managed_server
+    values = iter(["", "Tab content"])
+
+    def read(*args: Any, **kwargs: Any) -> Any:
+        return [SimpleNamespace(value=SimpleNamespace(status="ok", scalar=next(values)))], None
+
+    client = SimpleNamespace(read=read)
+    ref = SimpleNamespace(object_id="object", generation=1, type=SimpleNamespace(name="TabItem"))
+    assert server._wpf_control_text(client, ref, (None,), time.monotonic() + 1) == "Tab content"
+
+
 @pytest.mark.parametrize("case", ["peer", "peerless", "unreachable", "password", "stale"])
 def test_wpf_properties_and_managed_resolve(
     managed_server: Any, monkeypatch: pytest.MonkeyPatch, schema_registry: Registry[Any], case: str
@@ -1004,6 +1082,13 @@ def test_wpf_ancestors_use_walked_nodes(
         server, output, "inspect.properties", {"nodeId": child["nodeId"], "includeAncestors": True}
     )["result"]
     assert [item["nodeId"] for item in result["ancestors"]] == ["root", parent["nodeId"]]
+    # The Properties sidebar derives Parent, FullName and Name from these: the owning window first,
+    # then the immediate parent, each described like a tree node, plus the keys it reads directly.
+    assert result["source"] == "wpf"
+    assert all({"nodeId", "info"} <= set(item) for item in result["ancestors"])
+    assert {"ClrFullClassName", "x:Name", "Visible", "IsEnabled", "Bounds"} <= set(
+        result["properties"]
+    )
     assert (
         request(server, output, "inspect.properties", {"nodeId": child["nodeId"]})["result"][
             "ancestors"

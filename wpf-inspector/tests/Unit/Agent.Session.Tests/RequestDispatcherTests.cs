@@ -17,6 +17,80 @@ public class RequestDispatcherTests
     private static readonly IReadOnlyList<IReadOnlyList<PathSegment>> Paths = new[] { new[] { new PathSegment { Kind = SegmentKind.Type, Name = "Name" } } };
     private static Task<ResponseEnvelope> Dispatch(RequestDispatcher dispatcher, string method, JsonObjectNode parameters) => dispatcher.HandleAsync(new RequestEnvelope { Id = 42, Method = method, Params = parameters }, CancellationToken.None);
 
+    private static JsonObjectNode InvokeParams(string capability, ObjectRef handle)
+    {
+        var parameters = new JsonObjectNode();
+        parameters.Add("capability", new JsonStringNode(capability));
+        parameters.Add("handle", handle.ToJson());
+        parameters.Add("memberKey", new JsonStringNode("method-key"));
+        parameters.Add("arguments", new JsonArrayNode());
+        parameters.Add("timeoutMs", JsonNumberNode.From(500));
+        return parameters;
+    }
+
+    [Fact]
+    public async Task SpyInvokeFailsClosedAndUsesWriteAdmission()
+    {
+        string capability = Convert.ToBase64String(new byte[32]);
+        var service = new InvokeService();
+        var disabled = new RequestDispatcher(Session, service, new PassThroughRequestScheduler());
+        Assert.Equal(ErrorCodes.WriteDenied, (await Dispatch(disabled, SpyPipeMethods.Invoke, InvokeParams(capability, StateService.Handle))).Error!.Code);
+        var dispatcher = new RequestDispatcher(Session, service, new PassThroughRequestScheduler(), invokeCapability: capability);
+        var malformed = new JsonObjectNode(); malformed.Add("capability", new JsonStringNode("wrong")); malformed.Add("memberKey", new JsonStringNode(capability));
+        var denied = await Dispatch(dispatcher, SpyPipeMethods.Invoke, malformed);
+        Assert.Equal(ErrorCodes.WriteDenied, denied.Error!.Code);
+        Assert.DoesNotContain(capability, System.Text.Encoding.UTF8.GetString(StrictJson.Serialize(denied.ToJson())));
+        Assert.Equal(ErrorCodes.WriteDenied, (await Dispatch(dispatcher, SpyPipeMethods.Invoke, new JsonObjectNode())).Error!.Code);
+        var other = StateService.Handle; other.SessionId = "other";
+        Assert.Equal(ErrorCodes.SessionStale, (await Dispatch(dispatcher, SpyPipeMethods.Invoke, InvokeParams(capability, other))).Error!.Code);
+        Assert.Equal(0, service.Calls);
+        var response = await Dispatch(dispatcher, SpyPipeMethods.Invoke, InvokeParams(capability, StateService.Handle));
+        Assert.Null(response.Error); Assert.Equal(1, service.Calls);
+        Assert.Equal("performed", WriteCallResult.FromJson(response.Result!).Audit.Outcome);
+        for (int index = 0; index < 6; index++) await Dispatch(dispatcher, SpyPipeMethods.Invoke, malformed);
+        Assert.Equal(ErrorCodes.WriteRateExceeded, (await Dispatch(dispatcher, SpyPipeMethods.Invoke, malformed)).Error!.Code);
+        var rejected = new RequestDispatcher(Session, service, new RejectingScheduler { Reject = true }, invokeCapability: capability);
+        var busy = await Dispatch(rejected, SpyPipeMethods.Invoke, InvokeParams(capability, StateService.Handle));
+        Assert.Equal(ErrorCodes.Busy, busy.Error!.Code);
+        Assert.Equal("admission", WriteAudit.FromJson(busy.Error.Details!.Get("audit")).Reason);
+    }
+
+    private sealed class InvokeService : RecordingService, ISpyInvokeInspectionService
+    {
+        public int Calls { get; private set; }
+        public Task<WriteCallResult> InvokeAsync(ObjectRef handle, string memberKey, IReadOnlyList<JsonNode> values, DateTime deadline, CancellationToken ct)
+        {
+            Calls++;
+            return Task.FromResult(new WriteCallResult { Audit = new WriteAudit { Operation = "call", TypeFullName = "Example", MemberKey = "identity", Outcome = "performed", TimestampUtc = DateTime.UtcNow.ToString("O") }, Result = new ValueDto { Status = "ok", Kind = "null", Scalar = JsonNullNode.Instance } });
+        }
+    }
+
+    [Fact]
+    public async Task SpyMethodsRoutesMetadataAndChecksSession()
+    {
+        var service = new MethodService();
+        var dispatcher = new RequestDispatcher(Session, service);
+        var parameters = new MembersParams { SessionId = Session, ObjectId = "held", Generation = 2, PageSize = 1, PageToken = "cursor" };
+        var envelope = RequestEnvelope.FromJson(new RequestEnvelope { Id = 42, Method = SpyPipeMethods.Methods, Params = parameters.ToJson() }.ToJson());
+        var response = await dispatcher.HandleAsync(envelope, CancellationToken.None);
+        var page = PageDto<MethodMetadataDto>.FromJson(response.Result!, MethodMetadataDto.FromJson);
+        Assert.Equal("Run", Assert.Single(page.Items).Name);
+        Assert.Equal("held:2:1:cursor", service.Arguments);
+        parameters.SessionId = "other";
+        Assert.Equal(ErrorCodes.SessionStale, (await Dispatch(dispatcher, SpyPipeMethods.Methods, parameters.ToJson())).Error!.Code);
+        Assert.Equal(ErrorCodes.UnsupportedTarget, (await Dispatch(new RequestDispatcher(Session, new RecordingService()), SpyPipeMethods.Methods, new MembersParams { SessionId = Session, ObjectId = "held", Generation = 2 }.ToJson())).Error!.Code);
+    }
+
+    private sealed class MethodService : RecordingService, ISpyMethodInspectionService
+    {
+        public string? Arguments { get; private set; }
+        public Task<PageDto<MethodMetadataDto>> SpyMethodsAsync(string objectId, long generation, int? pageSize, string? pageToken, CancellationToken ct)
+        {
+            Arguments = $"{objectId}:{generation}:{pageSize}:{pageToken}";
+            return Task.FromResult(new PageDto<MethodMetadataDto> { Complete = true, SnapshotId = "snapshot", Items = new[] { new MethodMetadataDto { Key = "key", Name = "Run", DeclaringType = "Test", ReturnType = "System.Void", Visibility = "public" } } });
+        }
+    }
+
     [Fact]
     public async Task EventSubscriptionsValidateAndRoute()
     {
