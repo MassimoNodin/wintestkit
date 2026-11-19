@@ -348,8 +348,9 @@ describe("Properties sidebar acceptance", () => {
     expect(view.posts).toContainEqual({ type: "managedMethods", action: "activate" });
     view.send(managed({ sequence: 2, methods: { status: "ready", canInvoke: true, items: [{ key: "k", name: "Measure", declaringType: "System.Windows.UIElement", returnType: "System.Void", visibility: "public", isStatic: false, parameters: [{ name: "width", type: "System.Double" }] }] } }));
     expect(view.names()).toEqual(["Measure(System.Double width)"]);
-    expect(view.text("#sidebar-rows")).toContain("System.Void; System.Windows.UIElement; public; instance");
-    expect(view.doc.querySelector("#sidebar-rows details")).not.toBeNull();
+    // The value is the return type and the flags; the declaring type is the tooltip and the description.
+    expect(view.value("Measure(System.Double width)")).toBe("System.Void public instance");
+    expect(view.doc.querySelector("#sidebar-rows details")).toBeNull();
     expect(view.errors).toEqual([]);
   });
 
@@ -516,11 +517,12 @@ describe("Properties sidebar review fixes", () => {
     view.send(...hostSession());
     (view.doc.querySelector('[data-sidebar-tab="methods"]') as HTMLButtonElement).click();
     view.send(managed({ sequence: 2, methods: { status: "ready", canInvoke: true, items: [{ key: "k", name: "Measure", declaringType: "T", returnType: "System.Void", visibility: "public", isStatic: false, parameters: [{ name: "width", type: "System.Double" }] }] } }));
-    const input = view.doc.querySelector("#sidebar-rows input") as HTMLInputElement;
-    expect(contextmenuOn(view, input).defaultPrevented).toBe(false);
     const row = view.doc.querySelector('#sidebar-rows [data-name^="Measure"]') as Element;
     expect(contextmenuOn(view, row).defaultPrevented).toBe(true);
-    expect(menuItems(view).map((button) => button.textContent)).toEqual(ALL_ITEMS);
+    expect(menuItems(view).map((button) => button.textContent)).toEqual(["Invoke\u2026", ...ALL_ITEMS]);
+    menuItems(view)[0]!.click();
+    const input = view.doc.querySelector("#sidebar-rows input") as HTMLInputElement;
+    expect(contextmenuOn(view, input).defaultPrevented).toBe(false);
   });
 
   it("3. shows a value for every .NET row, dependency and attached properties included, or the real reason", () => {
@@ -701,5 +703,320 @@ describe("Properties sidebar review fixes", () => {
     key(view, view.doc.querySelector("#sidebar-row-menu") as Element, { key: "Escape" });
     expect(view.value("Content")).toBe("Later");
     expect(view.doc.activeElement).toBe(view.doc.querySelector('[data-name="Content"]'));
+  });
+});
+
+describe("Properties sidebar attach flow", () => {
+  const detachedSnapshot = (sequence: number) => managed({ sequence, state: "detached (idle)", object: undefined, rows: [], methods: { status: "idle", items: [], canInvoke: false } });
+  it("3.9 shows one status line with one Attach after Detach and a new selection, and Attach brings the inspector back", () => {
+    const view = open("properties-view");
+    view.send(...hostSession());
+    // Attached: the kebab menu offers Detach and there is no status line.
+    expect(view.visible("#sidebar-actions")).toBe(true);
+    expect(view.visible("#wpf-details-note")).toBe(false);
+    (view.doc.querySelector("#sidebar-actions > summary") as HTMLElement).click();
+    expect(view.hiddenReason("#sidebar-detach")).toBeUndefined();
+    (view.doc.querySelector("#sidebar-detach") as HTMLButtonElement).click();
+    expect(view.posts).toContainEqual({ type: "managedDetach" });
+    // The host answers with the detached snapshot, then the user selects another object.
+    view.send(detachedSnapshot(2));
+    view.send({ type: "selectionPending", nodeId: "border" }, { type: "selected", nodeId: "border", properties: { ...presenterProperties, info: borderNode.info, ancestors: [windowNode] } }, { type: "wpfDetails", nodeId: "border", missing: false }, detachedSnapshot(3));
+    expect(view.visible("#wpf-details-note")).toBe(true);
+    expect(view.text("#sidebar-attach-status")).toBe("detached (idle): The session is detached. Attach again to inspect.");
+    expect(view.visibleButtons("Attach")).toHaveLength(1);
+    expect(view.visibleButtons("Attach")[0]?.id).toBe("wpf-details-attach");
+    expect(view.visible("#managed-panel")).toBe(false);
+    expect(view.visible("#sidebar-actions")).toBe(false);
+    // The status line stays the only one when the tree reports the same selection again.
+    view.send({ type: "wpfDetails", nodeId: "border", missing: false }, detachedSnapshot(4));
+    expect(view.doc.querySelectorAll("#wpf-details-note")).toHaveLength(1);
+    expect(view.visibleButtons("Attach")).toHaveLength(1);
+    expect(view.visible("#wpf-details-note")).toBe(true);
+    // Attach asks the host, which answers with a ready snapshot: the line goes and the actions return.
+    view.visibleButtons("Attach")[0]!.click();
+    expect(view.posts).toContainEqual({ type: "managedAttach" });
+    view.send(managed({ sequence: 5 }));
+    expect(view.visible("#wpf-details-note")).toBe(false);
+    expect(view.visibleButtons("Attach")).toHaveLength(0);
+    expect(view.visible("#sidebar-actions")).toBe(true);
+    for (const tab of ["properties", "fields", "methods"]) expect(view.visible(`#sidebar-tab-${tab}`), tab).toBe(true);
+    expect(view.errors).toEqual([]);
+  });
+
+  it("3.9 keeps the same single line when the tree-level notice arrives after the snapshot", () => {
+    const view = open("properties-view");
+    view.send(...hostSession().slice(0, 7));
+    view.send(detachedSnapshot(2));
+    // The tree's own "WPF details missing" notice must not add a second line or hide the first.
+    view.send({ type: "wpfDetails", nodeId: "presenter", missing: true });
+    expect(view.visibleButtons("Attach")).toHaveLength(1);
+    expect(view.visible("#wpf-details-note")).toBe(true);
+    view.send({ type: "wpfDetails", nodeId: "presenter", missing: false });
+    expect(view.visible("#wpf-details-note")).toBe(true);
+    expect(view.visibleButtons("Attach")).toHaveLength(1);
+    expect(view.errors).toEqual([]);
+  });
+});
+
+describe("Methods tab invocation", () => {
+  const RECORD = "RecordWrite(System.String value, System.Int64 number)";
+  const method = (extra: Record<string, unknown> = {}) => ({
+    key: "k1", name: "RecordWrite", declaringType: "WinTestKit.Fixture.FixtureControl", returnType: "System.String", visibility: "public", isStatic: false,
+    parameters: [{ name: "value", type: "System.String", isOut: false }, { name: "number", type: "System.Int64", isOut: false }], ...extra,
+  });
+  const snapshot = (items: unknown[], extra: Record<string, unknown> = {}, sequence = 2) => managed({ sequence, methods: { status: "ready", canInvoke: true, items, ...extra } });
+  const methodsView = (items: unknown[] = [method()], extra: Record<string, unknown> = {}) => {
+    const view = open("properties-view");
+    view.send(...hostSession());
+    (view.doc.querySelector('[data-sidebar-tab="methods"]') as HTMLButtonElement).click();
+    view.send(snapshot(items, extra));
+    return view;
+  };
+  const rowFor = (view: ReturnType<typeof open>, label = RECORD) => view.doc.querySelector(`#sidebar-rows tr.sidebar-row[data-name="${label}"]`) as HTMLTableRowElement;
+  const invokeItem = (view: ReturnType<typeof open>, label = RECORD) => {
+    contextmenuOn(view, rowFor(view, label));
+    return menuItems(view).find((button) => button.textContent === "Invoke\u2026") as HTMLButtonElement;
+  };
+  const field = (view: ReturnType<typeof open>, index: number) => view.doc.getElementById(`invoke-arg-${index}`) as HTMLInputElement;
+  const typeInto = (view: ReturnType<typeof open>, index: number, text: string) => view.type(field(view, index), text);
+  const submit = (view: ReturnType<typeof open>) => view.doc.getElementById("invoke-submit") as HTMLButtonElement;
+  const forms = (view: ReturnType<typeof open>) => view.doc.querySelectorAll("#sidebar-rows tr.invoke-row");
+  const invocations = (view: ReturnType<typeof open>) => view.posts.filter((post) => post.type === "managedInvoke");
+
+  it("offers Invoke\u2026 first in the row menu, enabled when the session can call, the list is ready and the method is supported", () => {
+    const view = methodsView();
+    const item = invokeItem(view);
+    expect(menuItems(view).map((button) => button.textContent)).toEqual(["Invoke\u2026", ...ALL_ITEMS]);
+    expect(item.disabled).toBe(false);
+    expect(item.title).toBe("");
+    expect(view.doc.activeElement).toBe(item);
+    expect(view.doc.querySelector("#sidebar-rows details")).toBeNull();
+    expect(view.errors).toEqual([]);
+  });
+
+  it("keeps the item but disables it, with the reason as a tooltip, when invocation cannot work", () => {
+    const cases: [string, unknown[], Record<string, unknown>, string][] = [
+      ["canInvoke is false", [method()], { canInvoke: false }, "Invocation unavailable: method calls are not enabled for this session (detach, then attach again)"],
+      ["the list is loading", [method()], { status: "loading" }, "Invocation unavailable: the method list is not loaded"],
+      ["the type is unsupported", [method({ unsupportedReason: "A parameter type is not supported." })], {}, "Invocation unavailable: A parameter type is not supported."],
+      ["more than 16 parameters", [method({ parameters: Array.from({ length: 17 }, (_, index) => ({ name: `p${index}`, type: "System.Int32", isOut: false })) })], {}, "Invocation unavailable: more than 16 parameters"],
+      ["an out parameter", [method({ parameters: [{ name: "result", type: "System.Int32", isOut: true }] })], {}, "Invocation unavailable: out parameters are not supported"],
+    ];
+    for (const [name, items, extra, tooltip] of cases) {
+      const view = methodsView(items, extra);
+      const row = view.doc.querySelector("#sidebar-rows tr.sidebar-row") as HTMLTableRowElement;
+      contextmenuOn(view, row);
+      const item = menuItems(view).find((button) => button.textContent === "Invoke\u2026") as HTMLButtonElement;
+      expect(item.disabled, name).toBe(true);
+      expect(item.title, name).toBe(tooltip);
+      expect(menuItems(view).filter((button) => !button.disabled)[0]?.textContent, name).toBe("Copy value");
+      expect(view.errors).toEqual([]);
+    }
+  });
+
+  it("shows the Methods value as the return type and flags only, with the rest in the tooltip and the description", () => {
+    const view = methodsView([method({ name: "Hidden", visibility: "private", isStatic: true, returnType: "System.Void", parameters: [{ name: "x", type: "App.Thing", isOut: false }], unsupportedReason: "A parameter type is not supported." }), method({ key: "k2", name: "Both", visibility: "protectedInternal", parameters: [] })]);
+    const hidden = rowFor(view, "Hidden(App.Thing x)");
+    expect((hidden.children[1] as HTMLElement).textContent).toBe("System.Void private static");
+    expect((hidden.children[1] as HTMLElement).title).toBe("WinTestKit.Fixture.FixtureControl\nA parameter type is not supported.");
+    expect(view.text("#sidebar-rows")).not.toContain("A parameter type is not supported.");
+    expect(view.text("#sidebar-rows")).not.toContain("WinTestKit.Fixture.FixtureControl");
+    expect(view.value("Both()")).toBe("System.String protected internal instance");
+    hidden.click();
+    const description = view.text("#sidebar-description-content");
+    for (const line of ["Declaring type: WinTestKit.Fixture.FixtureControl", "Returns: System.Void", "Access: private static", "Not supported: A parameter type is not supported.", "Invocation: Invocation unavailable: A parameter type is not supported."]) expect(description).toContain(line);
+    expect(view.errors).toEqual([]);
+  });
+
+  it("opens an inline form under the method, one labelled input per parameter, and closes it on Cancel", () => {
+    const view = methodsView();
+    expect(forms(view)).toHaveLength(0);
+    invokeItem(view).click();
+    expect((view.doc.getElementById("sidebar-row-menu") as HTMLElement).hidden).toBe(true);
+    expect(forms(view)).toHaveLength(1);
+    expect(rowFor(view).nextElementSibling).toBe(forms(view)[0]);
+    const labels = [...view.doc.querySelectorAll("#sidebar-rows .invoke-field > label[for]")].map((label) => label.textContent);
+    expect(labels).toEqual(["value (System.String)", "number (System.Int64)"]);
+    expect(view.doc.querySelectorAll("#sidebar-rows .invoke-field input[type=text]")).toHaveLength(2);
+    expect(view.doc.querySelector('#sidebar-rows [role="group"]')?.getAttribute("aria-label")).toBe(`Invoke ${RECORD}`);
+    expect(view.doc.activeElement).toBe(field(view, 0));
+    expect(view.doc.querySelector("#sidebar-rows details")).toBeNull();
+    expect([...view.doc.querySelectorAll("#sidebar-rows .invoke-actions button")].map((button) => button.textContent)).toEqual(["Invoke", "Cancel"]);
+    (view.doc.getElementById("invoke-cancel") as HTMLButtonElement).click();
+    expect(forms(view)).toHaveLength(0);
+    expect(view.doc.activeElement).toBe(rowFor(view));
+    expect(invocations(view)).toEqual([]);
+    expect(view.errors).toEqual([]);
+  });
+
+  it("Esc cancels the form from an input and returns focus to the method row", () => {
+    const view = methodsView();
+    invokeItem(view).click();
+    expect(forms(view)).toHaveLength(1);
+    expect(key(view, field(view, 0), { key: "Escape" }).defaultPrevented).toBe(true);
+    expect(forms(view)).toHaveLength(0);
+    expect(view.doc.activeElement).toBe(rowFor(view));
+    expect(invocations(view)).toEqual([]);
+  });
+
+  it("posts managedInvoke with the typed arguments, as the host expects them", () => {
+    const view = methodsView();
+    invokeItem(view).click();
+    typeInto(view, 0, "hello");
+    typeInto(view, 1, "42");
+    submit(view).click();
+    expect(invocations(view)).toEqual([{ type: "managedInvoke", memberKey: "k1", arguments: [{ kind: "value", text: "hello" }, { kind: "value", text: "42" }] }]);
+    // A null string, a boolean, an enum and a floating point number are each their own kind of input.
+    const typed = methodsView([method({ key: "k3", name: "Mix", parameters: [{ name: "text", type: "System.String" }, { name: "flag", type: "System.Boolean" }, { name: "mode", type: "App.Mode" }, { name: "ratio", type: "System.Double" }] })]);
+    invokeItem(typed, "Mix(System.String text, System.Boolean flag, App.Mode mode, System.Double ratio)").click();
+    expect(field(typed, 1).tagName).toBe("SELECT");
+    expect(field(typed, 3).inputMode).toBe("decimal");
+    expect(field(typed, 2).placeholder).toBe("Enum name or flags");
+    typeInto(typed, 0, "ignored");
+    const nullBox = typed.doc.getElementById("invoke-null-0") as HTMLInputElement;
+    nullBox.checked = true;
+    nullBox.dispatchEvent(new typed.dom.window.Event("change", { bubbles: true }));
+    expect(field(typed, 0).disabled).toBe(true);
+    field(typed, 1).value = "true";
+    field(typed, 1).dispatchEvent(new typed.dom.window.Event("change", { bubbles: true }));
+    typeInto(typed, 2, "First, Second");
+    typeInto(typed, 3, "1.5");
+    submit(typed).click();
+    expect(invocations(typed)).toEqual([{ type: "managedInvoke", memberKey: "k3", arguments: [{ kind: "null", text: "" }, { kind: "value", text: "true" }, { kind: "enum", text: "First, Second" }, { kind: "value", text: "1.5" }] }]);
+    expect(view.errors.concat(typed.errors)).toEqual([]);
+  });
+
+  it("submits with Enter in an input, and not while an invocation is in flight", () => {
+    const view = methodsView();
+    invokeItem(view).click();
+    typeInto(view, 0, "x");
+    typeInto(view, 1, "1");
+    key(view, field(view, 1), { key: "Enter" });
+    expect(invocations(view)).toHaveLength(1);
+    view.send(snapshot([method()], { invoking: true }, 3));
+    expect(submit(view).disabled).toBe(true);
+    expect(view.text(".invoke-form")).toContain("Waiting for confirmation or the result\u2026");
+    expect(field(view, 0).value).toBe("x");
+    key(view, field(view, 1), { key: "Enter" });
+    expect(invocations(view)).toHaveLength(1);
+    // The host finished (or the user declined the confirmation): the form is still there, ready for another go.
+    view.send(snapshot([method()], { invoking: false }, 4));
+    expect(submit(view).disabled).toBe(false);
+  });
+
+  it("keeps what was typed, and the focus, across the redraws that follow every snapshot", () => {
+    const view = methodsView();
+    invokeItem(view).click();
+    typeInto(view, 0, "abc");
+    field(view, 0).setSelectionRange(1, 2);
+    view.send(snapshot([method()], {}, 3));
+    expect(field(view, 0).value).toBe("abc");
+    expect(view.doc.activeElement).toBe(field(view, 0));
+    expect([field(view, 0).selectionStart, field(view, 0).selectionEnd]).toEqual([1, 2]);
+    expect(forms(view)).toHaveLength(1);
+  });
+
+  it("shows the result inline under the row, and in the Description pane", () => {
+    const view = methodsView();
+    invokeItem(view).click();
+    view.send(snapshot([method()], { invocation: { key: "k1", text: "Result: written-1" } }, 3));
+    const result = view.doc.querySelector("#sidebar-rows tr.invoke-result") as HTMLElement;
+    expect(result.textContent).toBe("Result: written-1");
+    expect(result.previousElementSibling).toBe(forms(view)[0]);
+    expect(view.doc.querySelector("#sidebar-rows details")).toBeNull();
+    // The description of the method shows it too (the menu already described the row).
+    expect(view.text("#sidebar-description-content")).toContain("Result: written-1");
+    // With the form closed, the result stays directly under the method row.
+    key(view, field(view, 0), { key: "Escape" });
+    expect(rowFor(view).nextElementSibling?.textContent).toBe("Result: written-1");
+    // A failure is shown the same way, and only under the method it belongs to.
+    view.send(snapshot([method(), method({ key: "k9", name: "Other", parameters: [] })], { invocation: { key: "k1", text: "Invocation failed or timed out. The method may still have had an effect." } }, 4));
+    expect(view.doc.querySelectorAll("#sidebar-rows tr.invoke-result")).toHaveLength(1);
+    rowFor(view).click();
+    expect(view.text("#sidebar-description-content")).toContain("Outcome: Invocation failed or timed out.");
+    expect(view.errors).toEqual([]);
+  });
+
+  it("drops the form when the selection changes or the method disappears", () => {
+    const view = methodsView();
+    invokeItem(view).click();
+    expect(forms(view)).toHaveLength(1);
+    view.send(snapshot([method({ key: "other", name: "Another", parameters: [] })], {}, 3));
+    expect(forms(view)).toHaveLength(0);
+    view.send(snapshot([method()], {}, 4));
+    expect(forms(view)).toHaveLength(0);
+    invokeItem(view).click();
+    view.send({ type: "selectionPending", nodeId: "border" });
+    view.send({ type: "selected", nodeId: "border", properties: { ...presenterProperties, info: borderNode.info, ancestors: [windowNode] } });
+    view.send(snapshot([method()], {}, 5));
+    expect(forms(view)).toHaveLength(0);
+  });
+
+  it("is reachable from the keyboard: Shift+F10 opens the menu on Invoke\u2026 and Enter opens the form", () => {
+    const view = methodsView();
+    const row = rowFor(view);
+    row.focus();
+    expect(key(view, row, { key: "F10", shiftKey: true }).defaultPrevented).toBe(true);
+    expect(view.doc.activeElement?.textContent).toBe("Invoke\u2026");
+    (view.doc.activeElement as HTMLButtonElement).click();
+    expect(view.doc.activeElement).toBe(field(view, 0));
+    expect(forms(view)).toHaveLength(1);
+  });
+});
+
+describe("Not read rows", () => {
+  const dotnet = (rows: unknown[], extra: Record<string, unknown> = {}) => managed({ sequence: 2, rows, ...extra });
+  const hidden = (name: string, extra: Record<string, unknown> = {}) => ({ ...member(name), visibility: "internal", readable: false, reason: "nonPublic", ...extra });
+  const advanced = () => {
+    const view = open("properties-view", { sidebarAdvanced: true });
+    view.send(...hostSession().slice(0, 7));
+    return view;
+  };
+
+  it("says why a member cannot be read instead of Not read", () => {
+    const view = advanced();
+    view.send(dotnet([
+      { member: hidden("HasComplexContent") },
+      { member: hidden("ContentsChangedHandler", { visibility: "protectedInternal" }) },
+      { member: hidden("System.Windows.IContentHost.HostedElements", { visibility: "private" }) },
+      { member: hidden("WriteOnlyThing", { visibility: "public", reason: "writeOnly" }) },
+      { member: hidden("Item", { visibility: "public", reason: "indexer" }) },
+      { member: hidden("Shared", { visibility: "public", reason: "static" }) },
+      { member: hidden("Weird", { visibility: "public", reason: "unsupportedType" }) },
+      { member: hidden("Twin", { visibility: "public", reason: "ambiguous" }) },
+      { member: { ...hidden("NoPath", { visibility: "public", reason: undefined }), pathSegment: undefined } },
+      { member: member("Fine"), value: { status: "notReadable", kind: "unavailable" } },
+      { member: member("Odd"), value: { status: "unsupported", kind: "unavailable" } },
+    ]));
+    expect(view.value("HasComplexContent")).toBe("Not readable: internal member, only public members are read");
+    expect(view.value("ContentsChangedHandler")).toBe("Not readable: protected internal member, only public members are read");
+    expect(view.value("System.Windows.IContentHost.HostedElements")).toBe("Not readable: private member, only public members are read");
+    expect(view.value("WriteOnlyThing")).toBe("Not readable: write-only property");
+    expect(view.value("Item")).toBe("Not readable: indexer, it needs arguments");
+    expect(view.value("Shared")).toBe("Not readable: static member");
+    expect(view.value("Weird")).toBe("Not readable: its type is not supported");
+    expect(view.value("Twin")).toBe("Not readable: the name matches more than one member");
+    expect(view.value("NoPath")).toBe("Not readable: the member has no read path");
+    expect(view.value("Fine")).toBe("Not readable: the inspector cannot read this member");
+    expect(view.value("Odd")).toBe("Not readable: its type is not supported");
+    expect(view.errors).toEqual([]);
+  });
+
+  it("leaves no .NET row of a TextBlock-sized object bare Not read once the automatic read has run", () => {
+    const view = advanced();
+    const unreadable = Array.from({ length: 40 }, (_, index) => ({ member: hidden(`Internal${index}`) }));
+    const readable = Array.from({ length: 20 }, (_, index) => ({ member: member(`Public${index}`), value: { status: "ok", kind: "string", scalar: `v${index}`, runtimeType: "System.String" } }));
+    const outcomes = [{ member: member("Slow"), autoStatus: "timed out" }, { member: member("Throws"), value: { status: "exception", kind: "unavailable", message: "System.InvalidOperationException" } }];
+    const typeFact = { member: { ...member("FullName"), category: "typeMetadata", pathSegment: { kind: "type", name: "FullName" } }, value: { status: "ok", kind: "string", scalar: "System.Windows.Controls.TextBlock", runtimeType: "System.String" } };
+    view.send(dotnet([...unreadable, ...readable, ...outcomes, typeFact]));
+    const cells = [...view.doc.querySelectorAll<HTMLTableRowElement>("#sidebar-rows tr.sidebar-row")].filter((row) => row.dataset.key?.startsWith(".NET/")).map((row) => row.children[1]?.textContent);
+    // 63 members and the ClrFullClassName row every WPF object gets.
+    expect(cells.length).toBe(64);
+    expect(cells.filter((text) => text === "Not read")).toEqual([]);
+    expect(cells.filter((text) => text?.startsWith("Not readable: "))).toHaveLength(40);
+    // Declined consent changes nothing for rows that could never be read; the readable ones say reading is off.
+    view.send(dotnet([{ member: hidden("HasComplexContent"), autoStatus: "declined" }, { member: member("Text"), autoStatus: "declined" }], { sequence: 3 }));
+    expect(view.value("HasComplexContent")).toBe("Not readable: internal member, only public members are read");
+    expect(view.value("Text")).toBe("Not read (automatic reading is off)");
   });
 });

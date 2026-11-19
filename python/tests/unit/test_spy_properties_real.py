@@ -256,8 +256,13 @@ def auto_eligible(member: dict[str, Any]) -> bool:
     if not segment or not member["readable"] or member["visibility"] != "public":
         return False
     category = member["category"]
-    return (category == "clrProperty" and segment["kind"] == "property") or (
-        category in ("dependencyProperty", "attachedProperty") and segment["kind"] == "dependency"
+    return (
+        (category == "clrProperty" and segment["kind"] == "property")
+        or (
+            category in ("dependencyProperty", "attachedProperty")
+            and segment["kind"] == "dependency"
+        )
+        or (category == "typeMetadata" and segment["kind"] == "type")
     )
 
 
@@ -321,5 +326,75 @@ def test_every_property_row_is_read_over_stdio(owned: Any) -> None:
     server = Stdio(path)
     try:
         check_every_row_is_read(server, scope.app.main_window().process_id)
+    finally:
+        server.close()
+
+
+def check_method_call_can_be_prepared(rpc: Rpc, pid: int) -> None:
+    """The sequence behind the Methods tab's Invoke...: the host's canInvoke is true and a ticket is issued.
+
+    The method is not invoked; the confirmation dialog and the invocation itself are the host's and are
+    covered by the writes tests.
+    """
+    with attached(rpc, pid) as (window, session):
+        node = find(rpc, window, {"FixtureControl"})["FixtureControl"]
+        # attach (above), resolve, spySelect: select_like_the_host asserts what ManagedInspector.bindSpy checks.
+        ref = select_like_the_host(rpc, session, node)
+        bound = result(
+            rpc,
+            "inspect.managed.spySelect",
+            {
+                "hostCapability": CAPABILITY,
+                "sessionId": session["sessionId"],
+                "nodeId": node["nodeId"],
+            },
+        )
+        mapped = bound["mapping"]["object"]
+        assert bound["canInvoke"] is True and bound["mapping"]["status"] == "exact"
+        assert (mapped["sessionId"], mapped["objectId"], mapped["generation"]) == (
+            ref["sessionId"],
+            ref["objectId"],
+            ref["generation"],
+        )
+        base = {
+            "sessionId": session["sessionId"],
+            "objectId": ref["objectId"],
+            "generation": ref["generation"],
+        }
+        methods = pages(rpc, "inspect.managed.spyMethods", base)
+        record = next(m for m in methods if m["name"] == "RecordWrite")
+        assert [p["type"] for p in record["parameters"]] == ["System.String", "System.Int64"]
+        assert not record.get("unsupportedReason")
+        assert len(record["parameters"]) <= 16 and not any(p["isOut"] for p in record["parameters"])
+        prepared = result(
+            rpc,
+            "inspect.managed.spyPrepareInvoke",
+            {
+                "hostCapability": CAPABILITY,
+                "sessionId": session["sessionId"],
+                "objectId": ref["objectId"],
+                "generation": ref["generation"],
+                "memberKey": record["key"],
+                "arguments": [
+                    {"type": "System.String", "value": "prepared-only"},
+                    {"type": "System.Int64", "value": 3},
+                ],
+            },
+        )
+        assert isinstance(prepared["ticket"], str) and prepared["ticket"]
+
+
+def test_method_call_can_be_prepared_in_process(owned: Any) -> None:
+    scope, path = owned
+    check_method_call_can_be_prepared(
+        InProcess(path, scope.app), scope.app.main_window().process_id
+    )
+
+
+def test_method_call_can_be_prepared_over_stdio(owned: Any) -> None:
+    scope, path = owned
+    server = Stdio(path)
+    try:
+        check_method_call_can_be_prepared(server, scope.app.main_window().process_id)
     finally:
         server.close()

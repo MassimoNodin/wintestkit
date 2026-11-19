@@ -3001,6 +3001,20 @@ describe("Spy view bridge", () => {
       fixture.provider.dispose();
     });
 
+    it("keeps the inspector session when recovery follows a fresh Attach, and drops it for a stale one", async () => {
+      serve();
+      const fixture = await create();
+      await selectSave(fixture);
+      const host = fixture.provider as unknown as { managedInspector: { invalidate(): void }; recoverStale(process?: unknown, keepSession?: boolean): Promise<void> };
+      const invalidate = vi.spyOn(host.managedInspector, "invalidate");
+      await host.recoverStale(undefined, true);
+      expect(invalidate).not.toHaveBeenCalled();
+      expect(fixture.sent).toContainEqual({ type: "selectionRestored", nodeId: "save1" });
+      await host.recoverStale();
+      expect(invalidate).toHaveBeenCalledTimes(1);
+      fixture.provider.dispose();
+    });
+
     it("selects the closest surviving ancestor during stale recovery", async () => {
       serve();
       const fixture = await create();

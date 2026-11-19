@@ -1004,13 +1004,8 @@
     }
     element("pinned-group").hidden = shownProperties.length === 0;
   };
-  const renderWpfDetails = (nodeId) => {
-    const entry = nodes.get(nodeId);
-    element("wpf-details-note").hidden = !entry?.wpfMissing || managedSnapshot?.state === "ready";
-    element("sidebar-attach-status").textContent = entry?.wpfBlocked ? attachHeader(entry.wpfBlocked) : managedSnapshot?.failure ? attachHeader(managedSnapshot.failure) : "WPF details not loaded";
-    element("wpf-blocked").hidden = true;
-    element("wpf-blocked").textContent = entry?.wpfBlocked ? `${entry.wpfBlocked.code}: ${entry.wpfBlocked.hint} Run ` + "`wtk doctor --agent`" + " for details." : "";
-  };
+  // The one status line is drawn with the rest of the sidebar, from the tree's notice and the host's snapshot together.
+  const renderWpfDetails = () => renderSidebar();
   element("wpf-details-attach").addEventListener("click", () => { if (selected && (nodes.get(selected)?.wpfMissing || nodes.get(selected)?.wpfBlocked)) post("treeAttach", { nodeId: selected }); else post("managedAttach"); });
   const showProperties = (properties) => {
     currentProperties = properties;
@@ -1053,9 +1048,25 @@
   };
   const standardDescription = (name, value) => [["Name", name], ["Value", value === undefined || value === null ? "Unknown" : value === "" ? '""' : String(value)], ["Group", "Standard"], ["Meaning", STANDARD_MEANING[name]]];
   const redactedLabel = (name, value) => value.redactionRule === "identity" ? (name === "Password" || name === "SecurePassword" ? "Redacted: password" : "Redacted: element has no automation peer") : `Redacted (rule: ${value.redactionRule || "unknown"})`;
+  const UNREADABLE_REASONS = {
+    writeOnly: "write-only property",
+    indexer: "indexer, it needs arguments",
+    static: "static member",
+    unsupportedType: "its type is not supported",
+    ambiguous: "the name matches more than one member",
+  };
+  /** Why the inspector will not read a member: its own reason, in words. */
+  function unreadableReason(member) {
+    const access = { protectedInternal: "protected internal", privateProtected: "private protected" }[member.visibility] || member.visibility;
+    if (member.reason === "nonPublic" || (!member.reason && access && access !== "public")) return `${access || "non-public"} member, only public members are read`;
+    return UNREADABLE_REASONS[member.reason] || (member.pathSegment ? "the inspector cannot read this member" : "the member has no read path");
+  }
   /** What a .NET row shows as its value: the value itself, or the real reason there is none. */
   function managedValueText(row) {
     const v = row.value;
+    if (!v && !managedReadable(row.member)) return `Not readable: ${unreadableReason(row.member)}`;
+    if (v && v.status === "notReadable") return `Not readable: ${unreadableReason(row.member)}`;
+    if (v && v.status === "unsupported") return `Not readable: ${UNREADABLE_REASONS.unsupportedType}`;
     if (!v) return row.autoStatus === "timed out" ? "(timed out)" : row.autoStatus === "unavailable" ? "(unavailable)" : row.autoStatus === "declined" ? "Not read (automatic reading is off)" : row.autoStatus ? `(${row.autoStatus})` : "Not read";
     if (v.status === "ok") return v.scalar !== undefined ? (v.scalar === "" ? '""' : String(v.scalar)) : v.kind === "null" ? "null" : v.runtimeType || v.kind || "ok";
     if (v.status === "exception") return `(threw ${String(v.message || "an exception").split(".").pop()})`;
@@ -1075,6 +1086,7 @@
     const menu = item.menu || {};
     const hasValue = item.value !== undefined && item.value !== null;
     return [
+      ...(item.invoke ? [{ label: "Invoke\u2026", enabled: item.invoke.enabled, title: item.invoke.reason, run: item.invoke.open }] : []),
       { label: "Copy value", enabled: menu.copyValue !== undefined ? menu.copyValue : hasValue, run: () => (menu.address ? post("managedCopy", { kind: "value", ...menu.address }) : post("copy", { text: displayValue(item) })) },
       { label: "Copy name", enabled: true, run: () => post("copy", { text: menu.name ?? item.name }) },
       { label: "Copy locator key", enabled: !!menu.locatorKey, run: () => post("managedCopy", { kind: "path", ...menu.address }) },
@@ -1099,7 +1111,7 @@
     describeSidebar(item, key);
     for (const entry of rowMenuItems(item)) {
       const button = document.createElement("button");
-      button.type = "button"; button.className = "secondary"; button.setAttribute("role", "menuitem"); button.textContent = entry.label; button.disabled = !entry.enabled;
+      button.type = "button"; button.className = "secondary"; button.setAttribute("role", "menuitem"); button.textContent = entry.label; button.disabled = !entry.enabled; if (entry.title) button.title = entry.title;
       button.addEventListener("click", () => { closeRowMenu(); entry.run(); });
       rowMenu.append(button);
     }
@@ -1157,6 +1169,93 @@
   let sidebarAdvanced = vscode.getState?.()?.sidebarAdvanced === true;
   const sidebarSearch = element("sidebar-search");
   const sidebarTabs = ["properties", "fields", "methods"].map((name) => element("sidebar-tab-" + name));
+  // The method whose argument form is open, with what was typed; it survives the redraws that follow every snapshot.
+  let invokeForm;
+  const INVOKE_NUMBERS = ["System.Int32", "System.Int64", "System.Single", "System.Double", "System.Decimal"];
+  const invokeKind = (type) => type === "System.String" ? "string" : type === "System.Boolean" ? "boolean" : INVOKE_NUMBERS.includes(type) ? "number" : "enum";
+  const invokeDefaults = (method) => (method.parameters || []).map((parameter) => ({ kind: invokeKind(parameter.type) === "enum" ? "enum" : "value", text: invokeKind(parameter.type) === "boolean" ? "false" : "" }));
+  const methodLabel = (method) => method.name + "(" + (method.parameters || []).map((parameter) => (parameter.isOut ? "out " : "") + parameter.type + " " + parameter.name).join(", ") + ")";
+  /** Whether a method can be called, or the reason it cannot. */
+  function invokeAvailability(method, methods) {
+    const parameters = method.parameters || [];
+    const reason = method.unsupportedReason || (parameters.length > 16 ? "more than 16 parameters" : parameters.some((parameter) => parameter.isOut) ? "out parameters are not supported" : methods.status !== "ready" ? "the method list is not loaded" : !methods.canInvoke ? "method calls are not enabled for this session (detach, then attach again)" : "");
+    return reason ? { enabled: false, reason: `Invocation unavailable: ${reason}` } : { enabled: true };
+  }
+  function closeInvokeForm() {
+    const rowKey = invokeForm?.rowKey;
+    invokeForm = undefined;
+    renderSidebar();
+    if (rowKey) rowByKey(rowKey)?.focus();
+  }
+  /** The typed argument inputs of one method, in a row of their own under it. */
+  function invokeFormRow(method, methods) {
+    const form = invokeForm, row = document.createElement("tr"), cell = document.createElement("td"), box = document.createElement("div");
+    row.className = "invoke-row"; row.dataset.for = method.key; cell.colSpan = 3;
+    box.className = "invoke-form"; box.setAttribute("role", "group"); box.setAttribute("aria-label", "Invoke " + methodLabel(method));
+    (method.parameters || []).forEach((parameter, index) => {
+      const kind = invokeKind(parameter.type), draft = form.draft[index], field = document.createElement("div"), label = document.createElement("label");
+      field.className = "invoke-field"; label.htmlFor = "invoke-arg-" + index; label.textContent = `${parameter.name || "argument"} (${parameter.type})`;
+      let input;
+      if (kind === "boolean") {
+        input = document.createElement("select");
+        for (const choice of ["false", "true"]) { const option = document.createElement("option"); option.value = choice; option.textContent = choice; input.append(option); }
+        input.value = draft.text; input.addEventListener("change", () => { draft.text = input.value; });
+      } else {
+        input = document.createElement("input"); input.type = "text"; input.maxLength = 4096; input.autocomplete = "off"; input.spellcheck = false; input.value = draft.text;
+        if (kind === "number") input.inputMode = "decimal";
+        if (kind === "enum") input.placeholder = "Enum name or flags";
+        input.disabled = draft.kind === "null";
+        input.addEventListener("input", () => { draft.text = input.value; });
+      }
+      input.id = "invoke-arg-" + index;
+      field.append(label, input);
+      if (kind === "string") {
+        const nullLabel = document.createElement("label"), nullBox = document.createElement("input");
+        nullLabel.className = "invoke-null"; nullBox.type = "checkbox"; nullBox.id = "invoke-null-" + index; nullBox.checked = draft.kind === "null";
+        nullBox.addEventListener("change", () => { draft.kind = nullBox.checked ? "null" : "value"; input.disabled = nullBox.checked; });
+        nullLabel.append(nullBox, document.createTextNode("Null"));
+        field.append(nullLabel);
+      }
+      box.append(field);
+    });
+    const actions = document.createElement("div"), submit = document.createElement("button");
+    actions.className = "invoke-actions";
+    submit.id = "invoke-submit"; submit.type = "button"; submit.textContent = "Invoke"; submit.disabled = !!methods.invoking;
+    submit.addEventListener("click", () => post("managedInvoke", { memberKey: method.key, arguments: form.draft.map((item) => ({ kind: item.kind, text: item.kind === "null" ? "" : item.text })) }));
+    const cancel = managedButton("Cancel", closeInvokeForm); cancel.id = "invoke-cancel";
+    actions.append(submit, cancel);
+    box.append(actions);
+    if (methods.invoking) { const status = managedNode("div", "Waiting for confirmation or the result\u2026"); status.className = "muted"; box.append(status); }
+    row.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); closeInvokeForm(); }
+      else if (event.key === "Enter" && event.target.tagName === "INPUT" && event.target.type === "text") { event.preventDefault(); submit.click(); }
+    });
+    cell.append(box); row.append(cell);
+    return row;
+  }
+  function invokeResultRow(text) {
+    const row = document.createElement("tr"), cell = managedNode("td", text);
+    row.className = "invoke-result"; cell.colSpan = 3; cell.setAttribute("role", "status");
+    row.append(cell);
+    return row;
+  }
+  /** One Methods row: the return type and flags as its value, everything else in the description and the row menu. */
+  function methodItem(method, methods) {
+    const label = methodLabel(method), availability = invokeAvailability(method, methods), invocation = methods.invocation && methods.invocation.key === method.key ? methods.invocation.text : "";
+    const flags = [String(method.visibility || "").replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase(), method.isStatic ? "static" : "instance"].filter(Boolean).join(" ");
+    return {
+      name: label, method,
+      value: [method.returnType, flags].filter(Boolean).join(" "),
+      tooltip: [method.declaringType, method.unsupportedReason].filter(Boolean).join("\n"),
+      description: [["Name", method.name], ["Signature", `${method.returnType} ${method.declaringType}.${label}`], ["Returns", method.returnType], ["Declaring type", method.declaringType], ["Access", flags], ["Not supported", method.unsupportedReason], ["Invocation", availability.enabled ? "available" : availability.reason], invocation.startsWith("Result: ") ? ["Result", invocation.slice(8)] : ["Outcome", invocation]],
+      invoke: { ...availability, open: () => {
+        if (!invokeForm || invokeForm.key !== method.key) invokeForm = { key: method.key, rowKey: "Methods/" + label, draft: invokeDefaults(method) };
+        renderSidebar();
+        (element("invoke-arg-0") || element("invoke-submit"))?.focus();
+      } },
+      after: () => [...(invokeForm && invokeForm.key === method.key ? [invokeFormRow(method, methods)] : []), ...(invocation ? [invokeResultRow(invocation)] : [])],
+    };
+  }
   function renderSidebar() {
     if (!rowMenu.hidden) {
       if (rowMenuOwner?.selected === selected && rowMenuOwner.object === managedSnapshot?.object?.objectId) { renderDeferred = true; return; }
@@ -1164,6 +1263,8 @@
     }
     const body = element("sidebar-rows"), empty = element("sidebar-empty");
     const focusedKey = document.activeElement?.closest?.("tr.sidebar-row")?.dataset?.key;
+    const formField = document.activeElement?.closest?.("tr.invoke-row") ? document.activeElement : undefined;
+    const formFocus = formField && { id: formField.id, caret: typeof formField.selectionStart === "number" ? [formField.selectionStart, formField.selectionEnd] : undefined };
     rowItems.clear();
     body.replaceChildren();
     sidebarTabs.forEach((button) => button.setAttribute("aria-selected", String(button.dataset.sidebarTab === sidebarTab)));
@@ -1188,35 +1289,20 @@
         const value = document.createElement("td");
         if (item.select) { const button = managedButton(String(item.value), () => nodes.has(item.select) ? choose(item.select) : post("select", { nodeId: item.select })); value.append(button); }
         else value.textContent = displayValue(item);
+        if (item.tooltip) value.title = item.tooltip;
         const actions = document.createElement("td"); actions.className = "property-actions";
         if (item.action) actions.append(item.action());
         else if (item.pin && PINNABLE.test(item.name)) actions.append(pinButton(item.name));
         if (!item.noMenu) actions.append(menuButton());
         row.tabIndex = 0;
         row.append(th, value, actions); body.append(row); count++;
+        for (const extra of item.after?.() || []) body.append(extra);
       }
     };
     if (sidebarTab === "methods") {
       const methods = managedSnapshot?.methods;
-      const items = (methods?.items || []).map((method) => ({
-        name: method.name + "(" + (method.parameters || []).map((parameter) => (parameter.isOut ? "out " : "") + parameter.type + " " + parameter.name).join(", ") + ")",
-        value: [method.returnType, method.declaringType, method.visibility, method.isStatic ? "static" : "instance", method.unsupportedReason, methods.invocation && methods.invocation.key === method.key ? methods.invocation.text : ""].filter(Boolean).join("; "),
-        ...(methods.canInvoke && methods.status === "ready" && !method.unsupportedReason && method.parameters.length <= 16 ? { action: () => {
-          const menu = document.createElement("details"), summary = managedNode("summary", "Invoke");
-          menu.className = "sidebar-row-menu"; menu.append(summary);
-          const inputs = method.parameters.map((parameter) => {
-            const label = document.createElement("label"), select = document.createElement("select"), input = document.createElement("input");
-            label.textContent = `${parameter.name || "argument"} (${parameter.type}) `;
-            const choices = parameter.type === "System.String" ? [["value", "String"], ["null", "Null"]] : parameter.type === "System.Boolean" ? [["value", "Boolean"]] : ["System.Int32", "System.Int64", "System.Single", "System.Double", "System.Decimal"].includes(parameter.type) ? [["value", "Number"]] : [["enum", "Enum name or flags"]];
-            choices.forEach(([value, text]) => { const option = document.createElement("option"); option.value = value; option.textContent = text; select.append(option); });
-            if (parameter.type === "System.Boolean") { const bool = document.createElement("select"); ["false", "true"].forEach((value) => { const option = document.createElement("option"); option.value = value; option.textContent = value; bool.append(option); }); label.append(select, bool); menu.append(label); return () => ({ kind: select.value, text: bool.value }); }
-            input.type = "text"; input.maxLength = 4096; select.addEventListener("change", () => { input.disabled = select.value === "null"; });
-            label.append(select, input); menu.append(label); return () => ({ kind: select.value, text: select.value === "null" ? "" : input.value });
-          });
-          const submit = managedButton("Invoke", () => { submit.disabled = true; post("managedInvoke", { memberKey: method.key, arguments: inputs.map((read) => read()) }); });
-          submit.disabled = !!methods.invoking; menu.append(submit); return menu;
-        } } : {}),
-      }));
+      if (invokeForm && !(methods?.items || []).some((method) => method.key === invokeForm.key)) invokeForm = undefined;
+      const items = (methods?.items || []).map((method) => methodItem(method, methods));
       group("Methods", items);
       if (!managedSnapshot?.object) empty.textContent = "Methods unavailable for this selection.";
       else if (methods?.status === "loading") empty.textContent = "Loading methods…";
@@ -1228,7 +1314,7 @@
         if (methods.page && !methods.page.complete) cell.append(document.createTextNode("Partial list. "));
         if (methods.status === "loading") cell.append(document.createTextNode("Loading methods…"));
         if (methods.status === "error") cell.append(managedButton("Retry methods", () => post("managedMethods", { action: "retry" })));
-        else if (methods.page.nextToken && methods.status !== "loading") cell.append(managedButton("Load more methods", () => post("managedMethods", { action: "more" })));
+        else if (methods.page?.nextToken && methods.status !== "loading") cell.append(managedButton("Load more methods", () => post("managedMethods", { action: "more" })));
         row.append(cell); body.append(row);
       }
     }
@@ -1287,6 +1373,8 @@
     const described = describedKey !== undefined ? rowItems.get(describedKey) : undefined;
     if (described) describeSidebar(described, describedKey);
     if (focusedKey !== undefined) rowByKey(focusedKey)?.focus({ preventScroll: true });
+    const refocused = formFocus?.id ? element(formFocus.id) : undefined;
+    if (refocused) { refocused.focus({ preventScroll: true }); if (formFocus.caret) try { refocused.setSelectionRange(...formFocus.caret); } catch { /* not a text field */ } }
     if (sidebarTab !== "methods" && managedSnapshot?.page && !managedSnapshot.page.complete && managedSnapshot.page.nextToken) {
       const more = document.createElement("tr"), cell = document.createElement("td"); cell.colSpan = 3;
       cell.append(managedButton("Load more managed members", () => post("managedLoadMore", { group: sidebarTab === "fields" ? "CLR fields" : "CLR properties" }))); more.append(cell); body.append(more);
@@ -1324,6 +1412,7 @@
   const clearProperties = () => {
     currentProperties = undefined;
     selectedProperties = undefined; selectedDefinitions = undefined; definitionsState = undefined;
+    invokeForm = undefined;
     closeRowMenu(false);
     standardLocatorRequested = undefined;
     propertiesNodeId = undefined;

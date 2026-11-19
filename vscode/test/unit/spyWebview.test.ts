@@ -430,7 +430,8 @@ it("renders searchable sidebar tabs and remembers the property mode", () => {
   send({ type: "managedPanel", sequence: 3, visible: true, state: "ready", object: { objectId: "o", type: { fullName: "Example", assemblyName: "A", baseTypes: [] } }, rows: [], methods: { status: "ready", items: [method, { ...method, parameters: [{ name: "text", type: "System.String" }] }], page: { complete: false, nextToken: true } } });
   search.value = ""; search.dispatchEvent(new dom.window.Event("input"));
   expect(names()).toEqual(["<Run>(System.Int32 count)", "<Run>(System.String text)"]);
-  expect(doc.querySelector("#sidebar-rows")?.textContent).toContain("Example.Base; public; static; generic");
+  expect(doc.querySelector('[data-name="<Run>(System.Int32 count)"] td')?.textContent).toBe("System.Void public static");
+  expect(doc.querySelector("#sidebar-rows")?.textContent).not.toContain("generic");
   expect(doc.querySelector("#sidebar-rows img")).toBeNull();
   expect(doc.querySelector("#sidebar-rows")?.textContent).toContain("Partial list");
   [...doc.querySelectorAll<HTMLButtonElement>("#sidebar-rows button")].find((button) => button.textContent === "Load more methods")!.click();
@@ -439,10 +440,16 @@ it("renders searchable sidebar tabs and remembers the property mode", () => {
   search.value = ""; search.dispatchEvent(new dom.window.Event("input"));
   const supported = { ...method, key: "safe-key", unsupportedReason: undefined, parameters: [{ name: "count", type: "System.Int64" }] };
   send({ type: "managedPanel", sequence: 4, visible: true, state: "ready", object: { objectId: "o", type: { fullName: "Example", assemblyName: "A", baseTypes: [] } }, rows: [], methods: { status: "ready", canInvoke: true, items: [supported, method] } });
-  const input = doc.querySelector<HTMLInputElement>("#sidebar-rows input")!; input.value = "9223372036854775807";
-  const invoke = [...doc.querySelectorAll<HTMLButtonElement>("#sidebar-rows button")].find((button) => button.textContent === "Invoke")!;
-  invoke.click(); expect(posts).toContainEqual({ type: "managedInvoke", memberKey: "safe-key", arguments: [{ kind: "value", text: "9223372036854775807" }] }); expect(invoke.disabled).toBe(true);
-  expect(doc.querySelectorAll("#sidebar-rows details")).toHaveLength(1);
+  // The form is not drawn until the row menu asks for it; the unsupported method offers the item disabled.
+  expect(doc.querySelector("#sidebar-rows input")).toBeNull();
+  const openMenu = (name: string) => { doc.querySelector(`[data-name="${name}"]`)!.dispatchEvent(new dom.window.MouseEvent("contextmenu", { bubbles: true, cancelable: true })); return [...doc.querySelectorAll<HTMLButtonElement>("#sidebar-row-menu button")].find((button) => button.textContent === "Invoke" + String.fromCharCode(0x2026))!; };
+  expect(openMenu("<Run>(System.Int32 count)").disabled).toBe(true);
+  doc.getElementById("sidebar-row-menu")!.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  const item = openMenu("<Run>(System.Int64 count)"); expect(item.disabled).toBe(false); item.click();
+  const input = doc.querySelector<HTMLInputElement>("#sidebar-rows input")!; input.value = "9223372036854775807"; input.dispatchEvent(new dom.window.Event("input"));
+  const invoke = doc.getElementById("invoke-submit") as HTMLButtonElement;
+  invoke.click(); expect(posts).toContainEqual({ type: "managedInvoke", memberKey: "safe-key", arguments: [{ kind: "value", text: "9223372036854775807" }] });
+  expect(doc.querySelectorAll("#sidebar-rows details")).toHaveLength(0);
   send({ type: "managedPanel", sequence: 5, visible: true, state: "ready", object: { objectId: "o", type: { fullName: "Example", assemblyName: "A", baseTypes: [] } }, rows: [], methods: { status: "error", items: [], page: { complete: false, nextToken: true } } });
   [...doc.querySelectorAll<HTMLButtonElement>("#sidebar-rows button")].find((button) => button.textContent === "Retry methods")!.click();
   expect(posts).toContainEqual({ type: "managedMethods", action: "retry" });

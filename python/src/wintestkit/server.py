@@ -1332,6 +1332,24 @@ class Server:
             )
         return client
 
+    @staticmethod
+    def _wpf_node_gone(node: Any) -> bool:
+        """True when a live session reports the element gone.
+
+        A closed session (detached, or its process exited) cannot answer, so its nodes keep their
+        process id: Attach identifies the selected node to open a new session.
+        """
+        from wintestkit.errors import InspectorUnavailableError
+
+        if node.client.session.state != "ready":
+            return False
+        try:
+            return not node.is_alive()
+        except InspectorUnavailableError as error:
+            if error.code in ("sessionStale", "notAttached"):
+                return False
+            raise
+
     def _release_managed_objects(self) -> None:
         """Invalidate server-held leases on refresh without detaching the session."""
         assert self.cfg is not None
@@ -1387,7 +1405,7 @@ class Server:
                 with self._node_lock:
                     selected = self.nodes.get(params["nodeId"])
                 if isinstance(selected, WpfElement):
-                    if not selected.is_alive():
+                    if self._wpf_node_gone(selected):
                         raise RpcError(-32005, "unknown node id")
                     pid = selected.process_id
                 else:
@@ -1455,12 +1473,13 @@ class Server:
                 with self._node_lock:
                     selected = self.nodes.get(params["nodeId"])
                 if isinstance(selected, WpfElement):
-                    if not selected.is_alive():
-                        raise RpcError(-32005, "unknown node id")
+                    # A detached session's node is stale, not dead: check that first.
                     if selected.ref.session_id != session_id:
                         raise InspectorUnavailableError(
                             "Selected element belongs to another session", code="objectStale"
                         )
+                    if self._wpf_node_gone(selected):
+                        raise RpcError(-32005, "unknown node id")
                     node = selected
                 else:
                     node = self._node(params["nodeId"])

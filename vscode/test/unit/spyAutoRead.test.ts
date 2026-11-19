@@ -128,3 +128,18 @@ describe("automatic read time budget", () => {
     expect(settled(last().rows)).toEqual(Array(60).fill("timed out"));
   });
 });
+
+describe("automatic read eligibility", () => {
+  it("reads public properties and type facts, and never queues what the inspector cannot read", async () => {
+    const hidden = { ...member("HasComplexContent"), visibility: "internal", readable: false, reason: "nonPublic" };
+    const typeFact = { ...member("FullName"), category: "typeMetadata", pathSegment: { kind: "type", name: "FullName" } };
+    const indexer = { ...member("Item"), readable: false, reason: "indexer" };
+    const { panel, spyRead, inspector, last } = make(0);
+    inspector.members.mockResolvedValue({ items: [member("Text"), typeFact, hidden, indexer], complete: true } as never);
+    panel.select("node");
+    await vi.waitFor(() => expect(settled(last().rows).filter((status) => status === "ok")).toHaveLength(2));
+    expect(spyRead.mock.calls.flatMap(([p]) => p.paths.map(([segment]) => segment.name))).toEqual(["Text", "FullName"]);
+    // The unreadable rows carry their reason on the member, which is what the sidebar words as "Not readable: ...".
+    expect(last().rows.map((row) => row.value?.status ?? row.autoStatus ?? "unread")).toEqual(["ok", "ok", "unread", "unread"]);
+  });
+});

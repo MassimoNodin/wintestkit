@@ -783,7 +783,7 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
       ? path.win32.basename(appProcess).replace(/\.exe$/i, "")
       : undefined;
     this.client = client;
-    this.managedInspector = new ManagedInspector(client, connection.initialized, (process) => void this.safe(() => this.recoverStale(process)), (line) => this.log.error(line), connection.hostCapability);
+    this.managedInspector = new ManagedInspector(client, connection.initialized, (process) => void this.safe(() => this.recoverStale(process)), (line) => this.log.error(line), connection.hostCapability, (process) => void this.safe(() => this.recoverStale(process, true)));
     this.managedPanel = new ManagedPanel(this.managedInspector, (message) => {
       if (this.managedInspector?.visible && !this.tutorialActive()) {
         this.managedSnapshot = message;
@@ -1368,12 +1368,13 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
       data.errors.map((entry) => String(entry.index) + ": " + String(entry.message)).join("; ") });
     return data.nodes;
   }
-  private async recoverStale(process?: ManagedProcessIdentity): Promise<void> {
+  /** `keepSession`: the inspector has just attached again, so only the tree and its selected handle are replaced. */
+  private async recoverStale(process?: ManagedProcessIdentity, keepSession = false): Promise<void> {
     if (this.recovering || this.disposed || !this.client) return;
     this.recovering = true;
     this.recoveryFailures.clear();
     this.recoveryProcess = process ?? this.managedInspector?.sessionInfo?.process;
-    this.managedInspector?.invalidate();
+    if (!keepSession) this.managedInspector?.invalidate();
     const selected = this.selectedNodeId;
     try { await this.refresh(); }
     catch (error) {
