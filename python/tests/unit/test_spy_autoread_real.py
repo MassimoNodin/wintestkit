@@ -128,13 +128,17 @@ def auto_eligible(member: dict[str, Any]) -> bool:
     )
     if not (public or field):
         return False
-    return category == "clrField" or (
-        member["visibility"] == "public"
-        and (
-            (category == "clrProperty" and segment["kind"] == "property")
-            or (
-                category in ("dependencyProperty", "attachedProperty")
-                and segment["kind"] == "dependency"
+    return (
+        category == "clrField"
+        or (category == "typeMetadata" and segment["kind"] == "type")
+        or (
+            member["visibility"] == "public"
+            and (
+                (category == "clrProperty" and segment["kind"] == "property")
+                or (
+                    category in ("dependencyProperty", "attachedProperty")
+                    and segment["kind"] == "dependency"
+                )
             )
         )
     )
@@ -184,6 +188,16 @@ class AutoRead:
         finally:
             self.elapsed = time.perf_counter() - started
             self.done.set()
+
+
+UNREADABLE_REASONS = {"nonPublic", "writeOnly", "indexer", "static", "unsupportedType", "ambiguous"}
+INTERNALS_OF_A_TEXT_BLOCK = {
+    "ContentsChangedHandler",
+    "HasComplexContent",
+    "IsContentPresenterContainer",
+    "System.Windows.IContentHost.HostedElements",
+    "VisualContentBounds",
+}
 
 
 def percentile(values: list[float], fraction: float) -> float:
@@ -369,5 +383,46 @@ def test_a_burst_of_reads_does_not_queue_user_actions(
             for method, values in latencies.items():
                 assert values and max(values) < USER_ACTION_LIMIT, f"{method}\n{summary}"
             assert all("result" in future.result() for future in pending)
+    finally:
+        pipe.close()
+
+
+def test_every_text_block_row_ends_with_a_value_or_a_reason(owned: Any) -> None:
+    """No row of any group is left as a bare "Not read" (the sidebar's text for a row nobody tried).
+
+    A row is either read by the automatic read (every outcome is a value, "(timed out)" or "(threw X)")
+    or the inspector says it cannot be read and gives the reason the sidebar shows as "Not readable: ...".
+    """
+    scope, path = owned
+    pipe = Pipe(path)
+    try:
+        with attached(pipe, scope.app.main_window().process_id) as (window, session):  # type: ignore[arg-type]
+            node = find(pipe, window, {"TextBlock"})["TextBlock"]  # type: ignore[arg-type]
+            ref = select_like_the_host(pipe, session, node)  # type: ignore[arg-type]
+            base = {
+                "sessionId": session["sessionId"],
+                "objectId": ref["objectId"],
+                "generation": ref["generation"],
+            }
+            members = pages(pipe, "inspect.managed.members", base)  # type: ignore[arg-type]
+            read_rows = [m for m in members if auto_eligible(m)]
+            skipped = [m for m in members if not auto_eligible(m)]
+            # The rows seen on screen as "Not read": internal members the inspector will not read.
+            assert {m["name"] for m in skipped} >= INTERNALS_OF_A_TEXT_BLOCK, sorted(
+                INTERNALS_OF_A_TEXT_BLOCK - {m["name"] for m in skipped}
+            )
+            bare = [
+                f"{m['category']}:{m['name']}"
+                for m in skipped
+                if m["readable"] or m.get("reason") not in UNREADABLE_REASONS
+            ]
+            assert not bare, bare
+            # Public type facts are read like every other public row.
+            assert any(m["category"] == "typeMetadata" for m in read_rows)
+            read = AutoRead(pipe, base, read_rows)
+            read._run()
+            assert not read.unresolved, read.unresolved
+            assert sum(read.outcomes.values()) == len(read_rows), read.outcomes
+            assert read.outcomes.get("ok", 0) > len(read_rows) * 0.9, read.outcomes
     finally:
         pipe.close()

@@ -267,3 +267,40 @@ def test_loaded_agent_mismatch_compares_image_content(
     assert sessions._loaded_agent_mismatch(42, expected)
     loaded.write_bytes(b"expected")
     assert not sessions._loaded_agent_mismatch(42, expected)
+
+
+def test_detach_then_attach_opens_a_new_session_each_time(monkeypatch: pytest.MonkeyPatch) -> None:
+    registry = sessions.SessionRegistry()
+    clients: list[InspectorClient] = []
+
+    def attach(identity: Any, hwnd: Any, deadline: float, entry: Any, **kwargs: Any) -> Any:
+        transport = ScriptedTransport(
+            lambda request: {"id": request["id"], "result": {"closed": True}}
+        )
+        client = InspectorClient(
+            transport,
+            replace(session(), session_id=f"session-{len(clients)}"),
+            on_closed=lambda closed: registry._client_closed(identity, entry, closed),
+        )
+        clients.append(client)
+        return client
+
+    monkeypatch.setattr(registry, "_attach_owned", attach)
+    monkeypatch.setattr(probe, "current_identity", lambda pid: IDENTITY)
+    try:
+        first = registry.attach(IDENTITY, target_hwnd=None, deadline=time.monotonic() + 1)
+        for round_ in range(1, 4):
+            registry.detach(clients[-1].session.session_id)
+            # The detached client is gone from the registry; nothing hands out a closed session.
+            assert registry.get(IDENTITY) is None
+            assert clients[-1].session.state == "detached"
+            assert registry.status(IDENTITY).state == "detached"
+            client = registry.attach(IDENTITY, target_hwnd=None, deadline=time.monotonic() + 1)
+            assert client is clients[-1] and client is not first
+            assert client.session.state == "ready"
+            assert client.session.session_id == f"session-{round_}"
+            assert registry.get(IDENTITY) is client
+            assert len(registry._entries) == 1
+        assert len(clients) == 4
+    finally:
+        registry.close_all()

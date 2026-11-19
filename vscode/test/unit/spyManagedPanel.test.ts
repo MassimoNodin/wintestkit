@@ -126,14 +126,14 @@ describe("automatic reading reaches every public value", () => {
   };
   const ok = (p: { paths: { name: string }[][] }) => ({ result: { values: p.paths.map(([{ name }]) => ({ value: { status: "ok", kind: "string", scalar: name } })) } });
 
-  it("reads CLR, dependency and attached properties without a click, and nothing that is not public or readable", async () => {
+  it("reads CLR, dependency and attached properties and type facts without a click, and nothing that is not public or readable", async () => {
     mocks.warning.mockReset().mockResolvedValue("Read automatically");
     const { inspector, send, panel } = make([row("Clr", "clrProperty"), row("Dep", "dependencyProperty"), row("Attached", "attachedProperty"), row("Hidden", "clrProperty", { visibility: "internal", readable: false }), row("Type", "typeMetadata")], async (p) => ok(p));
     panel.select("node");
     await vi.waitFor(() => expect(inspector.spyRead).toHaveBeenCalledTimes(1));
-    await vi.waitFor(() => expect(send.mock.calls.at(-1)![0].rows.filter((r: { value?: unknown }) => r.value)).toHaveLength(3));
+    await vi.waitFor(() => expect(send.mock.calls.at(-1)![0].rows.filter((r: { value?: unknown }) => r.value)).toHaveLength(4));
     const names = inspector.spyRead.mock.calls.flatMap((call) => (call[0] as { paths: { name: string }[][] }).paths.map((path) => path[0].name));
-    expect(names).toEqual(["Clr", "Dep", "Attached"]);
+    expect(names).toEqual(["Clr", "Dep", "Attached", "Type"]);
     expect(inspector.read).not.toHaveBeenCalled();
     const rows = send.mock.calls.at(-1)![0].rows as { member: { name: string }; value?: unknown; autoStatus?: string }[];
     expect(rows.find((r) => r.member.name === "Hidden")?.value).toBeUndefined();

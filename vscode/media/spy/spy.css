@@ -595,7 +595,7 @@ ul {
     background: var(--raised);
     border-bottom: 1px solid var(--border);
 }
-#wpf-blocked, #wpf-details-note {
+#wpf-details-note {
     margin: 0;
     padding: 8px 12px;
 }
@@ -1104,8 +1104,16 @@ body.properties-view #property-groups > section:not(#managed-panel), body.proper
 body.properties-view #refresh-counts { display: none !important; }
 body.spy-view #sidebar-inspector { display: none !important; }
 
-.sidebar-row-menu, #sidebar-actions { position: relative; }
-.sidebar-row-menu summary, #sidebar-actions summary { cursor: pointer; list-style: none; }
-.sidebar-row-menu[open], #sidebar-actions[open] { z-index: 2; }
-.sidebar-row-menu button, #sidebar-actions button { display: block; white-space: nowrap; width: 100%; text-align: left; }
+#sidebar-actions { position: relative; }
+#sidebar-actions summary { cursor: pointer; list-style: none; }
+#sidebar-actions[open] { z-index: 2; }
+#sidebar-actions button { display: block; white-space: nowrap; width: 100%; text-align: left; }
+/* A method's argument form and its result sit in their own rows under the method. */
+.invoke-form { display: flex; flex-direction: column; gap: 6px; padding: 6px 4px 8px 12px; border-left: 2px solid var(--vscode-focusBorder); }
+.invoke-field { display: flex; flex-direction: column; gap: 2px; }
+.invoke-field label { overflow-wrap: anywhere; }
+.invoke-field input[type="text"], .invoke-field select { width: 100%; }
+.invoke-null { display: flex; align-items: center; gap: 4px; }
+.invoke-actions { display: flex; gap: 6px; }
+.invoke-result td { padding: 2px 4px 6px 12px; overflow-wrap: anywhere; }
 #sidebar-description { border-top: 1px solid var(--vscode-panel-border); padding: 8px 12px; }

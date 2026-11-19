@@ -33,6 +33,11 @@ async function confirmProcess(facts: InspectManagedIdentifyResult): Promise<bool
   }
   try { return await pending; } finally { if (confirmations.get(identity) === pending) confirmations.delete(identity); }
 }
+/** The session a WPF node id was issued by: `wpf:["<sessionId>","<objectId>",<generation>]`. */
+export function wpfNodeSession(nodeId: string | undefined): string | undefined {
+  if (!nodeId?.startsWith("wpf:")) return;
+  try { const parts: unknown = JSON.parse(nodeId.slice(4)); return Array.isArray(parts) && typeof parts[0] === "string" ? parts[0] : undefined; } catch { return; }
+}
 export type ManagedFailure = { code: string; hint: string; message: string };
 export function managedFailure(error: unknown): ManagedFailure {
   const detail = error as { message?: unknown; data?: { code?: unknown; hint?: unknown } } | undefined;
@@ -65,6 +70,8 @@ export class ManagedInspector {
   private lastFailureKey?: string;
   private lastWithheldKey?: string;
   private executable = "unknown";
+  /** What identify and attach told the host about each node and session, so a failure before identify still names its target. */
+  private targets = new Map<string, { executable: string; process: { pid: number; creationTimeUtc: string } }>();
   private session?: InspectManagedAttachResult;
   private nodeId?: string;
   private sequence = 0;
@@ -72,7 +79,7 @@ export class ManagedInspector {
   private releasing: Promise<void> = Promise.resolve();
   get sessionInfo(): InspectManagedAttachResult | undefined { return this.session; }
   private spyQueue: Promise<unknown> = Promise.resolve();
-  constructor(private readonly client: JsonRpcClient, initialized: InitializeResult, private readonly onStale?: (process?: { pid: number; creationTimeUtc: string }) => void, private readonly logFailure?: (line: string) => void, private readonly capability?: string) {
+  constructor(private readonly client: JsonRpcClient, initialized: InitializeResult, private readonly onStale?: (process?: { pid: number; creationTimeUtc: string }) => void, private readonly logFailure?: (line: string) => void, private readonly capability?: string, private readonly onReattached?: (process?: { pid: number; creationTimeUtc: string }) => void) {
     this.visible = initialized.capabilities?.managedInspector === true;
   }
   private fail(error: unknown, facts?: { executable: string; process: { pid: number; creationTimeUtc?: string } }): ManagedFailure {
@@ -82,6 +89,23 @@ export class ManagedInspector {
     if (key !== this.lastFailureKey) this.logFailure?.(`Spy .NET attach failed for ${facts?.executable ?? "unknown"} (PID ${facts?.process.pid ?? "unknown"}): ${failure.code}: ${sentence(failure.message)}. ${failure.hint}`.trim());
     this.lastFailureKey = key;
     return failure;
+  }
+  private rememberTarget(key: string, facts: { executable: string; process: { pid: number; creationTimeUtc: string } }): void {
+    this.targets.delete(key); this.targets.set(key, { executable: facts.executable, process: facts.process });
+    if (this.targets.size > 1024) this.targets.delete(this.targets.keys().next().value as string);
+  }
+  /** The process a node belongs to when the host has seen it before: by its own identify, or by the session its handle came from. */
+  private targetOf(nodeId: string | undefined): { executable: string; process: { pid: number; creationTimeUtc: string } } | undefined {
+    if (!nodeId) return;
+    const known = this.targets.get(`node:${nodeId}`);
+    if (known) return known;
+    const sessionId = wpfNodeSession(nodeId);
+    return sessionId ? this.targets.get(`session:${sessionId}`) : undefined;
+  }
+  /** True when the selected node is a WPF handle of a session other than the current one (it was detached or replaced). */
+  nodeIsStale(): boolean {
+    const sessionId = wpfNodeSession(this.nodeId);
+    return !!sessionId && !!this.session && sessionId !== this.session.sessionId;
   }
   private current(sequence: number, nodeId: string | undefined, sessionId?: string): boolean {
     return sequence === this.sequence && nodeId === this.nodeId && sessionId === this.session?.sessionId;
@@ -118,7 +142,7 @@ export class ManagedInspector {
     let facts: InspectManagedIdentifyResult | undefined;
     try {
       facts = await this.client.request<InspectManagedIdentifyResult>("inspect.managed.identify", { nodeId: node });
-      this.executable = facts.executable;
+      this.executable = facts.executable; this.rememberTarget(`node:${node}`, facts);
       if (!this.current(seq, node, oldSession)) return;
       if (this.session?.state === "ready" && identityKey(this.session.process) === identityKey(facts.process)) { this.state = "ready"; this.lastFailureKey = undefined; return this.session; }
       if (!await confirmProcess(facts) || !this.current(seq, node, oldSession)) return;
@@ -126,13 +150,16 @@ export class ManagedInspector {
       if (!this.current(seq, node, oldSession)) return;
       if (session.state !== "ready") { this.fail({ message: `Inspector attachment ended in state ${session.state}`, data: { code: session.error || "attachFailed" } }, facts); return; }
       this.session = session; this.state = "ready"; this.lastFailureKey = undefined;
+      this.rememberTarget(`session:${session.sessionId}`, { executable: facts.executable, process: facts.process });
+      // The selected node is a handle of the session that was detached: the tree walks again so it and its handles are new.
+      if (this.nodeIsStale()) this.onReattached?.(session.process);
       return session;
-    } catch (error) { if (this.current(seq, node, oldSession)) this.fail(error, facts); return; }
+    } catch (error) { if (this.current(seq, node, oldSession)) this.fail(error, facts ?? this.targetOf(node)); return; }
   }
   treeFailure?: { code: string; hint: string };
   async reportTreeFailure(nodeId: string, blocked: { code: string; hint: string }): Promise<void> {
     const facts = await this.client.request<InspectManagedIdentifyResult>("inspect.managed.identify", { nodeId }).catch(() => undefined);
-    this.fail({ message: "Inspector attachment failed", data: blocked }, facts?.process ? facts : undefined);
+    this.fail({ message: "Inspector attachment failed", data: blocked }, facts?.process ? facts : this.targetOf(nodeId));
   }
   async attachTree(nodeId: string, process: { pid: number; creationTimeUtc: string }, automatic = false): Promise<boolean> {
     this.treeFailure = undefined;
@@ -142,7 +169,7 @@ export class ManagedInspector {
     let facts: InspectManagedIdentifyResult | undefined;
     try {
       facts = await this.client.request<InspectManagedIdentifyResult>("inspect.managed.identify", { nodeId });
-      this.executable = facts.executable;
+      this.executable = facts.executable; this.rememberTarget(`node:${nodeId}`, facts);
       if (identityKey(facts.process) !== identityKey(process)) {
         this.treeFailure = { code: "processChanged", hint: "The target process changed. Refresh the object tree and try again." };
         return false;
@@ -150,11 +177,11 @@ export class ManagedInspector {
       if (automatic && !facts.appUnderTest && !isManagedProcessConfirmed(process)) return false;
       if (!await confirmProcess(facts)) return false;
       const result = await this.client.request<InspectManagedAttachResult>("inspect.managed.attach", { process, ...(this.capability ? { hostCapability: this.capability } : {}) });
-      if (result.state === "ready") { this.session = { ...result, process: { ...result.process } }; this.state = "ready"; this.failure = undefined; this.lastFailureKey = undefined; }
+      if (result.state === "ready") { this.session = { ...result, process: { ...result.process } }; this.state = "ready"; this.failure = undefined; this.lastFailureKey = undefined; this.rememberTarget(`session:${result.sessionId}`, { executable: facts.executable, process: facts.process }); }
       if (result.state !== "ready") { const { code, hint } = this.fail({ message: `Inspector attachment ended in state ${result.state}`, data: { code: result.error || "attachFailed" } }, facts); this.treeFailure = { code, hint }; }
       return result.state === "ready";
     } catch (error) {
-      const { code, hint } = this.fail(error, facts ?? { executable: "unknown", process }); this.treeFailure = { code, hint };
+      const { code, hint } = this.fail(error, facts ?? { executable: this.targetOf(nodeId)?.executable ?? "unknown", process }); this.treeFailure = { code, hint };
       return false;
     }
   }
@@ -164,13 +191,14 @@ export class ManagedInspector {
     let facts: InspectManagedIdentifyResult | undefined;
     try {
       facts = await this.client.request<InspectManagedIdentifyResult>("inspect.managed.identify", { nodeId });
+      this.rememberTarget(`node:${nodeId}`, facts);
       if (!this.current(sequence, nodeId, oldSession)) return;
       if (this.session?.state === "ready" && identityKey(this.session.process) === identityKey(facts.process)) return;
       const session = await this.client.request<InspectManagedAttachResult>("inspect.managed.status", { process: facts.process });
       if (!this.current(sequence, nodeId, oldSession)) return;
       if (session.state === "ready" && identityKey(session.process) === identityKey(facts.process)) { this.session = session; this.state = "ready"; this.lastFailureKey = undefined; this.failure = undefined; }
       else if (session.error) this.fail({ message: `Inspector session ended in state ${session.state}`, data: { code: session.error } }, facts);
-    } catch (error) { if (this.current(sequence, nodeId, oldSession)) this.fail(error, facts); }
+    } catch (error) { if (this.current(sequence, nodeId, oldSession)) this.fail(error, facts ?? this.targetOf(nodeId)); }
   }
   async keepalive(): Promise<void> {
     const sessionId = this.session?.sessionId;
@@ -260,8 +288,11 @@ export class ManagedInspector {
     if (nodeId !== this.nodeId) return;
     const session = this.session, sequence = this.sequence;
     if (!session) return;
+    // A handle from a detached session cannot be mapped by the new one; the tree walk that follows Attach replaces it.
+    if (this.nodeIsStale()) return;
     try {
       const facts = await this.client.request<InspectManagedIdentifyResult>("inspect.managed.identify", { nodeId });
+      this.rememberTarget(`node:${nodeId}`, facts);
       if (!this.current(sequence, nodeId, session.sessionId)) return;
       if (facts.process.pid !== session.process.pid || facts.process.creationTimeUtc !== session.process.creationTimeUtc) { this.state = "not attached to this process"; return; }
       this.state = "ready";

@@ -300,3 +300,111 @@ describe("honest managed failures", () => {
     }
   });
 });
+
+describe("when the host can call methods", () => {
+  const object = { sessionId: "s", objectId: "o", generation: 4 };
+  const attached = async (select: unknown, capability: string | null = "host-secret") => {
+    const request = vi.fn(async (method: string) => {
+      if (method.endsWith("identify")) return { ...facts, appUnderTest: true };
+      if (method.endsWith("attach")) return session;
+      if (method.endsWith("spySelect")) return select;
+      return { releasedCount: 0 };
+    });
+    const inspector = new ManagedInspector({ request } as unknown as JsonRpcClient, initialized(true), undefined, undefined, capability ?? undefined);
+    mock.trusted = true; await inspector.select("node"); await inspector.attach();
+    return { inspector, request };
+  };
+  it("is true for the live sequence: attach, resolve, spySelect with the same object", async () => {
+    const { inspector } = await attached({ canInvoke: true, mapping: { status: "exact", object } });
+    expect(await inspector.bindSpy("node", { ...object } as never)).toBe(true);
+  });
+  it("is false, never an error, for each way the binding can fail", async () => {
+    // The server did not open the session for method calls (attached without the capability).
+    expect(await (await attached({ canInvoke: false, mapping: { status: "exact", object } })).inspector.bindSpy("node", object as never)).toBe(false);
+    // The mapping is not exact, or maps another object or generation.
+    expect(await (await attached({ canInvoke: true, mapping: { status: "ambiguous" } })).inspector.bindSpy("node", object as never)).toBe(false);
+    expect(await (await attached({ canInvoke: true, mapping: { status: "exact", object: { ...object, objectId: "x" } } })).inspector.bindSpy("node", object as never)).toBe(false);
+    // The host has no capability at all: nothing is even asked.
+    const none = await attached({ canInvoke: true, mapping: { status: "exact", object } }, null);
+    expect(await none.inspector.bindSpy("node", object as never)).toBe(false);
+    expect(none.request).not.toHaveBeenCalledWith("inspect.managed.spySelect", expect.objectContaining({ nodeId: "node" }));
+    // Another node is selected by the time the answer arrives.
+    const { inspector } = await attached({ canInvoke: true, mapping: { status: "exact", object } });
+    expect(await inspector.bindSpy("other", object as never)).toBe(false);
+  });
+});
+
+describe("detach then attach", () => {
+  const wpfNode = (sessionId: string) => `wpf:["${sessionId}","${sessionId}:6:6",6]`;
+  function detachable() {
+    let count = 0;
+    const sessions = () => ({ ...session, sessionId: `s${count}` });
+    const request = vi.fn(async (method: string) => {
+      if (method.endsWith("identify")) return facts;
+      if (method.endsWith("attach")) { count++; return sessions(); }
+      if (method.endsWith("detach")) return { detached: true };
+      if (method.endsWith("resolve")) return { status: "exact", object: { sessionId: `s${count}`, objectId: "o", generation: 1 } };
+      return {};
+    });
+    const reattached = vi.fn(), log = vi.fn();
+    const inspector = new ManagedInspector({ request } as unknown as JsonRpcClient, initialized(true), undefined, log, undefined, reattached);
+    return { request, inspector, reattached, log };
+  }
+  it("attaches again three times in a row and asks the tree to replace the stale selected handle", async () => {
+    mock.trusted = true; mock.warning.mockResolvedValue("Attach");
+    const { request, inspector, reattached, log } = detachable();
+    await inspector.select("window"); await inspector.attach();
+    expect(inspector.sessionInfo?.sessionId).toBe("s1");
+    let current = "s1";
+    for (let round = 2; round <= 4; round++) {
+      await inspector.select(wpfNode(current));
+      await inspector.detach();
+      expect(inspector.state).toBe("detached (idle)");
+      expect(request).toHaveBeenLastCalledWith("inspect.managed.detach", { sessionId: current });
+      expect(inspector.sessionInfo).toBeUndefined();
+      const attached = await inspector.attach();
+      expect(attached?.sessionId).toBe(`s${round}`);
+      expect(inspector.state).toBe("ready");
+      expect(inspector.failure).toBeUndefined();
+      // The old handle belongs to the closed session: it is replaced by the tree, never resolved with the new session.
+      expect(inspector.nodeIsStale()).toBe(true);
+      expect(reattached).toHaveBeenCalledTimes(round - 1);
+      expect(reattached).toHaveBeenLastCalledWith(facts.process);
+      request.mockClear();
+      expect(await inspector.resolve(wpfNode(current))).toBeUndefined();
+      expect(request).not.toHaveBeenCalled();
+      expect(inspector.state).toBe("ready");
+      // The tree walk gives the same object a node of the new session, which resolves normally.
+      current = `s${round}`;
+      await inspector.select(wpfNode(current));
+      expect(inspector.nodeIsStale()).toBe(false);
+      expect((await inspector.resolve(wpfNode(current)))?.status).toBe("exact");
+    }
+    expect(log).not.toHaveBeenCalled();
+  });
+  it("does not ask for a tree walk when the selected node was never a handle of another session", async () => {
+    mock.trusted = true; mock.warning.mockResolvedValue("Attach");
+    const { inspector, reattached } = detachable();
+    await inspector.select("window"); await inspector.attach(); await inspector.detach(); await inspector.attach();
+    expect(reattached).not.toHaveBeenCalled();
+  });
+  it("names the executable and PID when the attach fails before identify, from the earlier attach", async () => {
+    mock.trusted = true; mock.warning.mockResolvedValue("Attach");
+    const log = vi.fn();
+    let identifyFails = false;
+    const request = vi.fn(async (method: string) => {
+      if (method.endsWith("identify")) { if (identifyFails) throw { message: "Inspector session is not ready", data: { code: "sessionStale", hint: "Check the inspector payload." } }; return facts; }
+      if (method.endsWith("attach")) return session;
+      return { detached: true };
+    });
+    const inspector = new ManagedInspector({ request } as unknown as JsonRpcClient, initialized(true), undefined, log);
+    await inspector.select("window"); await inspector.attach(); await inspector.detach();
+    // A handle of the session that was attached, never identified on its own.
+    identifyFails = true;
+    await inspector.select(wpfNode("s")); await inspector.attach();
+    expect(log.mock.calls).toEqual([["Spy .NET attach failed for C:/App.exe (PID 271): sessionStale: Inspector session is not ready. Check the inspector payload."]]);
+    // A node the host has never seen, of no known session, honestly stays unknown.
+    await inspector.select("never-seen"); await inspector.attach();
+    expect(log.mock.calls.at(-1)?.[0]).toContain("for unknown (PID unknown)");
+  });
+});

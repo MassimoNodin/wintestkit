@@ -1288,3 +1288,71 @@ def test_non_ready_attach_reports_reason(managed_server: Any) -> None:
     ]
     assert error["data"]["code"] == "alreadyAttached"
     assert "faulted" in error["message"]
+
+
+def test_identify_names_the_process_of_a_node_whose_session_was_detached(
+    managed_server: Any,
+) -> None:
+    """Attach identifies the selected node first: a closed session must not make that fail."""
+    from wintestkit.backends.element import WpfElement
+
+    server, output, client = managed_server
+    node = WpfElement(client, REF, 42)
+    server.nodes["wpf-node"] = node
+    client.session = replace(SESSION, state="detached", error="notAttached")
+    # The closed client cannot answer; asking it would raise sessionStale ("Inspector session is not ready").
+    facts = request(server, output, "inspect.managed.identify", {"nodeId": "wpf-node"})
+    assert facts["result"]["executable"] == "app.exe"
+    assert facts["result"]["process"] == IDENTITY.to_json()
+    node.forget_release()
+
+
+def test_identify_keeps_asking_a_ready_session_whether_the_element_is_gone(
+    managed_server: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from wintestkit.backends.element import WpfElement
+
+    server, output, client = managed_server
+    node = WpfElement(client, REF, 42)
+    server.nodes["wpf-node"] = node
+    monkeypatch.setattr(WpfElement, "is_alive", lambda self: False)
+    assert (
+        request(server, output, "inspect.managed.identify", {"nodeId": "wpf-node"})["error"]["code"]
+        == -32005
+    )
+
+    def closed_meanwhile(self: Any) -> bool:
+        raise InspectorUnavailableError("Inspector session is not ready", code="sessionStale")
+
+    monkeypatch.setattr(WpfElement, "is_alive", closed_meanwhile)
+    assert "result" in request(server, output, "inspect.managed.identify", {"nodeId": "wpf-node"})
+
+    def broken(self: Any) -> bool:
+        raise InspectorUnavailableError("Inspector denied", code="accessDenied")
+
+    monkeypatch.setattr(WpfElement, "is_alive", broken)
+    assert (
+        request(server, output, "inspect.managed.identify", {"nodeId": "wpf-node"})["error"][
+            "data"
+        ]["code"]
+        == "accessDenied"
+    )
+    node.forget_release()
+
+
+def test_resolve_of_a_node_from_a_detached_session_is_stale_not_unavailable(
+    managed_server: Any,
+) -> None:
+    from wintestkit.backends.element import WpfElement
+
+    server, output, _ = managed_server
+    request(server, output, "inspect.managed.attach", {"process": IDENTITY.to_json()})
+    old = FakeClient()
+    old.session = replace(SESSION, session_id="old", state="detached", error="notAttached")
+    node = WpfElement(old, replace(REF, session_id="old"), 42)  # type: ignore[arg-type]
+    server.nodes["wpf-old"] = node
+    error = request(
+        server, output, "inspect.managed.resolve", {"sessionId": "session", "nodeId": "wpf-old"}
+    )["error"]
+    assert error["data"]["code"] == "objectStale"
+    node.forget_release()

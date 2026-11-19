@@ -61,6 +61,7 @@ export class ManagedPanel {
     const canInvoke = await this.inspector.bindSpy(node, object);
     if (epoch !== this.epoch || this.object !== object) return;
     this.canInvoke = canInvoke;
+    if (canInvoke) this.publish();
     if (this.methodsActive) void this.loadMethods(epoch);
     await this.loadAutomatic(epoch);
   }
@@ -135,11 +136,12 @@ export class ManagedPanel {
     finally { cancel(); }
   }
   private canRead(row: Row): boolean { const m = row.member; return !!m.pathSegment && ((m.readable && m.visibility === "public") || (m.category === "clrField" && m.reason === "nonPublic" && m.pathSegment.kind === "field" && !!m.pathSegment.memberKey && !!m.pathSegment.declaringType)); }
-  // Every public readable value is read without a click: CLR properties, dependency and attached properties, fields.
+  // Every readable value is read without a click: CLR properties, dependency and attached properties, fields, type facts.
+  // What the inspector cannot read (non-public properties, indexers, write-only ones) is never queued; the sidebar says why.
   private autoEligible(row: Row): boolean {
     const { category, visibility, pathSegment } = row.member;
     if (!this.canRead(row)) return false;
-    return category === "clrField" || (visibility === "public" && ((category === "clrProperty" && pathSegment?.kind === "property") || ((category === "dependencyProperty" || category === "attachedProperty") && pathSegment?.kind === "dependency")));
+    return category === "clrField" || (category === "typeMetadata" && pathSegment?.kind === "type") || (visibility === "public" && ((category === "clrProperty" && pathSegment?.kind === "property") || ((category === "dependencyProperty" || category === "attachedProperty") && pathSegment?.kind === "dependency")));
   }
   private async load(epoch: number, append = false, deadline = Infinity): Promise<void> {
     const object = this.object; if (!object) return;
