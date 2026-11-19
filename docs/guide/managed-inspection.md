@@ -21,7 +21,10 @@ have side effects.
 Framework-dependent WPF targets include .NET Framework 4.8, .NET 8 and .NET 10 on x86
 and x64. Check `wtk doctor --agent` on the actual machine and target.
 
-Unsupported targets include ARM64, non-WPF, NativeAOT, trimmed, self-contained or
+Spy also attaches to WinForms applications on the same runtimes: it lists the control tree and
+shows the members of a control. Locators and queries stay WPF only.
+
+Unsupported targets include ARM64, applications with neither a WPF nor a WinForms UI, NativeAOT, trimmed, self-contained or
 single-file applications, multiple WPF runtimes or AppDomains in one process, different
 users or Windows sessions, protected processes, and mismatched integrity levels. Unlisted
 .NET versions are not assumed compatible. Use an interactive Windows desktop.

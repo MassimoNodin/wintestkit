@@ -3,7 +3,7 @@
   "$id": "https://wintestkit.dev/schemas/rpc.schema.json",
   "$defs": {
     "InspectManagedIdentifyParams": {"type":"object","properties":{"nodeId":{"type":"string","minLength":1}},"required":["nodeId"],"additionalProperties":false},
-    "InspectManagedIdentifyResult": {"type":"object","properties":{"process":{"$ref":"common.schema.json#/$defs/ManagedProcessIdentity"},"executable":{"type":"string"},"runtime":{"enum":["net48","net8","net10",null]},"architecture":{"enum":["x86","x64","arm64","unknown"]},"wpfLoaded":{"type":"boolean"},"appUnderTest":{"type":"boolean"}},"required":["process","executable","runtime","architecture","wpfLoaded","appUnderTest"],"additionalProperties":false},
+    "InspectManagedIdentifyResult": {"type":"object","properties":{"process":{"$ref":"common.schema.json#/$defs/ManagedProcessIdentity"},"executable":{"type":"string"},"runtime":{"enum":["net48","net8","net10",null]},"architecture":{"enum":["x86","x64","arm64","unknown"]},"wpfLoaded":{"type":"boolean"},"winformsLoaded":{"type":"boolean"},"appUnderTest":{"type":"boolean"}},"required":["process","executable","runtime","architecture","wpfLoaded","winformsLoaded","appUnderTest"],"additionalProperties":false},
     "InspectManagedAttachParams": {"type":"object","properties":{"process":{"$ref":"common.schema.json#/$defs/ManagedProcessIdentity"},"hostCapability":{"$ref":"#/$defs/SpyHostCapability"}},"required":["process"],"additionalProperties":false},
     "InspectManagedAttachResult": {"$ref":"common.schema.json#/$defs/ManagedSession"},
     "InspectManagedStatusParams": {"type":"object","properties":{"process":{"$ref":"common.schema.json#/$defs/ManagedProcessIdentity"}},"required":["process"],"additionalProperties":false},
@@ -13,7 +13,7 @@
     "InspectManagedKeepaliveParams": {"type":"object","properties":{"sessionId":{"type":"string","minLength":1,"maxLength":128}},"required":["sessionId"],"additionalProperties":false},
     "InspectManagedKeepaliveResult": {"type":"object","properties":{"alive":{"const":true}},"required":["alive"],"additionalProperties":false},
     "InspectManagedResolveParams": {"type":"object","properties":{"sessionId":{"type":"string","minLength":1,"maxLength":128},"nodeId":{"type":"string","minLength":1}},"required":["sessionId","nodeId"],"additionalProperties":false},
-    "InspectManagedResolveResult": {"anyOf":[{"$ref":"common.schema.json#/$defs/ManagedMapping"},{"type":"object","properties":{"status":{"const":"exact"},"process":{"$ref":"common.schema.json#/$defs/ManagedProcessIdentity"},"object":{"$ref":"../wpf-inspector/protocol/inspector.schema.json#/$defs/ObjectRef"},"source":{"const":"wpf"}},"required":["status","process","object","source"],"additionalProperties":false}]},
+    "InspectManagedResolveResult": {"anyOf":[{"$ref":"common.schema.json#/$defs/ManagedMapping"},{"type":"object","properties":{"status":{"const":"exact"},"process":{"$ref":"common.schema.json#/$defs/ManagedProcessIdentity"},"object":{"$ref":"../wpf-inspector/protocol/inspector.schema.json#/$defs/ObjectRef"},"source":{"enum":["wpf","winforms"]}},"required":["status","process","object","source"],"additionalProperties":false}]},
     "SpyHostCapability": {"type":"string","pattern":"^[A-Za-z0-9+/]{42}[AEIMQUYcgkosw048]=$","minLength":44,"maxLength":44},
     "SpyInvokeArgument": {"type":"object","properties":{"type":{"type":"string","minLength":1,"maxLength":1024},"value":{"anyOf":[{"type":"string","maxLength":4096},{"type":"boolean"},{"type":"number"}]},"enum":{"anyOf":[{"type":"string","maxLength":4096},{"type":"integer","minimum":-9223372036854775808,"maximum":9223372036854775807}]},"null":{"const":true}},"required":["type"],"oneOf":[{"required":["value"]},{"required":["enum"]},{"required":["null"]}],"additionalProperties":false},
     "InspectManagedSpySelectParams": {"type":"object","properties":{"hostCapability":{"$ref":"#/$defs/SpyHostCapability"},"sessionId":{"type":"string","minLength":1,"maxLength":128},"nodeId":{"type":"string","minLength":1}},"required":["hostCapability"],"dependentRequired":{"sessionId":["nodeId"],"nodeId":["sessionId"]},"additionalProperties":false},
@@ -74,7 +74,7 @@
         "hasChildren": {
           "type": "boolean"
         },
-        "source": {"enum": ["wpf", "uia"]},
+        "source": {"enum": ["wpf", "winforms", "uia"]},
         "identity": {
           "type": "object",
           "properties": {"type": {"type": "string"}, "xName": {"type": "string"}, "automationId": {"type": "string"}},
@@ -548,10 +548,49 @@
       "required": ["nodeId"],
       "additionalProperties": false
     },
+    "NativeWindowStyle": {
+      "type": "object",
+      "description": "One decoded style: its name and the bits it stands for.",
+      "properties": {
+        "name": {"type": "string"},
+        "value": {"type": "integer", "minimum": 0}
+      },
+      "required": ["name", "value"],
+      "additionalProperties": false
+    },
+    "NativeWindowInfo": {
+      "type": "object",
+      "description": "Win32 facts about the HWND behind a UI Automation node. Optional fields are omitted when the system would not answer.",
+      "properties": {
+        "handle": {"type": "integer", "minimum": 1},
+        "className": {"type": "string"},
+        "text": {"type": "string", "description": "Window text, cut to 2000 characters; omitted for password boxes."},
+        "styles": {"type": "array", "items": {"$ref": "rpc.schema.json#/$defs/NativeWindowStyle"}},
+        "rawStyle": {"type": "integer", "minimum": 0},
+        "unknownStyle": {"type": "integer", "minimum": 1, "description": "Style bits no name covers."},
+        "exStyles": {"type": "array", "items": {"$ref": "rpc.schema.json#/$defs/NativeWindowStyle"}},
+        "rawExStyle": {"type": "integer", "minimum": 0},
+        "unknownExStyle": {"type": "integer", "minimum": 1},
+        "controlId": {"type": "integer", "description": "Dialog control ID; only for child windows."},
+        "processId": {"type": "integer", "minimum": 0},
+        "threadId": {"type": "integer", "minimum": 0},
+        "owner": {"type": "integer", "minimum": 0, "description": "Owner window handle; 0 when unowned."},
+        "parent": {"type": "integer", "minimum": 0, "description": "Parent window handle; 0 for top-level windows."},
+        "rect": {"$ref": "common.schema.json#/$defs/Rect"},
+        "clientRect": {"$ref": "common.schema.json#/$defs/Rect"},
+        "visible": {"type": "boolean"},
+        "enabled": {"type": "boolean"},
+        "topmost": {"type": "boolean"},
+        "dpi": {"type": "integer", "minimum": 1}
+      },
+      "required": ["handle", "className", "styles", "rawStyle", "exStyles", "rawExStyle", "owner", "parent", "enabled", "topmost"],
+      "additionalProperties": false
+    },
     "InspectPropertiesResult": {
       "type": "object",
       "properties": {
-        "source": {"const": "wpf"},
+        "source": {"enum": ["wpf", "winforms"]},
+        "window": {"$ref": "rpc.schema.json#/$defs/NativeWindowInfo"},
         "uiaMapped": {"type": "boolean"},
         "uia": {
           "type": "object",

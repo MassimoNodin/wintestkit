@@ -300,7 +300,7 @@ def _runtime(modules: tuple[str, ...]) -> tuple[Literal["net48", "net8", "net10"
     core = [path for path in paths if path.name.lower() == "coreclr.dll"]
     framework = [path for path in paths if path.name.lower() == "clr.dll"]
     wpf = any(
-        path.name.lower() in {"presentationframework.dll", "wpfgfx_v0400.dll", "wpfgfx_cor3.dll"}
+        path.name.lower() in {*_WPF_MODULES, "wpfgfx_v0400.dll", "wpfgfx_cor3.dll"}
         for path in paths
     )
     if len(core) + len(framework) != 1:
@@ -323,6 +323,15 @@ def _runtime(modules: tuple[str, ...]) -> tuple[Literal["net48", "net8", "net10"
     return None, wpf
 
 
+_WPF_MODULES = {"presentationframework.dll", "presentationframework.ni.dll"}
+_WINFORMS_MODULES = {"system.windows.forms.dll", "system.windows.forms.ni.dll"}
+
+
+def _winforms(modules: tuple[str, ...]) -> bool:
+    """True when the process has loaded System.Windows.Forms (a WinForms UI)."""
+    return any(PureWindowsPath(path).name.lower() in _WINFORMS_MODULES for path in modules)
+
+
 def identify(pid: int) -> ProcessFacts:
     kernel, _ = _libraries()
     handle = _open(pid)
@@ -343,11 +352,20 @@ def identify(pid: int) -> ProcessFacts:
             {0x014C: "x86", 0x8664: "x64", 0xAA64: "arm64"}.get(machine, "unknown"),
         )
         user, integrity, session = _security(handle, pid)
-        runtime, wpf = _runtime(_modules(pid))
+        modules = _modules(pid)
+        runtime, wpf = _runtime(modules)
         if _identity(handle, pid) != identity:
             raise InspectorUnavailableError("Target process identity changed", code="processReused")
         return ProcessFacts(
-            identity, image.value, architecture, runtime, wpf, session, user, integrity
+            identity,
+            image.value,
+            architecture,
+            runtime,
+            wpf,
+            session,
+            user,
+            integrity,
+            _winforms(modules),
         )
     finally:
         kernel.CloseHandle(handle)

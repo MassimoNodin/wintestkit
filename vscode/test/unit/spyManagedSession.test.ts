@@ -3,7 +3,7 @@ import type { InitializeResult } from "../../src/protocol/generated";
 import type { JsonRpcClient } from "../../src/server/jsonrpc";
 const mock = vi.hoisted(() => ({ trusted: true, warning: vi.fn(), open: vi.fn() }));
 vi.mock("vscode", () => ({ workspace: { get isTrusted() { return mock.trusted; } }, window: { showWarningMessage: mock.warning }, env: { openExternal: mock.open }, Uri: { parse: (url: string) => url } }));
-import { ManagedInspector, managedErrorState, managedFailure } from "../../src/spy/managedSession";
+import { ManagedInspector, isManagedNodeId, isManagedSource, managedErrorState, managedFailure, wpfNodeSession } from "../../src/spy/managedSession";
 import { parseSpyRequest } from "../../src/spy/messages";
 const initialized = (enabled: boolean) => ({ capabilities: enabled ? { managedInspector: true } : undefined }) as InitializeResult;
 const facts = { process: { pid: 271, creationTimeUtc: "one" }, executable: "C:/App.exe", runtime: "net8", architecture: "x64", wpfLoaded: true, appUnderTest: false };
@@ -406,5 +406,20 @@ describe("detach then attach", () => {
     // A node the host has never seen, of no known session, honestly stays unknown.
     await inspector.select("never-seen"); await inspector.attach();
     expect(log.mock.calls.at(-1)?.[0]).toContain("for unknown (PID unknown)");
+  });
+});
+
+describe("managed node ids", () => {
+  it("tell WPF and WinForms objects apart from UI Automation elements and read the session from either", () => {
+    const wpf = 'wpf:["s1","7",7]', winforms = 'winforms:["s2","9",9]';
+    expect(isManagedNodeId(wpf)).toBe(true);
+    expect(isManagedNodeId(winforms)).toBe(true);
+    expect(isManagedNodeId("42.1234")).toBe(false);
+    expect(isManagedNodeId(undefined)).toBe(false);
+    expect(wpfNodeSession(wpf)).toBe("s1");
+    expect(wpfNodeSession(winforms)).toBe("s2");
+    expect(wpfNodeSession("winforms:not json")).toBeUndefined();
+    expect(wpfNodeSession("42.1234")).toBeUndefined();
+    expect([isManagedSource("wpf"), isManagedSource("winforms"), isManagedSource("uia"), isManagedSource(undefined)]).toEqual([true, true, false, false]);
   });
 });

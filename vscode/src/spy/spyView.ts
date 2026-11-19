@@ -1,7 +1,7 @@
 import { CompatibilityError, UPGRADE_LABEL } from "../compatibility";
 import { ManagedPanel } from "./managedPanel";
 import { SpyTrace } from "./trace";
-import { ManagedInspector } from "./managedSession";
+import { isManagedNodeId, isManagedSource, ManagedInspector } from "./managedSession";
 import { randomBytes } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import * as vscode from "vscode";
@@ -687,7 +687,7 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
       });
     } catch (error) {
       failed = true;
-      if (nodeId?.startsWith("wpf:") && this.isStale(error) && !this.recovering) {
+      if (isManagedNodeId(nodeId) && this.isStale(error) && !this.recovering) {
         await this.recoverStale();
         return undefined as T;
       }
@@ -884,10 +884,10 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
               pickedPath = ancestors.length
                 ? [...(processRoot ? [processSegment(processRoot.info)] : []), ...ancestors.map((ancestor) => segmentOf(ancestor.info)), segmentOf(picked.node.info)]
                 : processRoot ? [processSegment(processRoot.info), segmentOf(picked.node.info)] : undefined;
-              if (properties.source === "wpf" && !ancestors.length && !roots.some((root) => root.nodeId === picked.node.nodeId)) {
-                this.post({ type: "error", message: "Picked WPF node was not found in the tree." });
+              if (isManagedSource(properties.source) && !ancestors.length && !roots.some((root) => root.nodeId === picked.node.nodeId)) {
+                this.post({ type: "error", message: "Picked WPF or WinForms node was not found in the tree." });
               }
-              const mixedWpfPath = properties.source === "wpf" || ancestors.some((ancestor) => ancestor.source === "wpf");
+              const mixedWpfPath = isManagedSource(properties.source) || ancestors.some((ancestor) => isManagedSource(ancestor.source));
               for (const [index, ancestor] of ancestors.entries()) {
                 if (!this.sameReveal(client, treeRevision, selection))
                   return false;
@@ -931,7 +931,7 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
             return;
           this.suggestion = picked.suggestion;
           this.selectedNodeId = picked.node.nodeId;
-          this.managedPanel?.select(picked.node.nodeId, properties.source === "wpf");
+          this.managedPanel?.select(picked.node.nodeId, isManagedSource(properties.source));
           if (pickedPath) this.rememberSelection(pickedPath);
           this.post({
             type: "picked",
@@ -1452,7 +1452,7 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
       }
     } catch (error) {
       if (client !== this.client || revision !== this.revision) return;
-      if (this.isStale(error) && nodeId.startsWith("wpf:")) { await this.recoverStale(); return; }
+      if (this.isStale(error) && isManagedNodeId(nodeId)) { await this.recoverStale(); return; }
       const hint = error instanceof RpcError && error.code === -32005
         ? "The element is gone. Reload the objects view to refresh it."
         : error instanceof Error ? error.message : String(error);
@@ -1712,9 +1712,7 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
         ? "Loading children"
         : message.type === "select"
           ? "Inspecting object"
-          : message.type === "loadProperties"
-            ? "Loading all properties"
-            : "Highlighting object";
+          : "Highlighting object";
     await this.loading(
       title,
       2,
@@ -1730,11 +1728,7 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
         const client = attempt.client;
         if (!nodeId) return;
         if (message.type === "select") void this.managedInspector?.select(nodeId);
-        if (
-          (message.type === "select" || message.type === "loadProperties") &&
-          selection !== this.selection
-        )
-          return;
+        if (message.type === "select" && selection !== this.selection) return;
         if (message.type === "expand") {
           await phase("Reading child controls", () => this.showChildren(client, nodeId));
         } else if (message.type === "highlight") {
@@ -1744,31 +1738,6 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
               bringToFront: this.bringToFront(),
             }),
           );
-        } else if (message.type === "loadProperties") {
-          this.post({ type: "propertiesLoading", nodeId, loading: true });
-          try {
-            const properties = await phase(
-              "Reading all properties and patterns",
-              () =>
-                client.request<InspectPropertiesResult>("inspect.properties", {
-                  nodeId,
-                  full: true,
-                }),
-            );
-            if (
-              !this.disposed &&
-              selection === this.selection &&
-              client === this.client
-            )
-              this.post({ type: "allProperties", nodeId, properties });
-          } finally {
-            if (
-              !this.disposed &&
-              selection === this.selection &&
-              client === this.client
-            )
-              this.post({ type: "propertiesLoading", nodeId, loading: false });
-          }
         } else if (message.type === "select") {
           if (selection !== this.selection) return;
           const properties = await phase("Reading basic properties", () =>
@@ -1783,15 +1752,13 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
             client !== this.client
           )
             return;
-          if (properties.source === "wpf") this.managedPanel?.select(nodeId, true);
+          if (isManagedSource(properties.source)) this.managedPanel?.select(nodeId, true);
           this.post({ type: "selected", nodeId, properties });
           this.loadSelectionDetails(client, nodeId, selection);
         }
       },
       nodeId,
-      message.type === "select" ||
-        message.type === "highlight" ||
-        message.type === "loadProperties"
+      message.type === "select" || message.type === "highlight"
         ? "details"
         : "tree",
     );
@@ -1800,6 +1767,27 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
   private loadSelectionDetails(client: JsonRpcClient, nodeId: string, selection: number): void {
     void this.loadDefinitions(client, nodeId, selection);
     void this.loadPreview(client, nodeId, selection);
+    void this.loadAllProperties(client, nodeId, selection);
+  }
+  /**
+   * Every UI Automation property and supported pattern of the selected object. The selection was
+   * already posted with the cheap read (including the native window facts), so this only completes
+   * the list; a result for a selection that has since changed is dropped.
+   */
+  private async loadAllProperties(client: JsonRpcClient, nodeId: string, selection: number): Promise<void> {
+    const current = () =>
+      !this.disposed && !this.tutorialActive() && nodeId === this.selectedNodeId &&
+      selection === this.selection && client === this.client;
+    this.post({ type: "propertiesLoading", nodeId, loading: true });
+    try {
+      const properties = await client.request<InspectPropertiesResult>("inspect.properties", { nodeId, full: true });
+      if (current()) this.post({ type: "allProperties", nodeId, properties });
+    } catch (error) {
+      // The basic properties are already shown; a failure here only leaves the list short.
+      if (current()) this.log.error("Reading all properties failed: " + String(error));
+    } finally {
+      if (current()) this.post({ type: "propertiesLoading", nodeId, loading: false });
+    }
   }
   /** A live capture of the selected object and its window; nothing is saved. */
   private async loadPreview(client: JsonRpcClient, nodeId: string, selection: number): Promise<void> {
@@ -1814,7 +1802,7 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
       else this.post({ type: "objectPreview", nodeId, preview: result });
     } catch (error) {
       if (!current()) return;
-      if (nodeId.startsWith("wpf:") && this.isStale(error)) {
+      if (isManagedNodeId(nodeId) && this.isStale(error)) {
         this.post({ type: "objectPreview", nodeId, reason: "Inspector session ended. Reconnecting; retry if the object cannot be restored." });
         await this.recoverStale(); return;
       }

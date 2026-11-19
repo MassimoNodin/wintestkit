@@ -37,6 +37,7 @@ if TYPE_CHECKING:
     from wintestkit.inspector.models import ObjectRef, ProcessFacts, ProcessIdentity
     from wintestkit.targets import ModuleLoader
     from wintestkit.uia.element import ElementInfo, Rect, UIAElement
+    from wintestkit.uia.native_window import NativeWindowReader
 
 log = logging.getLogger("wintestkit.server")
 
@@ -124,6 +125,22 @@ _MANAGED_LIFECYCLE = frozenset(
 POPUP_SURFACE_CLASSES = frozenset(
     {"Xaml_WindowedPopupClass", "Microsoft.UI.Content.PopupWindowSiteBridge"}
 )
+
+
+_UIA_FRAMEWORKS = {"WPF": "wpf", "WinForm": "winforms", "WinForms": "winforms"}
+_SUPPORTED_RUNTIMES = frozenset({"net48", "net8", "net10"})
+
+
+def _ref_source(ref: Any) -> str:
+    """The managed UI framework of an agent object: ``wpf`` or ``winforms``."""
+    return "winforms" if ref.is_winforms else "wpf"
+
+
+def _managed_node_id(ref: Any) -> str:
+    """The node id of an agent object; the prefix tells WPF and WinForms objects apart."""
+    return f"{_ref_source(ref)}:" + json.dumps(
+        [ref.session_id, ref.object_id, ref.generation], separators=(",", ":")
+    )
 
 
 def _summarize(description: dict[str, Any]) -> str:
@@ -225,7 +242,11 @@ class Server:
         self._wpf_parents: dict[str, str] = {}
         self._wpf_descriptions: dict[str, dict[str, Any]] = {}
         self._wpf_text: dict[str, str | None] = {}
+        # Whether the agent can show a WinForms process's tree, by process id, for one refresh.
+        self._winforms_support: dict[int, bool] = {}
         self.coverage: Coverage | None = None
+        # Reads the HWND facts of selected nodes; tests substitute a fake backend.
+        self.window_reader: NativeWindowReader | None = None
         self.spy: SpySession | None = None
         self._write_lock = threading.Lock()
         self._node_lock = threading.Lock()
@@ -642,6 +663,22 @@ class Server:
             "source": "uia",
         }
 
+    def _with_window(self, result: dict[str, Any], node: Any) -> dict[str, Any]:
+        """Adds the native window facts when ``node`` owns an HWND (never fails the request)."""
+        try:
+            hwnd = int(node.native_window_handle or 0)
+            if hwnd:
+                if self.window_reader is None:
+                    from wintestkit.uia.native_window import default_reader
+
+                    self.window_reader = default_reader()
+                window = self.window_reader.read(hwnd)
+                if window is not None:
+                    result["window"] = window
+        except Exception:
+            log.debug("native window facts unavailable", exc_info=True)
+        return result
+
     def _node(self, node_id: str) -> UIAElement:
         with self._node_lock:
             node = self.nodes.get(node_id)
@@ -707,7 +744,7 @@ class Server:
             "Window": ("Title",),
         }
         text = None
-        for member in members.get(ref.type.name, ()):
+        for member in ("Text",) if ref.is_winforms else members.get(ref.type.name, ()):
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 break
@@ -743,8 +780,17 @@ class Server:
         from wintestkit.uia.element import ElementInfo, inspection_property
 
         assert self.cfg is not None
+        source = _ref_source(node.ref)
+        winforms = source == "winforms"
+        name_owner = (
+            "System.Windows.Forms.ToolStripItem"
+            if node.ref.is_winforms_item
+            else "System.Windows.Forms.Control"
+            if winforms
+            else "System.Windows.FrameworkElement"
+        )
         paths = [
-            (PathSegment("property", "Name", declaring_type="System.Windows.FrameworkElement"),),
+            (PathSegment("property", "Name", declaring_type=name_owner),),
             *((PathSegment("uia", name),) for name in ("automation_id", "name", "control_type")),
         ]
         values, _ = node.client.read(
@@ -766,7 +812,7 @@ class Server:
             peer_name,
             control_type,
             node.ref.type.full_name,
-            "WPF",
+            "WinForms" if winforms else "WPF",
             node.process_id,
             node.rect,
             state.enabled,
@@ -776,7 +822,8 @@ class Server:
         )
         properties = {
             "ClrFullClassName": node.ref.type.full_name,
-            "x:Name": x_name,
+            # The name given to the object: x:Name in WPF, the Name property in WinForms.
+            "ControlName" if winforms else "x:Name": x_name,
             "AutomationId": automation_id,
             "Name": peer_name,
             "ControlType": control_type,
@@ -800,14 +847,14 @@ class Server:
             with self._node_lock:
                 self._wpf_text[params["nodeId"]] = text
         if text is not None:
-            properties["WPFControlText"] = text
+            properties["WinFormsControlText" if winforms else "WPFControlText"] = text
         inspection = [inspection_property(name, value) for name, value in properties.items()]
         result: dict[str, Any] = {
             "info": info.to_dict(),
             "properties": properties,
             "inspection": inspection,
             "ancestors": [],
-            "source": "wpf",
+            "source": source,
             "uiaMapped": False,
         }
         if params.get("includeAncestors", False):
@@ -826,7 +873,7 @@ class Server:
                             "nodeId": parent_id,
                             "info": info.to_dict(),
                             "hasChildren": True,
-                            "source": "wpf",
+                            "source": source,
                         }
                     ancestors.append(description)
                     parent_id = self._wpf_parents.get(parent_id)
@@ -871,10 +918,35 @@ class Server:
             result["uia"] = {"properties": uia_properties, "inspection": uia_inspection}
         return result
 
+    def _managed_kind(self, element: UIAElement) -> str | None:
+        """``wpf`` or ``winforms`` when the agent can show this window's tree, else None."""
+        if self.cfg is None or self.cfg.backend != "auto":
+            return None
+        kind = _UIA_FRAMEWORKS.get(element.framework_id)
+        if kind != "winforms":
+            return kind
+        # A WinForms window is only taken over from UI Automation when the agent can attach to
+        # its process; an unsupported runtime keeps the plain UI Automation tree.
+        pid = element.process_id
+        supported = self._winforms_support.get(pid)
+        if supported is None:
+            try:
+                from wintestkit.inspector.probe import identify
+
+                facts = identify(pid)
+                supported = bool(
+                    facts.winforms_loaded
+                    and facts.runtime in _SUPPORTED_RUNTIMES
+                    and facts.architecture in ("x86", "x64")
+                )
+            except Exception:
+                log.debug("WinForms process probe failed", exc_info=True)
+                supported = False
+            self._winforms_support[pid] = supported
+        return "winforms" if supported else None
+
     def _wpf_enabled(self, element: UIAElement) -> bool:
-        return bool(
-            self.cfg is not None and self.cfg.backend == "auto" and element.framework_id == "WPF"
-        )
+        return self._managed_kind(element) is not None
 
     def _mark_roots(self, nodes: list[dict[str, Any]]) -> None:
         from wintestkit.uia import win32
@@ -887,8 +959,9 @@ class Server:
             node_id = item["nodeId"]
             with self._node_lock:
                 node = self.nodes.get(node_id)
-            if node is not None and self._wpf_enabled(cast("UIAElement", node)):
-                item["source"] = "wpf"
+            kind = self._managed_kind(cast("UIAElement", node)) if node is not None else None
+            if kind is not None:
+                item["source"] = kind
                 self._wpf_windows.add(node_id)
 
     @staticmethod
@@ -1029,9 +1102,7 @@ class Server:
                 for entry in entries:
                     ref = entry.object_ref
                     self._remember_managed(client.session.session_id, ref.to_json())
-                    node_id = "wpf:" + json.dumps(
-                        [ref.session_id, ref.object_id, ref.generation], separators=(",", ":")
-                    )
+                    node_id = _managed_node_id(ref)
                     identity_data = {"type": ref.type.full_name}
                     if entry.identity is not None:
                         if entry.identity.x_name:
@@ -1043,7 +1114,7 @@ class Server:
                         identity_data.get("xName", ""),
                         ref.type.name,
                         ref.type.full_name,
-                        "WPF",
+                        "WinForms" if ref.is_winforms else "WPF",
                         window.process_id,
                         None,
                         True,
@@ -1061,7 +1132,7 @@ class Server:
                             else entry.has_logical_children
                         )
                         or (self._is_hwnd_host(ref) and bool(self._hosted_children(target))),
-                        "source": "wpf",
+                        "source": _ref_source(ref),
                         "identity": identity_data,
                     }
                     with self._node_lock:
@@ -1082,12 +1153,8 @@ class Server:
                     parent_id = node_id
                 if pick and len(entries) > 1:
                     root_description = self._register(window)
-                    root_description["source"] = "wpf"
-                    first = entries[1].object_ref
-                    first_id = "wpf:" + json.dumps(
-                        [first.session_id, first.object_id, first.generation],
-                        separators=(",", ":"),
-                    )
+                    root_description["source"] = self._managed_kind(window) or "wpf"
+                    first_id = _managed_node_id(entries[1].object_ref)
                     with self._node_lock:
                         self._wpf_windows.add(root_description["nodeId"])
                         self._wpf_descriptions[root_description["nodeId"]] = root_description
@@ -1192,7 +1259,7 @@ class Server:
                         "nodeId": parent_id,
                         "info": parent_info.to_dict(),
                         "hasChildren": True,
-                        "source": "wpf",
+                        "source": _ref_source(ref),
                     }
             host = isinstance(node, WpfElement) and self._is_hwnd_host(ref)
             if host and page_token is not None and page_token.startswith("uia:"):
@@ -1238,16 +1305,13 @@ class Server:
                         identity_data["xName"] = child.identity.x_name
                     if child.identity.automation_id:
                         identity_data["automationId"] = child.identity.automation_id
-                node_id = "wpf:" + json.dumps(
-                    [child_ref.session_id, child_ref.object_id, child_ref.generation],
-                    separators=(",", ":"),
-                )
+                node_id = _managed_node_id(child_ref)
                 info = ElementInfo(
                     identity_data.get("automationId", ""),
                     (text or "")[:100],
                     child_ref.type.name,
                     child_ref.type.full_name,
-                    "WPF",
+                    "WinForms" if child_ref.is_winforms else "WPF",
                     process_id,
                     None,
                     True,
@@ -1275,7 +1339,7 @@ class Server:
                         else child.has_logical_children
                     )
                     or (self._is_hwnd_host(child_ref) and bool(self._hosted_children(element))),
-                    "source": "wpf",
+                    "source": _ref_source(child_ref),
                     "identity": identity_data,
                 }
                 with self._node_lock:
@@ -1417,6 +1481,7 @@ class Server:
                     "runtime": facts.runtime,
                     "architecture": facts.architecture,
                     "wpfLoaded": facts.wpf_loaded,
+                    "winformsLoaded": facts.winforms_loaded,
                     "appUnderTest": self._is_app_under_test(facts),
                 }
             runtime.require_managed()
@@ -1492,7 +1557,7 @@ class Server:
                         "status": "exact",
                         "process": client.session.process.to_json(),
                         "object": node.ref.to_json(),
-                        "source": "wpf",
+                        "source": _ref_source(node.ref),
                     }
                 else:
                     runtime_id, hwnd = runtime.managed_element_identity(node)
@@ -1984,6 +2049,7 @@ class Server:
             ]
             return result
         if method in ("inspect.roots", "inspect.refresh"):
+            self._winforms_support.clear()
             if self.coverage is not None:
                 self.coverage.invalidate()
             app = self._app(False)
@@ -2168,10 +2234,13 @@ class Server:
                         )
                         if mapping.status == "exact" and mapping.object_ref is not None:
                             ref = mapping.object_ref
-                            return self._wpf_properties(
-                                WpfElement(client, ref, selected.process_id),
-                                params,
-                                cast("UIAElement", selected).as_live(),
+                            return self._with_window(
+                                self._wpf_properties(
+                                    WpfElement(client, ref, selected.process_id),
+                                    params,
+                                    cast("UIAElement", selected).as_live(),
+                                ),
+                                selected,
                             )
             except InspectorError:
                 log.debug("WPF window properties unavailable; using UIA", exc_info=True)
@@ -2184,7 +2253,7 @@ class Server:
                 raise RpcError(-32005, "unknown node id")
             wpf_node = selected.as_live()
             if method == "inspect.properties":
-                return self._wpf_properties(wpf_node, params)
+                return self._with_window(self._wpf_properties(wpf_node, params), wpf_node)
             if method == "inspect.preview":
                 from wintestkit.live_preview import capture_live_preview
 
@@ -2214,6 +2283,8 @@ class Server:
                 from wintestkit import runtime
                 from wintestkit.engine.suggest import WindowSelectedError, suggest_locator
 
+                if selected.ref.is_winforms:
+                    raise RpcError(-32006, "Locator suggestions are not available for WinForms yet")
                 wpf_ancestors: list[WpfElement] = []
                 with self._node_lock:
                     parent_id = self._wpf_parents.get(params["nodeId"])
@@ -2360,12 +2431,15 @@ class Server:
             info = node.info(with_patterns=full)
             if not info.runtime_id:
                 info = dataclasses.replace(info, runtime_id=params["nodeId"])
-            return {
-                "info": info.to_dict(),
-                "properties": properties,
-                "ancestors": list(reversed(ancestors)),
-                "inspection": inspection,
-            }
+            return self._with_window(
+                {
+                    "info": info.to_dict(),
+                    "properties": properties,
+                    "ancestors": list(reversed(ancestors)),
+                    "inspection": inspection,
+                },
+                node,
+            )
         raise RpcError(-32601, "method not found")
 
     def serve(self, source: BinaryIO) -> int:

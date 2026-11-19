@@ -13,7 +13,7 @@
   const managedMessages = {
     "not enabled": "Enable the inspector in repository settings, then attach.",
     "not installed": "Install the inspector in the selected Python environment:",
-    "unsupported target": "Select a supported WPF target and try again.",
+    "unsupported target": "Select a supported WPF or WinForms target and try again.",
     "blocked by policy": "Windows policy, the workspace or the target's permissions blocked the inspector.",
     "restart required": "Restart the target application to load the matching inspector version.",
     "attach failed": "Run `wtk doctor --agent` for details.",
@@ -286,8 +286,6 @@
   let treeHasMatches = false;
   let hasDetails = false;
   let selecting = false;
-  let fullPropertiesLoaded = false;
-  let fullPropertiesLoading = false;
   let treeError = "";
   let detailsError = "";
   let failureTarget;
@@ -531,20 +529,6 @@
     otherApps.title = otherAppsText;
     otherApps.setAttribute("aria-label", otherAppsText);
     element("other-apps-label").textContent = otherAppsText;
-    const load = element("load-properties");
-    load.disabled =
-      !hasDetails || fullPropertiesLoading || fullPropertiesLoaded;
-    load.textContent = fullPropertiesLoading
-      ? "Loading properties…"
-      : fullPropertiesLoaded
-        ? "All properties loaded"
-        : "Load all properties";
-    load.setAttribute("aria-busy", String(fullPropertiesLoading));
-    element("properties-status").textContent = fullPropertiesLoading
-      ? "Reading additional properties and supported patterns."
-      : fullPropertiesLoaded
-        ? "Complete property list loaded for this object."
-        : "Additional properties and supported patterns load on demand.";
     const active = [...tasks.values()];
     for (const target of ["tree", "details"]) {
       const scoped = active.filter(
@@ -749,7 +733,7 @@
   let picking = false;
   let selected;
   let suggestion;
-  let selectedWpf = false;
+  let selectedWpf = false; const isManaged = (source) => source === "wpf" || source === "winforms"; const nameKey = (source) => source === "winforms" ? "ControlName" : "x:Name"; const textKey = (source) => source === "winforms" ? "WinFormsControlText" : "WPFControlText";
   // The preview shows either the object alone (the default) or its window with the object
   // outlined; the choice stays while the selection changes.
   let previewMode = "element";
@@ -1018,7 +1002,7 @@
   // The row last described, by key, so a redraw (values arrive while it is selected) keeps its description.
   let describedKey;
   const rowItems = new Map();
-  const displayValue = (item) => item.value === undefined || item.value === null ? "Unknown" : item.value === "" ? (item.name === "WPFControlText" ? "(empty)" : '""') : String(item.value);
+  const displayValue = (item) => item.value === undefined || item.value === null ? "Unknown" : item.value === "" ? ((item.name === "WPFControlText" || item.name === "WinFormsControlText") ? "(empty)" : '""') : String(item.value);
   const describeSidebar = (item, key) => {
     const content = element("sidebar-description-content"); content.replaceChildren();
     describedKey = key;
@@ -1035,7 +1019,7 @@
     Height: "Height of the bounding rectangle, in pixels.",
     Left: "Distance from the left edge of the containing window to this object's left edge, in pixels. A window reports its position on the screen.",
     MappedName: "The name your page definitions give this object (the qualified name of its element).",
-    Name: "The x:Name of a WPF object, otherwise its UI Automation name.",
+    Name: "The x:Name of a WPF object or the Name of a WinForms control, otherwise its UI Automation name.",
     Parent: "The object this one belongs to in the tree.",
     ScreenLeft: "Distance from the left edge of the screen to the object's left edge, in pixels.",
     ScreenTop: "Distance from the top edge of the screen to the object's top edge, in pixels.",
@@ -1044,9 +1028,51 @@
     VisibleOnScreen: "Whether the object is inside the visible part of the screen.",
     Width: "Width of the bounding rectangle, in pixels.",
     ClrFullClassName: "The full .NET type name of the object.",
-    WPFControlText: "The text the control shows.",
+    WPFControlText: "The text the control shows.", WinFormsControlText: "The text the control shows.",
   };
   const standardDescription = (name, value) => [["Name", name], ["Value", value === undefined || value === null ? "Unknown" : value === "" ? '""' : String(value)], ["Group", "Standard"], ["Meaning", STANDARD_MEANING[name]]];
+  // -- Win32 window: what the system reports for the HWND behind a node ----------------------
+  const LOADING_ALL = "Reading all UI Automation properties\u2026";
+  const hexText = (value, width = 8) => "0x" + (Number(value) >>> 0).toString(16).toUpperCase().padStart(width, "0");
+  const handleText = (value) => value ? hexText(value) + " (" + value + ")" : "None";
+  const styleText = (styles, unknown) => { const parts = (styles || []).map((style) => style.name); if (unknown) parts.push(hexText(unknown)); return parts.length ? parts.join(" | ") : "(none)"; };
+  const styleLines = (styles, unknown) => [...(styles || []).map((style) => [style.name, hexText(style.value)]), ...(unknown ? [["Unnamed bits", hexText(unknown)]] : [])];
+  const rectText = (rect) => rect ? `${rect.left}, ${rect.top}, ${rect.width} \u00d7 ${rect.height}` : undefined;
+  const WINDOW_MEANING = {
+    "Window Class": "The registered window class of the HWND (GetClassName), such as Edit, Button or #32770 for a dialog.",
+    "Control ID": "The dialog control ID (GetDlgCtrlID). Only child windows have one.",
+    Text: "The window text: GetWindowText, falling back to WM_GETTEXT with a short timeout. Never read from password boxes.",
+    Handle: "The window handle (HWND), in hexadecimal and decimal.",
+    Styles: "The window styles (WS_*) followed by the styles of the window class (BS_*, ES_*, SS_*, CBS_*, LBS_*, DS_*...). Bits without a name are shown in hexadecimal.",
+    "Raw Style": "The raw GWL_STYLE value.",
+    "Extended Styles": "The extended window styles (WS_EX_*).",
+    "Raw Extended Style": "The raw GWL_EXSTYLE value.",
+    "Process ID": "The process that owns the window.",
+    "Thread ID": "The thread that created the window.",
+    "Owner Window": "The owner (GW_OWNER); None when the window is not owned.",
+    "Parent Window": "The parent (GetAncestor with GA_PARENT); None for a top-level window.",
+    "Window Rect": "GetWindowRect in screen pixels: left, top, width \u00d7 height.",
+    "Client Rect": "GetClientRect: the client area, measured from its own origin.",
+    "Window Visible": "IsWindowVisible: the window and all its parents have WS_VISIBLE.",
+    "Window Enabled": "IsWindowEnabled: the window does not have WS_DISABLED.",
+    Topmost: "Whether WS_EX_TOPMOST is set.",
+    DPI: "The window's dots per inch (GetDpiForWindow); 96 is 100% scaling.",
+  };
+  const windowRows = (w, basic) => {
+    const controlId = w.controlId === undefined ? undefined : `${w.controlId} (${hexText(w.controlId, 1)})`;
+    const lines = { Styles: styleLines(w.styles, w.unknownStyle), "Extended Styles": styleLines(w.exStyles, w.unknownExStyle) };
+    const table = {
+      "Window Class": w.className, "Control ID": controlId, Text: w.text, Handle: handleText(w.handle), Styles: styleText(w.styles, w.unknownStyle),
+      "Raw Style": hexText(w.rawStyle), "Extended Styles": styleText(w.exStyles, w.unknownExStyle), "Raw Extended Style": hexText(w.rawExStyle),
+      "Process ID": w.processId, "Thread ID": w.threadId, "Owner Window": handleText(w.owner), "Parent Window": handleText(w.parent),
+      "Window Rect": rectText(w.rect), "Client Rect": rectText(w.clientRect), "Window Visible": w.visible, "Window Enabled": w.enabled, Topmost: w.topmost, DPI: w.dpi,
+    };
+    const names = basic ? ["Window Class", "Control ID", "Text", "Handle", "Styles"] : Object.keys(table);
+    return names.filter((name) => table[name] !== undefined).map((name) => ({
+      name, value: table[name],
+      description: [["Name", name], ["Value", table[name]], ["Group", "Win32 Window"], ["Meaning", WINDOW_MEANING[name]], ...(lines[name] || [])],
+    }));
+  };
   const redactedLabel = (name, value) => value.redactionRule === "identity" ? (name === "Password" || name === "SecurePassword" ? "Redacted: password" : "Redacted: element has no automation peer") : `Redacted (rule: ${value.redactionRule || "unknown"})`;
   const UNREADABLE_REASONS = {
     writeOnly: "write-only property",
@@ -1328,7 +1354,7 @@
       const fromHost = (p.ancestors || []).map((ancestor) => ({ nodeId: ancestor.nodeId, node: ancestor, label: WtkTreeLabels.labelsFor([ancestor])[0] }));
       const route = (entry && ancestry.length > 1 ? ancestry.slice(0, -1) : fromHost).filter((item) => item.node.info.controlType !== "Process");
       const actualParent = parent && parent.node.info.controlType !== "Process" ? { nodeId: parent.node.nodeId, label: parent.name } : route.at(-1);
-      const ownLabel = entry?.name || WtkTreeLabels.labelsFor([{ nodeId: selected, source: p.source, info, identity: { type: raw.ClrFullClassName, xName: raw["x:Name"] } }])[0];
+      const ownLabel = entry?.name || WtkTreeLabels.labelsFor([{ nodeId: selected, source: p.source, info, identity: { type: raw.ClrFullClassName, xName: raw[nameKey(p.source)] } }])[0];
       const locatorPath = suggestion?.unique && suggestion.window ? [suggestion.window.code, ...suggestion.helpers.map((helper) => helper.attributeName + " = " + helper.code), suggestion.code].join("\n") : [...route.map((item) => item.label), ownLabel].join(".");
       // Left and Top are measured from the containing window; a window reports its place on the screen.
       const windowRect = route[0]?.node?.info?.rect;
@@ -1337,32 +1363,35 @@
         ChildCount: entry?.node.hasChildren === false ? 0 : entry?.loaded ? entry.children.children.length : undefined,
         Enabled: info.isEnabled, Exists: true, FullName: locatorPath,
         Height: info.rect?.height, Left: offset(info.rect?.left, windowRect?.left), MappedName: definitionsState === "ready" ? (selectedDefinitions?.find((d) => d.kind === "element" || d.kind === "elements")?.qualname ?? "(not defined in any page)") : definitionsState === "loading" ? "Checking pages\u2026" : undefined,
-        Name: (p.source === "wpf" && raw["x:Name"]) || info.name, Parent: actualParent?.label, ScreenLeft: info.rect?.left, ScreenTop: info.rect?.top,
-        Top: offset(info.rect?.top, windowRect?.top), Visible: p.source === "wpf" ? raw.Visible : undefined, VisibleOnScreen: info.isOffscreen === undefined ? undefined : !info.isOffscreen, Width: info.rect?.width,
-        ClrFullClassName: raw.ClrFullClassName, WPFControlText: raw.WPFControlText,
+        Name: (isManaged(p.source) && raw[nameKey(p.source)]) || info.name, Parent: actualParent?.label, ScreenLeft: info.rect?.left, ScreenTop: info.rect?.top,
+        Top: offset(info.rect?.top, windowRect?.top), Visible: isManaged(p.source) ? raw.Visible : undefined, VisibleOnScreen: info.isOffscreen === undefined ? undefined : !info.isOffscreen, Width: info.rect?.width,
+        ClrFullClassName: raw.ClrFullClassName, [textKey(p.source)]: raw[textKey(p.source)],
       };
       const rowFor = (name) => ({ name, value: standard[name], description: standardDescription(name, standard[name]), ...(name === "Parent" && actualParent ? { select: actualParent.nodeId } : {}) });
-      const basic = ["Enabled", "Height", "MappedName", "Name", "Parent", "Visible", "Width", ...(p.source === "wpf" ? ["ClrFullClassName", "WPFControlText"] : [])];
-      if (!sidebarAdvanced) { group("Standard", basic.map(rowFor)); group("Pinned", [...managedRows(false), ...managedRows(true)].filter((row) => sidebarPins.includes(row.pinKey))); }
+      const basic = ["Enabled", "Height", "MappedName", "Name", "Parent", "Visible", "Width", ...(isManaged(p.source) ? ["ClrFullClassName", textKey(p.source)] : [])];
+      if (!sidebarAdvanced) { group("Standard", basic.map(rowFor)); if (p.window) group("Win32 Window", windowRows(p.window, true)); group("Pinned", [...managedRows(false), ...managedRows(true)].filter((row) => sidebarPins.includes(row.pinKey))); }
       else {
         const names = ["ChildCount", "Enabled", "Exists", "FullName", "Height", "Left", "MappedName", "Name", "Parent", "ScreenLeft", "ScreenTop", "Top", "Visible", "VisibleOnScreen", "Width"];
         group("Standard", names.map(rowFor));
+        if (p.window) group("Win32 Window", windowRows(p.window, false));
+        // The Win32 Window group already says these; each value appears once.
+        const windowCovered = new Set(p.window ? ["ClassName", "NativeWindowHandle", "ProcessId"] : []);
         // Each value appears once: x:Name is Name, IsEnabled is Enabled, Bounds is the rectangle rows above.
-        const represented = new Set([...names, "x:Name", "IsEnabled", "Bounds", "ClrFullClassName"]);
-        if (p.source === "wpf") {
+        const represented = new Set([...names, "x:Name", "ControlName", "IsEnabled", "Bounds", "ClrFullClassName"]);
+        if (isManaged(p.source)) {
           // AutomationId is the attached AutomationProperties.AutomationId, or empty.
           const extended = Object.entries(raw).filter(([name]) => !represented.has(name)).map(([name, value]) => ({ name, value: name === "AutomationId" ? (value ?? info.automationId ?? "") : value }));
           if (!extended.some((row) => row.name === "AutomationId")) extended.unshift({ name: "AutomationId", value: info.automationId ?? "" });
           group("Extended", extended);
         }
         const managed = managedRows(false).filter((row) => !["Name", "IsEnabled"].includes(row.name)).map((row) => represented.has(row.name) && row.name !== "ClrFullClassName" ? { ...row, name: "CLR " + row.name } : row);
-        if (p.source === "wpf" && !managed.some((r) => r.name === "ClrFullClassName")) managed.unshift(rowFor("ClrFullClassName"));
+        if (isManaged(p.source) && !managed.some((r) => r.name === "ClrFullClassName")) managed.unshift(rowFor("ClrFullClassName"));
         for (const binding of managedSnapshot?.bindings || []) managed.push({ name: "Binding " + binding.memberKey, value: [binding.kind, binding.status, binding.path].filter(Boolean).join("; ") });
         group(".NET", managed);
-        const uia = p.source === "wpf" ? p.uia : p;
-        if (uia && (p.source !== "wpf" || p.uiaMapped)) {
+        const uia = isManaged(p.source) ? p.uia : p;
+        if (uia && (!isManaged(p.source) || p.uiaMapped)) {
           const flatten = (item, prefix = "") => [{ name: prefix + item.name, value: propertySummary(item), pin: !prefix }, ...nestedEntries(item).flatMap((child) => flatten(child, prefix + item.name + "."))];
-          group("UI Automation", propertyEntries(uia.properties, uia.inspection).filter((item) => !represented.has(item.name) && (p.source !== "wpf" || (!Object.hasOwn(raw, item.name) && item.name !== "AutomationId"))).flatMap((item) => flatten(item)));
+          group("UI Automation", propertyEntries(uia.properties, uia.inspection).filter((item) => !represented.has(item.name) && !windowCovered.has(item.name) && (!isManaged(p.source) || (!Object.hasOwn(raw, item.name) && item.name !== "AutomationId"))).flatMap((item) => flatten(item)));
         }
       }
       empty.textContent = query ? "No matching properties." : "No properties loaded.";
@@ -1449,8 +1478,6 @@
     suggestion = undefined;
     hasDetails = false;
     selecting = true;
-    fullPropertiesLoaded = false;
-    fullPropertiesLoading = false;
     detailsError = "";
     const entry = nodes.get(nodeId);
     const info = entry.node.info;
@@ -1881,18 +1908,6 @@
   element("highlight").addEventListener("click", () => {
     if (selected) post("highlight", { nodeId: selected });
   });
-  element("load-properties").addEventListener("click", () => {
-    if (
-      !selected ||
-      !hasDetails ||
-      fullPropertiesLoading ||
-      fullPropertiesLoaded
-    )
-      return;
-    fullPropertiesLoading = true;
-    renderStatus();
-    post("loadProperties", { nodeId: selected });
-  });
   element("tree").addEventListener("keydown", (event) => {
     const row = event.target.closest(".node");
     if (!row) return;
@@ -2021,7 +2036,6 @@
       if (!!message.tutorial !== !!tutorialView) {
         tasks.clear();
         selecting = false;
-        fullPropertiesLoading = false;
         treeError = "";
         detailsError = "";
         failureTarget = undefined;
@@ -2080,8 +2094,6 @@
       rootsLoaded = true;
       hasDetails = false;
       selecting = false;
-      fullPropertiesLoaded = false;
-      fullPropertiesLoading = false;
         treeError = "";
       detailsError = "";
       }
@@ -2242,15 +2254,16 @@
       if (tutorialView) refreshTutorial();
     } else if (message.type === "propertiesLoading") {
       if (message.nodeId !== selected) return;
-      fullPropertiesLoading = message.loading;
+      // The list below is already usable; this only says the rest is still being read.
+      const status = element("properties-view-status");
+      if (message.loading) { status.textContent = LOADING_ALL; status.hidden = false; }
+      else if (status.textContent === LOADING_ALL) { status.textContent = ""; status.hidden = true; }
       renderStatus();
     } else if (message.type === "allProperties") {
       if (message.nodeId !== selected) return;
-      fullPropertiesLoaded = true;
-      fullPropertiesLoading = false;
       selectedProperties = message.properties; renderSidebar();
-      showProperties(message.properties.source === "wpf" && message.properties.uia ? message.properties.uia : message.properties);
-      if (message.properties.source === "wpf" && message.properties.uiaMapped) table("wpf-uia-properties", { "Control type": message.properties.info.controlType, "Class name": message.properties.uia?.properties?.ClassName, Patterns: message.properties.info.patterns?.join(", ") || "None", ...message.properties.uia?.properties });
+      showProperties(isManaged(message.properties.source) && message.properties.uia ? message.properties.uia : message.properties);
+      if (isManaged(message.properties.source) && message.properties.uiaMapped) table("wpf-uia-properties", { "Control type": message.properties.info.controlType, "Class name": message.properties.uia?.properties?.ClassName, Patterns: message.properties.info.patterns?.join(", ") || "None", ...message.properties.uia?.properties });
       const info = message.properties.info;
       table("automation-properties", {
         "Control type": info.controlType,
@@ -2272,20 +2285,18 @@
       focusSelected(message.nodeId);
       hasDetails = true;
       selecting = false;
-      fullPropertiesLoaded = false;
-      fullPropertiesLoading = false;
       detailsError = "";
       selectedProperties = message.properties; selectedDefinitions = undefined; definitionsState = undefined;
       const info = message.properties.info;
-      const isWpf = message.properties.source === "wpf";
+      const isWpf = isManaged(message.properties.source);
       selectedWpf = isWpf;
       const groups = element("property-groups"), managed = element("managed-panel");
       if (isWpf) groups.insertBefore(managed, element("wpf-uia-group"));
       else groups.parentElement.insertBefore(managed, groups.nextSibling);
       renderManaged();
       renderWpfDetails(message.nodeId);
-      element("wpf-section").hidden = !isWpf;
-      table("wpf-properties", isWpf ? { ClrFullClassName: message.properties.properties.ClrFullClassName, "x:Name": message.properties.properties["x:Name"] } : {});
+      element("wpf-section").hidden = !isWpf; const sectionTitle = element("wpf-section").querySelector("h3"); if (isWpf && sectionTitle) sectionTitle.textContent = message.properties.source === "winforms" ? "WinForms" : "WPF";
+      table("wpf-properties", isWpf ? { ClrFullClassName: message.properties.properties.ClrFullClassName, [message.properties.source === "winforms" ? "Name" : "x:Name"]: message.properties.properties[nameKey(message.properties.source)] } : {});
       for (const id of ["uia-state-group", "uia-geometry-group"]) element(id).hidden = true;
       element("uia-automation-group").hidden = isWpf;
       element("pinned-group").hidden = isWpf;

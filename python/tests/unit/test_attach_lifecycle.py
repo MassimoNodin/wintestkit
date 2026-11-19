@@ -18,7 +18,7 @@ from wintestkit.inspector.models import ProcessIdentity
 def test_launch_policy_and_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     identity = ProcessIdentity(42, "2026-01-01T00:00:00Z")
     window: Any = SimpleNamespace(process_id=42, native_window_handle=123)
-    facts = SimpleNamespace(identity=identity, wpf_loaded=False)
+    facts = SimpleNamespace(identity=identity, wpf_loaded=False, winforms_loaded=False)
     monkeypatch.setattr(probe, "identify", lambda pid: facts)
     calls: list[ProcessIdentity] = []
 

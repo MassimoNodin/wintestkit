@@ -1020,3 +1020,213 @@ describe("Not read rows", () => {
     expect(view.value("Text")).toBe("Not read (automatic reading is off)");
   });
 });
+
+describe("Win32 window rows", () => {
+  const dialog = { nodeId: "dlg", source: "uia", hasChildren: true, info: { controlType: "Window", name: "Open", className: "#32770", frameworkId: "Win32", nativeWindowHandle: 66000, processId: 7 } };
+  const edit = { nodeId: "edit", source: "uia", hasChildren: false, info: { controlType: "Edit", name: "", className: "Edit", frameworkId: "Win32", nativeWindowHandle: 199242, processId: 7, isEnabled: true, isOffscreen: false, rect: { left: 10, top: 20, width: 300, height: 200 } } };
+  const facts = {
+    handle: 199242, className: "Edit", text: "hello",
+    styles: [{ name: "WS_CHILD", value: 0x40000000 }, { name: "WS_VISIBLE", value: 0x10000000 }, { name: "ES_LEFT", value: 0 }, { name: "ES_MULTILINE", value: 4 }],
+    rawStyle: 0x50000004, unknownStyle: 0x100,
+    exStyles: [{ name: "WS_EX_CLIENTEDGE", value: 0x200 }], rawExStyle: 0x200,
+    controlId: 15, processId: 7, threadId: 9, owner: 0, parent: 66000,
+    rect: { left: 10, top: 20, width: 300, height: 200 }, clientRect: { left: 0, top: 0, width: 296, height: 196 },
+    visible: true, enabled: true, topmost: false, dpi: 96,
+  };
+  const session = (properties: Record<string, unknown>): Message[] => [
+    { type: "tour", dim: false, spyLit: false },
+    { type: "state", picking: false, appRunning: true, targetName: "demo", appName: "Fixture", appPids: [7], hasProject: true, showOtherApps: true, bringToFront: false, shownProperties: [], showRefreshCounts: false },
+    { type: "roots", nodes: [dialog] },
+    { type: "children", nodeId: "dlg", nodes: [edit], expanded: true },
+    { type: "selectionPending", nodeId: "edit" },
+    { type: "selected", nodeId: "edit", properties: { info: edit.info, properties: { Name: "" }, ancestors: [dialog], ...properties } },
+  ];
+  const fullUia = { info: edit.info, properties: { Name: "", ClassName: "Edit", ProcessId: "7", NativeWindowHandle: "199242", HelpText: "Type here" }, ancestors: [dialog], inspection: [], window: facts };
+
+  it("shows the window class, control ID, text, handle and styles in the Basic view with nothing to press", () => {
+    const view = open("properties-view");
+    view.send(...session({ window: facts }));
+    expect(view.headings()).toEqual([]);
+    expect(view.names()).toEqual(expect.arrayContaining(["Window Class", "Control ID", "Text", "Handle", "Styles"]));
+    expect(view.value("Window Class")).toBe("Edit");
+    expect(view.value("Control ID")).toBe("15 (0xF)");
+    expect(view.value("Text")).toBe("hello");
+    expect(view.value("Handle")).toBe("0x00030A4A (199242)");
+    expect(view.value("Styles")).toBe("WS_CHILD | WS_VISIBLE | ES_LEFT | ES_MULTILINE | 0x00000100");
+    // The raw values and the process facts belong to the Advanced view.
+    expect(view.names()).not.toContain("Raw Style");
+    expect(view.names()).not.toContain("Thread ID");
+    // The button and its status text are gone: everything loads with the selection.
+    expect(view.doc.querySelector("#load-properties")).toBeNull();
+    expect(view.doc.querySelector("#properties-status")).toBeNull();
+    expect(view.doc.body.textContent).not.toContain("Load all properties");
+    expect(view.errors).toEqual([]);
+  });
+
+  it("lists every window fact once under Win32 Window in the Advanced view", () => {
+    const view = open("properties-view", { sidebarAdvanced: true });
+    view.send(...session({ window: facts }), { type: "allProperties", nodeId: "edit", properties: fullUia });
+    expect(view.headings()).toContain("Win32 Window");
+    expect(view.value("Raw Style")).toBe("0x50000004");
+    expect(view.value("Extended Styles")).toBe("WS_EX_CLIENTEDGE");
+    expect(view.value("Raw Extended Style")).toBe("0x00000200");
+    expect(view.value("Process ID")).toBe("7");
+    expect(view.value("Thread ID")).toBe("9");
+    expect(view.value("Owner Window")).toBe("None");
+    expect(view.value("Parent Window")).toBe("0x000101D0 (66000)");
+    expect(view.value("Window Rect")).toBe("10, 20, 300 × 200");
+    expect(view.value("Client Rect")).toBe("0, 0, 296 × 196");
+    expect(view.value("Window Visible")).toBe("true");
+    expect(view.value("Window Enabled")).toBe("true");
+    expect(view.value("Topmost")).toBe("false");
+    expect(view.value("DPI")).toBe("96");
+    // The complete UI Automation list arrived without a button, minus what the window rows already say.
+    expect(view.value("HelpText")).toBe("Type here");
+    for (const repeated of ["ClassName", "ProcessId", "NativeWindowHandle"]) expect(view.names(), repeated).not.toContain(repeated);
+    const all = view.names();
+    expect(new Set(all).size).toBe(all.length);
+    expect(view.errors).toEqual([]);
+  });
+
+  it("describes each style with the bits it stands for and offers the row menu", () => {
+    const view = open("properties-view", { sidebarAdvanced: true });
+    view.send(...session({ window: facts }));
+    const row = view.doc.querySelector('#sidebar-rows [data-name="Styles"]') as HTMLTableRowElement;
+    row.click();
+    const description = view.text("#sidebar-description-content");
+    expect(description).toContain("Group: Win32 Window");
+    expect(description).toContain("WS_CHILD: 0x40000000");
+    expect(description).toContain("ES_MULTILINE: 0x00000004");
+    expect(description).toContain("Unnamed bits: 0x00000100");
+    const menu = view.doc.querySelector("#sidebar-row-menu") as HTMLElement;
+    const rightClick = () => row.dispatchEvent(new view.dom.window.MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
+    const choose = (label: string) => ([...menu.querySelectorAll("button")].find((button) => button.textContent === label) as HTMLButtonElement).click();
+    rightClick();
+    choose("Copy value");
+    rightClick();
+    choose("Copy name");
+    expect(view.posts).toEqual(expect.arrayContaining([
+      { type: "copy", text: "WS_CHILD | WS_VISIBLE | ES_LEFT | ES_MULTILINE | 0x00000100" },
+      { type: "copy", text: "Styles" },
+    ]));
+    expect(view.errors).toEqual([]);
+  });
+
+  it("shows no window rows for a node without a native window and keeps its UI Automation rows", () => {
+    const view = open("properties-view", { sidebarAdvanced: true });
+    view.send(...session({}), { type: "allProperties", nodeId: "edit", properties: { ...fullUia, window: undefined } });
+    expect(view.headings()).not.toContain("Win32 Window");
+    for (const name of ["Window Class", "Handle", "Styles"]) expect(view.names()).not.toContain(name);
+    expect(view.names()).toEqual(expect.arrayContaining(["ClassName", "ProcessId", "NativeWindowHandle", "HelpText"]));
+    expect(view.errors).toEqual([]);
+  });
+
+  it("omits what the system would not answer and never invents a control ID", () => {
+    const view = open("properties-view");
+    const partial: Record<string, unknown> = { ...facts };
+    delete partial.text;
+    delete partial.controlId;
+    view.send(...session({ window: partial }));
+    expect(view.names()).toEqual(expect.arrayContaining(["Window Class", "Handle", "Styles"]));
+    expect(view.names()).not.toContain("Text");
+    expect(view.names()).not.toContain("Control ID");
+    expect(view.errors).toEqual([]);
+  });
+
+  it("says the rest is loading while it reads, then clears the message", () => {
+    const view = open("properties-view");
+    view.send(...session({ window: facts }));
+    expect(view.visible("#properties-view-status")).toBe(false);
+    view.send({ type: "propertiesLoading", nodeId: "edit", loading: true });
+    expect(view.visible("#properties-view-status")).toBe(true);
+    expect(view.text("#properties-view-status")).toContain("Reading all UI Automation properties");
+    view.send({ type: "allProperties", nodeId: "edit", properties: fullUia }, { type: "propertiesLoading", nodeId: "edit", loading: false });
+    expect(view.visible("#properties-view-status")).toBe(false);
+    // A result for another object changes nothing.
+    view.send({ type: "propertiesLoading", nodeId: "other", loading: true });
+    expect(view.visible("#properties-view-status")).toBe(false);
+    expect(view.errors).toEqual([]);
+  });
+
+  it("never asks the host to load properties: the panel has no such request", () => {
+    const view = open("properties-view");
+    view.send(...session({ window: facts }));
+    expect(view.posts.some((post) => post.type === "loadProperties")).toBe(false);
+  });
+});
+
+describe("Properties sidebar for a WinForms object", () => {
+  const formNode = { nodeId: "form", source: "winforms", hasChildren: true, info: { controlType: "Window", name: "WinForms Fixture", className: "WindowsForms10.Window.8.app.0.1", processId: 42, frameworkId: "WinForm" } };
+  const buttonNode = {
+    nodeId: "winforms:button", source: "winforms", hasChildren: false,
+    info: { controlType: "Button", name: "OK", className: "System.Windows.Forms.Button", isEnabled: true, isOffscreen: false, frameworkId: "WinForms", rect: { left: 10, top: 20, width: 75, height: 23 } },
+    identity: { type: "System.Windows.Forms.Button", xName: "button1", automationId: "button1" },
+  };
+  const buttonProperties = {
+    source: "winforms",
+    info: buttonNode.info,
+    ancestors: [formNode],
+    uiaMapped: true,
+    properties: {
+      ClrFullClassName: "System.Windows.Forms.Button", ControlName: "button1", AutomationId: "button1", Name: "OK", ControlType: "Button",
+      Bounds: "{left:10}", Visible: "True", IsEnabled: "True", HasKeyboardFocus: "False", ProcessId: "42", WindowHandle: "7", WinFormsControlText: "OK",
+    },
+    uia: { properties: { ClassName: "WindowsForms10.BUTTON.app.0.1", FrameworkId: "WinForm" }, inspection: [] },
+  };
+  const winformsMember = (name: string, extra: Record<string, unknown> = {}) => ({
+    memberKey: "clr:" + name, name, category: "clrProperty", visibility: "public", readable: true,
+    pathSegment: { kind: "property", name }, declaringType: "System.Windows.Forms.Control", declaredType: "System.String", ...extra,
+  });
+  const session = (): Message[] => [
+    { type: "tour", dim: false, spyLit: false },
+    { type: "state", picking: false, appRunning: true, targetName: "demo", appName: "Fixture", appPids: [42], hasProject: true, showOtherApps: true, bringToFront: false, shownProperties: [], showRefreshCounts: false },
+    { type: "roots", nodes: [formNode] },
+    { type: "children", nodeId: "form", nodes: [buttonNode], expanded: true },
+    { type: "selectionPending", nodeId: "winforms:button" },
+    { type: "selected", nodeId: "winforms:button", properties: buttonProperties },
+    { type: "wpfDetails", nodeId: "winforms:button", missing: false },
+    {
+      type: "managedPanel", sequence: 1, visible: true, state: "ready",
+      object: { objectId: "o", type: { fullName: "System.Windows.Forms.Button", assemblyName: "System.Windows.Forms", baseTypes: ["System.Windows.Forms.ButtonBase", "System.Windows.Forms.Control"] } },
+      rows: [
+        { member: winformsMember("Text"), value: { status: "ok", kind: "string", scalar: "OK", runtimeType: "System.String" } },
+        { member: winformsMember("Name"), value: { status: "ok", kind: "string", scalar: "button1", runtimeType: "System.String" } },
+        { member: { ...winformsMember("clicks", { category: "clrField", visibility: "private", readable: false, reason: "nonPublic" }), pathSegment: { kind: "field", name: "clicks", memberKey: "clrField|clicks", declaringType: "Fixture.Form" } }, value: { status: "ok", kind: "integer", scalar: 3, runtimeType: "System.Int32" } },
+      ],
+    },
+  ];
+
+  it("labels the row WinFormsObject with the control name and shows the WinForms badge", () => {
+    const view = open("spy-view");
+    view.send(...session());
+    const row = view.doc.querySelector('[data-node-id="winforms:button"]')!;
+    expect(row.getAttribute("aria-label")).toBe('WinFormsObject("button1")');
+    expect(row.querySelector(".technology-badge")?.textContent).toBe("WinForms");
+    expect(view.doc.querySelector('[data-node-id="form"] .technology-badge')?.textContent).toBe("WinForms");
+    expect(view.errors).toEqual([]);
+  });
+
+  it("shows the Name row as the control name and the managed rows on the Properties, Fields and Methods tabs", () => {
+    const view = open("properties-view");
+    view.send(...session());
+    for (const selector of ["#sidebar-tab-properties", "#sidebar-tab-fields", "#sidebar-tab-methods", "#sidebar-search", "#sidebar-mode"]) expect(view.hiddenReason(selector), selector).toBeUndefined();
+    expect(view.value("Name")).toBe("button1");
+    expect(view.value("ClrFullClassName")).toBe("System.Windows.Forms.Button");
+    expect(view.value("WinFormsControlText")).toBe("OK");
+    (view.doc.querySelector('[data-sidebar-tab="fields"]') as HTMLButtonElement).click();
+    expect(view.names()).toEqual(["clicks"]);
+    expect(view.value("clicks")).toBe("3");
+    (view.doc.querySelector('[data-sidebar-tab="methods"]') as HTMLButtonElement).click();
+    expect(view.posts).toContainEqual({ type: "managedMethods", action: "activate" });
+    expect(view.errors).toEqual([]);
+  });
+
+  it("names the section WinForms and lists the control name in it", () => {
+    const view = open("spy-view");
+    view.send(...session());
+    expect(view.doc.querySelector<HTMLElement>("#wpf-section")?.hidden).toBe(false);
+    expect(view.text("#wpf-section h3")).toBe("WinForms");
+    expect(view.doc.querySelector("#wpf-properties")?.textContent).toContain("button1");
+    expect(view.errors).toEqual([]);
+  });
+});

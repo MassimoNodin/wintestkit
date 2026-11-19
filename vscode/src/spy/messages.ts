@@ -46,7 +46,7 @@ export type SpyRequest =
       enabled: boolean;
     }
   | {
-      type: "expand" | "highlight" | "loadProperties";
+      type: "expand" | "highlight";
       nodeId: string;
     }
   /** `path` is the route from a root window, so the selection can be found again after a reload. */
@@ -180,15 +180,14 @@ export function parseSpyRequest(value: unknown): SpyRequest | undefined {
       : { type: "select", nodeId: message.nodeId };
   }
   if (
-    ["expand", "highlight", "loadProperties", "generateLocator"].includes(
+    ["expand", "highlight", "generateLocator"].includes(
       String(message.type),
     ) &&
     typeof message.nodeId === "string" &&
     message.nodeId.length <= 512
   )
     return {
-      type: message.type as
-        "expand" | "highlight" | "loadProperties" | "generateLocator",
+      type: message.type as "expand" | "highlight" | "generateLocator",
       nodeId: message.nodeId,
     };
   if (

@@ -4,7 +4,7 @@
 
 Set the machine setting `wintestkit.spy.traceFile` to an absolute file path to append Spy panel traffic and pick requests as JSON lines for troubleshooting. Leave it empty to disable tracing. Property values and screenshots are excluded, but node names and identifiers may still be sensitive; review the file before sharing it.
 
-## WPF agent
+## WPF and WinForms agent
 
 For agent errors and supported targets, see the [state and error guide](managed-inspection.md#troubleshooting).
 Run `wtk doctor`, and ask your security administrator about policy blocks rather than disabling protection.

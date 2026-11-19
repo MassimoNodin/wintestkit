@@ -47,6 +47,7 @@ namespace WinTestKit.Inspector.Agent.Inspection.Members
             if (path.Count != 1) return false;
             PathSegment segment = path[0];
             if (segment.Kind == "type") return segment.Name == "Name" || segment.Name == "FullName" || segment.Name == "AssemblyName" || segment.Name == "AssemblyQualifiedName";
+            if (segment.Kind == "property" && declaration?.Property != null && declaration.Name == segment.Name && WinFormsNative.IsAllowedOnProtected(declaration.DeclaringType, segment.Name)) return true;
             if (Array.IndexOf(new[] { "Name", "IsVisible", "IsEnabled", "IsFocused", "IsKeyboardFocused", "IsKeyboardFocusWithin", "IsMouseOver", "IsHitTestVisible", "Visibility", "Opacity", "Width", "Height", "ActualWidth", "ActualHeight" }, segment.Name) < 0) return false;
             Type[] owners = { typeof(DependencyObject), typeof(UIElement), typeof(FrameworkElement), typeof(ContentElement), typeof(FrameworkContentElement) };
             if (segment.Kind == "property") return declaration?.Property != null && declaration.Name == segment.Name && Array.IndexOf(owners, declaration.DeclaringType) >= 0;
@@ -58,6 +59,7 @@ namespace WinTestKit.Inspector.Agent.Inspection.Members
 
         internal static bool IsProtectedIdentity(object target)
         {
+            if (WinFormsNative.IsWinFormsObject(target)) return WinFormsNative.IsPasswordText(target);
             if (!(target is DependencyObject dependency)) return false;
             try
             {

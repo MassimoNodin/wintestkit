@@ -11,6 +11,7 @@ from fakes import FakeApp, FakeElement
 from wintestkit.engine import actions, overlay, query
 from wintestkit.server import Server
 from wintestkit.uia.constants import TreeScope
+from wintestkit.uia.native_window import NativeWindowReader, RawWindow
 
 
 class RpcElement(FakeElement):
@@ -20,6 +21,27 @@ class RpcElement(FakeElement):
 
     def get_property(self, name: str) -> Any:
         return self.name if name == "Name" else [1, 2]
+
+
+class FakeWindowBackend:
+    """Every handle is a visible push button, so no test reads a real desktop window."""
+
+    def read(self, hwnd: int) -> RawWindow | None:
+        return RawWindow(
+            class_name="Button",
+            style=0x50010001,
+            ex_style=0,
+            text="OK",
+            control_id=1,
+            process_id=1,
+            thread_id=2,
+            parent=hwnd + 1000,
+            rect=(10, 20, 90, 50),
+            client_rect=(0, 0, 80, 30),
+            visible=True,
+            enabled=True,
+            dpi=96,
+        )
 
 
 def make_server(
@@ -38,6 +60,7 @@ def make_server(
     output = io.BytesIO()
     server = Server(output)
     server.app = FakeApp([window])
+    server.window_reader = NativeWindowReader(FakeWindowBackend())
     monkeypatch.setattr(query, "make_condition", lambda **props: props)
     monkeypatch.setattr(overlay, "flash", lambda *args, **kwargs: None)
     monkeypatch.setattr(actions, "bring_to_front", lambda element: True)

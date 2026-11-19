@@ -704,13 +704,6 @@ summary {
     font-size: 13px;
     color: var(--vscode-textLink-foreground, #3794ff);
 }
-.property-loading-actions {
-    padding: 10px 12px;
-}
-.property-loading-actions p {
-    margin: 8px 0 0;
-    font-size: 11px;
-}
 table {
     border-collapse: collapse;
     width: 100%;

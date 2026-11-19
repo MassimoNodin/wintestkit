@@ -187,8 +187,10 @@ adapt the example locators when testing a different application. If the VS Code 
 its expected content pane cannot be identified, the guide explains why instead of choosing
 another object.
 
-The **Spy** view in the bottom panel, explores the live WPF tree for WPF windows and the UI
-Automation tree for other windows. WPF inspection requires an enabled inspector, a trusted
+The **Spy** view in the bottom panel, explores the live WPF tree for WPF windows, the live control
+tree for WinForms windows (.NET Framework 4.8, .NET 8 and .NET 10; rows read `WinFormsObject("button1")`
+and carry a **WinForms** badge, and the Properties, Fields and Methods tabs work as for WPF objects)
+and the UI Automation tree for other windows. WPF inspection requires an enabled inspector, a trusted
 workspace; the configured app under test attaches automatically, while expanding another WPF app requests consent once per process run. Cancelling shows UI Automation children and an Attach action in the window properties. If the agent is blocked, Spy shows the error
 and its fix rather than silently falling back to UI Automation. See [Managed inspection](managed-inspection.md).
 
@@ -267,10 +269,14 @@ nested folders and multi-root workspaces. Each project has its own server, tests
 The guided setup creates the starter files described in
 [Getting started](getting-started.md).
 
-The inspector loads essential properties first. To read the complete property list and
-supported patterns, click **Load all properties** in the **All properties** section. Its loading
-state stays inside the inspector, and you can retry if the request fails. Locator generation
-does not block the basic property display.
+The inspector shows the essential properties first, then fills in the complete UI Automation
+property list and supported patterns by itself; there is nothing to click. A control that owns a
+window handle (Win32, MFC and WinForms controls, dialogs, top-level windows) also gets a
+**Win32 Window** group: window class, control ID, text, handle, decoded window and extended
+styles (with the raw values), process and thread, owner and parent, rectangles, visibility, state
+and DPI. The Basic view shows the class, control ID, text, handle and styles; the Advanced view
+shows everything. Such controls appear in the tree as `Window("Class", "text", index)`, with only
+the arguments needed to tell siblings apart. Locator generation does not block the property display.
 
 ## Project Configuration
 

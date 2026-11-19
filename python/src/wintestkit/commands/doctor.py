@@ -23,7 +23,7 @@ def add_parser(subparsers: Any) -> None:
     parser.add_argument(
         "--agent",
         action="store_true",
-        help="launch the configured app if needed to check the WPF agent",
+        help="launch the configured app if needed to check the WPF/WinForms agent",
     )
     parser.set_defaults(handler=run)
 

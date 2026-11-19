@@ -54,7 +54,7 @@ describe("Spy tutorial webview", () => {
     const renderStatus = vi.fn();
     const context = {
       tutorialView: undefined as unknown,
-      tasks, nodes: new Map([["window", entry]]), selecting: true, fullPropertiesLoading: true,
+      tasks, nodes: new Map([["window", entry]]), selecting: true,
       treeError: "old error", detailsError: "old error", failureTarget: "tree",
       progress, renderStatus,
       document: { body: { classList: { toggle: vi.fn() }, inert: false } },
@@ -71,7 +71,6 @@ describe("Spy tutorial webview", () => {
     expect(tasks.size).toBe(0);
     expect(entry.loading).toBe(false);
     expect(context.selecting).toBe(false);
-    expect(context.fullPropertiesLoading).toBe(false);
     expect(context.treeError).toBe("");
     expect(renderStatus).toHaveBeenCalledOnce();
     receive({ data: { type: "progress", taskId: 1, done: false } });

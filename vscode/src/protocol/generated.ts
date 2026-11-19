@@ -452,7 +452,7 @@ export type InspectManagedResolveResult =
       status: "exact";
       process: ManagedProcessIdentity;
       object: ObjectRef;
-      source: "wpf";
+      source: "wpf" | "winforms";
     };
 export type ManagedMapping = {
   status:
@@ -1030,6 +1030,8 @@ export interface ProtocolContracts {
   MethodPage?: MethodPage;
   MethodParameter?: MethodParameter;
   Mismatch?: Mismatch;
+  NativeWindowInfo?: NativeWindowInfo;
+  NativeWindowStyle?: NativeWindowStyle;
   NodeCoverage?: NodeCoverage;
   NodeInfo?: NodeInfo;
   ObjectRef?: ObjectRef;
@@ -1512,6 +1514,10 @@ export interface ElementInfo {
   isOffscreen: boolean;
   hasKeyboardFocus: boolean;
   runtimeId: string;
+  /**
+   * The HWND behind the element; omitted when it has none.
+   */
+  nativeWindowHandle?: number;
   patterns?: string[];
 }
 /**
@@ -2259,7 +2265,7 @@ export interface NodeInfo {
   nodeId: string;
   info: ElementInfo;
   hasChildren: boolean;
-  source?: "wpf" | "uia";
+  source?: "wpf" | "winforms" | "uia";
   identity?: {
     type: string;
     xName?: string;
@@ -2427,6 +2433,7 @@ export interface InspectManagedIdentifyResult {
   runtime: "net48" | "net8" | "net10" | null;
   architecture: "x86" | "x64" | "arm64" | "unknown";
   wpfLoaded: boolean;
+  winformsLoaded: boolean;
   appUnderTest: boolean;
 }
 /**
@@ -2922,7 +2929,8 @@ export interface InspectPropertiesParams {
  * via the `definition` "InspectPropertiesResult".
  */
 export interface InspectPropertiesResult {
-  source?: "wpf";
+  source?: "wpf" | "winforms";
+  window?: NativeWindowInfo;
   uiaMapped?: boolean;
   uia?: {
     properties: {
@@ -2936,6 +2944,59 @@ export interface InspectPropertiesResult {
     [k: string]: string;
   };
   ancestors: NodeInfo[];
+}
+/**
+ * Win32 facts about the HWND behind a UI Automation node. Optional fields are omitted when the system would not answer.
+ *
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "NativeWindowInfo".
+ */
+export interface NativeWindowInfo {
+  handle: number;
+  className: string;
+  /**
+   * Window text, cut to 2000 characters; omitted for password boxes.
+   */
+  text?: string;
+  styles: NativeWindowStyle[];
+  rawStyle: number;
+  /**
+   * Style bits no name covers.
+   */
+  unknownStyle?: number;
+  exStyles: NativeWindowStyle[];
+  rawExStyle: number;
+  unknownExStyle?: number;
+  /**
+   * Dialog control ID; only for child windows.
+   */
+  controlId?: number;
+  processId?: number;
+  threadId?: number;
+  /**
+   * Owner window handle; 0 when unowned.
+   */
+  owner: number;
+  /**
+   * Parent window handle; 0 for top-level windows.
+   */
+  parent: number;
+  rect?: Rect;
+  clientRect?: Rect;
+  visible?: boolean;
+  enabled: boolean;
+  topmost: boolean;
+  dpi?: number;
+}
+/**
+ * One decoded style: its name and the bits it stands for.
+ *
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "NativeWindowStyle".
+ */
+export interface NativeWindowStyle {
+  name: string;
+  value: number;
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema

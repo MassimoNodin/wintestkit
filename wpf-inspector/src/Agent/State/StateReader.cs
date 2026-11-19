@@ -6,6 +6,7 @@ using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Interop;
 using System.Windows.Media;
+using WinTestKit.Inspector.Agent.Inspection.Members;
 using WinTestKit.Inspector.Agent.Mapping;
 using WinTestKit.Inspector.Protocol;
 
@@ -19,6 +20,7 @@ namespace WinTestKit.Inspector.Agent.State
 
         internal static ElementState Read(object target, ObjectRef handle, IPeerRuntimeIdAdapter adapter)
         {
+            if (WinFormsNative.IsWinFormsObject(target)) return WinFormsNative.ReadState(target, handle);
             var dependency = target as DependencyObject;
             UIElement? element = target as UIElement;
             ContentElement? content = target as ContentElement;

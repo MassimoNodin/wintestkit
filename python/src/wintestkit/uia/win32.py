@@ -11,6 +11,7 @@ from ctypes import wintypes
 from typing import Any
 
 from wintestkit.uia.element import Rect
+from wintestkit.uia.native_window import RawWindow
 
 log = logging.getLogger("wintestkit.uia.win32")
 
@@ -72,7 +73,11 @@ SM_CXVIRTUALSCREEN = 78
 SM_CYVIRTUALSCREEN = 79
 
 GW_OWNER = 4
+GA_PARENT = 1
 GA_ROOT = 2
+GWL_STYLE = -16
+WM_GETTEXT = 0x000D
+SMTO_ABORTIFHUNG = 0x0002
 DWMWA_CLOAKED = 14
 SW_RESTORE = 9
 SW_SHOWNOACTIVATE = 4
@@ -101,6 +106,7 @@ WM_QUIT = 0x0012
 WM_APP = 0x8000
 
 WS_POPUP = 0x80000000
+WS_CHILD = 0x40000000
 WS_EX_TOPMOST = 0x00000008
 WS_EX_TRANSPARENT = 0x00000020
 WS_EX_TOOLWINDOW = 0x00000080
@@ -343,6 +349,22 @@ FillRect = _declare(user32, "FillRect", _I, wintypes.HDC, ctypes.POINTER(RECT), 
 GetDC = _declare(user32, "GetDC", wintypes.HDC, HWND)
 ReleaseDC = _declare(user32, "ReleaseDC", _I, HWND, wintypes.HDC)
 GetClientRect = _declare(user32, "GetClientRect", _B, HWND, ctypes.POINTER(RECT))
+GetWindowRect = _declare(user32, "GetWindowRect", _B, HWND, ctypes.POINTER(RECT))
+IsWindowEnabled = _declare(user32, "IsWindowEnabled", _B, HWND)
+GetDlgCtrlID = _declare(user32, "GetDlgCtrlID", _I, HWND)
+GetDesktopWindow = _declare(user32, "GetDesktopWindow", HWND)
+SendMessageTimeoutW = _declare(
+    user32,
+    "SendMessageTimeoutW",
+    LRESULT,
+    HWND,
+    _U,
+    WPARAM,
+    _P,
+    _U,
+    _U,
+    ctypes.POINTER(ctypes.c_size_t),
+)
 AttachThreadInput = _declare(user32, "AttachThreadInput", _B, _D, _D, _B)
 BringWindowToTop = _declare(user32, "BringWindowToTop", _B, HWND)
 PostQuitMessage = _declare(user32, "PostQuitMessage", None, _I)
@@ -568,6 +590,73 @@ def window_text(hwnd: int) -> str:
     buffer = ctypes.create_unicode_buffer(512)
     GetWindowTextW(hwnd, buffer, len(buffer))
     return buffer.value
+
+
+#: Most characters of a window's text the Spy reads, and how long a window may take to answer.
+TEXT_LIMIT = 2048
+TEXT_TIMEOUT_MS = 250
+
+
+def _box(rect: Any) -> tuple[int, int, int, int]:
+    return (int(rect.left), int(rect.top), int(rect.right), int(rect.bottom))
+
+
+def window_text_with_fallback(hwnd: int, *, timeout_ms: int = TEXT_TIMEOUT_MS) -> str | None:
+    """Caption or control text; ``None`` when the window did not answer in time.
+
+    ``GetWindowText`` does not ask another process's control for its text, so an empty answer is
+    followed by a bounded ``WM_GETTEXT``: a hung window costs ``timeout_ms``, never a deadlock.
+    """
+    buffer = ctypes.create_unicode_buffer(TEXT_LIMIT + 1)
+    if GetWindowTextW(hwnd, buffer, len(buffer)) and buffer.value:
+        return buffer.value
+    result = ctypes.c_size_t(0)
+    answered = SendMessageTimeoutW(
+        hwnd,
+        WM_GETTEXT,
+        len(buffer),
+        ctypes.cast(buffer, ctypes.c_void_p),
+        SMTO_ABORTIFHUNG,
+        timeout_ms,
+        ctypes.byref(result),
+    )
+    return buffer.value if answered else None
+
+
+class Win32WindowBackend:
+    """Reads one HWND with the real API; every field degrades to its default on failure."""
+
+    def read(self, hwnd: int) -> RawWindow | None:
+        if not IsWindow(hwnd):
+            return None
+        style = int(GetWindowLongW(hwnd, GWL_STYLE)) & 0xFFFFFFFF
+        pid = wintypes.DWORD(0)
+        thread = int(GetWindowThreadProcessId(hwnd, ctypes.byref(pid)))
+        rect, client = RECT(), RECT()
+        has_rect = bool(GetWindowRect(hwnd, ctypes.byref(rect)))
+        has_client = bool(GetClientRect(hwnd, ctypes.byref(client)))
+        parent = int(GetAncestor(hwnd, GA_PARENT) or 0)
+        dpi = 0
+        try:
+            dpi = int(GetDpiForWindow(hwnd))
+        except (AttributeError, OSError):  # Windows older than 10 1607
+            log.debug("GetDpiForWindow unavailable", exc_info=True)
+        return RawWindow(
+            class_name=window_class_name(hwnd),
+            style=style,
+            ex_style=int(GetWindowLongW(hwnd, GWL_EXSTYLE)) & 0xFFFFFFFF,
+            text=window_text_with_fallback(hwnd),
+            control_id=int(GetDlgCtrlID(hwnd)) if style & WS_CHILD else None,
+            process_id=int(pid.value) or None,
+            thread_id=thread or None,
+            owner=window_owner(hwnd),
+            parent=0 if parent == int(GetDesktopWindow() or 0) else parent,
+            rect=_box(rect) if has_rect else None,
+            client_rect=_box(client) if has_client else None,
+            visible=bool(IsWindowVisible(hwnd)),
+            enabled=bool(IsWindowEnabled(hwnd)),
+            dpi=dpi or None,
+        )
 
 
 def process_is_elevated(pid: int) -> bool | None:

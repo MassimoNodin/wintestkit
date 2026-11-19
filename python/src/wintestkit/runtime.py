@@ -317,7 +317,11 @@ def managed_client_for(pid: int, *, deadline: float, target_hwnd: int | None) ->
 
 
 def attach_on_launch(window: UIAElement, *, deadline: float) -> ProcessIdentity | None:
-    """Attach to a WPF window when launch-time inspection is enabled."""
+    """Attach to a WPF window when launch-time inspection is enabled.
+
+    A WinForms application is driven through UI Automation, so launching it never injects the
+    agent; Spy attaches to it on demand.
+    """
     __tracebackhide__ = True
     config = get_config().inspector
     if not config.enabled or config.attach != "on-launch":

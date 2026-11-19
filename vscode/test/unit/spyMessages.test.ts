@@ -12,13 +12,10 @@ describe("Spy message contract", () => {
     expect(
       parseSpyRequest({ type: "select", nodeId: "node:1", extra: "ignored" }),
     ).toEqual({ type: "select", nodeId: "node:1" });
+    // Every property loads with the selection; there is no request for a button to send.
     expect(
-      parseSpyRequest({
-        type: "loadProperties",
-        nodeId: "node:1",
-        full: false,
-      }),
-    ).toEqual({ type: "loadProperties", nodeId: "node:1" });
+      parseSpyRequest({ type: "loadProperties", nodeId: "node:1" }),
+    ).toBeUndefined();
     expect(
       parseSpyRequest({ type: "copy", text: "button = Element()" }),
     ).toBeDefined();

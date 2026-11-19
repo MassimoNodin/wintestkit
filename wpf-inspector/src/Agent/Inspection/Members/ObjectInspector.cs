@@ -128,6 +128,7 @@ namespace WinTestKit.Inspector.Agent.Inspection.Members
                 string? rule = segment.Kind == "uia" && (segment.Name == "is_password" || segment.Name == "supported_patterns") ? null : redaction.Match(segment.Name);
                 if (rule != null) return new ValueDto { Status = "redacted", Kind = "unavailable", RedactionRule = rule };
             }
+            if (first.Kind == "uia" && WinFormsNative.IsWinFormsObject(root)) return WinFormsNative.ReadUia(root, first.Name, registry, dispatcher);
             if (first.Kind == "uia")
             {
                 try { if (!(root is DependencyObject dependency) || (first.Name != "automation_id" && PeerIdentity.GetPeer(dependency) == null)) return new ValueDto { Status = "unavailable", Kind = "unavailable" }; }

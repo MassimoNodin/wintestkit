@@ -19,6 +19,33 @@ it("minimizes labels across pages and escapes arguments", () => {
   expect(labelsFor([win("A"), win("B")])).toEqual(['Window("C", "A")', 'Window("C", "B")']);
   expect(labelsFor([win("A"), win("A")])).toEqual(['Window("C", "A", 1)', 'Window("C", "A", 2)']);
 });
+it("labels native window controls by class, then text, then position", () => {
+  const native = (className: string, name = "", controlType = "Edit") => ({ source: "uia", info: { controlType, className, name, nativeWindowHandle: 4242, frameworkId: "Win32" } });
+  // Only as many arguments as it takes to tell siblings apart, as for WPF objects.
+  expect(labelsFor([native("Edit")])).toEqual(['Window("Edit")']);
+  expect(labelsFor([native("Edit", "hello")])).toEqual(['Window("Edit")']);
+  expect(labelsFor([native("Edit", "a"), native("Button", "OK", "Button")])).toEqual(['Window("Edit")', 'Window("Button")']);
+  expect(labelsFor([native("Button", "OK", "Button"), native("Button", "Cancel", "Button")])).toEqual(['Window("Button", "OK")', 'Window("Button", "Cancel")']);
+  expect(labelsFor([native("Edit"), native("Edit")])).toEqual(['Window("Edit", "", 1)', 'Window("Edit", "", 2)']);
+  expect(labelsFor([native("Edit", "x"), native("Edit", "x"), native("Edit", "y")])).toEqual(['Window("Edit", "x", 1)', 'Window("Edit", "x", 2)', 'Window("Edit", "y")']);
+  // A top-level window and a control with a handle are the same kind of object.
+  const top = { source: "uia", info: { controlType: "Window", className: "#32770", name: "Open", nativeWindowHandle: 1 } };
+  expect(labelsFor([top, native("Edit")])).toEqual(['Window("#32770")', 'Window("Edit")']);
+  expect(labelsFor([native('Say "hi"', "雪")])).toEqual(['Window("Say \\"hi\\"")']);
+});
+it("leaves UIA and WPF objects without a native window handle as they were", () => {
+  const plain = (controlType: string, name: string, extra: Record<string, unknown> = {}) => ({ source: "uia", info: { controlType, className: "Edit", name, ...extra } });
+  // No handle (or an empty one): still UIAObject, whatever the class says.
+  expect(labelsFor([plain("Edit", "a")])).toEqual(['UIAObject("Edit")']);
+  expect(labelsFor([plain("Edit", "a", { nativeWindowHandle: 0 })])).toEqual(['UIAObject("Edit")']);
+  expect(labelsFor([plain("Edit", "a", { nativeWindowHandle: 5, className: "" })])).toEqual(['UIAObject("Edit")']);
+  // A WPF object keeps its WPF label even when UI Automation reports a handle for it.
+  const wpf = { source: "wpf", info: { controlType: "TextBox", name: "", className: "TextBox", nativeWindowHandle: 7 }, identity: { type: "System.Windows.Controls.TextBox", xName: "input" } };
+  expect(labelsFor([wpf])).toEqual(['WPFObject("input")']);
+  // Siblings of different kinds do not count each other when numbering.
+  const native = { source: "uia", info: { controlType: "Edit", className: "Edit", name: "", nativeWindowHandle: 9 } };
+  expect(labelsFor([plain("Edit", ""), native, plain("Edit", "")])).toEqual(['UIAObject("Edit", "", 1)', 'Window("Edit")', 'UIAObject("Edit", "", 2)']);
+});
 it("maps every UIA type and WPF panels", () => {
   const types = readFileSync("../python/src/wintestkit/uia/constants.py", "utf8").split("_CONTROL_TYPE_NAMES_IN_ORDER = (")[1].split(")")[0].match(/"[A-Za-z]+"/g)!.map((x) => JSON.parse(x));
   for (const type of [...types, "ListBox", "ListBoxItem", "TextBox", "TextBlock", "Border", "StackPanel", "Grid", "DockPanel", "Canvas", "ContentPresenter", "ScrollViewer"]) expect(iconFor(type), type).not.toBe("symbol-object");
@@ -43,4 +70,29 @@ it("shows mixed labels, badges, and General Name", () => {
   send({ type: "selected", nodeId: "child", properties: { source: "wpf", info: child.info, properties: {} } });
   expect(dom.window.document.querySelector("#properties tr:first-child td")?.textContent).toBe('WPFObject("ListBoxItem", "Alpha")');
   dom.window.close();
+});
+const f = (name: string, xName = "", type = "System.Windows.Forms.Button") => ({ source: "winforms", info: { controlType: type.split(".").pop(), name }, identity: { type, xName } });
+it("labels WinForms controls by their Name, then by type, text and place among siblings", () => {
+  expect(labelsFor([f("OK", "button1")])).toEqual(['WinFormsObject("button1")']);
+  expect(labelsFor([f("OK", "button1"), f("Cancel", "button2")])).toEqual(['WinFormsObject("button1")', 'WinFormsObject("button2")']);
+  // Only as many arguments as it takes, like WPFObject: the type, the text when there is one, then the ordinal.
+  expect(labelsFor([f("OK"), f("Cancel")])).toEqual(['WinFormsObject("Button", "OK")', 'WinFormsObject("Button", "Cancel")']);
+  expect(labelsFor([f("OK"), f("OK"), f("Other", "", "System.Windows.Forms.Label")])).toEqual(['WinFormsObject("Button", "OK", 1)', 'WinFormsObject("Button", "OK", 2)', 'WinFormsObject("Label", "Other")']);
+  expect(labelsFor([f(""), f("")])).toEqual(['WinFormsObject("Button", 1)', 'WinFormsObject("Button", 2)']);
+  // A name shared by two siblings cannot tell them apart, so they fall back to the type and text.
+  expect(labelsFor([f("A", "same"), f("B", "same")])).toEqual(['WinFormsObject("Button", "A")', 'WinFormsObject("Button", "B")']);
+  expect(labelsFor([f('say "hi"', "named"), f("x", "")])[0]).toBe('WinFormsObject("named")');
+  // WinForms and WPF objects are counted apart.
+  expect(labelsFor([f("OK"), w("OK")])).toEqual(['WinFormsObject("Button", "OK")', 'WPFObject("ListBoxItem", "OK")']);
+  // A form with a Name reads like its other controls; an unnamed form keeps the window label.
+  expect(labelsFor([{ source: "winforms", info: { controlType: "Window", className: "WindowsForms10.Window.8.app.0.1", name: "Main", automationId: "mainForm" } }])).toEqual(['WinFormsObject("mainForm")']);
+  expect(labelsFor([{ source: "winforms", info: { controlType: "Window", className: "WindowsForms10.Window.8.app.0.1", name: "Main" } }])).toEqual(['Window("WindowsForms10.Window.8.app.0.1")']);
+});
+it("has WinForms badges and icons", () => {
+  const { badgeFor } = createRequire(import.meta.url)("../../media/spy/treeLabels.js");
+  expect(badgeFor(f("OK", "button1"), false)).toBe("WinForms");
+  expect(badgeFor({ source: "uia", info: { controlType: "Window", frameworkId: "WinForm", className: "WindowsForms10.Window.8.app.0.1" } }, true)).toBe("WinForms");
+  expect(badgeFor(w("A"), false)).toBe("WPF");
+  expect(badgeFor(u("A"), false)).toBe("UIA");
+  for (const type of ["Form", "Label", "GroupBox", "TabControl", "TabPage", "DataGridView", "MenuStrip", "ToolStripMenuItem", "Panel", "UserControl", "ListView", "TreeView"]) expect(iconFor(type), type).not.toBe("symbol-object");
 });

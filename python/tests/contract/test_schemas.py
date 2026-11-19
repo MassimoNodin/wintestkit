@@ -86,6 +86,27 @@ def definition_examples() -> dict[str, dict[str, Any]]:
     results = fixture_data("results.json")
     events = run_events()
     node = {"nodeId": element["runtimeId"], "info": element, "hasChildren": False}
+    native_window = {
+        "handle": 197066,
+        "className": "Edit",
+        "text": "hello",
+        "styles": [{"name": "WS_CHILD", "value": 0x40000000}, {"name": "ES_MULTILINE", "value": 4}],
+        "rawStyle": 0x50300104,
+        "unknownStyle": 0x100,
+        "exStyles": [{"name": "WS_EX_CLIENTEDGE", "value": 0x200}],
+        "rawExStyle": 0x200,
+        "controlId": 15,
+        "processId": 1234,
+        "threadId": 5678,
+        "owner": 0,
+        "parent": 65828,
+        "rect": {"left": 10, "top": 20, "width": 300, "height": 200},
+        "clientRect": {"left": 0, "top": 0, "width": 296, "height": 196},
+        "visible": True,
+        "enabled": True,
+        "topmost": False,
+        "dpi": 96,
+    }
     element_result = {"status": "found", "element": element, "durationMs": 12.5}
     spy_target = {"sessionId": "session-1", "objectId": "object-1", "generation": 1}
     spy_proof = "A" * 43 + "="
@@ -230,10 +251,13 @@ def definition_examples() -> dict[str, dict[str, Any]]:
             "nodeId": node["nodeId"],
             "include": ["HelpText", "Orientation"],
         },
+        "NativeWindowStyle": {"name": "WS_CHILD", "value": 0x40000000},
+        "NativeWindowInfo": native_window,
         "InspectPropertiesResult": {
             "info": element,
             "properties": {"Name": "Sign in"},
             "ancestors": [node],
+            "window": native_window,
         },
         "InspectHighlightParams": {
             "nodeId": node["nodeId"],
@@ -478,6 +502,34 @@ def test_optional_and_nullable_fields(validate: Validate) -> None:
     initialize = definition_examples()["rpc.schema.json"]["InitializeResult"]
     initialize["config"].pop("app")
     validate("rpc.schema.json", "InitializeResult", initialize)
+
+
+def test_native_window_facts_are_closed_and_optional(validate: Validate) -> None:
+    element = fixture_data("element-info.json")
+    validate("common.schema.json", "ElementInfo", {**element, "nativeWindowHandle": 199242})
+    with pytest.raises(ValidationError):
+        validate("common.schema.json", "ElementInfo", {**element, "nativeWindowHandle": 0})
+    minimal = {
+        "handle": 7,
+        "className": "Edit",
+        "styles": [],
+        "rawStyle": 0,
+        "exStyles": [],
+        "rawExStyle": 0,
+        "owner": 0,
+        "parent": 0,
+        "enabled": True,
+        "topmost": False,
+    }
+    validate("rpc.schema.json", "NativeWindowInfo", minimal)
+    with pytest.raises(ValidationError):
+        validate("rpc.schema.json", "NativeWindowInfo", {**minimal, "unexpected": 1})
+    with pytest.raises(ValidationError):
+        validate("rpc.schema.json", "NativeWindowInfo", {**minimal, "handle": 0})
+    with pytest.raises(ValidationError):
+        validate(
+            "rpc.schema.json", "NativeWindowInfo", {**minimal, "styles": [{"name": "WS_CHILD"}]}
+        )
 
 
 def test_recursive_diagnostic(validate: Validate) -> None:
