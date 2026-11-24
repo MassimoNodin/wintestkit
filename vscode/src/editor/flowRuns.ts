@@ -107,8 +107,10 @@ export class FlowRuns implements vscode.Disposable {
         const choice = await vscode.window.showErrorMessage(
           `Flow ${target.name} failed: ${result.message ?? "unknown error"}`,
           "Show Output",
+          "Save diagnostics",
         );
         if (choice === "Show Output") this.log.show();
+        if (choice === "Save diagnostics") await vscode.commands.executeCommand("wintestkit.saveDiagnostics");
       }
     } catch (error) {
       this.states.delete(key);

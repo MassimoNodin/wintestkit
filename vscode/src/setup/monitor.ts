@@ -277,8 +277,10 @@ export class SetupMonitor implements vscode.Disposable {
     const choice = await vscode.window.showWarningMessage(
       `WinTestKit setup: ${problem.title} needs attention. ${problem.detail}`,
       "Open WinTestKit",
+      "Save diagnostics",
     );
-    if (choice) await this.show();
+    if (choice === "Open WinTestKit") await this.show();
+    if (choice === "Save diagnostics") await vscode.commands.executeCommand("wintestkit.saveDiagnostics");
   }
 
   /** Brings the sidebar forward with the guide open. */

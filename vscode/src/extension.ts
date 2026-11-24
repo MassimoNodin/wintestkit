@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import { createLog } from "./log";
+import { saveDiagnostics } from "./diagnostics/command";
 import { onDidChangeInterpreter, runTerminal } from "./python";
 import { ServerManager, type Project } from "./server/serverManager";
 import { StatusBar } from "./statusBar";
@@ -416,6 +417,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       vscode.commands.executeCommand("workbench.view.testing.focus"),
     "wintestkit.elements.refresh": () => projects.refresh(),
     "wintestkit.showOutput": () => log.show(),
+    "wintestkit.saveDiagnostics": () => saveDiagnostics(context, currentProject()?.root, () => ({ server: currentProject() ? servers.diagnostics(currentProject()!) : "no project", spy: spy.diagnostics() })).catch((error) => vscode.window.showErrorMessage("Could not save diagnostics: " + String(error))),
     "wintestkit.openReport": () => reports.open(currentProject()),
     "wintestkit.exportReport": () => reports.exportHtml(currentProject()),
     "wintestkit.openPreviousReport": () => reports.openPrevious(),

@@ -20,6 +20,7 @@ export type TileId =
   | "openReport"
   | "dismissRun"
   | "enable"
+  | "saveDiagnostics"
   | "resumeSetup"
   | "installPackage"
   | "updateExtension"
@@ -223,6 +224,7 @@ export function buildTestAppModel(input: TestAppInput): TestAppModel {
           tone: "warn",
           tooltip: input.blocker.detail,
         },
+        { id: "saveDiagnostics", title: "Save diagnostics", codicon: "save", tone: "link", tooltip: "Review and save local diagnostics" },
       ],
     };
   const model = buildModel(input);

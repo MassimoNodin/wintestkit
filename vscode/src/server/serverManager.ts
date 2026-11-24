@@ -29,6 +29,7 @@ interface Entry {
   python?: string;
   blocked?: boolean;
   startupError?: Error;
+  lastFailure?: Error;
 }
 
 export class ServerManager implements vscode.Disposable {
@@ -40,6 +41,11 @@ export class ServerManager implements vscode.Disposable {
   state(project: Project): ServerState {
     return this.entries.get(project.root.toString())?.state ?? "stopped";
   }
+  diagnostics(project: Project): unknown {
+    const entry = this.entries.get(project.root.toString());
+    const error = (entry?.lastFailure ?? entry?.startupError) as (Error & { code?: number }) | undefined;
+    return { state: this.state(project), lastFailure: error ? { code: error.code, message: error.message } : undefined };
+  }
   private incompatible(entry: Entry, issue: CompatibilityIssue, python: string): CompatibilityError {
     const error = new CompatibilityError(issue, python);
     entry.startupError = error;
@@ -49,9 +55,11 @@ export class ServerManager implements vscode.Disposable {
       issue.kind === "older" ? UPGRADE_LABEL : "Install Compatible Package",
       "Choose Interpreter",
       "Show Output",
+      "Save diagnostics",
     ];
     void vscode.window.showErrorMessage(error.message, ...actions).then(async (choice) => {
       if (choice === "Show Output") this.log.show();
+      if (choice === "Save diagnostics") await vscode.commands.executeCommand("wintestkit.saveDiagnostics");
       if (choice === "Update Extension") await vscode.commands.executeCommand("wintestkit.updateExtension");
       if (choice === "Install Compatible Package" || choice === UPGRADE_LABEL)
         await vscode.commands.executeCommand("wintestkit.installCompatiblePackage", entry.project.root);
@@ -101,6 +109,7 @@ export class ServerManager implements vscode.Disposable {
         if (generation !== current.generation) throw error;
         current.promise = undefined;
         if (current.state !== "not-installed") current.state = "error";
+        if (error instanceof Error) current.lastFailure = error;
         this.changed.fire(project);
         throw error;
       });
@@ -182,6 +191,7 @@ export class ServerManager implements vscode.Disposable {
       entry.process = undefined;
       entry.state = "error";
       if (startupRejected) return;
+      entry.lastFailure = new Error(`Server stopped unexpectedly (exit code ${code}, signal ${signal})`);
       this.log.error(
         "[" +
           entry.project.name +
@@ -206,10 +216,12 @@ export class ServerManager implements vscode.Disposable {
               entry.project.name +
               " repeatedly stopped.",
             "Show Output",
+            "Save diagnostics",
             "Restart",
           )
           .then((choice) => {
             if (choice === "Show Output") this.log.show();
+            if (choice === "Save diagnostics") void vscode.commands.executeCommand("wintestkit.saveDiagnostics");
             if (choice === "Restart")
               void this.restart(entry.project).catch((error) =>
                 this.log.error(String(error)),

@@ -124,6 +124,7 @@ describe("flow runs", () => {
     expect(mocks.error).toHaveBeenCalledWith(
       "Flow tour failed: AssertionError: boom",
       "Show Output",
+      "Save diagnostics",
     );
     expect(mocks.show).toHaveBeenCalled();
     expect(flows.states.get(flowKey(target))?.status).toBe("failed");

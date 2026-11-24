@@ -146,7 +146,7 @@ describe("editor highlight commands", () => {
     mocks.executeCommand.mockRejectedValueOnce(new Error("Launch failed"));
     await mocks.commands.get("wintestkit.highlightElement")?.(target);
     expect(mocks.request).toHaveBeenCalledOnce();
-    expect(mocks.error).toHaveBeenCalledWith("Launch failed", "Show Output");
+    expect(mocks.error).toHaveBeenCalledWith("Launch failed", "Show Output", "Save diagnostics");
   });
   it.each([0, 600])(
     "cleans up highlight before an undismissed launch prompt after %s ms",
@@ -198,6 +198,7 @@ describe("editor highlight commands", () => {
     expect(mocks.error).toHaveBeenCalledWith(
       "The app isn't running.",
       "Show Output",
+      "Save diagnostics",
     );
     expect(mocks.feedback.mock.calls.map((call) => call[2].status)).toEqual([
       "running",
@@ -285,6 +286,7 @@ describe("editor highlight commands", () => {
       expect(mocks.error).toHaveBeenCalledWith(
         "Connection lost",
         "Show Output",
+        "Save diagnostics",
       );
     },
   );

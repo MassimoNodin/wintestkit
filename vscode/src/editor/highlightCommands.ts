@@ -120,8 +120,10 @@ export class HighlightCommands implements vscode.Disposable {
       const choice = await vscode.window.showErrorMessage(
         error instanceof Error ? error.message : String(error),
         "Show Output",
+        "Save diagnostics",
       );
-      if (choice) this.log.show();
+      if (choice === "Show Output") this.log.show();
+      if (choice === "Save diagnostics") await vscode.commands.executeCommand("wintestkit.saveDiagnostics");
     }
   }
   private target(target?: ElementTarget): ElementTarget | undefined {

@@ -48,6 +48,7 @@ const TILES = new Set<string>([
   "dismissRun",
   "enable",
   "resumeSetup",
+  "saveDiagnostics",
   "installPackage",
   "updateExtension",
   "initProject",
@@ -345,6 +346,8 @@ export class TestAppView implements vscode.Disposable {
           return await this.reports?.open(project);
         case "enable":
           return void (await vscode.commands.executeCommand("wintestkit.enable"));
+        case "saveDiagnostics":
+          return void (await vscode.commands.executeCommand("wintestkit.saveDiagnostics"));
         case "resumeSetup":
           return this.setup?.resume();
         case "installPackage":
@@ -386,8 +389,8 @@ export class TestAppView implements vscode.Disposable {
     }
     else if (setup.installer.error)
       void vscode.window
-        .showErrorMessage("Installing wintestkit failed: " + setup.installer.error, "Show Output")
-        .then((choice) => choice && vscode.commands.executeCommand("wintestkit.showOutput"));
+        .showErrorMessage("Installing wintestkit failed: " + setup.installer.error, "Try again", "Show Output", "Save diagnostics")
+        .then((choice) => choice === "Try again" ? this.installPackage(folder, upgrade) : choice === "Show Output" ? vscode.commands.executeCommand("wintestkit.showOutput") : choice === "Save diagnostics" ? vscode.commands.executeCommand("wintestkit.saveDiagnostics") : undefined);
   }
   /** What the buttons in the tour's callout do. */
   private async runTour(action: TourAction): Promise<void> {

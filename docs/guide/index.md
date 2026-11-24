@@ -16,6 +16,7 @@ No application source changes or image matching are required.
 | [Managed inspection](managed-inspection.md) | Agent attachment, managed properties, security and writes |
 | [Actions and assertions](actions-and-assertions.md) | Every action, auto-waiting, `expect`, timeouts |
 | [Running tests](running-tests.md) | `wtk run`, launch modes, fixtures, reports, JUnit, exit codes |
+| [Diagnostics](diagnostics.md) | Review and save a local troubleshooting bundle |
 | [VS Code](vscode.md) | CodeLens, Test Explorer, debugging, Explorer (Pages, Flows, Tests), Spy |
 | [CI](ci.md) | Running UI tests on a build agent |
 | [Troubleshooting](troubleshooting.md) | `wtk doctor`, common failures, logs |

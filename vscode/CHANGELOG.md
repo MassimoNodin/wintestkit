@@ -7,6 +7,14 @@ Unreleased changes must be moved to a dated candidate section before a release c
 
 ## [Unreleased]
 
+- Save a locally reviewed diagnostics zip to help investigate errors.
+
+- Keep WPF tree handles alive across selection changes and improve recovery and busy-app diagnostics.
+
+- Simplified Properties sidebar row actions and moved metadata actions beside search.
+
+- Stage inspector payloads outside the Python package and help close applications holding older inspector files during upgrades.
+
 ## [0.1.1rc5] - 2026-11-24
 
 Fifth prerelease. Install the extension's pre-release channel together with `pip install --pre "wintestkit[inspector]==0.1.1rc5"`. Restart a target that still runs an older inspector agent.

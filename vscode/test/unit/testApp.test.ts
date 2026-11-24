@@ -344,7 +344,7 @@ describe("Test Target tiles", () => {
     const blocker = { title: "The wintestkit package", detail: "It is not installed in C:/py/python.exe" };
     const model = buildTestAppModel({ blocker, trusted: true, project, config: launchable, lastRun: { passed: 1, failed: 0, at: 1 } });
     expect(model.kind).toBe("blocked");
-    expect(model.tiles.map((tile) => tile.id)).toEqual(["interpreter", "resumeSetup"]);
+    expect(model.tiles.map((tile) => tile.id)).toEqual(["interpreter", "resumeSetup", "saveDiagnostics"]);
     expect(model.tiles[1]).toMatchObject({
       title: "Resume setup",
       subtitle: "The wintestkit package needs attention",

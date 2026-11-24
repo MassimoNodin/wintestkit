@@ -40,6 +40,7 @@
   ],
   "contributes": {
     "commands": [
+      { "command": "wintestkit.saveDiagnostics", "title": "Save Diagnostics?", "category": "WinTestKit" },
       {
         "command": "wintestkit.highlightElement",
         "title": "Highlight Element",

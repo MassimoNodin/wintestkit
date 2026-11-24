@@ -529,7 +529,7 @@ describe("setup monitor", () => {
     monitor.close();
     mocks.warning.mockResolvedValue("Open WinTestKit");
     await breakPackage();
-    expect(mocks.warning).toHaveBeenCalledWith(expect.stringContaining("The wintestkit package needs attention"), "Open WinTestKit");
+    expect(mocks.warning).toHaveBeenCalledWith(expect.stringContaining("The wintestkit package needs attention"), "Open WinTestKit", "Save diagnostics");
     await vi.advanceTimersByTimeAsync(10);
     expect(monitor.tour?.step).toBe("package");
     expect(mocks.execute).toHaveBeenCalledWith("workbench.view.extension.wintestkit");
