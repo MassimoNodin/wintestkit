@@ -119,3 +119,36 @@ def test_real_staged_payload(monkeypatch):
         pytest.skip("No staged inspector payload")
     monkeypatch.setattr(payload.resources, "files", lambda _: package)
     payload.load_payload().verify()
+
+
+def test_staging_reuses_and_detects_partial_payload(tree, tmp_path, monkeypatch):
+    monkeypatch.setattr(payload.sys, "prefix", str(tmp_path / "environment"))
+    original = payload.load_payload()
+    staged = payload.stage_payload(original)
+    assert staged.root != tree.root
+    assert staged.agent_for("net48").read_bytes() == (tree.root / "net48.dll").read_bytes()
+    assert payload.stage_payload(original).root == staged.root
+    staged.agent_for("net48").unlink()
+    with pytest.raises(InspectorUnavailableError):
+        staged.verify()
+    replacement = payload.stage_payload(original)
+    assert replacement.root != staged.root
+    replacement.verify()
+
+
+def test_staging_falls_back_when_prefix_unwritable(tree, tmp_path, monkeypatch):
+    prefix = tmp_path / "blocked"
+    prefix.write_text("not a directory")
+    monkeypatch.setattr(payload.sys, "prefix", str(prefix))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local"))
+    staged = payload.stage_payload(payload.load_payload())
+    assert staged.root.is_relative_to(tmp_path / "local" / "WinTestKit" / "inspector")
+    staged.verify()
+
+
+def test_staging_rejects_tampered_source(tree, tmp_path, monkeypatch):
+    monkeypatch.setattr(payload.sys, "prefix", str(tmp_path / "environment"))
+    original = payload.load_payload()
+    original.agent_for("net48").write_bytes(b"changed")
+    with pytest.raises(InspectorUnavailableError, match="hash mismatch"):
+        payload.stage_payload(original)

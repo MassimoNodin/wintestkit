@@ -4,9 +4,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import platform
 import re
+import shutil
 import stat
+import sys
+import tempfile
+import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass
 from importlib import resources
@@ -86,6 +91,81 @@ class Payload:
                 raise _mismatch(f"Cannot read inspector payload file: {path}") from error
             if digest.hexdigest() != entry["sha256"]:
                 raise _mismatch(f"Inspector payload hash mismatch: {path}")
+
+
+def stage_payload(payload: Payload) -> Payload:
+    """Copy verified payload files outside the package before loading them into a target."""
+    payload.verify()
+    manifest_bytes = _path(payload.root, "manifest.json").read_bytes()
+    name = f"{payload.inspector_version}-{hashlib.sha256(manifest_bytes).hexdigest()[:12]}"
+    parents = [Path(sys.prefix) / "wintestkit-inspector"]
+    if os.environ.get("LOCALAPPDATA"):
+        parents.append(Path(os.environ["LOCALAPPDATA"]) / "WinTestKit" / "inspector")
+    last_error: OSError | None = None
+    for parent in parents:
+        # Reuse a verified copy: most attaches find one, so they copy nothing.
+        if (parent / name).is_dir():
+            try:
+                existing = Payload(
+                    _path(parent, name), payload.manifest, payload.inspector_version, payload.signed
+                )
+                existing.verify()
+                if _path(existing.root, "manifest.json").read_bytes() == manifest_bytes:
+                    return existing
+            except (InspectorUnavailableError, OSError):
+                pass
+        try:
+            parent.mkdir(parents=True, exist_ok=True)
+            # Creating the temporary directory also checks that this location is writable.
+            temp = Path(tempfile.mkdtemp(prefix=".staging-", dir=parent))
+        except OSError as error:
+            last_error = error
+            continue
+        try:
+            for entry in payload.manifest["files"]:
+                source = _path(payload.root, entry["path"])
+                destination = _path(temp, entry["path"])
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(source, destination)
+            (temp / "manifest.json").write_bytes(manifest_bytes)
+            staged = Payload(temp, payload.manifest, payload.inspector_version, payload.signed)
+            staged.verify()
+            final = _path(parent, name)
+            if final.exists():
+                existing = Payload(
+                    final, payload.manifest, payload.inspector_version, payload.signed
+                )
+                try:
+                    existing.verify()
+                    if _path(final, "manifest.json").read_bytes() != manifest_bytes:
+                        raise _mismatch("Inspector staged manifest mismatch")
+                    return existing
+                except (InspectorUnavailableError, OSError):
+                    final = _path(parent, f"{name}-{uuid.uuid4().hex}")
+            try:
+                temp.rename(final)
+            except FileExistsError:
+                # Another controller may have published the same name concurrently.
+                final = _path(parent, f"{name}-{uuid.uuid4().hex}")
+                temp.rename(final)
+            staged = Payload(final, payload.manifest, payload.inspector_version, payload.signed)
+            staged.verify()
+            for child in parent.iterdir():
+                if child != final and re.fullmatch(
+                    r".+-[0-9a-f]{12}(?:-[0-9a-f]{32})?", child.name
+                ):
+                    try:
+                        _path(parent, child.name)
+                        shutil.rmtree(child)
+                    except (OSError, InspectorUnavailableError):
+                        pass
+            return staged
+        except OSError as error:
+            last_error = error
+            continue
+        finally:
+            shutil.rmtree(temp, ignore_errors=True)
+    raise _mismatch(f"Cannot stage inspector payload: {last_error}")
 
 
 def load_payload() -> Payload:

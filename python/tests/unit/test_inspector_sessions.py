@@ -165,9 +165,22 @@ def test_attach_cleanup_failure_closes_authenticated_client(
     monkeypatch.setattr(probe, "current_identity", lambda pid: IDENTITY)
     monkeypatch.setattr(probe, "agent_active", lambda pid: False)
     monkeypatch.setattr(sessions, "_validate_facts", lambda *args: None)
+    staged = SimpleNamespace(
+        verify=lambda: None,
+        inspector_version="1",
+        launcher_for=lambda architecture: tmp_path / "staged" / "launcher.exe",
+        agent_for=lambda runtime: tmp_path / "staged" / "agent.dll",
+    )
+    monkeypatch.setattr(sessions, "_stage_payload", lambda original: staged)
     monkeypatch.setattr(sessions, "_payload_path", lambda payload, path: path)
     monkeypatch.setattr(sessions.bootstrap, "create_bootstrap", lambda *args, **kwargs: settings)
-    monkeypatch.setattr(sessions.launcher, "launch", lambda *args: object())
+
+    def launch(executable: Path, agent: Path, *args: Any) -> object:
+        assert executable == tmp_path / "staged" / "launcher.exe"
+        assert agent == tmp_path / "staged" / "agent.dll"
+        return object()
+
+    monkeypatch.setattr(sessions.launcher, "launch", launch)
     monkeypatch.setattr(sessions.launcher, "close_launcher", lambda process: finish("launcher"))
     monkeypatch.setattr(sessions.WindowsPipe, "connect", lambda *args, **kwargs: transport)
     monkeypatch.setattr(InspectorClient, "authenticate", lambda *args, **kwargs: client)
@@ -216,6 +229,7 @@ def test_pipe_timeout_reports_agent_taken_by_another_session(
     monkeypatch.setattr(probe, "current_identity", lambda pid: IDENTITY)
     monkeypatch.setattr(probe, "agent_active", agent_active)
     monkeypatch.setattr(sessions, "_validate_facts", lambda *args: None)
+    monkeypatch.setattr(sessions, "_stage_payload", lambda payload: payload)
     monkeypatch.setattr(sessions, "_payload_path", lambda payload, path: path)
     monkeypatch.setattr(sessions.bootstrap, "create_bootstrap", lambda *args, **kwargs: settings)
     monkeypatch.setattr(sessions.launcher, "launch", lambda *args: object())

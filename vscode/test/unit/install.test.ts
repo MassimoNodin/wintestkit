@@ -4,11 +4,21 @@ const mocks = vi.hoisted(() => ({
   trusted: true,
   localArgs: vi.fn(async () => ["-m", "pip", "install", "--upgrade", "C:/dev/wintestkit-0.1.2-py3-none-any.whl"]),
   execFile: vi.fn(),
+  helper: vi.fn(),
+  warning: vi.fn(),
   requirePip: vi.fn(async (executable: string, args: string[]) => ({ executable, args })),
   check: vi.fn(async (): Promise<{ installed: boolean; version?: string }> => ({ installed: true, version: "0.1.1" })),
   args: vi.fn(async (): Promise<string[] | undefined> => ["-m", "pip", "install", "--upgrade", "--force-reinstall", "wintestkit>=0.1.1,<0.2.0"]),
 }));
-vi.mock("node:child_process", () => ({ execFile: mocks.execFile }));
+vi.mock("node:child_process", () => ({ execFile: (...args: unknown[]) => {
+  const command = args[1] as string[];
+  if (command[0] === "-I") {
+    Promise.resolve(mocks.helper(command[2], command[3] && JSON.parse(command[3]))).then(
+      (result) => (args[3] as (error: unknown, stdout: string, stderr: string) => void)(null, JSON.stringify(result), ""),
+      (error) => (args[3] as (error: unknown, stdout: string, stderr: string) => void)(error, "", String(error)),
+    );
+  } else mocks.execFile(...args);
+} }));
 vi.mock("../../src/python", () => ({ installArguments: mocks.args, checkWintestkit: mocks.check, requirePip: mocks.requirePip }));
 vi.mock("../../src/setup/devPackages", () => ({
   DevPackages: class {
@@ -29,7 +39,7 @@ vi.mock("vscode", () => {
     }
     dispose() {}
   }
-  return { EventEmitter, workspace: { get isTrusted() { return mocks.trusted; } } };
+  return { EventEmitter, window: { showWarningMessage: mocks.warning }, workspace: { get isTrusted() { return mocks.trusted; } } };
 });
 import { installFailure, PackageInstaller } from "../../src/setup/install";
 import { compareReleaseVersions as compareVersions } from "../../src/compatibility";
@@ -72,6 +82,8 @@ describe("installing the package", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.trusted = true;
+    mocks.helper.mockReset().mockResolvedValue([]);
+    mocks.warning.mockReset();
     mocks.requirePip.mockImplementation(async (executable, args) => ({ executable, args }));
     mocks.check.mockResolvedValue({ installed: true, version: "0.1.1" });
     mocks.args.mockResolvedValue(["-m", "pip", "install", "--upgrade", "--force-reinstall", "wintestkit>=0.1.1,<0.2.0"]);
@@ -89,7 +101,7 @@ describe("installing the package", () => {
     const changed = vi.fn();
     installer.onDidChange(changed);
     const result = installer.install(folder, "C:/py/python.exe");
-    await vi.waitFor(() => expect(installer.busy).toBe(true));
+    await vi.waitFor(() => expect(done).toBeDefined());
     expect(await installer.install(folder, "C:/py/python.exe")).toBe(false);
     done?.();
     expect(await result).toBe(true);
@@ -100,6 +112,44 @@ describe("installing the package", () => {
     expect(mocks.requirePip).toHaveBeenCalledWith("C:/py/python.exe", mocks.execFile.mock.calls[0][1]);
     expect(mocks.execFile.mock.calls[0][1]).toEqual(["-m", "pip", "install", "--upgrade", "--force-reinstall", "wintestkit>=0.1.1,<0.2.0"]);
     expect(changed).toHaveBeenCalledTimes(2);
+  });
+
+  it("cancels when a holder is not closed", async () => {
+    const holders = [{ pid: 123, name: "App.exe", started: "123456789012345678" }];
+    mocks.helper.mockResolvedValueOnce(holders);
+    mocks.warning.mockResolvedValueOnce("Cancel");
+    const installer = new PackageInstaller(log);
+    expect(await installer.install(folder, "python.exe")).toBe(false);
+    expect(mocks.execFile).not.toHaveBeenCalled();
+  });
+
+  it("closes holders before installing", async () => {
+    const holders = [{ pid: 123, name: "App.exe", started: "123456789012345678" }];
+    mocks.helper.mockResolvedValueOnce(holders).mockResolvedValueOnce([]);
+    mocks.warning.mockResolvedValueOnce("Close and install");
+    finish(null);
+    expect(await new PackageInstaller(log).install(folder, "python.exe")).toBe(true);
+    expect(mocks.helper).toHaveBeenCalledWith("close", holders);
+  });
+
+  it("asks before force closing remaining holders", async () => {
+    const holders = [{ pid: 123, name: "App.exe", started: "123456789012345678" }];
+    mocks.helper.mockResolvedValueOnce(holders).mockResolvedValueOnce(holders).mockResolvedValueOnce([]);
+    mocks.warning.mockResolvedValueOnce("Close and install").mockResolvedValueOnce("Force close");
+    finish(null);
+    expect(await new PackageInstaller(log).install(folder, "python.exe")).toBe(true);
+    expect(mocks.helper).toHaveBeenCalledWith("force", holders);
+    expect(mocks.warning).toHaveBeenCalledTimes(2);
+  });
+
+  it("reports locked inspector files with holder names", async () => {
+    const holders = [{ pid: 123, name: "App.exe", started: "123456789012345678" }];
+    mocks.helper.mockResolvedValueOnce([]).mockResolvedValueOnce(holders);
+    finish(new Error("failed"), "", "ERROR: WinError 5 Access is denied wintestkit_inspector");
+    const installer = new PackageInstaller(log);
+    expect(await installer.install(folder, "python.exe")).toBe(false);
+    expect(installer.error).toContain("App.exe (PID 123)");
+    expect(installer.error).not.toContain("WinError");
   });
 
   it("runs and logs the selected uv command", async () => {

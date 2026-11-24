@@ -23,6 +23,12 @@ if TYPE_CHECKING:
     from wintestkit.inspector.payload import Payload
 
 
+def _stage_payload(payload: Payload) -> Payload:
+    from wintestkit.inspector.payload import stage_payload
+
+    return stage_payload(payload)
+
+
 def _load_payload() -> Payload:
     from wintestkit.inspector.payload import load_payload
 
@@ -259,7 +265,7 @@ class SessionRegistry:
                 )
             if entry.cancel.wait(max(0.0, min(0.05, cleanup_deadline - time.monotonic()))):
                 _remaining(deadline, entry.cancel)
-        payload = self._payload_loader()
+        payload = _stage_payload(self._payload_loader())
         payload.verify()
         executable = _payload_path(payload, payload.launcher_for(cast(Any, facts.architecture)))
         agent = _payload_path(payload, payload.agent_for(cast(Any, facts.runtime)))
@@ -286,6 +292,7 @@ class SessionRegistry:
                 raise InspectorUnavailableError(
                     "Target process identity changed", code="processReused"
                 )
+            payload.verify()
             process = launcher.launch(executable, agent, identity, settings.path)
 
             def check() -> None:
