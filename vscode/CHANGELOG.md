@@ -7,6 +7,10 @@ Unreleased changes must be moved to a dated candidate section before a release c
 
 ## [Unreleased]
 
+## [0.1.1rc5] - 2026-11-24
+
+Fifth prerelease. Install the extension's pre-release channel together with `pip install --pre "wintestkit[inspector]==0.1.1rc5"`. Restart a target that still runs an older inspector agent.
+
 - **Properties sidebar:** A **Show all properties** switch replaces the Basic and Advanced button, and the row menu's **Pin** and **Unpin** replace Show in and Remove from Basic view. The search box has a search icon, Properties, Fields and Methods form one split button, and the **…** menu (Detach, Refresh metadata, Export metadata) moves to the preview heading after **In App context**.
 
 - **Properties sidebar:** Collapsible sections now show managed members in one alphabetical .NET list, with property-kind markers and control identification values when **Show all properties** is off.

@@ -1,7 +1,7 @@
 {
-  "extensionVersion": "0.1.4",
+  "extensionVersion": "0.1.5",
   "python": {
-    "minimum": "0.1.1rc4",
+    "minimum": "0.1.1rc5",
     "maximumExclusive": "0.2.0"
   },
   "protocolVersion": 1,
