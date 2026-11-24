@@ -18,6 +18,7 @@ namespace WinTestKit.Inspector.Agent.Inspection
             internal readonly string Id = Guid.NewGuid().ToString("N");
             internal CancellationTokenSource Unavailable = new CancellationTokenSource();
             internal bool Unresponsive;
+            internal long WorkStarted;
         }
         private readonly object gate = new object();
         private readonly Dictionary<Dispatcher, State> states = new Dictionary<Dispatcher, State>();
@@ -40,9 +41,10 @@ namespace WinTestKit.Inspector.Agent.Inspection
             Stopwatch elapsed = Stopwatch.StartNew();
             State state = GetState(dispatcher);
             CancellationToken unavailable;
+            long queuedMs = 0;
             lock (gate)
             {
-                if (state.Unresponsive) throw Unavailable();
+                if (state.Unresponsive) throw Unavailable(state);
                 unavailable = state.Unavailable.Token;
             }
             using (var admissionCancellation = CancellationTokenSource.CreateLinkedTokenSource(ct, unavailable))
@@ -50,21 +52,23 @@ namespace WinTestKit.Inspector.Agent.Inspection
                 try
                 {
                     if (!await state.Admission.WaitAsync(ProtocolLimits.DispatcherQueueWaitMs, admissionCancellation.Token).ConfigureAwait(false))
-                        throw QueueTimeout();
+                        throw QueueTimeout(elapsed.ElapsedMilliseconds);
                 }
-                catch (OperationCanceledException) when (unavailable.IsCancellationRequested) { throw Unavailable(); }
+                catch (OperationCanceledException) when (unavailable.IsCancellationRequested) { throw Unavailable(state); }
             }
             bool release = true;
             var workCancellation = CancellationTokenSource.CreateLinkedTokenSource(ct);
             try
             {
-                lock (gate) if (state.Unresponsive) throw Unavailable();
+                lock (gate) if (state.Unresponsive) throw Unavailable(state);
                 ct.ThrowIfCancellationRequested();
-                if (dispatcher.HasShutdownStarted || dispatcher.HasShutdownFinished) throw Unavailable();
+                if (dispatcher.HasShutdownStarted || dispatcher.HasShutdownFinished) throw Unavailable(state);
                 DispatcherOperation<T> operation = dispatcher.InvokeAsync(() =>
                 {
                     ct.ThrowIfCancellationRequested();
-                    if (elapsed.ElapsedMilliseconds >= ProtocolLimits.DispatcherQueueWaitMs) throw QueueTimeout();
+                    if (elapsed.ElapsedMilliseconds >= ProtocolLimits.DispatcherQueueWaitMs) throw QueueTimeout(elapsed.ElapsedMilliseconds);
+                    Interlocked.Exchange(ref queuedMs, elapsed.ElapsedMilliseconds);
+                    Interlocked.Exchange(ref state.WorkStarted, Stopwatch.GetTimestamp());
                     return action(workCancellation.Token);
                 }, DispatcherPriority.Background);
                 Task completed = await Task.WhenAny(operation.Task,
@@ -73,7 +77,7 @@ namespace WinTestKit.Inspector.Agent.Inspection
                 {
                     Observe(operation.Task);
                     ct.ThrowIfCancellationRequested();
-                    throw QueueTimeout();
+                    throw QueueTimeout(elapsed.ElapsedMilliseconds);
                 }
                 Task deadline = Task.Delay(Remaining(ProtocolLimits.RequestTimeoutMs, elapsed), ct);
                 completed = await Task.WhenAny(operation.Task, deadline).ConfigureAwait(false);
@@ -96,18 +100,18 @@ namespace WinTestKit.Inspector.Agent.Inspection
                     }, CancellationToken.None,
                         TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
                     ct.ThrowIfCancellationRequested();
-                    throw new ProtocolException(ErrorCodes.DispatcherUnavailable, "Dispatcher did not complete before the deadline.");
+                    throw WorkTimeout(elapsed.ElapsedMilliseconds, Interlocked.Read(ref queuedMs));
                 }
                 T result;
                 try { result = await operation.Task.ConfigureAwait(false); }
                 catch (OperationCanceledException) when (elapsed.ElapsedMilliseconds >= ProtocolLimits.RequestTimeoutMs)
                 {
                     ct.ThrowIfCancellationRequested();
-                    throw Unavailable();
+                    throw Unavailable(state);
                 }
                 if (elapsed.ElapsedMilliseconds >= ProtocolLimits.RequestTimeoutMs)
                 {
-                    throw Unavailable();
+                    throw WorkTimeout(elapsed.ElapsedMilliseconds, Interlocked.Read(ref queuedMs));
                 }
                 ct.ThrowIfCancellationRequested();
                 return result;
@@ -183,12 +187,21 @@ namespace WinTestKit.Inspector.Agent.Inspection
             state.Unavailable.Cancel();
         }
         private static void Observe(Task task) { if (task.IsFaulted) _ = task.Exception; }
-        private static ProtocolException QueueTimeout()
+        private static ProtocolException QueueTimeout(long waited)
         {
             var details = new JsonObjectNode();
             details.Add("dispatcherBusy", new JsonBoolNode(true));
-            return new ProtocolException(ErrorCodes.Timeout, "Dispatcher queue wait timed out.", details);
+            return new ProtocolException(ErrorCodes.Timeout, string.Format("Dispatcher queue wait exceeded {0} ms (waited {1} ms; the UI thread is busy with higher-priority work)", ProtocolLimits.DispatcherQueueWaitMs, waited), details);
         }
-        private static ProtocolException Unavailable() => new ProtocolException(ErrorCodes.DispatcherUnavailable, "Dispatcher is unavailable.");
+        private static ProtocolException WorkTimeout(long elapsed, long queued) =>
+            new ProtocolException(ErrorCodes.DispatcherUnavailable, string.Format("Dispatcher work did not finish within {0} ms (queued {1} ms, ran {2} ms)", ProtocolLimits.RequestTimeoutMs, queued, Math.Max(0, elapsed - queued)));
+        private static ProtocolException Unavailable(State state)
+        {
+            long started = Interlocked.Read(ref state.WorkStarted);
+            string message = state.Unresponsive && started != 0
+                ? string.Format("Dispatcher is unavailable: earlier work is still running (for {0} ms)", (Stopwatch.GetTimestamp() - started) * 1000 / Stopwatch.Frequency)
+                : "Dispatcher is unavailable.";
+            return new ProtocolException(ErrorCodes.DispatcherUnavailable, message);
+        }
     }
 }

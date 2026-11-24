@@ -1900,3 +1900,27 @@ def test_managed_resource_rpc(managed_server: Any) -> None:
         {key: value for key, value in params.items() if key != "scope"},
     ):
         assert request(server, output, "inspect.managed.resource", bad)["error"]["code"] == -32602
+
+
+def test_sidebar_release_preserves_tree_handles(managed_server: Any) -> None:
+    from wintestkit.backends.element import WpfElement
+
+    server, output, client = managed_server
+    request(server, output, "inspect.managed.attach", {"process": IDENTITY.to_json()})
+    node = WpfElement(client, REF, 42)
+    server.nodes["wpf-node"] = node
+    server._remember_managed("session", REF.to_json())
+    server._managed_objects["session"]["other"] = 1
+    response = request(
+        server,
+        output,
+        "inspect.managed.release",
+        {"sessionId": "session", "objectIds": ["object", "other"]},
+    )
+    assert response["result"]["releasedCount"] == 1
+    assert ("release", ["other"]) in client.calls
+    assert server._managed_objects["session"] == {"object": 1}
+    result = request(server, output, "inspect.children", {"nodeId": "wpf-node", "tree": "visual"})
+    assert "result" in result
+    assert any(call[0] == "children" and call[1][0] == "object" for call in client.calls)
+    node.forget_release()

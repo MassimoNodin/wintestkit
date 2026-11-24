@@ -269,6 +269,7 @@ class Server:
         self._managed_clients: dict[str, InspectorClient] = {}
         self._managed_objects: dict[str, dict[str, int]] = {}
         self._spy_selection: tuple[InspectorClient, ObjectRef] | None = None
+        self._spy_retained_node: TargetElement | None = None
         self._spy_ticket: (
             tuple[str, float, InspectorClient, ObjectRef, str, list[dict[str, object]]] | None
         ) = None
@@ -276,6 +277,7 @@ class Server:
     def _clear_managed_spy(self) -> None:
         with self._managed_lock:
             self._spy_selection = None
+            self._spy_retained_node = None
             self._spy_ticket = None
 
     def _verify_spy_host(self, value: Any) -> None:
@@ -731,14 +733,29 @@ class Server:
         from wintestkit.backends.element import WpfElement
 
         if isinstance(node, WpfElement):
+            # Called with the node lock held after removal from the tree.
             with self._managed_lock:
-                if self._spy_selection and (
-                    self._spy_selection[1].session_id,
-                    self._spy_selection[1].object_id,
-                ) == (node.ref.session_id, node.ref.object_id):
-                    self._clear_managed_spy()
-                self._managed_objects.get(node.ref.session_id, {}).pop(node.ref.object_id, None)
-            node.release()
+                protected = any(
+                    isinstance(other, WpfElement)
+                    and (other.ref.session_id, other.ref.object_id)
+                    == (node.ref.session_id, node.ref.object_id)
+                    for other in self.nodes.values()
+                ) or bool(
+                    self._spy_selection
+                    and (self._spy_selection[1].session_id, self._spy_selection[1].object_id)
+                    == (node.ref.session_id, node.ref.object_id)
+                )
+                if (
+                    protected
+                    and self._spy_selection
+                    and (self._spy_selection[1].session_id, self._spy_selection[1].object_id)
+                    == (node.ref.session_id, node.ref.object_id)
+                ):
+                    self._spy_retained_node = node
+                if not protected:
+                    self._managed_objects.get(node.ref.session_id, {}).pop(node.ref.object_id, None)
+            if not protected:
+                node.release()
 
     def _wpf_control_text(
         self, client: Any, ref: Any, names: tuple[str | None, ...], deadline: float
@@ -1465,6 +1482,8 @@ class Server:
             self._wpf_descriptions.clear()
             self._wpf_text.clear()
         with self._managed_lock:
+            if isinstance(self._spy_retained_node, WpfElement):
+                self._spy_retained_node.forget_release()
             self._clear_managed_spy()
             objects, self._managed_objects = self._managed_objects, {}
             clients = dict(self._managed_clients)
@@ -1694,16 +1713,23 @@ class Server:
                     )
                     result = {"bindings": [binding.to_json() for binding in bindings]}
                 elif method == "inspect.managed.release":
-                    if (
-                        self._spy_selection
-                        and self._spy_selection[1].session_id == session_id
-                        and self._spy_selection[1].object_id in params["objectIds"]
-                    ):
-                        self._clear_managed_spy()
-                    released = client.release(params["objectIds"], deadline=deadline)
-                    with self._managed_lock:
-                        for item in params["objectIds"]:
+                    from wintestkit.backends.element import WpfElement
+
+                    with self._node_lock, self._managed_lock:
+                        protected = {
+                            node.ref.object_id
+                            for node in self.nodes.values()
+                            if isinstance(node, WpfElement) and node.ref.session_id == session_id
+                        }
+                        if self._spy_selection and self._spy_selection[1].session_id == session_id:
+                            protected.add(self._spy_selection[1].object_id)
+                            if self._spy_selection[1].object_id in params["objectIds"]:
+                                self._spy_ticket = None
+                        ids = [item for item in params["objectIds"] if item not in protected]
+                        for item in ids:
                             self._managed_objects.get(session_id, {}).pop(item, None)
+                    # Outside the locks: a busy target can take the whole request timeout.
+                    released = client.release(ids, deadline=deadline) if ids else 0
                     result = {"releasedCount": released}
                 else:
                     raise RpcError(-32601, "method not found")
@@ -1803,6 +1829,11 @@ class Server:
                         != ref.generation
                     ):
                         raise RpcError(-32000, "Spy selection unavailable")
+                    if not self._spy_selection or (
+                        self._spy_selection[1].session_id,
+                        self._spy_selection[1].object_id,
+                    ) != (ref.session_id, ref.object_id):
+                        self._spy_retained_node = None
                     self._spy_selection = (client, ref)
             return {
                 "canInvoke": self._spy_selection is not None

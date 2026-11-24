@@ -46,6 +46,8 @@ A visible irregular region may have no safe click point; unrooted handles may go
 
 Install in the Python environment used by WinTestKit: `pip install 'wintestkit[inspector]'`
 or `uv pip install 'wintestkit[inspector]'`. Run `wtk doctor` to check prerequisites.
+
+The inspector stages verified payload files outside the installed package before attaching. The VS Code installer checks for applications holding older installed inspector files and offers to close them before upgrading. If they do not close, you can choose whether to force close them.
 Configure shared defaults in `wintestkit.yaml` and machine-specific overrides in
 `wintestkit.local.yaml`:
 
@@ -368,6 +370,8 @@ requires `--managed`. `--json` emits JSON. Inspection may expose sensitive data:
 
 ## Troubleshooting
 
+For help investigating an error, [save and review local diagnostics](diagnostics.md).
+
 | Error code | Action |
 |---|---|
 | `invalidParams`, `invalidPageToken` | Correct the request or refresh the view and retry. |
@@ -383,7 +387,7 @@ requires `--managed`. `--json` emits JSON. Inspection may expose sensitive data:
 | `processExited`, `processReused`, `sessionStale`, `objectStale` | Reselect the live process or element and reattach. |
 | `mappingFailed` | Select a UIA element with a supported, unambiguous peer. |
 | `memberAmbiguous`, `memberNotFound` | Reinspect the element and use the observed member identity. |
-| `dispatcherUnavailable`, `timeout`, `busy` | Allow the UI to respond; avoid slow getters and retry. A timeout cannot stop running code. |
+| `dispatcherUnavailable`, `timeout`, `busy` | The application UI thread is busy. The attachment remains ready; allow the UI to respond and retry the selection. Dispatcher diagnostics include queue and execution times. A timeout cannot stop running code. |
 | `limitExceeded` | Narrow the locator or request fewer paths. |
 | `cancelled` | Retry if the operation is still needed. |
 | `internalError` | Collect non-sensitive diagnostics and report the failure. |

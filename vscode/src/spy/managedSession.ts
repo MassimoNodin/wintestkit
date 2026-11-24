@@ -6,7 +6,7 @@ import type { InspectManagedStylingParams, InspectManagedStylingResult } from ".
 import type { InspectManagedEventsParams, InspectManagedEventsResult, InspectManagedResourceParams, InspectManagedResourceResult } from "../protocol/generated";
 import type { InspectManagedSpyMethodsParams, InspectManagedSpyMethodsResult } from "../protocol/generated";
 
-export type ManagedState = "not enabled" | "not installed" | "unsupported target" | "blocked by policy" | "restart required" | "attach failed" | "mapping unavailable" | "detached (idle)" | "ready" | "not attached to this process";
+export type ManagedState = "not enabled" | "not installed" | "unsupported target" | "blocked by policy" | "restart required" | "attach failed" | "mapping unavailable" | "detached (idle)" | "ready" | "busy (retrying)" | "not attached to this process";
 export const MANAGED_INSTALL_HINT = 'pip install "wintestkit[inspector]" or uv pip install "wintestkit[inspector]"';
 const confirmed = new Set<string>();
 const identityKey = (process: { pid: number; creationTimeUtc: string }) => `${process.pid}:${process.creationTimeUtc}`;
@@ -58,6 +58,7 @@ export function managedErrorState(error: unknown): ManagedState {
     case "unsupportedTarget": case "unsupportedProtocol": return "unsupported target";
     case "accessDenied": case "blockedByPolicy": case "workspaceNotTrusted": return "blocked by policy";
     case "agentVersionMismatch": case "payloadMismatch": return "restart required";
+    case "timeout": case "dispatcherUnavailable": case "busy": return "busy (retrying)";
     case "mappingFailed": case "objectStale": case "memberAmbiguous": case "memberNotFound": case "limitExceeded": return "mapping unavailable";
     case "processExited": case "sessionStale": return "detached (idle)";
     default: return "attach failed";
@@ -85,15 +86,21 @@ export class ManagedInspector {
   private handles = new Set<string>();
   private releasing: Promise<void> = Promise.resolve();
   get sessionInfo(): InspectManagedAttachResult | undefined { return this.session; }
+  get targetLabel(): string { return `${this.executable} (PID ${this.session?.process.pid ?? "unknown"})`; }
   private spyQueue: Promise<unknown> = Promise.resolve();
   constructor(private readonly client: JsonRpcClient, initialized: InitializeResult, private readonly onStale?: (process?: { pid: number; creationTimeUtc: string }) => void, private readonly logFailure?: (line: string) => void, private readonly capability?: string, private readonly onReattached?: (process?: { pid: number; creationTimeUtc: string }) => void) {
     this.visible = initialized.capabilities?.managedInspector === true;
   }
   private fail(error: unknown, facts?: { executable: string; process: { pid: number; creationTimeUtc?: string } }): ManagedFailure {
     const failure = managedFailure(error); this.failure = failure; this.state = managedErrorState(error);
+    facts ??= this.targetOf(this.nodeId) ?? (this.session ? { executable: this.executable, process: this.session.process } : undefined);
     const sentence = (value: string) => value.replace(/[.\s]+$/, "");
     const key = `${facts?.process.pid ?? "unknown"}:${facts?.process.creationTimeUtc ?? "unknown"}:${failure.code}`;
-    if (key !== this.lastFailureKey) this.logFailure?.(`Spy .NET attach failed for ${facts?.executable ?? "unknown"} (PID ${facts?.process.pid ?? "unknown"}): ${failure.code}: ${sentence(failure.message)}. ${failure.hint}`.trim());
+    if (key !== this.lastFailureKey) {
+      if (this.session && ["timeout", "dispatcherUnavailable", "busy"].includes(failure.code))
+        this.logFailure?.(`Spy .NET request to ${facts?.executable ?? this.executable} (PID ${facts?.process.pid ?? this.session.process.pid}) could not complete because its UI thread is busy. The attachment is still ready; Spy retries on the next selection. ${failure.message}`);
+      else this.logFailure?.(`Spy .NET attach failed for ${facts?.executable ?? "unknown"} (PID ${facts?.process.pid ?? "unknown"}): ${failure.code}: ${sentence(failure.message)}. ${failure.hint}`.trim());
+    }
     this.lastFailureKey = key;
     return failure;
   }
@@ -129,7 +136,7 @@ export class ManagedInspector {
     this.sequence++;
     void this.clearSpy();
     // Without a session the last attach failure is still the honest reason; the next attach clears it.
-    if (this.session) this.failure = undefined;
+    if (this.session) { this.failure = undefined; this.lastFailureKey = undefined; this.state = "ready"; }
     this.nodeId = nodeId;
     const ids = [...this.handles]; this.handles.clear();
     if (ids.length && this.session) this.releasing = this.releaseIds(this.session.sessionId, ids);

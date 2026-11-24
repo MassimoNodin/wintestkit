@@ -59,6 +59,7 @@ namespace WinTestKit.Inspector.Agent.Mapping.Tests
                 {
                     var error = await Assert.ThrowsAsync<ProtocolException>(() => executor.ExecuteAsync(ui.Dispatcher, () => { ran = true; return 0; }, CancellationToken.None));
                     Assert.Equal(ErrorCodes.Timeout, error.Code);
+                    Assert.Contains("Dispatcher queue wait exceeded 500 ms (waited", error.Message);
                     Assert.True(((JsonBoolNode)error.Details!.Get("dispatcherBusy")).Value);
                 }
                 finally { unblock.Set(); await blocking; }
@@ -166,7 +167,10 @@ namespace WinTestKit.Inspector.Agent.Mapping.Tests
                     }
                     else
                     {
-                        Assert.Equal(ErrorCodes.DispatcherUnavailable, (await Assert.ThrowsAsync<ProtocolException>(() => operation)).Code);
+                        var timeout = await Assert.ThrowsAsync<ProtocolException>(() => operation);
+                        Assert.Equal(ErrorCodes.DispatcherUnavailable, timeout.Code);
+                        Assert.Contains("Dispatcher work did not finish within 2000 ms (queued", timeout.Message);
+                        Assert.Contains("ran", timeout.Message);
                     }
                     Assert.True(workToken.IsCancellationRequested);
                     int posted = 0;
@@ -176,7 +180,9 @@ namespace WinTestKit.Inspector.Agent.Mapping.Tests
                     {
                         Task<int> rejected = executor.ExecuteAsync(ui.Dispatcher, () => 0, CancellationToken.None);
                         Assert.True(rejected.IsCompleted);
-                        Assert.Equal(ErrorCodes.DispatcherUnavailable, (await Assert.ThrowsAsync<ProtocolException>(() => rejected)).Code);
+                        var unavailable = await Assert.ThrowsAsync<ProtocolException>(() => rejected);
+                        Assert.Equal(ErrorCodes.DispatcherUnavailable, unavailable.Code);
+                        Assert.Contains("Dispatcher is unavailable: earlier work is still running (for", unavailable.Message);
                         Assert.Equal(0, posted);
                     }
                     finally { ui.Dispatcher.Hooks.OperationPosted -= handler; }

@@ -107,7 +107,7 @@ describe("managed Spy host", () => {
   });
   it("maps every protocol error code to a Spy state", () => {
     const codes = ["invalidParams", "unsupportedProtocol", "unsupportedTarget", "accessDenied", "authenticationFailed", "payloadMissing", "payloadMismatch", "alreadyAttached", "notAttached", "attachFailed", "blockedByPolicy", "agentVersionMismatch", "processExited", "processReused", "sessionStale", "objectStale", "mappingFailed", "memberAmbiguous", "memberNotFound", "dispatcherUnavailable", "timeout", "busy", "limitExceeded", "invalidPageToken", "cancelled", "internalError"];
-    for (const code of codes) expect(["not enabled", "not installed", "unsupported target", "blocked by policy", "restart required", "attach failed", "mapping unavailable", "detached (idle)"], code).toContain(managedErrorState({ data: { code } }));
+    for (const code of codes) expect(["not enabled", "not installed", "unsupported target", "blocked by policy", "restart required", "attach failed", "mapping unavailable", "detached (idle)", "busy (retrying)"], code).toContain(managedErrorState({ data: { code } }));
   });
   it("requires trust and confirmation, remembers identity, and never attaches on selection", async () => {
     const { inspector, request } = setup(); await inspector.select("n"); expect(request).not.toHaveBeenCalled();

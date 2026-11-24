@@ -1350,3 +1350,13 @@ def test_items_reject_objects_from_another_session() -> None:
             client.items("object", 1, deadline=time.monotonic() + 1)
     finally:
         client.invalidate(InspectorUnavailableError("done", code="notAttached"))
+
+
+def test_dispatcher_diagnostic_message_survives_response_mapping() -> None:
+    from wintestkit.inspector.client import _response
+
+    message = "Dispatcher queue wait exceeded 500 ms (waited 512 ms)"
+    _, _, error = _response({"id": 1, "error": {"code": "timeout", "message": message}})
+    assert error is not None
+    assert str(error) == message
+    assert error.to_dict()["message"] == message

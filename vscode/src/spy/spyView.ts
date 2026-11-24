@@ -88,6 +88,7 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
   private scopeRevision = 0;
   private selection = 0;
   private managedInspector?: ManagedInspector;
+  diagnostics(): unknown { return { visible: this.view?.visible ?? false, managedState: this.managedInspector?.state ?? "not active", lastFailure: this.managedInspector?.failure }; }
   private managedPanel?: ManagedPanel;
   private pickRevision = 0;
   private pickSession?: string;
@@ -1452,7 +1453,11 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
       }
     } catch (error) {
       if (client !== this.client || revision !== this.revision) return;
-      if (this.isStale(error) && isManagedNodeId(nodeId)) { await this.recoverStale(); return; }
+      const code = (error as { data?: { code?: string } })?.data?.code;
+      if (code === "objectStale" && isManagedNodeId(nodeId) && !this.recovering) {
+        await this.recoverStale(undefined, true); return;
+      }
+      if (this.isStale(error) && isManagedNodeId(nodeId) && !this.recovering) { await this.recoverStale(); return; }
       const hint = error instanceof RpcError && error.code === -32005
         ? "The element is gone. Reload the objects view to refresh it."
         : error instanceof Error ? error.message : String(error);
@@ -1786,7 +1791,12 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
       if (current()) this.post({ type: "allProperties", nodeId, properties });
     } catch (error) {
       // The basic properties are already shown; a failure here only leaves the list short.
-      if (current()) this.log.error("Reading all properties failed: " + String(error));
+      if (current()) {
+        const code = (error as { data?: { code?: string } })?.data?.code;
+        if (["timeout", "dispatcherUnavailable", "busy"].includes(code ?? "") && this.managedInspector?.sessionInfo) {
+          this.log.error(`Spy .NET request to ${this.managedInspector.targetLabel} could not complete because its UI thread is busy. The attachment is still ready; Spy retries on the next selection. ${String(error)}`);
+        } else this.log.error("Reading all properties failed: " + String(error));
+      }
     } finally {
       if (current()) this.post({ type: "propertiesLoading", nodeId, loading: false });
     }

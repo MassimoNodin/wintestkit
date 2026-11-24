@@ -177,6 +177,9 @@ def _response(value: object) -> tuple[int, object, InspectorError | None]:
         raise ValueError("Invalid error details")
     details = error.get("details")
     result = _error(code, details)
+    if code in {"timeout", "dispatcherUnavailable", "busy"}:
+        result.args = (error["message"],)
+        result.message = error["message"]
     if isinstance(details, dict) and "audit" in details:
         result.audit = WriteAudit.from_json(cast(dict[str, object], details)["audit"])
     return request_id, None, result

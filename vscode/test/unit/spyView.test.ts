@@ -161,6 +161,28 @@ describe("Spy view bridge", () => {
     mocks.projectListeners.splice(0);
     mocks.previews.mockReset().mockResolvedValue(undefined);
   });
+  it("recovers a stale managed tree node once and exposes retry if recovery also fails", async () => {
+    mocks.request.mockImplementation(async (method: string) => {
+      if (method === "inspect.children") throw new RpcError(-32000, "stale", { code: "objectStale" });
+      if (method === "inspect.refresh") return { nodes: [], status: { running: false } };
+      return [];
+    });
+    const fixture = await create();
+    await fixture.provider.refresh();
+    const internal = fixture.provider as unknown as {
+      recovering: boolean;
+      recoverStale: (process?: unknown, keepSession?: boolean) => Promise<void>;
+      showChildren: (client: typeof fixture.client, nodeId: string) => Promise<void>;
+    };
+    const recovery = vi.spyOn(internal, "recoverStale").mockResolvedValue();
+    await internal.showChildren(fixture.client, 'wpf:["s","o",1]');
+    expect(recovery).toHaveBeenCalledOnce();
+    expect(recovery).toHaveBeenCalledWith(undefined, true);
+    internal.recovering = true;
+    await internal.showChildren(fixture.client, 'wpf:["s","o",1]');
+    expect(recovery).toHaveBeenCalledOnce();
+    expect(fixture.sent).toContainEqual(expect.objectContaining({ type: "children", blocked: expect.objectContaining({ code: "childrenUnavailable" }) }));
+  });
   it("uses the visual tree and handles paged, UIA, and blocked responses", async () => {
     const update = vi.fn(async () => {});
     const memory = { get: () => undefined, update };
