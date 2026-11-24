@@ -32,7 +32,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d
         with:
           version: "0.12.5"
           python-version: "3.12"
@@ -89,7 +89,7 @@ jobs:
         with:
           name: inspector-results
           path: inspector-artifacts
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d
         with:
           version: "0.12.5"
       - name: Publish tested inspector wheel using only PyPI OIDC
@@ -126,7 +126,7 @@ jobs:
         with:
           name: python-dist
           path: artifacts
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d
         with:
           version: "0.12.5"
       - name: Publish tested distributions using only PyPI OIDC
