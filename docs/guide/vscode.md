@@ -268,7 +268,7 @@ nested folders and multi-root workspaces. Each project has its own server, tests
 The guided setup creates the starter files described in
 [Getting started](getting-started.md).
 
-With **Show all properties** off, the Properties sidebar groups values under **Standard** and, for managed objects, **.NET**. The .NET rows include the short and full CLR class names, control name and text, and for WPF an ordinal among loaded siblings of the same type and text. With **Show all properties** on, it shows Standard, Win32 Window when available, Extended, an alphabetical .NET member list, Bindings, Style and template, Resources, Events and UI Automation when available. Expanded member values stay beneath their parent. Markers distinguish dependency, attached and static properties; the Description pane also identifies their kind. Fields and methods are grouped by instance or static membership. All section headings collapse, search hides empty sections, and collapsed headings are remembered. Automatic reads retain their five-second per-object budget; choose **Read remaining** to continue reading timed-out rows in batches, subject to the same getter limit.
+With **Show all properties** off, the Properties sidebar groups values under **Standard** and, for managed objects, **.NET**. The .NET rows include the short and full CLR class names, control name and text, and for WPF an ordinal among loaded siblings of the same type and text. With **Show all properties** on, it shows Standard, Win32 Window when available, Extended, an alphabetical .NET member list, Bindings, Style and template, Resources, Events and UI Automation when available. Expanded member values stay beneath their parent. Markers distinguish dependency, attached and static properties; the Description pane also identifies their kind. Fields and methods are grouped by instance or static membership. All section headings collapse, search hides empty sections, and collapsed headings are remembered. Automatic reads retain their five-second per-object budget; choose **Read remaining** to continue reading timed-out rows in batches, subject to the same getter limit. Click a row's name or value to copy it; Enter or Ctrl+C on a focused row copies its value. Use the arrow to expand a value, the refresh icon to read an eligible managed member again, or the play icon to open a method's invocation form. The actions button beside search offers detach, refresh metadata, and export metadata.
 
 The inspector shows the essential properties first, then fills in the complete UI Automation
 property list and supported patterns by itself; there is nothing to click. A control that owns a
@@ -420,3 +420,7 @@ prompts for required values, pre-fills defaults, validates input as a scalar, an
 prompt is cancelled. Flow source expressions are never evaluated as input.
 
 The WPF inspector session expires after five minutes without requests. Spy sends a keepalive while Spy or Properties is visible. If a session has expired, Spy attempts to reconnect and restore the selection and open visual-tree branches. Other applications require consent for each process run; attachment errors appear in the tree with a Retry action.
+
+## Sharing diagnostics
+
+Use [Save Diagnostics](diagnostics.md) to review and save a local troubleshooting bundle.

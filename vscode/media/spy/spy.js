@@ -802,8 +802,6 @@
   // -- All properties: one list, sorted by name, in which nested values fold open ------------
   let currentProperties;
   let selectedProperties;
-  let selectedDefinitions;
-  let definitionsState;
   let shownProperties = [];
   const expandedProperties = new Set();
   let propertiesNodeId;
@@ -999,7 +997,6 @@
   };
   // The same filter applies to all rows of the active category, including managed values.
   let sidebarTab = "properties";
-  let sidebarPins = vscode.getState?.()?.sidebarManagedPins || [];
   // The row last described, by key, so a redraw (values arrive while it is selected) keeps its description.
   let describedKey;
   const rowItems = new Map();
@@ -1019,7 +1016,6 @@
     FullName: "The locator path from the window down to this object.",
     Height: "Height of the bounding rectangle, in pixels.",
     Left: "Distance from the left edge of the containing window to this object's left edge, in pixels. A window reports its position on the screen.",
-    MappedName: "The name your page definitions give this object (the qualified name of its element).",
     Name: "The x:Name of a WPF object or the Name of a WinForms control, otherwise its UI Automation name.",
     Parent: "The object this one belongs to in the tree.",
     ScreenLeft: "Distance from the left edge of the screen to the object's left edge, in pixels.",
@@ -1107,91 +1103,39 @@
     if (v.status === "nullIntermediate") return "null";
     return `(${v.status})`;
   }
-  const togglePin = (key) => { sidebarPins = sidebarPins.includes(key) ? sidebarPins.filter((item) => item !== key) : [...sidebarPins, key]; vscode.setState?.({ ...(vscode.getState?.() || {}), sidebarManagedPins: sidebarPins }); renderSidebar(); };
-  // One popup serves the "more actions" button and the context menu of every row, on every tab.
-  const rowMenu = element("sidebar-row-menu");
-  let rowMenuOwner;
-  let renderDeferred = false;
-  const rowMenuItems = (item) => {
-    const menu = item.menu || {};
-    const hasValue = item.value !== undefined && item.value !== null;
-    return [
-      ...(item.invoke ? [{ label: "Invoke\u2026", enabled: item.invoke.enabled, title: item.invoke.reason, run: item.invoke.open }] : []),
-      { label: "Copy value", enabled: menu.copyValue !== undefined ? menu.copyValue : hasValue, run: () => (menu.address ? post("managedCopy", { kind: "value", ...menu.address }) : post("copy", { text: displayValue(item) })) },
-      { label: "Copy name", enabled: true, run: () => post("copy", { text: menu.name ?? item.name }) },
-      { label: "Copy locator key", enabled: !!menu.locatorKey, run: () => post("managedCopy", { kind: "path", ...menu.address }) },
-      { label: item.toggle?.expanded ? "Collapse" : "Expand", enabled: !!item.toggle || !!menu.expand, run: () => item.toggle ? item.toggle.run() : post("managedExpand", menu.address) },
-      { label: "Read again", enabled: !!menu.read, run: () => post("managedRead", menu.address) },
-      { label: menu.pinned ? "Unpin" : "Pin", enabled: !!menu.pinKey, run: () => togglePin(menu.pinKey) },
-    ];
-  };
   const rowByKey = (key) => [...element("sidebar-rows").querySelectorAll("tr.sidebar-row")].find((row) => row.dataset.key === key);
-  function closeRowMenu(restore = true) {
-    if (rowMenu.hidden) return;
-    const owner = rowMenuOwner; rowMenuOwner = undefined;
-    rowMenu.hidden = true; rowMenu.replaceChildren();
-    for (const button of element("sidebar-rows").querySelectorAll(".row-menu-button")) button.removeAttribute("aria-expanded");
-    if (renderDeferred) { renderDeferred = false; renderSidebar(); }
-    if (restore && owner) rowByKey(owner.key)?.focus();
-  }
-  function openRowMenu(row, point, opener) {
-    const key = row.dataset.key, item = rowItems.get(key);
-    if (!item) return;
-    closeRowMenu(false);
-    describeSidebar(item, key);
-    for (const entry of rowMenuItems(item)) {
-      const button = document.createElement("button");
-      button.type = "button"; button.className = "secondary"; button.setAttribute("role", "menuitem"); button.textContent = entry.label; button.disabled = !entry.enabled; if (entry.title) button.title = entry.title;
-      button.addEventListener("click", () => { closeRowMenu(); entry.run(); });
-      rowMenu.append(button);
-    }
-    rowMenu.hidden = false;
-    const anchor = point ? undefined : (opener || row).getBoundingClientRect();
-    const width = rowMenu.offsetWidth || 180, height = rowMenu.offsetHeight || 140;
-    const x = point ? point.x : anchor.right - width, y = point ? point.y : anchor.bottom;
-    rowMenu.style.left = Math.max(4, Math.min(x, window.innerWidth - width - 4)) + "px";
-    rowMenu.style.top = Math.max(4, Math.min(y, window.innerHeight - height - 4)) + "px";
-    opener?.setAttribute("aria-expanded", "true");
-    rowMenuOwner = { key, selected, object: managedSnapshot?.object?.objectId };
-    rowMenu.querySelector("button:not(:disabled)")?.focus();
-  }
-  rowMenu.addEventListener("keydown", (event) => {
-    const buttons = [...rowMenu.querySelectorAll("button:not(:disabled)")], at = buttons.indexOf(document.activeElement);
-    if (event.key === "Escape" || event.key === "Tab") { event.preventDefault(); event.stopPropagation(); closeRowMenu(); }
-    else if (event.key === "ArrowDown") { event.preventDefault(); buttons[(at + 1) % buttons.length]?.focus(); }
-    else if (event.key === "ArrowUp") { event.preventDefault(); buttons[(at - 1 + buttons.length) % buttons.length]?.focus(); }
-    else if (event.key === "Home") { event.preventDefault(); buttons[0]?.focus(); }
-    else if (event.key === "End") { event.preventDefault(); buttons.at(-1)?.focus(); }
-  });
-  rowMenu.addEventListener("focusout", (event) => { if (!event.relatedTarget || !rowMenu.contains(event.relatedTarget)) closeRowMenu(false); });
-  document.addEventListener("mousedown", (event) => { if (!rowMenu.hidden && !rowMenu.contains(event.target)) closeRowMenu(false); }, true);
-  const menuButton = () => {
-    const button = document.createElement("button"), glyph = document.createElement("span");
-    button.type = "button"; button.className = "icon-button secondary row-menu-button"; button.title = "Row actions";
-    button.setAttribute("aria-label", "Row actions"); button.setAttribute("aria-haspopup", "menu");
-    glyph.className = "codicon codicon-kebab-horizontal"; glyph.setAttribute("aria-hidden", "true"); button.append(glyph);
-    return button;
-  };
-  // The rows are redrawn as values arrive, so the handlers live on the table body, not on a row.
   const sidebarBody = element("sidebar-rows");
   const rowOf = (event) => event.target.closest?.("tr.sidebar-row") || null;
+  function copyCell(item, cell, name = false) {
+    const menu = item.menu || {};
+    if (name) post("copy", { text: menu.name ?? item.name });
+    else {
+      if (item.value === undefined || item.value === null || menu.copyValue === false) return;
+      if (menu.address) post("managedCopy", { kind: "value", ...menu.address });
+      else post("copy", { text: displayValue(item) });
+    }
+    const feedback = element("sidebar-copy-feedback");
+    feedback.textContent = "Copied";
+    cell.classList.add("copied");
+    clearTimeout(cell.copyTimer);
+    cell.copyTimer = setTimeout(() => { cell.classList.remove("copied"); feedback.textContent = ""; }, 1000);
+  }
   sidebarBody.addEventListener("click", (event) => {
     const row = rowOf(event), item = row && rowItems.get(row.dataset.key);
     if (!item) return;
-    const opener = event.target.closest(".row-menu-button");
-    if (opener) openRowMenu(row, undefined, opener); else describeSidebar(item, row.dataset.key);
-  });
-  sidebarBody.addEventListener("contextmenu", (event) => {
-    const row = rowOf(event);
-    if (!row || event.target.closest("input, textarea, select")) return;
-    event.preventDefault();
-    openRowMenu(row, { x: event.clientX, y: event.clientY });
+    describeSidebar(item, row.dataset.key);
+    if (event.target.closest("button, a, input, select, textarea")) return;
+    const cell = event.target.closest("th, td");
+    if (cell === row.cells[0]) copyCell(item, cell, true);
+    else if (cell === row.cells[1]) copyCell(item, cell);
   });
   sidebarBody.addEventListener("keydown", (event) => {
     const row = rowOf(event);
-    if (!row || event.target.closest("input, textarea, select")) return;
-    if ((event.key === "F10" && event.shiftKey) || event.key === "ContextMenu") { event.preventDefault(); openRowMenu(row, undefined, row.querySelector(".row-menu-button") || undefined); }
-    else if ((event.key === "Enter" || event.key === " ") && event.target === row) { event.preventDefault(); const item = rowItems.get(row.dataset.key); if (item) describeSidebar(item, row.dataset.key); }
+    if (!row || event.target !== row) return;
+    const item = rowItems.get(row.dataset.key);
+    if (!item) return;
+    if (event.key === "Enter" || (event.ctrlKey && event.key.toLowerCase() === "c")) { event.preventDefault(); describeSidebar(item, row.dataset.key); copyCell(item, row.cells[1]); }
+    else if (event.key === " ") { event.preventDefault(); describeSidebar(item, row.dataset.key); }
   });
   const sidebarActions = element("sidebar-actions");
   for (const [id, type, payload] of [["sidebar-detach", "managedDetach"], ["sidebar-refresh", "managedRefresh"], ["sidebar-export", "managedCopy", { kind: "export" }]]) {
@@ -1303,7 +1247,7 @@
   function bindingRows(info, member) {
     const rows = [], objects = managedSnapshot?.bindingObjects || [], group = { category: "binding", isStatic: false };
     // A binding's object rows are not members: they have no locator and cannot be pinned.
-    const scrub = (row) => ({ ...row, pinKey: undefined, menu: { ...row.menu, pinKey: undefined, pinned: false, locatorKey: false } });
+    const scrub = (row) => row;
     const walk = (binding, path, name) => {
       const key = info.memberKey + path.map((index) => "/" + index).join(""), open = expandedBindings.has(key), summary = bindingSummary(binding);
       rows.push({ category: "binding", name, value: summary, description: [["Name", name], ["Value", summary], ["Kind", binding.kind], ["Status", binding.status]], menu: { name, copyValue: true },
@@ -1361,7 +1305,7 @@
   function stylingRows(styling) {
     const rows = [], objects = managedSnapshot?.stylingObjects || [], style = { category: "style", isStatic: false }, resource = { category: "resource", isStatic: false };
     // An object row is not a member: it has no locator and cannot be pinned.
-    const scrub = (row) => ({ ...row, pinKey: undefined, menu: { ...row.menu, pinKey: undefined, pinned: false, locatorKey: false } });
+    const scrub = (row) => row;
     const plain = (group, name, value, description, extra) => rows.push({ category: group.category, name, value: String(value ?? ""), description: [["Name", name], ["Value", String(value ?? "")], ...(description || [])], menu: { name, copyValue: true }, ...extra });
     const opener = (key, label) => { const open = expandedStyling.has(key); return { open, toggle: { expanded: open, label: (open ? "Hide " : "Show ") + label, run: () => { if (!expandedStyling.delete(key)) expandedStyling.add(key); renderSidebar(); } } }; };
     // One row for a value: an object expands, anything else shows its text.
@@ -1511,10 +1455,6 @@
     }).observe(element("sidebar-table"));
   }
   function renderSidebar() {
-    if (!rowMenu.hidden) {
-      if (rowMenuOwner?.selected === selected && rowMenuOwner.object === managedSnapshot?.object?.objectId) { renderDeferred = true; return; }
-      closeRowMenu(false);
-    }
     const body = element("sidebar-rows"), empty = element("sidebar-empty");
     const focusedKey = document.activeElement?.closest?.("tr.sidebar-row")?.dataset?.key;
     const formField = document.activeElement?.closest?.("tr.invoke-row") ? document.activeElement : undefined;
@@ -1554,10 +1494,16 @@
         else value.textContent = displayValue(item);
         if (item.tooltip) value.title = item.tooltip;
         const actions = document.createElement("td"); actions.className = "property-actions";
-        if (item.toggle) { const button = document.createElement("button"); button.type = "button"; button.className = "property-toggle codicon " + (item.toggle.expanded ? "codicon-chevron-down" : "codicon-chevron-right"); button.setAttribute("aria-expanded", String(item.toggle.expanded)); button.setAttribute("aria-label", item.toggle.label); button.title = item.toggle.label; button.addEventListener("click", (event) => { event.stopPropagation(); item.toggle.run(); }); actions.append(button); }
+        const toggle = item.toggle || (item.menu?.expand ? { expanded: false, label: "Expand " + item.name, run: () => post("managedExpand", item.menu.address) } : undefined);
+        if (toggle) { const button = document.createElement("button"); button.type = "button"; button.className = "property-toggle codicon " + (toggle.expanded ? "codicon-chevron-down" : "codicon-chevron-right"); button.setAttribute("aria-expanded", String(toggle.expanded)); button.setAttribute("aria-label", toggle.label); button.title = toggle.label; button.addEventListener("click", (event) => { event.stopPropagation(); describeSidebar(item, key); toggle.run(); }); th.prepend(button); }
         if (item.action) actions.append(item.action());
-        else if (item.pin && PINNABLE.test(item.name)) actions.append(pinButton(item.name));
-        if (!item.noMenu) actions.append(menuButton());
+        else if (item.invoke || item.menu?.read) {
+          const button = document.createElement("button"), icon = document.createElement("span");
+          const invoke = item.invoke, label = invoke ? "Invoke\u2026" : "Read again";
+          button.type = "button"; button.className = "icon-button secondary row-action-button"; button.setAttribute("aria-label", label); button.title = invoke && !invoke.enabled ? invoke.reason : label;
+          button.disabled = !!invoke && !invoke.enabled; icon.className = "codicon " + (invoke ? "codicon-play" : "codicon-refresh"); icon.setAttribute("aria-hidden", "true"); button.append(icon);
+          button.addEventListener("click", (event) => { event.stopPropagation(); describeSidebar(item, key); if (invoke) invoke.open(); else post("managedRead", item.menu.address); }); actions.append(button);
+        }
         row.tabIndex = 0;
         row.append(th, value, actions); body.append(row); count++;
         for (const extra of item.after?.() || []) body.append(extra);
@@ -1604,23 +1550,23 @@
       const standard = {
         ChildCount: entry?.node.hasChildren === false ? 0 : entry?.loaded ? entry.children.children.length : undefined,
         Enabled: info.isEnabled, Exists: true, FullName: locatorPath,
-        Height: info.rect?.height, Left: offset(info.rect?.left, windowRect?.left), MappedName: definitionsState === "ready" ? (selectedDefinitions?.find((d) => d.kind === "element" || d.kind === "elements")?.qualname ?? "(not defined in any page)") : definitionsState === "loading" ? "Checking pages\u2026" : undefined,
+        Height: info.rect?.height, Left: offset(info.rect?.left, windowRect?.left),
         Name: (isManaged(p.source) && raw[nameKey(p.source)]) || info.name, Parent: actualParent?.label, ScreenLeft: info.rect?.left, ScreenTop: info.rect?.top,
         Top: offset(info.rect?.top, windowRect?.top), Visible: isManaged(p.source) ? raw.Visible : undefined, VisibleOnScreen: info.isOffscreen === undefined ? undefined : !info.isOffscreen, Width: info.rect?.width,
         ClrFullClassName: raw.ClrFullClassName, [textKey(p.source)]: raw[textKey(p.source)],
         ClrClassName: raw.ClrFullClassName ? String(raw.ClrFullClassName).split(/[.+]/).pop() : undefined, [nameAlias]: raw.AutomationId || info.automationId || raw[nameKey(p.source)] || "", WPFControlOrdinalNo: ordinal,
       };
       const rowFor = (name) => ({ name, value: standard[name], description: standardDescription(name, standard[name]), ...(name === "Parent" && actualParent ? { select: actualParent.nodeId } : {}) });
-      const basic = ["Enabled", "Height", "MappedName", "Name", "Parent", "Visible", "Width"];
-      if (!sidebarShowAll) { group("Standard", basic.map(rowFor)); if (isManaged(p.source)) group(".NET", aliases.map(rowFor)); if (p.window) group("Win32 Window", windowRows(p.window, true)); group("Pinned", [...managedRows(false), ...managedRows(true)].filter((row) => sidebarPins.includes(row.pinKey))); }
+      const basic = ["Enabled", "Height", "Name", "Parent", "Visible", "Width"];
+      if (!sidebarShowAll) { group("Standard", basic.map(rowFor)); if (isManaged(p.source)) group(".NET", aliases.map(rowFor)); if (p.window) group("Win32 Window", windowRows(p.window, true)); }
       else {
-        const names = ["ChildCount", "Enabled", "Exists", "FullName", "Height", "Left", "MappedName", "Name", "Parent", "ScreenLeft", "ScreenTop", "Top", "Visible", "VisibleOnScreen", "Width"];
+        const names = ["ChildCount", "Enabled", "Exists", "FullName", "Height", "Left", "Name", "Parent", "ScreenLeft", "ScreenTop", "Top", "Visible", "VisibleOnScreen", "Width"];
         group("Standard", names.map(rowFor));
         if (p.window) group("Win32 Window", windowRows(p.window, false));
         // The Win32 Window group already says these; each value appears once.
         const windowCovered = new Set(p.window ? ["ClassName", "NativeWindowHandle", "ProcessId"] : []);
         // Each value appears once: x:Name is Name, IsEnabled is Enabled, Bounds is the rectangle rows above.
-        const represented = new Set([...names, "x:Name", "ControlName", "IsEnabled", "Bounds", "ClrFullClassName", textKey(p.source)]);
+        const represented = new Set([...names, "MappedName", "x:Name", "ControlName", "IsEnabled", "Bounds", "ClrFullClassName", textKey(p.source)]);
         if (isManaged(p.source)) {
           // AutomationId is the attached AutomationProperties.AutomationId, or empty.
           const extended = Object.entries(raw).filter(([name]) => !represented.has(name)).map(([name, value]) => ({ name, value: name === "AutomationId" ? (value ?? info.automationId ?? "") : value }));
@@ -1669,15 +1615,12 @@
       // `[0]` item rows read as Items[0], not Items.[0].
       const lead = row.item && m.name.startsWith("[") ? prefix.replace(/\.$/, "") : prefix;
       const address = { memberKey: m.memberKey, ...(scope ? { scope } : {}) };
-      const pinKey = path.map((segment) => JSON.stringify(segment)).join("/");
-      const first = path[0];
-      const validKey = path.every(Boolean) && (first?.kind === "property" || first?.kind === "dependency") && path.slice(1).every((segment) => segment.kind === "property") && (first.kind !== "dependency" || ![first.ownerAssembly, first.ownerType, first.name].some((part) => /[|:/]/.test(part)));
       const binding = (managedSnapshot?.bindings || []).find((item) => item.memberKey === m.memberKey);
       const text = managedValueText(row);
-      const result = { depth: path.length, kind: m.category, category: rootGroup.category, isStatic: rootGroup.isStatic, name: lead + (m.category === "typeMetadata" && m.name === "Name" ? "ClrClassName" : m.category === "typeMetadata" && m.name === "FullName" ? "ClrFullClassName" : m.compatibilityAlias || m.name) + (fields && (rows || []).filter((item) => item.member.category === "clrField" && item.member.name === m.name).length > 1 ? ` (${m.declaringType})` : ""), pinKey,
+      const result = { depth: path.length, kind: m.category, category: rootGroup.category, isStatic: rootGroup.isStatic, name: lead + (m.category === "typeMetadata" && m.name === "Name" ? "ClrClassName" : m.category === "typeMetadata" && m.name === "FullName" ? "ClrFullClassName" : m.compatibilityAlias || m.name) + (fields && (rows || []).filter((item) => item.member.category === "clrField" && item.member.name === m.name).length > 1 ? ` (${m.declaringType})` : ""),
         value: text,
         description: [["Name", m.name], ["Value", text], ["Declared type", m.declaredType], ["Runtime type", v?.runtimeType], ["Declaring type", m.declaringType], ["Kind", ({ dependencyProperty: "Dependency property", attachedProperty: "Attached property", staticProperty: "Static property", clrProperty: "CLR property", typeMetadata: "Type metadata" })[m.category]], ["Category", m.category], ["Value source", v?.dependencySource?.baseValueSource], ["Binding", binding && [binding.kind, binding.status, binding.path].filter(Boolean).join("; ")]],
-        menu: { address, name: m.name, pinKey, pinned: sidebarPins.includes(pinKey), locatorKey: validKey, read: managedReadable(m),
+        menu: { address, name: m.name, read: managedReadable(m),
           copyValue: managedReadable(m) && v?.status === "ok" && v.scalar !== undefined && !["object", "array", "unavailable"].includes(v.kind),
           expand: v?.status === "ok" && (v.kind === "object" || v.kind === "array") } };
       const more = row.page?.nextToken ? [{ ...rootGroup, name: lead + m.name + ".Load more", value: "Partial list", noMenu: true, action: () => managedButton("Load more", () => post("managedLoadMore", { group: row.id })) }] : [];
@@ -1699,9 +1642,8 @@
   element("sidebar-mode").addEventListener("change", (event) => { sidebarShowAll = event.currentTarget.checked; vscode.setState?.({ ...(vscode.getState?.() || {}), sidebarShowAll }); renderSidebar(); requestStandardLocator(); });
   const clearProperties = () => {
     currentProperties = undefined;
-    selectedProperties = undefined; selectedDefinitions = undefined; definitionsState = undefined;
+    selectedProperties = undefined;
     invokeForm = undefined;
-    closeRowMenu(false);
     standardLocatorRequested = undefined;
     propertiesNodeId = undefined;
     expandedProperties.clear(); expandedBindings.clear(); expandedStyling.clear();
@@ -2502,7 +2444,6 @@
     } else if (message.type === "definitions") {
       if (message.nodeId !== selected) return;
       renderDefinitions(message);
-      selectedDefinitions = message.state === "ready" ? message.definitions : undefined; definitionsState = message.state; renderSidebar();
     } else if (message.type === "coverage") {
       for (const id of message.nodeIds) {
         const info = message.covered[id];
@@ -2545,7 +2486,7 @@
       hasDetails = true;
       selecting = false;
       detailsError = "";
-      selectedProperties = message.properties; selectedDefinitions = undefined; definitionsState = undefined;
+      selectedProperties = message.properties;
       const info = message.properties.info;
       const isWpf = isManaged(message.properties.source);
       selectedWpf = isWpf;

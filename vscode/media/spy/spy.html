@@ -263,7 +263,6 @@
                                         <button id="preview-element" class="secondary" aria-pressed="true" title="Show just the object">Element</button>
                                         <button id="preview-context" class="secondary" aria-pressed="false" title="Show the object outlined in its window">In App context</button>
                                     </div>
-                                    <details id="sidebar-actions"><summary class="icon-button secondary" aria-label="Properties actions" title="Properties actions"><span class="codicon codicon-kebab-horizontal" aria-hidden="true"></span></summary><div class="sidebar-actions-menu" role="menu"><button id="sidebar-detach">Detach</button><button id="sidebar-refresh">Refresh metadata</button><button id="sidebar-export">Export metadata</button></div></details>
                                 </div>
                                 <div id="object-preview-frame">
                                     <img id="object-preview-image" alt="Preview of the selected object" hidden />
@@ -277,10 +276,10 @@
                             <div id="sidebar-inspector" hidden>
                                 <p id="wpf-details-note" hidden><span id="sidebar-attach-status"></span> <button id="wpf-details-attach" class="secondary">Attach</button></p>
                                 <div class="sidebar-tabs" role="tablist" aria-label="Inspection categories"><button role="tab" id="sidebar-tab-properties" data-sidebar-tab="properties">Properties</button><button role="tab" id="sidebar-tab-fields" data-sidebar-tab="fields">Fields</button><button role="tab" id="sidebar-tab-methods" data-sidebar-tab="methods">Methods</button></div>
-                                <label class="sidebar-search"><span class="codicon codicon-search" aria-hidden="true"></span><input id="sidebar-search" type="search" aria-label="Search" placeholder="Search" /></label>
+                                <div class="sidebar-search-row"><label class="sidebar-search"><span class="codicon codicon-search" aria-hidden="true"></span><input id="sidebar-search" type="search" aria-label="Search" placeholder="Search" /></label><details id="sidebar-actions"><summary class="icon-button secondary" aria-label="Properties actions" title="Properties actions"><span class="codicon codicon-kebab-horizontal" aria-hidden="true"></span></summary><div class="sidebar-actions-menu" role="menu"><button id="sidebar-detach">Detach</button><button id="sidebar-refresh">Refresh metadata</button><button id="sidebar-export">Export metadata</button></div></details></div>
                                 <label id="sidebar-mode-toggle" class="sidebar-toggle"><input id="sidebar-mode" type="checkbox" role="switch" /><span>Show all properties</span></label>
                                 <table id="sidebar-table" class="sidebar-table"><thead><tr><th>Name</th><th>Value</th><th></th></tr></thead><tbody id="sidebar-rows"></tbody></table>
-                                <div id="sidebar-row-menu" class="row-menu" role="menu" aria-label="Row actions" hidden></div><p id="sidebar-empty" class="muted" hidden></p><section id="sidebar-description" aria-label="Description"><h3>Description</h3><div id="sidebar-description-content">Select a row to see its description.</div></section>
+                                <span id="sidebar-copy-feedback" class="sidebar-copy-feedback" aria-live="polite"></span><p id="sidebar-empty" class="muted" hidden></p><section id="sidebar-description" aria-label="Description"><h3>Description</h3><div id="sidebar-description-content">Select a row to see its description.</div></section>
 
                             </div>
                             <div id="property-groups" hidden>

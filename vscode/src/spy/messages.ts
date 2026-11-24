@@ -23,7 +23,7 @@ export type ManagedRequest =
   | { type: "managedLoadMore"; group: string }
   | { type: "managedMethods"; action: "activate" | "deactivate" | "retry" | "more" }
   | { type: "managedReadVisible"; memberKeys: string[]; scopes?: string[] }
-  | { type: "managedCopy"; kind: "value" | "path" | "locator" | "export"; memberKey?: string; scope?: string };
+  | { type: "managedCopy"; kind: "value" | "locator" | "export"; memberKey?: string; scope?: string };
 
 export type SpyRequest =
   | ManagedRequest
@@ -230,5 +230,5 @@ export function parseManagedRequest(message: Record<string, unknown>): ManagedRe
   if (message.type === "managedLoadMore" && exact("type", "group") && key(message.group)) return { type: message.type, group: message.group };
   if (message.type === "managedMethods" && exact("type", "action") && (message.action === "activate" || message.action === "deactivate" || message.action === "retry" || message.action === "more")) return { type: message.type, action: message.action };
   if (message.type === "managedReadVisible" && (exact("type", "memberKeys") || (exact("type", "memberKeys", "scopes") && Array.isArray(message.scopes) && message.scopes.every((scope) => scope === "" || key(scope)))) && Array.isArray(message.memberKeys) && message.memberKeys.length > 0 && message.memberKeys.length <= 32 && message.memberKeys.every(key) && (!Array.isArray(message.scopes) || message.scopes.length === message.memberKeys.length)) return { type: message.type, memberKeys: message.memberKeys, ...(Array.isArray(message.scopes) ? { scopes: message.scopes as string[] } : {}) };
-  if (message.type === "managedCopy" && (exact("type", "kind") || (exact("type", "kind", "memberKey") && key(message.memberKey)) || (exact("type", "kind", "memberKey", "scope") && key(message.memberKey) && key(message.scope))) && (message.kind === "value" || message.kind === "path" || message.kind === "locator" || message.kind === "export")) return { type: message.type, kind: message.kind, ...(typeof message.memberKey === "string" ? { memberKey: message.memberKey } : {}), ...(typeof message.scope === "string" ? { scope: message.scope } : {}) };
+  if (message.type === "managedCopy" && (exact("type", "kind") || (exact("type", "kind", "memberKey") && key(message.memberKey)) || (exact("type", "kind", "memberKey", "scope") && key(message.memberKey) && key(message.scope))) && (message.kind === "value" || message.kind === "locator" || message.kind === "export")) return { type: message.type, kind: message.kind, ...(typeof message.memberKey === "string" ? { memberKey: message.memberKey } : {}), ...(typeof message.scope === "string" ? { scope: message.scope } : {}) };
 }

@@ -393,10 +393,10 @@ it("renders searchable sidebar tabs and remembers the property mode", () => {
   send({ type: "children", nodeId: "win", nodes: [child], expanded: true });
   send({ type: "selected", nodeId: "child", properties: { source: "wpf", info: child.info, properties: { ClrFullClassName: "Example.Button", Visible: "True", Custom: "custom value" }, uiaMapped: false } });
   const names = () => [...doc.querySelectorAll<HTMLTableRowElement>("#sidebar-rows tr[data-name]")].map((row) => row.dataset.name);
-  expect(names()).toEqual(["Enabled", "Height", "MappedName", "Name", "Parent", "Visible", "Width", "ClrClassName", "ClrFullClassName", "WPFControlName", "WPFControlOrdinalNo", "WPFControlText"]);
+  expect(names()).toEqual(["Enabled", "Height", "Name", "Parent", "Visible", "Width", "ClrClassName", "ClrFullClassName", "WPFControlName", "WPFControlOrdinalNo", "WPFControlText"]);
   expect(doc.querySelector('[data-name="WPFControlText"] td')?.textContent).toBe("Unknown");
   send({ type: "definitions", nodeId: "child", state: "ready", definitions: [{ kind: "element", qualname: "Page.save", file: "page.py", line: 1, pages: [], pageCount: 1 }] });
-  expect(doc.querySelector('[data-name="MappedName"] td')?.textContent).toBe("Page.save");
+  expect(doc.querySelector('[data-name="MappedName"]')).toBeNull();
   (doc.querySelector('[data-name="Parent"] button') as HTMLButtonElement).click();
   expect(posts).toContainEqual(expect.objectContaining({ type: "select", nodeId: "win" }));
   send({ type: "selected", nodeId: "child", properties: { source: "wpf", info: child.info, properties: { ClrFullClassName: "Example.Button", Custom: "custom value" }, uiaMapped: false } });
@@ -442,10 +442,9 @@ it("renders searchable sidebar tabs and remembers the property mode", () => {
   send({ type: "managedPanel", sequence: 4, visible: true, state: "ready", object: { objectId: "o", type: { fullName: "Example", assemblyName: "A", baseTypes: [] } }, rows: [], methods: { status: "ready", canInvoke: true, items: [supported, method] } });
   // The form is not drawn until the row menu asks for it; the unsupported method offers the item disabled.
   expect(doc.querySelector("#sidebar-rows input")).toBeNull();
-  const openMenu = (name: string) => { doc.querySelector(`[data-name="${name}"]`)!.dispatchEvent(new dom.window.MouseEvent("contextmenu", { bubbles: true, cancelable: true })); return [...doc.querySelectorAll<HTMLButtonElement>("#sidebar-row-menu button")].find((button) => button.textContent === "Invoke" + String.fromCharCode(0x2026))!; };
-  expect(openMenu("<Run>(System.Int32 count)").disabled).toBe(true);
-  doc.getElementById("sidebar-row-menu")!.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
-  const item = openMenu("<Run>(System.Int64 count)"); expect(item.disabled).toBe(false); item.click();
+  const play = (name: string) => doc.querySelector<HTMLButtonElement>(`[data-name="${name}"] [aria-label="Invoke\u2026"]`)!;
+  expect(play("<Run>(System.Int32 count)").disabled).toBe(true);
+  const item = play("<Run>(System.Int64 count)"); expect(item.disabled).toBe(false); item.click();
   const input = doc.querySelector<HTMLInputElement>("#sidebar-rows input")!; input.value = "9223372036854775807"; input.dispatchEvent(new dom.window.Event("input"));
   const invoke = doc.getElementById("invoke-submit") as HTMLButtonElement;
   invoke.click(); expect(posts).toContainEqual({ type: "managedInvoke", memberKey: "safe-key", arguments: [{ kind: "value", text: "9223372036854775807" }] });
@@ -477,17 +476,13 @@ it("offers managed row actions, descriptions, pins, and readiness controls", () 
   const row = doc.querySelector('[data-name="Title"]') as HTMLTableRowElement; row.click();
   expect(doc.querySelector("#sidebar-description")?.textContent).toContain("Runtime type: System.String");
   expect(doc.querySelector("#sidebar-description")?.textContent).toContain("Binding: Binding; active; Name");
-  // The row's menu opens from its context menu; its items are never missing, only disabled.
-  const action = (label: string, target: Element = row) => {
-    target.dispatchEvent(new dom.window.MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
-    return [...doc.querySelectorAll("#sidebar-row-menu button")].find((button) => button.textContent === label) as HTMLButtonElement;
-  };
-  action("Copy locator key").click(); expect(posts).toContainEqual({ type: "managedCopy", kind: "path", memberKey: "clr:Title" });
-  action("Pin").click(); expect(state.sidebarManagedPins).toHaveLength(1);
-  (doc.querySelector("#sidebar-mode") as HTMLInputElement).click(); expect(doc.querySelector('[data-name="Title"]')).not.toBeNull();
-  (doc.querySelector("#sidebar-mode") as HTMLInputElement).click();
+  row.cells[0]!.click(); row.cells[1]!.click();
+  expect(posts).toContainEqual({ type: "managedCopy", kind: "value", memberKey: "clr:Title" });
+  row.querySelector<HTMLButtonElement>('[aria-label="Read again"]')!.click();
+  expect(posts).toContainEqual({ type: "managedRead", memberKey: "clr:Title" });
+  expect(doc.querySelector("#sidebar-row-menu, .row-menu-button")).toBeNull();
   const secret = doc.querySelector('[data-name="Secret"]') as HTMLTableRowElement;
-  expect(secret.textContent).not.toContain("secret"); expect(action("Copy value", secret).disabled).toBe(true);
+  expect(secret.textContent).not.toContain("secret");
   (doc.querySelector("#sidebar-export") as HTMLButtonElement).click(); expect(posts).toContainEqual({ type: "managedCopy", kind: "export" });
   dom.window.close();
 });

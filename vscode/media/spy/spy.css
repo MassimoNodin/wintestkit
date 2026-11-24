@@ -1084,7 +1084,8 @@ body.properties-view #property-groups > section:not(#managed-panel), body.proper
 .sidebar-tabs button:hover { background: var(--vscode-toolbar-hoverBackground, #e6ebf2); }
 .sidebar-tabs button[aria-selected="true"] { position: relative; z-index: 1; color: var(--vscode-button-foreground, #fff); background: var(--vscode-button-background, #0078d4); border-color: var(--vscode-button-background, #0078d4); }
 /* The search box is a shade lighter than the section headings. */
-.sidebar-search { display: flex; align-items: center; gap: 6px; margin: 8px 12px; padding: 4px 8px; border: 1px solid transparent; border-radius: 4px; color: var(--muted); background: color-mix(in srgb, var(--vscode-foreground) 20%, var(--vscode-sideBar-background, transparent)); }
+.sidebar-search-row { display: flex; align-items: stretch; gap: 6px; margin: 8px 12px; }
+.sidebar-search { display: flex; flex: 1; min-width: 0; align-items: center; gap: 6px; margin: 0; padding: 4px 8px; border: 1px solid transparent; border-radius: 4px; color: var(--muted); background: color-mix(in srgb, var(--vscode-foreground) 20%, var(--vscode-sideBar-background, transparent)); }
 .sidebar-search:focus-within { border-color: var(--vscode-focusBorder, var(--accent)); }
 .sidebar-search input { flex: 1; width: 100%; min-width: 0; border: 0; outline: none; color: var(--vscode-input-foreground, inherit); background: transparent; }
 .sidebar-search input::placeholder { color: var(--vscode-input-placeholderForeground, var(--muted)); }
@@ -1142,23 +1143,22 @@ body.properties-view #property-groups > section:not(#managed-panel), body.proper
 .sidebar-table { width: 100%; }
 .sidebar-table thead th:nth-child(1) { width: 42%; }
 .sidebar-table thead th:nth-child(2) { width: auto; }
-.sidebar-table thead th:nth-child(3) { width: 56px; }
+.sidebar-table thead th:nth-child(3) { width: 28px; }
 .sidebar-table tbody th[scope="row"] { padding-left: 18px; position: relative; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; font-weight: normal; }
 .sidebar-table tbody td { overflow-wrap: anywhere; vertical-align: top; }
-.sidebar-table .property-actions { width: 56px; white-space: nowrap; }
-.sidebar-table .row-menu-button, #sidebar-actions > summary { width: 22px; height: 22px; padding: 0; }
+.sidebar-table .property-actions { width: 28px; white-space: nowrap; }
 .sidebar-row.described > th, .sidebar-row.described > td { background: var(--vscode-list-inactiveSelectionBackground, transparent); }
-.row-menu { position: fixed; z-index: 20; display: flex; flex-direction: column; min-width: 180px; padding: 4px 0; background: var(--vscode-menu-background, var(--vscode-editorWidget-background)); color: var(--vscode-menu-foreground, var(--vscode-foreground)); border: 1px solid var(--vscode-menu-border, var(--vscode-widget-border, transparent)); box-shadow: 0 2px 8px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.36)); }
-.row-menu[hidden] { display: none; }
-.row-menu button { border: 0; border-radius: 0; background: transparent; color: inherit; text-align: left; white-space: nowrap; padding: 4px 16px; }
-.row-menu button:hover:not(:disabled), .row-menu button:focus { background: var(--vscode-menu-selectionBackground, var(--vscode-list-hoverBackground)); color: var(--vscode-menu-selectionForeground, inherit); }
-.row-menu button:disabled { opacity: 0.5; }
-/* The refresh counts belong to the Spy panel's tree, not to the sidebar. */
 body.properties-view #refresh-counts { display: none !important; }
 body.spy-view #sidebar-inspector { display: none !important; }
-
-#sidebar-actions { position: relative; flex-shrink: 0; margin-right: 8px; }
-#preview-mode { margin-right: 0; }
+.sidebar-table .row-action-button { width: 22px; height: 22px; padding: 0; }
+.sidebar-table th .property-toggle { position: absolute; left: 0; top: 0; }
+.sidebar-table .copied { background: var(--vscode-list-hoverBackground, var(--surface)); }
+.sidebar-table .copied::after { content: "Copied"; position: absolute; z-index: 3; padding: 2px 5px; border-radius: 3px; background: var(--vscode-editorHoverWidget-background, var(--surface)); color: var(--vscode-editorHoverWidget-foreground, inherit); }
+.sidebar-copy-feedback { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+#sidebar-actions { position: relative; flex-shrink: 0; }
+#sidebar-actions > summary { display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 0; border-radius: 4px; background: color-mix(in srgb, var(--vscode-foreground) 20%, var(--vscode-sideBar-background, transparent)); }
+#sidebar-actions > summary:hover { background: var(--vscode-toolbar-hoverBackground); }
+#sidebar-actions > summary:focus-visible { outline: 1px solid var(--vscode-focusBorder, var(--accent)); outline-offset: -1px; }
 .sidebar-actions-menu { position: absolute; right: 0; top: calc(100% + 2px); z-index: 5; min-width: 160px; padding: 4px; border: 1px solid var(--vscode-menu-border, var(--border)); border-radius: 4px; color: var(--vscode-menu-foreground, inherit); background: var(--vscode-menu-background, var(--surface)); box-shadow: 0 2px 8px var(--vscode-widget-shadow, rgba(0, 0, 0, .3)); }
 #sidebar-actions summary { cursor: pointer; list-style: none; }
 #sidebar-actions[open] { z-index: 2; }

@@ -120,8 +120,8 @@ describe("Properties sidebar controls", () => {
     const view = open("properties-view");
     view.send(...hostSession());
     const actions = view.doc.querySelector<HTMLDetailsElement>("#sidebar-actions")!;
-    expect(actions.parentElement?.classList.contains("preview-heading")).toBe(true);
-    expect(actions.previousElementSibling?.id).toBe("preview-mode");
+    expect(actions.parentElement?.classList.contains("sidebar-search-row")).toBe(true);
+    expect(actions.previousElementSibling?.classList.contains("sidebar-search")).toBe(true);
     expect(actions.querySelector('.sidebar-actions-menu[role="menu"]')).not.toBeNull();
     for (const [id, message] of [
       ["sidebar-detach", { type: "managedDetach" }],
@@ -318,7 +318,7 @@ describe("Properties sidebar acceptance", () => {
     // Rows from more than one group survive, so the filter spans the groups.
     expect(view.headings().length).toBeGreaterThan(1);
     expect(filtered).toContain("Content");
-    expect(filtered).toContain("MappedName");
+    expect(filtered).not.toContain("MappedName");
     view.type(view.doc.querySelector("#sidebar-search") as HTMLInputElement, "no-such-row");
     expect(view.names()).toEqual([]);
     expect(view.visible("#sidebar-empty")).toBe(true);
@@ -326,7 +326,7 @@ describe("Properties sidebar acceptance", () => {
   });
 
   it("3.3 shows the default rows and remembers the choice", () => {
-    const basic = ["Enabled", "Height", "MappedName", "Name", "Parent", "Visible", "Width", "ClrClassName", "ClrFullClassName", "WPFControlName", "WPFControlOrdinalNo", "WPFControlText"];
+    const basic = ["Enabled", "Height", "Name", "Parent", "Visible", "Width", "ClrClassName", "ClrFullClassName", "WPFControlName", "WPFControlOrdinalNo", "WPFControlText"];
     const view = open("properties-view");
     view.send(...hostSession());
     expect(view.names()).toEqual(basic);
@@ -429,7 +429,7 @@ describe("Properties sidebar acceptance", () => {
   it("3.4 reports FullName as the locator path from the window, MappedName as the defining element and Parent as a link", () => {
     const view = open("properties-view");
     view.send(...hostSession());
-    expect(view.value("MappedName")).toBe("Page.contentSite");
+    expect(view.names()).not.toContain("MappedName");
     (view.doc.querySelector("#sidebar-mode") as HTMLInputElement).click();
     expect(view.posts).toContainEqual({ type: "generateLocator", nodeId: "presenter" });
     // No unique locator yet: the path is built from the tree, window first.
@@ -464,43 +464,18 @@ describe("Properties sidebar acceptance", () => {
     expect(view.text("#sidebar-description-content")).toContain("Getter threw InvalidOperationException: broken");
   });
 
-  it("3.6 lists rows as name and value with a menu of row actions and a description pane", () => {
+  it("copies cells and reads managed rows without a menu", () => {
     const view = open("properties-view", { sidebarShowAll: true });
     view.send(...hostSession());
-    expect([...view.doc.querySelectorAll(".sidebar-table thead th")].map((cell) => cell.textContent)).toEqual(["Name", "Value", ""]);
     const row = view.doc.querySelector('[data-name="Content"]') as HTMLTableRowElement;
-    expect([...row.children].map((cell) => cell.tagName)).toEqual(["TH", "TD", "TD"]);
-    const menu = view.doc.querySelector("#sidebar-row-menu") as HTMLElement;
-    const labels = () => [...menu.querySelectorAll("button")].map((button) => button.textContent);
-    const contextmenu = (target: Element) => {
-      const event = new view.dom.window.MouseEvent("contextmenu", { bubbles: true, cancelable: true });
-      target.dispatchEvent(event);
-      return event;
-    };
-    // Right-click opens the row's own menu, never the browser's: every item is present, those that do not apply are disabled.
-    expect(menu.hidden).toBe(true);
-    expect(contextmenu(row).defaultPrevented).toBe(true);
-    expect(menu.hidden).toBe(false);
-    expect(labels()).toEqual(["Copy value", "Copy name", "Copy locator key", "Expand", "Read again", "Pin"]);
-    const enabled = () => [...menu.querySelectorAll("button")].filter((button) => !button.disabled).map((button) => button.textContent);
-    expect(enabled()).toEqual(["Copy value", "Copy name", "Copy locator key", "Read again", "Pin"]);
+    (row.cells[0] as HTMLElement).click();
+    (row.cells[1] as HTMLElement).click();
+    row.querySelector<HTMLButtonElement>('[aria-label="Read again"]')!.click();
+    expect(view.posts).toEqual(expect.arrayContaining([{ type: "copy", text: "Content" }, { type: "managedCopy", kind: "value", memberKey: "clr:Content" }, { type: "managedRead", memberKey: "clr:Content" }]));
+    expect(view.doc.querySelector("#sidebar-row-menu, .row-menu-button")).toBeNull();
     expect(view.text("#sidebar-description-content")).toContain("Runtime type: System.String");
-    expect(view.text("#sidebar-description-content")).toContain("Declaring type: System.Windows.Controls.ContentPresenter");
-    const choose = (label: string) => {
-      if (menu.hidden) contextmenu(row);
-      ([...menu.querySelectorAll("button")].find((button) => button.textContent === label) as HTMLButtonElement).click();
-    };
-    for (const label of ["Copy value", "Copy name", "Copy locator key", "Read again"]) choose(label);
-    expect(menu.hidden).toBe(true);
-    expect(view.posts).toEqual(expect.arrayContaining([
-      { type: "managedCopy", kind: "value", memberKey: "clr:Content" },
-      { type: "copy", text: "Content" },
-      { type: "managedCopy", kind: "path", memberKey: "clr:Content" },
-      { type: "managedRead", memberKey: "clr:Content" },
-    ]));
-    // An object value can also be expanded in place; the same row menu carries that item enabled.
-    contextmenu(view.doc.querySelector('[data-name="CLR Parent"]') as Element);
-    expect(enabled()).toContain("Expand");
+    expect(view.doc.querySelector('[data-name="Height"] [aria-label="Read again"]')).toBeNull();
+    expect(view.headings()).not.toContain("Pinned");
     expect(view.errors).toEqual([]);
   });
 
@@ -580,132 +555,27 @@ describe("Properties sidebar acceptance", () => {
 });
 
 const rowsOf = (view: ReturnType<typeof open>) => [...view.doc.querySelectorAll<HTMLTableRowElement>("#sidebar-rows tr.sidebar-row")];
-const contextmenuOn = (view: ReturnType<typeof open>, target: Element) => {
-  const event = new view.dom.window.MouseEvent("contextmenu", { bubbles: true, cancelable: true });
-  target.dispatchEvent(event);
-  return event;
-};
 const key = (view: ReturnType<typeof open>, target: Element, init: KeyboardEventInit) => {
   const event = new view.dom.window.KeyboardEvent("keydown", { bubbles: true, cancelable: true, ...init });
   target.dispatchEvent(event);
   return event;
 };
-const menuItems = (view: ReturnType<typeof open>) => [...view.doc.querySelectorAll<HTMLButtonElement>("#sidebar-row-menu button")];
-const ALL_ITEMS = ["Copy value", "Copy name", "Copy locator key", "Expand", "Read again", "Pin"];
 
 describe("Properties sidebar review fixes", () => {
-  it("1. draws the menu glyphs as the kebab icon with a name and a tooltip, never a literal question mark", () => {
+  it("copies UI Automation values and names, with keyboard and interactive children", () => {
     const view = open("properties-view", { sidebarShowAll: true });
     view.send(...hostSession());
-    const summary = view.doc.querySelector("#sidebar-actions > summary") as HTMLElement;
-    expect(summary.querySelector(".codicon-kebab-horizontal")).not.toBeNull();
-    expect(summary.getAttribute("aria-label")).toBe("Properties actions");
-    expect(summary.title).toBe("Properties actions");
-    expect(summary.textContent).toBe("");
-    const buttons = [...view.doc.querySelectorAll<HTMLButtonElement>("#sidebar-rows .row-menu-button")];
-    expect(buttons.length).toBe(rowsOf(view).length);
-    for (const button of buttons) {
-      expect(button.querySelector(".codicon-kebab-horizontal")).not.toBeNull();
-      expect(button.getAttribute("aria-label")).toBe("Row actions");
-      expect(button.title).toBe("Row actions");
-      expect(button.textContent).toBe("");
-    }
-    expect(view.text("#sidebar-inspector")).not.toMatch(/(^|\s)\?(\s|$)/);
-    // No source that draws the sidebar or its messages stands in a question mark for a glyph or an ellipsis.
-    for (const file of ["media/spy/spy.js", "media/spy/spy.html", "src/spy/spyView.ts", "src/spy/managedPanel.ts"]) {
-      const source = readFileSync(file, "utf8");
-      expect(source, file).not.toMatch(/managedNode\("summary", "\?"\)|>\?<\/summary>|preview\?"|(?:Loading|Capturing|Refreshing|Checking) [a-z ]+\?["'`]/);
-    }
-    expect(view.errors).toEqual([]);
-  });
-
-  it("2. opens the row menu from the context menu of every row, with the toggle off and on, and on the Fields tab", () => {
-    const view = open("properties-view");
-    view.send(...hostSession());
-    const check = () => {
-      const rows = rowsOf(view);
-      expect(rows.length).toBeGreaterThan(0);
-      for (const row of rows) {
-        expect(contextmenuOn(view, row).defaultPrevented, row.dataset.key).toBe(true);
-        expect(view.hiddenReason("#sidebar-row-menu")).toBeUndefined();
-        expect(menuItems(view).map((button) => button.textContent), row.dataset.key).toEqual(ALL_ITEMS);
-        key(view, view.doc.querySelector("#sidebar-row-menu") as Element, { key: "Escape" });
-      }
-    };
-    check();
-    expect(view.names()).toHaveLength(12);
-    (view.doc.querySelector("#sidebar-mode") as HTMLInputElement).click();
-    check();
-    (view.doc.querySelector('[data-sidebar-tab="fields"]') as HTMLButtonElement).click();
-    check();
-    expect(view.errors).toEqual([]);
-  });
-
-  it("2. disables the items that do not apply instead of leaving them out", () => {
-    const view = open("properties-view", { sidebarShowAll: true });
-    view.send(...hostSession());
-    const disabled = (name: string) => {
-      contextmenuOn(view, view.doc.querySelector(`[data-name="${name}"]`) as Element);
-      const result = menuItems(view).filter((button) => button.disabled).map((button) => button.textContent);
-      key(view, view.doc.querySelector("#sidebar-row-menu") as Element, { key: "Escape" });
-      return result;
-    };
-    // A Standard row has no member to read, expand or key; its value and name still copy.
-    expect(disabled("Height")).toEqual(["Copy locator key", "Expand", "Read again", "Pin"]);
-    // A plain .NET property can be read again and pinned, but is not an object to expand.
-    expect(disabled("Content")).toEqual(["Expand"]);
-    // An object value expands, but there is no scalar to copy.
-    expect(disabled("CLR Parent")).toEqual(["Copy value"]);
-    expect(view.errors).toEqual([]);
-  });
-
-  it("2. opens from the button, Shift+F10 and the Menu key; arrows move, Esc closes and focus returns to the row", () => {
-    const view = open("properties-view", { sidebarShowAll: true });
-    view.send(...hostSession());
-    const row = view.doc.querySelector('[data-name="Content"]') as HTMLElement;
-    const menu = view.doc.querySelector("#sidebar-row-menu") as HTMLElement;
-    const button = row.querySelector(".row-menu-button") as HTMLButtonElement;
-    button.click();
-    expect(menu.hidden).toBe(false);
-    expect(button.getAttribute("aria-expanded")).toBe("true");
-    expect(view.doc.activeElement?.textContent).toBe("Copy value");
-    key(view, menu, { key: "ArrowDown" });
-    expect(view.doc.activeElement?.textContent).toBe("Copy name");
-    key(view, menu, { key: "ArrowUp" });
-    key(view, menu, { key: "ArrowUp" });
-    // Wraps past the first item to the last enabled one (Expand is disabled for a string).
-    expect(view.doc.activeElement?.textContent).toBe("Pin");
-    key(view, menu, { key: "Home" });
-    expect(view.doc.activeElement?.textContent).toBe("Copy value");
-    key(view, menu, { key: "End" });
-    expect(view.doc.activeElement?.textContent).toBe("Pin");
-    key(view, menu, { key: "Escape" });
-    expect(menu.hidden).toBe(true);
-    expect(view.doc.activeElement).toBe(row);
-    expect(button.hasAttribute("aria-expanded")).toBe(false);
-    expect(key(view, row, { key: "F10", shiftKey: true }).defaultPrevented).toBe(true);
-    expect(menu.hidden).toBe(false);
-    key(view, menu, { key: "Escape" });
-    expect(key(view, row, { key: "ContextMenu" }).defaultPrevented).toBe(true);
-    expect(menu.hidden).toBe(false);
-    // Enter on a focused item runs it (a button's own activation) and closes the menu.
-    (view.doc.activeElement as HTMLButtonElement).click();
-    expect(menu.hidden).toBe(true);
-    expect(view.doc.activeElement).toBe(row);
-    expect(view.errors).toEqual([]);
-  });
-
-  it("2. keeps the browser's own menu for the argument boxes of a method", () => {
-    const view = open("properties-view", { sidebarShowAll: true });
-    view.send(...hostSession());
-    (view.doc.querySelector('[data-sidebar-tab="methods"]') as HTMLButtonElement).click();
-    view.send(managed({ sequence: 2, methods: { status: "ready", canInvoke: true, items: [{ key: "k", name: "Measure", declaringType: "T", returnType: "System.Void", visibility: "public", isStatic: false, parameters: [{ name: "width", type: "System.Double" }] }] } }));
-    const row = view.doc.querySelector('#sidebar-rows [data-name^="Measure"]') as Element;
-    expect(contextmenuOn(view, row).defaultPrevented).toBe(true);
-    expect(menuItems(view).map((button) => button.textContent)).toEqual(["Invoke\u2026", ...ALL_ITEMS]);
-    menuItems(view)[0]!.click();
-    const input = view.doc.querySelector("#sidebar-rows input") as HTMLInputElement;
-    expect(contextmenuOn(view, input).defaultPrevented).toBe(false);
+    const height = view.doc.querySelector('[data-name="Height"]') as HTMLTableRowElement;
+    height.cells[0]!.click(); height.cells[1]!.click();
+    expect(view.posts).toContainEqual({ type: "copy", text: "Height" });
+    expect(view.posts).toContainEqual({ type: "copy", text: height.cells[1]!.textContent });
+    expect(view.text("#sidebar-copy-feedback")).toBe("Copied");
+    key(view, height, { key: "Enter" }); key(view, height, { key: "c", ctrlKey: true });
+    const before = view.posts.filter((p) => p.type === "copy" || p.type === "managedCopy").length;
+    (view.doc.querySelector('[data-name="Parent"] button') as HTMLButtonElement).click();
+    (view.doc.querySelector('[data-name="CLR Parent"] .property-toggle') as HTMLButtonElement).click();
+    expect(view.posts.filter((p) => p.type === "copy" || p.type === "managedCopy")).toHaveLength(before);
+    expect(view.posts).toContainEqual({ type: "managedExpand", memberKey: "clr:Parent" });
   });
 
   it("3. shows a value for every .NET row, dependency and attached properties included, or the real reason", () => {
@@ -766,9 +636,9 @@ describe("Properties sidebar review fixes", () => {
     expect(view.value("AutomationId")).toBe('""');
     // Pages not yet known: the value is not yet known; a finished search with no match says so.
     view.send({ type: "definitions", nodeId: "presenter", state: "ready", definitions: [] });
-    expect(view.value("MappedName")).toBe("(not defined in any page)");
+    expect(view.names()).not.toContain("MappedName");
     // Nothing in this row may still read Unknown for a value the page can derive.
-    for (const name of ["Exists", "Left", "Top", "AutomationId", "MappedName"]) expect(view.value(name), name).not.toBe("Unknown");
+    for (const name of ["Exists", "Left", "Top", "AutomationId"]) expect(view.value(name), name).not.toBe("Unknown");
     // The window itself reports its place on the screen.
     view.send({ type: "selected", nodeId: "win", properties: { ...presenterProperties, info: win.info, ancestors: [] } });
     expect(view.value("Left")).toBe("100");
@@ -813,7 +683,7 @@ describe("Properties sidebar review fixes", () => {
     const names = rule('.sidebar-table tbody th[scope="row"]');
     expect(rule(".sidebar-table thead th:nth-child(1)")).toMatch(/width:\s*42%/);
     expect(rule(".sidebar-table thead th:nth-child(2)")).toMatch(/width:\s*auto/);
-    expect(rule(".sidebar-table thead th:nth-child(3)")).toMatch(/width:\s*56px/);
+    expect(rule(".sidebar-table thead th:nth-child(3)")).toMatch(/width:\s*28px/);
     expect(names).toMatch(/text-overflow:\s*ellipsis/);
     expect(names).toMatch(/white-space:\s*nowrap/);
     // A name is never broken in the middle of a word; values wrap.
@@ -889,25 +759,14 @@ describe("Properties sidebar review fixes", () => {
     expect(view.text("#sidebar-description-content")).toContain("Name: Name");
   });
 
-  it("keeps the default view to exactly the nine rows, each with a menu button", () => {
-    const view = open("properties-view");
-    view.send(...hostSession());
-    expect(view.names()).toEqual(["Enabled", "Height", "MappedName", "Name", "Parent", "Visible", "Width", "ClrClassName", "ClrFullClassName", "WPFControlName", "WPFControlOrdinalNo", "WPFControlText"]);
-    expect(view.doc.querySelectorAll("#sidebar-rows .row-menu-button")).toHaveLength(12);
+  it("keeps the default rows without row menus or pinned group", () => {
+    const view = open("properties-view"); view.send(...hostSession());
+    expect(view.names()).not.toContain("MappedName");
+    expect(view.headings()).not.toContain("Pinned");
+    expect(view.doc.querySelector("#sidebar-row-menu, .row-menu-button")).toBeNull();
   });
 
-  it("does not redraw rows under an open menu, and applies the redraw when it closes", () => {
-    const view = open("properties-view", { sidebarShowAll: true });
-    view.send(...hostSession());
-    const row = view.doc.querySelector('[data-name="Content"]') as HTMLElement;
-    contextmenuOn(view, row);
-    view.send(managed({ sequence: 2, rows: [{ member: member("Content"), value: { status: "ok", kind: "string", scalar: "Later", runtimeType: "System.String" } }] }));
-    expect(row.isConnected).toBe(true);
-    expect(view.value("Content")).toBe("Hello");
-    key(view, view.doc.querySelector("#sidebar-row-menu") as Element, { key: "Escape" });
-    expect(view.value("Content")).toBe("Later");
-    expect(view.doc.activeElement).toBe(view.doc.querySelector('[data-name="Content"]'));
-  });
+
 });
 
 describe("Properties sidebar attach flow", () => {
@@ -978,8 +837,7 @@ describe("Methods tab invocation", () => {
   };
   const rowFor = (view: ReturnType<typeof open>, label = RECORD) => view.doc.querySelector(`#sidebar-rows tr.sidebar-row[data-name="${label}"]`) as HTMLTableRowElement;
   const invokeItem = (view: ReturnType<typeof open>, label = RECORD) => {
-    contextmenuOn(view, rowFor(view, label));
-    return menuItems(view).find((button) => button.textContent === "Invoke\u2026") as HTMLButtonElement;
+    return rowFor(view, label).querySelector('[aria-label="Invoke\u2026"]') as HTMLButtonElement;
   };
   const field = (view: ReturnType<typeof open>, index: number) => view.doc.getElementById(`invoke-arg-${index}`) as HTMLInputElement;
   const typeInto = (view: ReturnType<typeof open>, index: number, text: string) => view.type(field(view, index), text);
@@ -990,10 +848,9 @@ describe("Methods tab invocation", () => {
   it("offers Invoke\u2026 first in the row menu, enabled when the session can call, the list is ready and the method is supported", () => {
     const view = methodsView();
     const item = invokeItem(view);
-    expect(menuItems(view).map((button) => button.textContent)).toEqual(["Invoke\u2026", ...ALL_ITEMS]);
     expect(item.disabled).toBe(false);
-    expect(item.title).toBe("");
-    expect(view.doc.activeElement).toBe(item);
+    expect(item.title).toBe("Invoke\u2026");
+    expect(item.querySelector(".codicon-play")).not.toBeNull();
     expect(view.doc.querySelector("#sidebar-rows details")).toBeNull();
     expect(view.errors).toEqual([]);
   });
@@ -1009,11 +866,9 @@ describe("Methods tab invocation", () => {
     for (const [name, items, extra, tooltip] of cases) {
       const view = methodsView(items, extra);
       const row = view.doc.querySelector("#sidebar-rows tr.sidebar-row") as HTMLTableRowElement;
-      contextmenuOn(view, row);
-      const item = menuItems(view).find((button) => button.textContent === "Invoke\u2026") as HTMLButtonElement;
+      const item = row.querySelector('[aria-label="Invoke\u2026"]') as HTMLButtonElement;
       expect(item.disabled, name).toBe(true);
       expect(item.title, name).toBe(tooltip);
-      expect(menuItems(view).filter((button) => !button.disabled)[0]?.textContent, name).toBe("Copy value");
       expect(view.errors).toEqual([]);
     }
   });
@@ -1036,7 +891,7 @@ describe("Methods tab invocation", () => {
     const view = methodsView();
     expect(forms(view)).toHaveLength(0);
     invokeItem(view).click();
-    expect((view.doc.getElementById("sidebar-row-menu") as HTMLElement).hidden).toBe(true);
+    expect(view.doc.getElementById("sidebar-row-menu")).toBeNull();
     expect(forms(view)).toHaveLength(1);
     expect(rowFor(view).nextElementSibling).toBe(forms(view)[0]);
     const labels = [...view.doc.querySelectorAll("#sidebar-rows .invoke-field > label[for]")].map((label) => label.textContent);
@@ -1156,16 +1011,12 @@ describe("Methods tab invocation", () => {
     expect(forms(view)).toHaveLength(0);
   });
 
-  it("is reachable from the keyboard: Shift+F10 opens the menu on Invoke\u2026 and Enter opens the form", () => {
-    const view = methodsView();
-    const row = rowFor(view);
-    row.focus();
-    expect(key(view, row, { key: "F10", shiftKey: true }).defaultPrevented).toBe(true);
-    expect(view.doc.activeElement?.textContent).toBe("Invoke\u2026");
-    (view.doc.activeElement as HTMLButtonElement).click();
-    expect(view.doc.activeElement).toBe(field(view, 0));
-    expect(forms(view)).toHaveLength(1);
+  it("opens the invocation form from the play button", () => {
+    const view = methodsView(); const button = invokeItem(view); button.focus(); button.click();
+    expect(view.doc.activeElement).toBe(field(view, 0)); expect(forms(view)).toHaveLength(1);
   });
+
+
 });
 
 describe("Not read rows", () => {
@@ -1300,13 +1151,7 @@ describe("Win32 window rows", () => {
     expect(description).toContain("WS_CHILD: 0x40000000");
     expect(description).toContain("ES_MULTILINE: 0x00000004");
     expect(description).toContain("Unnamed bits: 0x00000100");
-    const menu = view.doc.querySelector("#sidebar-row-menu") as HTMLElement;
-    const rightClick = () => row.dispatchEvent(new view.dom.window.MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
-    const choose = (label: string) => ([...menu.querySelectorAll("button")].find((button) => button.textContent === label) as HTMLButtonElement).click();
-    rightClick();
-    choose("Copy value");
-    rightClick();
-    choose("Copy name");
+    row.cells[1]!.click(); row.cells[0]!.click();
     expect(view.posts).toEqual(expect.arrayContaining([
       { type: "copy", text: "WS_CHILD | WS_VISIBLE | ES_LEFT | ES_MULTILINE | 0x00000100" },
       { type: "copy", text: "Styles" },
@@ -1481,13 +1326,10 @@ describe("Binding details in the Properties sidebar", () => {
     expect(view.errors).toEqual([]);
   });
 
-  it("offers Collapse in the row menu while a binding is open", () => {
-    const view = show([single]);
-    const menuLabels = () => { bindingRow(view).querySelector<HTMLButtonElement>(".row-menu-button")!.click(); const labels = [...view.doc.querySelectorAll("#sidebar-row-menu button")].map((button) => button.textContent); return labels; };
-    expect(menuLabels()).toContain("Expand");
-    (view.doc.querySelector("#sidebar-row-menu") as HTMLElement).dispatchEvent(new view.dom.window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
-    toggle(bindingRow(view)).click();
-    expect(menuLabels()).toContain("Collapse");
+  it("expands and collapses a binding with its arrow", () => {
+    const view = show([single]); const button = toggle(bindingRow(view));
+    expect(button.getAttribute("aria-expanded")).toBe("false"); button.click();
+    expect(toggle(bindingRow(view)).getAttribute("aria-expanded")).toBe("true"); toggle(bindingRow(view)).click();
   });
 
   it("expands DataItem and ResolvedSource through the existing expand flow and lists their members below", () => {
@@ -1502,14 +1344,7 @@ describe("Binding details in the Properties sidebar", () => {
     view.send(managed({ sequence: 3, rows: [dependency], bindings: [single], bindingObjects: [{ ...item, children: [child, { id: "nested", member: member("Parent", { memberKey: "clr:Parent" }), value: handle("parent") }] }, objectRow("resolvedSource", "ResolvedSource", "source")] }));
     expect(view.value("Text.DataItem.Name")).toBe("inner");
     expect(view.names()).toContain("Text.DataItem.Parent");
-    // An object that is open has no expand button; its members are not pinnable as locators of the binding row.
-    expect(toggle(view.doc.querySelector('#sidebar-rows [data-name="Text.DataItem"]'))).toBeNull();
-    (view.doc.querySelector('#sidebar-rows [data-name="Text.DataItem.Parent"] .row-menu-button') as HTMLButtonElement).click();
-    const buttons = [...view.doc.querySelectorAll<HTMLButtonElement>("#sidebar-row-menu button")];
-    expect(buttons.find((button) => button.textContent === "Expand")!.disabled).toBe(false);
-    expect(buttons.find((button) => button.textContent === "Copy locator key")!.disabled).toBe(true);
-    expect(buttons.find((button) => button.textContent === "Pin")!.disabled).toBe(true);
-    buttons.find((button) => button.textContent === "Expand")!.click();
+    toggle(view.doc.querySelector('#sidebar-rows [data-name="Text.DataItem.Parent"]')).click();
     expect(view.posts).toContainEqual({ type: "managedExpand", memberKey: "clr:Parent", scope: "row-dataItem" });
     expect(view.errors).toEqual([]);
   });
