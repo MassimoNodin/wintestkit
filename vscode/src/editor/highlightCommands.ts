@@ -203,6 +203,8 @@ export class HighlightCommands implements vscode.Disposable {
           ...located,
           result: { ...result, qualname: target.qualname },
         });
+      if (result.outlinedAncestor && result.element)
+        void vscode.window.showInformationMessage(`${shortElement(result.element)} has no on-screen rectangle; outlined ${result.outlinedAncestor} instead`);
       if (result.status === "found" && result.element)
         vscode.window.setStatusBarMessage(
           "$(eye) Found " + shortElement(result.element),

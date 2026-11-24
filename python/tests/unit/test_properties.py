@@ -303,7 +303,7 @@ def test_terminal_spy_prints_properties(
     )
 
     class Session:
-        def __init__(self, hover, pick, cancel, process_filter):
+        def __init__(self, hover, pick, cancel, process_filter, **kwargs):
             self.pick, self.cancel = pick, cancel
 
         def start(self):

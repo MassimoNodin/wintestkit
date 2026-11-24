@@ -80,3 +80,31 @@ def test_native_window_handle_is_reported_only_when_there_is_one() -> None:
     assert ElementInfo.from_dict(data) == info
     # Older payloads have no such key; they read as "no window".
     assert ElementInfo.from_dict(make_info().to_dict()).native_window_handle == 0
+
+
+def test_empty_uia_bounds_use_visible_native_window(monkeypatch):
+    from types import SimpleNamespace
+
+    from wintestkit.engine.highlight import _window_rect, outline
+    from wintestkit.uia import win32
+    from wintestkit.uia.element import UIAElement
+
+    raw = SimpleNamespace(
+        CurrentBoundingRectangle=SimpleNamespace(left=0, top=0, right=0, bottom=0),
+        CurrentNativeWindowHandle=123,
+        GetRuntimeId=lambda: [1],
+    )
+    monkeypatch.setattr(win32, "IsWindowVisible", lambda handle: handle == 123)
+
+    def get_rect(handle, address):
+        rect = address._obj
+        rect.left, rect.top, rect.right, rect.bottom = 5, 6, 25, 36
+        return True
+
+    monkeypatch.setattr(win32, "GetWindowRect", get_rect)
+    element = UIAElement(raw)
+    assert element.rect is None
+    assert outline(element) == (Rect(5, 6, 20, 30), None)
+    monkeypatch.setattr(win32, "IsWindowVisible", lambda handle: False)
+    assert _window_rect(element) is None
+    assert element.rect is None

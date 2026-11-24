@@ -203,6 +203,7 @@ namespace WinTestKit.Inspector.Agent.Members.Tests
 #if !NET48
             keys.Add(Property(typeof(Model), "ByRefLike"));
 #endif
+            keys.Add(Property(typeof(Model), "Static"));
             keys.Add(Property(typeof(Model), "Item", "System.Int32"));
             keys.Add(Property(typeof(Model), "Item", "System.String"));
             keys.AddRange(new[] { "Hidden", "Secret", "Protected", "Internal", "ProtectedInternal", "PrivateProtected" }.Select(name => Property(typeof(ModelBase), name)));
@@ -222,7 +223,7 @@ namespace WinTestKit.Inspector.Agent.Members.Tests
                 Assert.Equal(0, getterCalls);
                 Assert.Equal(0, attributeCalls);
                 Assert.Equal(0, staticCalls);
-                Assert.DoesNotContain(members, member => member.Name == "Static");
+                Assert.Contains(members, member => member.Name == "Static" && member.Category == "staticProperty");
                 MemberInfo overridden = Assert.Single(members, member => member.MemberKey == Property(typeof(Model), "Virtual"));
                 Assert.Equal(typeof(Model).FullName, overridden.DeclaringType);
                 Assert.Contains(overridden.Attributes, attribute => attribute.TypeName == typeof(ProbeAttribute).FullName);

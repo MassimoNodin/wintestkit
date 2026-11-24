@@ -28,12 +28,16 @@ FEATURES = frozenset(
     {
         "typeMetadata",
         "clrMembers",
+        "membersItems",
+        "membersStyling",
+        "membersEvents",
         "dependencyProperties",
         "bindings",
         "exactUiaMapping",
         "batchReads",
         "query",
         "geometry",
+        "treeParent",
         "actions",
         "virtualItems",
         "writes",
@@ -209,13 +213,19 @@ def _camel(name: str) -> str:
 def _wire(value: Any) -> Any:
     if isinstance(value, PathSegment):
         return value.to_json()
+    if type(value).__name__ == "MemberEvent":
+        # The wire names an event's handler list by its kind, so the event writes itself.
+        return value.to_json()
     if is_dataclass(value) and not isinstance(value, type):
         result: dict[str, Any] = {}
         for item in fields(value):
             entry = getattr(value, item.name)
             if (
                 entry is None
-                and item.name not in {"scalar", "value"}
+                and (
+                    item.name not in {"scalar", "value"}
+                    or type(value).__name__ in {"StylingSetter", "ResourceResult"}
+                )
                 and not (
                     type(value).__name__ in {"ElementState", "PartGeometry"}
                     and item.name in {"bounds", "window_handle", "click_point"}
@@ -452,6 +462,78 @@ class DependencyMetadata(WireModel):
 
 
 @dataclass(frozen=True)
+class Item(WireModel):
+    index: int | None
+    key: Value | None
+    value: Value
+
+    @classmethod
+    def from_json(cls, value: object) -> Item:
+        data = _obj(value, "index key value")
+        return cls(
+            None if data["index"] is None else _int(data["index"], 0, 2**31 - 1),
+            None if data["key"] is None else Value.from_json(data["key"]),
+            Value.from_json(data["value"]),
+        )
+
+
+@dataclass(frozen=True)
+class ItemsError(WireModel):
+    type: str
+    message: str | None
+
+    @classmethod
+    def from_json(cls, value: object) -> ItemsError:
+        data = _obj(value, "type message")
+        return cls(
+            _str(data["type"]),
+            None if data["message"] is None else _str(data["message"], 512, empty=True),
+        )
+
+
+@dataclass(frozen=True)
+class ItemsResult(WireModel):
+    kind: str
+    count: int | None
+    items: tuple[Item, ...]
+    next_page_token: str | None
+    complete: bool
+    error: ItemsError | None = None
+
+    @classmethod
+    def from_json(cls, value: object) -> ItemsResult:
+        data = _obj(value, "kind count items nextPageToken complete", "error")
+        complete = _bool(data["complete"])
+        token = None if data["nextPageToken"] is None else _identifier(data["nextPageToken"])
+        if complete and token is not None:
+            raise ValueError("Complete page cannot have next token")
+        return cls(
+            _choice(data["kind"], {"array", "list", "dictionary", "enumerable", "notEnumerable"}),
+            None if data["count"] is None else _int(data["count"], 0, 2**31 - 1),
+            _array(data["items"], Item.from_json, 200),
+            token,
+            complete,
+            _optional(data, "error", ItemsError.from_json),
+        )
+
+    def to_json(self) -> dict[str, Any]:
+        result = super().to_json()
+        result["count"] = self.count
+        result["nextPageToken"] = self.next_page_token
+        result["items"] = [
+            {
+                "index": item.index,
+                "key": item.key.to_json() if item.key else None,
+                "value": item.value.to_json(),
+            }
+            for item in self.items
+        ]
+        if self.error:
+            result["error"] = {"type": self.error.type, "message": self.error.message}
+        return result
+
+
+@dataclass(frozen=True)
 class MethodParameter(WireModel):
     name: str
     type: str
@@ -537,6 +619,8 @@ class Member(WireModel):
                     "typeMetadata",
                     "clrProperty",
                     "clrField",
+                    "staticProperty",
+                    "staticField",
                     "dependencyProperty",
                     "attachedProperty",
                 },
@@ -563,7 +647,7 @@ class Member(WireModel):
                 "reason",
                 lambda item: _choice(
                     item,
-                    {"nonPublic", "writeOnly", "indexer", "static", "unsupportedType", "ambiguous"},
+                    {"nonPublic", "writeOnly", "indexer", "unsupportedType", "ambiguous"},
                 ),
             ),
             _optional(data, "wrapperKey", _key),
@@ -636,6 +720,7 @@ class Value(WireModel):
     failed_segment: int | None = None
     redaction_rule: str | None = None
     dependency_source: DependencySource | None = None
+    error_message: str | None = None
 
     @classmethod
     def from_json(cls, value: object) -> Value:
@@ -643,7 +728,7 @@ class Value(WireModel):
             value,
             "status kind declaredType runtimeType",
             "scalar object message truncatedAt cycleTo numericValue typeInfo arrayRank "
-            "arrayLength failedSegment redactionRule dependencySource",
+            "arrayLength failedSegment redactionRule dependencySource errorMessage",
         )
         status = _choice(
             data["status"],
@@ -738,6 +823,8 @@ class Value(WireModel):
             "dependencySource",
         }:
             raise ValueError("Invalid unavailable value")
+        if status != "exception" and "errorMessage" in data:
+            raise ValueError("Unexpected error message")
         if (status in {"nullIntermediate", "exception"}) != ("failedSegment" in data):
             raise ValueError("Invalid failed segment")
         if (kind != "array" or status != "ok") and keys & {"arrayRank", "arrayLength"}:
@@ -767,11 +854,13 @@ class Value(WireModel):
             _optional(data, "failedSegment", lambda item: _int(item, 0, 7)),
             _optional(data, "redactionRule", _key),
             _optional(data, "dependencySource", DependencySource.from_json),
+            _optional(data, "errorMessage", lambda item: _str(item, 512, empty=True)),
         )
 
     def as_python(self) -> object:
         if self.status != "ok" or self.scalar is MISSING:
-            raise ValueError("Value is not a usable scalar")
+            detail = f": {self.error_message}" if self.error_message else ""
+            raise ValueError(f"Value is not a usable scalar{detail}")
         if self.kind == "integer" and isinstance(self.scalar, str):
             return int(self.scalar)
         if self.kind == "number" and isinstance(self.scalar, str):
@@ -921,6 +1010,29 @@ class BindingInfo(WireModel):
     converter_type: str | None = None
     children: tuple[BindingInfo, ...] | None = None
     validation_errors: tuple[str, ...] | None = None
+    string_format: str | None = None
+    fallback_value: Value | None = None
+    target_null_value: Value | None = None
+    converter_parameter: Value | None = None
+    converter_culture: str | None = None
+    delay: int | None = None
+    binding_group_name: str | None = None
+    x_path: str | None = None
+    is_async: bool | None = None
+    notify_on_source_updated: bool | None = None
+    notify_on_target_updated: bool | None = None
+    notify_on_validation_error: bool | None = None
+    validates_on_data_errors: bool | None = None
+    validates_on_exceptions: bool | None = None
+    validates_on_notify_data_errors: bool | None = None
+    validation_rules: tuple[str, ...] | None = None
+    has_update_source_exception_filter: bool | None = None
+    active_child_index: int | None = None
+    data_item: Value | None = None
+    resolved_source: Value | None = None
+    resolved_source_property_name: str | None = None
+    has_error: bool | None = None
+    has_validation_error: bool | None = None
 
     @classmethod
     def from_json(cls, value: object) -> BindingInfo:
@@ -934,7 +1046,12 @@ class BindingInfo(WireModel):
                 item,
                 "memberKey kind status mode updateSourceTrigger",
                 "path elementName relativeSource sourceType converterType children "
-                "validationErrors",
+                "validationErrors stringFormat fallbackValue targetNullValue converterParameter "
+                "converterCulture delay bindingGroupName xPath isAsync notifyOnSourceUpdated "
+                "notifyOnTargetUpdated notifyOnValidationError validatesOnDataErrors "
+                "validatesOnExceptions validatesOnNotifyDataErrors validationRules "
+                "hasUpdateSourceExceptionFilter activeChildIndex dataItem resolvedSource "
+                "resolvedSourcePropertyName hasError hasValidationError",
             )
             kind = _choice(data["kind"], {"none", "binding", "multiBinding", "priorityBinding"})
             status, mode, trigger = (
@@ -964,9 +1081,554 @@ class BindingInfo(WireModel):
                     lambda entries: _array(entries, lambda child: parse(child, depth + 1), 32),
                 ),
                 _optional(data, "validationErrors", lambda entries: _array(entries, _key, 32)),
+                _optional(data, "stringFormat", text),
+                _optional(data, "fallbackValue", Value.from_json),
+                _optional(data, "targetNullValue", Value.from_json),
+                _optional(data, "converterParameter", Value.from_json),
+                _optional(data, "converterCulture", lambda entry: _str(entry, 128, empty=True)),
+                _optional(data, "delay", lambda entry: _int(entry, 0, 2_147_483_647)),
+                _optional(data, "bindingGroupName", text),
+                _optional(data, "xPath", text),
+                _optional(data, "isAsync", _bool),
+                _optional(data, "notifyOnSourceUpdated", _bool),
+                _optional(data, "notifyOnTargetUpdated", _bool),
+                _optional(data, "notifyOnValidationError", _bool),
+                _optional(data, "validatesOnDataErrors", _bool),
+                _optional(data, "validatesOnExceptions", _bool),
+                _optional(data, "validatesOnNotifyDataErrors", _bool),
+                _optional(data, "validationRules", lambda entries: _array(entries, _key, 32)),
+                _optional(data, "hasUpdateSourceExceptionFilter", _bool),
+                _optional(data, "activeChildIndex", lambda entry: _int(entry, 0, 31)),
+                _optional(data, "dataItem", Value.from_json),
+                _optional(data, "resolvedSource", Value.from_json),
+                _optional(data, "resolvedSourcePropertyName", text),
+                _optional(data, "hasError", _bool),
+                _optional(data, "hasValidationError", _bool),
             )
 
         return parse(value, 1)
+
+
+STYLING_ACTIVITY = frozenset({"active", "inactive", "unknown"})
+STYLING_SETTER_KINDS = frozenset(
+    {
+        "value",
+        "dynamicResource",
+        "binding",
+        "multiBinding",
+        "priorityBinding",
+        "templateBinding",
+        "other",
+    }
+)
+STYLING_TRIGGER_KINDS = frozenset(
+    {"trigger", "dataTrigger", "multiTrigger", "multiDataTrigger", "eventTrigger", "other"}
+)
+STYLING_STYLE_SOURCES = frozenset({"local", "implicit", "typeLookup", "none"})
+STYLING_TEMPLATE_KINDS = frozenset(
+    {"controlTemplate", "dataTemplate", "hierarchicalDataTemplate", "itemsPanelTemplate", "other"}
+)
+STYLING_KEY_KINDS = frozenset({"string", "type", "componentResourceKey", "other"})
+STYLING_MAX_ENTRIES = 32
+STYLING_MAX_BASED_ON = 8
+STYLING_MAX_RESOURCES = 200
+
+
+def _styling_text(value: object) -> str:
+    return _str(value, 1024, empty=True)
+
+
+def _truncation(truncated: bool, total: int, listed: int, maximum: int) -> None:
+    if listed > maximum or listed > total or truncated == (listed >= total):
+        raise ValueError("Inconsistent list size")
+
+
+@dataclass(frozen=True)
+class StylingCondition(WireModel):
+    """A trigger condition: a property or binding path and the value it is compared with."""
+
+    value: Value
+    active: str
+    property: str | None = None
+    binding: str | None = None
+    source_name: str | None = None
+
+    @classmethod
+    def from_json(cls, value: object) -> StylingCondition:
+        data = _obj(value, "value active", "property binding sourceName")
+        return cls(
+            Value.from_json(data["value"]),
+            _choice(data["active"], STYLING_ACTIVITY),
+            _optional(data, "property", _styling_text),
+            _optional(data, "binding", _styling_text),
+            _optional(data, "sourceName", _styling_text),
+        )
+
+
+@dataclass(frozen=True)
+class StylingSetter(WireModel):
+    """A Setter. Resource and binding markup is named (`expression`), never evaluated."""
+
+    property: str
+    owner: str
+    kind: str
+    target_name: str | None = None
+    expression: str | None = None
+    value: Value | None = None
+
+    @classmethod
+    def from_json(cls, value: object) -> StylingSetter:
+        data = _obj(value, "property owner kind", "targetName expression value")
+        return cls(
+            _styling_text(data["property"]),
+            _styling_text(data["owner"]),
+            _choice(data["kind"], STYLING_SETTER_KINDS),
+            _optional(data, "targetName", _styling_text),
+            _optional(data, "expression", _styling_text),
+            _optional(data, "value", Value.from_json),
+        )
+
+
+@dataclass(frozen=True)
+class StylingTrigger(WireModel):
+    kind: str
+    active: str
+    conditions: tuple[StylingCondition, ...]
+    setter_count: int
+    setters_truncated: bool
+    setters: tuple[StylingSetter, ...]
+    enter_actions: int
+    exit_actions: int
+    routed_event: str | None = None
+
+    @classmethod
+    def from_json(cls, value: object) -> StylingTrigger:
+        data = _obj(
+            value,
+            "kind active conditions setterCount settersTruncated setters enterActions exitActions",
+            "routedEvent",
+        )
+        result = cls(
+            _choice(data["kind"], STYLING_TRIGGER_KINDS),
+            _choice(data["active"], STYLING_ACTIVITY),
+            _array(data["conditions"], StylingCondition.from_json, STYLING_MAX_ENTRIES),
+            _int(data["setterCount"], 0, 2**31 - 1),
+            _bool(data["settersTruncated"]),
+            _array(data["setters"], StylingSetter.from_json, STYLING_MAX_ENTRIES),
+            _int(data["enterActions"], 0, 2**31 - 1),
+            _int(data["exitActions"], 0, 2**31 - 1),
+            _optional(data, "routedEvent", _styling_text),
+        )
+        _truncation(
+            result.setters_truncated, result.setter_count, len(result.setters), STYLING_MAX_ENTRIES
+        )
+        return result
+
+
+_STYLING_LEVEL_FIELDS = (
+    "setterCount settersTruncated setters triggerCount triggersTruncated triggers"
+)
+
+
+def _styling_level_values(data: dict[str, Any]) -> dict[str, Any]:
+    """The fields a style level and a style share, checked."""
+    setters = _array(data["setters"], StylingSetter.from_json, STYLING_MAX_ENTRIES)
+    triggers = _array(data["triggers"], StylingTrigger.from_json, STYLING_MAX_ENTRIES)
+    values: dict[str, Any] = {
+        "setter_count": _int(data["setterCount"], 0, 2**31 - 1),
+        "setters_truncated": _bool(data["settersTruncated"]),
+        "setters": setters,
+        "trigger_count": _int(data["triggerCount"], 0, 2**31 - 1),
+        "triggers_truncated": _bool(data["triggersTruncated"]),
+        "triggers": triggers,
+        "key": _optional(data, "key", _styling_text),
+        "target_type": _optional(data, "targetType", _styling_text),
+    }
+    _truncation(
+        values["setters_truncated"], values["setter_count"], len(setters), STYLING_MAX_ENTRIES
+    )
+    _truncation(
+        values["triggers_truncated"], values["trigger_count"], len(triggers), STYLING_MAX_ENTRIES
+    )
+    return values
+
+
+@dataclass(frozen=True)
+class StylingLevel(WireModel):
+    """One level of a style: its own setters and triggers, without the inherited ones."""
+
+    setter_count: int
+    setters_truncated: bool
+    setters: tuple[StylingSetter, ...]
+    trigger_count: int
+    triggers_truncated: bool
+    triggers: tuple[StylingTrigger, ...]
+    key: str | None = None
+    target_type: str | None = None
+
+    @classmethod
+    def from_json(cls, value: object) -> StylingLevel:
+        data = _obj(value, _STYLING_LEVEL_FIELDS, "key targetType")
+        return cls(**_styling_level_values(data))
+
+
+@dataclass(frozen=True)
+class StylingStyle(WireModel):
+    """The style an element uses (`source` says how it was found) and the styles it is based on."""
+
+    source: str
+    setter_count: int
+    setters_truncated: bool
+    setters: tuple[StylingSetter, ...]
+    trigger_count: int
+    triggers_truncated: bool
+    triggers: tuple[StylingTrigger, ...]
+    based_on: tuple[StylingLevel, ...]
+    based_on_truncated: bool
+    key: str | None = None
+    target_type: str | None = None
+
+    @classmethod
+    def from_json(cls, value: object) -> StylingStyle:
+        data = _obj(
+            value, "source basedOn basedOnTruncated " + _STYLING_LEVEL_FIELDS, "key targetType"
+        )
+        based_on = _array(data["basedOn"], StylingLevel.from_json, STYLING_MAX_BASED_ON)
+        truncated = _bool(data["basedOnTruncated"])
+        if truncated and len(based_on) != STYLING_MAX_BASED_ON:
+            raise ValueError("Inconsistent BasedOn chain")
+        return cls(
+            source=_choice(data["source"], STYLING_STYLE_SOURCES),
+            based_on=based_on,
+            based_on_truncated=truncated,
+            **_styling_level_values(data),
+        )
+
+
+@dataclass(frozen=True)
+class StylingPart(WireModel):
+    name: str
+    type: str
+    element: Value
+
+    @classmethod
+    def from_json(cls, value: object) -> StylingPart:
+        data = _obj(value, "name type element")
+        return cls(
+            _styling_text(data["name"]),
+            _styling_text(data["type"]),
+            Value.from_json(data["element"]),
+        )
+
+
+@dataclass(frozen=True)
+class StylingTemplate(WireModel):
+    kind: str
+    trigger_count: int
+    triggers_truncated: bool
+    triggers: tuple[StylingTrigger, ...]
+    parts_truncated: bool
+    parts: tuple[StylingPart, ...]
+    key: str | None = None
+    target_type: str | None = None
+    data_type: str | None = None
+    root_type: str | None = None
+
+    @classmethod
+    def from_json(cls, value: object) -> StylingTemplate:
+        data = _obj(
+            value,
+            "kind triggerCount triggersTruncated triggers partsTruncated parts",
+            "key targetType dataType rootType",
+        )
+        result = cls(
+            _choice(data["kind"], STYLING_TEMPLATE_KINDS),
+            _int(data["triggerCount"], 0, 2**31 - 1),
+            _bool(data["triggersTruncated"]),
+            _array(data["triggers"], StylingTrigger.from_json, STYLING_MAX_ENTRIES),
+            _bool(data["partsTruncated"]),
+            _array(data["parts"], StylingPart.from_json, STYLING_MAX_ENTRIES),
+            _optional(data, "key", _styling_text),
+            _optional(data, "targetType", _styling_text),
+            _optional(data, "dataType", _styling_text),
+            _optional(data, "rootType", _styling_text),
+        )
+        _truncation(
+            result.triggers_truncated,
+            result.trigger_count,
+            len(result.triggers),
+            STYLING_MAX_ENTRIES,
+        )
+        if result.parts_truncated and len(result.parts) != STYLING_MAX_ENTRIES:
+            raise ValueError("Inconsistent template parts")
+        return result
+
+
+@dataclass(frozen=True)
+class StylingTemplates(WireModel):
+    control_template: StylingTemplate | None = None
+    content_template: StylingTemplate | None = None
+    item_template: StylingTemplate | None = None
+    item_container_style: StylingStyle | None = None
+    items_panel: StylingTemplate | None = None
+    templated_parent: Value | None = None
+
+    @classmethod
+    def from_json(cls, value: object) -> StylingTemplates:
+        data = _obj(
+            value,
+            "",
+            "controlTemplate contentTemplate itemTemplate itemContainerStyle itemsPanel "
+            "templatedParent",
+        )
+        return cls(
+            _optional(data, "controlTemplate", StylingTemplate.from_json),
+            _optional(data, "contentTemplate", StylingTemplate.from_json),
+            _optional(data, "itemTemplate", StylingTemplate.from_json),
+            _optional(data, "itemContainerStyle", StylingStyle.from_json),
+            _optional(data, "itemsPanel", StylingTemplate.from_json),
+            _optional(data, "templatedParent", Value.from_json),
+        )
+
+
+@dataclass(frozen=True)
+class StylingResourceEntry(WireModel):
+    """A resource's key and its position in the dictionary. The listing never reads a value."""
+
+    key: str
+    key_kind: str
+    index: int
+
+    @classmethod
+    def from_json(cls, value: object) -> StylingResourceEntry:
+        data = _obj(value, "key keyKind index")
+        return cls(
+            _styling_text(data["key"]),
+            _choice(data["keyKind"], STYLING_KEY_KINDS),
+            _int(data["index"], 0, 2**31 - 1),
+        )
+
+
+@dataclass(frozen=True)
+class ResourceResult(WireModel):
+    """Result of `members.resource`: one resource value, created on demand."""
+
+    found: bool
+    value_type: str | None = None
+    value: Value | None = None
+
+    @classmethod
+    def from_json(cls, value: object) -> ResourceResult:
+        data = _obj(value, "found", "valueType value")
+        found = _bool(data["found"])
+        if found != ("value" in data and "valueType" in data) or (
+            not found and data.keys() != {"found"}
+        ):
+            raise ValueError("Inconsistent resource result")
+        return cls(
+            found,
+            _optional(data, "valueType", _styling_text),
+            _optional(data, "value", Value.from_json),
+        )
+
+
+@dataclass(frozen=True)
+class StylingMergedDictionary(WireModel):
+    count: int
+    source: str | None = None
+
+    @classmethod
+    def from_json(cls, value: object) -> StylingMergedDictionary:
+        data = _obj(value, "count", "source")
+        return cls(_int(data["count"], 0, 2**31 - 1), _optional(data, "source", _styling_text))
+
+
+@dataclass(frozen=True)
+class StylingResources(WireModel):
+    """A resource dictionary: size, first page of entries and merged dictionaries."""
+
+    count: int
+    truncated: bool
+    entries: tuple[StylingResourceEntry, ...]
+    merged_truncated: bool
+    merged_dictionaries: tuple[StylingMergedDictionary, ...]
+    source: str | None = None
+
+    @classmethod
+    def from_json(cls, value: object) -> StylingResources:
+        data = _obj(value, "count truncated entries mergedTruncated mergedDictionaries", "source")
+        result = cls(
+            _int(data["count"], 0, 2**31 - 1),
+            _bool(data["truncated"]),
+            _array(data["entries"], StylingResourceEntry.from_json, STYLING_MAX_RESOURCES),
+            _bool(data["mergedTruncated"]),
+            _array(
+                data["mergedDictionaries"], StylingMergedDictionary.from_json, STYLING_MAX_RESOURCES
+            ),
+            _optional(data, "source", _styling_text),
+        )
+        _truncation(result.truncated, result.count, len(result.entries), STYLING_MAX_RESOURCES)
+        if result.merged_truncated and len(result.merged_dictionaries) != STYLING_MAX_RESOURCES:
+            raise ValueError("Inconsistent merged dictionaries")
+        return result
+
+
+@dataclass(frozen=True)
+class StylingResult(WireModel):
+    """Result of `members.styling`; empty unless the object is a framework element."""
+
+    applicable: bool
+    style: StylingStyle | None = None
+    templates: StylingTemplates | None = None
+    resources: StylingResources | None = None
+    application: StylingResources | None = None
+
+    @classmethod
+    def from_json(cls, value: object) -> StylingResult:
+        data = _obj(value, "applicable", "style templates resources application")
+        result = cls(
+            _bool(data["applicable"]),
+            _optional(data, "style", StylingStyle.from_json),
+            _optional(data, "templates", StylingTemplates.from_json),
+            _optional(data, "resources", StylingResources.from_json),
+            _optional(data, "application", StylingResources.from_json),
+        )
+        if not result.applicable and any(
+            part is not None
+            for part in (result.style, result.templates, result.resources, result.application)
+        ):
+            raise ValueError("Not applicable result must be empty")
+        return result
+
+    def values(self) -> tuple[Value, ...]:
+        """Every Value in the result, so the client can check the handles they hold."""
+        found: list[Value] = []
+
+        def setters(items: tuple[StylingSetter, ...]) -> None:
+            found.extend(item.value for item in items if item.value is not None)
+
+        def triggers(items: tuple[StylingTrigger, ...]) -> None:
+            for trigger in items:
+                setters(trigger.setters)
+                found.extend(condition.value for condition in trigger.conditions)
+
+        def style(item: StylingStyle | None) -> None:
+            if item is None:
+                return
+            for level in (item, *item.based_on):
+                setters(level.setters)
+                triggers(level.triggers)
+
+        def template(item: StylingTemplate | None) -> None:
+            if item is None:
+                return
+            triggers(item.triggers)
+            found.extend(part.element for part in item.parts)
+
+        style(self.style)
+        if self.templates is not None:
+            template(self.templates.control_template)
+            template(self.templates.content_template)
+            template(self.templates.item_template)
+            style(self.templates.item_container_style)
+            template(self.templates.items_panel)
+            if self.templates.templated_parent is not None:
+                found.append(self.templates.templated_parent)
+        return tuple(found)
+
+
+MEMBER_EVENT_KINDS = frozenset({"routed", "clr"})
+MEMBER_EVENT_STRATEGIES = frozenset({"bubble", "tunnel", "direct"})
+MEMBER_EVENT_MAX_HANDLERS = 32
+
+
+@dataclass(frozen=True)
+class EventHandler(WireModel):
+    """The method a delegate points at: a routed event's handler or a CLR event's subscriber."""
+
+    declaring_type: str
+    method: str
+    handled_events_too: bool | None = None
+
+    @classmethod
+    def from_json(cls, value: object) -> EventHandler:
+        data = _obj(value, "declaringType method", "handledEventsToo")
+        return cls(
+            _styling_text(data["declaringType"]),
+            _styling_text(data["method"]),
+            _optional(data, "handledEventsToo", _bool),
+        )
+
+
+@dataclass(frozen=True)
+class MemberEvent(WireModel):
+    """
+    An event of an object: a routed event that applies to its type, or a CLR event it declares.
+
+    The wire names the handler list by kind (`handlers*` for a routed event, `subscribers*` for a
+    CLR one); here it is one `handlers` list with `known`, `count` and `truncated`.
+    """
+
+    kind: str
+    name: str
+    declaring_type: str
+    handler_type: str
+    known: bool
+    count: int
+    truncated: bool
+    handlers: tuple[EventHandler, ...]
+    strategy: str | None = None
+    is_static: bool = False
+
+    @classmethod
+    def from_json(cls, value: object) -> MemberEvent:
+        if not isinstance(value, dict):
+            raise ValueError("Expected an object")
+        raw = cast(dict[str, Any], value)
+        kind = _choice(raw.get("kind"), MEMBER_EVENT_KINDS)
+        routed = kind == "routed"
+        names = ("handler", "handlers") if routed else ("subscriber", "subscribers")
+        plural, singular = names[1], names[0]
+        required = "kind name declaringType handlerType"
+        required += f" {plural}Known {singular}Count {plural}Truncated {plural}"
+        data = _obj(raw, required + (" strategy" if routed else " isStatic"))
+        result = cls(
+            kind,
+            _styling_text(data["name"]),
+            _styling_text(data["declaringType"]),
+            _styling_text(data["handlerType"]),
+            _bool(data[f"{names[1]}Known"]),
+            _int(data[f"{names[0]}Count"], 0, 2**31 - 1),
+            _bool(data[f"{names[1]}Truncated"]),
+            _array(data[names[1]], EventHandler.from_json, MEMBER_EVENT_MAX_HANDLERS),
+            _choice(data["strategy"], MEMBER_EVENT_STRATEGIES) if routed else None,
+            False if routed else _bool(data["isStatic"]),
+        )
+        if not result.known and (result.count or result.truncated or result.handlers):
+            raise ValueError("Unknown handlers cannot be listed")
+        _truncation(result.truncated, result.count, len(result.handlers), MEMBER_EVENT_MAX_HANDLERS)
+        if any((item.handled_events_too is not None) != routed for item in result.handlers):
+            raise ValueError("Handler does not match the event kind")
+        return result
+
+    def to_json(self) -> dict[str, Any]:
+        routed = self.kind == "routed"
+        names = ("handler", "handlers") if routed else ("subscriber", "subscribers")
+        result: dict[str, Any] = {
+            "kind": self.kind,
+            "name": self.name,
+            "declaringType": self.declaring_type,
+            "handlerType": self.handler_type,
+        }
+        if routed:
+            result["strategy"] = self.strategy
+        else:
+            result["isStatic"] = self.is_static
+        result[f"{names[1]}Known"] = self.known
+        result[f"{names[0]}Count"] = self.count
+        result[f"{names[1]}Truncated"] = self.truncated
+        result[names[1]] = [item.to_json() for item in self.handlers]
+        return result
 
 
 @dataclass(frozen=True)
@@ -1112,7 +1774,9 @@ class RequestEnvelope:
                 "element.readBatch",
                 "roots",
                 "children",
+                "tree.parent",
                 "members",
+                "members.items",
                 "read",
                 "spy.fieldRead",
                 "spy.methods",
@@ -1415,13 +2079,14 @@ class ElementState(WireModel):
     parts: tuple[PartGeometry, ...]
     uia_runtime_id: tuple[int, ...] | None = None
     click_point: Point | None = None
+    visible_bounds: Rect | None = None
 
     @classmethod
     def from_json(cls, value: object) -> ElementState:
         d = _obj(
             value,
-            "handle windowHandle bounds clickPoint dpi visible clipped offscreen enabled focused "
-            "isKeyboardFocusable parts",
+            "handle windowHandle bounds visibleBounds clickPoint dpi visible clipped offscreen "
+            "enabled focused isKeyboardFocusable parts",
             "uiaRuntimeId",
         )
         hwnd = d["windowHandle"]
@@ -1441,6 +2106,7 @@ class ElementState(WireModel):
             _array(d["parts"], PartGeometry.from_json, 1_000_000),
             _optional(d, "uiaRuntimeId", _runtime_id),
             None if d["clickPoint"] is None else Point.from_json(d["clickPoint"]),
+            None if d["visibleBounds"] is None else Rect.from_json(d["visibleBounds"]),
         )
 
     def to_json(self) -> dict[str, Any]:
@@ -1448,6 +2114,7 @@ class ElementState(WireModel):
         result["windowHandle"] = self.window_handle
         result["bounds"] = _wire(self.bounds)
         result["clickPoint"] = _wire(self.click_point)
+        result["visibleBounds"] = _wire(self.visible_bounds)
         result["parts"] = [p.to_json() for p in self.parts]
         return result
 

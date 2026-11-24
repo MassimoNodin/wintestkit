@@ -50,7 +50,7 @@ namespace WinTestKit.Inspector.Agent.Members.Tests
                 Assert.Equal("identity", reader.Read(Property("VisibleValue")).RedactionRule);
                 Assert.Equal("identity", new Reader(outer).Read(Property("Child"), Property("VisibleValue")).RedactionRule);
                 string key = reader.Inspector.GetMembers(target, new List<Diagnostic>()).Single(row => row.PathSegment?.Kind == "dependency" && row.PathSegment.Name == "Content" && row.PathSegment.OwnerType == typeof(ContentControl).FullName).MemberKey;
-                var error = Assert.Throws<ProtocolException>(() => reader.Inspector.GetBindings(target, new[] { key }));
+                var error = Assert.Throws<ProtocolException>(() => reader.Inspector.GetBindings(target, new[] { key }, reader.Registry, System.Windows.Threading.Dispatcher.CurrentDispatcher));
                 Assert.Equal(ErrorCodes.AccessDenied, error.Code);
                 Assert.DoesNotContain("VisibleValue", error.Message);
                 Assert.Equal(before, target.Calls);

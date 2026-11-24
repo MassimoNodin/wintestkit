@@ -1075,15 +1075,75 @@ body.spy-view .inspector-columns:has(> #properties-pane[hidden]) { grid-template
 
 /* The sidebar uses a single searchable list; legacy containers remain for existing actions. */
 body.properties-view #property-groups > section:not(#managed-panel), body.properties-view #uia-all-group, body.properties-view #wpf-uia-group, body.properties-view #managed-groups, body.properties-view #wpf-managed-groups { display: none !important; }
-.sidebar-tabs { display: flex; gap: 4px; margin: 8px 12px; }
-.sidebar-tabs [aria-selected="true"] { border-bottom: 2px solid var(--vscode-focusBorder); }
-.sidebar-search { display: block; margin: 8px 12px; }
-.sidebar-search input { width: 100%; }
-#sidebar-mode { margin: 0 12px 8px; }
-.sidebar-table .sidebar-group th { text-align: left; padding-top: 10px; }
-.sidebar-table { width: 100%; --name-ch: 12; }
-/* The name column is about 45% wide and never narrower than the longest name (up to 24 characters); a longer name is cut with an ellipsis and carries its full text as a tooltip. */
-.sidebar-table tbody th[scope="row"] { width: 45%; min-width: min(calc(var(--name-ch) * 1ch), 60%); max-width: 24ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; font-weight: normal; }
+/* Properties | Fields | Methods: one split button; the open tab is filled. */
+.sidebar-tabs { display: flex; margin: 8px 12px; }
+.sidebar-tabs button { flex: 1; padding: 4px 8px; border: 1px solid var(--border); border-radius: 0; color: inherit; background: transparent; }
+.sidebar-tabs button + button { margin-left: -1px; }
+.sidebar-tabs button:first-child { border-radius: 4px 0 0 4px; }
+.sidebar-tabs button:last-child { border-radius: 0 4px 4px 0; }
+.sidebar-tabs button:hover { background: var(--vscode-toolbar-hoverBackground, #e6ebf2); }
+.sidebar-tabs button[aria-selected="true"] { position: relative; z-index: 1; color: var(--vscode-button-foreground, #fff); background: var(--vscode-button-background, #0078d4); border-color: var(--vscode-button-background, #0078d4); }
+/* The search box is a shade lighter than the section headings. */
+.sidebar-search { display: flex; align-items: center; gap: 6px; margin: 8px 12px; padding: 4px 8px; border: 1px solid transparent; border-radius: 4px; color: var(--muted); background: color-mix(in srgb, var(--vscode-foreground) 20%, var(--vscode-sideBar-background, transparent)); }
+.sidebar-search:focus-within { border-color: var(--vscode-focusBorder, var(--accent)); }
+.sidebar-search input { flex: 1; width: 100%; min-width: 0; border: 0; outline: none; color: var(--vscode-input-foreground, inherit); background: transparent; }
+.sidebar-search input::placeholder { color: var(--vscode-input-placeholderForeground, var(--muted)); }
+.sidebar-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 12px 8px;
+  color: var(--vscode-sideBar-foreground, var(--vscode-foreground));
+  cursor: pointer;
+}
+.sidebar-toggle[hidden] { display: none; }
+.sidebar-toggle input {
+  appearance: none;
+  position: relative;
+  flex: 0 0 auto;
+  width: 28px;
+  height: 16px;
+  margin: 0;
+  border: 1px solid color-mix(in srgb, var(--vscode-foreground) 35%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--vscode-foreground) 20%, var(--vscode-sideBar-background, transparent));
+  cursor: pointer;
+}
+.sidebar-toggle input::before {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--vscode-checkbox-foreground, var(--vscode-foreground));
+}
+.sidebar-toggle input:checked { background: var(--vscode-button-background); }
+.sidebar-toggle input:checked::before { left: 14px; background: var(--vscode-button-foreground); }
+.sidebar-toggle:hover input { border-color: var(--vscode-focusBorder); }
+.sidebar-toggle:hover input:checked { background: var(--vscode-button-hoverBackground); }
+.sidebar-toggle input:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 2px; }
+@media (forced-colors: active) {
+  .sidebar-toggle input { forced-color-adjust: none; border-color: CanvasText; background: Canvas; }
+  .sidebar-toggle input::before { background: CanvasText; }
+  .sidebar-toggle input:checked { background: Highlight; border-color: Highlight; }
+  .sidebar-toggle input:checked::before { background: HighlightText; }
+}
+.sidebar-table .sidebar-group th { text-align: left; padding: 3px 4px; font-weight: 600; background: color-mix(in srgb, var(--vscode-foreground) 14%, var(--vscode-sideBar-background, transparent)); border-top: 1px solid color-mix(in srgb, var(--vscode-foreground) 22%, transparent); }
+.sidebar-table tr.sidebar-gap td { height: 14px; padding: 0; border: 0; background: transparent; }
+.sidebar-table .sidebar-group button { display: flex; justify-content: flex-start; gap: 4px; width: 100%; padding: 0; background: transparent; color: inherit; border: 0; font: inherit; cursor: pointer; }
+.sidebar-table .sidebar-group button::before { content: "\25BE"; width: 12px; text-align: center; }
+.sidebar-table .sidebar-group button[aria-expanded="false"]::before { content: "\25B8"; }
+.sidebar-table tbody th[data-kind]::before { position: absolute; left: 4px; width: 12px; text-align: center; font-size: 10px; opacity: .85; }
+.sidebar-table tbody th[data-kind="dependencyProperty"]::before { content: "\25CB"; color: var(--vscode-symbolIcon-classForeground, #ee9d28); }
+.sidebar-table tbody th[data-kind="attachedProperty"]::before { content: "\25C7"; color: var(--vscode-symbolIcon-methodForeground, #b180d7); }
+.sidebar-table tbody th[data-kind="staticProperty"]::before { content: "S"; font-weight: 700; color: var(--vscode-textLink-foreground, #4daafc); }
+.sidebar-table { width: 100%; }
+.sidebar-table thead th:nth-child(1) { width: 42%; }
+.sidebar-table thead th:nth-child(2) { width: auto; }
+.sidebar-table thead th:nth-child(3) { width: 56px; }
+.sidebar-table tbody th[scope="row"] { padding-left: 18px; position: relative; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; font-weight: normal; }
 .sidebar-table tbody td { overflow-wrap: anywhere; vertical-align: top; }
 .sidebar-table .property-actions { width: 56px; white-space: nowrap; }
 .sidebar-table .row-menu-button, #sidebar-actions > summary { width: 22px; height: 22px; padding: 0; }
@@ -1097,7 +1157,9 @@ body.properties-view #property-groups > section:not(#managed-panel), body.proper
 body.properties-view #refresh-counts { display: none !important; }
 body.spy-view #sidebar-inspector { display: none !important; }
 
-#sidebar-actions { position: relative; }
+#sidebar-actions { position: relative; flex-shrink: 0; margin-right: 8px; }
+#preview-mode { margin-right: 0; }
+.sidebar-actions-menu { position: absolute; right: 0; top: calc(100% + 2px); z-index: 5; min-width: 160px; padding: 4px; border: 1px solid var(--vscode-menu-border, var(--border)); border-radius: 4px; color: var(--vscode-menu-foreground, inherit); background: var(--vscode-menu-background, var(--surface)); box-shadow: 0 2px 8px var(--vscode-widget-shadow, rgba(0, 0, 0, .3)); }
 #sidebar-actions summary { cursor: pointer; list-style: none; }
 #sidebar-actions[open] { z-index: 2; }
 #sidebar-actions button { display: block; white-space: nowrap; width: 100%; text-align: left; }

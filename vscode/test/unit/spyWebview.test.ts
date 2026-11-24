@@ -382,7 +382,7 @@ it("places the live preview first in the sidebar and gates it to that surface", 
 
 it("renders searchable sidebar tabs and remembers the property mode", () => {
   const dom = new JSDOM(readFileSync("media/spy/spy.html", "utf8").replace("{{viewClass}}", "properties-view"), { runScripts: "outside-only" });
-  const posts: unknown[] = []; let state: Record<string, unknown> = { sidebarAdvanced: false };
+  const posts: unknown[] = []; let state: Record<string, unknown> = { sidebarShowAll: false };
   Object.assign(dom.window, { acquireVsCodeApi: () => ({ postMessage: (message: unknown) => posts.push(message), getState: () => state, setState: (next: Record<string, unknown>) => { state = next; } }), matchMedia: () => ({ matches: false, addEventListener() {} }), requestAnimationFrame: (fn: () => void) => fn() });
   dom.window.eval(readFileSync("media/spy/treeLabels.js", "utf8") + "\n" + readFileSync("media/spy/spy.js", "utf8"));
   const send = (data: unknown) => dom.window.dispatchEvent(new dom.window.MessageEvent("message", { data }));
@@ -393,15 +393,15 @@ it("renders searchable sidebar tabs and remembers the property mode", () => {
   send({ type: "children", nodeId: "win", nodes: [child], expanded: true });
   send({ type: "selected", nodeId: "child", properties: { source: "wpf", info: child.info, properties: { ClrFullClassName: "Example.Button", Visible: "True", Custom: "custom value" }, uiaMapped: false } });
   const names = () => [...doc.querySelectorAll<HTMLTableRowElement>("#sidebar-rows tr[data-name]")].map((row) => row.dataset.name);
-  expect(names()).toEqual(["Enabled", "Height", "MappedName", "Name", "Parent", "Visible", "Width", "ClrFullClassName", "WPFControlText"]);
+  expect(names()).toEqual(["Enabled", "Height", "MappedName", "Name", "Parent", "Visible", "Width", "ClrClassName", "ClrFullClassName", "WPFControlName", "WPFControlOrdinalNo", "WPFControlText"]);
   expect(doc.querySelector('[data-name="WPFControlText"] td')?.textContent).toBe("Unknown");
   send({ type: "definitions", nodeId: "child", state: "ready", definitions: [{ kind: "element", qualname: "Page.save", file: "page.py", line: 1, pages: [], pageCount: 1 }] });
   expect(doc.querySelector('[data-name="MappedName"] td')?.textContent).toBe("Page.save");
   (doc.querySelector('[data-name="Parent"] button') as HTMLButtonElement).click();
   expect(posts).toContainEqual(expect.objectContaining({ type: "select", nodeId: "win" }));
   send({ type: "selected", nodeId: "child", properties: { source: "wpf", info: child.info, properties: { ClrFullClassName: "Example.Button", Custom: "custom value" }, uiaMapped: false } });
-  (doc.querySelector("#sidebar-mode") as HTMLButtonElement).click();
-  expect(state.sidebarAdvanced).toBe(true);
+  (doc.querySelector("#sidebar-mode") as HTMLInputElement).click();
+  expect(state.sidebarShowAll).toBe(true);
   // Until a unique locator arrives the path from the window is built from the tree.
   expect(doc.querySelector('[data-name="FullName"] td')?.textContent).toBe('Window("").WPFObject("Button", "Save")');
   expect(posts).toContainEqual({ type: "generateLocator", nodeId: "child" });
@@ -412,9 +412,9 @@ it("renders searchable sidebar tabs and remembers the property mode", () => {
   send({ type: "suggestion", nodeId: "child", suggestion: locator });
   send({ type: "selected", nodeId: "win", properties: { source: "wpf", info: win.info, properties: { WPFControlText: "" }, uiaMapped: false } });
   expect(doc.querySelector('[data-name="FullName"] td')?.textContent).toBe('Window("")');
-  (doc.querySelector("#sidebar-mode") as HTMLButtonElement).click();
+  (doc.querySelector("#sidebar-mode") as HTMLInputElement).click();
   expect(doc.querySelector('[data-name="WPFControlText"] td')?.textContent).toBe("(empty)");
-  (doc.querySelector("#sidebar-mode") as HTMLButtonElement).click();
+  (doc.querySelector("#sidebar-mode") as HTMLInputElement).click();
   send({ type: "selected", nodeId: "child", properties: { source: "wpf", info: child.info, properties: { ClrFullClassName: "Example.Button", Custom: "custom value" }, uiaMapped: false } });
   expect(doc.querySelector("#sidebar-rows")?.textContent).not.toContain("UI Automation");
   const search = doc.querySelector("#sidebar-search") as HTMLInputElement; search.value = "custom value"; search.dispatchEvent(new dom.window.Event("input"));
@@ -458,7 +458,7 @@ it("renders searchable sidebar tabs and remembers the property mode", () => {
 
 it("offers managed row actions, descriptions, pins, and readiness controls", () => {
   const dom = new JSDOM(readFileSync("media/spy/spy.html", "utf8").replace("{{viewClass}}", "properties-view"), { runScripts: "outside-only" });
-  const posts: unknown[] = []; let state: Record<string, unknown> = { sidebarAdvanced: true };
+  const posts: unknown[] = []; let state: Record<string, unknown> = { sidebarShowAll: true };
   Object.assign(dom.window, { acquireVsCodeApi: () => ({ postMessage: (message: unknown) => posts.push(message), getState: () => state, setState: (next: Record<string, unknown>) => { state = next; } }), matchMedia: () => ({ matches: false, addEventListener() {} }), requestAnimationFrame: (fn: () => void) => fn() });
   dom.window.eval(readFileSync("media/spy/treeLabels.js", "utf8") + "\n" + readFileSync("media/spy/spy.js", "utf8"));
   const send = (data: unknown) => dom.window.dispatchEvent(new dom.window.MessageEvent("message", { data }));
@@ -483,9 +483,9 @@ it("offers managed row actions, descriptions, pins, and readiness controls", () 
     return [...doc.querySelectorAll("#sidebar-row-menu button")].find((button) => button.textContent === label) as HTMLButtonElement;
   };
   action("Copy locator key").click(); expect(posts).toContainEqual({ type: "managedCopy", kind: "path", memberKey: "clr:Title" });
-  action("Show in Basic view").click(); expect(state.sidebarManagedPins).toHaveLength(1);
-  (doc.querySelector("#sidebar-mode") as HTMLButtonElement).click(); expect(doc.querySelector('[data-name="Title"]')).not.toBeNull();
-  (doc.querySelector("#sidebar-mode") as HTMLButtonElement).click();
+  action("Pin").click(); expect(state.sidebarManagedPins).toHaveLength(1);
+  (doc.querySelector("#sidebar-mode") as HTMLInputElement).click(); expect(doc.querySelector('[data-name="Title"]')).not.toBeNull();
+  (doc.querySelector("#sidebar-mode") as HTMLInputElement).click();
   const secret = doc.querySelector('[data-name="Secret"]') as HTMLTableRowElement;
   expect(secret.textContent).not.toContain("secret"); expect(action("Copy value", secret).disabled).toBe(true);
   (doc.querySelector("#sidebar-export") as HTMLButtonElement).click(); expect(posts).toContainEqual({ type: "managedCopy", kind: "export" });

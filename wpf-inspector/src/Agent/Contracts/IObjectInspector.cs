@@ -23,6 +23,6 @@ namespace WinTestKit.Inspector.Agent.Contracts
         /// <summary>Complete, sorted catalog. Never evaluates getters. Adds diagnostics for partial failures.</summary>
         IReadOnlyList<MemberInfo> GetMembers(object target, List<Diagnostic> diagnostics);
         ValueDto ReadPath(object root, IReadOnlyList<PathSegment> path, IObjectRegistry registry, Dispatcher dispatcher, CancellationToken ct);
-        IReadOnlyList<BindingInfoDto> GetBindings(object target, IReadOnlyList<string> memberKeys);
+        IReadOnlyList<BindingInfoDto> GetBindings(object target, IReadOnlyList<string> memberKeys, IObjectRegistry registry, Dispatcher dispatcher);
     }
 }

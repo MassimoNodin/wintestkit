@@ -1,0 +1,1 @@
+{"schema":"StylingCondition","instance":{"value":{"status":"ok","kind":"boolean","declaredType":"System.Object","runtimeType":"System.Boolean","scalar":true},"active":"active","property":"System.Windows.UIElement.IsEnabled","sourceName":"PART_Border"}}

@@ -114,6 +114,7 @@ def definition_examples() -> dict[str, dict[str, Any]]:
     method_page = {"items": [], "complete": True, "snapshotId": "snapshot-1", "diagnostics": []}
     common = {
         "ManagedMethodPage": method_page,
+        "ManagedEventPage": method_page,
         "InspectionProperty": {
             "name": "Name",
             "typeName": "str",
@@ -264,7 +265,7 @@ def definition_examples() -> dict[str, dict[str, Any]]:
             "durationMs": 1500,
             "bringToFront": True,
         },
-        "InspectHighlightResult": None,
+        "InspectHighlightResult": {},
         "PreviewImage": {"data": "UklGRg==", "width": 4, "height": 2},
         "InspectPreviewParams": {"nodeId": node["nodeId"]},
         "InspectPreviewResult": {
@@ -394,6 +395,10 @@ def test_every_named_definition(
                 "Roots",
                 "Children",
                 "Members",
+                "Items",
+                "Styling",
+                "Resource",
+                "Events",
                 "Read",
                 "Bindings",
                 "Release",
@@ -454,7 +459,7 @@ def test_invalid_item_selectors(validate: Validate, data: Any) -> None:
         ("rpc.schema.json", "InitializeParams", {}),
         ("rpc.schema.json", "DiscoverParams", {"overrides": {"file.py": 42}}),
         ("rpc.schema.json", "InspectRootsParams", {"includeOtherApps": "yes"}),
-        ("rpc.schema.json", "InspectHighlightResult", {}),
+        ("rpc.schema.json", "InspectHighlightResult", None),
         ("rpc.schema.json", "InspectPropertiesParams", {"nodeId": "n", "include": "HelpText"}),
         ("rpc.schema.json", "InspectPropertiesParams", {"nodeId": "n", "include": [""]}),
         ("rpc.schema.json", "InspectPropertiesParams", {"nodeId": "n", "include": ["x"] * 65}),

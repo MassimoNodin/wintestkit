@@ -73,6 +73,13 @@ _PARAMS: dict[str, tuple[set[str], set[str]]] = {
         {"pageSize", "pageToken"},
     ),
     "inspect.managed.members": ({"sessionId", "objectId", "generation"}, {"pageSize", "pageToken"}),
+    "inspect.managed.items": ({"sessionId", "objectId", "generation"}, {"pageSize", "pageToken"}),
+    "inspect.managed.styling": ({"sessionId", "objectId", "generation"}, set()),
+    "inspect.managed.resource": (
+        {"sessionId", "objectId", "generation", "scope", "key", "keyKind"},
+        {"index"},
+    ),
+    "inspect.managed.events": ({"sessionId", "objectId", "generation"}, {"pageSize", "pageToken"}),
     "inspect.managed.spyMethods": (
         {"sessionId", "objectId", "generation"},
         {"pageSize", "pageToken"},
@@ -108,6 +115,10 @@ _APPLICATION_READS = frozenset(
         "inspect.managed.read",
         "inspect.managed.spyRead",
         "inspect.managed.members",
+        "inspect.managed.items",
+        "inspect.managed.styling",
+        "inspect.managed.resource",
+        "inspect.managed.events",
         "inspect.managed.children",
         "inspect.managed.bindings",
         "inspect.managed.spyMethods",
@@ -411,6 +422,18 @@ class Server:
                 elif key == "tree":
                     if value not in ("visual", "logical"):
                         raise ValueError("invalid tree")
+                elif key == "scope":
+                    if value not in ("local", "application"):
+                        raise ValueError("invalid resource scope")
+                elif key == "keyKind":
+                    if value not in ("string", "type", "componentResourceKey", "other"):
+                        raise ValueError("invalid resource key kind")
+                elif key == "key":
+                    from wintestkit.inspector.models import string_value
+
+                    string_value(value, 1024, empty=True)
+                elif key == "index":
+                    integer_value(value, 0, 2**31 - 1)
                 elif key == "memberKey":
                     from wintestkit.inspector.models import string_value
 
@@ -503,29 +526,41 @@ class Server:
                     self._error(request_id, -32603, "internal error", {"message": str(exc)})
 
     @staticmethod
-    def _raise_for_highlight(element: UIAElement) -> Rect | None:
-        """Raise the element's window without taking focus, then read its bounds.
-
-        An element without bounds (offscreen, collapsed, never laid out) has nothing to outline, so
-        its window is left alone. A minimized window is the exception: its controls have no bounds
-        until it is restored.
-        """
+    def _raise_for_highlight(element: TargetElement) -> TargetElement:
+        """Raise without activation, restoring minimized windows before reading bounds."""
         from wintestkit.engine.actions import raise_without_activating, window_is_minimized
 
-        if element.rect is None and not window_is_minimized(element):
-            return None
-        raise_without_activating(element)
-        return element.rect
+        if element.rect is not None or window_is_minimized(element):
+            raise_without_activating(element)
+            return element.as_live()
+        return element
 
     def _flash(self, rect: Rect | None, params: dict[str, Any]) -> None:
-        """Outline ``rect`` for a moment in the configured highlight colour."""
         from wintestkit.engine import overlay
+        from wintestkit.errors import ActionError
 
-        if rect is not None:
-            color = overlay.parse_color(
-                self.cfg.highlight_color if self.cfg is not None else "#FF0000"
-            )
-            overlay.flash(rect, int(params.get("durationMs", 1500)), color=color, block=False)
+        if rect is None or rect.is_empty():
+            raise ActionError("Element has no on-screen rectangle to highlight")
+        color = overlay.parse_color(self.cfg.highlight_color if self.cfg is not None else "#FF0000")
+        thickness = self.cfg.highlight_thickness if self.cfg is not None else 3
+        overlay.flash(
+            rect, int(params.get("durationMs", 1500)), color=color, thickness=thickness, block=False
+        )
+
+    def _highlight(
+        self, element: TargetElement, params: dict[str, Any], *, raise_window: bool = False
+    ) -> dict[str, Any]:
+        from wintestkit.engine.highlight import outline
+
+        if raise_window:
+            element = self._raise_for_highlight(element)
+        rect, ancestor = outline(element)
+        self._flash(rect, params)
+        return (
+            {"outlinedAncestor": ancestor.info().short(), "outlinedTarget": element.info().short()}
+            if ancestor is not None
+            else {}
+        )
 
     def _app(self, required: bool = True) -> App | None:
         from wintestkit.app import App
@@ -1599,6 +1634,36 @@ class Server:
                         page_token=params.get("pageToken"),
                         deadline=deadline,
                     ).to_json()
+                elif method == "inspect.managed.items":
+                    result = client.items(
+                        object_id,
+                        params["generation"],
+                        page_size=params.get("pageSize"),
+                        page_token=params.get("pageToken"),
+                        deadline=deadline,
+                    ).to_json()
+                elif method == "inspect.managed.styling":
+                    result = client.styling(
+                        object_id, params["generation"], deadline=deadline
+                    ).to_json()
+                elif method == "inspect.managed.resource":
+                    result = client.resource(
+                        object_id,
+                        params["generation"],
+                        scope=params["scope"],
+                        key=params["key"],
+                        key_kind=params["keyKind"],
+                        index=params.get("index"),
+                        deadline=deadline,
+                    ).to_json()
+                elif method == "inspect.managed.events":
+                    result = client.events(
+                        object_id,
+                        params["generation"],
+                        page_size=params.get("pageSize"),
+                        page_token=params.get("pageToken"),
+                        deadline=deadline,
+                    ).to_json()
                 elif method == "inspect.managed.spyMethods":
                     result = client.spy_methods(
                         object_id,
@@ -2003,12 +2068,13 @@ class Server:
                     app, self.loader, Target(file, params["qualname"]), timeout=0, capture=True
                 ).to_dict()
             result = resolve_target(app, self.loader, Target(file, params["qualname"]), timeout=0)
-            if result.uia is not None:
-                rect = self._raise_for_highlight(result.uia)
-            else:
-                rect = result.element.rect if result.element is not None else None
-            self._flash(rect, params)
-            return result.to_dict()
+            response = result.to_dict()
+            if result.status == "found":
+                if result.uia is not None:
+                    response.update(self._highlight(result.uia, params, raise_window=True))
+                else:
+                    self._flash(result.element.rect if result.element is not None else None, params)
+            return response
         if method == "inspect.coverage":
             from wintestkit.backends.element import WpfElement
             from wintestkit.errors import NoUiaPeerError
@@ -2118,6 +2184,7 @@ class Server:
             self._mark_roots(nodes)
             return {"nodes": nodes, "status": status} if status is not None else nodes
         if method == "spy.start":
+            from wintestkit.engine.overlay import parse_color
             from wintestkit.engine.spy import SpySession
             from wintestkit.uia import win32
 
@@ -2180,7 +2247,13 @@ class Server:
 
                         options["resolve"] = resolve
                     session = SpySession(
-                        hover, pick, cancel, None if pids is None else pids.__contains__, **options
+                        hover,
+                        pick,
+                        cancel,
+                        None if pids is None else pids.__contains__,
+                        color=parse_color(self.cfg.highlight_color if self.cfg else "#FF0000"),
+                        thickness=self.cfg.highlight_thickness if self.cfg else 3,
+                        **options,
                     )
                     self.spy = session
                     try:
@@ -2258,19 +2331,7 @@ class Server:
                 from wintestkit.live_preview import capture_live_preview
 
                 return capture_live_preview(wpf_node)
-            from wintestkit.uia import win32
-
-            state = wpf_node.state()
-            hwnd = state.window_handle
-            if (
-                params.get("bringToFront", False)
-                and hwnd
-                and (wpf_node.rect is not None or win32.IsIconic(hwnd))
-            ):
-                win32.raise_window(win32.root_window(hwnd))
-                wpf_node = wpf_node.as_live()
-            self._flash(wpf_node.rect, params)
-            return None
+            return self._highlight(wpf_node, params, raise_window=params.get("bringToFront", False))
         if isinstance(selected, WpfElement) and method in (
             "inspect.definitions",
             "suggest.locator",
@@ -2351,12 +2412,7 @@ class Server:
                 page_result["nextPageToken"] = str(end)
             return page_result
         if method == "inspect.highlight":
-            # The outline is drawn on top of every window, so raising the window is opt-in.
-            rect = (
-                self._raise_for_highlight(node) if params.get("bringToFront", False) else node.rect
-            )
-            self._flash(rect, params)
-            return None
+            return self._highlight(node, params, raise_window=params.get("bringToFront", False))
         if method == "inspect.preview":
             from wintestkit.live_preview import capture_live_preview
 

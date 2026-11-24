@@ -6,6 +6,8 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Media;
+using System.Windows.Controls.Primitives;
+using System.Windows.Interop;
 using System.Windows.Media.Media3D;
 using System.Windows.Threading;
 using WinTestKit.Inspector.Agent.Inspection;
@@ -115,6 +117,29 @@ namespace WinTestKit.Inspector.Agent.Mapping
             foreach (PresentationSource source in PresentationSource.CurrentSources)
                 if (source.Dispatcher == dispatcher && !source.IsDisposed && source.RootVisual is DependencyObject root)
                     yield return root;
+        }
+
+        public static DependencyObject? Parent(DependencyObject target)
+        {
+            target.VerifyAccess();
+            DependencyObject? parent = target is Visual || target is Visual3D ? VisualTreeHelper.GetParent(target) : null;
+            if (parent != null) return parent;
+            if (target is ContentElement content) parent = ContentOperations.GetParent(content);
+            parent = parent ?? LogicalTreeHelper.GetParent(target);
+            if (parent != null) return parent;
+            if (target is Visual root && root.GetType().FullName == "System.Windows.Controls.Primitives.PopupRoot" && PresentationSource.FromVisual(root) is HwndSource source && ReferenceEquals(source.RootVisual, root))
+            {
+                var pending = new Queue<DependencyObject>(); pending.Enqueue(root);
+                int visited = 0;
+                while (pending.Count > 0 && visited++ < ProtocolLimits.ScanMaxObjects)
+                {
+                    var current = pending.Dequeue();
+                    if (!ReferenceEquals(current, root) && LogicalTreeHelper.GetParent(current) is Popup popup && ReferenceEquals(popup.Child, current)) return popup;
+                    if (current is Visual || current is Visual3D)
+                        for (int i = 0; i < VisualTreeHelper.GetChildrenCount(current); i++) pending.Enqueue(VisualTreeHelper.GetChild(current, i));
+                }
+            }
+            return null;
         }
 
         public static IEnumerable<DependencyObject> EnumerateChildren(DependencyObject target, string tree)

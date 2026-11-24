@@ -163,12 +163,32 @@ namespace WinTestKit.Inspector.Agent.Session
                 case PipeMethods.Roots:
                     var roots = RootsParams.FromJson(request.Params); CheckSession(roots.SessionId);
                     return (await service.RootsAsync(roots.PageSize, roots.PageToken, ct).ConfigureAwait(false)).ToJson();
+                case PipeMethods.Parent:
+                    if (!(service is IParentInspectionService parentService)) throw new ProtocolException(ErrorCodes.UnsupportedTarget, "Feature not available.");
+                    var parent = ParentParams.FromJson(request.Params); CheckSession(parent.SessionId);
+                    return (await parentService.ParentAsync(parent.ObjectId, parent.Generation, ct).ConfigureAwait(false)).ToJson();
                 case PipeMethods.Children:
                     var children = ChildrenParams.FromJson(request.Params); CheckSession(children.SessionId);
                     return (await service.ChildrenAsync(children.ObjectId, children.Generation, children.Tree, children.PageSize, children.PageToken, ct).ConfigureAwait(false)).ToJson();
                 case PipeMethods.Members:
                     var members = MembersParams.FromJson(request.Params); CheckSession(members.SessionId);
                     return (await service.MembersAsync(members.ObjectId, members.Generation, members.PageSize, members.PageToken, ct).ConfigureAwait(false)).ToJson();
+                case PipeMethods.Items:
+                    var itemParams = MembersParams.FromJson(request.Params); CheckSession(itemParams.SessionId);
+                    if (!(service is IItemsInspectionService itemService)) throw new ProtocolException(ErrorCodes.UnsupportedTarget, "Item inspection unavailable");
+                    return (await itemService.ItemsAsync(itemParams.ObjectId, itemParams.Generation, itemParams.PageSize, itemParams.PageToken, ct).ConfigureAwait(false)).ToJson();
+                case PipeMethods.Styling:
+                    var stylingParams = StylingParams.FromJson(request.Params); CheckSession(stylingParams.SessionId);
+                    if (!(service is IStylingInspectionService stylingService)) throw new ProtocolException(ErrorCodes.UnsupportedTarget, "Style inspection unavailable");
+                    return (await stylingService.StylingAsync(stylingParams.ObjectId, stylingParams.Generation, ct).ConfigureAwait(false)).ToJson();
+                case PipeMethods.Resource:
+                    var resourceParams = ResourceParams.FromJson(request.Params); CheckSession(resourceParams.SessionId);
+                    if (!(service is IResourceInspectionService resourceService)) throw new ProtocolException(ErrorCodes.UnsupportedTarget, "Resource inspection unavailable");
+                    return (await resourceService.ResourceAsync(resourceParams.ObjectId, resourceParams.Generation, resourceParams.Scope, resourceParams.Key, resourceParams.KeyKind, resourceParams.Index, ct).ConfigureAwait(false)).ToJson();
+                case PipeMethods.MemberEvents:
+                    var eventParams = MembersParams.FromJson(request.Params); CheckSession(eventParams.SessionId);
+                    if (!(service is IMemberEventsInspectionService eventService)) throw new ProtocolException(ErrorCodes.UnsupportedTarget, "Event inspection unavailable");
+                    return (await eventService.EventsAsync(eventParams.ObjectId, eventParams.Generation, eventParams.PageSize, eventParams.PageToken, ct).ConfigureAwait(false)).ToJson();
                 case PipeMethods.Read:
                     var read = ReadParams.FromJson(request.Params); CheckSession(read.SessionId);
                     return (await service.ReadAsync(read.ObjectId, read.Generation, read.Paths, ct).ConfigureAwait(false)).ToJson();

@@ -6,9 +6,10 @@ import json
 from collections.abc import Callable
 from decimal import Decimal
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
+from jsonschema import Draft202012Validator
 
 from wintestkit.inspector.client import _response
 from wintestkit.inspector.models import (
@@ -17,26 +18,81 @@ from wintestkit.inspector.models import (
     AttributeLiteral,
     BindingInfo,
     BootstrapSettings,
+    EventHandler,
     HelloParams,
+    ItemsResult,
     ManagedNode,
     Mapping,
     Member,
+    MemberEvent,
     ObjectRef,
     Page,
     ProcessIdentity,
     RequestEnvelope,
+    ResourceResult,
     Session,
+    StylingCondition,
+    StylingResourceEntry,
+    StylingResources,
+    StylingResult,
+    StylingSetter,
+    StylingStyle,
+    StylingTemplate,
+    StylingTrigger,
     Value,
     parse_path,
 )
 from wintestkit.inspector.paths import PathSegment
 
 ROOT = Path(__file__).resolve().parents[3] / "wpf-inspector/protocol/fixtures"
+ITEMS_SCHEMA = json.loads((ROOT.parent / "inspector.schema.json").read_text(encoding="utf-8"))
+ITEMS_PARAMS = {**ITEMS_SCHEMA, "$ref": "#/$defs/ItemsParams"}
+STYLING_PARAMS = {**ITEMS_SCHEMA, "$ref": "#/$defs/StylingParams"}
+RESOURCE_PARAMS = {**ITEMS_SCHEMA, "$ref": "#/$defs/ResourceParams"}
+
+
+def _items_params(value: Any) -> None:
+    if not Draft202012Validator(ITEMS_PARAMS).is_valid(value):
+        raise ValueError("Invalid items parameters")
+
+
+def _styling_params(value: Any) -> None:
+    if not Draft202012Validator(STYLING_PARAMS).is_valid(value):
+        raise ValueError("Invalid styling parameters")
+
+
+def _resource_params(value: Any) -> None:
+    if not Draft202012Validator(RESOURCE_PARAMS).is_valid(value):
+        raise ValueError("Invalid resource parameters")
+
+
+def _routed_handler(value: Any) -> EventHandler:
+    handler = EventHandler.from_json(value)
+    if handler.handled_events_too is None:
+        raise ValueError("Routed handlers say whether they take handled events")
+    return handler
+
+
+def _clr_subscriber(value: Any) -> EventHandler:
+    handler = EventHandler.from_json(value)
+    if handler.handled_events_too is not None:
+        raise ValueError("CLR subscribers have no handled-events flag")
+    return handler
+
+
 PARSERS: dict[str, Callable[[Any], Any]] = {
     "AttributeInfo": AttributeInfo.from_json,
     "BindingInfo": BindingInfo.from_json,
     "BootstrapSettings": BootstrapSettings.from_json,
     "HelloParams": HelloParams.from_json,
+    "ItemsResult": ItemsResult.from_json,
+    "ItemsParams": lambda value: _items_params(value),
+    "MemberEvent": MemberEvent.from_json,
+    "MemberEventPage": lambda value: Page.from_json(value, MemberEvent.from_json),
+    "ResourceParams": lambda value: _resource_params(value),
+    "ResourceResult": ResourceResult.from_json,
+    "RoutedEventHandler": _routed_handler,
+    "ClrEventSubscriber": _clr_subscriber,
     "Mapping": Mapping.from_json,
     "Member": Member.from_json,
     "MemberPage": lambda value: Page.from_json(value, Member.from_json),
@@ -49,6 +105,15 @@ PARSERS: dict[str, Callable[[Any], Any]] = {
     "ResponseEnvelope": _response,
     "RequestEnvelope": RequestEnvelope.from_json,
     "Session": Session.from_json,
+    "StylingCondition": StylingCondition.from_json,
+    "StylingResourceEntry": StylingResourceEntry.from_json,
+    "StylingParams": lambda value: _styling_params(value),
+    "StylingResources": StylingResources.from_json,
+    "StylingResult": StylingResult.from_json,
+    "StylingSetter": StylingSetter.from_json,
+    "StylingStyle": StylingStyle.from_json,
+    "StylingTemplate": StylingTemplate.from_json,
+    "StylingTrigger": StylingTrigger.from_json,
     "Value": Value.from_json,
 }
 FIXTURES = [
@@ -93,6 +158,25 @@ def test_golden_dto(fixture: Path) -> None:
     else:
         with pytest.raises(ValueError):
             parser(document["instance"])
+
+
+def test_getter_error_message() -> None:
+    raw = {
+        "status": "exception",
+        "kind": "unavailable",
+        "declaredType": "",
+        "runtimeType": "",
+        "failedSegment": 0,
+        "message": "System.InvalidOperationException",
+        "errorMessage": "broken",
+    }
+    value = Value.from_json(raw)
+    assert value.error_message == "broken"
+    with pytest.raises(ValueError, match="broken"):
+        value.as_python()
+    for bad in (123, "x" * 513):
+        with pytest.raises(ValueError):
+            Value.from_json({**raw, "errorMessage": bad})
 
 
 def test_null_and_missing_are_distinct() -> None:
@@ -170,3 +254,283 @@ def test_creation_time_compares_at_full_windows_precision() -> None:
     first = ProcessIdentity(42, "2026-10-29T01:00:00.1234567+01:00")
     assert first == ProcessIdentity(42, "2026-10-29T00:00:00.1234567Z")
     assert first != ProcessIdentity(42, "2026-10-29T00:00:00.1234568Z")
+
+
+def _binding_fixture(name: str) -> dict[str, Any]:
+    document = json.loads((ROOT / "valid" / f"{name}.json").read_text(encoding="utf-8"))
+    assert isinstance(document["instance"], dict)
+    return document["instance"]
+
+
+def test_binding_details_round_trip_with_handles() -> None:
+    raw = _binding_fixture("binding-details")
+    info = BindingInfo.from_json(raw)
+    assert info.string_format == "{0:N2}"
+    assert info.fallback_value is not None and info.fallback_value.scalar == "fb"
+    assert info.target_null_value is not None and info.target_null_value.scalar == 7
+    assert info.converter_parameter is not None and info.converter_parameter.object_ref is not None
+    assert info.data_item is not None and info.data_item.object_ref is not None
+    assert info.data_item.object_ref.object_id == "d1"
+    assert info.resolved_source is not None and info.resolved_source.object_ref is not None
+    assert info.resolved_source_property_name == "Name"
+    assert (info.converter_culture, info.delay, info.binding_group_name, info.x_path) == (
+        "fr-FR",
+        250,
+        "group",
+        "item",
+    )
+    assert info.is_async is True and info.notify_on_target_updated is False
+    assert info.validates_on_notify_data_errors is True
+    assert info.validation_rules == ("App.NonEmptyRule",)
+    assert info.has_update_source_exception_filter is True
+    assert info.has_error is False and info.has_validation_error is False
+    assert info.to_json() == raw
+
+
+def test_binding_details_nested_children_and_active_child() -> None:
+    multi = BindingInfo.from_json(_binding_fixture("binding-details-multi"))
+    assert multi.converter_parameter is not None and multi.converter_parameter.scalar == "-"
+    assert multi.children is not None and len(multi.children) == 2
+    assert multi.children[0].data_item is not None
+    priority = BindingInfo.from_json(_binding_fixture("binding-details-priority"))
+    assert priority.active_child_index == 1
+    assert priority.fallback_value is not None and priority.fallback_value.scalar == "pfb"
+
+
+def test_binding_without_details_leaves_them_unset() -> None:
+    info = BindingInfo.from_json(
+        {
+            "memberKey": "k",
+            "kind": "binding",
+            "status": "Active",
+            "mode": "OneWay",
+            "updateSourceTrigger": "Default",
+        }
+    )
+    assert info.string_format is None and info.data_item is None and info.has_error is None
+    assert "dataItem" not in info.to_json()
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        {"delay": -1},
+        {"delay": 2_147_483_648},
+        {"hasError": "yes"},
+        {"isAsync": 1},
+        {"activeChildIndex": 32},
+        {"validationRules": [1]},
+        {"validationRules": [f"R{index}" for index in range(33)]},
+        {"fallbackValue": {"status": "ok"}},
+        {"dataItem": "object"},
+        {"stringFormat": "x" * 1025},
+        {"converterCulture": "x" * 129},
+        {"resolvedSourceType": "T"},
+    ],
+)
+def test_binding_details_reject_invalid_fields(extra: dict[str, Any]) -> None:
+    base = {
+        "memberKey": "k",
+        "kind": "binding",
+        "status": "Active",
+        "mode": "OneWay",
+        "updateSourceTrigger": "Default",
+    }
+    with pytest.raises(ValueError):
+        BindingInfo.from_json({**base, **extra})
+
+
+def _styling_fixture(name: str) -> dict[str, Any]:
+    document = json.loads((ROOT / "valid" / f"{name}.json").read_text(encoding="utf-8"))
+    assert document["schema"].startswith("Styling")
+    return cast(dict[str, Any], document["instance"])
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "styling-result-empty",
+        "styling-result-style",
+        "styling-result-style-implicit",
+        "styling-result-style-none",
+        "styling-result-templates",
+        "styling-result-resources",
+    ],
+)
+def test_styling_result_round_trips_the_golden_fixtures(name: str) -> None:
+    raw = _styling_fixture(name)
+    assert StylingResult.from_json(raw).to_json() == raw
+
+
+def test_styling_style_describes_setters_triggers_and_based_on() -> None:
+    style = StylingResult.from_json(_styling_fixture("styling-result-style")).style
+    assert style is not None
+    assert (style.source, style.key, style.target_type) == (
+        "local",
+        "Fancy",
+        "System.Windows.Controls.Button",
+    )
+    assert [trigger.kind for trigger in style.triggers] == [
+        "trigger",
+        "dataTrigger",
+        "multiTrigger",
+        "eventTrigger",
+    ]
+    assert [trigger.active for trigger in style.triggers] == [
+        "active",
+        "unknown",
+        "inactive",
+        "unknown",
+    ]
+    assert style.triggers[1].conditions[0].binding == "Path=Ready"
+    assert style.triggers[3].routed_event == "System.Windows.Controls.Primitives.ButtonBase.Click"
+    base = style.based_on[0]
+    assert base.key == "Base" and style.based_on[1].key is None
+    dynamic, hidden, event_setter = base.setters
+    assert (dynamic.kind, dynamic.expression, dynamic.value) == ("dynamicResource", "Accent", None)
+    assert hidden.value is not None and hidden.value.status == "redacted"
+    assert event_setter.kind == "other"
+    assert "value" not in dynamic.to_json()
+
+
+def test_styling_templates_and_resources_describe_parts_and_keys() -> None:
+    result = StylingResult.from_json(_styling_fixture("styling-result-templates"))
+    assert result.templates is not None
+    control = result.templates.control_template
+    assert control is not None and control.root_type == "System.Windows.Controls.Border"
+    assert [part.name for part in control.parts] == ["PART_Border"]
+    assert control.triggers[0].conditions[0].source_name == "PART_Border"
+    assert result.templates.item_template is not None
+    assert result.templates.item_template.kind == "hierarchicalDataTemplate"
+    assert result.templates.items_panel is not None
+    assert result.templates.items_panel.root_type == "System.Windows.Controls.WrapPanel"
+    assert result.templates.templated_parent is not None
+    assert len(result.values()) == 4
+    resources = StylingResult.from_json(_styling_fixture("styling-result-resources"))
+    assert resources.resources is not None and resources.application is not None
+    assert [entry.key_kind for entry in resources.resources.entries] == [
+        "string",
+        "type",
+        "componentResourceKey",
+        "other",
+    ]
+    assert [item.source for item in resources.resources.merged_dictionaries] == [
+        "Themes/Dark.xaml",
+        None,
+    ]
+    assert resources.application.truncated and resources.application.count == 250
+
+
+def test_styling_result_must_be_empty_when_not_applicable() -> None:
+    assert StylingResult.from_json({"applicable": False}).style is None
+    with pytest.raises(ValueError):
+        StylingResult.from_json(
+            {"applicable": False, "style": _styling_fixture("styling-result-style-none")["style"]}
+        )
+    with pytest.raises(ValueError, match="Inconsistent"):
+        raw = _styling_fixture("styling-result-resources")["application"]
+        StylingResources.from_json({**raw, "truncated": False})
+
+
+def _valid_fixture(name: str) -> dict[str, Any]:
+    document = json.loads((ROOT / "valid" / f"{name}.json").read_text(encoding="utf-8"))
+    return cast(dict[str, Any], document["instance"])
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "member-event-routed",
+        "member-event-routed-no-handlers",
+        "member-event-routed-unknown",
+        "member-event-clr",
+        "member-event-clr-static",
+        "member-event-clr-unknown",
+        "member-event-clr-truncated",
+    ],
+)
+def test_member_events_round_trip_the_golden_fixtures(name: str) -> None:
+    raw = _valid_fixture(name)
+    assert MemberEvent.from_json(raw).to_json() == raw
+
+
+def test_member_events_name_their_handler_fields_by_kind() -> None:
+    routed = MemberEvent.from_json(_valid_fixture("member-event-routed"))
+    assert (routed.kind, routed.strategy, routed.known, routed.count) == (
+        "routed",
+        "bubble",
+        True,
+        2,
+    )
+    assert [item.handled_events_too for item in routed.handlers] == [False, True]
+    assert routed.handlers[0].declaring_type == "Demo.MainWindow"
+    assert "subscribers" not in routed.to_json() and "isStatic" not in routed.to_json()
+    clr = MemberEvent.from_json(_valid_fixture("member-event-clr-static"))
+    assert (clr.kind, clr.is_static, clr.strategy, clr.known, clr.count) == (
+        "clr",
+        True,
+        None,
+        True,
+        1,
+    )
+    assert clr.handlers[0].handled_events_too is None
+    assert "handledEventsToo" not in clr.handlers[0].to_json()
+    assert "handlers" not in clr.to_json() and "strategy" not in clr.to_json()
+    unknown = MemberEvent.from_json(_valid_fixture("member-event-clr-unknown"))
+    assert not unknown.known and unknown.handlers == ()
+
+
+def test_member_event_lists_are_capped_and_consistent() -> None:
+    truncated = MemberEvent.from_json(_valid_fixture("member-event-clr-truncated"))
+    assert (truncated.count, len(truncated.handlers), truncated.truncated) == (40, 32, True)
+    raw = _valid_fixture("member-event-clr-truncated")
+    with pytest.raises(ValueError, match="Inconsistent"):
+        MemberEvent.from_json({**raw, "subscribersTruncated": False})
+    with pytest.raises(ValueError):
+        MemberEvent.from_json({**raw, "subscribers": raw["subscribers"] + raw["subscribers"][:1]})
+    routed = _valid_fixture("member-event-routed")
+    with pytest.raises(ValueError, match="Unknown"):
+        MemberEvent.from_json({**routed, "handlersKnown": False})
+    with pytest.raises(ValueError):
+        MemberEvent.from_json({**routed, "subscribers": []})
+    with pytest.raises(ValueError):
+        MemberEvent.from_json({**routed, "strategy": "sideways"})
+    with pytest.raises(ValueError, match="kind"):
+        MemberEvent.from_json({**routed, "handlers": [{"declaringType": "T", "method": "M"}] * 2})
+    with pytest.raises(ValueError):
+        MemberEvent.from_json({**routed, "kind": "delegate"})
+
+
+def test_resource_listing_carries_keys_and_positions_never_values() -> None:
+    result = StylingResult.from_json(_valid_fixture("styling-result-resources"))
+    assert result.resources is not None
+    assert [entry.index for entry in result.resources.entries] == [0, 1, 2, 3]
+    assert result.resources.entries[1].to_json() == {
+        "key": "System.Windows.Controls.Button",
+        "keyKind": "type",
+        "index": 1,
+    }
+    assert result.values() == ()
+    with pytest.raises(ValueError):
+        StylingResourceEntry.from_json({"key": "k", "keyKind": "string", "index": 0, "value": {}})
+    with pytest.raises(ValueError):
+        StylingResourceEntry.from_json({"key": "k", "keyKind": "string"})
+
+
+def test_resource_result_round_trips_and_is_empty_when_not_found() -> None:
+    found = _valid_fixture("resource-result-found")
+    parsed = ResourceResult.from_json(found)
+    assert parsed.found and parsed.value_type == "System.String" and parsed.value is not None
+    assert parsed.to_json() == found
+    assert ResourceResult.from_json({"found": False}).to_json() == {"found": False}
+    assert ResourceResult.from_json(_valid_fixture("resource-result-redacted")).value is not None
+    for bad in (
+        {"found": True, "valueType": "System.String"},
+        {"found": True, "value": found["value"]},
+        {"found": False, "valueType": "System.String"},
+        {"found": False, "value": found["value"], "valueType": "System.String"},
+        {"found": "yes"},
+        {},
+    ):
+        with pytest.raises(ValueError):
+            ResourceResult.from_json(bad)

@@ -38,6 +38,10 @@ def test_worker_survives_callback_and_closes(monkeypatch: pytest.MonkeyPatch) ->
     element.process_id = 987
 
     class FakeOverlay:
+        def __init__(self, color: int, thickness: int) -> None:
+            assert color == spy.RED
+            assert thickness == 3
+
         def show(self, rect: Any) -> None:
             hovered.set()
 

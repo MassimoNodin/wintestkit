@@ -1732,12 +1732,14 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
         if (message.type === "expand") {
           await phase("Reading child controls", () => this.showChildren(client, nodeId));
         } else if (message.type === "highlight") {
-          await phase("Highlighting control", () =>
-            client.request("inspect.highlight", {
+          const highlight = await phase("Highlighting control", () =>
+            client.request<{ outlinedAncestor?: string; outlinedTarget?: string }>("inspect.highlight", {
               nodeId,
               bringToFront: this.bringToFront(),
             }),
           );
+          if (highlight.outlinedAncestor)
+            void vscode.window.showInformationMessage(`${highlight.outlinedTarget ?? "Selected element"} has no on-screen rectangle; outlined ${highlight.outlinedAncestor} instead`);
         } else if (message.type === "select") {
           if (selection !== this.selection) return;
           const properties = await phase("Reading basic properties", () =>

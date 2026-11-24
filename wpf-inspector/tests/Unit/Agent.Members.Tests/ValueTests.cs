@@ -305,6 +305,34 @@ namespace WinTestKit.Inspector.Agent.Members.Tests
             public int Value => throw Error;
         }
 
+        private sealed class MessageFixture
+        {
+            public int Value => throw new InvalidOperationException("broken getter");
+            public static int StaticFailure => throw new InvalidOperationException("static failure");
+            public int LongFailure => throw new InvalidOperationException(new string('x', 600));
+            public int InvalidText => throw new InvalidOperationException("a\ud800\u0001b");
+            public int SecretFailure => throw new InvalidOperationException("hidden");
+            public int SecurityFailure => throw new SecurityException("hidden");
+        }
+
+        [Fact]
+        public void GetterMessagesAreBoundedSanitizedAndRedacted()
+        {
+            Sta(() =>
+            {
+                var reader = new Reader(new MessageFixture());
+                var value = reader.Read(Property("Value"));
+                Assert.Equal(typeof(InvalidOperationException).FullName, value.Message);
+                Assert.Equal("broken getter", value.ErrorMessage);
+                Assert.Equal("static failure", reader.Read(Property("StaticFailure")).ErrorMessage);
+                Assert.Equal(512, reader.Read(Property("LongFailure")).ErrorMessage!.Length);
+                Assert.Equal("a\uFFFD\uFFFDb", reader.Read(Property("InvalidText")).ErrorMessage);
+                Assert.Null(reader.Read(Property("SecretFailure")).ErrorMessage);
+                Assert.Null(reader.Read(Property("SecurityFailure")).ErrorMessage);
+                value.ToJson();
+            });
+        }
+
         [Fact]
         public void ExceptionReportingNeverReadsMessageOrStackTrace()
         {

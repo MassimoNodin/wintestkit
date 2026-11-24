@@ -85,6 +85,7 @@ _TOP_LEVEL_KEYS = {
     "report_dir",
     "highlight_actions",
     "highlight_color",
+    "highlight_thickness",
     "slow_mo_ms",
     "python_paths",
     "property_aliases",
@@ -179,6 +180,7 @@ class WtkConfig:
     object_previews: bool = True
     object_previews_share: bool = False
     highlight_color: str = "#FF0000"
+    highlight_thickness: int = 3
     inspector: InspectorConfig = field(default_factory=InspectorConfig)
     backend: Literal["uia", "auto"] = "auto"
 
@@ -262,6 +264,13 @@ def _positive_int(key: str, value: Any) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
         raise _fail(key, f"expected a positive integer, got {value!r}")
     return value
+
+
+def _highlight_thickness(value: Any) -> int:
+    number = _positive_int("highlight_thickness", value)
+    if number > 20:
+        raise _fail("highlight_thickness", f"must be at most 20, got {value!r}")
+    return number
 
 
 def _boolean(key: str, value: Any) -> bool:
@@ -596,6 +605,7 @@ def load_config(start: Path | None = None, overrides: Mapping[str, Any] | None =
         ),
         highlight_actions=_boolean("highlight_actions", values.get("highlight_actions", False)),
         highlight_color=_hex_color("highlight_color", values.get("highlight_color", "#FF0000")),
+        highlight_thickness=_highlight_thickness(values.get("highlight_thickness", 3)),
         object_previews=_boolean("object_previews", values.get("object_previews", True)),
         # Repository-wide: a machine's own file or environment cannot decide it for everyone.
         object_previews_share=_boolean(

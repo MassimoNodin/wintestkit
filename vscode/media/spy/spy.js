@@ -26,7 +26,8 @@
   const attachHeader = (failure) => `${failure.code}: ${failure.hint} Run ` + "`wtk doctor --agent`" + " for details.";
   const managedNode = (tag, text) => { const node = document.createElement(tag); node.textContent = text; return node; };
   const managedButton = (label, action) => { const button = managedNode("button", label); button.className = "secondary"; button.addEventListener("click", action); return button; };
-  function managedReadable(member) { return !!member.pathSegment && ((member.readable && member.visibility === "public") || (member.category === "clrField" && member.reason === "nonPublic" && member.pathSegment.kind === "field" && !!member.pathSegment.memberKey && !!member.pathSegment.declaringType)); }
+  function getterFailureText(value) { return `Getter threw ${String(value.message || "an exception").split(".").pop()}${value.errorMessage ? `: ${value.errorMessage}` : ""}`; }
+  function managedReadable(member) { return !!member.pathSegment && ((member.readable && member.visibility === "public") || ((member.category === "clrField" || member.category === "staticField") && member.reason === "nonPublic" && member.pathSegment.kind === "field" && !!member.pathSegment.memberKey && !!member.pathSegment.declaringType)); }
   function renderManaged() {
     const data = managedSnapshot; if (!data) return;
     element("managed-panel").hidden = propertiesView || !data.visible || !selectedWpf;
@@ -49,7 +50,7 @@
       box.append(managedNode("div", `Declared: ${m.declaredType}; runtime: ${v?.runtimeType || "—"}; declaring: ${m.declaringType}; category: ${m.category}; visibility: ${m.visibility}; ${m.readable ? "readable" : "unreadable"}${m.reason ? ` (${m.reason})` : ""}`));
       if (m.compatibilityAlias || m.memberKey === "type:FullName") box.append(managedNode("div", `${m.compatibilityAlias || "ClrFullClassName"} is a compatibility alias of type:FullName`));
       if (m.dependency) box.append(managedNode("div", `Owner: ${m.dependency.ownerType}; ${m.dependency.hasLocalValue ? "local value" : "effective value"}`));
-      let label = row.autoStatus || (v?.kind === "null" && v?.status === "ok" ? "null" : v?.status === "exception" ? "getter threw" : v?.status === "timeout" ? "timed out" : v?.status || "not read");
+      let label = row.autoStatus || (v?.kind === "null" && v?.status === "ok" ? "null" : v?.status === "exception" ? getterFailureText(v) : v?.status === "timeout" ? "timed out" : v?.status || "not read");
       if (v?.status === "redacted") label += ` (rule: ${v.redactionRule || "unknown"})`;
       if (v?.scalar !== undefined && v.status !== "redacted") label += `: ${String(v.scalar)}`;
       if (v?.status === "truncated") label += ` (truncated at ${v.truncatedAt})`;
@@ -57,7 +58,7 @@
       box.append(managedNode("div", label));
       if (v?.status === "cycle" && v.cycleTo) { const link = managedButton("Go to ancestor", () => { const target = ancestors.get(v.cycleTo.objectId); target?.scrollIntoView(); target?.focus(); }); box.append(link); }
       const address = { memberKey: m.memberKey, ...(scope ? { scope } : {}) };
-      if (m.readable && m.visibility === "public" && m.pathSegment) { box.append(managedButton("Read", () => post("managedRead", address))); if (!v || v.kind === "object" || v.kind === "array") box.append(managedButton("Expand", () => post("managedExpand", address))); }
+      if (m.readable && m.visibility === "public" && m.pathSegment) { box.append(managedButton("Read", () => post("managedRead", address))); if (!v || v.kind === "object" || v.kind === "array") box.append(managedButton("Expand", () => post("managedExpand", address))); } else if (row.item && v?.object) box.append(managedButton("Expand", () => post("managedExpand", address)));
       if (managedReadable(m) && v?.status === "ok" && v.scalar !== undefined && !["object", "array", "unavailable"].includes(v.kind)) box.append(managedButton("Copy value", () => post("managedCopy", { kind: "value", ...address })));
       box.append(managedButton("Copy canonical path", () => post("managedCopy", { kind: "path", ...address })));
       const locator = managedButton("Copy locator", () => {}); locator.disabled = true; locator.title = "Needs uniqueness check — not available yet"; box.append(locator);
@@ -1027,7 +1028,9 @@
     Visible: "Whether the object is shown (its Visibility is Visible).",
     VisibleOnScreen: "Whether the object is inside the visible part of the screen.",
     Width: "Width of the bounding rectangle, in pixels.",
-    ClrFullClassName: "The full .NET type name of the object.",
+    ClrFullClassName: "The full .NET type name of the object.", ClrClassName: "The .NET type name of the object, without its namespace.",
+    WPFControlName: "The control's AutomationId, or its x:Name when it has none. find(..., \"WPFControlName\", ...) matches this value.", WinFormsControlName: "The control's Name property.",
+    WPFControlOrdinalNo: "The control's position, counting from 1, among sibling objects of the same type with the same text.",
     WPFControlText: "The text the control shows.", WinFormsControlText: "The text the control shows.",
   };
   const standardDescription = (name, value) => [["Name", name], ["Value", value === undefined || value === null ? "Unknown" : value === "" ? '""' : String(value)], ["Group", "Standard"], ["Meaning", STANDARD_MEANING[name]]];
@@ -1077,7 +1080,7 @@
   const UNREADABLE_REASONS = {
     writeOnly: "write-only property",
     indexer: "indexer, it needs arguments",
-    static: "static member",
+
     unsupportedType: "its type is not supported",
     ambiguous: "the name matches more than one member",
   };
@@ -1090,12 +1093,13 @@
   /** What a .NET row shows as its value: the value itself, or the real reason there is none. */
   function managedValueText(row) {
     const v = row.value;
+    if (row.text !== undefined) return row.text;
     if (!v && !managedReadable(row.member)) return `Not readable: ${unreadableReason(row.member)}`;
     if (v && v.status === "notReadable") return `Not readable: ${unreadableReason(row.member)}`;
     if (v && v.status === "unsupported") return `Not readable: ${UNREADABLE_REASONS.unsupportedType}`;
     if (!v) return row.autoStatus === "timed out" ? "(timed out)" : row.autoStatus === "unavailable" ? "(unavailable)" : row.autoStatus === "declined" ? "Not read (automatic reading is off)" : row.autoStatus ? `(${row.autoStatus})` : "Not read";
     if (v.status === "ok") return v.scalar !== undefined ? (v.scalar === "" ? '""' : String(v.scalar)) : v.kind === "null" ? "null" : v.runtimeType || v.kind || "ok";
-    if (v.status === "exception") return `(threw ${String(v.message || "an exception").split(".").pop()})`;
+    if (v.status === "exception") return getterFailureText(v);
     if (v.status === "timeout") return "(timed out)";
     if (v.status === "redacted") return redactedLabel(row.member.name, v);
     if (v.status === "truncated") return `${v.scalar ?? ""} (truncated at ${v.truncatedAt})`;
@@ -1116,9 +1120,9 @@
       { label: "Copy value", enabled: menu.copyValue !== undefined ? menu.copyValue : hasValue, run: () => (menu.address ? post("managedCopy", { kind: "value", ...menu.address }) : post("copy", { text: displayValue(item) })) },
       { label: "Copy name", enabled: true, run: () => post("copy", { text: menu.name ?? item.name }) },
       { label: "Copy locator key", enabled: !!menu.locatorKey, run: () => post("managedCopy", { kind: "path", ...menu.address }) },
-      { label: "Expand", enabled: !!menu.expand, run: () => post("managedExpand", menu.address) },
+      { label: item.toggle?.expanded ? "Collapse" : "Expand", enabled: !!item.toggle || !!menu.expand, run: () => item.toggle ? item.toggle.run() : post("managedExpand", menu.address) },
       { label: "Read again", enabled: !!menu.read, run: () => post("managedRead", menu.address) },
-      { label: menu.pinned ? "Remove from Basic view" : "Show in Basic view", enabled: !!menu.pinKey, run: () => togglePin(menu.pinKey) },
+      { label: menu.pinned ? "Unpin" : "Pin", enabled: !!menu.pinKey, run: () => togglePin(menu.pinKey) },
     ];
   };
   const rowByKey = (key) => [...element("sidebar-rows").querySelectorAll("tr.sidebar-row")].find((row) => row.dataset.key === key);
@@ -1189,10 +1193,17 @@
     if ((event.key === "F10" && event.shiftKey) || event.key === "ContextMenu") { event.preventDefault(); openRowMenu(row, undefined, row.querySelector(".row-menu-button") || undefined); }
     else if ((event.key === "Enter" || event.key === " ") && event.target === row) { event.preventDefault(); const item = rowItems.get(row.dataset.key); if (item) describeSidebar(item, row.dataset.key); }
   });
-  element("sidebar-detach").addEventListener("click", () => post("managedDetach"));
-  element("sidebar-refresh").addEventListener("click", () => post("managedRefresh"));
-  element("sidebar-export").addEventListener("click", () => post("managedCopy", { kind: "export" }));
-  let sidebarAdvanced = vscode.getState?.()?.sidebarAdvanced === true;
+  const sidebarActions = element("sidebar-actions");
+  for (const [id, type, payload] of [["sidebar-detach", "managedDetach"], ["sidebar-refresh", "managedRefresh"], ["sidebar-export", "managedCopy", { kind: "export" }]]) {
+    element(id).addEventListener("click", () => { sidebarActions.open = false; post(type, payload); });
+  }
+  document.addEventListener("click", (event) => { if (sidebarActions.open && !sidebarActions.contains(event.target)) sidebarActions.open = false; });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && sidebarActions.open) { sidebarActions.open = false; sidebarActions.querySelector("summary").focus(); }
+  });
+  let sidebarShowAll = vscode.getState?.()?.sidebarShowAll === true;
+  let sidebarCollapsed = vscode.getState?.()?.sidebarCollapsed || {};
+  const fieldGroups = [[false, "Instance fields"], [true, "Static fields"]];
   const sidebarSearch = element("sidebar-search");
   const sidebarTabs = ["properties", "fields", "methods"].map((name) => element("sidebar-tab-" + name));
   // The method whose argument form is open, with what was typed; it survives the redraws that follow every snapshot.
@@ -1275,12 +1286,229 @@
       tooltip: [method.declaringType, method.unsupportedReason].filter(Boolean).join("\n"),
       description: [["Name", method.name], ["Signature", `${method.returnType} ${method.declaringType}.${label}`], ["Returns", method.returnType], ["Declaring type", method.declaringType], ["Access", flags], ["Not supported", method.unsupportedReason], ["Invocation", availability.enabled ? "available" : availability.reason], invocation.startsWith("Result: ") ? ["Result", invocation.slice(8)] : ["Outcome", invocation]],
       invoke: { ...availability, open: () => {
-        if (!invokeForm || invokeForm.key !== method.key) invokeForm = { key: method.key, rowKey: "Methods/" + label, draft: invokeDefaults(method) };
+        if (!invokeForm || invokeForm.key !== method.key) invokeForm = { key: method.key, rowKey: (method.isStatic ? "Static methods/" : "Instance methods/") + label, draft: invokeDefaults(method) };
         renderSidebar();
         (element("invoke-arg-0") || element("invoke-submit"))?.focus();
       } },
       after: () => [...(invokeForm && invokeForm.key === method.key ? [invokeFormRow(method, methods)] : []), ...(invocation ? [invokeResultRow(invocation)] : [])],
     };
+  }
+  // -- Bindings: one row per bound property, expandable to the details of the binding ---------
+  // Open bindings by key (member key plus the child indexes); empty values, absent values and default flags get no row.
+  const expandedBindings = new Set();
+  const BINDING_SCOPE = "bindings";
+  const bindingSummary = (binding) => [binding.kind, binding.status, binding.path || ""].join("; ");
+  const BINDING_FLAGS = [["notifyOnSourceUpdated", "NotifyOnSourceUpdated"], ["notifyOnTargetUpdated", "NotifyOnTargetUpdated"], ["notifyOnValidationError", "NotifyOnValidationError"], ["validatesOnDataErrors", "ValidatesOnDataErrors"], ["validatesOnExceptions", "ValidatesOnExceptions"]];
+  /** The rows of one binding, and when it is open the detail rows below it, children of Multi- and PriorityBindings nested. */
+  function bindingRows(info, member) {
+    const rows = [], objects = managedSnapshot?.bindingObjects || [], group = { category: "binding", isStatic: false };
+    // A binding's object rows are not members: they have no locator and cannot be pinned.
+    const scrub = (row) => ({ ...row, pinKey: undefined, menu: { ...row.menu, pinKey: undefined, pinned: false, locatorKey: false } });
+    const walk = (binding, path, name) => {
+      const key = info.memberKey + path.map((index) => "/" + index).join(""), open = expandedBindings.has(key), summary = bindingSummary(binding);
+      rows.push({ category: "binding", name, value: summary, description: [["Name", name], ["Value", summary], ["Kind", binding.kind], ["Status", binding.status]], menu: { name, copyValue: true },
+        toggle: { expanded: open, label: (open ? "Hide" : "Show") + " the details of " + name, run: () => { if (!expandedBindings.delete(key)) expandedBindings.add(key); renderSidebar(); } } });
+      if (!open) return;
+      const prefix = name + ".";
+      const add = (label, value) => { if (value !== undefined && value !== null && value !== "") rows.push({ category: "binding", name: prefix + label, value: String(value), description: [["Name", label], ["Value", String(value)], ["Binding", name]], menu: { name: label, copyValue: true } }); };
+      const addValue = (label, field) => {
+        const value = binding[field]; if (!value) return;
+        const object = objects.find((item) => item.binding?.memberKey === info.memberKey && item.binding.field === field && item.binding.path.join("/") === path.join("/"));
+        if (!object) { add(label, managedValueText({ value, member: { name: label } })); return; }
+        const flat = managedRows(false, { rows: [object], scope: BINDING_SCOPE, prefix, group }).map(scrub);
+        if (!object.children && flat.length) flat[0].toggle = { expanded: false, label: "Expand " + prefix + label, run: () => post("managedExpand", flat[0].menu.address) };
+        rows.push(...flat);
+      };
+      const relative = binding.relativeSource;
+      add("Mode", binding.mode); add("UpdateSourceTrigger", binding.updateSourceTrigger);
+      add("Path", binding.path); add("XPath", binding.xPath); add("ElementName", binding.elementName);
+      if (relative) add("RelativeSource", [relative.mode, relative.ancestorType, relative.ancestorLevel !== undefined ? "level " + relative.ancestorLevel : ""].filter(Boolean).join("; "));
+      add("Source", binding.sourceType); add("Converter", binding.converterType);
+      addValue("ConverterParameter", "converterParameter");
+      if (binding.converterCulture !== undefined) add("ConverterCulture", binding.converterCulture === "" ? "(invariant)" : binding.converterCulture);
+      add("StringFormat", binding.stringFormat);
+      addValue("FallbackValue", "fallbackValue"); addValue("TargetNullValue", "targetNullValue");
+      if (binding.delay) add("Delay", binding.delay + " ms");
+      add("BindingGroupName", binding.bindingGroupName);
+      if (binding.isAsync) add("IsAsync", "true");
+      for (const [field, label] of BINDING_FLAGS) if (binding[field]) add(label, "true");
+      if (binding.validatesOnNotifyDataErrors === false) add("ValidatesOnNotifyDataErrors", "false");
+      if (binding.validationRules?.length) add("ValidationRules", binding.validationRules.join(", "));
+      if (binding.hasUpdateSourceExceptionFilter) add("UpdateSourceExceptionFilter", "set");
+      if (binding.activeChildIndex !== undefined) add("ActiveBinding", "child " + binding.activeChildIndex);
+      addValue("DataItem", "dataItem"); addValue("ResolvedSource", "resolvedSource");
+      add("ResolvedSourcePropertyName", binding.resolvedSourcePropertyName);
+      if (binding.hasError) add("HasError", "true");
+      if (binding.hasValidationError) add("HasValidationError", "true");
+      add("Error", (binding.validationErrors || []).join("; "));
+      (binding.children || []).forEach((child, index) => walk(child, [...path, index], `${prefix}Bindings[${index}]`));
+    };
+    walk(info, [], member.name);
+    return rows;
+  }
+  // -- Style, templates and resources: the rows of ".NET > Style and template" and ".NET > Resources" ------------
+  // The agent reads these without running application code. Triggers, templates and the like open to what they hold; an object value
+  // (a setter value, a template part, a resource, the templated parent) expands through the member flow in the "styling" scope.
+  const expandedStyling = new Set();
+  const STYLING_SCOPE = "styling";
+  const lastSegment = (name) => String(name ?? "").split(".").pop();
+  const TRIGGER_LABELS = { trigger: "Trigger", dataTrigger: "DataTrigger", multiTrigger: "MultiTrigger", multiDataTrigger: "MultiDataTrigger", eventTrigger: "EventTrigger", other: "Trigger" };
+  /** A target type and the key it is stored under: "Button (Fancy)"; an implicit style's key is its type, so it shows once. */
+  const targetText = (type, key) => [lastSegment(type) || "(no target type)", key && key !== type ? `(${key})` : ""].filter(Boolean).join(" ");
+  const MARKUP = { dynamicResource: "DynamicResource", binding: "Binding", multiBinding: "MultiBinding", priorityBinding: "PriorityBinding", templateBinding: "TemplateBinding" };
+  /** The text of a setter whose value is markup the agent named instead of evaluating. */
+  const setterMarkup = (setter) => MARKUP[setter.kind] ? `{${MARKUP[setter.kind]} ${setter.expression ?? ""}}`.replace(" }", "}") : setter.expression ?? "";
+  function stylingRows(styling) {
+    const rows = [], objects = managedSnapshot?.stylingObjects || [], style = { category: "style", isStatic: false }, resource = { category: "resource", isStatic: false };
+    // An object row is not a member: it has no locator and cannot be pinned.
+    const scrub = (row) => ({ ...row, pinKey: undefined, menu: { ...row.menu, pinKey: undefined, pinned: false, locatorKey: false } });
+    const plain = (group, name, value, description, extra) => rows.push({ category: group.category, name, value: String(value ?? ""), description: [["Name", name], ["Value", String(value ?? "")], ...(description || [])], menu: { name, copyValue: true }, ...extra });
+    const opener = (key, label) => { const open = expandedStyling.has(key); return { open, toggle: { expanded: open, label: (open ? "Hide " : "Show ") + label, run: () => { if (!expandedStyling.delete(key)) expandedStyling.add(key); renderSidebar(); } } }; };
+    // One row for a value: an object expands, anything else shows its text.
+    const valueRow = (group, slot, name, value, description) => {
+      const object = value?.status === "ok" && value.object ? objects.find((item) => item.styling?.slot === slot) : undefined;
+      if (!object) { plain(group, name, managedValueText({ value, member: { name } }), description); return; }
+      const flat = managedRows(false, { rows: [{ ...object, member: { ...object.member, name } }], scope: STYLING_SCOPE, prefix: "", group }).map(scrub);
+      if (!object.children && flat.length) flat[0].toggle = { expanded: false, label: "Expand " + name, run: () => post("managedExpand", flat[0].menu.address) };
+      rows.push(...flat);
+    };
+    const more = (group, name, shown, total, what) => { if (total > shown) plain(group, name, `${total - shown} more ${what} not shown`); };
+    const setterRows = (prefix, list, slot, total) => {
+      list.forEach((setter, index) => {
+        const name = `${prefix}Setter ${lastSegment(setter.owner)}.${setter.property}${setter.targetName ? ` (${setter.targetName})` : ""}`;
+        const description = [["Property", `${setter.owner}.${setter.property}`], ["Kind", setter.kind], ["Target", setter.targetName], ["Expression", setter.expression]];
+        if (setter.value) valueRow(style, `${slot}.${index}.value`, name, setter.value, description);
+        else plain(style, name, setterMarkup(setter), description);
+      });
+      more(style, prefix + "Setters", list.length, total, "setters");
+    };
+    const conditionName = (condition) => condition.property ? `${condition.sourceName ? condition.sourceName + "." : ""}${lastSegment(condition.property)}` : `{Binding ${condition.binding ?? ""}}`.replace(" }", "}");
+    const conditionValue = (condition) => managedValueText({ value: condition.value, member: { name: conditionName(condition) } });
+    const conditionText = (condition) => `${conditionName(condition)} = ${conditionValue(condition)}`;
+    const triggerRows = (prefix, list, slot, keyBase, total) => {
+      list.forEach((trigger, index) => {
+        const key = `${keyBase}/trigger/${index}`, name = `${prefix}Triggers[${index}]`, summary = trigger.conditions.map(conditionText).join(" and ") || trigger.routedEvent || "";
+        const { open, toggle } = opener(key, "the conditions and setters of " + name);
+        plain(style, name, `${TRIGGER_LABELS[trigger.kind] || "Trigger"} ${summary}; ${trigger.active}`.replace(/\s+;/, ";"), [["Kind", trigger.kind], ["Active", trigger.active], ["Event", trigger.routedEvent], ["Setters", trigger.setterCount]], { toggle });
+        if (!open) return;
+        const inner = name + ".";
+        trigger.conditions.forEach((condition) => plain(style, `${inner}Condition ${conditionName(condition)}`, `= ${conditionValue(condition)} (${condition.active})`, [["Property", condition.property], ["Binding", condition.binding], ["Source", condition.sourceName], ["Active", condition.active]]));
+        setterRows(inner, trigger.setters, `${slot}.${index}.setters`, trigger.setterCount);
+        if (trigger.enterActions) plain(style, inner + "EnterActions", trigger.enterActions);
+        if (trigger.exitActions) plain(style, inner + "ExitActions", trigger.exitActions);
+      });
+      more(style, prefix + "Triggers", list.length, total, "triggers");
+    };
+    const levelRows = (prefix, level, slot, keyBase) => { setterRows(prefix, level.setters, slot + ".setters", level.setterCount); triggerRows(prefix, level.triggers, slot + ".triggers", keyBase, level.triggerCount); };
+    // A style's own setters and triggers, then the styles it is based on, each of them opening to its own.
+    const styleRows = (prefix, info, slot, keyBase) => {
+      levelRows(prefix, info, slot, keyBase);
+      info.basedOn.forEach((level, index) => {
+        const name = `${prefix}BasedOn[${index}]`, { open, toggle } = opener(`${keyBase}/basedOn/${index}`, "the setters and triggers of " + name);
+        plain(style, name, targetText(level.targetType, level.key), [["Target type", level.targetType], ["Key", level.key]], { toggle });
+        if (open) levelRows(name + ".", level, `${slot}.basedOn.${index}`, `${keyBase}/basedOn/${index}`);
+      });
+      if (info.basedOnTruncated) plain(style, prefix + "BasedOn", "More styles in the chain are not shown");
+    };
+    const templateRows = (name, template, slot, keyBase) => {
+      const { open, toggle } = opener(keyBase, "the triggers and parts of " + name);
+      const text = template.kind === "itemsPanelTemplate" ? lastSegment(template.rootType) || "(unknown panel)" : template.dataType ? `DataType ${lastSegment(template.dataType)}` : targetText(template.targetType, template.key);
+      plain(style, name, text, [["Kind", template.kind], ["Target type", template.targetType], ["Data type", template.dataType], ["Root", template.rootType], ["Key", template.key], ["Triggers", template.triggerCount], ["Parts", template.parts.length]], template.triggers.length || template.parts.length ? { toggle } : undefined);
+      if (!open) return;
+      const inner = name + ".";
+      triggerRows(inner, template.triggers, slot + ".triggers", keyBase, template.triggerCount);
+      template.parts.forEach((part, index) => valueRow(style, `${slot}.parts.${index}.element`, `${inner}Part ${part.name}`, part.element, [["Type", part.type]]));
+      if (template.partsTruncated) plain(style, inner + "Parts", "More parts are not shown");
+    };
+    // A resource's value is read when its row is expanded: reading a deferred resource creates it in the application, so the listing names keys only.
+    const resourceRow = (name, slot, entry) => {
+      const object = objects.find((item) => item.styling?.slot === slot), description = [["Key", entry.key], ["Key kind", entry.keyKind], ["Position", entry.index]];
+      if (!object) { plain(resource, name, "(expand to read)", description); return; }
+      const flat = managedRows(false, { rows: [{ ...object, member: { ...object.member, name } }], scope: STYLING_SCOPE, prefix: "", group: resource }).map(scrub);
+      if (!flat.length) return;
+      flat[0].description = [...flat[0].description, ...description, ["Value type", object.valueType]];
+      if (!object.value) flat[0].toggle = { expanded: false, label: "Read the value of " + name, run: () => post("managedExpand", flat[0].menu.address) };
+      else if (object.value.status === "ok" && object.value.object && !object.children) flat[0].toggle = { expanded: false, label: "Expand " + name, run: () => post("managedExpand", flat[0].menu.address) };
+      rows.push(...flat);
+    };
+    const resourceRows = (prefix, info, slot) => {
+      info.entries.forEach((entry, index) => resourceRow(prefix + entry.key, `${slot}.entries.${index}`, entry));
+      if (info.truncated) plain(resource, prefix + "Resources", `${info.entries.length} of ${info.count} shown`);
+      info.mergedDictionaries.forEach((merged, index) => plain(resource, `${prefix}MergedDictionaries[${index}]`, merged.source ?? "(inline)", [["Resources", merged.count]]));
+      if (info.mergedTruncated) plain(resource, prefix + "MergedDictionaries", "More dictionaries are not shown");
+    };
+    const current = styling.style, templates = styling.templates;
+    if (current) {
+      plain(style, "Style", current.source === "none" ? "(no style)" : targetText(current.targetType, current.key), [["Source", current.source], ["Target type", current.targetType], ["Key", current.key]]);
+      if (current.source !== "none") styleRows("", current, "style", "style");
+    }
+    if (templates) {
+      if (templates.controlTemplate) templateRows("ControlTemplate", templates.controlTemplate, "templates.controlTemplate", "template/control");
+      if (templates.contentTemplate) templateRows("ContentTemplate", templates.contentTemplate, "templates.contentTemplate", "template/content");
+      if (templates.itemTemplate) templateRows("ItemTemplate", templates.itemTemplate, "templates.itemTemplate", "template/item");
+      if (templates.itemContainerStyle) {
+        const container = templates.itemContainerStyle, { open, toggle } = opener("template/container", "the setters and triggers of ItemContainerStyle");
+        plain(style, "ItemContainerStyle", targetText(container.targetType, container.key), [["Target type", container.targetType], ["Key", container.key]], { toggle });
+        if (open) styleRows("ItemContainerStyle.", container, "templates.itemContainerStyle", "template/container");
+      }
+      if (templates.itemsPanel) templateRows("ItemsPanel", templates.itemsPanel, "templates.itemsPanel", "template/panel");
+      if (templates.templatedParent) valueRow(style, "templates.templatedParent", "TemplatedParent", templates.templatedParent);
+    }
+    if (styling.resources) resourceRows("", styling.resources, "resources");
+    if (styling.application) {
+      const { open, toggle } = opener("resources/application", "the resources of the application");
+      plain(resource, "Application resources", `${styling.application.count} ${styling.application.count === 1 ? "resource" : "resources"}`, [["Source", styling.application.source]], { toggle });
+      if (open) resourceRows("Application.", styling.application, "application");
+    }
+    return rows;
+  }
+  // -- Events: one row per event, expandable to its handlers (routed) or subscribers (CLR) ------------------
+  // The agent lists events somebody handles first; rows with no handlers stay listed after them, in the agent's order.
+  const capitalized = (text) => text ? text[0].toUpperCase() + text.slice(1) : "";
+  const countText = (count, noun) => `${count} ${noun}${count === 1 ? "" : "s"}`;
+  /** The wire names an event's handler list by its kind; this reads either. */
+  const eventHandlers = (event) => event.kind === "routed"
+    ? { known: !!event.handlersKnown, count: event.handlerCount || 0, truncated: !!event.handlersTruncated, list: event.handlers || [], noun: "handler" }
+    : { known: !!event.subscribersKnown, count: event.subscriberCount || 0, truncated: !!event.subscribersTruncated, list: event.subscribers || [], noun: "subscriber" };
+  /** "routed (Bubble), 2 handlers", "CLR, 1 subscriber", or "handlers unknown" when the agent could not read them. */
+  function eventSummary(event) {
+    const handlers = eventHandlers(event);
+    if (!handlers.known) return "handlers unknown";
+    const kind = event.kind === "routed" ? `routed (${capitalized(event.strategy)})` : "CLR";
+    return `${kind}, ${countText(handlers.count, handlers.noun)}${handlers.truncated ? ` (${handlers.list.length} shown)` : ""}`;
+  }
+  function eventRows() {
+    const rows = [], row = (name, value, description, extra) => rows.push({ category: "event", name, value, description: [["Name", name], ["Value", value], ...description], menu: { name, copyValue: value !== "" }, ...extra });
+    for (const event of managedSnapshot?.events || []) {
+      const handlers = eventHandlers(event), key = `event/${event.kind}/${event.declaringType}/${event.name}`, open = handlers.list.length > 0 && expandedStyling.has(key);
+      const toggle = handlers.list.length ? { expanded: open, label: (open ? "Hide the " : "Show the ") + handlers.noun + "s of " + event.name, run: () => { if (!expandedStyling.delete(key)) expandedStyling.add(key); renderSidebar(); } } : undefined;
+      row(event.name, eventSummary(event), [["Kind", event.kind === "routed" ? "Routed event" : "CLR event"], ["Declaring type", event.declaringType], ["Handler type", event.handlerType], ["Routing", capitalized(event.strategy)], ["Static", event.kind === "clr" ? String(!!event.isStatic) : undefined]], toggle ? { toggle } : undefined);
+      if (!open) continue;
+      const seen = new Map();
+      for (const handler of handlers.list) {
+        const label = `${handler.declaringType}.${handler.method}`, times = (seen.get(label) || 0) + 1;
+        seen.set(label, times);
+        row(`${event.name}.${label}${times > 1 ? ` (${times})` : ""}`, handler.handledEventsToo ? "handledEventsToo" : handlers.noun, [["Declaring type", handler.declaringType], ["Method", handler.method], ["Handled events too", handler.handledEventsToo === undefined ? undefined : String(handler.handledEventsToo)], ["Event", event.name]]);
+      }
+      if (handlers.truncated) row(`${event.name}.${handlers.noun}s`, `${handlers.count - handlers.list.length} more not shown`, []);
+    }
+    return rows;
+  }
+  /** The name column is as wide as its longest name needs, up to 60% with Show all properties off (a dozen rows, names up to WPFControlOrdinalNo) and 42% elsewhere; longer names get an ellipsis and their full text as a tooltip. */
+  function fitNameColumn() {
+    const table = element("sidebar-table"), head = table.querySelector("thead th");
+    if (!head || !table.clientWidth) return;
+    head.style.width = "25%";
+    const widest = Math.max(0, ...[...table.querySelectorAll("tbody th[scope=row]")].map((cell) => cell.scrollWidth));
+    if (widest) head.style.width = Math.max(25, Math.min(sidebarTab === "properties" && !sidebarShowAll ? 60 : 42, (widest + 2) / table.clientWidth * 100)).toFixed(1) + "%";
+  }
+  if (typeof ResizeObserver !== "undefined") {
+    let framePending = false;
+    new ResizeObserver(() => {
+      if (framePending) return;
+      framePending = true;
+      requestAnimationFrame(() => { framePending = false; fitNameColumn(); });
+    }).observe(element("sidebar-table"));
   }
   function renderSidebar() {
     if (!rowMenu.hidden) {
@@ -1294,29 +1522,39 @@
     rowItems.clear();
     body.replaceChildren();
     sidebarTabs.forEach((button) => button.setAttribute("aria-selected", String(button.dataset.sidebarTab === sidebarTab)));
-    const mode = element("sidebar-mode"); mode.hidden = sidebarTab !== "properties"; mode.textContent = sidebarAdvanced ? "Advanced" : "Basic"; mode.setAttribute("aria-pressed", String(sidebarAdvanced));
+    element("sidebar-mode-toggle").hidden = sidebarTab !== "properties"; element("sidebar-mode").checked = sidebarShowAll;
     const entry = nodes.get(selected);
     const status = element("wpf-details-note");
     status.hidden = !selectedWpf || managedSnapshot?.state === "ready" || !(entry?.wpfMissing || entry?.wpfBlocked || (managedSnapshot?.visible && managedSnapshot.state !== "ready"));
     element("sidebar-attach-status").textContent = entry?.wpfBlocked ? attachHeader(entry.wpfBlocked) : managedSnapshot?.failure ? attachHeader(managedSnapshot.failure) : (managedSnapshot?.state ? `${managedSnapshot.state}: ${managedMessages[managedSnapshot.state] || ""}` : "WPF details not loaded");
-    element("sidebar-actions").hidden = !selectedWpf || managedSnapshot?.state !== "ready";
+    sidebarActions.hidden = !selectedWpf || managedSnapshot?.state !== "ready";
+    if (sidebarActions.hidden) sidebarActions.open = false;
     const query = sidebarSearch.value.trim().toLowerCase();
     let count = 0;
     const matches = (...parts) => !query || parts.some((part) => String(part ?? "").toLowerCase().includes(query));
     const group = (name, rows) => {
       const matched = rows.filter((row) => matches(row.name, row.value));
       if (!matched.length) return;
-      if (sidebarAdvanced || sidebarTab !== "properties") { const heading = document.createElement("tr"); heading.className = "sidebar-group"; const th = document.createElement("th"); th.colSpan = 3; th.textContent = name; heading.append(th); body.append(heading); }
+      if (body.children.length) {
+        const gap = document.createElement("tr"), cell = document.createElement("td");
+        gap.className = "sidebar-gap"; gap.setAttribute("aria-hidden", "true"); cell.colSpan = 3; gap.append(cell); body.append(gap);
+      }
+      const heading = document.createElement("tr"), th = document.createElement("th");
+      heading.className = "sidebar-group"; th.colSpan = 3;
+      const button = managedButton(name, () => { sidebarCollapsed[name] = !sidebarCollapsed[name]; vscode.setState?.({ ...(vscode.getState?.() || {}), sidebarCollapsed }); renderSidebar(); });
+      button.setAttribute("aria-expanded", String(!sidebarCollapsed[name])); th.append(button); heading.append(th); body.append(heading);
+      if (sidebarCollapsed[name]) { count += matched.length; return; }
       for (const item of matched) {
         const key = name + "/" + item.name;
         item.group = name; rowItems.set(key, item);
         const row = document.createElement("tr"); row.className = "property-row sidebar-row"; row.dataset.name = item.name; row.dataset.key = key;
-        const th = document.createElement("th"); th.scope = "row"; th.textContent = item.name; th.title = item.name;
+        const th = document.createElement("th"); th.scope = "row"; th.textContent = item.name; th.title = item.name; if (item.depth === 1 && item.kind) th.dataset.kind = item.kind;
         const value = document.createElement("td");
         if (item.select) { const button = managedButton(String(item.value), () => nodes.has(item.select) ? choose(item.select) : post("select", { nodeId: item.select })); value.append(button); }
         else value.textContent = displayValue(item);
         if (item.tooltip) value.title = item.tooltip;
         const actions = document.createElement("td"); actions.className = "property-actions";
+        if (item.toggle) { const button = document.createElement("button"); button.type = "button"; button.className = "property-toggle codicon " + (item.toggle.expanded ? "codicon-chevron-down" : "codicon-chevron-right"); button.setAttribute("aria-expanded", String(item.toggle.expanded)); button.setAttribute("aria-label", item.toggle.label); button.title = item.toggle.label; button.addEventListener("click", (event) => { event.stopPropagation(); item.toggle.run(); }); actions.append(button); }
         if (item.action) actions.append(item.action());
         else if (item.pin && PINNABLE.test(item.name)) actions.append(pinButton(item.name));
         if (!item.noMenu) actions.append(menuButton());
@@ -1329,7 +1567,7 @@
       const methods = managedSnapshot?.methods;
       if (invokeForm && !(methods?.items || []).some((method) => method.key === invokeForm.key)) invokeForm = undefined;
       const items = (methods?.items || []).map((method) => methodItem(method, methods));
-      group("Methods", items);
+      for (const [isStatic, heading] of [[false, "Instance methods"], [true, "Static methods"]]) group(heading, items.filter((_, index) => !!methods.items[index].isStatic === isStatic));
       if (!managedSnapshot?.object) empty.textContent = "Methods unavailable for this selection.";
       else if (methods?.status === "loading") empty.textContent = "Loading methods…";
       else if (methods?.status === "error") empty.textContent = "Methods unavailable. Retry to load methods.";
@@ -1345,7 +1583,7 @@
       }
     }
     else if (sidebarTab === "fields") {
-      group("Fields", managedRows(true)); empty.textContent = query ? "No matching fields." : "No fields loaded.";
+      for (const [isStatic, heading] of fieldGroups) group(heading, managedRows(true).filter((row) => !!row.isStatic === isStatic)); empty.textContent = query ? "No matching fields." : "No fields loaded.";
     } else if (selectedProperties) {
       const p = selectedProperties, info = p.info || {}, raw = p.properties || {}, entry = nodes.get(selected), parent = nodes.get(entry?.parentId);
       // The loaded tree is the first source; the ancestors the host sent with the selection are the fallback.
@@ -1359,6 +1597,10 @@
       // Left and Top are measured from the containing window; a window reports its place on the screen.
       const windowRect = route[0]?.node?.info?.rect;
       const offset = (own, origin) => typeof own !== "number" ? undefined : typeof origin === "number" ? own - origin : own;
+      const nameAlias = p.source === "winforms" ? "WinFormsControlName" : "WPFControlName";
+      const lookAlikes = entry ? [...nodes.values()].filter((other) => other.parentId === entry.parentId && other.node.source === entry.node.source && (other.node.identity?.type || "") === (entry.node.identity?.type || "") && (other.node.info.name || "") === (entry.node.info.name || "")).sort((a, b) => a.index - b.index) : [];
+      const ordinal = lookAlikes.includes(entry) ? lookAlikes.indexOf(entry) + 1 : undefined;
+      const aliases = isManaged(p.source) ? ["ClrClassName", "ClrFullClassName", nameAlias, ...(p.source === "wpf" ? ["WPFControlOrdinalNo"] : []), textKey(p.source)] : [];
       const standard = {
         ChildCount: entry?.node.hasChildren === false ? 0 : entry?.loaded ? entry.children.children.length : undefined,
         Enabled: info.isEnabled, Exists: true, FullName: locatorPath,
@@ -1366,10 +1608,11 @@
         Name: (isManaged(p.source) && raw[nameKey(p.source)]) || info.name, Parent: actualParent?.label, ScreenLeft: info.rect?.left, ScreenTop: info.rect?.top,
         Top: offset(info.rect?.top, windowRect?.top), Visible: isManaged(p.source) ? raw.Visible : undefined, VisibleOnScreen: info.isOffscreen === undefined ? undefined : !info.isOffscreen, Width: info.rect?.width,
         ClrFullClassName: raw.ClrFullClassName, [textKey(p.source)]: raw[textKey(p.source)],
+        ClrClassName: raw.ClrFullClassName ? String(raw.ClrFullClassName).split(/[.+]/).pop() : undefined, [nameAlias]: raw.AutomationId || info.automationId || raw[nameKey(p.source)] || "", WPFControlOrdinalNo: ordinal,
       };
       const rowFor = (name) => ({ name, value: standard[name], description: standardDescription(name, standard[name]), ...(name === "Parent" && actualParent ? { select: actualParent.nodeId } : {}) });
-      const basic = ["Enabled", "Height", "MappedName", "Name", "Parent", "Visible", "Width", ...(isManaged(p.source) ? ["ClrFullClassName", textKey(p.source)] : [])];
-      if (!sidebarAdvanced) { group("Standard", basic.map(rowFor)); if (p.window) group("Win32 Window", windowRows(p.window, true)); group("Pinned", [...managedRows(false), ...managedRows(true)].filter((row) => sidebarPins.includes(row.pinKey))); }
+      const basic = ["Enabled", "Height", "MappedName", "Name", "Parent", "Visible", "Width"];
+      if (!sidebarShowAll) { group("Standard", basic.map(rowFor)); if (isManaged(p.source)) group(".NET", aliases.map(rowFor)); if (p.window) group("Win32 Window", windowRows(p.window, true)); group("Pinned", [...managedRows(false), ...managedRows(true)].filter((row) => sidebarPins.includes(row.pinKey))); }
       else {
         const names = ["ChildCount", "Enabled", "Exists", "FullName", "Height", "Left", "MappedName", "Name", "Parent", "ScreenLeft", "ScreenTop", "Top", "Visible", "VisibleOnScreen", "Width"];
         group("Standard", names.map(rowFor));
@@ -1377,17 +1620,27 @@
         // The Win32 Window group already says these; each value appears once.
         const windowCovered = new Set(p.window ? ["ClassName", "NativeWindowHandle", "ProcessId"] : []);
         // Each value appears once: x:Name is Name, IsEnabled is Enabled, Bounds is the rectangle rows above.
-        const represented = new Set([...names, "x:Name", "ControlName", "IsEnabled", "Bounds", "ClrFullClassName"]);
+        const represented = new Set([...names, "x:Name", "ControlName", "IsEnabled", "Bounds", "ClrFullClassName", textKey(p.source)]);
         if (isManaged(p.source)) {
           // AutomationId is the attached AutomationProperties.AutomationId, or empty.
           const extended = Object.entries(raw).filter(([name]) => !represented.has(name)).map(([name, value]) => ({ name, value: name === "AutomationId" ? (value ?? info.automationId ?? "") : value }));
           if (!extended.some((row) => row.name === "AutomationId")) extended.unshift({ name: "AutomationId", value: info.automationId ?? "" });
           group("Extended", extended);
         }
-        const managed = managedRows(false).filter((row) => !["Name", "IsEnabled"].includes(row.name)).map((row) => represented.has(row.name) && row.name !== "ClrFullClassName" ? { ...row, name: "CLR " + row.name } : row);
-        if (isManaged(p.source) && !managed.some((r) => r.name === "ClrFullClassName")) managed.unshift(rowFor("ClrFullClassName"));
-        for (const binding of managedSnapshot?.bindings || []) managed.push({ name: "Binding " + binding.memberKey, value: [binding.kind, binding.status, binding.path].filter(Boolean).join("; ") });
-        group(".NET", managed);
+        const managed = managedRows(false).filter((row) => row.category === "typeMetadata" || !["Name", "IsEnabled"].includes(row.name)).map((row) => row.category !== "typeMetadata" && row.name !== textKey(p.source) && represented.has(row.name) ? { ...row, name: "CLR " + row.name } : row);
+        if (isManaged(p.source) && !managed.some((row) => row.name === "ClrFullClassName")) managed.unshift({ ...rowFor("ClrFullClassName"), category: "typeMetadata", depth: 1 });
+        for (const alias of aliases) if (!managed.some((row) => row.name === alias) ) managed.push({ ...rowFor(alias), category: "typeMetadata", depth: 1 });
+        for (const binding of managedSnapshot?.bindings || []) { const member = (managedSnapshot?.rows || []).find((row) => row.member.memberKey === binding.memberKey)?.member; if (member) managed.push(...bindingRows(binding, member)); }
+        if (managedSnapshot?.styling) managed.push(...stylingRows(managedSnapshot.styling));
+        managed.push(...eventRows());
+        const memberKinds = new Set(["typeMetadata", "clrProperty", "dependencyProperty", "attachedProperty", "staticProperty"]);
+        const blocks = [];
+        for (const row of managed.filter((item) => memberKinds.has(item.category))) { if (row.depth === 1 || !blocks.length) blocks.push([row]); else blocks.at(-1).push(row); }
+        const sortKey = (block) => block[0].name.toLowerCase();
+        blocks.sort((a, b) => sortKey(a) < sortKey(b) ? -1 : sortKey(a) > sortKey(b) ? 1 : 0);
+        group(".NET", blocks.flat());
+        if (!query && managedSnapshot?.readRemaining && !sidebarCollapsed[".NET"]) { const row = document.createElement("tr"), cell = document.createElement("td"); cell.colSpan = 3; cell.append(managedButton("Read remaining", () => post("managedReadRemaining"))); row.append(cell); body.append(row); }
+        for (const [category, heading] of [["binding", "Bindings"], ["style", "Style and template"], ["resource", "Resources"], ["event", "Events"]]) group(heading, managed.filter((row) => row.category === category));
         const uia = isManaged(p.source) ? p.uia : p;
         if (uia && (!isManaged(p.source) || p.uiaMapped)) {
           const flatten = (item, prefix = "") => [{ name: prefix + item.name, value: propertySummary(item), pin: !prefix }, ...nestedEntries(item).flatMap((child) => flatten(child, prefix + item.name + "."))];
@@ -1397,8 +1650,7 @@
       empty.textContent = query ? "No matching properties." : "No properties loaded.";
     }
     empty.hidden = count > 0;
-    // The name column is as wide as the longest name, up to 24 characters; longer names get an ellipsis and a tooltip.
-    element("sidebar-table").style.setProperty("--name-ch", String(Math.min(24, Math.max(6, ...[...rowItems.values()].map((item) => item.name.length)))));
+    fitNameColumn();
     const described = describedKey !== undefined ? rowItems.get(describedKey) : undefined;
     if (described) describeSidebar(described, describedKey);
     if (focusedKey !== undefined) rowByKey(focusedKey)?.focus({ preventScroll: true });
@@ -1409,35 +1661,42 @@
       cell.append(managedButton("Load more managed members", () => post("managedLoadMore", { group: sidebarTab === "fields" ? "CLR fields" : "CLR properties" }))); more.append(cell); body.append(more);
     }
   }
-  function managedRows(fields) {
-    const flatten = (rows, scope, prefix = "", segments = []) => (rows || []).flatMap((row) => {
+  /** The .NET rows, flat; `root` flattens another row list (the object a binding holds) instead of the snapshot rows. */
+  function managedRows(fields, root) {
+    const flatten = (rows, scope, prefix = "", segments = [], group) => (rows || []).flatMap((row) => {
       const m = row.member, v = row.value, path = [...segments, m.pathSegment];
+      const rootGroup = group || { category: m.category, isStatic: !!m.isStatic || m.category === "staticField" };
+      // `[0]` item rows read as Items[0], not Items.[0].
+      const lead = row.item && m.name.startsWith("[") ? prefix.replace(/\.$/, "") : prefix;
       const address = { memberKey: m.memberKey, ...(scope ? { scope } : {}) };
       const pinKey = path.map((segment) => JSON.stringify(segment)).join("/");
       const first = path[0];
       const validKey = path.every(Boolean) && (first?.kind === "property" || first?.kind === "dependency") && path.slice(1).every((segment) => segment.kind === "property") && (first.kind !== "dependency" || ![first.ownerAssembly, first.ownerType, first.name].some((part) => /[|:/]/.test(part)));
       const binding = (managedSnapshot?.bindings || []).find((item) => item.memberKey === m.memberKey);
       const text = managedValueText(row);
-      const result = { name: prefix + (m.compatibilityAlias || m.name) + (fields && (rows || []).filter((item) => item.member.category === "clrField" && item.member.name === m.name).length > 1 ? ` (${m.declaringType})` : ""), pinKey,
+      const result = { depth: path.length, kind: m.category, category: rootGroup.category, isStatic: rootGroup.isStatic, name: lead + (m.category === "typeMetadata" && m.name === "Name" ? "ClrClassName" : m.category === "typeMetadata" && m.name === "FullName" ? "ClrFullClassName" : m.compatibilityAlias || m.name) + (fields && (rows || []).filter((item) => item.member.category === "clrField" && item.member.name === m.name).length > 1 ? ` (${m.declaringType})` : ""), pinKey,
         value: text,
-        description: [["Name", m.name], ["Value", text], ["Declared type", m.declaredType], ["Runtime type", v?.runtimeType], ["Declaring type", m.declaringType], ["Category", m.category], ["Value source", v?.dependencySource?.baseValueSource], ["Binding", binding && [binding.kind, binding.status, binding.path].filter(Boolean).join("; ")]],
+        description: [["Name", m.name], ["Value", text], ["Declared type", m.declaredType], ["Runtime type", v?.runtimeType], ["Declaring type", m.declaringType], ["Kind", ({ dependencyProperty: "Dependency property", attachedProperty: "Attached property", staticProperty: "Static property", clrProperty: "CLR property", typeMetadata: "Type metadata" })[m.category]], ["Category", m.category], ["Value source", v?.dependencySource?.baseValueSource], ["Binding", binding && [binding.kind, binding.status, binding.path].filter(Boolean).join("; ")]],
         menu: { address, name: m.name, pinKey, pinned: sidebarPins.includes(pinKey), locatorKey: validKey, read: managedReadable(m),
           copyValue: managedReadable(m) && v?.status === "ok" && v.scalar !== undefined && !["object", "array", "unavailable"].includes(v.kind),
           expand: v?.status === "ok" && (v.kind === "object" || v.kind === "array") } };
-      const more = row.page?.nextToken ? [{ name: prefix + m.name + ".Load more", value: "Partial list", noMenu: true, action: () => managedButton("Load more", () => post("managedLoadMore", { group: row.id })) }] : [];
-      return [(m.category === "clrField") === fields ? result : undefined, ...flatten(row.children, row.id, prefix + m.name + ".", path), ...more].filter(Boolean);
+      const more = row.page?.nextToken ? [{ ...rootGroup, name: lead + m.name + ".Load more", value: "Partial list", noMenu: true, action: () => managedButton("Load more", () => post("managedLoadMore", { group: row.id })) }] : [];
+      const itemMore = row.itemPage?.nextToken ? [{ ...rootGroup, name: lead + m.name + ".Load more items", value: "Partial list", noMenu: true, action: () => managedButton("Load more", () => post("managedLoadMore", { group: "items:" + row.id })) }] : [];
+      // Count and the items come right after the parent, then its members, so they stay in the parent's sub-group.
+      const kids = row.children || [], below = (list) => flatten(list, row.id, lead + m.name + ".", path, rootGroup);
+      return (["clrField", "staticField"].includes(rootGroup.category)) === fields ? [result, ...below(kids.filter((kid) => kid.item)), ...itemMore, ...below(kids.filter((kid) => !kid.item)), ...more] : [];
     });
-    return flatten(managedSnapshot?.rows);
+    return flatten(root ? root.rows : managedSnapshot?.rows, root?.scope, root?.prefix || "", [], root?.group);
   }
   sidebarTabs.forEach((button) => button.addEventListener("click", () => { const previous = sidebarTab; sidebarTab = button.dataset.sidebarTab; if (sidebarTab === "methods" && previous !== "methods") post("managedMethods", { action: "activate" }); else if (previous === "methods" && sidebarTab !== "methods") post("managedMethods", { action: "deactivate" }); renderSidebar(); requestStandardLocator(); }));
   sidebarSearch.addEventListener("input", renderSidebar);
   let standardLocatorRequested;
   const requestStandardLocator = () => {
-    if (!propertiesView || sidebarTab !== "properties" || !sidebarAdvanced || !selected || !selectedProperties || suggestion || standardLocatorRequested === selected || tutorialView) return;
+    if (!propertiesView || sidebarTab !== "properties" || !sidebarShowAll || !selected || !selectedProperties || suggestion || standardLocatorRequested === selected || tutorialView) return;
     standardLocatorRequested = selected;
     post("generateLocator", { nodeId: selected });
   };
-  element("sidebar-mode").addEventListener("click", () => { sidebarAdvanced = !sidebarAdvanced; vscode.setState?.({ ...(vscode.getState?.() || {}), sidebarAdvanced }); renderSidebar(); requestStandardLocator(); });
+  element("sidebar-mode").addEventListener("change", (event) => { sidebarShowAll = event.currentTarget.checked; vscode.setState?.({ ...(vscode.getState?.() || {}), sidebarShowAll }); renderSidebar(); requestStandardLocator(); });
   const clearProperties = () => {
     currentProperties = undefined;
     selectedProperties = undefined; selectedDefinitions = undefined; definitionsState = undefined;
@@ -1445,7 +1704,7 @@
     closeRowMenu(false);
     standardLocatorRequested = undefined;
     propertiesNodeId = undefined;
-    expandedProperties.clear();
+    expandedProperties.clear(); expandedBindings.clear(); expandedStyling.clear();
     renderPinned();
     renderAllProperties();
   };
@@ -2279,7 +2538,7 @@
       if (!propertiesView || tutorialView) element("object-preview").hidden = true;
       else loadingPreview();
       // What was open belongs to the object it was opened on; picking another starts closed.
-      if (message.nodeId !== propertiesNodeId) { expandedProperties.clear(); describedKey = undefined; element("sidebar-description-content").textContent = "Select a row to see its description."; }
+      if (message.nodeId !== propertiesNodeId) { expandedProperties.clear(); expandedBindings.clear(); expandedStyling.clear(); describedKey = undefined; element("sidebar-description-content").textContent = "Select a row to see its description."; }
       propertiesNodeId = message.nodeId;
       hint("");
       focusSelected(message.nodeId);

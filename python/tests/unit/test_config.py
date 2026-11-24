@@ -360,3 +360,17 @@ def test_actionability_precedence(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
     monkeypatch.setenv("WTK_ACTIONABILITY", "strict")
     assert load_config(tmp_path).actionability == "strict"  # environment beats local
     assert load_config(tmp_path, {"actionability": "exists"}).actionability == "exists"  # CLI wins
+
+
+@pytest.mark.parametrize("value", [0, 21, -1, True, 1.5, "3"])
+def test_highlight_thickness_rejects_invalid_values(value: object) -> None:
+    from wintestkit.config import _highlight_thickness
+
+    with pytest.raises(ConfigError):
+        _highlight_thickness(value)
+
+
+def test_highlight_thickness_valid_range() -> None:
+    from wintestkit.config import _highlight_thickness
+
+    assert [_highlight_thickness(value) for value in (1, 3, 20)] == [1, 3, 20]

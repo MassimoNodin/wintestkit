@@ -1831,3 +1831,44 @@ def test_window_move_resize_and_rect(owned):
         with pytest.raises(ActionError, match="call restore"):
             page.window.move(0, 0)
         page.window.restore()
+
+
+def test_peerless_agent_parent_real(owned):
+    from wintestkit.backends import WpfElement
+
+    scope, path = owned
+    with runtime.config_scope(replace(config(path, "agent"), backend="auto")):
+        target = resolve(
+            scope, Locator(where=(("type:Is", "WinTestKit.Fixture.PeerlessClickTarget"),))
+        )
+        assert isinstance(target, WpfElement)
+        parent = target.parent()
+        assert isinstance(parent, WpfElement)
+        assert parent.ref != target.ref
+        assert parent.state().handle == parent.ref
+
+
+def test_live_getter_error_message(owned):
+    from wintestkit.backends import WpfElement
+    from wintestkit.inspector.paths import PathSegment
+
+    scope, path = owned
+    with runtime.config_scope(replace(config(path, "agent"), backend="auto")):
+        target = resolve(
+            scope,
+            Locator(
+                automation_id="FixtureControl",
+                where=(("type:Is", "WinTestKit.Fixture.FixtureControl"),),
+            ),
+        )
+        assert isinstance(target, WpfElement)
+        values, _ = target.client.read(
+            target.ref.object_id,
+            target.ref.generation,
+            [[PathSegment("property", "Throwing")]],
+            deadline=time.monotonic() + 5,
+        )
+        value = values[0].value
+        assert value.status == "exception"
+        assert value.error_message == "fixture exception"
+        print("Live getter message:", value.error_message)

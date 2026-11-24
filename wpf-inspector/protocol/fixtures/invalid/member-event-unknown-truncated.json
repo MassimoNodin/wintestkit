@@ -1,0 +1,1 @@
+{"schema":"MemberEvent","instance":{"kind":"clr","name":"Changed","declaringType":"Demo.Model","handlerType":"System.EventHandler","isStatic":false,"subscribersKnown":false,"subscriberCount":0,"subscribersTruncated":true,"subscribers":[]}}

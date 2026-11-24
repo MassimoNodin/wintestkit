@@ -99,7 +99,7 @@ function client(file: "setup" | "spy", viewport: { width?: number; propertiesVie
     void event;
   };
   const posts: unknown[] = [];
-  const captures = new Map<string, (event: unknown) => void>();
+  const captures = new Map<string, ((event: unknown) => void)[]>();
   const api = { postMessage(message: unknown) { posts.push(message); } };
   vm.runInNewContext(
     readFileSync("media/" + file + "/" + file + ".js", "utf8"),
@@ -109,7 +109,7 @@ function client(file: "setup" | "spy", viewport: { width?: number; propertiesVie
         body,
         getElementById: element,
         createElement: () => new Node(),
-        addEventListener: (type: string, listener: (event: unknown) => void) => captures.set(type, listener),
+        addEventListener: (type: string, listener: (event: unknown) => void) => captures.set(type, [...(captures.get(type) ?? []), listener]),
       },
       window: {
         innerHeight: 320,
@@ -127,12 +127,16 @@ function client(file: "setup" | "spy", viewport: { width?: number; propertiesVie
   const dispatch = (type: string, id: string, key?: string, tutorial = false) => {
     let prevented = false;
     let stopped = false;
-    captures.get(type)?.({
+    const event = {
       type, key,
       target: { closest: () => tutorial ? element("extra-tutorial") : undefined },
       preventDefault: () => { prevented = true; },
       stopImmediatePropagation: () => { stopped = true; },
-    });
+    };
+    for (const listener of captures.get(type) ?? []) {
+      listener(event);
+      if (stopped) break;
+    }
     if (!stopped) element(id).listeners[type]?.();
     return { prevented, stopped };
   };

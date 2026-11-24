@@ -66,7 +66,7 @@ namespace WinTestKit.Inspector.Agent.Writes
                                 throw Error(ErrorCodes.WriteDenied, Audit("denied", "notAllowlisted"));
                             authorization = "allowlist";
                             var declarations = ReflectionCatalog.Get(target.GetType()).Where(d => d.Property != null && d.Name == name).ToArray();
-                            var dependencies = target is DependencyObject dep ? DependencyCatalog.Discover(dep, _ => { }).Where(d => d.Property.Name == name).ToArray() : Array.Empty<DependencyEntry>();
+                            var dependencies = target is DependencyObject dep ? DependencyCatalog.Discover(dep, _ => { }, false).Where(d => d.Property.Name == name && (!d.IsAttached && d.Descriptor?.IsAttached != true || d.HasLocalValue)).ToArray() : Array.Empty<DependencyEntry>();
                             if (declarations.Length > 1 || dependencies.Length > 1)
                                 throw Error(ErrorCodes.WriteDenied, Audit("denied", "ambiguous"));
                             var declaration = declarations.FirstOrDefault();
@@ -124,7 +124,7 @@ namespace WinTestKit.Inspector.Agent.Writes
             {
                 if (target is DependencyObject dependency)
                 {
-                    var dp = DependencyCatalog.Discover(dependency, _ => { }).FirstOrDefault(e => e.Key == key);
+                    var dp = DependencyCatalog.Discover(dependency, _ => { }, false).FirstOrDefault(e => e.Key == key);
                     if (dp != null)
                     {
                         if (dp.Property.ReadOnly) throw Denied();

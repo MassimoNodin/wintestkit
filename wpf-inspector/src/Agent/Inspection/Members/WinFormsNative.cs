@@ -111,7 +111,7 @@ namespace WinTestKit.Inspector.Agent.Inspection.Members
         internal static object? ParentOf(object target)
         {
             if (target is Control control) return control.Parent;
-            return target is ToolStripItem item ? (object?)item.OwnerItem ?? item.Owner : null;
+            return target is ToolStripItem item ? item.Owner : null;
         }
 
         /// <summary>The children of a node in natural order: a control's Controls, a strip's items, a menu item's drop-down items.</summary>
@@ -193,20 +193,26 @@ namespace WinTestKit.Inspector.Agent.Inspection.Members
                 bounds = item.Owner.RectangleToScreen(item.Bounds);
                 hasBounds = item.Available && item.Owner.IsHandleCreated;
             }
-            bool visible = hasBounds && !bounds.IsEmpty && (control?.Visible ?? item?.Visible ?? false)
+            var visibleBounds = bounds;
+            for (Control? ancestor = control?.Parent ?? item?.Owner; ancestor != null; ancestor = ancestor.Parent)
+                visibleBounds = System.Drawing.Rectangle.Intersect(visibleBounds, ancestor.RectangleToScreen(ancestor.ClientRectangle));
+            bool visible = hasBounds && !visibleBounds.IsEmpty && (control?.Visible ?? item?.Visible ?? false)
                 && (owner == null || owner.Visible) && bounds.IntersectsWith(SystemInformation.VirtualScreen);
             bool enabled = control != null ? control.Enabled : item?.Enabled ?? false;
             int dpi = owner != null && owner.IsHandleCreated ? owner.DeviceDpi : 96;
             IntPtr window = owner != null && owner.IsHandleCreated ? owner.Handle : IntPtr.Zero;
+            var physicalBounds = State.ScreenCoordinates.Physical(window, new System.Windows.Rect(bounds.X, bounds.Y, bounds.Width, bounds.Height));
+            var physicalVisible = State.ScreenCoordinates.Physical(window, new System.Windows.Rect(visibleBounds.X, visibleBounds.Y, visibleBounds.Width, visibleBounds.Height));
             return new ElementState
             {
                 Handle = handle,
                 WindowHandle = window == IntPtr.Zero ? (long?)null : window.ToInt64(),
-                Bounds = hasBounds ? new RectDto { X = bounds.X, Y = bounds.Y, Width = bounds.Width, Height = bounds.Height } : null,
-                ClickPoint = visible ? new PointDto { X = bounds.X + bounds.Width / 2.0, Y = bounds.Y + bounds.Height / 2.0 } : null,
+                Bounds = hasBounds ? new RectDto { X = physicalBounds.X, Y = physicalBounds.Y, Width = physicalBounds.Width, Height = physicalBounds.Height } : null,
+                VisibleBounds = visible ? new RectDto { X = physicalVisible.X, Y = physicalVisible.Y, Width = physicalVisible.Width, Height = physicalVisible.Height } : null,
+                ClickPoint = visible ? new PointDto { X = physicalVisible.X + physicalVisible.Width / 2.0, Y = physicalVisible.Y + physicalVisible.Height / 2.0 } : null,
                 Dpi = new PointDto { X = dpi, Y = dpi },
                 Visible = visible,
-                Clipped = false,
+                Clipped = hasBounds && visibleBounds != bounds,
                 Offscreen = !visible,
                 Enabled = enabled,
                 Focused = control != null && control.Focused,

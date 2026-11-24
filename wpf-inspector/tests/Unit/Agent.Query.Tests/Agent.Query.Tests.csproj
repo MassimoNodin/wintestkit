@@ -17,6 +17,7 @@
     <Compile Include="../../../src/Agent/Mapping/TreeWalker.cs" Link="TreeWalker.cs" />
     <Compile Include="../../../src/Agent/Inspection/DispatcherExecutor.cs" Link="DispatcherExecutor.cs" />
     <Compile Include="../../../src/Agent/Inspection/ObjectRegistry.cs" Link="ObjectRegistry.cs" />
+    <Compile Include="../../../src/Agent/State/ScreenCoordinates.cs" Link="State/ScreenCoordinates.cs" />
     <Compile Include="../../../src/Agent/Inspection/Members/**/*.cs" LinkBase="Members" />
     <Compile Include="../../../src/Agent/Contracts/**/*.cs" LinkBase="Contracts" />
   </ItemGroup>

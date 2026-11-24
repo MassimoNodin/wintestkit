@@ -67,7 +67,9 @@ class DescriptionRaw:
 
 
 class CapturedSpy:
-    def __init__(self, hover: Any, pick: Any, cancel: Any, process_filter: Any) -> None:
+    def __init__(
+        self, hover: Any, pick: Any, cancel: Any, process_filter: Any, **kwargs: Any
+    ) -> None:
         self.hover, self.pick, self.cancel = hover, pick, cancel
         self.stopped = False
 

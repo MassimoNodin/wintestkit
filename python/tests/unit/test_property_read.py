@@ -9,7 +9,7 @@ from fakes import FakeElement
 from wintestkit import runtime
 from wintestkit.backends.element import WpfElement
 from wintestkit.config import load_config
-from wintestkit.engine.property_read import read_property
+from wintestkit.engine.property_read import read_property, to_python
 from wintestkit.errors import ActionError, InvalidLocatorError
 from wintestkit.inspector.models import ObjectRef, PathValue, TypeInfo, Value
 
@@ -67,3 +67,16 @@ def test_redacted_and_non_wpf(tmp_path: Any) -> None:
             read_property(FakeElement("Button", "x"), "clr:Name")
     finally:
         runtime.reset()
+
+
+def test_getter_error_includes_type_and_message() -> None:
+    value = Value(
+        "exception",
+        "unavailable",
+        "T",
+        "",
+        message="System.InvalidOperationException",
+        error_message="broken",
+    )
+    with pytest.raises(ActionError, match=r"System\.InvalidOperationException: broken"):
+        to_python(value)

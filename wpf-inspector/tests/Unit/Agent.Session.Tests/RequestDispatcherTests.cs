@@ -92,6 +92,81 @@ public class RequestDispatcherTests
     }
 
     [Fact]
+    public async Task StylingRoutesParametersAndChecksSession()
+    {
+        var service = new StylingService();
+        var dispatcher = new RequestDispatcher(Session, service);
+        var parameters = new StylingParams { SessionId = Session, ObjectId = "held", Generation = 2 };
+        var response = await Dispatch(dispatcher, PipeMethods.Styling, parameters.ToJson());
+        Assert.True(StylingResult.FromJson(response.Result!).Applicable);
+        Assert.Equal("held:2", service.Arguments);
+        parameters.SessionId = "other";
+        Assert.Equal(ErrorCodes.SessionStale, (await Dispatch(dispatcher, PipeMethods.Styling, parameters.ToJson())).Error!.Code);
+        Assert.Equal(ErrorCodes.InvalidParams, (await Dispatch(dispatcher, PipeMethods.Styling, new MembersParams { SessionId = Session, ObjectId = "held", Generation = 2, PageSize = 5 }.ToJson())).Error!.Code);
+        Assert.Equal(ErrorCodes.UnsupportedTarget, (await Dispatch(new RequestDispatcher(Session, new RecordingService()), PipeMethods.Styling, new StylingParams { SessionId = Session, ObjectId = "held", Generation = 2 }.ToJson())).Error!.Code);
+    }
+
+    private sealed class StylingService : RecordingService, IStylingInspectionService
+    {
+        public string? Arguments { get; private set; }
+        public Task<StylingResult> StylingAsync(string objectId, long generation, CancellationToken ct)
+        {
+            Arguments = $"{objectId}:{generation}";
+            return Task.FromResult(new StylingResult { Applicable = true });
+        }
+    }
+
+    [Fact]
+    public async Task EventsRouteParametersPageAndCheckSession()
+    {
+        var service = new MemberEventsService();
+        var dispatcher = new RequestDispatcher(Session, service);
+        var parameters = new MembersParams { SessionId = Session, ObjectId = "held", Generation = 2, PageSize = 5, PageToken = "snap.next" };
+        var response = await Dispatch(dispatcher, PipeMethods.MemberEvents, parameters.ToJson());
+        Assert.Equal("Changed", PageDto<MemberEventDto>.FromJson(response.Result!, MemberEventDto.FromJson).Items.Single().Name);
+        Assert.Equal("held:2:5:snap.next", service.Arguments);
+        parameters.SessionId = "other";
+        Assert.Equal(ErrorCodes.SessionStale, (await Dispatch(dispatcher, PipeMethods.MemberEvents, parameters.ToJson())).Error!.Code);
+        Assert.Equal(ErrorCodes.InvalidParams, (await Dispatch(dispatcher, PipeMethods.MemberEvents, new ResourceParams { SessionId = Session, ObjectId = "held", Generation = 2, Key = "k" }.ToJson())).Error!.Code);
+        Assert.Equal(ErrorCodes.UnsupportedTarget, (await Dispatch(new RequestDispatcher(Session, new RecordingService()), PipeMethods.MemberEvents, new MembersParams { SessionId = Session, ObjectId = "held", Generation = 2 }.ToJson())).Error!.Code);
+    }
+
+    private sealed class MemberEventsService : RecordingService, IMemberEventsInspectionService
+    {
+        public string? Arguments { get; private set; }
+        public Task<PageDto<MemberEventDto>> EventsAsync(string objectId, long generation, int? pageSize, string? pageToken, CancellationToken ct)
+        {
+            Arguments = $"{objectId}:{generation}:{pageSize}:{pageToken}";
+            return Task.FromResult(new PageDto<MemberEventDto> { Complete = true, SnapshotId = "snapshot", Items = new[] { new MemberEventDto { Kind = "clr", Name = "Changed", DeclaringType = "Demo.Model", HandlerType = "System.EventHandler" } } });
+        }
+    }
+
+    [Fact]
+    public async Task ResourceRoutesTheKeyReferenceAndChecksSession()
+    {
+        var service = new ResourceService();
+        var dispatcher = new RequestDispatcher(Session, service);
+        var parameters = new ResourceParams { SessionId = Session, ObjectId = "held", Generation = 2, Scope = "application", Key = "Accent", KeyKind = "string", Index = 4 };
+        var response = await Dispatch(dispatcher, PipeMethods.Resource, parameters.ToJson());
+        Assert.True(ResourceResult.FromJson(response.Result!).Found);
+        Assert.Equal("held:2:application:Accent:string:4", service.Arguments);
+        parameters.SessionId = "other";
+        Assert.Equal(ErrorCodes.SessionStale, (await Dispatch(dispatcher, PipeMethods.Resource, parameters.ToJson())).Error!.Code);
+        Assert.Equal(ErrorCodes.InvalidParams, (await Dispatch(dispatcher, PipeMethods.Resource, new StylingParams { SessionId = Session, ObjectId = "held", Generation = 2 }.ToJson())).Error!.Code);
+        Assert.Equal(ErrorCodes.UnsupportedTarget, (await Dispatch(new RequestDispatcher(Session, new RecordingService()), PipeMethods.Resource, new ResourceParams { SessionId = Session, ObjectId = "held", Generation = 2, Key = "k" }.ToJson())).Error!.Code);
+    }
+
+    private sealed class ResourceService : RecordingService, IResourceInspectionService
+    {
+        public string? Arguments { get; private set; }
+        public Task<ResourceResult> ResourceAsync(string objectId, long generation, string scope, string key, string keyKind, int? index, CancellationToken ct)
+        {
+            Arguments = $"{objectId}:{generation}:{scope}:{key}:{keyKind}:{index}";
+            return Task.FromResult(new ResourceResult { Found = true, ValueType = "System.String", Value = new ValueDto { Status = ValueStatus.Ok, Kind = ValueKind.String, DeclaredType = "System.Object", RuntimeType = "System.String", Scalar = new JsonStringNode("v") } });
+        }
+    }
+
+    [Fact]
     public async Task EventSubscriptionsValidateAndRoute()
     {
         var dispatcher = new RequestDispatcher(Session, new RecordingService());

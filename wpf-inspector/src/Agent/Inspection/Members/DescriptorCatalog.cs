@@ -39,7 +39,7 @@ namespace WinTestKit.Inspector.Agent.Inspection.Members
                         var entry = new DescriptorEntry(descriptor);
                         foreach (Declaration declaration in declarations)
                         {
-                            if (declaration.Property != null && declaration.DeclaringType == entry.ComponentType && declaration.Name == entry.Name && declaration.ValueType == entry.PropertyType)
+                            if (!declaration.IsStatic && declaration.Property != null && declaration.DeclaringType == entry.ComponentType && declaration.Name == entry.Name && declaration.ValueType == entry.PropertyType)
                             {
                                 entry.Declaration = declaration;
                                 break;

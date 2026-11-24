@@ -732,7 +732,7 @@ namespace WinTestKit.Inspector.Agent.Mapping.Tests
                     return new ValueDto { Status = ValueStatus.Ok, Kind = ValueKind.Object, DeclaredType = "System.Object", RuntimeType = "System.Object", Object = registry.Register(Nested, dispatcher, DescribeType(Nested.GetType())) };
                 return new ValueDto { Status = ValueStatus.Ok, Kind = ValueKind.String, DeclaredType = "System.String", RuntimeType = "System.String", Scalar = new JsonStringNode(path[0].Name!) };
             }
-            public IReadOnlyList<BindingInfoDto> GetBindings(object target, IReadOnlyList<string> memberKeys)
+            public IReadOnlyList<BindingInfoDto> GetBindings(object target, IReadOnlyList<string> memberKeys, IObjectRegistry registry, Dispatcher dispatcher)
             {
                 ExpectedDispatcher?.VerifyAccess();
                 if (target is DispatcherObject dispatcherObject) dispatcherObject.VerifyAccess();

@@ -1,0 +1,1 @@
+{"schema":"StylingResourceEntry","instance":{"key":"k","keyKind":"string","index":0,"value":{"status":"ok","kind":"string","declaredType":"System.Object","runtimeType":"System.String","scalar":"Hello"}}}

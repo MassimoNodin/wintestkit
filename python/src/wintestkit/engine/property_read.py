@@ -39,7 +39,12 @@ def to_python(value: Value) -> Any:
         runtime.mark_sensitive()
         raise ActionError("Managed property is redacted")
     if value.status not in ("ok", "truncated"):
-        raise ActionError(f"Managed property read failed: {value.status}")
+        detail = value.status
+        if value.status == "exception" and value.message:
+            detail += f": {value.message}"
+            if value.error_message:
+                detail += f": {value.error_message}"
+        raise ActionError(f"Managed property read failed: {detail}")
     if value.kind == "integer":
         return int(cast(int | str, value.scalar))
     if value.kind == "number":

@@ -66,7 +66,9 @@ def test_highlight_json_and_overlay_options(
         == 0
     )
     assert seen == [0.5]
-    assert record["flashes"] == [((record["info"].rect, 25), {"color": overlay.RED, "block": True})]
+    assert record["flashes"] == [
+        ((record["info"].rect, 25), {"color": overlay.RED, "thickness": 3, "block": True})
+    ]
     assert json.loads(capsys.readouterr().out)["element"]["name"] == "OK"
     assert not record["closed"]
 
@@ -90,7 +92,9 @@ def test_highlight_raises_window_before_reading_bounds(
         lambda *args: ElementResult("found", 1.0, element=live.info(), uia=live),
     )
     assert invoke(record, "highlight", "main.py::Main.ok", "--duration", "10") == 0
-    assert record["flashes"] == [((restored, 10), {"color": overlay.RED, "block": True})]
+    assert record["flashes"] == [
+        ((restored, 10), {"color": overlay.RED, "thickness": 3, "block": True})
+    ]
 
 
 @pytest.mark.parametrize("status", ["not_found", "ambiguous", "error"])
@@ -219,3 +223,24 @@ def test_check_human_output_and_no_pages(
     assert 'Button[name="OK"]' in capsys.readouterr().out
     monkeypatch.setattr(targets.ModuleLoader, "pages_in", lambda *args: {})
     assert invoke(command_setup, "check", "main.py") == 2
+
+
+def test_peerless_highlight_command(command_setup, monkeypatch):
+    from test_backend_element import Client
+
+    from wintestkit.backends.element import WpfElement
+    from wintestkit.inspector.models import ObjectRef, TypeInfo
+
+    client = Client()
+    client.state.uia_runtime_id = None
+    ref = ObjectRef("session", "object", 1, TypeInfo("T", "T", "A", "T, A", ()), "dispatcher")
+    element = WpfElement(client, ref, 42)
+    monkeypatch.setattr(WpfElement, "as_uia", lambda self: pytest.fail("unexpected UIA call"))
+    monkeypatch.setattr(actions, "bring_to_front", lambda target: True)
+    monkeypatch.setattr(
+        targets,
+        "resolve_target",
+        lambda *args: ElementResult("found", 1, element=command_setup["info"], uia=element),
+    )
+    assert invoke(command_setup, "highlight", "main.py::Main.ok") == 0
+    assert command_setup["flashes"][0][0][0] == Rect(1, 3, 11, 4)

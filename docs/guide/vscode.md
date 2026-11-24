@@ -47,11 +47,10 @@ is focused, and app actions refresh the visible Spy.
 
 ## CodeLens
 
-- Above every `Element` and `Window`: **Highlight** brings the control's owning window to the
-  foreground, then draws a frame around it. If Windows denies that, the outline is still drawn.
-  When the frame disappears, focus goes back to the window that had it (the VS Code window you
-  clicked in), unless you switched to another window meanwhile. `wtk highlight` and
-  `Element.highlight()` use the same foreground step but leave focus on the highlighted window. **Check** resolves
+- Above every `Element` and `Window`: **Highlight** raises the control's owning window without activating it, then draws a frame.
+  `wtk highlight` and `Element.highlight()` bring the window to the foreground. Highlighting
+  supports WPF elements without UI Automation peers. When an element has no on-screen rectangle,
+  its nearest ancestor with bounds is outlined and identified. **Check** resolves
   the control and shows the result in the gutter. A failed check becomes an editor warning with
   the full diagnostic (closest candidates and what differs).
 - Above every `Page`: **Check all elements in this class** checks the whole page.
@@ -269,13 +268,15 @@ nested folders and multi-root workspaces. Each project has its own server, tests
 The guided setup creates the starter files described in
 [Getting started](getting-started.md).
 
+With **Show all properties** off, the Properties sidebar groups values under **Standard** and, for managed objects, **.NET**. The .NET rows include the short and full CLR class names, control name and text, and for WPF an ordinal among loaded siblings of the same type and text. With **Show all properties** on, it shows Standard, Win32 Window when available, Extended, an alphabetical .NET member list, Bindings, Style and template, Resources, Events and UI Automation when available. Expanded member values stay beneath their parent. Markers distinguish dependency, attached and static properties; the Description pane also identifies their kind. Fields and methods are grouped by instance or static membership. All section headings collapse, search hides empty sections, and collapsed headings are remembered. Automatic reads retain their five-second per-object budget; choose **Read remaining** to continue reading timed-out rows in batches, subject to the same getter limit.
+
 The inspector shows the essential properties first, then fills in the complete UI Automation
 property list and supported patterns by itself; there is nothing to click. A control that owns a
 window handle (Win32, MFC and WinForms controls, dialogs, top-level windows) also gets a
 **Win32 Window** group: window class, control ID, text, handle, decoded window and extended
 styles (with the raw values), process and thread, owner and parent, rectangles, visibility, state
-and DPI. The Basic view shows the class, control ID, text, handle and styles; the Advanced view
-shows everything. Such controls appear in the tree as `Window("Class", "text", index)`, with only
+and DPI. With **Show all properties** off, it shows the class, control ID, text, handle and styles;
+with it on, it shows everything. Such controls appear in the tree as `Window("Class", "text", index)`, with only
 the arguments needed to tell siblings apart. Locator generation does not block the property display.
 
 ## Project Configuration

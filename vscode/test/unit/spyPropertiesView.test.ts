@@ -115,6 +115,52 @@ const hostSession = (): Message[] => [
   { type: "objectPreview", nodeId: "presenter", reason: "The automation server returned no preview." },
 ];
 
+describe("Properties sidebar controls", () => {
+  it("places the actions after the preview mode and dismisses them after use, Escape, or an outside click", () => {
+    const view = open("properties-view");
+    view.send(...hostSession());
+    const actions = view.doc.querySelector<HTMLDetailsElement>("#sidebar-actions")!;
+    expect(actions.parentElement?.classList.contains("preview-heading")).toBe(true);
+    expect(actions.previousElementSibling?.id).toBe("preview-mode");
+    expect(actions.querySelector('.sidebar-actions-menu[role="menu"]')).not.toBeNull();
+    for (const [id, message] of [
+      ["sidebar-detach", { type: "managedDetach" }],
+      ["sidebar-refresh", { type: "managedRefresh" }],
+      ["sidebar-export", { type: "managedCopy", kind: "export" }],
+    ] as const) {
+      actions.open = true;
+      view.doc.querySelector<HTMLButtonElement>(`#${id}`)!.click();
+      expect(view.posts).toContainEqual(message);
+      expect(actions.open).toBe(false);
+    }
+    actions.open = true;
+    actions.querySelector("summary")!.dispatchEvent(new view.dom.window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    expect(actions.open).toBe(false);
+    expect(view.doc.activeElement).toBe(actions.querySelector("summary"));
+    actions.open = true;
+    view.doc.body.click();
+    expect(actions.open).toBe(false);
+    expect(view.errors).toEqual([]);
+  });
+
+  it("labels the search input and keeps the tab selection in sync", () => {
+    const view = open("properties-view");
+    view.send(...hostSession());
+    const search = view.doc.querySelector<HTMLInputElement>("#sidebar-search")!;
+    expect(search.getAttribute("aria-label")).toBe("Search");
+    expect(search.placeholder).toBe("Search");
+    expect(search.parentElement?.querySelector('.codicon-search[aria-hidden="true"]')).not.toBeNull();
+    const tabs = [...view.doc.querySelectorAll<HTMLButtonElement>('.sidebar-tabs[role="tablist"] [role="tab"]')];
+    expect(tabs.map((tab) => tab.getAttribute("aria-selected"))).toEqual(["true", "false", "false"]);
+    for (const [index, tab] of tabs.entries()) {
+      tab.click();
+      expect(tabs.map((item) => item.getAttribute("aria-selected"))).toEqual(tabs.map((_, i) => String(i === index)));
+    }
+    expect(view.posts).toContainEqual({ type: "managedMethods", action: "activate" });
+    expect(view.errors).toEqual([]);
+  });
+});
+
 describe("Properties sidebar visibility", () => {
   it("shows its placeholder, and nothing else, before anything is selected", () => {
     const view = open("properties-view");
@@ -185,6 +231,64 @@ describe("Spy panel visibility", () => {
 });
 
 describe("Properties sidebar acceptance", () => {
+  it("shows aliases and computes ordinals only for loaded WPF siblings", () => {
+    const view = open("properties-view");
+    const twin = { ...presenterNode, nodeId: "twin" };
+    view.send(...hostSession(), { type: "children", nodeId: "border", nodes: [twin, presenterNode], expanded: true }, { type: "selected", nodeId: "presenter", properties: presenterProperties });
+    expect(view.names().slice(-5)).toEqual(["ClrClassName", "ClrFullClassName", "WPFControlName", "WPFControlOrdinalNo", "WPFControlText"]);
+    expect(view.value("ClrClassName")).toBe("ContentPresenter");
+    expect(view.value("WPFControlName")).toBe("contentSite");
+    expect(view.value("WPFControlOrdinalNo")).toBe("2");
+    const detached = open("properties-view");
+    detached.send({ type: "selected", nodeId: "missing", properties: presenterProperties });
+    expect(detached.value("WPFControlOrdinalNo")).toBe("Unknown");
+    const forms = open("properties-view");
+    forms.send({ type: "selected", nodeId: "missing", properties: { ...presenterProperties, source: "winforms", properties: { ClrFullClassName: "A.Outer+Inner", ControlName: "button1", WinFormsControlText: "Go" } } });
+    expect(forms.value("ClrClassName")).toBe("Inner");
+    expect(forms.value("WinFormsControlName")).toBe("button1");
+    expect(forms.value("WinFormsControlText")).toBe("Go");
+    expect(forms.names()).not.toContain("WPFControlOrdinalNo");
+  });
+
+  it("orders window and managed sections and keeps control text out of Extended", () => {
+    const view = open("properties-view", { sidebarShowAll: true });
+    view.send(...hostSession(), { type: "selected", nodeId: "presenter", properties: { ...presenterProperties, window: { className: "Window" }, properties: { ...presenterProperties.properties, WPFControlText: "Hello" } } });
+    expect(view.headings().slice(0, 4)).toEqual(["Standard", "Win32 Window", "Extended", ".NET"]);
+    expect(view.names().filter((name) => name === "WPFControlText")).toHaveLength(1);
+    const row = view.doc.querySelector('[data-name="WPFControlText"]')!;
+    let preceding = row.previousElementSibling;
+    while (preceding && !preceding.classList.contains("sidebar-group")) preceding = preceding.previousElementSibling;
+    expect(preceding?.textContent).toBe(".NET");
+    expect(view.value("WPFControlText")).toBe("Hello");
+  });
+
+  it("sorts member blocks, marks kinds, separates headings and persists collapse", () => {
+    const view = open("properties-view", { sidebarShowAll: true });
+    view.send(...hostSession());
+    const rows = [
+      { member: member("Zoo", { category: "staticProperty" }), value: { status: "ok", kind: "string", scalar: "z" } },
+      { member: member("DataContext", { category: "dependencyProperty" }), value: { status: "ok", kind: "object" }, children: [{ member: member("Zed"), value: { status: "ok", kind: "string", scalar: "child" } }] },
+      { member: member("DataContextMiddle", { category: "attachedProperty" }), value: { status: "ok", kind: "string", scalar: "a" } },
+    ];
+    view.send(managed({ sequence: 2, rows }));
+    const names = view.names();
+    expect(names.slice(names.indexOf("DataContext"), names.indexOf("DataContext") + 3)).toEqual(["DataContext", "DataContext.Zed", "DataContextMiddle"]);
+    for (const [name, kind] of [["DataContext", "dependencyProperty"], ["DataContextMiddle", "attachedProperty"], ["Zoo", "staticProperty"]]) {
+      expect(view.doc.querySelector(`#sidebar-rows tr[data-name="${name}"] th`)?.getAttribute("data-kind")).toBe(kind);
+    }
+    (view.doc.querySelector('[data-name="DataContext"]') as HTMLElement).click();
+    expect(view.text("#sidebar-description")).toContain("Dependency property");
+    const headings = [...view.doc.querySelectorAll("#sidebar-rows tr.sidebar-group")];
+    for (const heading of headings.slice(1)) expect(heading.previousElementSibling?.matches('tr.sidebar-gap[aria-hidden="true"]')).toBe(true);
+    expect(view.doc.querySelectorAll("#sidebar-rows tr.sidebar-gap")).toHaveLength(headings.length - 1);
+    (view.visibleButtons("Standard")[0] as HTMLButtonElement).click();
+    const reopened = open("properties-view", view.state()); reopened.send(...hostSession());
+    expect(reopened.visibleButtons("Standard")[0].getAttribute("aria-expanded")).toBe("false");
+    expect(reopened.names()).not.toContain("Enabled");
+    expect(css).toContain('content: "\\25BE"');
+    expect(css).toContain('content: "\\25B8"');
+  });
+
   it("3.1 puts the live preview first in the sidebar and keeps it out of the Spy panel", () => {
     const sidebar = open("properties-view");
     expect(sidebar.doc.querySelector(".properties-scroll")?.firstElementChild?.id).toBe("object-preview");
@@ -200,7 +304,7 @@ describe("Properties sidebar acceptance", () => {
   });
 
   it("3.2 offers Properties, Fields and Methods tabs and one search box that filters the active tab", () => {
-    const view = open("properties-view", { sidebarAdvanced: true });
+    const view = open("properties-view", { sidebarShowAll: true });
     view.send(...hostSession());
     expect([...view.doc.querySelectorAll("[data-sidebar-tab]")].map((tab) => tab.textContent)).toEqual(["Properties", "Fields", "Methods"]);
     expect(view.doc.querySelectorAll("#sidebar-search")).toHaveLength(1);
@@ -221,28 +325,29 @@ describe("Properties sidebar acceptance", () => {
     expect(view.errors).toEqual([]);
   });
 
-  it("3.3 shows exactly the nine Basic rows and remembers the choice", () => {
-    const basic = ["Enabled", "Height", "MappedName", "Name", "Parent", "Visible", "Width", "ClrFullClassName", "WPFControlText"];
+  it("3.3 shows the default rows and remembers the choice", () => {
+    const basic = ["Enabled", "Height", "MappedName", "Name", "Parent", "Visible", "Width", "ClrClassName", "ClrFullClassName", "WPFControlName", "WPFControlOrdinalNo", "WPFControlText"];
     const view = open("properties-view");
     view.send(...hostSession());
     expect(view.names()).toEqual(basic);
-    expect(view.headings()).toEqual([]);
-    expect(view.text("#sidebar-mode")).toBe("Basic");
-    (view.doc.querySelector("#sidebar-mode") as HTMLButtonElement).click();
-    expect(view.text("#sidebar-mode")).toBe("Advanced");
-    expect(view.state()).toMatchObject({ sidebarAdvanced: true });
+    expect(view.headings()).toEqual(["Standard", ".NET"]);
+    expect(view.text("#sidebar-mode-toggle")).toBe("Show all properties");
+    expect((view.doc.querySelector("#sidebar-mode") as HTMLInputElement).checked).toBe(false);
+    (view.doc.querySelector("#sidebar-mode") as HTMLInputElement).click();
+    expect((view.doc.querySelector("#sidebar-mode") as HTMLInputElement).checked).toBe(true);
+    expect(view.state()).toMatchObject({ sidebarShowAll: true });
     // A reopened view starts in the remembered mode.
     const reopened = open("properties-view", view.state());
     reopened.send(...hostSession());
-    expect(reopened.text("#sidebar-mode")).toBe("Advanced");
+    expect((reopened.doc.querySelector("#sidebar-mode") as HTMLInputElement).checked).toBe(true);
     expect(reopened.headings()[0]).toBe("Standard");
-    (reopened.doc.querySelector("#sidebar-mode") as HTMLButtonElement).click();
-    expect(open("properties-view", reopened.state()).text("#sidebar-mode")).toBe("Basic");
+    (reopened.doc.querySelector("#sidebar-mode") as HTMLInputElement).click();
+    expect((open("properties-view", reopened.state()).doc.querySelector("#sidebar-mode") as HTMLInputElement).checked).toBe(false);
     expect(view.errors.concat(reopened.errors)).toEqual([]);
   });
 
-  it("3.4 groups Advanced as Standard, Extended, .NET and UI Automation, with every value once", () => {
-    const view = open("properties-view", { sidebarAdvanced: true });
+  it("3.4 groups all properties as Standard, Extended, .NET and UI Automation, with every value once", () => {
+    const view = open("properties-view", { sidebarShowAll: true });
     view.send(...hostSession());
     expect(view.headings()).toEqual(["Standard", "Extended", ".NET", "UI Automation"]);
     const names = view.names();
@@ -254,10 +359,70 @@ describe("Properties sidebar acceptance", () => {
     expect(view.doc.body.textContent?.match(/System\.Windows\.Controls\.ContentPresenter/g)?.length).toBeGreaterThan(0);
     const classCells = [...view.doc.querySelectorAll<HTMLTableCellElement>("#sidebar-rows td")].filter((cell) => cell.textContent === "System.Windows.Controls.ContentPresenter");
     expect(classCells).toHaveLength(1);
-    // Basic mode has neither groups nor UI Automation.
-    (view.doc.querySelector("#sidebar-mode") as HTMLButtonElement).click();
-    expect(view.headings()).toEqual([]);
+    // With Show all properties off there are neither groups nor UI Automation.
+    (view.doc.querySelector("#sidebar-mode") as HTMLInputElement).click();
+    expect(view.headings()).toEqual(["Standard", ".NET"]);
     expect(view.doc.querySelector("#sidebar-rows")?.textContent).not.toContain("UI Automation");
+    expect(view.errors).toEqual([]);
+  });
+
+  it("groups categories, names bindings, remembers collapse and filters headings", () => {
+    const view = open("properties-view", { sidebarShowAll: true });
+    view.send(...hostSession());
+    const rows = ["typeMetadata", "clrProperty", "dependencyProperty", "attachedProperty", "staticProperty", "event", "style", "resource"].map((category, index) => ({ member: member(index === 0 ? "Name" : `Member${index}`, { category, memberKey: `key${index}` }), value: { status: "ok", kind: "string", scalar: `value${index}` } }));
+    view.send(managed({ sequence: 2, rows, bindings: [{ memberKey: "key2", kind: "Binding", status: "active", path: "Title" }], readRemaining: true }));
+    expect(view.headings()).toEqual(["Standard", "Extended", ".NET", "Bindings", "Style and template", "Resources", "Events", "UI Automation"]);
+    expect(view.names()).toContain("ClrClassName");
+    expect([...view.doc.querySelectorAll('[data-name="Member2"] td')].some((cell) => cell.textContent === "Binding; active; Title")).toBe(true);
+    (view.visibleButtons("Read remaining")[0] as HTMLButtonElement).click();
+    expect(view.posts).toContainEqual({ type: "managedReadRemaining" });
+    (view.visibleButtons(".NET")[0] as HTMLButtonElement).click();
+    expect(view.state()).toMatchObject({ sidebarCollapsed: { ".NET": true } });
+    const reopened = open("properties-view", view.state()); reopened.send(...hostSession()); reopened.send(managed({ sequence: 2, rows }));
+    expect(reopened.visibleButtons(".NET")[0].getAttribute("aria-expanded")).toBe("false");
+    view.type(view.doc.querySelector("#sidebar-search") as HTMLInputElement, "Member7");
+    expect(view.headings()).toContain("Resources");
+    expect(view.headings()).not.toContain(".NET");
+  });
+
+  it("keeps expanded descendants in their root subgroup", () => {
+    const view = open("properties-view", { sidebarShowAll: true });
+    view.send(...hostSession());
+    const rows = [{ id: "parent", member: member("Container", { category: "dependencyProperty" }), value: { status: "ok", kind: "object" }, children: [
+      { id: "child", member: member("Child", { category: "clrProperty" }), value: { status: "ok", kind: "object" }, children: [
+        { member: member("Leaf", { category: "clrField" }), value: { status: "ok", kind: "string", scalar: "nested" } },
+      ] },
+    ], page: { nextToken: true } }];
+    view.send(managed({ sequence: 2, rows }));
+    const entries = [...view.doc.querySelectorAll("#sidebar-rows tr")].map((row) => row.classList.contains("sidebar-group") ? row.textContent : row.getAttribute("data-name"));
+    const parent = entries.indexOf("Container", entries.indexOf(".NET") + 1);
+    expect(entries.slice(parent, parent + 4)).toEqual(["Container", "Container.Child", "Container.Child.Leaf", "Container.Load more"]);
+    (view.doc.querySelector('[data-sidebar-tab="fields"]') as HTMLButtonElement).click();
+    expect(view.names()).not.toContain("Container.Child.Leaf");
+    expect(view.errors).toEqual([]);
+  });
+
+  it("shows collection items right after their parent, in its sub-group, with Load more and the enumeration error", () => {
+    const view = open("properties-view", { sidebarShowAll: true });
+    view.send(...hostSession());
+    const item = (id: string, name: string, value: Record<string, unknown>, extra: Record<string, unknown> = {}) => ({ id, item: true, member: member(`item:${id}`, { name, readable: false, pathSegment: undefined, declaringType: "" }), value, ...extra });
+    const rows = [{ id: "parent", member: member("Items", { category: "dependencyProperty" }), value: { status: "ok", kind: "object", runtimeType: "System.Collections.ArrayList" }, itemPage: { nextToken: true }, children: [
+      item("count", "Count", { status: "ok", kind: "integer", scalar: 3, runtimeType: "System.Int32" }),
+      item("zero", "[0]", { status: "ok", kind: "string", scalar: "first", runtimeType: "System.String" }),
+      item("one", "[1]", { status: "ok", kind: "object", runtimeType: "My.Person" }, { children: [{ id: "name", member: member("Name"), value: { status: "ok", kind: "string", scalar: "Ada" } }] }),
+      item("boom", "Enumeration threw System.InvalidOperationException: broken", { status: "ok", kind: "unavailable", runtimeType: "" }, { text: "" }),
+      { id: "capacity", member: member("Capacity"), value: { status: "ok", kind: "integer", scalar: 4 } },
+    ] }];
+    view.send(managed({ sequence: 2, rows }));
+    const entries = [...view.doc.querySelectorAll("#sidebar-rows tr")].map((row) => row.classList.contains("sidebar-group") ? row.textContent : row.getAttribute("data-name"));
+    const parent = entries.indexOf("Items", entries.indexOf(".NET") + 1);
+    expect(entries.slice(parent, parent + 8)).toEqual(["Items", "Items.Count", "Items[0]", "Items[1]", "Items[1].Name", "Items.Enumeration threw System.InvalidOperationException: broken", "Items.Load more items", "Items.Capacity"]);
+    const cell = (name: string) => view.doc.querySelector(`#sidebar-rows tr[data-name="${name}"] td`)?.textContent;
+    expect(cell("Items.Count")).toBe("3");
+    expect(cell("Items[0]")).toBe("first");
+    expect(cell("Items[1]")).toBe("My.Person");
+    (view.visibleButtons("Load more")[0] as HTMLButtonElement).click();
+    expect(view.posts).toContainEqual({ type: "managedLoadMore", group: "items:parent" });
     expect(view.errors).toEqual([]);
   });
 
@@ -265,7 +430,7 @@ describe("Properties sidebar acceptance", () => {
     const view = open("properties-view");
     view.send(...hostSession());
     expect(view.value("MappedName")).toBe("Page.contentSite");
-    (view.doc.querySelector("#sidebar-mode") as HTMLButtonElement).click();
+    (view.doc.querySelector("#sidebar-mode") as HTMLInputElement).click();
     expect(view.posts).toContainEqual({ type: "generateLocator", nodeId: "presenter" });
     // No unique locator yet: the path is built from the tree, window first.
     expect(view.value("FullName")).toBe('Window("FixtureWindow").WPFObject("Border").WPFObject("contentSite")');
@@ -283,15 +448,24 @@ describe("Properties sidebar acceptance", () => {
     // The host sent no tree, only the selection and the ancestors it read with it.
     view.send({ type: "selected", nodeId: "presenter", properties: presenterProperties });
     expect(view.value("Parent")).toBe('WPFObject("Border")');
-    (view.doc.querySelector("#sidebar-mode") as HTMLButtonElement).click();
+    (view.doc.querySelector("#sidebar-mode") as HTMLInputElement).click();
     expect(view.value("FullName")).toBe('Window("FixtureWindow").WPFObject("Border").WPFObject("contentSite")');
     (view.doc.querySelector('[data-name="Parent"] button') as HTMLButtonElement).click();
     expect(view.posts).toContainEqual({ type: "select", nodeId: "border" });
     expect(view.errors).toEqual([]);
   });
 
+  it("shows getter errors in the row and description", () => {
+    const view = open("properties-view", { sidebarShowAll: true });
+    view.send(...hostSession());
+    view.send(managed({ sequence: 2, rows: [{ member: member("Content"), value: { status: "exception", kind: "unavailable", message: "System.InvalidOperationException", errorMessage: "broken" } }] }));
+    expect(view.value("Content")).toBe("Getter threw InvalidOperationException: broken");
+    (view.doc.querySelector('[data-name="Content"]') as HTMLElement).click();
+    expect(view.text("#sidebar-description-content")).toContain("Getter threw InvalidOperationException: broken");
+  });
+
   it("3.6 lists rows as name and value with a menu of row actions and a description pane", () => {
-    const view = open("properties-view", { sidebarAdvanced: true });
+    const view = open("properties-view", { sidebarShowAll: true });
     view.send(...hostSession());
     expect([...view.doc.querySelectorAll(".sidebar-table thead th")].map((cell) => cell.textContent)).toEqual(["Name", "Value", ""]);
     const row = view.doc.querySelector('[data-name="Content"]') as HTMLTableRowElement;
@@ -307,9 +481,9 @@ describe("Properties sidebar acceptance", () => {
     expect(menu.hidden).toBe(true);
     expect(contextmenu(row).defaultPrevented).toBe(true);
     expect(menu.hidden).toBe(false);
-    expect(labels()).toEqual(["Copy value", "Copy name", "Copy locator key", "Expand", "Read again", "Show in Basic view"]);
+    expect(labels()).toEqual(["Copy value", "Copy name", "Copy locator key", "Expand", "Read again", "Pin"]);
     const enabled = () => [...menu.querySelectorAll("button")].filter((button) => !button.disabled).map((button) => button.textContent);
-    expect(enabled()).toEqual(["Copy value", "Copy name", "Copy locator key", "Read again", "Show in Basic view"]);
+    expect(enabled()).toEqual(["Copy value", "Copy name", "Copy locator key", "Read again", "Pin"]);
     expect(view.text("#sidebar-description-content")).toContain("Runtime type: System.String");
     expect(view.text("#sidebar-description-content")).toContain("Declaring type: System.Windows.Controls.ContentPresenter");
     const choose = (label: string) => {
@@ -330,11 +504,20 @@ describe("Properties sidebar acceptance", () => {
     expect(view.errors).toEqual([]);
   });
 
+  it("groups static fields separately", () => {
+    const view = open("properties-view", { sidebarShowAll: true });
+    view.send(...hostSession());
+    view.send(managed({ sequence: 2, rows: [{ member: member("StaticField", { category: "staticField" }), value: { status: "ok", kind: "string", scalar: "static" } }] }));
+    (view.doc.querySelector('[data-sidebar-tab="fields"]') as HTMLButtonElement).click();
+    expect(view.headings()).toContain("Static fields");
+    expect(view.value("StaticField")).toBe("static");
+  });
+
   it("3.7 lists fields with their values on the Fields tab", () => {
     const view = open("properties-view");
     view.send(...hostSession());
     (view.doc.querySelector('[data-sidebar-tab="fields"]') as HTMLButtonElement).click();
-    expect(view.headings()).toEqual(["Fields"]);
+    expect(view.headings()).toEqual(["Instance fields"]);
     expect(view.names()).toEqual(["_count"]);
     expect(view.value("_count")).toBe("7");
     expect(view.visible("#sidebar-mode")).toBe(false);
@@ -408,11 +591,11 @@ const key = (view: ReturnType<typeof open>, target: Element, init: KeyboardEvent
   return event;
 };
 const menuItems = (view: ReturnType<typeof open>) => [...view.doc.querySelectorAll<HTMLButtonElement>("#sidebar-row-menu button")];
-const ALL_ITEMS = ["Copy value", "Copy name", "Copy locator key", "Expand", "Read again", "Show in Basic view"];
+const ALL_ITEMS = ["Copy value", "Copy name", "Copy locator key", "Expand", "Read again", "Pin"];
 
 describe("Properties sidebar review fixes", () => {
   it("1. draws the menu glyphs as the kebab icon with a name and a tooltip, never a literal question mark", () => {
-    const view = open("properties-view", { sidebarAdvanced: true });
+    const view = open("properties-view", { sidebarShowAll: true });
     view.send(...hostSession());
     const summary = view.doc.querySelector("#sidebar-actions > summary") as HTMLElement;
     expect(summary.querySelector(".codicon-kebab-horizontal")).not.toBeNull();
@@ -436,7 +619,7 @@ describe("Properties sidebar review fixes", () => {
     expect(view.errors).toEqual([]);
   });
 
-  it("2. opens the row menu from the context menu of every row, in Basic and Advanced, and on the Fields tab", () => {
+  it("2. opens the row menu from the context menu of every row, with the toggle off and on, and on the Fields tab", () => {
     const view = open("properties-view");
     view.send(...hostSession());
     const check = () => {
@@ -450,8 +633,8 @@ describe("Properties sidebar review fixes", () => {
       }
     };
     check();
-    expect(view.names()).toHaveLength(9);
-    (view.doc.querySelector("#sidebar-mode") as HTMLButtonElement).click();
+    expect(view.names()).toHaveLength(12);
+    (view.doc.querySelector("#sidebar-mode") as HTMLInputElement).click();
     check();
     (view.doc.querySelector('[data-sidebar-tab="fields"]') as HTMLButtonElement).click();
     check();
@@ -459,7 +642,7 @@ describe("Properties sidebar review fixes", () => {
   });
 
   it("2. disables the items that do not apply instead of leaving them out", () => {
-    const view = open("properties-view", { sidebarAdvanced: true });
+    const view = open("properties-view", { sidebarShowAll: true });
     view.send(...hostSession());
     const disabled = (name: string) => {
       contextmenuOn(view, view.doc.querySelector(`[data-name="${name}"]`) as Element);
@@ -468,7 +651,7 @@ describe("Properties sidebar review fixes", () => {
       return result;
     };
     // A Standard row has no member to read, expand or key; its value and name still copy.
-    expect(disabled("Height")).toEqual(["Copy locator key", "Expand", "Read again", "Show in Basic view"]);
+    expect(disabled("Height")).toEqual(["Copy locator key", "Expand", "Read again", "Pin"]);
     // A plain .NET property can be read again and pinned, but is not an object to expand.
     expect(disabled("Content")).toEqual(["Expand"]);
     // An object value expands, but there is no scalar to copy.
@@ -477,7 +660,7 @@ describe("Properties sidebar review fixes", () => {
   });
 
   it("2. opens from the button, Shift+F10 and the Menu key; arrows move, Esc closes and focus returns to the row", () => {
-    const view = open("properties-view", { sidebarAdvanced: true });
+    const view = open("properties-view", { sidebarShowAll: true });
     view.send(...hostSession());
     const row = view.doc.querySelector('[data-name="Content"]') as HTMLElement;
     const menu = view.doc.querySelector("#sidebar-row-menu") as HTMLElement;
@@ -491,11 +674,11 @@ describe("Properties sidebar review fixes", () => {
     key(view, menu, { key: "ArrowUp" });
     key(view, menu, { key: "ArrowUp" });
     // Wraps past the first item to the last enabled one (Expand is disabled for a string).
-    expect(view.doc.activeElement?.textContent).toBe("Show in Basic view");
+    expect(view.doc.activeElement?.textContent).toBe("Pin");
     key(view, menu, { key: "Home" });
     expect(view.doc.activeElement?.textContent).toBe("Copy value");
     key(view, menu, { key: "End" });
-    expect(view.doc.activeElement?.textContent).toBe("Show in Basic view");
+    expect(view.doc.activeElement?.textContent).toBe("Pin");
     key(view, menu, { key: "Escape" });
     expect(menu.hidden).toBe(true);
     expect(view.doc.activeElement).toBe(row);
@@ -513,7 +696,7 @@ describe("Properties sidebar review fixes", () => {
   });
 
   it("2. keeps the browser's own menu for the argument boxes of a method", () => {
-    const view = open("properties-view", { sidebarAdvanced: true });
+    const view = open("properties-view", { sidebarShowAll: true });
     view.send(...hostSession());
     (view.doc.querySelector('[data-sidebar-tab="methods"]') as HTMLButtonElement).click();
     view.send(managed({ sequence: 2, methods: { status: "ready", canInvoke: true, items: [{ key: "k", name: "Measure", declaringType: "T", returnType: "System.Void", visibility: "public", isStatic: false, parameters: [{ name: "width", type: "System.Double" }] }] } }));
@@ -528,7 +711,7 @@ describe("Properties sidebar review fixes", () => {
   it("3. shows a value for every .NET row, dependency and attached properties included, or the real reason", () => {
     const dependency = (name: string) => ({ memberKey: `dp:${name}`, name, category: "dependencyProperty", visibility: "public", readable: true, pathSegment: { kind: "dependency", name, ownerType: "System.Windows.Controls.TextBox", ownerAssembly: "PresentationFramework" }, declaringType: "System.Windows.Controls.TextBox", declaredType: "System.Boolean" });
     const attached = (name: string) => ({ ...dependency(name), memberKey: `ap:${name}`, category: "attachedProperty" });
-    const view = open("properties-view", { sidebarAdvanced: true });
+    const view = open("properties-view", { sidebarShowAll: true });
     view.send(...hostSession().slice(0, 7));
     view.send(managed({
       sequence: 2,
@@ -549,7 +732,7 @@ describe("Properties sidebar review fixes", () => {
     expect(view.value("Row")).toBe("3");
     expect(view.value("Slow")).toBe("(timed out)");
     expect(view.value("SlowToo")).toBe("(timed out)");
-    expect(view.value("Throws")).toBe("(threw InvalidOperationException)");
+    expect(view.value("Throws")).toBe("Getter threw InvalidOperationException");
     expect(view.value("Cursor")).toBe("Redacted: element has no automation peer");
     expect(view.value("ApiKey")).toBe("Redacted (rule: key)");
     expect(view.value("Gone")).toBe("(unavailable)");
@@ -562,14 +745,14 @@ describe("Properties sidebar review fixes", () => {
   });
 
   it("3. says reading is off when the getters were not allowed, not a bare Not read", () => {
-    const view = open("properties-view", { sidebarAdvanced: true });
+    const view = open("properties-view", { sidebarShowAll: true });
     view.send(...hostSession().slice(0, 7));
     view.send(managed({ sequence: 2, rows: [{ member: member("Content"), autoStatus: "declined" }] }));
     expect(view.value("Content")).toBe("Not read (automatic reading is off)");
   });
 
   it("4. derives Exists, Left and Top, shows AutomationId as empty, and says when MappedName has no page", () => {
-    const view = open("properties-view", { sidebarAdvanced: true });
+    const view = open("properties-view", { sidebarShowAll: true });
     // The window is at 100,50 on the screen, the presenter at 110,70.
     const win = { ...windowNode, info: { ...windowNode.info, rect: { left: 100, top: 50, width: 500, height: 400 } } };
     const presenter = { ...presenterNode, info: { ...presenterNode.info, rect: { left: 110, top: 70, width: 30, height: 40 } } };
@@ -597,7 +780,7 @@ describe("Properties sidebar review fixes", () => {
   });
 
   it("4. takes AutomationId from the element when the property map has none", () => {
-    const view = open("properties-view", { sidebarAdvanced: true });
+    const view = open("properties-view", { sidebarShowAll: true });
     const { AutomationId, ...rest } = presenterProperties.properties;
     void AutomationId;
     view.send({ type: "selected", nodeId: "presenter", properties: { ...presenterProperties, info: { ...presenterNode.info, automationId: "save" }, properties: rest } });
@@ -628,26 +811,47 @@ describe("Properties sidebar review fixes", () => {
   it("6. gives the name column room and an ellipsis with a tooltip, and lets values wrap", () => {
     const rule = (selector: string) => css.split("}").find((block) => block.includes(selector)) ?? "";
     const names = rule('.sidebar-table tbody th[scope="row"]');
-    expect(names).toMatch(/width:\s*45%/);
-    expect(names).toMatch(/min-width:\s*min\(calc\(var\(--name-ch\) \* 1ch\), 60%\)/);
-    expect(names).toMatch(/max-width:\s*24ch/);
+    expect(rule(".sidebar-table thead th:nth-child(1)")).toMatch(/width:\s*42%/);
+    expect(rule(".sidebar-table thead th:nth-child(2)")).toMatch(/width:\s*auto/);
+    expect(rule(".sidebar-table thead th:nth-child(3)")).toMatch(/width:\s*56px/);
     expect(names).toMatch(/text-overflow:\s*ellipsis/);
     expect(names).toMatch(/white-space:\s*nowrap/);
     // A name is never broken in the middle of a word; values wrap.
     expect(names).not.toMatch(/overflow-wrap|word-break/);
     expect(rule(".sidebar-table tbody td")).toMatch(/overflow-wrap:\s*anywhere/);
-    const view = open("properties-view", { sidebarAdvanced: true });
+    const view = open("properties-view", { sidebarShowAll: true });
     view.send(...hostSession());
-    const table = view.doc.querySelector("#sidebar-table") as HTMLElement;
-    // The column is as wide as the longest name, up to 24 characters.
-    const longest = Math.max(...rowsOf(view).map((row) => (row.dataset.name ?? "").length));
-    expect(table.style.getPropertyValue("--name-ch")).toBe(String(Math.min(24, Math.max(6, longest))));
+    const head = view.doc.querySelector<HTMLTableCellElement>("#sidebar-table thead th")!;
+    expect(head.style.width).toBe("");
     for (const row of rowsOf(view)) expect((row.querySelector("th") as HTMLElement).title).toBe(row.dataset.name);
     expect(view.errors).toEqual([]);
   });
 
+  it("fits visible names and recomputes the limits when the toggle changes", () => {
+    const view = open("properties-view");
+    const table = view.doc.querySelector<HTMLElement>("#sidebar-table")!;
+    const head = table.querySelector<HTMLTableCellElement>("thead th")!;
+    let widest = 148;
+    Object.defineProperty(table, "clientWidth", { configurable: true, value: 293 });
+    Object.defineProperty(view.dom.window.HTMLTableCellElement.prototype, "scrollWidth", {
+      configurable: true, get() { return this.matches('tbody th[scope="row"]') ? widest : 0; },
+    });
+    view.send(...hostSession());
+    expect(head.style.width).toBe("51.2%");
+    widest = 250;
+    (view.doc.querySelector("#sidebar-mode") as HTMLElement).click();
+    expect(head.style.width).toBe("42%");
+    (view.doc.querySelector("#sidebar-mode") as HTMLElement).click();
+    expect(head.style.width).toBe("60%");
+    widest = 90;
+    (view.doc.querySelector("#sidebar-mode") as HTMLElement).click();
+    (view.doc.querySelector("#sidebar-mode") as HTMLElement).click();
+    expect(head.style.width).toBe("31.4%");
+    expect(view.errors).toEqual([]);
+  });
+
   it("7. shows the metadata of the row that was clicked, and what a Standard row means", () => {
-    const view = open("properties-view", { sidebarAdvanced: true });
+    const view = open("properties-view", { sidebarShowAll: true });
     view.send(...hostSession());
     expect(view.text("#sidebar-description-content")).toBe("Select a row to see its description.");
     (view.doc.querySelector('[data-name="Content"]') as HTMLElement).click();
@@ -685,15 +889,15 @@ describe("Properties sidebar review fixes", () => {
     expect(view.text("#sidebar-description-content")).toContain("Name: Name");
   });
 
-  it("keeps Basic mode to exactly the nine rows, each with a menu button", () => {
+  it("keeps the default view to exactly the nine rows, each with a menu button", () => {
     const view = open("properties-view");
     view.send(...hostSession());
-    expect(view.names()).toEqual(["Enabled", "Height", "MappedName", "Name", "Parent", "Visible", "Width", "ClrFullClassName", "WPFControlText"]);
-    expect(view.doc.querySelectorAll("#sidebar-rows .row-menu-button")).toHaveLength(9);
+    expect(view.names()).toEqual(["Enabled", "Height", "MappedName", "Name", "Parent", "Visible", "Width", "ClrClassName", "ClrFullClassName", "WPFControlName", "WPFControlOrdinalNo", "WPFControlText"]);
+    expect(view.doc.querySelectorAll("#sidebar-rows .row-menu-button")).toHaveLength(12);
   });
 
   it("does not redraw rows under an open menu, and applies the redraw when it closes", () => {
-    const view = open("properties-view", { sidebarAdvanced: true });
+    const view = open("properties-view", { sidebarShowAll: true });
     view.send(...hostSession());
     const row = view.doc.querySelector('[data-name="Content"]') as HTMLElement;
     contextmenuOn(view, row);
@@ -968,7 +1172,7 @@ describe("Not read rows", () => {
   const dotnet = (rows: unknown[], extra: Record<string, unknown> = {}) => managed({ sequence: 2, rows, ...extra });
   const hidden = (name: string, extra: Record<string, unknown> = {}) => ({ ...member(name), visibility: "internal", readable: false, reason: "nonPublic", ...extra });
   const advanced = () => {
-    const view = open("properties-view", { sidebarAdvanced: true });
+    const view = open("properties-view", { sidebarShowAll: true });
     view.send(...hostSession().slice(0, 7));
     return view;
   };
@@ -981,7 +1185,6 @@ describe("Not read rows", () => {
       { member: hidden("System.Windows.IContentHost.HostedElements", { visibility: "private" }) },
       { member: hidden("WriteOnlyThing", { visibility: "public", reason: "writeOnly" }) },
       { member: hidden("Item", { visibility: "public", reason: "indexer" }) },
-      { member: hidden("Shared", { visibility: "public", reason: "static" }) },
       { member: hidden("Weird", { visibility: "public", reason: "unsupportedType" }) },
       { member: hidden("Twin", { visibility: "public", reason: "ambiguous" }) },
       { member: { ...hidden("NoPath", { visibility: "public", reason: undefined }), pathSegment: undefined } },
@@ -993,7 +1196,6 @@ describe("Not read rows", () => {
     expect(view.value("System.Windows.IContentHost.HostedElements")).toBe("Not readable: private member, only public members are read");
     expect(view.value("WriteOnlyThing")).toBe("Not readable: write-only property");
     expect(view.value("Item")).toBe("Not readable: indexer, it needs arguments");
-    expect(view.value("Shared")).toBe("Not readable: static member");
     expect(view.value("Weird")).toBe("Not readable: its type is not supported");
     expect(view.value("Twin")).toBe("Not readable: the name matches more than one member");
     expect(view.value("NoPath")).toBe("Not readable: the member has no read path");
@@ -1010,8 +1212,8 @@ describe("Not read rows", () => {
     const typeFact = { member: { ...member("FullName"), category: "typeMetadata", pathSegment: { kind: "type", name: "FullName" } }, value: { status: "ok", kind: "string", scalar: "System.Windows.Controls.TextBlock", runtimeType: "System.String" } };
     view.send(dotnet([...unreadable, ...readable, ...outcomes, typeFact]));
     const cells = [...view.doc.querySelectorAll<HTMLTableRowElement>("#sidebar-rows tr.sidebar-row")].filter((row) => row.dataset.key?.startsWith(".NET/")).map((row) => row.children[1]?.textContent);
-    // 63 members and the ClrFullClassName row every WPF object gets.
-    expect(cells.length).toBe(64);
+    // The type fact supplies the class name without a duplicate row.
+    expect(cells.length).toBe(67);
     expect(cells.filter((text) => text === "Not read")).toEqual([]);
     expect(cells.filter((text) => text?.startsWith("Not readable: "))).toHaveLength(40);
     // Declined consent changes nothing for rows that could never be read; the readable ones say reading is off.
@@ -1043,10 +1245,10 @@ describe("Win32 window rows", () => {
   ];
   const fullUia = { info: edit.info, properties: { Name: "", ClassName: "Edit", ProcessId: "7", NativeWindowHandle: "199242", HelpText: "Type here" }, ancestors: [dialog], inspection: [], window: facts };
 
-  it("shows the window class, control ID, text, handle and styles in the Basic view with nothing to press", () => {
+  it("shows the window class, control ID, text, handle and styles with Show all properties off", () => {
     const view = open("properties-view");
     view.send(...session({ window: facts }));
-    expect(view.headings()).toEqual([]);
+    expect(view.headings()).toEqual(["Standard", "Win32 Window"]);
     expect(view.names()).toEqual(expect.arrayContaining(["Window Class", "Control ID", "Text", "Handle", "Styles"]));
     expect(view.value("Window Class")).toBe("Edit");
     expect(view.value("Control ID")).toBe("15 (0xF)");
@@ -1063,8 +1265,8 @@ describe("Win32 window rows", () => {
     expect(view.errors).toEqual([]);
   });
 
-  it("lists every window fact once under Win32 Window in the Advanced view", () => {
-    const view = open("properties-view", { sidebarAdvanced: true });
+  it("lists every window fact once under Win32 Window with Show all properties on", () => {
+    const view = open("properties-view", { sidebarShowAll: true });
     view.send(...session({ window: facts }), { type: "allProperties", nodeId: "edit", properties: fullUia });
     expect(view.headings()).toContain("Win32 Window");
     expect(view.value("Raw Style")).toBe("0x50000004");
@@ -1089,7 +1291,7 @@ describe("Win32 window rows", () => {
   });
 
   it("describes each style with the bits it stands for and offers the row menu", () => {
-    const view = open("properties-view", { sidebarAdvanced: true });
+    const view = open("properties-view", { sidebarShowAll: true });
     view.send(...session({ window: facts }));
     const row = view.doc.querySelector('#sidebar-rows [data-name="Styles"]') as HTMLTableRowElement;
     row.click();
@@ -1113,7 +1315,7 @@ describe("Win32 window rows", () => {
   });
 
   it("shows no window rows for a node without a native window and keeps its UI Automation rows", () => {
-    const view = open("properties-view", { sidebarAdvanced: true });
+    const view = open("properties-view", { sidebarShowAll: true });
     view.send(...session({}), { type: "allProperties", nodeId: "edit", properties: { ...fullUia, window: undefined } });
     expect(view.headings()).not.toContain("Win32 Window");
     for (const name of ["Window Class", "Handle", "Styles"]) expect(view.names()).not.toContain(name);
@@ -1227,6 +1429,456 @@ describe("Properties sidebar for a WinForms object", () => {
     expect(view.doc.querySelector<HTMLElement>("#wpf-section")?.hidden).toBe(false);
     expect(view.text("#wpf-section h3")).toBe("WinForms");
     expect(view.doc.querySelector("#wpf-properties")?.textContent).toContain("button1");
+    expect(view.errors).toEqual([]);
+  });
+});
+
+describe("Binding details in the Properties sidebar", () => {
+  const text = (scalar: string) => ({ status: "ok", kind: "string", declaredType: "System.Object", runtimeType: "System.String", scalar });
+  const handle = (objectId: string) => ({ status: "ok", kind: "object", declaredType: "System.Object", runtimeType: "App.Source", object: { objectId, generation: 1 } });
+  const dependency = { member: member("Text", { category: "dependencyProperty", memberKey: "dp:Text" }), value: text("shown") };
+  const single = {
+    memberKey: "dp:Text", kind: "binding", status: "Active", mode: "TwoWay", updateSourceTrigger: "PropertyChanged", path: "Name", elementName: "Source", sourceType: "App.Source", converterType: "App.Converter",
+    relativeSource: { mode: "FindAncestor", ancestorType: "App.Host", ancestorLevel: 2 }, converterParameter: handle("param"), converterCulture: "", stringFormat: "{0:N2}", fallbackValue: text("fb"), targetNullValue: text("none"),
+    delay: 250, bindingGroupName: "group", xPath: "item", isAsync: false, notifyOnSourceUpdated: true, notifyOnTargetUpdated: false, validatesOnDataErrors: true, validatesOnExceptions: false, validatesOnNotifyDataErrors: true,
+    validationRules: ["App.Rule"], hasUpdateSourceExceptionFilter: true, dataItem: handle("item"), resolvedSource: handle("source"), resolvedSourcePropertyName: "Name", hasError: true, hasValidationError: false, validationErrors: ["System.FormatException"],
+  };
+  const objectRow = (field: string, label: string, objectId: string, path: number[] = [], extra: Record<string, unknown> = {}) => ({ id: "row-" + field + path.join(""), item: true, binding: { memberKey: "dp:Text", path, field }, member: member(label, { memberKey: `binding:${field}${path.join("")}`, category: "dependencyProperty", readable: false, pathSegment: undefined }), value: handle(objectId), ...extra });
+  const show = (bindings: unknown[], bindingObjects: unknown[] = []) => {
+    const view = open("properties-view", { sidebarShowAll: true });
+    view.send(...hostSession());
+    view.send(managed({ sequence: 2, rows: [dependency], bindings, bindingObjects }));
+    return view;
+  };
+  const bindingRow = (view: ReturnType<typeof open>) => view.doc.querySelector<HTMLElement>('tr[data-key="Bindings/Text"]')!;
+  const toggle = (row: Element | null) => row!.querySelector<HTMLButtonElement>("button.property-toggle")!;
+  const detailNames = (view: ReturnType<typeof open>) => view.names().filter((name) => name!.startsWith("Text."));
+
+  it("shows one collapsed row per binding, named by the property, with kind, status and path", () => {
+    const view = show([single]);
+    expect(bindingRow(view).querySelector("td")?.textContent).toBe("binding; Active; Name");
+    expect(toggle(bindingRow(view)).getAttribute("aria-expanded")).toBe("false");
+    expect(detailNames(view)).toEqual([]);
+    expect(view.errors).toEqual([]);
+  });
+
+  it("opens to the details, leaves out empty and default fields, and closes again", () => {
+    const view = show([single], [objectRow("converterParameter", "ConverterParameter", "param"), objectRow("dataItem", "DataItem", "item"), objectRow("resolvedSource", "ResolvedSource", "source")]);
+    toggle(bindingRow(view)).click();
+    expect(toggle(bindingRow(view)).getAttribute("aria-expanded")).toBe("true");
+    const rows = Object.fromEntries(detailNames(view).map((name) => [name!.slice(5), view.value(name!)]));
+    expect(rows).toEqual({
+      Mode: "TwoWay", UpdateSourceTrigger: "PropertyChanged", Path: "Name", XPath: "item", ElementName: "Source",
+      RelativeSource: "FindAncestor; App.Host; level 2", Source: "App.Source", Converter: "App.Converter", ConverterParameter: "App.Source", ConverterCulture: "(invariant)",
+      StringFormat: "{0:N2}", FallbackValue: "fb", TargetNullValue: "none", Delay: "250 ms", BindingGroupName: "group",
+      NotifyOnSourceUpdated: "true", ValidatesOnDataErrors: "true", ValidationRules: "App.Rule", UpdateSourceExceptionFilter: "set",
+      DataItem: "App.Source", ResolvedSource: "App.Source", ResolvedSourcePropertyName: "Name", HasError: "true", Error: "System.FormatException",
+    });
+    // Omitted: false flags, ValidatesOnNotifyDataErrors while true, HasValidationError while false, Delay of 0, empty strings.
+    for (const omitted of ["IsAsync", "NotifyOnTargetUpdated", "ValidatesOnExceptions", "ValidatesOnNotifyDataErrors", "HasValidationError"]) expect(view.names()).not.toContain("Text." + omitted);
+    toggle(bindingRow(view)).click();
+    expect(detailNames(view)).toEqual([]);
+    expect(view.errors).toEqual([]);
+  });
+
+  it("offers Collapse in the row menu while a binding is open", () => {
+    const view = show([single]);
+    const menuLabels = () => { bindingRow(view).querySelector<HTMLButtonElement>(".row-menu-button")!.click(); const labels = [...view.doc.querySelectorAll("#sidebar-row-menu button")].map((button) => button.textContent); return labels; };
+    expect(menuLabels()).toContain("Expand");
+    (view.doc.querySelector("#sidebar-row-menu") as HTMLElement).dispatchEvent(new view.dom.window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    toggle(bindingRow(view)).click();
+    expect(menuLabels()).toContain("Collapse");
+  });
+
+  it("expands DataItem and ResolvedSource through the existing expand flow and lists their members below", () => {
+    const item = objectRow("dataItem", "DataItem", "item");
+    const view = show([single], [item, objectRow("resolvedSource", "ResolvedSource", "source")]);
+    toggle(bindingRow(view)).click();
+    const row = view.doc.querySelector<HTMLElement>('#sidebar-rows [data-name="Text.DataItem"]')!;
+    toggle(row).click();
+    expect(view.posts).toContainEqual({ type: "managedExpand", memberKey: item.member.memberKey, scope: "bindings" });
+    // The host answers with the object's members; they appear under the row, expandable in their own scope.
+    const child = { id: "child", member: member("Name", { memberKey: "clr:Name" }), value: text("inner") };
+    view.send(managed({ sequence: 3, rows: [dependency], bindings: [single], bindingObjects: [{ ...item, children: [child, { id: "nested", member: member("Parent", { memberKey: "clr:Parent" }), value: handle("parent") }] }, objectRow("resolvedSource", "ResolvedSource", "source")] }));
+    expect(view.value("Text.DataItem.Name")).toBe("inner");
+    expect(view.names()).toContain("Text.DataItem.Parent");
+    // An object that is open has no expand button; its members are not pinnable as locators of the binding row.
+    expect(toggle(view.doc.querySelector('#sidebar-rows [data-name="Text.DataItem"]'))).toBeNull();
+    (view.doc.querySelector('#sidebar-rows [data-name="Text.DataItem.Parent"] .row-menu-button') as HTMLButtonElement).click();
+    const buttons = [...view.doc.querySelectorAll<HTMLButtonElement>("#sidebar-row-menu button")];
+    expect(buttons.find((button) => button.textContent === "Expand")!.disabled).toBe(false);
+    expect(buttons.find((button) => button.textContent === "Copy locator key")!.disabled).toBe(true);
+    expect(buttons.find((button) => button.textContent === "Pin")!.disabled).toBe(true);
+    buttons.find((button) => button.textContent === "Expand")!.click();
+    expect(view.posts).toContainEqual({ type: "managedExpand", memberKey: "clr:Parent", scope: "row-dataItem" });
+    expect(view.errors).toEqual([]);
+  });
+
+  it("nests the child bindings of Multi- and PriorityBindings, each opening on its own", () => {
+    const child = (path: string) => ({ memberKey: "dp:Text", kind: "binding", status: "Active", mode: "OneWay", updateSourceTrigger: "Default", path, dataItem: handle("d" + path), resolvedSourcePropertyName: path });
+    const multi = { memberKey: "dp:Text", kind: "multiBinding", status: "Active", mode: "Default", updateSourceTrigger: "Default", converterType: "App.Join", activeChildIndex: 1, children: [child("First"), child("Second")] };
+    const view = show([multi], [objectRow("dataItem", "DataItem", "dFirst", [0]), objectRow("dataItem", "DataItem", "dSecond", [1])]);
+    toggle(bindingRow(view)).click();
+    expect(detailNames(view)).toEqual(expect.arrayContaining(["Text.Converter", "Text.ActiveBinding", "Text.Bindings[0]", "Text.Bindings[1]"]));
+    expect(view.value("Text.ActiveBinding")).toBe("child 1");
+    expect(view.value("Text.Bindings[1]")).toBe("binding; Active; Second");
+    expect(view.names()).not.toContain("Text.Bindings[1].Path");
+    toggle(view.doc.querySelector('#sidebar-rows [data-name="Text.Bindings[1]"]')).click();
+    expect(view.value("Text.Bindings[1].Path")).toBe("Second");
+    expect(view.value("Text.Bindings[1].DataItem")).toBe("App.Source");
+    expect(view.names()).not.toContain("Text.Bindings[0].Path");
+    // Each child's object row belongs to that child.
+    toggle(view.doc.querySelector('#sidebar-rows [data-name="Text.Bindings[1].DataItem"]')).click();
+    expect(view.posts).toContainEqual(expect.objectContaining({ type: "managedExpand", scope: "bindings", memberKey: "binding:dataItem1" }));
+    expect(view.errors).toEqual([]);
+  });
+
+  it("shows a binding value that is not an object as text", () => {
+    const redacted = { status: "redacted", kind: "unavailable", redactionRule: "password" };
+    const view = show([{ ...single, fallbackValue: redacted, dataItem: undefined, resolvedSource: undefined, converterParameter: undefined }]);
+    toggle(bindingRow(view)).click();
+    expect(view.value("Text.FallbackValue")).toContain("Redacted");
+    expect(view.names()).not.toContain("Text.DataItem");
+  });
+
+  it("starts closed again for another object", () => {
+    const view = show([single]);
+    toggle(bindingRow(view)).click();
+    expect(detailNames(view).length).toBeGreaterThan(0);
+    view.send({ type: "selected", nodeId: "border", properties: { ...presenterProperties, info: borderNode.info } });
+    view.send({ type: "selected", nodeId: "presenter", properties: presenterProperties });
+    view.send(managed({ sequence: 5, rows: [dependency], bindings: [single] }));
+    expect(detailNames(view)).toEqual([]);
+  });
+});
+
+describe("Style, templates and resources in the Properties sidebar", () => {
+  const text = (scalar: string) => ({ status: "ok", kind: "string", declaredType: "System.Object", runtimeType: "System.String", scalar });
+  const handle = (objectId: string, runtimeType = "System.Windows.Media.SolidColorBrush") => ({ status: "ok", kind: "object", declaredType: "System.Object", runtimeType, object: { objectId, generation: 1 } });
+  const flag = (scalar: boolean) => ({ status: "ok", kind: "boolean", declaredType: "System.Object", runtimeType: "System.Boolean", scalar });
+  const setter = (property: string, extra: Record<string, unknown> = {}) => ({ property, owner: "System.Windows.Controls.Control", kind: "value", ...extra });
+  const trigger = (extra: Record<string, unknown> = {}) => ({ kind: "trigger", active: "active", conditions: [], setterCount: 0, settersTruncated: false, setters: [], enterActions: 0, exitActions: 0, ...extra });
+  const level = (extra: Record<string, unknown> = {}) => ({ setterCount: 0, settersTruncated: false, setters: [], triggerCount: 0, triggersTruncated: false, triggers: [], ...extra });
+  const template = (extra: Record<string, unknown> = {}) => ({ kind: "controlTemplate", triggerCount: 0, triggersTruncated: false, triggers: [], partsTruncated: false, parts: [], ...extra });
+  const dictionary = (extra: Record<string, unknown> = {}) => ({ count: 0, truncated: false, entries: [], mergedTruncated: false, mergedDictionaries: [], ...extra });
+  const slotRow = (slot: string, objectId: string, label: string, runtimeType?: string, extra: Record<string, unknown> = {}) => ({ id: "row-" + objectId, item: true, styling: { slot }, member: member(label, { memberKey: "styling:" + objectId, readable: false, pathSegment: undefined }), value: handle(objectId, runtimeType), ...extra });
+  const resourceRow = (slot: string, objectId: string, key: string, extra: Record<string, unknown> = {}) => ({ id: "row-" + objectId, item: true, text: "(expand to read)", styling: { slot }, member: member(key, { memberKey: "styling:" + objectId, readable: false, pathSegment: undefined }), ...extra });
+  const styling = {
+    applicable: true,
+    style: {
+      source: "local", key: "Fancy", targetType: "System.Windows.Controls.Button",
+      ...level({
+        setterCount: 3, setters: [setter("Padding", { value: text("4,4,4,4") }), setter("Foreground", { kind: "dynamicResource", expression: "Accent" }), setter("Tag", { kind: "value", value: handle("tag", "App.Marker") })],
+        triggerCount: 2, triggers: [
+          trigger({ kind: "trigger", active: "inactive", conditions: [{ property: "System.Windows.UIElement.IsEnabled", value: flag(false), active: "inactive" }], setterCount: 1, setters: [setter("Opacity", { owner: "System.Windows.UIElement", value: text("0.5") })] }),
+          trigger({ kind: "dataTrigger", active: "unknown", conditions: [{ binding: "Path=Ready", value: flag(true), active: "unknown" }] }),
+        ],
+      }),
+      basedOn: [{ key: "Base", targetType: "System.Windows.Controls.Button", ...level({ setterCount: 1, setters: [setter("Margin", { value: text("2") })] }) }],
+      basedOnTruncated: false,
+    },
+    templates: {
+      controlTemplate: template({ targetType: "System.Windows.Controls.Button", rootType: "System.Windows.Controls.Border", parts: [{ name: "PART_Border", type: "System.Windows.Controls.Border", element: handle("border", "System.Windows.Controls.Border") }], triggerCount: 1, triggers: [trigger({ active: "unknown", conditions: [{ property: "System.Windows.UIElement.Opacity", sourceName: "PART_Border", value: text("1"), active: "unknown" }] })] }),
+      itemTemplate: template({ kind: "dataTemplate", dataType: "App.Person" }),
+      itemsPanel: template({ kind: "itemsPanelTemplate", rootType: "System.Windows.Controls.WrapPanel" }),
+      itemContainerStyle: { source: "local", targetType: "System.Windows.Controls.ListBoxItem", ...level({ setterCount: 1, setters: [setter("Padding", { value: text("3") })] }), basedOn: [], basedOnTruncated: false },
+      templatedParent: handle("parent", "System.Windows.Controls.Button"),
+    },
+    resources: dictionary({
+      count: 3, entries: [
+        { key: "Title", keyKind: "string", index: 0 },
+        { key: "Accent", keyKind: "string", index: 1 },
+        { key: "System.Windows.Controls.Button", keyKind: "type", index: 2 },
+      ],
+      mergedDictionaries: [{ source: "Themes/Dark.xaml", count: 12 }, { count: 0 }],
+    }),
+    application: dictionary({ count: 250, truncated: true, entries: [{ key: "AppTitle", keyKind: "string", index: 0 }] }),
+  };
+  const objects = [
+    slotRow("style.setters.2.value", "tag", "value", "App.Marker"),
+    slotRow("templates.controlTemplate.parts.0.element", "border", "element", "System.Windows.Controls.Border"),
+    slotRow("templates.templatedParent", "parent", "templatedParent", "System.Windows.Controls.Button"),
+    // A resource has a row from the start, without a value: it is read when the row is expanded.
+    resourceRow("resources.entries.0", "title", "Title"),
+    resourceRow("resources.entries.1", "accent", "Accent"),
+    resourceRow("resources.entries.2", "button-style", "System.Windows.Controls.Button"),
+    resourceRow("application.entries.0", "app-title", "AppTitle"),
+  ];
+  const show = (result: unknown = styling, stylingObjects: unknown[] = objects) => {
+    const view = open("properties-view", { sidebarShowAll: true });
+    view.send(...hostSession());
+    view.send(managed({ sequence: 2, styling: result, stylingObjects }));
+    return view;
+  };
+  const row = (view: ReturnType<typeof open>, name: string) => view.doc.querySelector<HTMLElement>(`#sidebar-rows [data-name="${name}"]`);
+  const toggle = (element: Element | null) => element!.querySelector<HTMLButtonElement>("button.property-toggle")!;
+  const subgroups = (view: ReturnType<typeof open>) => [...view.doc.querySelectorAll("#sidebar-rows tr.sidebar-group")].map((item) => item.textContent);
+  const rowsOf = (view: ReturnType<typeof open>, heading: string) => {
+    const result: string[] = [];
+    let inside = false;
+    for (const item of view.doc.querySelectorAll<HTMLTableRowElement>("#sidebar-rows tr")) {
+      if (item.classList.contains("sidebar-group")) { inside = item.textContent === heading; continue; }
+      if (inside && item.dataset.name) result.push(item.dataset.name);
+    }
+    return result;
+  };
+
+  it("adds the Style and template and Resources sub-groups under .NET only when the object has styling", () => {
+    const none = show({ applicable: false }, []);
+    expect(subgroups(none)).not.toContain("Style and template");
+    expect(subgroups(none)).not.toContain("Resources");
+    const view = show();
+    expect(subgroups(view)).toEqual(expect.arrayContaining(["Style and template", "Resources"]));
+    expect(subgroups(view).indexOf("Style and template")).toBeLessThan(subgroups(view).indexOf("Resources"));
+    expect(view.errors).toEqual([]);
+  });
+
+  it("lists the style, its setters, its triggers and its templates", () => {
+    const view = show();
+    expect(rowsOf(view, "Style and template")).toEqual([
+      "Style", "Setter Control.Padding", "Setter Control.Foreground", "Setter Control.Tag", "Triggers[0]", "Triggers[1]", "BasedOn[0]",
+      "ControlTemplate", "ItemTemplate", "ItemContainerStyle", "ItemsPanel", "TemplatedParent",
+    ]);
+    expect(view.value("Style")).toBe("Button (Fancy)");
+    expect(view.value("Setter Control.Padding")).toBe("4,4,4,4");
+    // Markup is named, never evaluated.
+    expect(view.value("Setter Control.Foreground")).toBe("{DynamicResource Accent}");
+    expect(view.value("Setter Control.Tag")).toBe("App.Marker");
+    expect(view.value("BasedOn[0]")).toBe("Button (Base)");
+    expect(view.value("ControlTemplate")).toBe("Button");
+    expect(view.value("ItemTemplate")).toBe("DataType Person");
+    expect(view.value("ItemsPanel")).toBe("WrapPanel");
+    expect(view.value("ItemContainerStyle")).toBe("ListBoxItem");
+    expect(view.errors).toEqual([]);
+  });
+
+  it("opens a trigger to its conditions, its active state and its setters", () => {
+    const view = show();
+    expect(view.value("Triggers[0]")).toBe("Trigger IsEnabled = false; inactive");
+    expect(view.value("Triggers[1]")).toBe("DataTrigger {Binding Path=Ready} = true; unknown");
+    expect(toggle(row(view, "Triggers[0]")).getAttribute("aria-expanded")).toBe("false");
+    expect(view.names()).not.toContain("Triggers[0].Condition IsEnabled");
+    toggle(row(view, "Triggers[0]")).click();
+    expect(toggle(row(view, "Triggers[0]")).getAttribute("aria-expanded")).toBe("true");
+    expect(view.value("Triggers[0].Condition IsEnabled")).toBe("= false (inactive)");
+    expect(view.value("Triggers[0].Setter UIElement.Opacity")).toBe("0.5");
+    toggle(row(view, "Triggers[1]")).click();
+    expect(view.value("Triggers[1].Condition {Binding Path=Ready}")).toBe("= true (unknown)");
+    toggle(row(view, "Triggers[0]")).click();
+    expect(view.names()).not.toContain("Triggers[0].Condition IsEnabled");
+    expect(view.errors).toEqual([]);
+  });
+
+  it("opens the based-on styles, the template parts and the item container style", () => {
+    const view = show();
+    toggle(row(view, "BasedOn[0]")).click();
+    expect(view.value("BasedOn[0].Setter Control.Margin")).toBe("2");
+    toggle(row(view, "ControlTemplate")).click();
+    expect(view.value("ControlTemplate.Triggers[0]")).toBe("Trigger PART_Border.Opacity = 1; unknown");
+    expect(view.value("ControlTemplate.Part PART_Border")).toBe("System.Windows.Controls.Border");
+    toggle(row(view, "ItemContainerStyle")).click();
+    expect(view.value("ItemContainerStyle.Setter Control.Padding")).toBe("3");
+    // A template with nothing to open has no toggle.
+    expect(row(view, "ItemTemplate")!.querySelector("button.property-toggle")).toBeNull();
+    expect(view.errors).toEqual([]);
+  });
+
+  it("expands objects through the member flow in the styling scope", () => {
+    const view = show();
+    toggle(row(view, "TemplatedParent")).click();
+    expect(view.posts).toContainEqual({ type: "managedExpand", memberKey: "styling:parent", scope: "styling" });
+    toggle(row(view, "Setter Control.Tag")).click();
+    expect(view.posts).toContainEqual({ type: "managedExpand", memberKey: "styling:tag", scope: "styling" });
+    toggle(row(view, "ControlTemplate")).click();
+    toggle(row(view, "ControlTemplate.Part PART_Border")).click();
+    expect(view.posts).toContainEqual({ type: "managedExpand", memberKey: "styling:border", scope: "styling" });
+    // The host answers with the members; they appear under the row.
+    const child = { id: "child", member: member("Parent", { memberKey: "clr:Parent" }), value: text("inner") };
+    view.send(managed({ sequence: 3, styling, stylingObjects: objects.map((item) => item.id === "row-parent" ? { ...item, children: [child] } : item) }));
+    expect(view.value("TemplatedParent.Parent")).toBe("inner");
+    expect(view.errors).toEqual([]);
+  });
+
+  it("lists the local resources by key, each saying it is read on expanding, then the merged dictionaries", () => {
+    const view = show();
+    expect(rowsOf(view, "Resources")).toEqual(["Title", "Accent", "System.Windows.Controls.Button", "MergedDictionaries[0]", "MergedDictionaries[1]", "Application resources"]);
+    expect(view.value("Title")).toBe("(expand to read)");
+    expect(view.value("Accent")).toBe("(expand to read)");
+    expect(view.value("System.Windows.Controls.Button")).toBe("(expand to read)");
+    expect(view.value("MergedDictionaries[0]")).toBe("Themes/Dark.xaml");
+    expect(view.value("MergedDictionaries[1]")).toBe("(inline)");
+    expect(toggle(row(view, "Title")).getAttribute("aria-label")).toBe("Read the value of Title");
+    toggle(row(view, "Accent")).click();
+    expect(view.posts).toContainEqual({ type: "managedExpand", memberKey: "styling:accent", scope: "styling" });
+    toggle(row(view, "System.Windows.Controls.Button")).click();
+    expect(view.posts).toContainEqual({ type: "managedExpand", memberKey: "styling:button-style", scope: "styling" });
+    expect(view.errors).toEqual([]);
+  });
+
+  it("shows a resource's value once the host has read it, and offers object resources to expand", () => {
+    const view = show();
+    const read = (extra: Record<string, unknown>) => objects.map((item) => (item as { id: string }).id === "row-title" ? { ...item, text: undefined, valueType: "System.String", value: text("Hello") } : (item as { id: string }).id === "row-accent" ? { ...item, text: undefined, valueType: "System.Windows.Media.SolidColorBrush", value: handle("accent"), ...extra } : item);
+    view.send(managed({ sequence: 3, styling, stylingObjects: read({}) }));
+    expect(view.value("Title")).toBe("Hello");
+    // A scalar has nothing more to open; an object resource expands through the member flow.
+    expect(row(view, "Title")!.querySelector("button.property-toggle")).toBeNull();
+    expect(view.value("Accent")).toBe("System.Windows.Media.SolidColorBrush");
+    expect(toggle(row(view, "Accent")).getAttribute("aria-label")).toBe("Expand Accent");
+    toggle(row(view, "Accent")).click();
+    expect(view.posts.filter((post) => (post as { memberKey?: string }).memberKey === "styling:accent")).toHaveLength(1);
+    const child = { id: "child", member: member("Color", { memberKey: "clr:Color" }), value: text("Red") };
+    view.send(managed({ sequence: 4, styling, stylingObjects: read({ children: [child] }) }));
+    expect(view.value("Accent.Color")).toBe("Red");
+    expect(view.errors).toEqual([]);
+  });
+
+  it("says why a resource has no value, and lets the row be expanded again", () => {
+    const view = show();
+    view.send(managed({ sequence: 3, styling, stylingObjects: objects.map((item) => (item as { id: string }).id === "row-title" ? { ...item, text: "(not found: the resource is gone)" } : item) }));
+    expect(view.value("Title")).toBe("(not found: the resource is gone)");
+    expect(toggle(row(view, "Title")).getAttribute("aria-label")).toBe("Read the value of Title");
+    expect(view.errors).toEqual([]);
+  });
+
+  it("summarizes the application resources in one row that opens to the first page", () => {
+    const view = show();
+    expect(view.value("Application resources")).toBe("250 resources");
+    expect(view.names()).not.toContain("Application.AppTitle");
+    toggle(row(view, "Application resources")).click();
+    expect(view.value("Application.AppTitle")).toBe("(expand to read)");
+    toggle(row(view, "Application.AppTitle")).click();
+    expect(view.posts).toContainEqual({ type: "managedExpand", memberKey: "styling:app-title", scope: "styling" });
+    expect(view.value("Application.Resources")).toBe("1 of 250 shown");
+    toggle(row(view, "Application resources")).click();
+    expect(view.names()).not.toContain("Application.AppTitle");
+  });
+
+  it("filters the rows with the search box and collapses each sub-group", () => {
+    const view = show();
+    view.type(view.doc.querySelector<HTMLInputElement>("#sidebar-search")!, "padding");
+    expect(rowsOf(view, "Style and template")).toEqual(["Setter Control.Padding"]);
+    expect(subgroups(view)).not.toContain("Resources");
+    view.type(view.doc.querySelector<HTMLInputElement>("#sidebar-search")!, "");
+    const heading = [...view.doc.querySelectorAll<HTMLButtonElement>("tr.sidebar-group button")].find((button) => button.textContent === "Resources")!;
+    heading.click();
+    expect(rowsOf(view, "Resources")).toEqual([]);
+    expect(rowsOf(view, "Style and template").length).toBeGreaterThan(0);
+    expect(view.errors).toEqual([]);
+  });
+
+  it("starts closed again for another object", () => {
+    const view = show();
+    toggle(row(view, "Triggers[0]")).click();
+    expect(view.names()).toContain("Triggers[0].Condition IsEnabled");
+    view.send({ type: "selected", nodeId: "border", properties: { ...presenterProperties, info: borderNode.info } });
+    view.send({ type: "selected", nodeId: "presenter", properties: presenterProperties });
+    view.send(managed({ sequence: 5, styling, stylingObjects: objects }));
+    expect(view.names()).not.toContain("Triggers[0].Condition IsEnabled");
+  });
+});
+
+describe("Events in the Properties sidebar", () => {
+  const handler = (type: string, method: string, handledEventsToo?: boolean) => ({ declaringType: type, method, ...(handledEventsToo === undefined ? {} : { handledEventsToo }) });
+  const routed = (name: string, handlers: unknown[] | undefined, extra: Record<string, unknown> = {}) => ({ kind: "routed", name, declaringType: "System.Windows.UIElement", handlerType: "System.Windows.RoutedEventHandler", strategy: name.startsWith("Preview") ? "tunnel" : "bubble", handlersKnown: !!handlers, handlerCount: handlers?.length ?? 0, handlersTruncated: false, handlers: handlers ?? [], ...extra });
+  const clr = (name: string, subscribers: unknown[] | undefined, extra: Record<string, unknown> = {}) => ({ kind: "clr", name, declaringType: "Demo.Model", handlerType: "System.EventHandler", isStatic: false, subscribersKnown: !!subscribers, subscriberCount: subscribers?.length ?? 0, subscribersTruncated: false, subscribers: subscribers ?? [], ...extra });
+  const events = [
+    routed("Click", [handler("Demo.MainWindow", "OnClick", false), handler("Demo.Logger", "OnAny", true)]),
+    clr("Idle", [handler("Demo.Bus", "OnIdle")], { isStatic: true }),
+    clr("Changed", [handler("Demo.View", "OnChanged"), handler("Demo.View", "OnChanged")]),
+    routed("PreviewMouseDown", []),
+    clr("Hidden", undefined),
+  ];
+  const show = (list: unknown[] = events) => {
+    const view = open("properties-view", { sidebarShowAll: true });
+    view.send(...hostSession());
+    view.send(managed({ sequence: 2, events: list }));
+    return view;
+  };
+  const row = (view: ReturnType<typeof open>, name: string) => view.doc.querySelector<HTMLElement>(`#sidebar-rows [data-name="${name}"]`);
+  const toggle = (element: Element | null) => element!.querySelector<HTMLButtonElement>("button.property-toggle")!;
+  const subgroups = (view: ReturnType<typeof open>) => [...view.doc.querySelectorAll("#sidebar-rows tr.sidebar-group")].map((item) => item.textContent);
+  const rowsOf = (view: ReturnType<typeof open>, heading: string) => {
+    const result: string[] = [];
+    let inside = false;
+    for (const item of view.doc.querySelectorAll<HTMLTableRowElement>("#sidebar-rows tr")) {
+      if (item.classList.contains("sidebar-group")) { inside = item.textContent === heading; continue; }
+      if (inside && item.dataset.name) result.push(item.dataset.name);
+    }
+    return result;
+  };
+
+  it("adds the Events sub-group under .NET only when the object has events", () => {
+    expect(subgroups(show([]))).not.toContain("Events");
+    const view = show();
+    expect(subgroups(view)).toContain("Events");
+    expect(view.errors).toEqual([]);
+  });
+
+  it("lists one row per event in the order the agent sent them, saying what handles it", () => {
+    const view = show();
+    expect(rowsOf(view, "Events")).toEqual(["Click", "Idle", "Changed", "PreviewMouseDown", "Hidden"]);
+    expect(view.value("Click")).toBe("routed (Bubble), 2 handlers");
+    expect(view.value("Idle")).toBe("CLR, 1 subscriber");
+    expect(view.value("Changed")).toBe("CLR, 2 subscribers");
+    expect(view.value("PreviewMouseDown")).toBe("routed (Tunnel), 0 handlers");
+    expect(view.value("Hidden")).toBe("handlers unknown");
+    expect(view.errors).toEqual([]);
+  });
+
+  it("opens an event to the method of each handler, and says which ones take handled events", () => {
+    const view = show();
+    expect(view.names()).not.toContain("Click.Demo.MainWindow.OnClick");
+    expect(toggle(row(view, "Click")).getAttribute("aria-expanded")).toBe("false");
+    toggle(row(view, "Click")).click();
+    expect(toggle(row(view, "Click")).getAttribute("aria-expanded")).toBe("true");
+    expect(rowsOf(view, "Events").slice(0, 3)).toEqual(["Click", "Click.Demo.MainWindow.OnClick", "Click.Demo.Logger.OnAny"]);
+    expect(view.value("Click.Demo.MainWindow.OnClick")).toBe("handler");
+    expect(view.value("Click.Demo.Logger.OnAny")).toBe("handledEventsToo");
+    toggle(row(view, "Idle")).click();
+    expect(view.value("Idle.Demo.Bus.OnIdle")).toBe("subscriber");
+    toggle(row(view, "Click")).click();
+    expect(view.names()).not.toContain("Click.Demo.MainWindow.OnClick");
+    expect(view.errors).toEqual([]);
+  });
+
+  it("gives an event without handlers, or with handlers it could not read, nothing to open", () => {
+    const view = show();
+    expect(row(view, "PreviewMouseDown")!.querySelector("button.property-toggle")).toBeNull();
+    expect(row(view, "Hidden")!.querySelector("button.property-toggle")).toBeNull();
+    expect(row(view, "Click")!.querySelector("button.property-toggle")).not.toBeNull();
+    expect(view.errors).toEqual([]);
+  });
+
+  it("keeps a handler that is subscribed twice as two rows, and says when the list was capped", () => {
+    const view = show([clr("Changed", [handler("Demo.View", "OnChanged"), handler("Demo.View", "OnChanged")]), routed("Click", Array.from({ length: 32 }, (_, index) => handler("Demo.Window", "On" + index, false)), { handlerCount: 40, handlersTruncated: true })]);
+    expect(view.value("Click")).toBe("routed (Bubble), 40 handlers (32 shown)");
+    toggle(row(view, "Changed")).click();
+    expect(rowsOf(view, "Events").slice(0, 3)).toEqual(["Changed", "Changed.Demo.View.OnChanged", "Changed.Demo.View.OnChanged (2)"]);
+    toggle(row(view, "Click")).click();
+    expect(view.value("Click.handlers")).toBe("8 more not shown");
+    expect(view.errors).toEqual([]);
+  });
+
+  it("filters the events with the search box and collapses the sub-group", () => {
+    const view = show();
+    view.type(view.doc.querySelector<HTMLInputElement>("#sidebar-search")!, "unknown");
+    expect(rowsOf(view, "Events")).toEqual(["Hidden"]);
+    view.type(view.doc.querySelector<HTMLInputElement>("#sidebar-search")!, "changed");
+    expect(rowsOf(view, "Events")).toEqual(["Changed"]);
+    view.type(view.doc.querySelector<HTMLInputElement>("#sidebar-search")!, "");
+    const heading = [...view.doc.querySelectorAll<HTMLButtonElement>("tr.sidebar-group button")].find((button) => button.textContent === "Events")!;
+    heading.click();
+    expect(rowsOf(view, "Events")).toEqual([]);
+    expect(view.errors).toEqual([]);
+  });
+
+  it("describes an event in the description pane", () => {
+    const view = show();
+    row(view, "Idle")!.click();
+    const text = view.text("#sidebar-description-content");
+    expect(text).toContain("Demo.Model");
+    expect(text).toContain("System.EventHandler");
+    expect(text).toContain("CLR event");
     expect(view.errors).toEqual([]);
   });
 });

@@ -1,0 +1,1 @@
+{"schema":"ItemsResult","instance":{"kind":"list","count":1,"items":[{"index":0,"key":null,"value":{"status":"ok","kind":"integer","declaredType":"System.Object","runtimeType":"System.Int32","scalar":1}}],"nextPageToken":null,"complete":true}}

@@ -2,6 +2,7 @@
 using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Security;
+using System.Text;
 using System.Windows.Threading;
 using WinTestKit.Inspector.Agent.Contracts;
 using WinTestKit.Inspector.Protocol;
@@ -10,6 +11,26 @@ namespace WinTestKit.Inspector.Agent.Inspection.Members
 {
     internal static class ValueSerializer
     {
+        internal static string? ErrorMessage(Exception exception)
+        {
+            if (exception is SecurityException || exception.GetType().GetProperty(nameof(Exception.Message))?.GetMethod?.DeclaringType != typeof(Exception)) return null;
+            string text;
+            try { text = exception.Message; }
+            catch (Exception) { return null; }
+            var result = new StringBuilder();
+            for (int index = 0; index < text.Length && result.Length < 512; index++)
+            {
+                char character = text[index];
+                if (char.IsHighSurrogate(character) && index + 1 < text.Length && char.IsLowSurrogate(text[index + 1]))
+                {
+                    if (result.Length + 2 > 512) break;
+                    result.Append(character).Append(text[++index]);
+                }
+                else if (char.IsSurrogate(character) || char.IsControl(character)) result.Append('\uFFFD');
+                else result.Append(character);
+            }
+            return result.ToString();
+        }
         internal static ValueDto Serialize(object? value, Type declared, IObjectRegistry registry, Dispatcher dispatcher)
         {
             string declaredName = Declaration.TypeName(declared);

@@ -18,7 +18,7 @@ export const SPY_TOUR_ACTIONS = ["back", "next", "close", "disable", "skip", "fi
 
 export type ManagedRequest =
   | { type: "managedInvoke"; memberKey: string; arguments: { kind: string; text: string }[] }
-  | { type: "managedAttach" | "managedDetach" | "managedRefresh" }
+  | { type: "managedAttach" | "managedDetach" | "managedRefresh" | "managedReadRemaining" }
   | { type: "managedRead" | "managedExpand"; memberKey: string; scope?: string }
   | { type: "managedLoadMore"; group: string }
   | { type: "managedMethods"; action: "activate" | "deactivate" | "retry" | "more" }
@@ -225,7 +225,7 @@ export function parseManagedRequest(message: Record<string, unknown>): ManagedRe
   const exact = (...allowed: string[]) => keys.length === allowed.length && keys.every((key) => allowed.includes(key));
   const key = (value: unknown): value is string => typeof value === "string" && value.length > 0 && value.length <= 1024;
   if (message.type === "managedInvoke" && exact("type", "memberKey", "arguments") && typeof message.memberKey === "string" && message.memberKey.length > 0 && message.memberKey.length <= 8192 && Array.isArray(message.arguments) && message.arguments.length <= 16 && message.arguments.every((arg) => arg && typeof arg === "object" && !Array.isArray(arg) && Object.keys(arg).length === 2 && typeof arg.kind === "string" && typeof arg.text === "string" && arg.text.length <= 4096)) return { type: "managedInvoke", memberKey: message.memberKey, arguments: message.arguments as { kind: string; text: string }[] };
-  if ((message.type === "managedAttach" || message.type === "managedDetach" || message.type === "managedRefresh") && exact("type")) return { type: message.type };
+  if ((message.type === "managedAttach" || message.type === "managedDetach" || message.type === "managedRefresh" || message.type === "managedReadRemaining") && exact("type")) return { type: message.type };
   if ((message.type === "managedRead" || message.type === "managedExpand") && (exact("type", "memberKey") || (exact("type", "memberKey", "scope") && key(message.scope))) && key(message.memberKey)) return { type: message.type, memberKey: message.memberKey, ...(typeof message.scope === "string" ? { scope: message.scope } : {}) };
   if (message.type === "managedLoadMore" && exact("type", "group") && key(message.group)) return { type: message.type, group: message.group };
   if (message.type === "managedMethods" && exact("type", "action") && (message.action === "activate" || message.action === "deactivate" || message.action === "retry" || message.action === "more")) return { type: message.type, action: message.action };

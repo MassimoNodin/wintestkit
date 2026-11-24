@@ -67,14 +67,31 @@ def run(args: argparse.Namespace) -> int:
                 from wintestkit.engine.actions import bring_to_front
 
                 bring_to_front(result.uia)
-                rect = result.uia.rect
+                from wintestkit.backends.element import WpfElement
+                from wintestkit.engine.highlight import outline
+
+                element = result.uia.as_live() if isinstance(result.uia, WpfElement) else result.uia
+                rect, ancestor = outline(element)
+                if ancestor is not None:
+                    import logging
+
+                    logging.getLogger("wintestkit").warning(
+                        "%s has no on-screen rectangle; outlined %s instead",
+                        element.info().short(),
+                        ancestor.info().short(),
+                    )
             else:
                 rect = result.element.rect if result.element is not None else None
-            if rect is not None and not rect.is_empty():
+                if rect is None:
+                    from wintestkit.errors import ActionError
+
+                    raise ActionError("Element has no on-screen rectangle to highlight")
+            if not rect.is_empty():
                 overlay.flash(
                     rect,
                     args.duration,
                     color=overlay.parse_color(cfg.highlight_color),
+                    thickness=cfg.highlight_thickness,
                     block=True,
                 )
         if args.json:

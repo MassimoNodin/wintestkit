@@ -16,6 +16,8 @@ properties instead. `type:Is` is a locator predicate, not a readable value. Reda
 cannot be read. As with Spy, reading managed properties executes application getters, which can
 have side effects.
 
+Spy lists inherited public and non-public static properties and fields alongside instance members. Public static getters and static fields can be read subject to the same redaction and timeout safeguards.
+
 ## Compatibility
 
 Framework-dependent WPF targets include .NET Framework 4.8, .NET 8 and .NET 10 on x86
@@ -113,7 +115,198 @@ its value. Reading visible values prompts about the risk. Value statuses are `ok
 `notReadable`, `nullIntermediate`, `exception`, `stale`, `redacted`, `truncated`, `cycle`,
 `timeout`, and `unsupported`; they indicate respectively a value, no read yet, unreadable
 member, null along a path, getter failure, stale object, withheld value, shortened value,
-cycle, timed-out operation, or unsupported value.
+cycle, timed-out operation, or unsupported value. Getter failures can include a sanitized
+exception message of up to 512 characters, omitted for protected or redacted reads.
+
+### Binding details
+
+Under **.NET › Bindings**, each bound property has one row whose value reads `kind; status; path`.
+Expand it (the chevron, or **Expand** in the row menu) to see every detail of the binding as
+rows named `Property.Detail`:
+
+- **Binding options:** `Mode`, `UpdateSourceTrigger`, `Path`, `XPath`, `ElementName`,
+  `RelativeSource` (mode, ancestor type and level), `Source` and `Converter` (type names),
+  `ConverterParameter`, `ConverterCulture` (`(invariant)` for the invariant culture),
+  `StringFormat`, `FallbackValue`, `TargetNullValue`, `Delay`, `BindingGroupName`, `IsAsync`.
+- **Validation:** `NotifyOnSourceUpdated`, `NotifyOnTargetUpdated`, `NotifyOnValidationError`,
+  `ValidatesOnDataErrors`, `ValidatesOnExceptions`, `ValidatesOnNotifyDataErrors`,
+  `ValidationRules` (type names), `UpdateSourceExceptionFilter` (shown as `set` when present).
+- **Resolved state:** `DataItem`, `ResolvedSource` and `ResolvedSourcePropertyName`, `HasError`,
+  `HasValidationError` and `Error` (the validation error's type and sanitized message).
+- **Composite bindings:** a `MultiBinding` shows its converter and `ConverterParameter`, and a
+  `PriorityBinding` shows `ActiveBinding` (the index of the child that supplies the value). Their
+  children appear as nested `Property.Bindings[0]`, `Property.Bindings[1]`, ... rows, each opening to
+  its own details. The tree is limited to 8 levels and 32 bindings.
+
+`DataItem`, `ResolvedSource`, `ConverterParameter`, `FallbackValue` and `TargetNullValue` are values,
+serialized like member values: an object comes back as a handle, so Spy expands it with
+**Expand** and lists its members and collection items like any other object row. Those object rows
+are not members of the selected element, so they have no locator and cannot be shown in the Basic view.
+
+To keep the list readable, Spy leaves out rows that carry no information: empty strings, absent
+values, a `Delay` of 0, flags that are `false` (`IsAsync`, `NotifyOn...`, `ValidatesOnDataErrors`,
+`ValidatesOnExceptions`, `HasError`, `HasValidationError`), and `ValidatesOnNotifyDataErrors` while it
+has its default value `true`. The protocol itself always reports the flags of a `Binding`.
+
+The agent reads what WPF already holds. It does not call converters, read source getters, update the
+target or the source, or force the binding to resolve. Redaction applies as it does to reads:
+
+- a bound property or element that is protected (for example a `PasswordBox`) or whose property name
+  is redacted withholds the whole request;
+- when the binding path or element name matches a redaction rule, `StringFormat`, `FallbackValue`,
+  `TargetNullValue`, `ConverterParameter`, `XPath`, `DataItem`, `ResolvedSource` and
+  `ResolvedSourcePropertyName` are omitted (for a `MultiBinding` or `PriorityBinding`, when any
+  child binding matches);
+- a value whose type name matches a rule, or that is a protected object, is omitted on its own.
+
+### Collection items
+
+Expanding a member whose value is an object also asks the agent for that object's items
+(the `members.items` request, advertised as the `membersItems` feature; restart a target that
+still runs an older agent). Spy lists them as child rows directly under the object, before
+its members:
+
+- `Count`, when the collection reports one (a real `Count` member keeps its own row, and the
+  items row is then labelled `Count (items)`);
+- `[0]`, `[1]`, ... for arrays, lists and other enumerables, or `[key]` for dictionaries;
+- a `Load more items` row when more items follow. Pages hold up to 200 items; a plain
+  enumerable that does not report a count is re-walked from the start to reach a later page;
+- `Enumeration threw <Type>: <message>` when enumerating failed part-way. The items read
+  before the failure stay listed, and the message is sanitized and bounded like getter errors.
+
+An item that is an object can be expanded like any other row, and shows its own members and
+items. Strings and protected identities (password controls) list no items, and a value that is not enumerable adds no rows. Enumerating runs application code (an
+`IEnumerable` can be lazy, slow or have side effects), so Spy only does it when you expand a row,
+never in the automatic read. Item rows cannot be read again or copied as locator paths.
+
+Python code can read the same pages with `InspectorClient.items(object_id, generation,
+page_size=..., page_token=..., deadline=...)`, and the extension uses the
+`inspect.managed.items` request, which takes `sessionId`, `objectId`, `generation`, and optional
+`pageSize` and `pageToken`, and returns `kind` (`array`, `list`, `dictionary`, `enumerable` or
+`notEnumerable`), `count`, `items`, `nextPageToken`, `complete` and an optional page `error`.
+
+### Style, templates and resources
+
+Selecting a `FrameworkElement` or `FrameworkContentElement` also asks the agent for its styling
+(the `members.styling` request, advertised as the `membersStyling` feature; restart a target that
+still runs an older agent). Spy shows it under **.NET > Style and template** and **.NET > Resources**:
+
+- **Style:** the style the element uses with its target type and key. The source says how it was
+  found: `local` (set on the element, including by an `ItemContainerStyle`), `implicit` (an
+  implicit style found for the element's type), `typeLookup` (the element has no `Style`, so the
+  agent looks up the default style key, which finds the theme's default style) or `none`. The key is
+  the type for an implicit or looked-up style; otherwise it is the `x:Key` when the style sits in a
+  resource dictionary on the way from the element to the application (a bounded search of at most
+  1024 entries, so a style stored elsewhere has no key).
+- **`Setter <Owner.Property>` rows:** one per setter. A value is shown as it is; markup is *named, not
+  evaluated*: `{DynamicResource Key}`, `{Binding Path=..., ElementName=...}`, `{MultiBinding}`,
+  `{PriorityBinding}` and `{TemplateBinding Property}`. An object value expands like any other row.
+  A setter of a property whose name matches a redaction rule shows a redacted value and no
+  expression.
+- **`BasedOn[n]` rows:** the chain of styles the style is based on (target type and key per level, at
+  most 8 levels), each opening to its own setters and triggers.
+- **`Triggers[n]` rows:** `Trigger`, `DataTrigger`, `MultiTrigger`, `MultiDataTrigger` and
+  `EventTrigger`, each opening to its conditions (a dependency property or binding path, the value
+  compared and, for a template trigger, the part named by `SourceName`), its setters and its
+  enter/exit action counts. The active state is `active` or `inactive` only for property triggers
+  (`Trigger`, and `MultiTrigger` when every condition can be told): the element's current value is
+  compared with the condition value, converting text only for enums and primitives. Data triggers
+  and event triggers are `unknown`, as is any condition whose value cannot be compared.
+- **Templates:** `ControlTemplate`, `ContentTemplate` (`ContentControl` and `ContentPresenter`),
+  `ItemTemplate`, `ItemContainerStyle` and `ItemsPanel` rows, each opening to its triggers and, for
+  the control and content templates, the named parts the template built on this element
+  (`PART_...`; found among the element's own template visuals and confirmed through
+  `Template.FindName`, so a template that is not applied yet lists none). A data template shows its
+  `DataType`, an items panel the panel type. A `TemplatedParent` row expands to the control whose
+  template created the element. A `ContentPresenter` that got its data template through an implicit
+  `DataType` lookup has no `ContentTemplate` to show.
+- **Resources:** one row per entry in the element's own `Resources`, named by its key (a type key
+  by the type name, a `ComponentResourceKey` or `DataTemplateKey` by what it names). The listing
+  names keys only, so each row says `(expand to read)`; expanding it reads that one value (the
+  `members.resource` request, see below) and shows its text or, for an object, its members and
+  items like any other row. Then the `MergedDictionaries` sources (`(inline)` for a dictionary
+  without a `Source`) and an **Application resources** row with the entry count that opens to the
+  first 100 keys of `Application.Resources`. An element without resources gets none created.
+
+The agent reads framework properties only: it does not call converters, selectors, application
+getters or setters, never evaluates `DynamicResource` or binding markup, and never applies a
+template or updates the layout. Listing resources does not instantiate them: a dictionary loaded
+from compiled XAML creates its resources only when they are looked up, so the listing enumerates the
+dictionary's keys and never reads a value or enumerates the dictionary itself. The same goes for
+naming the key of the style or template an element uses: the agent only looks at entries the
+application has already created. Because no getter runs, the request does not count against the
+automatic read budget and Spy sends it right after the members. Lists are capped: 32 setters, triggers, conditions
+and template parts per owner, 8 `BasedOn` levels, 200 local resources, 100 application resources,
+with a `...Truncated` flag and a total next to each cut list. A password control, and any object that is
+not a framework element, returns an empty, not applicable result.
+
+Python code can read the same result with `InspectorClient.styling(object_id, generation,
+deadline=...)`, and the extension uses the `inspect.managed.styling` request, which takes
+`sessionId`, `objectId` and `generation` and returns `applicable`, `style`, `templates`,
+`resources` and `application`. An entry of `resources` or `application` is `key`, `keyKind` (`string`,
+`type`, `componentResourceKey` or `other`) and `index`, the key's position in the dictionary's key order.
+
+#### Reading one resource
+
+Reading a resource's value is a request of its own because it is the one thing that can run
+application code: looking a deferred resource up creates it in the target (its constructor runs, and
+a resource that is not shared is created again). `members.resource` (the `membersStyling` feature)
+takes the object handle plus the reference the listing returned, `scope` (`local` for the element's
+own `Resources`, `application` for `Application.Current.Resources`), `key`, `keyKind` and the optional
+`index`, and returns `found` with `valueType` and a `value` (an object handle for objects, so the
+members and items of the value expand through the usual requests). The agent finds the key at `index`
+when it still matches, otherwise the first key with the same text and kind; a key that is gone, a
+password control and an object that is not a framework element answer `found: false`. A resource
+whose key matches a redaction rule is never read: its value is redacted and its type is not named.
+Merged dictionaries are not searched, only the dictionary the key was listed in. Python code uses
+`InspectorClient.resource(object_id, generation, scope=..., key=..., key_kind=..., index=...,
+deadline=...)`, and the extension uses `inspect.managed.resource`.
+
+### Events
+
+Selecting an object also asks the agent for its events (the `members.events` request, advertised as
+the `membersEvents` feature; restart a target that still runs an older agent). Spy shows them under
+**.NET > Events**, one row per event, after the members and without spending the automatic read
+budget, because only metadata and delegate lists are read: **no handler or subscriber is ever
+invoked**.
+
+- **Routed events:** every routed event that applies to the object's type, found with
+  `EventManager.GetRoutedEventsForOwner` for the type and each base type (class handlers are not
+  listed). A row's value is `routed (Bubble), 2 handlers` (or `Tunnel`, `Direct`). Each event has the
+  type that owns it (the first level of the hierarchy that does), the handler type and the
+  routing strategy. The instance handlers come from the internal `EventHandlersStore` of
+  `UIElement`, `ContentElement` and `UIElement3D`, read by reflection: handlers added in code
+  (`+=`, `AddHandler`) and in XAML (`Click="OnClick"`) are listed with the declaring type and name of
+  the method they call, and whether they also take events another handler marked handled
+  (`handledEventsToo`).
+- **CLR events:** the events the type and its base types declare, instance and static, public and
+  not (explicit interface events included). A row's value is `CLR, 1 subscriber`. The subscribers
+  come from the event's backing delegate field when it can be found (a field named like the event, or
+  with `Event` added), each as the declaring type and name of the method it calls, with a static event
+  marked. An event written with its own `add` and `remove` accessors, or one the framework keeps in
+  a private store, has no field to read.
+- **Wrappers are listed once:** a CLR event that only wraps a routed event of the same name and
+  handler type (`Button.Click` over `ButtonBase.ClickEvent`) is not listed as a CLR event. The routed
+  entry stands for it, so each event appears once.
+- **Unknown handlers:** when the framework's private state, or a backing field, cannot be read, the
+  row says `handlers unknown` instead of guessing, and the answer never fails because of it. A
+  password control lists its event names and nothing about who listens, the same as for its other
+  data.
+- **Open a row** to see one row per handler or subscriber, `<DeclaringType>.<Method>`, marked
+  `handledEventsToo` where it applies. A lambda is a method of the compiler's closure class, so it
+  shows that class and a generated method name. At most 32 handlers or subscribers are listed per
+  event, with the total and a note when the list was cut.
+- **Order:** events somebody handles come first, then the rest, each group by name. Events with
+  no handlers stay in the list.
+
+Search and the collapsible **Events** heading work like those of the other sub-groups. Events are
+paged like members (up to 200 per page, `pageSize` and `pageToken`); Spy loads up to ten pages. On
+the wire a routed event names its list `handlersKnown`, `handlerCount`, `handlersTruncated` and
+`handlers`, and a CLR event `subscribersKnown`, `subscriberCount`, `subscribersTruncated` and
+`subscribers`, with `kind` (`routed` or `clr`) telling them apart. Python code reads the same page with
+`InspectorClient.events(object_id, generation, page_size=..., page_token=..., deadline=...)`, and the
+extension uses the `inspect.managed.events` request, which takes `sessionId`, `objectId`, `generation`,
+`pageSize` and `pageToken`.
 
 Reading getters, property descriptors, or creating automation peers can execute application
 code, change state, or hang the UI. Timeouts bound waiting; they do **not** sandbox code or
@@ -242,3 +435,5 @@ A client failure without an agent audit is recorded as `clientFailure` with an u
 and redacted member; the outcome of a request whose response was lost may be unknown.
 
 Pure method calls: public instance methods directly marked with an attribute named `PureAttribute` may be called without an allowlist entry. Signature, redaction, deadline and rate limits still apply; property setters always require an allowlist entry. The attribute is the author's claim, not proof: a method can still have side effects. Value-free audits identify authorization as `pure` or `allowlist`; denied attempts omit it.
+
+Attached properties appear when locally set or exposed by the WPF descriptor provider. In addition, commonly used framework attached properties and public static attached-property fields in application assemblies appear when their effective value source is not Default, including values supplied by styles, templates, or inheritance. Discovery scans are bounded; an incomplete scan reports a discovery diagnostic.

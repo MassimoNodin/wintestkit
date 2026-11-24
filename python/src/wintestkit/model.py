@@ -13,6 +13,7 @@ from __future__ import annotations
 import copy
 import dataclasses
 import inspect
+import logging
 import os
 import re
 import time
@@ -781,13 +782,22 @@ class _BoundBase:
         __tracebackhide__ = True
         element = self.resolve(timeout)
         actions.bring_to_front(element)
-        rect = element.rect
-        if rect is None:
-            raise ActionError(f"{self._description()} has no on-screen rectangle to highlight")
+        if isinstance(element, WpfElement):
+            element = element.as_live()
+        from wintestkit.engine.highlight import outline
+
+        rect, ancestor = outline(element)
+        if ancestor is not None:
+            logging.getLogger("wintestkit").warning(
+                "%s has no on-screen rectangle; outlined %s instead",
+                self._description(),
+                ancestor.info().short(),
+            )
         overlay.flash(
             rect,
             duration_ms,
             color=overlay.parse_color(runtime.get_config().highlight_color),
+            thickness=runtime.get_config().highlight_thickness,
             block=True,
         )
 
@@ -1122,14 +1132,27 @@ class BoundControl(_BoundBase):
     def _maybe_highlight(self, element: TargetElement) -> None:
         __tracebackhide__ = True
         if runtime.get_config().highlight_actions:
-            rect = element.rect
-            if rect is not None:
-                overlay.flash(
-                    rect,
-                    400,
-                    color=overlay.parse_color(runtime.get_config().highlight_color),
-                    block=True,
+            from wintestkit.engine.highlight import outline
+
+            if element.rect is None and actions.window_is_minimized(element):
+                return
+            try:
+                rect, ancestor = outline(element)
+            except ActionError:
+                return
+            if ancestor is not None:
+                logging.getLogger("wintestkit").warning(
+                    "%s has no on-screen rectangle; outlined %s instead",
+                    self._description(),
+                    ancestor.info().short(),
                 )
+            overlay.flash(
+                rect,
+                400,
+                color=overlay.parse_color(runtime.get_config().highlight_color),
+                thickness=runtime.get_config().highlight_thickness,
+                block=True,
+            )
 
     def step(
         self, action: str, args: Mapping[str, Any] | None = None, *, secret: bool = False

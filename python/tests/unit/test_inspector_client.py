@@ -8,8 +8,10 @@ import threading
 import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 from decimal import Decimal
-from typing import Any
+from pathlib import Path
+from typing import Any, cast
 
 import pytest
 
@@ -848,5 +850,503 @@ def test_protocol2_query_error_propagation(code: str) -> None:
                 deadline=time.monotonic() + 1,
             )
         assert exc.value.code == ("redacted" if code == "valueUnreadable" else code)
+    finally:
+        client.invalidate(InspectorUnavailableError("done", code="notAttached"))
+
+
+def _styling_instance(name: str = "styling-result-templates") -> dict[str, Any]:
+    root = Path(__file__).resolve().parents[3] / "wpf-inspector/protocol/fixtures/valid"
+    return cast(
+        dict[str, Any], json.loads((root / f"{name}.json").read_text(encoding="utf-8"))["instance"]
+    )
+
+
+def test_styling_request_and_parse() -> None:
+    seen: list[dict[str, Any]] = []
+
+    def handler(request: dict[str, Any]) -> object:
+        seen.append(request)
+        return {"id": request["id"], "result": _styling_instance("styling-result-style")}
+
+    client = InspectorClient(ScriptedTransport(handler), session())
+    try:
+        result = client.styling("object", 1, deadline=time.monotonic() + 2)
+        assert seen[0]["method"] == "members.styling"
+        assert seen[0]["params"]["objectId"] == "object" and seen[0]["params"]["generation"] == 1
+        assert result.applicable and result.style is not None and result.style.key == "Fancy"
+        assert result.to_json() == _styling_instance("styling-result-style")
+    finally:
+        client.close()
+
+
+def test_styling_values_are_checked_against_the_session() -> None:
+    page = _styling_instance()
+    page["templates"]["templatedParent"]["object"]["sessionId"] = "other"
+    client = InspectorClient(
+        ScriptedTransport(lambda request: {"id": request["id"], "result": page}), session()
+    )
+    try:
+        with pytest.raises(InspectorUnavailableError) as error:
+            client.styling("object", 1, deadline=time.monotonic() + 1)
+        assert error.value.code == "sessionStale"
+    finally:
+        client.invalidate(InspectorUnavailableError("done", code="notAttached"))
+
+
+def test_styling_requires_the_feature_and_a_valid_request() -> None:
+    sent: list[dict[str, Any]] = []
+
+    def handler(request: dict[str, Any]) -> object:
+        sent.append(request)
+        return {"id": request["id"], "result": {"applicable": False}}
+
+    features = tuple(feature for feature in FEATURES if feature != "membersStyling")
+    old = InspectorClient(ScriptedTransport(handler), replace(session(), features=features))
+    try:
+        with pytest.raises(InspectorUnavailableError) as unsupported:
+            old.styling("object", 1, deadline=time.monotonic() + 1)
+        assert unsupported.value.code == "unsupportedTarget"
+    finally:
+        old.close()
+    client = InspectorClient(ScriptedTransport(handler), session())
+    try:
+        with pytest.raises(InspectorError) as bad_generation:
+            client.styling("object", 0, deadline=time.monotonic() + 1)
+        assert bad_generation.value.code == "invalidParams"
+        assert all(request["method"] != "members.styling" for request in sent)
+        assert not client.styling("object", 1, deadline=time.monotonic() + 1).applicable
+    finally:
+        client.close()
+
+
+@pytest.mark.parametrize(
+    "page",
+    [
+        {"applicable": False, "style": {}},
+        {"applicable": "yes"},
+        {"applicable": True, "extra": 1},
+        {"applicable": True, "resources": {"count": 0}},
+    ],
+)
+def test_styling_rejects_invalid_results(page: dict[str, Any]) -> None:
+    client = InspectorClient(
+        ScriptedTransport(lambda request: {"id": request["id"], "result": page}), session()
+    )
+    try:
+        with pytest.raises(InspectorUnavailableError) as error:
+            client.styling("object", 1, deadline=time.monotonic() + 1)
+        assert error.value.code == "sessionStale"
+    finally:
+        client.invalidate(InspectorUnavailableError("done", code="notAttached"))
+
+
+def test_styling_retries_while_the_dispatcher_is_busy() -> None:
+    count = 0
+
+    def handler(request: dict[str, Any]) -> object:
+        nonlocal count
+        count += 1
+        if count == 1:
+            return {
+                "id": request["id"],
+                "error": {
+                    "code": "timeout",
+                    "message": "busy",
+                    "details": {"dispatcherBusy": True},
+                },
+            }
+        return {"id": request["id"], "result": {"applicable": False}}
+
+    client = InspectorClient(ScriptedTransport(handler), session())
+    try:
+        assert not client.styling("object", 1, deadline=time.monotonic() + 1).applicable
+        assert count == 2
+    finally:
+        client.close()
+
+
+def _fixture_instance(name: str) -> dict[str, Any]:
+    return _styling_instance(name)
+
+
+def test_events_request_and_parse() -> None:
+    seen: list[dict[str, Any]] = []
+
+    def handler(request: dict[str, Any]) -> object:
+        seen.append(request)
+        return {"id": request["id"], "result": _fixture_instance("member-event-page")}
+
+    client = InspectorClient(ScriptedTransport(handler), session())
+    try:
+        page = client.events(
+            "object", 1, page_size=50, page_token="snap.next", deadline=time.monotonic() + 2
+        )
+        assert seen[0]["method"] == "members.events"
+        assert seen[0]["params"] == {
+            "sessionId": seen[0]["params"]["sessionId"],
+            "objectId": "object",
+            "generation": 1,
+            "pageSize": 50,
+            "pageToken": "snap.next",
+        }
+        assert [item.kind for item in page.items] == ["routed", "clr"]
+        assert page.items[0].handlers[1].handled_events_too is True
+        assert page.to_json() == _fixture_instance("member-event-page")
+    finally:
+        client.close()
+
+
+def test_events_require_the_feature_and_a_valid_page() -> None:
+    sent: list[dict[str, Any]] = []
+
+    def handler(request: dict[str, Any]) -> object:
+        sent.append(request)
+        return {"id": request["id"], "result": {"items": [{}], "complete": True}}
+
+    features = tuple(feature for feature in FEATURES if feature != "membersEvents")
+    old = InspectorClient(ScriptedTransport(handler), replace(session(), features=features))
+    try:
+        with pytest.raises(InspectorUnavailableError) as unsupported:
+            old.events("object", 1, deadline=time.monotonic() + 1)
+        assert unsupported.value.code == "unsupportedTarget"
+        assert not sent
+    finally:
+        old.close()
+    client = InspectorClient(ScriptedTransport(handler), session())
+    try:
+        with pytest.raises(InspectorUnavailableError) as invalid:
+            client.events("object", 1, deadline=time.monotonic() + 1)
+        assert invalid.value.code == "sessionStale"
+    finally:
+        client.invalidate(InspectorUnavailableError("done", code="notAttached"))
+
+
+def test_events_retry_while_the_dispatcher_is_busy() -> None:
+    count = 0
+
+    def handler(request: dict[str, Any]) -> object:
+        nonlocal count
+        count += 1
+        if count == 1:
+            return {
+                "id": request["id"],
+                "error": {
+                    "code": "timeout",
+                    "message": "busy",
+                    "details": {"dispatcherBusy": True},
+                },
+            }
+        return {"id": request["id"], "result": _fixture_instance("member-event-page")}
+
+    client = InspectorClient(ScriptedTransport(handler), session())
+    try:
+        assert len(client.events("object", 1, deadline=time.monotonic() + 1).items) == 2
+        assert count == 2
+    finally:
+        client.close()
+
+
+def test_resource_request_and_parse() -> None:
+    seen: list[dict[str, Any]] = []
+
+    def handler(request: dict[str, Any]) -> object:
+        seen.append(request)
+        return {"id": request["id"], "result": _fixture_instance("resource-result-found")}
+
+    client = InspectorClient(ScriptedTransport(handler), session())
+    try:
+        result = client.resource(
+            "object",
+            1,
+            scope="application",
+            key="Accent",
+            key_kind="string",
+            index=3,
+            deadline=time.monotonic() + 2,
+        )
+        assert seen[0]["method"] == "members.resource"
+        params = seen[0]["params"]
+        assert (params["scope"], params["key"], params["keyKind"], params["index"]) == (
+            "application",
+            "Accent",
+            "string",
+            3,
+        )
+        assert result.found and result.value_type == "System.String"
+        assert result.to_json() == _fixture_instance("resource-result-found")
+        client.resource(
+            "object", 1, scope="local", key="k", key_kind="type", deadline=time.monotonic() + 2
+        )
+        assert "index" not in seen[1]["params"]
+        client.resource(
+            "object", 1, scope="local", key="gone", key_kind="string", deadline=time.monotonic() + 2
+        )
+    finally:
+        client.close()
+
+
+def test_resource_not_found_is_an_empty_result() -> None:
+    client = InspectorClient(
+        ScriptedTransport(lambda request: {"id": request["id"], "result": {"found": False}}),
+        session(),
+    )
+    try:
+        result = client.resource(
+            "object", 1, scope="local", key="k", key_kind="string", deadline=time.monotonic() + 1
+        )
+        assert not result.found and result.value is None
+    finally:
+        client.close()
+
+
+def test_resource_validates_the_reference_the_feature_and_the_handles() -> None:
+    sent: list[dict[str, Any]] = []
+    foreign = _fixture_instance("resource-result-found")
+    foreign["value"] = {
+        **_styling_instance()["templates"]["templatedParent"],
+    }
+    foreign["value"]["object"]["sessionId"] = "other"
+
+    def handler(request: dict[str, Any]) -> object:
+        sent.append(request)
+        return {"id": request["id"], "result": foreign}
+
+    features = tuple(feature for feature in FEATURES if feature != "membersStyling")
+    old = InspectorClient(ScriptedTransport(handler), replace(session(), features=features))
+    try:
+        with pytest.raises(InspectorUnavailableError) as unsupported:
+            old.resource(
+                "object",
+                1,
+                scope="local",
+                key="k",
+                key_kind="string",
+                deadline=time.monotonic() + 1,
+            )
+        assert unsupported.value.code == "unsupportedTarget"
+    finally:
+        old.close()
+    client = InspectorClient(ScriptedTransport(handler), session())
+    try:
+        for scope, kind in (("merged", "string"), ("local", "number")):
+            with pytest.raises(InspectorError) as invalid:
+                client.resource(
+                    "object",
+                    1,
+                    scope=cast(Any, scope),
+                    key="k",
+                    key_kind=kind,
+                    deadline=time.monotonic() + 1,
+                )
+            assert invalid.value.code == "invalidParams"
+        assert all(request["method"] != "members.resource" for request in sent)
+        with pytest.raises(InspectorUnavailableError) as stale:
+            client.resource(
+                "object",
+                1,
+                scope="local",
+                key="k",
+                key_kind="string",
+                deadline=time.monotonic() + 1,
+            )
+        assert stale.value.code == "sessionStale"
+    finally:
+        client.invalidate(InspectorUnavailableError("done", code="notAttached"))
+
+
+def test_items_request_and_parse() -> None:
+    seen: list[dict[str, Any]] = []
+
+    def handler(request: dict[str, Any]) -> object:
+        seen.append(request)
+        return {
+            "id": request["id"],
+            "result": {
+                "kind": "list",
+                "count": 0,
+                "items": [],
+                "nextPageToken": None,
+                "complete": True,
+            },
+        }
+
+    client = InspectorClient(ScriptedTransport(handler), session())
+    try:
+        result = client.items(
+            "object", 1, page_size=2, page_token="token", deadline=time.monotonic() + 2
+        )
+        assert result.kind == "list" and result.count == 0
+        assert seen[0]["method"] == "members.items"
+        assert seen[0]["params"]["pageToken"] == "token"
+    finally:
+        client.close()
+
+
+def _item_page(**changes: Any) -> dict[str, Any]:
+    page: dict[str, Any] = {
+        "kind": "dictionary",
+        "count": 3,
+        "items": [
+            {
+                "index": None,
+                "key": {
+                    "status": "ok",
+                    "kind": "string",
+                    "declaredType": "System.Object",
+                    "runtimeType": "System.String",
+                    "scalar": "first",
+                },
+                "value": {
+                    "status": "ok",
+                    "kind": "object",
+                    "declaredType": "System.Object",
+                    "runtimeType": "Demo.Person",
+                    "object": {
+                        "sessionId": "session",
+                        "objectId": "person",
+                        "generation": 1,
+                        "type": {
+                            "name": "Person",
+                            "fullName": "Demo.Person",
+                            "assemblyName": "Demo",
+                            "assemblyQualifiedName": "Demo.Person, Demo",
+                            "baseTypes": [],
+                        },
+                        "dispatcherId": "d",
+                    },
+                },
+            }
+        ],
+        "nextPageToken": "more",
+        "complete": False,
+    }
+    page.update(changes)
+    return page
+
+
+def test_items_parse_dictionary_page_with_object_value_and_next_token() -> None:
+    client = InspectorClient(
+        ScriptedTransport(lambda request: {"id": request["id"], "result": _item_page()}),
+        session(),
+    )
+    try:
+        result = client.items("object", 1, deadline=time.monotonic() + 2)
+        assert (result.kind, result.count, result.next_page_token, result.complete) == (
+            "dictionary",
+            3,
+            "more",
+            False,
+        )
+        item = result.items[0]
+        assert item.index is None and item.key is not None and item.key.scalar == "first"
+        assert item.value.object_ref is not None and item.value.object_ref.object_id == "person"
+        assert result.to_json()["items"][0]["value"]["object"]["objectId"] == "person"
+    finally:
+        client.close()
+
+
+def test_items_parse_page_error_and_not_enumerable() -> None:
+    pages = iter(
+        [
+            _item_page(
+                items=[],
+                nextPageToken=None,
+                complete=False,
+                error={"type": "System.InvalidOperationException", "message": "changed"},
+            ),
+            {
+                "kind": "notEnumerable",
+                "count": None,
+                "items": [],
+                "nextPageToken": None,
+                "complete": True,
+            },
+        ]
+    )
+    client = InspectorClient(
+        ScriptedTransport(
+            lambda request: {
+                "id": request["id"],
+                "result": next(pages) if request["method"] == "members.items" else {},
+            }
+        ),
+        session(),
+    )
+    try:
+        broken = client.items("object", 1, deadline=time.monotonic() + 2)
+        assert broken.error is not None
+        assert (broken.error.type, broken.error.message) == (
+            "System.InvalidOperationException",
+            "changed",
+        )
+        assert broken.to_json()["error"] == {
+            "type": "System.InvalidOperationException",
+            "message": "changed",
+        }
+        plain = client.items("object", 1, deadline=time.monotonic() + 2)
+        assert plain.kind == "notEnumerable" and plain.count is None and not plain.items
+        assert "error" not in plain.to_json()
+    finally:
+        client.close()
+
+
+def test_items_requires_the_feature_and_a_valid_request() -> None:
+    sent: list[dict[str, Any]] = []
+
+    def handler(request: dict[str, Any]) -> object:
+        sent.append(request)
+        return {"id": request["id"], "result": _item_page()}
+
+    features = tuple(feature for feature in FEATURES if feature != "membersItems")
+    old = InspectorClient(ScriptedTransport(handler), replace(session(), features=features))
+    try:
+        with pytest.raises(InspectorUnavailableError) as unsupported:
+            old.items("object", 1, deadline=time.monotonic() + 1)
+        assert unsupported.value.code == "unsupportedTarget"
+    finally:
+        old.close()
+    client = InspectorClient(ScriptedTransport(handler), session())
+    try:
+        with pytest.raises(InspectorError) as bad_page:
+            client.items("object", 1, page_size=201, deadline=time.monotonic() + 1)
+        assert bad_page.value.code == "invalidParams"
+        with pytest.raises(InspectorError) as bad_generation:
+            client.items("object", 0, deadline=time.monotonic() + 1)
+        assert bad_generation.value.code == "invalidParams"
+        assert all(request["method"] != "members.items" for request in sent)
+    finally:
+        client.close()
+
+
+@pytest.mark.parametrize(
+    "page",
+    [
+        _item_page(complete=True),
+        _item_page(kind="set"),
+        _item_page(items=[{"index": 0, "value": {}}]),
+        _item_page(extra=True),
+    ],
+)
+def test_items_reject_invalid_pages(page: dict[str, Any]) -> None:
+    client = InspectorClient(
+        ScriptedTransport(lambda request: {"id": request["id"], "result": page}), session()
+    )
+    try:
+        with pytest.raises(InspectorUnavailableError) as error:
+            client.items("object", 1, deadline=time.monotonic() + 1)
+        assert error.value.code == "sessionStale"
+    finally:
+        client.invalidate(InspectorUnavailableError("done", code="notAttached"))
+
+
+def test_items_reject_objects_from_another_session() -> None:
+    page = _item_page()
+    page["items"][0]["value"]["object"]["sessionId"] = "other"
+    client = InspectorClient(
+        ScriptedTransport(lambda request: {"id": request["id"], "result": page}), session()
+    )
+    try:
+        with pytest.raises(InspectorUnavailableError):
+            client.items("object", 1, deadline=time.monotonic() + 1)
     finally:
         client.invalidate(InspectorUnavailableError("done", code="notAttached"))

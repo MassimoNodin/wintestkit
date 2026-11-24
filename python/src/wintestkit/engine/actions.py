@@ -186,9 +186,12 @@ def ensure_visible(el: TargetElement) -> None:
         raise ActionError(f"{_short(el)} is off-screen and cannot be scrolled into view")
 
 
-def _top_level_hwnd(el: UIAElement) -> int:
+def _top_level_hwnd(el: TargetElement) -> int:
     __tracebackhide__ = True
-    node: UIAElement | None = el
+    if isinstance(el, WpfElement):
+        handle = el.state().window_handle
+        return win32.root_window(handle) if handle else 0
+    node: TargetElement | None = el
     while node is not None:
         handle = node.native_window_handle
         if handle:
@@ -200,7 +203,6 @@ def _top_level_hwnd(el: UIAElement) -> int:
 def bring_to_front(el: TargetElement) -> bool:
     """Raise the owning window without clicking or focusing the control itself."""
     __tracebackhide__ = True
-    el = uia_of(el)
     hwnd = _top_level_hwnd(el)
     if not hwnd:
         return False
@@ -213,7 +215,6 @@ def bring_to_front(el: TargetElement) -> bool:
 def window_is_minimized(el: TargetElement) -> bool:
     """Whether the element's top-level window is minimized (its controls then have no bounds)."""
     __tracebackhide__ = True
-    el = uia_of(el)
     hwnd = _top_level_hwnd(el)
     return bool(hwnd) and bool(win32.IsIconic(hwnd))
 
@@ -221,7 +222,6 @@ def window_is_minimized(el: TargetElement) -> bool:
 def raise_without_activating(el: TargetElement) -> bool:
     """Show the owning window above the others while the current window keeps keyboard focus."""
     __tracebackhide__ = True
-    el = uia_of(el)
     hwnd = _top_level_hwnd(el)
     if not hwnd:
         return False

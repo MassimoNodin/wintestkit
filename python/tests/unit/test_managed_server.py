@@ -18,15 +18,22 @@ from wintestkit.errors import InspectorUnavailableError, NoUiaPeerError
 from wintestkit.inspector import payload, probe
 from wintestkit.inspector.client import HitTestResult
 from wintestkit.inspector.models import (
+    EventHandler,
+    Item,
+    ItemsResult,
     ManagedNode,
     Mapping,
+    MemberEvent,
     NodeIdentity,
     ObjectRef,
     Page,
     PathValue,
     ProcessFacts,
     ProcessIdentity,
+    ResourceResult,
     Session,
+    StylingResources,
+    StylingResult,
     TypeInfo,
     Value,
 )
@@ -81,6 +88,40 @@ class FakeClient:
     def members(self, object_id: str, generation: int, **kwargs: Any) -> Page[Any]:
         self.calls.append(("members", (object_id, generation, kwargs)))
         return Page((), True, "snapshot", ())
+
+    def items(self, object_id: str, generation: int, **kwargs: Any) -> ItemsResult:
+        self.calls.append(("items", (object_id, generation, kwargs)))
+        return ItemsResult("list", 0, (), None, True)
+
+    def styling(self, object_id: str, generation: int, **kwargs: Any) -> StylingResult:
+        self.calls.append(("styling", (object_id, generation, kwargs)))
+        return StylingResult(True, resources=StylingResources(0, False, (), False, ()))
+
+    def resource(self, object_id: str, generation: int, **kwargs: Any) -> ResourceResult:
+        self.calls.append(("resource", (object_id, generation, kwargs)))
+        return ResourceResult(
+            True, "System.String", Value("ok", "string", "System.Object", "System.String", "Hi")
+        )
+
+    def events(self, object_id: str, generation: int, **kwargs: Any) -> Page[Any]:
+        self.calls.append(("events", (object_id, generation, kwargs)))
+        return Page(
+            (
+                MemberEvent(
+                    "clr",
+                    "Changed",
+                    "Demo.Model",
+                    "System.EventHandler",
+                    True,
+                    1,
+                    False,
+                    (EventHandler("Demo.View", "OnChanged"),),
+                ),
+            ),
+            True,
+            "snapshot",
+            (),
+        )
 
     def spy_methods(self, object_id: str, generation: int, **kwargs: Any) -> Page[Any]:
         self.calls.append(("spy_methods", (object_id, generation, kwargs)))
@@ -261,6 +302,7 @@ def test_every_managed_rpc_returns_its_declared_schema(
         ("roots", {"sessionId": "session", "pageSize": 3}),
         ("children", {**obj, "tree": "visual", "pageToken": "next"}),
         ("members", obj),
+        ("items", {**obj, "pageToken": "next", "pageSize": 200}),
         ("read", {**obj, "paths": [[{"kind": "type", "name": "Name"}]]}),
         ("bindings", {**obj, "memberKeys": ["key"]}),
         ("release", {"sessionId": "session", "objectIds": ["object"]}),
@@ -281,6 +323,7 @@ def test_every_managed_rpc_returns_its_declared_schema(
         "roots",
         "children",
         "members",
+        "items",
         "read",
         "bindings",
         "release",
@@ -301,6 +344,10 @@ def test_every_managed_rpc_returns_its_declared_schema(
         ("children", {"sessionId": "s", "objectId": "o", "generation": 0, "tree": "visual"}),
         ("children", {"sessionId": "s", "objectId": "o", "generation": 1, "tree": "bad"}),
         ("members", {"sessionId": "s", "objectId": "o", "generation": True}),
+        ("items", {"sessionId": "s", "objectId": "o", "generation": True}),
+        ("items", {"sessionId": "s", "objectId": "o", "generation": 1, "pageSize": 201}),
+        ("items", {"sessionId": "s", "objectId": "o"}),
+        ("items", {"sessionId": "s", "objectId": "o", "generation": 1, "tree": "visual"}),
         ("read", {"sessionId": "s", "objectId": "o", "generation": 1, "paths": []}),
         (
             "read",
@@ -849,6 +896,7 @@ def test_spy_wpf_geometry_routes(
     server.nodes["wpf-node"] = node
     state = SimpleNamespace(
         bounds=SimpleNamespace(x=10, y=20, width=30, height=40),
+        visible_bounds=SimpleNamespace(x=10, y=20, width=30, height=40),
         window_handle=7,
         uia_runtime_id=(1, 2) if peer else None,
     )
@@ -865,7 +913,7 @@ def test_spy_wpf_geometry_routes(
         request(server, output, "inspect.highlight", {"nodeId": "wpf-node", "bringToFront": True})[
             "result"
         ]
-        is None
+        == {}
     )
     assert flashed == [Rect(10, 20, 30, 40)]
     assert raised == [8]
@@ -1644,3 +1692,211 @@ def test_resolve_names_the_source_of_a_winforms_selection(managed_server: Any) -
     assert result["source"] == "winforms" and result["status"] == "exact"
     assert node.framework_id == "WinForms"
     server._release_managed_objects()
+
+
+def test_peerless_element_highlight_rpc(managed_server, monkeypatch):
+    from test_backend_element import Client
+
+    from wintestkit.backends.element import WpfElement
+    from wintestkit.targets import ElementResult
+    from wintestkit.uia.element import Rect
+
+    server, output, _ = managed_server
+    client = Client()
+    client.state.uia_runtime_id = None
+    element = WpfElement(client, REF, 42)
+    monkeypatch.setattr(WpfElement, "as_uia", lambda self: pytest.fail("unexpected UIA call"))
+    monkeypatch.setattr(server, "_app", lambda *args: object())
+    monkeypatch.setattr(server, "_raise_for_highlight", lambda target: target)
+    monkeypatch.setattr(
+        "wintestkit.targets.resolve_target",
+        lambda *args, **kwargs: ElementResult("found", 1, uia=element),
+    )
+    flashed = []
+    monkeypatch.setattr(server, "_flash", lambda rect, params: flashed.append(rect))
+    assert (
+        request(server, output, "element.highlight", {"file": "page.py", "qualname": "Main.ok"})[
+            "result"
+        ]["status"]
+        == "found"
+    )
+    assert flashed == [Rect(1, 3, 11, 4)]
+
+
+def test_managed_items_rpc(managed_server: Any) -> None:
+    server, output, client = managed_server
+    request(server, output, "inspect.managed.attach", {"process": IDENTITY.to_json()})
+    request(server, output, "inspect.managed.roots", {"sessionId": "session"})
+    result = request(
+        server,
+        output,
+        "inspect.managed.items",
+        {"sessionId": "session", "objectId": "object", "generation": 1, "pageSize": 2},
+    )
+    assert result["result"] == {
+        "kind": "list",
+        "count": 0,
+        "items": [],
+        "nextPageToken": None,
+        "complete": True,
+    }
+    assert client.calls[-1][1][:2] == ("object", 1)
+    assert client.calls[-1][1][2]["page_size"] == 2
+    stale = request(
+        server,
+        output,
+        "inspect.managed.items",
+        {"sessionId": "session", "objectId": "object", "generation": 2},
+    )
+    assert stale["error"]["data"]["code"] == "objectStale"
+    assert client.calls[-1][0] == "items" and client.calls[-1][1][1] == 1
+
+
+def test_managed_styling_rpc(managed_server: Any) -> None:
+    server, output, client = managed_server
+    request(server, output, "inspect.managed.attach", {"process": IDENTITY.to_json()})
+    request(server, output, "inspect.managed.roots", {"sessionId": "session"})
+    result = request(
+        server,
+        output,
+        "inspect.managed.styling",
+        {"sessionId": "session", "objectId": "object", "generation": 1},
+    )
+    assert result["result"] == {
+        "applicable": True,
+        "resources": {
+            "count": 0,
+            "truncated": False,
+            "entries": [],
+            "mergedTruncated": False,
+            "mergedDictionaries": [],
+        },
+    }
+    assert client.calls[-1][0] == "styling" and client.calls[-1][1][:2] == ("object", 1)
+    stale = request(
+        server,
+        output,
+        "inspect.managed.styling",
+        {"sessionId": "session", "objectId": "object", "generation": 2},
+    )
+    assert stale["error"]["data"]["code"] == "objectStale"
+    paged = request(
+        server,
+        output,
+        "inspect.managed.styling",
+        {"sessionId": "session", "objectId": "object", "generation": 1, "pageSize": 5},
+    )
+    assert paged["error"]["code"] == -32602
+
+
+def test_managed_items_handles_can_be_used_by_later_requests(managed_server: Any) -> None:
+    server, output, client = managed_server
+    person = ObjectRef("session", "person", 3, TYPE, "dispatcher")
+
+    def items(object_id: str, generation: int, **kwargs: Any) -> ItemsResult:
+        client.calls.append(("items", (object_id, generation, kwargs)))
+        return ItemsResult(
+            "list",
+            1,
+            (
+                Item(
+                    0,
+                    None,
+                    Value("ok", "object", "System.Object", "Test.Person", object_ref=person),
+                ),
+            ),
+            None,
+            True,
+        )
+
+    client.items = items  # pyright: ignore[reportAttributeAccessIssue]
+    request(server, output, "inspect.managed.attach", {"process": IDENTITY.to_json()})
+    request(server, output, "inspect.managed.roots", {"sessionId": "session"})
+    first = request(
+        server,
+        output,
+        "inspect.managed.items",
+        {"sessionId": "session", "objectId": "object", "generation": 1},
+    )
+    assert first["result"]["items"][0]["value"]["object"]["objectId"] == "person"
+    nested = request(
+        server,
+        output,
+        "inspect.managed.items",
+        {"sessionId": "session", "objectId": "person", "generation": 3},
+    )
+    assert "result" in nested
+    assert client.calls[-1][1][:2] == ("person", 3)
+
+
+def test_managed_events_rpc(managed_server: Any) -> None:
+    server, output, client = managed_server
+    request(server, output, "inspect.managed.attach", {"process": IDENTITY.to_json()})
+    request(server, output, "inspect.managed.roots", {"sessionId": "session"})
+    result = request(
+        server,
+        output,
+        "inspect.managed.events",
+        {"sessionId": "session", "objectId": "object", "generation": 1, "pageSize": 20},
+    )
+    assert result["result"]["items"] == [
+        {
+            "kind": "clr",
+            "name": "Changed",
+            "declaringType": "Demo.Model",
+            "handlerType": "System.EventHandler",
+            "isStatic": False,
+            "subscribersKnown": True,
+            "subscriberCount": 1,
+            "subscribersTruncated": False,
+            "subscribers": [{"declaringType": "Demo.View", "method": "OnChanged"}],
+        }
+    ]
+    assert client.calls[-1][0] == "events" and client.calls[-1][1][:2] == ("object", 1)
+    assert client.calls[-1][1][2]["page_size"] == 20
+    stale = request(
+        server,
+        output,
+        "inspect.managed.events",
+        {"sessionId": "session", "objectId": "object", "generation": 2},
+    )
+    assert stale["error"]["data"]["code"] == "objectStale"
+    invalid = request(
+        server,
+        output,
+        "inspect.managed.events",
+        {"sessionId": "session", "objectId": "object", "generation": 1, "pageSize": 201},
+    )
+    assert invalid["error"]["code"] == -32602
+
+
+def test_managed_resource_rpc(managed_server: Any) -> None:
+    server, output, client = managed_server
+    request(server, output, "inspect.managed.attach", {"process": IDENTITY.to_json()})
+    request(server, output, "inspect.managed.roots", {"sessionId": "session"})
+    params = {
+        "sessionId": "session",
+        "objectId": "object",
+        "generation": 1,
+        "scope": "application",
+        "key": "Accent",
+        "keyKind": "string",
+        "index": 2,
+    }
+    result = request(server, output, "inspect.managed.resource", params)
+    assert result["result"]["found"] is True and result["result"]["valueType"] == "System.String"
+    assert client.calls[-1][0] == "resource" and client.calls[-1][1][:2] == ("object", 1)
+    assert client.calls[-1][1][2]["scope"] == "application"
+    assert client.calls[-1][1][2]["key_kind"] == "string"
+    assert client.calls[-1][1][2]["index"] == 2
+    stale = request(server, output, "inspect.managed.resource", {**params, "generation": 2})
+    assert stale["error"]["data"]["code"] == "objectStale"
+    for bad in (
+        {**params, "scope": "merged"},
+        {**params, "keyKind": "number"},
+        {**params, "index": -1},
+        {**params, "key": 5},
+        {**params, "pageSize": 5},
+        {key: value for key, value in params.items() if key != "scope"},
+    ):
+        assert request(server, output, "inspect.managed.resource", bad)["error"]["code"] == -32602

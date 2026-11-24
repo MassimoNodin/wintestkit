@@ -17,6 +17,7 @@
     <Compile Include="../../../src/Agent/Writes/**/*.cs" LinkBase="Writes" />
     <Compile Include="../../../src/Agent/Inspection/DispatcherExecutor.cs" LinkBase="Inspection" />
     <Compile Include="../../../src/Agent/Inspection/ObjectRegistry.cs" LinkBase="Inspection" />
+    <Compile Include="../../../src/Agent/State/ScreenCoordinates.cs" Link="State/ScreenCoordinates.cs" />
     <Compile Include="../../../src/Agent/Inspection/Members/**/*.cs" LinkBase="Inspection/Members" />
     <Compile Include="../../../src/Agent/Mapping/**/*.cs" LinkBase="Mapping" />
     <Reference Include="UIAutomationClient" Condition="'$(TargetFramework)' == 'net48'" />

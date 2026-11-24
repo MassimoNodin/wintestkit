@@ -34,10 +34,12 @@ from wintestkit.inspector.models import (
     EventsNotification,
     HelloResult,
     ItemMatch,
+    ItemsResult,
     Locator,
     ManagedNode,
     Mapping,
     Member,
+    MemberEvent,
     MethodMetadata,
     ObjectRef,
     Page,
@@ -46,7 +48,9 @@ from wintestkit.inspector.models import (
     QueryFindAllResult,
     QueryFindResult,
     RealizeResult,
+    ResourceResult,
     Session,
+    StylingResult,
     Value,
     WaitCondition,
     WaitResult,
@@ -481,6 +485,10 @@ class InspectorClient:
                 "roots",
                 "children",
                 "members",
+                "members.items",
+                "members.styling",
+                "members.resource",
+                "members.events",
                 "read",
                 "spy.fieldRead",
                 "spy.methods",
@@ -1179,6 +1187,21 @@ class InspectorClient:
             self._request("roots", params, deadline),
         )
 
+    def parent(self, object_id: str, generation: int, *, deadline: float) -> ObjectRef | None:
+        self._feature("treeParent")
+
+        def parse(value: object) -> ObjectRef | None:
+            result = _obj(value, "handle")
+            handle = result["handle"]
+            ref = None if handle is None else ObjectRef.from_json(handle)
+            self._object_ref(ref)
+            return ref
+
+        return self._parse(
+            parse,
+            self._request("tree.parent", self._object_params(object_id, generation), deadline),
+        )
+
     def children(
         self,
         object_id: str,
@@ -1214,6 +1237,98 @@ class InspectorClient:
         return self._parse(
             lambda value: Page[Member].from_json(value, Member.from_json),
             self._request("members", params, deadline),
+        )
+
+    def items(
+        self,
+        object_id: str,
+        generation: int,
+        *,
+        page_size: int | None = None,
+        page_token: str | None = None,
+        deadline: float,
+    ) -> ItemsResult:
+        self._feature("membersItems")
+        params = self._page_params(page_size, page_token)
+        params.update(self._object_params(object_id, generation))
+
+        def parse(value: object) -> ItemsResult:
+            result = ItemsResult.from_json(value)
+            for item in result.items:
+                self._value(item.value)
+                if item.key is not None:
+                    self._value(item.key)
+            return result
+
+        return self._parse(parse, self._request("members.items", params, deadline))
+
+    def styling(self, object_id: str, generation: int, *, deadline: float) -> StylingResult:
+        """The Style, templates and resources of an object; no application code runs."""
+        self._feature("membersStyling")
+        params = self._object_params(object_id, generation)
+
+        def parse(value: object) -> StylingResult:
+            result = StylingResult.from_json(value)
+            for item in result.values():
+                self._value(item)
+            return result
+
+        return self._parse(parse, self._request("members.styling", params, deadline))
+
+    def resource(
+        self,
+        object_id: str,
+        generation: int,
+        *,
+        scope: Literal["local", "application"],
+        key: str,
+        key_kind: str,
+        index: int | None = None,
+        deadline: float,
+    ) -> ResourceResult:
+        """
+        One value of a resource dictionary, named by a key the styling listing returned.
+
+        This is the only request that creates a resource: reading the value of a deferred resource
+        instantiates it in the application.
+        """
+        self._feature("membersStyling")
+        if scope not in ("local", "application") or key_kind not in (
+            "string",
+            "type",
+            "componentResourceKey",
+            "other",
+        ):
+            raise InspectorError("Invalid resource reference", code="invalidParams")
+        params: dict[str, object] = self._object_params(object_id, generation)
+        params.update({"scope": scope, "key": key, "keyKind": key_kind})
+        if index is not None:
+            params["index"] = index
+
+        def parse(value: object) -> ResourceResult:
+            result = ResourceResult.from_json(value)
+            if result.value is not None:
+                self._value(result.value)
+            return result
+
+        return self._parse(parse, self._request("members.resource", params, deadline))
+
+    def events(
+        self,
+        object_id: str,
+        generation: int,
+        *,
+        page_size: int | None = None,
+        page_token: str | None = None,
+        deadline: float,
+    ) -> Page[MemberEvent]:
+        """The routed and CLR events of an object and who handles them; no handler runs."""
+        self._feature("membersEvents")
+        params = self._page_params(page_size, page_token)
+        params.update(self._object_params(object_id, generation))
+        return self._parse(
+            lambda value: Page[MemberEvent].from_json(value, MemberEvent.from_json),
+            self._request("members.events", params, deadline),
         )
 
     def spy_methods(

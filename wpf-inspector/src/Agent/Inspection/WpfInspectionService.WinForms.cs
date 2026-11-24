@@ -156,7 +156,8 @@ namespace WinTestKit.Inspector.Agent.Inspection
                 {
                     return await executor.ExecuteAsync(dispatcher, () =>
                     {
-                        object? target = WinFormsNative.HitTest(hwnd, (int)Math.Round(point.X), (int)Math.Round(point.Y));
+                        var logical = State.ScreenCoordinates.Convert(hwnd, new System.Windows.Point(point.X, point.Y), false);
+                        object? target = WinFormsNative.HitTest(hwnd, (int)Math.Round(logical.X), (int)Math.Round(logical.Y));
                         if (target == null) throw new ProtocolException(ErrorCodes.NotFound, "No hit.");
                         var hit = new Protocol.HitTestResult { Handle = registry.Register(target, dispatcher, inspector.DescribeType(target.GetType())) };
                         if (includePath)

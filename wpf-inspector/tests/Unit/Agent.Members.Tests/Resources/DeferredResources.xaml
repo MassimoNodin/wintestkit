@@ -1,0 +1,11 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:t="clr-namespace:WinTestKit.Inspector.Agent.Members.Tests">
+    <t:DeferredProbe x:Key="Probe" Label="made from baml"/>
+    <Style x:Key="DeferredStyle" TargetType="Button">
+        <Setter Property="Tag" Value="from baml"/>
+    </Style>
+    <Style x:Key="OtherStyle" TargetType="Button">
+        <Setter Property="Tag" Value="other"/>
+    </Style>
+</ResourceDictionary>

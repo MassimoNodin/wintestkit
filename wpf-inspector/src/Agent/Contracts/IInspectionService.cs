@@ -19,6 +19,33 @@ namespace WinTestKit.Inspector.Agent.Contracts
         Task<int> ReleaseAsync(IReadOnlyList<string> objectIds, CancellationToken ct);
     }
 
+    public interface IItemsInspectionService
+    {
+        Task<ItemsResult> ItemsAsync(string objectId, long generation, int? pageSize, string? pageToken, CancellationToken ct);
+    }
+
+    public interface IStylingInspectionService
+    {
+        Task<StylingResult> StylingAsync(string objectId, long generation, CancellationToken ct);
+    }
+
+    /// <summary>One value of a resource dictionary, read on demand: the listing in <c>members.styling</c> never creates a resource.</summary>
+    public interface IResourceInspectionService
+    {
+        Task<ResourceResult> ResourceAsync(string objectId, long generation, string scope, string key, string keyKind, int? index, CancellationToken ct);
+    }
+
+    /// <summary>The events of an object and who handles them.</summary>
+    public interface IMemberEventsInspectionService
+    {
+        Task<PageDto<MemberEventDto>> EventsAsync(string objectId, long generation, int? pageSize, string? pageToken, CancellationToken ct);
+    }
+
+    public interface IParentInspectionService
+    {
+        Task<ParentResult> ParentAsync(string objectId, long generation, CancellationToken ct);
+    }
+
     public interface ISpyFieldInspectionService
     {
         Task<ReadResult> ReadSpyFieldAsync(string objectId, long generation, IReadOnlyList<IReadOnlyList<PathSegment>> paths, CancellationToken ct);

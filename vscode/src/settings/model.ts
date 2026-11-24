@@ -262,6 +262,17 @@ export const settingFields: SettingField[] = [
     group: "Debugging",
   },
   {
+    key: "highlight_thickness",
+    label: "Highlight thickness (pixels)",
+    kind: "number",
+    description: same("Outline thickness for flashes, highlights and Spy."),
+    default: 3,
+    minimum: 1,
+    maximum: 20,
+    localOnly: true,
+    group: "Debugging",
+  },
+  {
     key: "slow_mo_ms",
     label: "Slow motion (milliseconds)",
     kind: "number",

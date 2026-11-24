@@ -233,7 +233,7 @@ def test_methods_and_nodes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> N
     )["result"]
     assert properties["properties"]["Name"] == "OK"
     assert properties["ancestors"][0]["info"]["name"] == "Demo"
-    assert request(server, output, "inspect.highlight", params)["result"] is None
+    assert request(server, output, "inspect.highlight", params)["result"] == {}
     assert request(server, output, "suggest.locator", params)["result"]["strategy"] == "name"
     window_error = request(server, output, "suggest.locator", {"nodeId": root["nodeId"]})["error"]
     assert window_error["code"] == -32006
@@ -462,7 +462,7 @@ def test_highlight_raises_window_before_reading_bounds(
         button.rect = restored_rect
         return activated
 
-    def flash(rect: Rect, duration: int, *, color: int, block: bool) -> None:
+    def flash(rect: Rect, duration: int, *, color: int, thickness: int, block: bool) -> None:
         assert rect == restored_rect
         assert duration == 800
         assert not block
@@ -478,7 +478,7 @@ def test_highlight_raises_window_before_reading_bounds(
             method,
             {"nodeId": node["nodeId"], "durationMs": 800, "bringToFront": True},
         )
-        assert response["result"] is None
+        assert response["result"] == {}
     else:
         response = request(
             server,
@@ -491,26 +491,25 @@ def test_highlight_raises_window_before_reading_bounds(
 
 
 @pytest.mark.parametrize("method", ["inspect.highlight", "element.highlight"])
-def test_highlight_does_not_raise_a_window_for_an_element_without_bounds(
+def test_highlight_uses_ancestor_without_raising(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, method: str
 ) -> None:
     server, output, button = make_server(tmp_path, monkeypatch)
     request(server, output, "initialize", {"root": str(tmp_path)})
     node = server._register(button)
     button.rect = None
-
-    def unexpected(*args: Any, **kwargs: Any) -> None:
-        pytest.fail("must not raise the window or outline an element that has no bounds")
-
-    monkeypatch.setattr(actions, "raise_without_activating", unexpected)
+    outlined: list[Rect] = []
+    monkeypatch.setattr(actions, "raise_without_activating", lambda element: pytest.fail("raised"))
     monkeypatch.setattr(actions, "window_is_minimized", lambda element: False)
-    monkeypatch.setattr(overlay, "flash", unexpected)
-    if method == "inspect.highlight":
-        response = request(server, output, method, {"nodeId": node["nodeId"], "bringToFront": True})
-        assert response["result"] is None
-    else:
-        response = request(server, output, method, {"file": "page.py", "qualname": "Main.ok"})
-        assert response["result"]["status"] == "found"
+    monkeypatch.setattr(overlay, "flash", lambda rect, *args, **kwargs: outlined.append(rect))
+    params = (
+        {"nodeId": node["nodeId"], "bringToFront": True}
+        if method == "inspect.highlight"
+        else {"file": "page.py", "qualname": "Main.ok"}
+    )
+    response = request(server, output, method, params)["result"]
+    assert response["outlinedAncestor"] == button.parent().info().short()
+    assert outlined == [button.parent().rect]
 
 
 def test_inspect_highlight_outlines_without_raising_the_window_unless_asked(
@@ -525,7 +524,7 @@ def test_inspect_highlight_outlines_without_raising_the_window_unless_asked(
         actions, "raise_without_activating", lambda element: raised.append("raised") or True
     )
     monkeypatch.setattr(
-        overlay, "flash", lambda rect, duration, *, color, block: outlined.append(rect)
+        overlay, "flash", lambda rect, duration, *, color, thickness, block: outlined.append(rect)
     )
     request(server, output, "inspect.highlight", {"nodeId": node["nodeId"]})
     assert raised == []  # off by default: the outline alone marks the element
@@ -645,7 +644,9 @@ def test_spy_notifications_and_shutdown(tmp_path: Path, monkeypatch: pytest.Monk
     stopped: list[bool] = []
 
     class FakeSpy:
-        def __init__(self, hover: Any, pick: Any, cancel: Any, process_filter: Any) -> None:
+        def __init__(
+            self, hover: Any, pick: Any, cancel: Any, process_filter: Any, **kwargs: Any
+        ) -> None:
             self.hover, self.pick, self.cancel = hover, pick, cancel
 
         def start(self) -> None:

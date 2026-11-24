@@ -32,6 +32,7 @@ LOCATOR = {
 STATE = {
     "handle": HANDLE,
     "windowHandle": None,
+    "visibleBounds": None,
     "clickPoint": None,
     "bounds": None,
     "dpi": {"x": 96, "y": 96},

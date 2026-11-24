@@ -1,0 +1,1 @@
+{"schema":"ResourceResult","instance":{"found":true,"valueType":"System.String","value":{"status":"ok","kind":"string","declaredType":"System.Object","runtimeType":"System.String","scalar":"Hello"}}}

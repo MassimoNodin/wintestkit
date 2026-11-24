@@ -88,6 +88,7 @@ app:
   cwd: C:/Program Files/Contoso
 highlight_actions: false
 highlight_color: "#FF0000"   # outline colour, quoted because # starts a YAML comment
+highlight_thickness: 3       # outline thickness in pixels (1 to 20)
 slow_mo_ms: 0
 ```
 

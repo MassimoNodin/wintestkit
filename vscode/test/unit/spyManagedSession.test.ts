@@ -45,6 +45,43 @@ describe("managed Spy host", () => {
     expect(parseSpyRequest({ type: "managedMethods", action: "more" })).toEqual({ type: "managedMethods", action: "more" });
     expect(parseSpyRequest({ type: "managedMethods", action: "more", objectId: "forged" })).toBeUndefined();
   });
+  it("requests the styling of an object and keeps the attachment ready when the inspector withholds it", async () => {
+    const process = { pid: 87012, creationTimeUtc: "styling" };
+    const denied = { message: "denied", data: { code: "accessDenied" } };
+    let deny = false;
+    const request = vi.fn(async (method: string) => {
+      if (method.endsWith("styling")) { if (deny) throw denied; return { applicable: false }; }
+      return method.endsWith("identify") ? { ...facts, process } : { ...session, process };
+    });
+    const log = vi.fn(), inspector = new ManagedInspector({ request } as unknown as JsonRpcClient, initialized(true), undefined, log); mock.trusted = true; mock.warning.mockResolvedValue("Attach");
+    await inspector.select("n"); await inspector.attach();
+    expect(await inspector.styling({ objectId: "object", generation: 4 })).toEqual({ applicable: false });
+    expect(request).toHaveBeenLastCalledWith("inspect.managed.styling", { sessionId: "s", objectId: "object", generation: 4 });
+    deny = true;
+    expect(await inspector.styling({ objectId: "object", generation: 4 })).toBeUndefined();
+    expect(inspector.state).toBe("ready");
+    expect(log.mock.calls[0][0]).toContain("styling withheld for the selected object");
+  });
+  it("requests events and single resource values with the host session identity, and keeps the attachment ready when they are withheld", async () => {
+    const process = { pid: 87013, creationTimeUtc: "events" };
+    const denied = { message: "denied", data: { code: "accessDenied" } };
+    let deny = false;
+    const request = vi.fn(async (method: string) => {
+      if (method.endsWith("events") || method.endsWith("resource")) { if (deny) throw denied; return method.endsWith("events") ? { items: [], complete: true, snapshotId: "snap", diagnostics: [] } : { found: false }; }
+      return method.endsWith("identify") ? { ...facts, process } : { ...session, process };
+    });
+    const log = vi.fn(), inspector = new ManagedInspector({ request } as unknown as JsonRpcClient, initialized(true), undefined, log); mock.trusted = true; mock.warning.mockResolvedValue("Attach");
+    await inspector.select("n"); await inspector.attach();
+    expect(await inspector.events({ objectId: "object", generation: 4, pageSize: 50, pageToken: "token" })).toMatchObject({ complete: true });
+    expect(request).toHaveBeenLastCalledWith("inspect.managed.events", { sessionId: "s", objectId: "object", generation: 4, pageSize: 50, pageToken: "token" });
+    expect(await inspector.resource({ objectId: "object", generation: 4, scope: "application", key: "Accent", keyKind: "string", index: 2 })).toEqual({ found: false });
+    expect(request).toHaveBeenLastCalledWith("inspect.managed.resource", { sessionId: "s", objectId: "object", generation: 4, scope: "application", key: "Accent", keyKind: "string", index: 2 });
+    deny = true;
+    expect(await inspector.events({ objectId: "object", generation: 4 })).toBeUndefined();
+    expect(await inspector.resource({ objectId: "object", generation: 4, scope: "local", key: "k", keyKind: "type" })).toBeUndefined();
+    expect(inspector.state).toBe("ready");
+    expect(log.mock.calls[0][0]).toContain("events withheld for the selected object");
+  });
   it("keeps the attachment ready when a Methods cursor expires", async () => {
     const process = { pid: 87011, creationTimeUtc: "expired-methods" };
     const request = vi.fn(async (method: string) => {

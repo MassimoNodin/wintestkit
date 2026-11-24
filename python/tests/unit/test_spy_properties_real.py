@@ -398,3 +398,100 @@ def test_method_call_can_be_prepared_over_stdio(owned: Any) -> None:
         check_method_call_can_be_prepared(server, scope.app.main_window().process_id)
     finally:
         server.close()
+
+
+def find_by_automation_id(rpc: Rpc, window: dict[str, Any], ids: set[str]) -> dict[str, Any]:
+    found: dict[str, dict[str, Any]] = {}
+    pending = [window]
+    while pending and not ids <= found.keys():
+        node = pending.pop(0)
+        for child in result(rpc, "inspect.children", {"nodeId": node["nodeId"], "tree": "visual"})[
+            "nodes"
+        ]:
+            pending.append(child)
+            automation_id = child["info"].get("automationId")
+            if automation_id in ids:
+                found.setdefault(automation_id, child)
+    assert ids <= found.keys(), sorted(found)
+    return found
+
+
+def text_binding(
+    rpc: Rpc, session: dict[str, Any], node: dict[str, Any]
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    ref = select_like_the_host(rpc, session, node)
+    base = {
+        "sessionId": session["sessionId"],
+        "objectId": ref["objectId"],
+        "generation": ref["generation"],
+    }
+    members = pages(rpc, "inspect.managed.members", base)
+    keys = [
+        item["memberKey"]
+        for item in members
+        if item["category"] in ("dependencyProperty", "attachedProperty") and item["name"] == "Text"
+    ]
+    bindings = result(rpc, "inspect.managed.bindings", {**base, "memberKeys": keys[:32]})
+    return base, next(item for item in bindings["bindings"] if item["kind"] != "none")
+
+
+def check_binding_details(rpc: Rpc, pid: int) -> None:
+    with attached(rpc, pid) as (window, session):
+        ids = {"DetailedBinding", "MultiBinding", "PriorityBinding", "ElementNameBinding"}
+        found = find_by_automation_id(rpc, window, ids)
+        _base, detailed = text_binding(rpc, session, found["DetailedBinding"])
+        print("DetailedBinding", json.dumps(detailed, indent=1))
+        assert detailed["kind"] == "binding" and detailed["path"] == "Label"
+        assert detailed["stringFormat"] == "[{0}]"
+        assert detailed["fallbackValue"]["scalar"] == "fallback"
+        assert detailed["targetNullValue"]["scalar"] == "(null)"
+        assert detailed["converterParameter"]["scalar"] == "cp"
+        assert detailed["converterCulture"] == ""
+        assert detailed["bindingGroupName"] == "fixtureGroup"
+        assert detailed["notifyOnTargetUpdated"] is True and detailed["isAsync"] is False
+        assert detailed["validatesOnNotifyDataErrors"] is True
+        assert detailed["hasError"] is False and detailed["hasValidationError"] is False
+        # DataItem is the fixture's DataContext: a handle a follow-up members request accepts.
+        item = detailed["dataItem"]
+        assert item["kind"] == "object", item
+        ref = item["object"]
+        members = result(
+            rpc,
+            "inspect.managed.members",
+            {
+                "sessionId": session["sessionId"],
+                "objectId": ref["objectId"],
+                "generation": ref["generation"],
+            },
+        )["items"]
+        assert any(member["name"] == "Label" for member in members)
+        assert detailed["resolvedSource"]["object"]["objectId"] == ref["objectId"]
+        assert detailed["resolvedSourcePropertyName"] == "Label"
+
+        _, multi = text_binding(rpc, session, found["MultiBinding"])
+        print("MultiBinding", json.dumps(multi, indent=1))
+        assert multi["kind"] == "multiBinding" and len(multi["children"]) == 2
+        assert multi["children"][0]["dataItem"]["kind"] == "object"
+        assert multi["converterType"].endswith("MultiConverter")
+
+        _, priority = text_binding(rpc, session, found["PriorityBinding"])
+        print("PriorityBinding", json.dumps(priority, indent=1))
+        assert priority["kind"] == "priorityBinding" and priority["activeChildIndex"] == 1
+
+        _, element = text_binding(rpc, session, found["ElementNameBinding"])
+        assert element["resolvedSourcePropertyName"] == "Text"
+        assert element["resolvedSource"]["object"]
+
+
+def test_binding_details_in_process(owned: Any) -> None:
+    scope, path = owned
+    check_binding_details(InProcess(path, scope.app), scope.app.main_window().process_id)
+
+
+def test_binding_details_over_stdio(owned: Any) -> None:
+    scope, path = owned
+    server = Stdio(path)
+    try:
+        check_binding_details(server, scope.app.main_window().process_id)
+    finally:
+        server.close()

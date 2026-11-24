@@ -29,6 +29,7 @@ class Client:
             window_handle=123,
             uia_runtime_id=(1, 2),
             bounds=AgentRect(1.2, 2.7, 10.4, 4.4),
+            visible_bounds=AgentRect(1.2, 2.7, 10.4, 4.4),
             enabled=True,
             visible=True,
             clipped=True,
@@ -128,7 +129,8 @@ def test_mapping_and_delegation(setup, monkeypatch):
     monkeypatch.setattr(UIAElement, "children", lambda self: [peer])
     monkeypatch.setattr(UIAElement, "get_property", lambda self, name: name)
     monkeypatch.setattr(UIAElement, "supported_patterns", lambda self: ["Invoke"])
-    assert element.parent() is peer and element.children() == [peer]
+    monkeypatch.setattr(client, "parent", lambda *args, **kwargs: None, raising=False)
+    assert element.parent() is None and element.children() == [peer]
     assert element.get_property("Name") == "Name"
     assert element.info(with_patterns=True).patterns == ("Invoke",)
     client.state.uia_runtime_id = None
@@ -163,3 +165,79 @@ def test_password_reads_are_redacted_on_both_backends(setup, monkeypatch):
         assert actions.get_text(element) == ""
         with pytest.raises(ActionError, match="Cannot read a password value"):
             actions.get_value(element)
+
+
+def test_peerless_window_helpers_use_agent_handle(setup, monkeypatch):
+    from wintestkit.uia import win32
+
+    client, element = setup
+    client.state.uia_runtime_id = None
+    monkeypatch.setattr(win32, "root_window", lambda hwnd: hwnd + 1)
+    monkeypatch.setattr(win32, "bring_to_foreground", lambda hwnd: hwnd == 124)
+    monkeypatch.setattr(win32, "raise_window", lambda hwnd: hwnd == 124)
+    monkeypatch.setattr(win32, "IsIconic", lambda hwnd: hwnd == 124)
+    assert actions.bring_to_front(element)
+    assert actions.raise_without_activating(element)
+    assert actions.window_is_minimized(element)
+
+
+def test_peerless_ancestor_outline_uses_managed_parent(setup, monkeypatch):
+    from wintestkit.engine.highlight import outline
+
+    client, element = setup
+    client.state.uia_runtime_id = None
+    client.state.bounds = None
+    client.state.visible_bounds = None
+    parent_ref = ObjectRef("session", "parent", 1, element.ref.type, "dispatcher")
+    parent_state = SimpleNamespace(**vars(client.state))
+    parent_state.bounds = AgentRect(5, 6, 20, 30)
+    parent_state.visible_bounds = parent_state.bounds
+    monkeypatch.setattr(
+        client,
+        "state_get",
+        lambda ref, **kwargs: client.state if ref == element.ref else parent_state,
+    )
+    monkeypatch.setattr(client, "parent", lambda *args, **kwargs: parent_ref, raising=False)
+    rect, ancestor = outline(element)
+    assert rect == Rect(5, 6, 20, 30)
+    assert isinstance(ancestor, WpfElement) and ancestor.ref == parent_ref
+
+
+def test_outline_uses_visible_bounds_and_skips_scrolled_out_node(setup, monkeypatch):
+    from wintestkit.engine.highlight import outline
+
+    client, element = setup
+    client.state.uia_runtime_id = None
+    client.state.visible_bounds = AgentRect(3, 4, 5, 6)
+    assert outline(element) == (Rect(3, 4, 5, 6), None)
+    client.state.visible_bounds = None
+    parent_ref = ObjectRef("session", "parent", 1, element.ref.type, "dispatcher")
+    parent_state = SimpleNamespace(**vars(client.state))
+    parent_state.visible_bounds = AgentRect(10, 20, 30, 40)
+    monkeypatch.setattr(client, "parent", lambda *args, **kwargs: parent_ref, raising=False)
+    monkeypatch.setattr(client, "state_get", lambda ref, **kwargs: parent_state)
+    rect, ancestor = outline(element)
+    assert rect == Rect(10, 20, 30, 40)
+    assert isinstance(ancestor, WpfElement) and ancestor.ref == parent_ref
+
+
+def test_peerless_bound_highlight_uses_agent(setup, monkeypatch):
+    from wintestkit.engine import overlay
+    from wintestkit.model import _BoundBase
+
+    client, element = setup
+    client.state.uia_runtime_id = None
+    monkeypatch.setattr(WpfElement, "as_uia", lambda self: pytest.fail("unexpected UIA call"))
+    monkeypatch.setattr(actions, "bring_to_front", lambda target: True)
+    flashed = []
+    monkeypatch.setattr(overlay, "flash", lambda rect, *args, **kwargs: flashed.append(rect))
+
+    class Bound(_BoundBase):
+        def resolve(self, timeout=None):
+            return element
+
+        def _description(self):
+            return "peerless"
+
+    Bound().highlight()
+    assert flashed == [Rect(1, 3, 11, 4)]

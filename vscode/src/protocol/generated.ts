@@ -216,6 +216,13 @@ export type AttributeLiteral = AttributeLiteral1;
  */
 export type BindingInfo = BindingInfo1;
 /**
+ * For truncated values truncatedAt is greater than the Unicode scalar length of scalar; dependencySource is present only for dependency reads.
+ *
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "Value".
+ */
+export type Value = Value1;
+/**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
  * via the `definition` "CallArgument".
  */
@@ -248,17 +255,15 @@ export type CandidateResult = CandidateResult1;
  */
 export type Mapping = Mapping1;
 /**
- * For truncated values truncatedAt is greater than the Unicode scalar length of scalar; dependencySource is present only for dependency reads.
- *
- * This interface was referenced by `ProtocolContracts`'s JSON-Schema
- * via the `definition` "Value".
- */
-export type Value = Value1;
-/**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
  * via the `definition` "CloseParams".
  */
 export type CloseParams = Record<string, never>;
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "ClrMemberEvent".
+ */
+export type ClrMemberEvent = ClrMemberEvent1;
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
  * via the `definition` "Matcher".
@@ -317,6 +322,10 @@ export type Features = (
   | "hitTest"
   | "waits"
   | "events"
+  | "treeParent"
+  | "membersItems"
+  | "membersStyling"
+  | "membersEvents"
 )[];
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
@@ -338,11 +347,6 @@ export type InspectChildrenResult =
       nodes: NodeInfo[];
       nextPageToken?: string;
     };
-/**
- * This interface was referenced by `ProtocolContracts`'s JSON-Schema
- * via the `definition` "InspectHighlightResult".
- */
-export type InspectHighlightResult = null;
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
  * via the `definition` "SpyHostCapability".
@@ -370,6 +374,32 @@ export type ManagedBindingInfo = {
    * @maxItems 32
    */
   validationErrors?: Key[];
+  stringFormat?: string;
+  fallbackValue?: Value;
+  targetNullValue?: Value;
+  converterParameter?: Value;
+  converterCulture?: string;
+  delay?: number;
+  bindingGroupName?: string;
+  xPath?: string;
+  isAsync?: boolean;
+  notifyOnSourceUpdated?: boolean;
+  notifyOnTargetUpdated?: boolean;
+  notifyOnValidationError?: boolean;
+  validatesOnDataErrors?: boolean;
+  validatesOnExceptions?: boolean;
+  validatesOnNotifyDataErrors?: boolean;
+  /**
+   * @maxItems 32
+   */
+  validationRules?: Key[];
+  hasUpdateSourceExceptionFilter?: boolean;
+  activeChildIndex?: number;
+  dataItem?: Value;
+  resolvedSource?: Value;
+  resolvedSourcePropertyName?: string;
+  hasError?: boolean;
+  hasValidationError?: boolean;
 };
 /**
  * nextToken is present iff further items exist; incomplete pages may instead indicate partial failure.
@@ -387,6 +417,29 @@ export type InspectManagedChildrenResult = {
   diagnostics: ManagedDiagnostic[];
   nextToken?: Identifier;
 };
+export type InspectManagedEventsResult = {
+  /**
+   * @maxItems 200
+   */
+  items: MemberEvent[];
+  complete: boolean;
+  snapshotId: Identifier;
+  /**
+   * @maxItems 200
+   */
+  diagnostics: ManagedDiagnostic[];
+  nextToken?: Identifier;
+};
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "MemberEvent".
+ */
+export type MemberEvent = RoutedMemberEvent | ClrMemberEvent;
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "RoutedMemberEvent".
+ */
+export type RoutedMemberEvent = RoutedMemberEvent1;
 /**
  * nextToken is present iff further items exist; incomplete pages may instead indicate partial failure.
  */
@@ -465,6 +518,11 @@ export type ManagedMapping = {
   process: ProcessIdentity;
   runtimeId: RuntimeId;
   object?: ObjectRef;
+};
+export type InspectManagedResourceResult = {
+  found: boolean;
+  valueType?: string;
+  value?: Value;
 };
 /**
  * nextToken is present iff further items exist; incomplete pages may instead indicate partial failure.
@@ -548,6 +606,19 @@ export type Predicate =
       kind: "assignableTo";
       fullName: Key;
     };
+export type ManagedEventPage = {
+  /**
+   * @maxItems 200
+   */
+  items: MemberEvent[];
+  complete: boolean;
+  snapshotId: Identifier;
+  /**
+   * @maxItems 200
+   */
+  diagnostics: ManagedDiagnostic[];
+  nextToken?: Identifier;
+};
 /**
  * nextToken is present iff further items exist; incomplete pages may instead indicate partial failure.
  */
@@ -601,6 +672,11 @@ export type ManagedMethodPage = {
  */
 export type ManagedNodePage = ManagedNodePage1;
 /**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "MemberEventPage".
+ */
+export type MemberEventPage = MemberEventPage1;
+/**
  * nextToken is present iff further items exist; incomplete pages may instead indicate partial failure.
  *
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
@@ -612,6 +688,11 @@ export type MemberPage = MemberPage1;
  * via the `definition` "MethodPage".
  */
 export type MethodPage = MethodPage1;
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "ResourceResult".
+ */
+export type ResourceResult = ResourceResult1;
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
  * via the `definition` "ResponseEnvelope".
@@ -759,6 +840,11 @@ export type WaitUntilResult = {
  */
 export type BindingInfo2 = ManagedBindingInfo1;
 /**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "ManagedEventPage".
+ */
+export type MemberEventPage2 = ManagedEventPage1;
+/**
  * nextToken is present iff further items exist; incomplete pages may instead indicate partial failure.
  *
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
@@ -833,12 +919,22 @@ export type ManagedPath1 =
  */
 export type ManagedInspectorNodePage2 = InspectManagedChildrenResult1;
 /**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "InspectManagedEventsResult".
+ */
+export type ManagedEventPage2 = InspectManagedEventsResult1;
+/**
  * nextToken is present iff further items exist; incomplete pages may instead indicate partial failure.
  *
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
  * via the `definition` "InspectManagedMembersResult".
  */
 export type ManagedMemberPage2 = InspectManagedMembersResult1;
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "InspectManagedResourceResult".
+ */
+export type ResourceResult2 = InspectManagedResourceResult1;
 /**
  * nextToken is present iff further items exist; incomplete pages may instead indicate partial failure.
  *
@@ -910,6 +1006,8 @@ export interface ProtocolContracts {
   ChildrenParams?: ChildrenParams;
   CloseParams?: CloseParams;
   CloseResult?: CloseResult;
+  ClrEventSubscriber?: ClrEventSubscriber;
+  ClrMemberEvent?: ClrMemberEvent;
   CollectError?: CollectError;
   CollectedTest?: CollectedTest;
   DefinitionError?: DefinitionError;
@@ -964,8 +1062,12 @@ export interface ProtocolContracts {
   InspectManagedChildrenResult?: InspectManagedChildrenResult;
   InspectManagedDetachParams?: InspectManagedDetachParams;
   InspectManagedDetachResult?: InspectManagedDetachResult;
+  InspectManagedEventsParams?: InspectManagedEventsParams;
+  InspectManagedEventsResult?: InspectManagedEventsResult;
   InspectManagedIdentifyParams?: InspectManagedIdentifyParams;
   InspectManagedIdentifyResult?: InspectManagedIdentifyResult;
+  InspectManagedItemsParams?: InspectManagedItemsParams;
+  InspectManagedItemsResult?: InspectManagedItemsResult;
   InspectManagedKeepaliveParams?: InspectManagedKeepaliveParams;
   InspectManagedKeepaliveResult?: InspectManagedKeepaliveResult;
   InspectManagedMembersParams?: InspectManagedMembersParams;
@@ -976,6 +1078,8 @@ export interface ProtocolContracts {
   InspectManagedReleaseResult?: InspectManagedReleaseResult;
   InspectManagedResolveParams?: InspectManagedResolveParams;
   InspectManagedResolveResult?: InspectManagedResolveResult;
+  InspectManagedResourceParams?: InspectManagedResourceParams;
+  InspectManagedResourceResult?: InspectManagedResourceResult;
   InspectManagedRootsParams?: InspectManagedRootsParams;
   InspectManagedRootsResult?: InspectManagedRootsResult;
   InspectManagedSpyInvokeParams?: InspectManagedSpyInvokeParams;
@@ -988,6 +1092,8 @@ export interface ProtocolContracts {
   InspectManagedSpySelectResult?: InspectManagedSpySelectResult;
   InspectManagedStatusParams?: InspectManagedStatusParams;
   InspectManagedStatusResult?: InspectManagedStatusResult;
+  InspectManagedStylingParams?: InspectManagedStylingParams;
+  InspectManagedStylingResult?: InspectManagedStylingResult;
   InspectPartialErrorData?: InspectPartialErrorData;
   InspectPreviewParams?: InspectPreviewParams;
   InspectPreviewResult?: InspectPreviewResult;
@@ -998,9 +1104,12 @@ export interface ProtocolContracts {
   InspectRootsParams?: InspectRootsParams;
   InspectRootsResult?: InspectRootsResult;
   InspectionProperty?: InspectionProperty;
+  Item?: Item;
   ItemMatch?: ItemMatch;
   ItemSearch?: ItemSearch;
   ItemSelectorData?: ItemSelectorData;
+  ItemsParams?: ItemsParams;
+  ItemsResult?: ItemsResult;
   Key?: Key;
   Locator?: Locator;
   LocatorData?: LocatorData;
@@ -1009,6 +1118,7 @@ export interface ProtocolContracts {
   ManagedBindingInfo?: ManagedBindingInfo;
   ManagedDiagnostic?: ManagedDiagnostic;
   ManagedErrorInfo?: ManagedErrorInfo;
+  ManagedEventPage?: ManagedEventPage;
   ManagedInspectorNodePage?: ManagedInspectorNodePage;
   ManagedMapping?: ManagedMapping;
   ManagedMemberPage?: ManagedMemberPage;
@@ -1024,6 +1134,8 @@ export interface ProtocolContracts {
   MatchWarning?: MatchWarning;
   Matcher?: Matcher;
   Member?: Member;
+  MemberEvent?: MemberEvent;
+  MemberEventPage?: MemberEventPage;
   MemberPage?: MemberPage;
   MembersParams?: MembersParams;
   MethodMetadata?: MethodMetadata;
@@ -1038,6 +1150,8 @@ export interface ProtocolContracts {
   PageCheckParams?: PageCheckParams;
   PageCheckResult?: PageCheckResult;
   PageEntry?: PageEntry;
+  ParentParams?: ParentParams;
+  ParentResult?: ParentResult;
   PartGeometry?: PartGeometry;
   Path?: Path;
   PathSegment?: PathSegment;
@@ -1065,9 +1179,13 @@ export interface ProtocolContracts {
   Replay?: Replay;
   RequestEnvelope?: RequestEnvelope;
   ResolveParams?: ResolveParams;
+  ResourceParams?: ResourceParams;
+  ResourceResult?: ResourceResult;
   ResponseEnvelope?: ResponseEnvelope;
   Results?: Results;
   RootsParams?: RootsParams;
+  RoutedEventHandler?: RoutedEventHandler;
+  RoutedMemberEvent?: RoutedMemberEvent;
   RunEvent?: RunEvent;
   RunningProcess?: RunningProcess;
   RuntimeId?: RuntimeId;
@@ -1092,6 +1210,19 @@ export interface ProtocolContracts {
   StateGetParams?: StateGetParams;
   StateGetResult?: StateGetResult;
   StepEvent?: StepEvent;
+  StylingCondition?: StylingCondition;
+  StylingLevel?: StylingLevel;
+  StylingMergedDictionary?: StylingMergedDictionary;
+  StylingParams?: StylingParams;
+  StylingPart?: StylingPart;
+  StylingResourceEntry?: StylingResourceEntry;
+  StylingResources?: StylingResources;
+  StylingResult?: StylingResult;
+  StylingSetter?: StylingSetter;
+  StylingStyle?: StylingStyle;
+  StylingTemplate?: StylingTemplate;
+  StylingTemplates?: StylingTemplates;
+  StylingTrigger?: StylingTrigger;
   SuggestLocatorParams?: SuggestLocatorParams;
   SuggestLocatorResult?: SuggestLocatorResult;
   Suggestion?: Suggestion;
@@ -1387,6 +1518,32 @@ export interface BindingInfo1 {
    * @maxItems 32
    */
   validationErrors?: Key[];
+  stringFormat?: string;
+  fallbackValue?: Value;
+  targetNullValue?: Value;
+  converterParameter?: Value;
+  converterCulture?: string;
+  delay?: number;
+  bindingGroupName?: string;
+  xPath?: string;
+  isAsync?: boolean;
+  notifyOnSourceUpdated?: boolean;
+  notifyOnTargetUpdated?: boolean;
+  notifyOnValidationError?: boolean;
+  validatesOnDataErrors?: boolean;
+  validatesOnExceptions?: boolean;
+  validatesOnNotifyDataErrors?: boolean;
+  /**
+   * @maxItems 32
+   */
+  validationRules?: Key[];
+  hasUpdateSourceExceptionFilter?: boolean;
+  activeChildIndex?: number;
+  dataItem?: Value;
+  resolvedSource?: Value;
+  resolvedSourcePropertyName?: string;
+  hasError?: boolean;
+  hasValidationError?: boolean;
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
@@ -1396,6 +1553,70 @@ export interface RelativeSource {
   mode: "FindAncestor" | "PreviousData" | "TemplatedParent" | "Self";
   ancestorType?: Key;
   ancestorLevel?: number;
+}
+export interface Value1 {
+  status:
+    | "ok"
+    | "notRead"
+    | "notReadable"
+    | "nullIntermediate"
+    | "exception"
+    | "stale"
+    | "redacted"
+    | "truncated"
+    | "cycle"
+    | "timeout"
+    | "unsupported"
+    | "unavailable";
+  kind:
+    | "null"
+    | "string"
+    | "boolean"
+    | "integer"
+    | "number"
+    | "enum"
+    | "object"
+    | "array"
+    | "type"
+    | "unavailable";
+  declaredType: TypeName;
+  runtimeType: TypeName;
+  scalar?: null | boolean | number | ScalarString;
+  object?: ObjectRef;
+  message?: string;
+  errorMessage?: string;
+  truncatedAt?: number;
+  cycleTo?: ObjectRef;
+  numericValue?: string;
+  typeInfo?: TypeInfo;
+  arrayRank?: number;
+  arrayLength?: number;
+  failedSegment?: number;
+  redactionRule?: Key;
+  dependencySource?: DependencySource;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "DependencySource".
+ */
+export interface DependencySource {
+  baseValueSource:
+    | "Unknown"
+    | "Default"
+    | "Inherited"
+    | "DefaultStyle"
+    | "DefaultStyleTrigger"
+    | "Style"
+    | "TemplateTrigger"
+    | "StyleTrigger"
+    | "ImplicitStyleReference"
+    | "ParentTemplate"
+    | "ParentTemplateTrigger"
+    | "Local";
+  isExpression: boolean;
+  isAnimated: boolean;
+  isCoerced: boolean;
+  isCurrent: boolean;
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
@@ -1575,69 +1796,6 @@ export interface PathValue {
   path: Path;
   value: Value;
 }
-export interface Value1 {
-  status:
-    | "ok"
-    | "notRead"
-    | "notReadable"
-    | "nullIntermediate"
-    | "exception"
-    | "stale"
-    | "redacted"
-    | "truncated"
-    | "cycle"
-    | "timeout"
-    | "unsupported"
-    | "unavailable";
-  kind:
-    | "null"
-    | "string"
-    | "boolean"
-    | "integer"
-    | "number"
-    | "enum"
-    | "object"
-    | "array"
-    | "type"
-    | "unavailable";
-  declaredType: TypeName;
-  runtimeType: TypeName;
-  scalar?: null | boolean | number | ScalarString;
-  object?: ObjectRef;
-  message?: string;
-  truncatedAt?: number;
-  cycleTo?: ObjectRef;
-  numericValue?: string;
-  typeInfo?: TypeInfo;
-  arrayRank?: number;
-  arrayLength?: number;
-  failedSegment?: number;
-  redactionRule?: Key;
-  dependencySource?: DependencySource;
-}
-/**
- * This interface was referenced by `ProtocolContracts`'s JSON-Schema
- * via the `definition` "DependencySource".
- */
-export interface DependencySource {
-  baseValueSource:
-    | "Unknown"
-    | "Default"
-    | "Inherited"
-    | "DefaultStyle"
-    | "DefaultStyleTrigger"
-    | "Style"
-    | "TemplateTrigger"
-    | "StyleTrigger"
-    | "ImplicitStyleReference"
-    | "ParentTemplate"
-    | "ParentTemplateTrigger"
-    | "Local";
-  isExpression: boolean;
-  isAnimated: boolean;
-  isCoerced: boolean;
-  isCurrent: boolean;
-}
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
  * via the `definition` "CheckResult".
@@ -1747,6 +1905,28 @@ export interface ChildrenParams {
  */
 export interface CloseResult {
   closed: true;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "ClrEventSubscriber".
+ */
+export interface ClrEventSubscriber {
+  declaringType: string;
+  method: string;
+}
+export interface ClrMemberEvent1 {
+  kind: "clr";
+  name: string;
+  declaringType: string;
+  handlerType: string;
+  isStatic: boolean;
+  subscribersKnown: boolean;
+  subscriberCount: number;
+  subscribersTruncated: boolean;
+  /**
+   * @maxItems 32
+   */
+  subscribers: ClrEventSubscriber[];
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
@@ -1977,6 +2157,8 @@ export interface ElementCheckResult {
   message?: string;
   code?: string;
   hint?: string;
+  outlinedAncestor?: string;
+  outlinedTarget?: string;
   durationMs: number;
 }
 /**
@@ -1995,6 +2177,8 @@ export interface ElementHighlightResult {
   message?: string;
   code?: string;
   hint?: string;
+  outlinedAncestor?: string;
+  outlinedTarget?: string;
   durationMs: number;
 }
 /**
@@ -2008,6 +2192,8 @@ export interface ElementResult {
   message?: string;
   code?: string;
   hint?: string;
+  outlinedAncestor?: string;
+  outlinedTarget?: string;
   durationMs: number;
 }
 /**
@@ -2040,6 +2226,7 @@ export interface ElementState {
    * @maxItems 1024
    */
   uiaRuntimeId?: [number, ...number[]];
+  visibleBounds: ManagedRect | null;
 }
 /**
  * Physical screen pixels; all numbers finite.
@@ -2332,6 +2519,14 @@ export interface InspectHighlightParams {
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "InspectHighlightResult".
+ */
+export interface InspectHighlightResult {
+  outlinedAncestor?: string;
+  outlinedTarget?: string;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
  * via the `definition` "InspectManagedAttachParams".
  */
 export interface InspectManagedAttachParams {
@@ -2416,6 +2611,36 @@ export interface InspectManagedDetachParams {
 export interface InspectManagedDetachResult {
   detached: true;
 }
+export interface InspectManagedEventsParams {
+  sessionId: string;
+  objectId: string;
+  generation: number;
+  pageSize?: number;
+  pageToken?: string;
+}
+export interface RoutedMemberEvent1 {
+  kind: "routed";
+  name: string;
+  declaringType: string;
+  handlerType: string;
+  strategy: "bubble" | "tunnel" | "direct";
+  handlersKnown: boolean;
+  handlerCount: number;
+  handlersTruncated: boolean;
+  /**
+   * @maxItems 32
+   */
+  handlers: RoutedEventHandler[];
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "RoutedEventHandler".
+ */
+export interface RoutedEventHandler {
+  declaringType: string;
+  method: string;
+  handledEventsToo: boolean;
+}
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
  * via the `definition` "InspectManagedIdentifyParams".
@@ -2435,6 +2660,36 @@ export interface InspectManagedIdentifyResult {
   wpfLoaded: boolean;
   winformsLoaded: boolean;
   appUnderTest: boolean;
+}
+export interface InspectManagedItemsParams {
+  sessionId: string;
+  objectId: string;
+  generation: number;
+  pageSize?: number;
+  pageToken?: string;
+}
+export interface InspectManagedItemsResult {
+  kind: "array" | "list" | "dictionary" | "enumerable" | "notEnumerable";
+  count: number | null;
+  /**
+   * @maxItems 200
+   */
+  items: Item[];
+  nextPageToken: Identifier | null;
+  complete: boolean;
+  error?: {
+    type: string;
+    message: string | null;
+  };
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "Item".
+ */
+export interface Item {
+  index: number | null;
+  key: Value | null;
+  value: Value;
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
@@ -2472,6 +2727,8 @@ export interface Member {
     | "typeMetadata"
     | "clrProperty"
     | "clrField"
+    | "staticProperty"
+    | "staticField"
     | "dependencyProperty"
     | "attachedProperty";
   declaringType: TypeName;
@@ -2491,12 +2748,7 @@ export interface Member {
   pathSegment?: PathSegment;
   dependency?: DependencyMetadata;
   reason?:
-    | "nonPublic"
-    | "writeOnly"
-    | "indexer"
-    | "static"
-    | "unsupportedType"
-    | "ambiguous";
+    "nonPublic" | "writeOnly" | "indexer" | "unsupportedType" | "ambiguous";
   wrapperKey?: Key;
   compatibilityAlias?: Identifier;
 }
@@ -2555,6 +2807,19 @@ export interface InspectManagedReleaseResult {
 export interface InspectManagedResolveParams {
   sessionId: string;
   nodeId: string;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "InspectManagedResourceParams".
+ */
+export interface InspectManagedResourceParams {
+  sessionId: string;
+  objectId: string;
+  generation: number;
+  scope: "local" | "application";
+  key: string;
+  keyKind: "string" | "type" | "componentResourceKey" | "other";
+  index?: number;
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
@@ -2868,6 +3133,241 @@ export interface InspectManagedStatusResult {
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "InspectManagedStylingParams".
+ */
+export interface InspectManagedStylingParams {
+  sessionId: string;
+  objectId: string;
+  generation: number;
+}
+export interface InspectManagedStylingResult {
+  applicable: boolean;
+  style?: StylingStyle;
+  templates?: StylingTemplates;
+  resources?: StylingResources;
+  application?: StylingResources;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "StylingStyle".
+ */
+export interface StylingStyle {
+  source: "local" | "implicit" | "typeLookup" | "none";
+  key?: string;
+  targetType?: string;
+  setterCount: number;
+  settersTruncated: boolean;
+  /**
+   * @maxItems 32
+   */
+  setters: StylingSetter[];
+  triggerCount: number;
+  triggersTruncated: boolean;
+  /**
+   * @maxItems 32
+   */
+  triggers: StylingTrigger[];
+  /**
+   * @maxItems 8
+   */
+  basedOn:
+    | []
+    | [StylingLevel]
+    | [StylingLevel, StylingLevel]
+    | [StylingLevel, StylingLevel, StylingLevel]
+    | [StylingLevel, StylingLevel, StylingLevel, StylingLevel]
+    | [StylingLevel, StylingLevel, StylingLevel, StylingLevel, StylingLevel]
+    | [
+        StylingLevel,
+        StylingLevel,
+        StylingLevel,
+        StylingLevel,
+        StylingLevel,
+        StylingLevel
+      ]
+    | [
+        StylingLevel,
+        StylingLevel,
+        StylingLevel,
+        StylingLevel,
+        StylingLevel,
+        StylingLevel,
+        StylingLevel
+      ]
+    | [
+        StylingLevel,
+        StylingLevel,
+        StylingLevel,
+        StylingLevel,
+        StylingLevel,
+        StylingLevel,
+        StylingLevel,
+        StylingLevel
+      ];
+  basedOnTruncated: boolean;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "StylingSetter".
+ */
+export interface StylingSetter {
+  property: string;
+  owner: string;
+  targetName?: string;
+  kind:
+    | "value"
+    | "dynamicResource"
+    | "binding"
+    | "multiBinding"
+    | "priorityBinding"
+    | "templateBinding"
+    | "other";
+  expression?: string;
+  value?: Value;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "StylingTrigger".
+ */
+export interface StylingTrigger {
+  kind:
+    | "trigger"
+    | "dataTrigger"
+    | "multiTrigger"
+    | "multiDataTrigger"
+    | "eventTrigger"
+    | "other";
+  active: "active" | "inactive" | "unknown";
+  routedEvent?: string;
+  /**
+   * @maxItems 32
+   */
+  conditions: StylingCondition[];
+  setterCount: number;
+  settersTruncated: boolean;
+  /**
+   * @maxItems 32
+   */
+  setters: StylingSetter[];
+  enterActions: number;
+  exitActions: number;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "StylingCondition".
+ */
+export interface StylingCondition {
+  property?: string;
+  binding?: string;
+  sourceName?: string;
+  value: Value;
+  active: "active" | "inactive" | "unknown";
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "StylingLevel".
+ */
+export interface StylingLevel {
+  key?: string;
+  targetType?: string;
+  setterCount: number;
+  settersTruncated: boolean;
+  /**
+   * @maxItems 32
+   */
+  setters: StylingSetter[];
+  triggerCount: number;
+  triggersTruncated: boolean;
+  /**
+   * @maxItems 32
+   */
+  triggers: StylingTrigger[];
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "StylingTemplates".
+ */
+export interface StylingTemplates {
+  controlTemplate?: StylingTemplate;
+  contentTemplate?: StylingTemplate;
+  itemTemplate?: StylingTemplate;
+  itemContainerStyle?: StylingStyle;
+  itemsPanel?: StylingTemplate;
+  templatedParent?: Value;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "StylingTemplate".
+ */
+export interface StylingTemplate {
+  kind:
+    | "controlTemplate"
+    | "dataTemplate"
+    | "hierarchicalDataTemplate"
+    | "itemsPanelTemplate"
+    | "other";
+  key?: string;
+  targetType?: string;
+  dataType?: string;
+  rootType?: string;
+  triggerCount: number;
+  triggersTruncated: boolean;
+  /**
+   * @maxItems 32
+   */
+  triggers: StylingTrigger[];
+  partsTruncated: boolean;
+  /**
+   * @maxItems 32
+   */
+  parts: StylingPart[];
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "StylingPart".
+ */
+export interface StylingPart {
+  name: string;
+  type: string;
+  element: Value;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "StylingResources".
+ */
+export interface StylingResources {
+  source?: string;
+  count: number;
+  truncated: boolean;
+  /**
+   * @maxItems 200
+   */
+  entries: StylingResourceEntry[];
+  mergedTruncated: boolean;
+  /**
+   * @maxItems 200
+   */
+  mergedDictionaries: StylingMergedDictionary[];
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "StylingResourceEntry".
+ */
+export interface StylingResourceEntry {
+  key: string;
+  keyKind: "string" | "type" | "componentResourceKey" | "other";
+  index: number;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "StylingMergedDictionary".
+ */
+export interface StylingMergedDictionary {
+  source?: string;
+  count: number;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
  * via the `definition` "InspectPartialErrorData".
  */
 export interface InspectPartialErrorData {
@@ -3031,6 +3531,35 @@ export interface InspectRootsParams {
   foregroundForProcessId?: number;
 }
 /**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "ItemsParams".
+ */
+export interface ItemsParams {
+  sessionId: Identifier;
+  objectId: Identifier;
+  generation: number;
+  pageSize?: number;
+  pageToken?: Identifier;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "ItemsResult".
+ */
+export interface ItemsResult {
+  kind: "array" | "list" | "dictionary" | "enumerable" | "notEnumerable";
+  count: number | null;
+  /**
+   * @maxItems 200
+   */
+  items: Item[];
+  nextPageToken: Identifier | null;
+  complete: boolean;
+  error?: {
+    type: string;
+    message: string | null;
+  };
+}
+/**
  * Predicates are ANDed; index selects after filtering. Defaults are applied before serialization.
  *
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
@@ -3144,6 +3673,19 @@ export interface ManagedSession {
   agentVersion?: Identifier;
   error?: string;
 }
+export interface MemberEventPage1 {
+  /**
+   * @maxItems 200
+   */
+  items: MemberEvent[];
+  complete: boolean;
+  snapshotId: Identifier;
+  /**
+   * @maxItems 200
+   */
+  diagnostics: ManagedDiagnostic[];
+  nextToken?: Identifier;
+}
 export interface MemberPage1 {
   /**
    * @maxItems 200
@@ -3195,6 +3737,22 @@ export interface PageCheckParams {
  */
 export interface PageCheckResult {
   results: CheckResult[];
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "ParentParams".
+ */
+export interface ParentParams {
+  sessionId: Identifier;
+  objectId: Identifier;
+  generation: number;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "ParentResult".
+ */
+export interface ParentResult {
+  handle: ObjectRef | null;
 }
 export interface QueryFindAllParams {
   locator: Locator;
@@ -3355,7 +3913,9 @@ export interface RequestEnvelope {
     | "write.call"
     | "spy.invoke"
     | "events.subscribe"
-    | "events.unsubscribe";
+    | "events.unsubscribe"
+    | "tree.parent"
+    | "members.items";
   params: Record<string, never>;
 }
 /**
@@ -3365,6 +3925,24 @@ export interface RequestEnvelope {
 export interface ResolveParams {
   runtimeId: RuntimeId;
   nativeWindowHandle?: number;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "ResourceParams".
+ */
+export interface ResourceParams {
+  sessionId: Identifier;
+  objectId: Identifier;
+  generation: number;
+  scope: "local" | "application";
+  key: string;
+  keyKind: "string" | "type" | "componentResourceKey" | "other";
+  index?: number;
+}
+export interface ResourceResult1 {
+  found: boolean;
+  valueType?: string;
+  value?: Value;
 }
 export interface ResponseEnvelope2 {
   id: number;
@@ -3601,6 +4179,26 @@ export interface StateGetParams {
  */
 export interface StateGetResult {
   state: ElementState;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "StylingParams".
+ */
+export interface StylingParams {
+  sessionId: Identifier;
+  objectId: Identifier;
+  generation: number;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "StylingResult".
+ */
+export interface StylingResult {
+  applicable: boolean;
+  style?: StylingStyle;
+  templates?: StylingTemplates;
+  resources?: StylingResources;
+  application?: StylingResources;
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
@@ -3845,6 +4443,45 @@ export interface ManagedBindingInfo1 {
    * @maxItems 32
    */
   validationErrors?: Key[];
+  stringFormat?: string;
+  fallbackValue?: Value;
+  targetNullValue?: Value;
+  converterParameter?: Value;
+  converterCulture?: string;
+  delay?: number;
+  bindingGroupName?: string;
+  xPath?: string;
+  isAsync?: boolean;
+  notifyOnSourceUpdated?: boolean;
+  notifyOnTargetUpdated?: boolean;
+  notifyOnValidationError?: boolean;
+  validatesOnDataErrors?: boolean;
+  validatesOnExceptions?: boolean;
+  validatesOnNotifyDataErrors?: boolean;
+  /**
+   * @maxItems 32
+   */
+  validationRules?: Key[];
+  hasUpdateSourceExceptionFilter?: boolean;
+  activeChildIndex?: number;
+  dataItem?: Value;
+  resolvedSource?: Value;
+  resolvedSourcePropertyName?: string;
+  hasError?: boolean;
+  hasValidationError?: boolean;
+}
+export interface ManagedEventPage1 {
+  /**
+   * @maxItems 200
+   */
+  items: MemberEvent[];
+  complete: boolean;
+  snapshotId: Identifier;
+  /**
+   * @maxItems 200
+   */
+  diagnostics: ManagedDiagnostic[];
+  nextToken?: Identifier;
 }
 export interface ManagedInspectorNodePage1 {
   /**
@@ -3959,6 +4596,8 @@ export interface ElementResult1 {
   message?: string;
   code?: string;
   hint?: string;
+  outlinedAncestor?: string;
+  outlinedTarget?: string;
   durationMs: number;
 }
 /**
@@ -3972,6 +4611,8 @@ export interface ElementResult2 {
   message?: string;
   code?: string;
   hint?: string;
+  outlinedAncestor?: string;
+  outlinedTarget?: string;
   durationMs: number;
 }
 /**
@@ -4010,6 +4651,59 @@ export interface InspectManagedChildrenResult1 {
   diagnostics: ManagedDiagnostic[];
   nextToken?: Identifier;
 }
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "InspectManagedEventsParams".
+ */
+export interface InspectManagedMembersParams1 {
+  sessionId: string;
+  objectId: string;
+  generation: number;
+  pageSize?: number;
+  pageToken?: string;
+}
+export interface InspectManagedEventsResult1 {
+  /**
+   * @maxItems 200
+   */
+  items: MemberEvent[];
+  complete: boolean;
+  snapshotId: Identifier;
+  /**
+   * @maxItems 200
+   */
+  diagnostics: ManagedDiagnostic[];
+  nextToken?: Identifier;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "InspectManagedItemsParams".
+ */
+export interface InspectManagedMembersParams2 {
+  sessionId: string;
+  objectId: string;
+  generation: number;
+  pageSize?: number;
+  pageToken?: string;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "InspectManagedItemsResult".
+ */
+export interface ItemsResult1 {
+  kind: "array" | "list" | "dictionary" | "enumerable" | "notEnumerable";
+  count: number | null;
+  /**
+   * @maxItems 200
+   */
+  items: Item[];
+  nextPageToken: Identifier | null;
+  complete: boolean;
+  error?: {
+    type: string;
+    message: string | null;
+  };
+}
 export interface InspectManagedMembersResult1 {
   /**
    * @maxItems 200
@@ -4022,6 +4716,11 @@ export interface InspectManagedMembersResult1 {
    */
   diagnostics: ManagedDiagnostic[];
   nextToken?: Identifier;
+}
+export interface InspectManagedResourceResult1 {
+  found: boolean;
+  valueType?: string;
+  value?: Value;
 }
 export interface InspectManagedRootsResult1 {
   /**
@@ -4040,7 +4739,7 @@ export interface InspectManagedRootsResult1 {
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
  * via the `definition` "InspectManagedSpyMethodsParams".
  */
-export interface InspectManagedMembersParams1 {
+export interface InspectManagedMembersParams3 {
   sessionId: string;
   objectId: string;
   generation: number;
@@ -4082,6 +4781,17 @@ export interface ManagedSession2 {
   architecture?: Identifier;
   agentVersion?: Identifier;
   error?: string;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "InspectManagedStylingResult".
+ */
+export interface StylingResult1 {
+  applicable: boolean;
+  style?: StylingStyle;
+  templates?: StylingTemplates;
+  resources?: StylingResources;
+  application?: StylingResources;
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema

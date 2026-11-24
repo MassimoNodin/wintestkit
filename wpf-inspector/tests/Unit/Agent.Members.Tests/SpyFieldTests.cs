@@ -13,6 +13,38 @@ namespace WinTestKit.Inspector.Agent.Members.Tests
         private class Base { private int shared = 11; private string password = "secret"; public int Touch() => shared + password.Length; }
         private class Derived : Base { private int shared = 22; private int HiddenProperty => 42; public int TouchDerived() => shared; }
 
+        private class StaticBase
+        {
+            public static int Shared => 31;
+            private static int hidden = 37;
+            private static string password = "secret";
+            public static int Touch() => hidden + password.Length;
+        }
+        private class StaticDerived : StaticBase
+        {
+            private static int PrivateProperty => 1;
+            public static System.Windows.DependencyProperty MarkerProperty = null!;
+            [System.Runtime.CompilerServices.CompilerGenerated] public static int Generated = 1;
+        }
+
+        [Fact]
+        public void StaticDeclarationsReadWithNormalRulesAndRedaction()
+        {
+            ValueTestSupport.Sta(() => {
+                var target = new StaticDerived(); var inspector = new ObjectInspector(); var registry = new ValueTestSupport.Registry();
+                var members = inspector.GetMembers(target, new List<Diagnostic>());
+                var property = members.Single(m => m.Name == "Shared" && m.Category == "staticProperty");
+                Assert.Equal(typeof(StaticBase).FullName, property.PathSegment!.DeclaringType);
+                Assert.Equal("31", ((JsonNumberNode)inspector.ReadPath(target, new[] { property.PathSegment }, registry, Dispatcher.CurrentDispatcher, CancellationToken.None).Scalar!).RawText);
+                var field = members.Single(m => m.Name == "hidden" && m.Category == "staticField");
+                Assert.Equal("37", ((JsonNumberNode)inspector.ReadSpyField(target, new[] { field.PathSegment! }, registry, Dispatcher.CurrentDispatcher, CancellationToken.None).Scalar!).RawText);
+                var secret = members.Single(m => m.Name == "password" && m.Category == "staticField");
+                Assert.Equal("redacted", inspector.ReadSpyField(target, new[] { secret.PathSegment! }, registry, Dispatcher.CurrentDispatcher, CancellationToken.None).Status);
+                Assert.Contains(members, m => m.Name == "PrivateProperty" && m.Reason == "nonPublic");
+                Assert.DoesNotContain(members, m => m.Name == "MarkerProperty" || m.Name == "Generated");
+            });
+        }
+
         [Fact]
         public void ExactSpyFieldsIncludePrivateBaseAndPreserveOrdinaryRedaction()
         {

@@ -22,7 +22,7 @@ using WinTestKit.Inspector.Protocol;
 
 namespace WinTestKit.Inspector.Agent.Inspection
 {
-    public sealed partial class WpfInspectionService : IInspectionService, ISpyFieldInspectionService, ISpyMethodInspectionService, IExactMappingCapability, IQueryInspectionService, IStateInspectionService, IWaitInspectionService, IActionInspectionService, IRealizeInspectionService, IHitTestInspectionService, IWriteInspectionService, ISpyInvokeInspectionService, Events.IEventInspectionService
+    public sealed partial class WpfInspectionService : IInspectionService, IItemsInspectionService, IStylingInspectionService, IResourceInspectionService, IMemberEventsInspectionService, IParentInspectionService, ISpyFieldInspectionService, ISpyMethodInspectionService, IExactMappingCapability, IQueryInspectionService, IStateInspectionService, IWaitInspectionService, IActionInspectionService, IRealizeInspectionService, IHitTestInspectionService, IWriteInspectionService, ISpyInvokeInspectionService, Events.IEventInspectionService
     {
         private readonly DispatcherExecutor executor;
         private readonly ObjectRegistry registry;
@@ -34,6 +34,7 @@ namespace WinTestKit.Inspector.Agent.Inspection
         private readonly QueryEngine query;
         private readonly WriteEngine writes;
         private readonly MethodInvocationExecutor invocations;
+        private readonly RedactionPolicy redaction;
         private readonly string sessionId;
         private readonly CancellationTokenSource lifetime = new CancellationTokenSource();
         private int disposed;
@@ -58,6 +59,7 @@ namespace WinTestKit.Inspector.Agent.Inspection
             query = new QueryEngine(executor, registry, inspector as ObjectInspector);
             writes = new WriteEngine(executor, allowlist ?? new WriteAllowlist(), redactNames ?? Array.Empty<string>());
             invocations = new MethodInvocationExecutor(executor, redactNames ?? Array.Empty<string>());
+            redaction = new RedactionPolicy(redactNames ?? Array.Empty<string>());
         }
 
         public bool ExactMappingAvailable => mapper.IsAvailable;
@@ -105,7 +107,7 @@ namespace WinTestKit.Inspector.Agent.Inspection
                     {
                         Visual? root = source.RootVisual;
                         if (root == null) throw new ProtocolException(ErrorCodes.MappingFailed, "Window has no WPF root.");
-                        Point local = root.PointFromScreen(new Point(point.X, point.Y));
+                        Point local = root.PointFromScreen(ScreenCoordinates.Convert(hwnd, new Point(point.X, point.Y), false));
                         if (root is UIElement rootElement && !new Rect(rootElement.RenderSize).Contains(local))
                             throw new ProtocolException(ErrorCodes.NotFound, "No hit.");
                         DependencyObject? target = null;
@@ -236,6 +238,16 @@ namespace WinTestKit.Inspector.Agent.Inspection
             return NewPage("", 0, "roots", "", nodes, Array.Empty<Diagnostic>(), size, token);
         }, ct);
 
+        public Task<ParentResult> ParentAsync(string objectId, long generation, CancellationToken ct) => RunAsync(async token =>
+        {
+            object target = GetObject(objectId, generation, out Dispatcher dispatcher);
+            return await executor.ExecuteAsync(dispatcher, () =>
+            {
+                object? parent = target is DependencyObject dependency ? TreeWalker.Parent(dependency) : WinFormsNative.ParentOf(target);
+                return new ParentResult { Handle = parent == null ? null : registry.Register(parent, dispatcher, inspector.DescribeType(parent.GetType())) };
+            }, token).ConfigureAwait(false);
+        }, ct);
+
         public Task<PageDto<ManagedNodeDto>> ChildrenAsync(string objectId, long generation, string tree,
             int? pageSize, string? pageToken, CancellationToken ct) => RunAsync(async token =>
         {
@@ -316,7 +328,7 @@ namespace WinTestKit.Inspector.Agent.Inspection
         {
             CheckCount(memberKeys.Count, ProtocolLimits.MaxBindingKeys, true);
             object target = GetObject(objectId, generation, out Dispatcher dispatcher);
-            return await executor.ExecuteAsync(dispatcher, () => inspector.GetBindings(target, memberKeys), token).ConfigureAwait(false);
+            return await executor.ExecuteAsync(dispatcher, () => inspector.GetBindings(target, memberKeys, registry, dispatcher), token).ConfigureAwait(false);
         }, ct);
 
         public Task<int> ReleaseAsync(IReadOnlyList<string> objectIds, CancellationToken ct) => RunAsync(token =>

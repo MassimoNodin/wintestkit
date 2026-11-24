@@ -1,6 +1,9 @@
 import * as vscode from "vscode";
 import type { InitializeResult, InspectManagedIdentifyResult, InspectManagedAttachResult, InspectManagedResolveResult, InspectManagedMembersParams, InspectManagedMembersResult, InspectManagedReadParams, InspectManagedReadResult, InspectManagedChildrenParams, InspectManagedChildrenResult, InspectManagedBindingsParams, InspectManagedBindingsResult, InspectManagedReleaseResult } from "../protocol/generated";
 import type { JsonRpcClient } from "../server/jsonrpc";
+import type { InspectManagedItemsParams, InspectManagedItemsResult } from "../protocol/generated";
+import type { InspectManagedStylingParams, InspectManagedStylingResult } from "../protocol/generated";
+import type { InspectManagedEventsParams, InspectManagedEventsResult, InspectManagedResourceParams, InspectManagedResourceResult } from "../protocol/generated";
 import type { InspectManagedSpyMethodsParams, InspectManagedSpyMethodsResult } from "../protocol/generated";
 
 export type ManagedState = "not enabled" | "not installed" | "unsupported target" | "blocked by policy" | "restart required" | "attach failed" | "mapping unavailable" | "detached (idle)" | "ready" | "not attached to this process";
@@ -64,7 +67,7 @@ export function managedErrorState(error: unknown): ManagedState {
 const WORKSPACE_NOT_TRUSTED = { code: "workspaceNotTrusted", hint: "Trust this workspace to attach the inspector." };
 const INSPECTOR_MISSING = { code: "payloadMissing", hint: `The inspector payload is missing or invalid. Install it with ${MANAGED_INSTALL_HINT}.` };
 // Requests about one object. Access denied there means the inspector withholds that object's data, not that the session is blocked.
-const OBJECT_REQUESTS = new Set(["members", "spyMethods", "read", "children", "bindings"]);
+const OBJECT_REQUESTS = new Set(["members", "spyMethods", "read", "children", "bindings", "styling", "resource", "events"]);
 
 /** Host-only session state. Never trusts process or session IDs from the webview. */
 export class ManagedInspector {
@@ -306,6 +309,13 @@ export class ManagedInspector {
     return result;
   }
   members(params: Omit<InspectManagedMembersParams, "sessionId">) { return this.call<InspectManagedMembersResult>("members", params); }
+  items(params: Omit<InspectManagedItemsParams, "sessionId">) { return this.call<InspectManagedItemsResult>("items", params); }
+  /** The Style, templates and resources of an object. No application code runs, so it is not part of the getter budget. */
+  styling(params: Omit<InspectManagedStylingParams, "sessionId">) { return this.call<InspectManagedStylingResult>("styling", params); }
+  /** The routed and CLR events of an object and who handles them. Only metadata is read, so it is not part of the getter budget either. */
+  events(params: Omit<InspectManagedEventsParams, "sessionId">) { return this.call<InspectManagedEventsResult>("events", params); }
+  /** One resource value, created on demand: the styling listing names keys only, because reading a deferred resource creates it in the application. */
+  resource(params: Omit<InspectManagedResourceParams, "sessionId">) { return this.call<InspectManagedResourceResult>("resource", params); }
   spyMethods(params: Omit<InspectManagedSpyMethodsParams, "sessionId">) { return this.call<InspectManagedSpyMethodsResult>("spyMethods", params); }
   read(params: Omit<InspectManagedReadParams, "sessionId">) { return this.call<InspectManagedReadResult>("read", params); }
   /** Wait while a user action (picker, refresh, tree expand, keepalive...) is in flight; resolves with the time waited. */

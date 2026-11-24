@@ -59,7 +59,15 @@ properties/fields and relevant WPF dependency properties. It lists nonpublic pro
 declarations and custom-attribute metadata without reading nonpublic values or instantiating
 attributes. Static application values, indexer evaluation, methods/events, arbitrary execution,
 mutation, resource materialization, collection enumeration, and control realization are not
-supported. Represent excluded values explicitly, not as empty strings.
+supported. *(Update: collection enumeration is now supported as bounded, paged `members.items`
+requests that Spy issues when an object row is expanded; see the managed inspection guide. Resource materialization is supported
+for the element's own `Resources` and a first page of `Application.Resources` through `members.styling`, together with the
+element's Style, BasedOn chain, setters, triggers and templates, none of which evaluates `DynamicResource` or binding markup.
+Listing resources names keys only and creates nothing; one resource is created only when its value is requested through
+`members.resource`. Events are now listed, with who handles them, through `members.events`: the routed events of the type and
+its base types with their instance handlers, and the CLR events with their subscribers, read from metadata and delegate lists
+without invoking anything. Calling methods stays a separate, confirmed operation. Mutation and control realization remain
+unsupported.)* Represent excluded values explicitly, not as empty strings.
 
 Discover relevant attached properties through local values and WPF descriptors. Do not read
 the private global dependency-property registry or initialize every loaded application type.
@@ -589,6 +597,19 @@ MarkupExtension. Validation entries contain exception/error type names only. Bin
 values require an ordinary explicit object read, not an implicit binding dump. Sensitive-name
 rules apply to binding paths and source metadata in exported output.
 
+> **Amendment (full binding details).** `BindingInfo` now also carries `stringFormat`,
+> `fallbackValue`, `targetNullValue`, `converterParameter`, `converterCulture`, `delay`,
+> `bindingGroupName`, `xPath`, `isAsync`, the `notifyOn*` and `validatesOn*` flags,
+> `validationRules` (type names), `hasUpdateSourceExceptionFilter`, `activeChildIndex`
+> (`PriorityBinding`), and from the binding expression `dataItem`, `resolvedSource`,
+> `resolvedSourcePropertyName`, `hasError` and `hasValidationError`. The value-bearing fields use
+> the `Value` DTO, so objects are handles. They report what WPF has already resolved: no converter,
+> getter or `UpdateTarget`/`UpdateSource` call, and no forced source resolution. Value-bearing fields
+> are omitted when the binding path or element name matches a redaction rule, or the value is
+> redacted or a protected object. "Binding source values require an ordinary explicit object
+> read" therefore applies only to the source's own members, which `dataItem` and `resolvedSource`
+> handles now let a follow-up read reach.
+
 ## 9. Value reading, nested paths, redaction, and serialization
 
 `members` returns notRead metadata, not values. `read` is the only operation that evaluates
@@ -627,12 +648,12 @@ Serialization is an explicit allowlist:
 | System.Type | type kind, TypeInfo metadata, no dynamic activation |
 | ordinary object | object kind with ObjectRef and TypeInfo; never arbitrary ToString |
 | CLR array | array kind with ObjectRef, rank/length metadata; no implicit iteration |
-| IEnumerable/ICollection/dictionary/Task/Lazy/stream/delegate | object reference only; no Count, iteration, awaiting, or Value evaluation |
+| IEnumerable/ICollection/dictionary/Task/Lazy/stream/delegate | object reference only; no Count, iteration, awaiting, or Value evaluation (update: `members.items` now enumerates collections, still never inside `read`) |
 
 Add optional `numericValue`, `typeInfo`, `arrayRank`, and `arrayLength` fields to Value schema
 for the corresponding variants. Arrays are not index-readable in V1; display their shape and
 ordinary public members only. This deliberately avoids collection side effects and does not
-promise item browsing. Do not serialize exceptions, COM objects, Dispatcher internals,
+promise item browsing (update: bounded item browsing now exists through `members.items`). Do not serialize exceptions, COM objects, Dispatcher internals,
 SecureString, pointer values, or raw handles; show unsupported/redacted metadata.
 
 Maintain a per-path reference-identity ancestor set. A repeated reference returns cycle with

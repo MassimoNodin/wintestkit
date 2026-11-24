@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Reflection;
 using System.Runtime.CompilerServices;
+using System.Windows;
 
 namespace WinTestKit.Inspector.Agent.Inspection.Members
 {
@@ -19,9 +20,10 @@ namespace WinTestKit.Inspector.Agent.Inspection.Members
             var overrides = new Dictionary<MethodInfo, int>();
             for (Type? current = type; current != null; current = current.BaseType)
             {
-                const BindingFlags flags = BindingFlags.DeclaredOnly | BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+                const BindingFlags flags = BindingFlags.DeclaredOnly | BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic;
                 foreach (PropertyInfo property in current.GetProperties(flags))
                 {
+                    if (property.Name.Contains("<") || property.IsDefined(typeof(CompilerGeneratedAttribute), false)) continue;
                     MethodInfo? accessor = property.GetGetMethod(true) ?? property.GetSetMethod(true);
                     if (accessor != null && accessor.IsVirtual)
                     {
@@ -37,7 +39,12 @@ namespace WinTestKit.Inspector.Agent.Inspection.Members
                     }
                     result.Add(new Declaration(property));
                 }
-                foreach (FieldInfo field in current.GetFields(flags)) result.Add(new Declaration(field));
+                foreach (FieldInfo field in current.GetFields(flags))
+                {
+                    if (field.Name.Contains("<") || field.IsDefined(typeof(CompilerGeneratedAttribute), false)) continue;
+                    if (field.IsStatic && (field.FieldType == typeof(DependencyProperty) || field.FieldType == typeof(DependencyPropertyKey) || field.FieldType == typeof(RoutedEvent))) continue;
+                    result.Add(new Declaration(field));
+                }
             }
             return result.ToArray();
         }
@@ -73,6 +80,7 @@ namespace WinTestKit.Inspector.Agent.Inspection.Members
         internal Type ValueType { get; }
         internal string Name { get; }
         internal string Key { get; }
+        internal bool IsStatic => Field?.IsStatic ?? (Property?.GetGetMethod(true) ?? Property?.GetSetMethod(true))?.IsStatic == true;
         internal static string TypeName(Type type) => type.FullName ?? string.Empty;
         internal static string AssemblyName(Type type) => type.Assembly.GetName().Name ?? string.Empty;
         internal static bool Unsupported(Type type)

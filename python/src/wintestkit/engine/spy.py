@@ -11,7 +11,7 @@ import time
 from collections.abc import Callable
 from typing import Any
 
-from wintestkit.engine.overlay import Overlay
+from wintestkit.engine.overlay import RED, Overlay
 from wintestkit.errors import EnvironmentNotReadyError
 from wintestkit.uia import com, win32
 from wintestkit.uia.element import UIAElement, from_point
@@ -28,6 +28,8 @@ class SpySession:
         process_filter: Callable[[int], bool] | None = None,
         throttle_ms: int = 60,
         resolve: Callable[[UIAElement, int, int, bool], Any] | None = None,
+        color: int = RED,
+        thickness: int = 3,
     ) -> None:
         if throttle_ms <= 0:
             raise ValueError("throttle_ms must be positive")
@@ -36,6 +38,8 @@ class SpySession:
         self._on_cancel = on_cancel
         self._process_filter = process_filter
         self._resolve = resolve
+        self._color = color
+        self._thickness = thickness
         self._throttle = throttle_ms / 1000
         self._events: queue.SimpleQueue[tuple[str, int, int]] = queue.SimpleQueue()
         self._stop = threading.Event()
@@ -176,7 +180,7 @@ class SpySession:
         last_hover = 0.0
         try:
             com.ensure_com_initialized()
-            overlay = Overlay()
+            overlay = Overlay(self._color, self._thickness)
             self._worker_ready.set()
             while not self._stop.is_set():
                 timeout = (

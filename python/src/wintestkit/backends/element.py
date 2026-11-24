@@ -45,7 +45,7 @@ class TargetElement(Protocol):
     @property
     def runtime_id(self) -> str: ...
     def info(self, with_patterns: bool = False) -> ElementInfo: ...
-    def parent(self) -> UIAElement | None: ...
+    def parent(self) -> TargetElement | None: ...
     def children(self) -> list[UIAElement]: ...
     def same_as(self, other: UIAElement) -> bool: ...
     def is_alive(self) -> bool: ...
@@ -170,6 +170,17 @@ class WpfElement:
         return None if rect.is_empty() else rect
 
     @property
+    def visible_rect(self) -> Rect | None:
+        bounds = self._get_state().visible_bounds
+        if bounds is None:
+            return None
+        left, top = round(bounds.x), round(bounds.y)
+        rect = Rect(
+            left, top, round(bounds.x + bounds.width) - left, round(bounds.y + bounds.height) - top
+        )
+        return None if rect.is_empty() else rect
+
+    @property
     def is_enabled(self) -> bool:
         return self._get_state().enabled
 
@@ -255,9 +266,11 @@ class WpfElement:
         """Expose the UIA peer for UIAElement.same_as without changing UIAElement."""
         return self.as_uia().raw
 
-    def parent(self) -> UIAElement | None:
-        """Delegate tree navigation to the UIA peer until the router slice."""
-        return self.as_uia().parent()
+    def parent(self) -> WpfElement | None:
+        ref = self.client.parent(
+            self.ref.object_id, self.ref.generation, deadline=operation_deadline(2)
+        )
+        return WpfElement(self.client, ref, self.process_id) if ref else None
 
     def children(self) -> list[UIAElement]:
         """Delegate tree navigation to the UIA peer until the router slice."""

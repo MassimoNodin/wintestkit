@@ -59,7 +59,8 @@ namespace WinTestKit.Inspector.Agent.State
             {
                 Handle = handle,
                 WindowHandle = source == null || source.Handle == IntPtr.Zero ? (long?)null : source.Handle.ToInt64(),
-                Bounds = bounds.HasValue ? Dto(bounds.Value) : null,
+                Bounds = bounds.HasValue ? Dto(ScreenCoordinates.Physical(source?.Handle ?? IntPtr.Zero, bounds.Value)) : null,
+                VisibleBounds = visible ? Dto(ScreenCoordinates.Physical(source?.Handle ?? IntPtr.Zero, intersection)) : null,
                 ClickPoint = visible && visual != null ? ClickPoint(visual, source, intersection) : null,
                 Dpi = new PointDto { X = 96 * scale.M11, Y = 96 * scale.M22 },
                 Visible = visible,
@@ -91,7 +92,7 @@ namespace WinTestKit.Inspector.Agent.State
                 if (!valid) continue;
                 var hit = VisualTreeHelper.HitTest(source.RootVisual, source.RootVisual.PointFromScreen(screen));
                 for (DependencyObject? node = hit?.VisualHit; node != null; node = VisualTreeHelper.GetParent(node))
-                    if (node == visual) return new PointDto { X = screen.X, Y = screen.Y };
+                    if (node == visual) { var physical = ScreenCoordinates.Convert(source.Handle, screen, true); return new PointDto { X = physical.X, Y = physical.Y }; }
             }
             return null;
         }
@@ -137,7 +138,9 @@ namespace WinTestKit.Inspector.Agent.State
                         Intersect(ref intersection, ScreenRect((Visual)ui, new Rect(new Point(), ui.RenderSize)));
                 }
             }
-            return intersection == bounds.Value ? bounds : null;
+            if (intersection != bounds.Value) return null;
+            var source = PresentationSource.FromVisual(visual) as HwndSource;
+            return ScreenCoordinates.Physical(source?.Handle ?? IntPtr.Zero, bounds.Value);
         }
 
         private static IReadOnlyList<PartGeometry> Parts(Control? control)

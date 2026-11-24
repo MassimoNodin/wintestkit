@@ -33,7 +33,7 @@ namespace WinTestKit.Inspector.Agent.Inspection.Members
                 var getter = d.Property?.GetGetMethod(true);
                 bool isPublic = d.Field != null ? d.Field.IsPublic : getter != null && getter.IsPublic;
                 string? reason = d.Property != null && d.Property.GetIndexParameters().Length != 0 ? "indexer" : d.Property != null && getter == null ? "writeOnly" : !isPublic ? "nonPublic" : Declaration.Unsupported(d.ValueType) ? "unsupportedType" : null;
-                var row = new MemberInfo { MemberKey = d.Key, Name = d.Name, Category = d.Property != null ? "clrProperty" : "clrField", DeclaringType = Declaration.TypeName(d.DeclaringType), DeclaredType = Declaration.TypeName(d.ValueType), Visibility = VisibilityOf(d.Field, getter ?? d.Property?.GetSetMethod(true)), Readable = reason == null, Reason = reason,
+                var row = new MemberInfo { MemberKey = d.Key, Name = d.Name, Category = d.Property != null ? (d.IsStatic ? "staticProperty" : "clrProperty") : (d.IsStatic ? "staticField" : "clrField"), DeclaringType = Declaration.TypeName(d.DeclaringType), DeclaredType = Declaration.TypeName(d.ValueType), Visibility = VisibilityOf(d.Field, getter ?? d.Property?.GetSetMethod(true)), Readable = reason == null, Reason = reason,
                     PathSegment = new PathSegment { Kind = d.Property != null ? "property" : "field", Name = d.Name, DeclaringType = Declaration.TypeName(d.DeclaringType), MemberKey = d.Key }, Attributes = Attributes(d, diagnostics) };
                 rows.Add(row);
             }
@@ -61,10 +61,10 @@ namespace WinTestKit.Inspector.Agent.Inspection.Members
                     {
                     DependencyProperty dp = entry.Property;
                     JsonObjectNode metadata = entry.Metadata(dependencyObject.GetType());
-                    var wrapper = entry.Descriptor?.IsAttached == true ? null : declarations.FirstOrDefault(d => d.Property != null && d.Name == dp.Name && d.ValueType == dp.PropertyType && (d.DeclaringType == dp.OwnerType || (entry.Descriptor != null && d.DeclaringType == entry.Descriptor.ComponentType) || d.BaseProperties.Any(property => property.DeclaringType == dp.OwnerType)));
+                    var wrapper = (entry.IsAttached || entry.Descriptor?.IsAttached == true) ? null : declarations.FirstOrDefault(d => d.Property != null && d.Name == dp.Name && d.ValueType == dp.PropertyType && (d.DeclaringType == dp.OwnerType || (entry.Descriptor != null && d.DeclaringType == entry.Descriptor.ComponentType) || d.BaseProperties.Any(property => property.DeclaringType == dp.OwnerType)));
                     if (wrapper != null) { MemberInfo? row = rows.FirstOrDefault(r => r.MemberKey == wrapper.Key); if (row != null) row.WrapperKey = entry.Key; }
                     bool unsupported = Declaration.Unsupported(dp.PropertyType);
-                    rows.Add(new MemberInfo { MemberKey = entry.Key, Name = dp.Name, Category = entry.Descriptor?.IsAttached == true ? "attachedProperty" : "dependencyProperty", DeclaringType = Declaration.TypeName(dp.OwnerType), DeclaredType = Declaration.TypeName(dp.PropertyType), Visibility = "public", Readable = !unsupported, Reason = unsupported ? "unsupportedType" : null, WrapperKey = wrapper?.Key, Dependency = metadata, PathSegment = new PathSegment { Kind = "dependency", Name = dp.Name, OwnerType = Declaration.TypeName(dp.OwnerType), OwnerAssembly = Declaration.AssemblyName(dp.OwnerType) } });
+                    rows.Add(new MemberInfo { MemberKey = entry.Key, Name = dp.Name, Category = (entry.IsAttached || entry.Descriptor?.IsAttached == true) ? "attachedProperty" : "dependencyProperty", DeclaringType = Declaration.TypeName(dp.OwnerType), DeclaredType = Declaration.TypeName(dp.PropertyType), Visibility = "public", Readable = !unsupported, Reason = unsupported ? "unsupportedType" : null, WrapperKey = wrapper?.Key, Dependency = metadata, PathSegment = new PathSegment { Kind = "dependency", Name = dp.Name, OwnerType = Declaration.TypeName(dp.OwnerType), OwnerAssembly = Declaration.AssemblyName(dp.OwnerType) } });
                     }
                     catch (Exception ex) { diagnostics.Add(new Diagnostic { Code = "discoveryFailed", Message = ex.GetType().FullName ?? "Exception", Category = "dependency" }); }
                 }
@@ -164,7 +164,7 @@ namespace WinTestKit.Inspector.Agent.Inspection.Members
                 }
                 var diagnostics = new List<Diagnostic>();
                 IReadOnlyList<MemberInfo> catalog = GetMembers(current!, diagnostics);
-                IEnumerable<MemberInfo> matches = catalog.Where(row => row.Name == segment.Name && ((segment.Kind == "property" && row.Category == "clrProperty") || (segment.Kind == "field" && row.Category == "clrField") || (segment.Kind == "dependency" && (row.Category == "dependencyProperty" || row.Category == "attachedProperty"))));
+                IEnumerable<MemberInfo> matches = catalog.Where(row => row.Name == segment.Name && ((segment.Kind == "property" && (row.Category == "clrProperty" || row.Category == "staticProperty")) || (segment.Kind == "field" && (row.Category == "clrField" || row.Category == "staticField")) || (segment.Kind == "dependency" && (row.Category == "dependencyProperty" || row.Category == "attachedProperty"))));
                 if (segment.MemberKey != null) matches = matches.Where(row => row.MemberKey == segment.MemberKey);
                 if (segment.DeclaringType != null) matches = matches.Where(row => row.DeclaringType == segment.DeclaringType);
                 if (segment.Kind == "dependency") matches = matches.Where(row => row.PathSegment?.OwnerType == segment.OwnerType && row.PathSegment?.OwnerAssembly == segment.OwnerAssembly);
@@ -175,7 +175,7 @@ namespace WinTestKit.Inspector.Agent.Inspection.Members
                 Declaration? declaration = ReflectionCatalog.Get(current!.GetType()).FirstOrDefault(d => d.Key == selected.MemberKey);
                 if (protectedIdentity && !RedactionPolicy.IsAllowedOnProtected(path, declaration)) return new ValueDto { Status = "redacted", Kind = "unavailable", RedactionRule = "identity" };
                 if (declaration != null && RedactionPolicy.IsPasswordIdentity(declaration.DeclaringType, declaration.Name)) return new ValueDto { Status = "redacted", Kind = "unavailable", RedactionRule = "identity" };
-                if (!selected.Readable && !(spyField && selected.Category == "clrField" && selected.Reason == "nonPublic" && declaration?.Field != null && !Declaration.Unsupported(declaration.ValueType))) return new ValueDto { Status = selected.Reason == "unsupportedType" ? "unsupported" : "notReadable", Kind = "unavailable", DeclaredType = selected.DeclaredType };
+                if (!selected.Readable && !(spyField && (selected.Category == "clrField" || selected.Category == "staticField") && selected.Reason == "nonPublic" && declaration?.Field != null && !Declaration.Unsupported(declaration.ValueType))) return new ValueDto { Status = selected.Reason == "unsupportedType" ? "unsupported" : "notReadable", Kind = "unavailable", DeclaredType = selected.DeclaredType };
                 try
                 {
                     object? next;
@@ -207,14 +207,14 @@ namespace WinTestKit.Inspector.Agent.Inspection.Members
                 catch (Exception ex)
                 {
                     Exception actual = ex is TargetInvocationException invocation && invocation.InnerException != null ? invocation.InnerException : ex;
-                    return new ValueDto { Status = "exception", Kind = "unavailable", DeclaredType = Declaration.TypeName(declared), Message = actual.GetType().FullName, FailedSegment = i };
+                    return new ValueDto { Status = "exception", Kind = "unavailable", DeclaredType = Declaration.TypeName(declared), Message = actual.GetType().FullName, ErrorMessage = protectedIdentity ? null : ValueSerializer.ErrorMessage(actual), FailedSegment = i };
                 }
             }
             ValueDto result = ValueSerializer.Serialize(current, declared, registry, dispatcher);
             if (result.Status == ValueStatus.Ok || result.Status == ValueStatus.Truncated) result.DependencySource = dependencySource;
             return result;
         }
-        public IReadOnlyList<BindingInfoDto> GetBindings(object target, IReadOnlyList<string> memberKeys)
+        public IReadOnlyList<BindingInfoDto> GetBindings(object target, IReadOnlyList<string> memberKeys, IObjectRegistry registry, Dispatcher dispatcher)
         {
             var result = new List<BindingInfoDto>();
             if (memberKeys.Count != 0 && RedactionPolicy.IsProtectedIdentity(target))
@@ -231,13 +231,13 @@ namespace WinTestKit.Inspector.Agent.Inspection.Members
                 if (entry == null) throw new ProtocolException(ErrorCodes.MemberNotFound, "Dependency property was not found");
                 if (redaction.Match(entry.Property.Name) != null)
                     throw new ProtocolException(ErrorCodes.AccessDenied, "Binding metadata is unavailable under the redaction policy");
-                result.Add(ToBinding(key, BindingMetadataReader.Read(dep, entry.Property, redaction)));
+                result.Add(ToBinding(key, BindingMetadataReader.Read(dep, entry.Property, redaction, registry, dispatcher)));
             }
             return result;
         }
         private static BindingInfoDto ToBinding(string key, BindingMetadata metadata)
         {
-            var result = new BindingInfoDto { MemberKey = key, Kind = metadata.Kind, Status = metadata.Status, Mode = metadata.Mode, UpdateSourceTrigger = metadata.Trigger, Path = metadata.Path, ElementName = metadata.ElementName, SourceType = metadata.SourceType, ConverterType = metadata.ConverterType };
+            var result = new BindingInfoDto { MemberKey = key, Kind = metadata.Kind, Status = metadata.Status, Mode = metadata.Mode, UpdateSourceTrigger = metadata.Trigger, Path = metadata.Path, ElementName = metadata.ElementName, SourceType = metadata.SourceType, ConverterType = metadata.ConverterType, StringFormat = metadata.StringFormat, FallbackValue = metadata.FallbackValue, TargetNullValue = metadata.TargetNullValue, ConverterParameter = metadata.ConverterParameter, ConverterCulture = metadata.ConverterCulture, Delay = metadata.Delay, BindingGroupName = metadata.BindingGroupName, XPath = metadata.XPath, IsAsync = metadata.IsAsync, NotifyOnSourceUpdated = metadata.NotifyOnSourceUpdated, NotifyOnTargetUpdated = metadata.NotifyOnTargetUpdated, NotifyOnValidationError = metadata.NotifyOnValidationError, ValidatesOnDataErrors = metadata.ValidatesOnDataErrors, ValidatesOnExceptions = metadata.ValidatesOnExceptions, ValidatesOnNotifyDataErrors = metadata.ValidatesOnNotifyDataErrors, ValidationRules = metadata.ValidationRules, HasUpdateSourceExceptionFilter = metadata.HasUpdateSourceExceptionFilter, ActiveChildIndex = metadata.ActiveChildIndex, DataItem = metadata.DataItem, ResolvedSource = metadata.ResolvedSource, ResolvedSourcePropertyName = metadata.ResolvedSourcePropertyName, HasError = metadata.HasError, HasValidationError = metadata.HasValidationError };
             if (metadata.RelativeMode != null)
             {
                 var relative = new JsonObjectNode(); relative.Add("mode", new JsonStringNode(metadata.RelativeMode));

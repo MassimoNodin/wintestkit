@@ -7,6 +7,30 @@ Unreleased changes must be moved to a dated candidate section before a release c
 
 ## [Unreleased]
 
+- **Properties sidebar:** A **Show all properties** switch replaces the Basic and Advanced button, and the row menu's **Pin** and **Unpin** replace Show in and Remove from Basic view. The search box has a search icon, Properties, Fields and Methods form one split button, and the **…** menu (Detach, Refresh metadata, Export metadata) moves to the preview heading after **In App context**.
+
+- **Properties sidebar:** Collapsible sections now show managed members in one alphabetical .NET list, with property-kind markers and control identification values when **Show all properties** is off.
+
+- **Managed inspection:** Selecting a WPF object now lists its **Events** under .NET in the Properties sidebar, with who handles them. Every routed event that applies to the type (and its base types) shows as `routed (Bubble), 2 handlers`, with the handlers added in code or XAML listed by declaring type and method name and marked `handledEventsToo` where they take handled events; every CLR event the type declares, instance or static, shows as `CLR, 1 subscriber`, with the subscribers read from its backing delegate field. A CLR event that only wraps a routed event (`Button.Click`) is listed once, as routed. An event whose handlers the inspector cannot read says `handlers unknown`; a password control lists names only. Events somebody handles come first, and each opens to one row per handler. Only metadata and delegate lists are read: no handler runs, so events do not spend the automatic read budget. New `members.events` request (`membersEvents` feature, `InspectorClient.events` and the `inspect.managed.events` RPC); restart a target that still runs an older agent.
+
+- **Managed inspection:** Resources in the Properties sidebar are listed by key and created only when asked for. Listing the resources of an element or the application no longer instantiates the lazily created resources of the dictionaries it lists (nor does naming the key of the element's style); each resource row says `(expand to read)`, and expanding it reads that one value through the new `members.resource` request (`InspectorClient.resource` and the `inspect.managed.resource` RPC), then shows it and, for an object, its members and items. Resource entries in the `members.styling` result now carry `key`, `keyKind` and `index` instead of a value.
+
+- **Managed inspection:** Selecting a WPF element now also shows its **Style and template** and **Resources** under .NET in the Properties sidebar: the style in use (its source, target type and key), its `Setter <Owner.Property>` rows with `DynamicResource`, binding and `TemplateBinding` markup named instead of evaluated, the `BasedOn` chain, and triggers that open to their conditions, setters and, for property triggers, whether they are active now; the control, content, item and item container templates with their triggers and named parts, the items panel and the templated parent; and the element's own resources (string, type and component keys, objects expandable), merged dictionary sources and an **Application resources** summary. It uses the new `members.styling` request (`membersStyling` feature, `InspectorClient.styling` and the `inspect.managed.styling` RPC) and runs no application getter; restart a target that still runs an older agent.
+
+- **Managed inspection:** Bindings in the Properties sidebar open to their full details: mode, update trigger, path, `XPath`, element name, relative source, source and converter types, `ConverterParameter`, `ConverterCulture`, `StringFormat`, `FallbackValue`, `TargetNullValue`, `Delay`, binding group, `IsAsync`, the notify and validation flags, validation rules, the resolved `DataItem` and `ResolvedSource` with its property name, error state and the active child of a `PriorityBinding`. `DataItem` and `ResolvedSource` expand like any object, and the children of Multi- and PriorityBindings nest under their parent. Values follow the redaction rules of member reads; empty and default fields are left out of the list.
+
+- **Managed inspection:** Expanding an object in Spy now lists the items of a collection (arrays, lists, dictionaries and other enumerables) under it: a `Count` row, `[0]`, `[1]`, ... rows (`[key]` for dictionaries), and a **Load more** row for further pages. Items that are objects expand like any other row, and a collection that throws while it is enumerated shows `Enumeration threw <type>: <message>` after the items read so far. Enumeration runs only when you expand a row, never in the automatic read. Restart a target that still runs an older inspector agent.
+
+- Show safe, bounded getter failure messages in managed Spy.
+
+- **Managed inspection:** Show non-default attached properties supplied by styles, templates, and inheritance.
+
+- **Managed inspection:** Spy lists inherited static properties and fields, and groups static methods separately.
+
+- **Properties sidebar:** With **Show all properties** off, Standard and .NET values are separated; with it on, managed members appear under collapsible category headings, with instance and static fields and methods grouped separately. **Read remaining** continues rows left unread after the automatic read budget.
+
+- Highlight peerless WPF elements and report ancestor outlines; configure outline thickness.
+
 ## [0.1.1rc4] - 2026-11-23
 
 Fourth prerelease. Install the extension's pre-release channel together with `pip install --pre "wintestkit[inspector]==0.1.1rc4"`.

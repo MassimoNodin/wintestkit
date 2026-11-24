@@ -45,6 +45,44 @@ namespace WinTestKit.Inspector.Agent.Mapping.Tests
         }
 
         [Fact]
+        public async Task ParentPrefersVisualTreeAndHandlesContent()
+        {
+            using (var ui = new DispatcherThread())
+            {
+                await ui.Dispatcher.InvokeAsync(() =>
+                {
+                    var panel = new StackPanel(); var button = new Button(); panel.Children.Add(button);
+                    Assert.Same(panel, TreeWalker.Parent(button));
+                    Assert.Null(TreeWalker.Parent(panel));
+                    var span = new System.Windows.Documents.Span(); var run = new System.Windows.Documents.Run(); span.Inlines.Add(run);
+                    Assert.Same(span, TreeWalker.Parent(run));
+                }).Task;
+            }
+        }
+
+        [Fact]
+        public async Task CrossesPopupSourceBoundary()
+        {
+            using (var ui = new DispatcherThread())
+            {
+                await ui.Dispatcher.InvokeAsync(() =>
+                {
+                    var child = new Border { Width = 20, Height = 20 };
+                    var popup = new System.Windows.Controls.Primitives.Popup { Child = child, IsOpen = true };
+                    var current = (DependencyObject)child;
+                    bool found = false;
+                    for (int i = 0; i < 20 && current != null; i++)
+                    {
+                        current = TreeWalker.Parent(current);
+                        if (ReferenceEquals(current, popup)) { found = true; break; }
+                    }
+                    popup.IsOpen = false;
+                    Assert.True(found);
+                }).Task;
+            }
+        }
+
+        [Fact]
         public void MissingOrChangedRuntimeIdMethodIsUnavailable()
         {
             Assert.False(new PeerRuntimeIdAdapter(typeof(NoMethod)).IsAvailable);

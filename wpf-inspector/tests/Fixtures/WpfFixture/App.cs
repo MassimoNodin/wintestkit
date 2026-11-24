@@ -236,6 +236,7 @@ public sealed class ChildHost : HwndHost
 
 public sealed class MainWindow : Window
 {
+    public static string StaticInspectionValue => "fixture-static";
     private readonly Popup popup;
     private readonly ListBox rows;
     private Window? second;
@@ -251,9 +252,13 @@ public sealed class MainWindow : Window
         DataContext = new ViewModel();
         var panel = Id(new StackPanel(), "MainPanel"); Content = new ScrollViewer { Content = panel };
         var fixture = Id(new FixtureControl { Content = "Fixture control", LocalValue = "local", CoercedValue = 25 }, "FixtureControl");
+        var fixtureStyle = new Style(typeof(FixtureControl));
+        fixtureStyle.Setters.Add(new Setter(Grid.RowProperty, 3));
+        fixture.Style = fixtureStyle;
         AttachedOwner.SetMarker(fixture, "attached");
         fixture.BeginAnimation(OpacityProperty, new DoubleAnimation(0.5, 1, new Duration(TimeSpan.FromHours(1))));
         panel.Children.Add(fixture);
+        panel.Children.Add(StylingButton());
         var contentDock = new DockPanel { Name = "_mainWindowDockPanel" };
         contentDock.Children.Add(new TextBlock { Text = "Content" });
         panel.Children.Add(contentDock);
@@ -330,6 +335,7 @@ public sealed class MainWindow : Window
         var source = Id(new TextBox { Name = "BindingSource", Text = "source" }, "BindingSource"); panel.Children.Add(source);
         var element = Id(new TextBlock(), "ElementNameBinding"); element.SetBinding(TextBlock.TextProperty, new Binding("Text") { Source = source }); panel.Children.Add(element);
         var relative = Id(new TextBlock(), "RelativeSourceBinding"); relative.SetBinding(TextBlock.TextProperty, new Binding("FontSize") { RelativeSource = new RelativeSource(RelativeSourceMode.Self) }); panel.Children.Add(relative);
+        var detailed = Id(new TextBlock(), "DetailedBinding"); detailed.SetBinding(TextBlock.TextProperty, new Binding("Label") { StringFormat = "[{0}]", FallbackValue = "fallback", TargetNullValue = "(null)", ConverterParameter = "cp", ConverterCulture = CultureInfo.InvariantCulture, BindingGroupName = "fixtureGroup", NotifyOnTargetUpdated = true, Mode = BindingMode.OneWay }); panel.Children.Add(detailed);
         var invalid = Id(new TextBox(), "ValidationError"); var validation = new Binding("Label") { ValidatesOnExceptions = true, UpdateSourceTrigger = UpdateSourceTrigger.PropertyChanged }; validation.ValidationRules.Add(new AlwaysInvalid()); invalid.SetBinding(TextBox.TextProperty, validation); panel.Children.Add(invalid); invalid.Text = "invalid"; invalid.GetBindingExpression(TextBox.TextProperty)?.UpdateSource();
         popup = new Popup { Child = Id(new Button { Content = "Popup content" }, "PopupContent"), PlacementTarget = fixture, Placement = PlacementMode.Bottom }; panel.Children.Add(popup);
         var duplicates = new StackPanel { Orientation = Orientation.Horizontal }; for (int i = 0; i < 2; i++) duplicates.Children.Add(Id(new Button { Content = "Duplicate", Width = 100, Height = 25 }, "Duplicate")); panel.Children.Add(duplicates);
@@ -343,6 +349,35 @@ public sealed class MainWindow : Window
         var suggestionRight = Id(new GroupBox { Content = new Button { Content = "Scoped suggestion" } }, "SuggestionRight");
         panel.Children.Add(suggestionLeft); panel.Children.Add(suggestionRight);
     }
+    /// <summary>A button with a based-on Style (a setter that is a DynamicResource, property and data triggers), a template with a named part and local resources.</summary>
+    private static Button StylingButton()
+    {
+        var button = Id(new Button { Content = "Styled button" }, "StylingButton");
+        button.Resources.Add("Accent", new SolidColorBrush(Colors.Crimson));
+        button.Resources.Add("StyleTitle", "Styled");
+        button.Resources.Add(typeof(CheckBox), new Style(typeof(CheckBox)));
+        var baseStyle = new Style(typeof(Button));
+        baseStyle.Setters.Add(new Setter(Control.PaddingProperty, new Thickness(6)));
+        baseStyle.Setters.Add(new Setter(Control.ForegroundProperty, new DynamicResourceExtension("Accent")));
+        var style = new Style(typeof(Button), baseStyle);
+        style.Setters.Add(new Setter(Control.FontWeightProperty, FontWeights.Bold));
+        var disabled = new Trigger { Property = UIElement.IsEnabledProperty, Value = false };
+        disabled.Setters.Add(new Setter(UIElement.OpacityProperty, 0.5));
+        style.Triggers.Add(disabled);
+        var hover = new Trigger { Property = UIElement.IsMouseOverProperty, Value = true };
+        hover.Setters.Add(new Setter(UIElement.OpacityProperty, 0.8));
+        style.Triggers.Add(hover);
+        var data = new DataTrigger { Binding = new Binding("Label"), Value = "Ready" };
+        data.Setters.Add(new Setter(ContentControl.ContentProperty, "Ready"));
+        style.Triggers.Add(data);
+        button.Style = style;
+        var frame = new FrameworkElementFactory(typeof(Border), "PART_Frame");
+        frame.SetValue(Border.BackgroundProperty, Brushes.WhiteSmoke);
+        frame.AppendChild(new FrameworkElementFactory(typeof(ContentPresenter), "PART_Content"));
+        button.Template = new ControlTemplate(typeof(Button)) { VisualTree = frame };
+        return button;
+    }
+
     private static T Id<T>(T control, string id) where T : DependencyObject { AutomationProperties.SetAutomationId(control, id); return control; }
     private static Window BuildControlsWindow()
     {

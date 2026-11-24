@@ -16,6 +16,7 @@ def add_parser(subparsers: Any) -> None:
 
 
 def run(args: argparse.Namespace) -> int:
+    from wintestkit.engine.overlay import parse_color
     from wintestkit.engine.properties import inspection_values
     from wintestkit.engine.spy import SpySession
     from wintestkit.engine.suggest import suggest_locator
@@ -42,7 +43,14 @@ def run(args: argparse.Namespace) -> int:
             print(f"  {name} = {code}")
         print(f"  {suggestion.attribute_name} = {suggestion.code}", flush=True)
 
-    session = SpySession(hover, pick, finished.set, None if pids is None else pids.__contains__)
+    session = SpySession(
+        hover,
+        pick,
+        finished.set,
+        None if pids is None else pids.__contains__,
+        color=parse_color(cfg.highlight_color),
+        thickness=cfg.highlight_thickness,
+    )
     try:
         session.start()
         print("Spy: Ctrl+Click to pick; Esc or Ctrl+C to exit.", flush=True)

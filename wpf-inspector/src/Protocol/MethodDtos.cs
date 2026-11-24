@@ -31,6 +31,17 @@ namespace WinTestKit.Inspector.Protocol
         public JsonObjectNode ToJson() { var o = new JsonObjectNode(); DtoHelpers.Add(o, "sessionId", SessionId); DtoHelpers.Add(o, "pageSize", PageSize); DtoHelpers.Add(o, "pageToken", PageToken); FromJson(o); return o; }
         public static RootsParams FromJson(JsonNode node) { var o = DtoHelpers.Object(node, "sessionId", "pageSize", "pageToken"); return new RootsParams { SessionId = DtoHelpers.Required(o, "sessionId"), PageSize = o.TryGet("pageSize", out var page) ? (int)DtoHelpers.Integer(page, 1, ProtocolLimits.MaxPageSize) : (int?)null, PageToken = DtoHelpers.Optional(o, "pageToken") }; }
     }
+    public sealed class ParentParams
+    {
+        public string SessionId { get; set; } = ""; public string ObjectId { get; set; } = ""; public long Generation { get; set; }
+        public static ParentParams FromJson(JsonNode n) { var o = DtoHelpers.Object(n, "sessionId", "objectId", "generation"); return new ParentParams { SessionId = DtoHelpers.Required(o, "sessionId"), ObjectId = DtoHelpers.Required(o, "objectId"), Generation = DtoHelpers.Integer(o.Get("generation"), 1) }; }
+    }
+    public sealed class ParentResult
+    {
+        public ObjectRef? Handle { get; set; }
+        public JsonObjectNode ToJson() { var o = new JsonObjectNode(); o.Add("handle", (JsonNode?)Handle?.ToJson() ?? JsonNullNode.Instance); return o; }
+        public static ParentResult FromJson(JsonNode n) { var o = DtoHelpers.Object(n, "handle"); var h = o.Get("handle"); return new ParentResult { Handle = h is JsonNullNode ? null : ObjectRef.FromJson(h) }; }
+    }
     public sealed class ChildrenParams
     {
         public string SessionId { get; set; } = "";

@@ -15,6 +15,7 @@
     <Compile Include="../../../src/Agent/Actions/ActionEngine.cs" Link="Actions/ActionEngine.cs" />
     <Compile Include="../../../src/Agent/Inspection/DispatcherExecutor.cs" Link="DispatcherExecutor.cs" />
     <Compile Include="../../../src/Agent/Contracts/**/*.cs" LinkBase="Contracts" />
+    <Compile Include="../../../src/Agent/State/ScreenCoordinates.cs" Link="State/ScreenCoordinates.cs" />
     <Compile Include="../../../src/Agent/Inspection/Members/**/*.cs" LinkBase="Members" />
   </ItemGroup>
 </Project>
