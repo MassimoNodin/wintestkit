@@ -7,13 +7,14 @@ Unreleased changes must be moved to a dated candidate section before a release c
 
 ## [Unreleased]
 
-- Save a locally reviewed diagnostics zip to help investigate errors.
+## [0.1.1rc6] - 2026-11-24
 
-- Keep WPF tree handles alive across selection changes and improve recovery and busy-app diagnostics.
+Sixth prerelease. Install the extension's pre-release channel together with `pip install --pre "wintestkit[inspector]==0.1.1rc6"`. The first upgrade from rc5 asks to close applications that still have the rc5 inspector loaded.
 
-- Simplified Properties sidebar row actions and moved metadata actions beside search.
-
-- Stage inspector payloads outside the Python package and help close applications holding older inspector files during upgrades.
+- **Upgrades:** The inspector is now injected from a verified copy next to the Python environment (or under `%LOCALAPPDATA%\WinTestKit\inspector`), so a running application no longer locks the installed package. Before installing, the extension names the applications that still hold older inspector files and offers to close them; force closing needs a second confirmation. A locked-file failure names the applications instead of showing the raw pip error, and pip rollback leftovers (`~intestkit…`) are removed after a successful install.
+- **Properties sidebar:** Click a name or value to copy it. Readable rows have a **Read again** icon and methods an **Invoke** icon; the row menu, Copy locator key and pinning are gone. `MappedName` is no longer listed. The Detach, Refresh metadata and Export metadata menu moved to a button beside the search box.
+- **Spy:** Expanding a WPF tree row no longer fails with `objectStale` after the Properties sidebar changes selection, and a stale row reloads the tree instead of showing an error. When the application's UI thread is busy, Spy says so and names the application and PID instead of reporting a failed attach, and inspector timeouts report how long the work waited and ran.
+- **Diagnostics:** **WinTestKit: Save Diagnostics…** collects versions, the WinTestKit log, `wtk doctor` checks and settings into a local zip for debugging. User, computer and domain names, home paths, email addresses and secret settings are redacted, the bundle opens for review before it is saved, and nothing is uploaded. The Spy trace, which may contain application values, is opt-in. See the diagnostics guide.
 
 ## [0.1.1rc5] - 2026-11-24
 
