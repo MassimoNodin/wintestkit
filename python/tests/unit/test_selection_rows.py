@@ -859,3 +859,28 @@ def test_unavailable_columns_and_dataitem_groups(
     assert bound.selected_items() == []
     bound.select("Order 1")
     assert bound.selected_items() == [" ".join(expected[0])]
+
+
+@pytest.mark.parametrize("mode", ["pattern", "mouse"])
+@pytest.mark.parametrize("clear", [True, False])
+def test_grid_cell_only_selection_is_removed(
+    grouped: GroupedGrid, monkeypatch: pytest.MonkeyPatch, mode: str, clear: bool
+) -> None:
+    row = grouped.rows[2]
+    cells = row.children()[:2]
+    selected = list(cells)
+    monkeypatch.setattr(patterns, "selection", lambda el: list(selected))
+    monkeypatch.setattr(actions, "is_selected", lambda el: False)
+    removed = []
+
+    def remove(container: Any, target: Any, actual_mode: str) -> None:
+        removed.append((target, actual_mode))
+        selected.remove(target)
+
+    monkeypatch.setattr(actions, "_toggle_off", remove)
+    if clear:
+        actions.clear_selection(grouped.grid, mode=mode)
+    else:
+        actions.deselect_items(grouped.grid, [1], mode=mode)
+    assert removed == [(cell, mode) for cell in cells]
+    assert not selected

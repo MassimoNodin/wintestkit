@@ -1394,3 +1394,37 @@ def test_dispatcher_diagnostics_are_preserved_and_whitelisted(reason: str) -> No
         assert "request read ran 2000 ms" in hint and "UI thread is busy" not in hint
     else:
         assert "running for 2500 ms" in hint and "UI thread is busy" not in hint
+
+
+def test_wire_timeout_has_headroom_and_preserves_server_details() -> None:
+    def handler(request: dict[str, Any]) -> object:
+        return {
+            "id": request["id"],
+            "error": {
+                "code": "timeout",
+                "message": "late",
+                "details": {"reason": "workTimeout", "ranMs": 1700},
+            },
+        }
+
+    transport = ScriptedTransport(handler)
+    client = InspectorClient(transport, session())
+    try:
+        with pytest.raises(InspectorDeadlineError) as exc:
+            client._request("act.toggle", {"timeoutMs": 2000}, time.monotonic() + 10)
+        assert 1 <= transport.requests[0]["params"]["timeoutMs"] <= 1700
+        assert exc.value.details == {"reason": "workTimeout", "ranMs": 1700}
+        assert exc.value.method == "act.toggle"
+    finally:
+        client.close()
+
+
+def test_local_expiry_has_distinct_reason() -> None:
+    client = InspectorClient(ScriptedTransport(lambda request: None), session())
+    try:
+        with pytest.raises(InspectorDeadlineError) as exc:
+            client._request("state.get", {}, time.monotonic() - 1)
+        assert exc.value.details["reason"] == "clientDeadline"
+        assert exc.value.method == "state.get"
+    finally:
+        client.close()

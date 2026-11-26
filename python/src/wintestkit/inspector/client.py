@@ -250,6 +250,12 @@ class EventSubscription:
             return True
 
 
+def _client_deadline(message: str) -> InspectorDeadlineError:
+    error = InspectorDeadlineError(message, code="timeout")
+    error.details = {"reason": "clientDeadline"}
+    return error
+
+
 class InspectorClient:
     def __init__(
         self,
@@ -444,7 +450,7 @@ class InspectorClient:
     ) -> _Pending:
         remaining = deadline - time.monotonic()
         if remaining <= 0 or not self._write_lock.acquire(timeout=max(0, remaining)):
-            raise InspectorDeadlineError("Inspector request deadline expired", code="timeout")
+            raise _client_deadline("Inspector request deadline expired")
         entry = _Pending(threading.Event(), method=method)
         try:
             with self._lock:
@@ -464,8 +470,16 @@ class InspectorClient:
                 with self._lock:
                     self._pending.pop(request_id, None)
                     self._abandoned.discard(request_id)
-                raise InspectorDeadlineError("Inspector request deadline expired", code="timeout")
+                raise _client_deadline("Inspector request deadline expired")
             try:
+                if "timeoutMs" in params:
+                    remaining_ms = int((deadline - time.monotonic()) * 1000)
+                    params = {
+                        **params,
+                        "timeoutMs": min(
+                            _int(params["timeoutMs"], 1, 2000), max(1, remaining_ms - 300)
+                        ),
+                    }
                 write_frame(
                     self._transport,
                     {"id": request_id, "method": method, "params": params},
@@ -475,9 +489,7 @@ class InspectorClient:
                 self.invalidate(
                     InspectorUnavailableError("Inspector pipe write failed", code="sessionStale")
                 )
-                raise InspectorDeadlineError(
-                    "Inspector pipe write timed out", code="timeout"
-                ) from error
+                raise _client_deadline("Inspector pipe write timed out") from error
             except (ValueError, EOFError, OSError, UnicodeError) as error:
                 self.invalidate(
                     InspectorUnavailableError("Inspector pipe write failed", code="sessionStale")
@@ -539,9 +551,7 @@ class InspectorClient:
                                 name="WinTestKit inspector cancel",
                                 daemon=True,
                             ).start()
-                            raise InspectorDeadlineError(
-                                "Inspector request deadline expired", code="timeout"
-                            )
+                            raise _client_deadline("Inspector request deadline expired")
                 if (
                     isinstance(entry.error, InspectorDeadlineError)
                     and entry.error.busy
@@ -593,6 +603,8 @@ class InspectorClient:
                 busy=error.busy,
             )
             wrapped.audit = error.audit
+            wrapped.details = error.details.copy()
+            wrapped.method = error.method or method
             raise wrapped from error
         except InspectorError as error:
             outcome = error.code if error.code in ERROR_CODES else "error"
@@ -723,7 +735,7 @@ class InspectorClient:
             raise InspectorError("Invalid request timeout", code="invalidParams") from error
         remaining = int((deadline - time.monotonic()) * 1000)
         if remaining < 1:
-            raise InspectorDeadlineError("Inspector request deadline expired", code="timeout")
+            raise _client_deadline("Inspector request deadline expired")
         return min(requested, remaining)
 
     def _query(self, method: str, locator: Locator, timeout_ms: int, deadline: float) -> object:

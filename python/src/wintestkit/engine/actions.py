@@ -959,7 +959,7 @@ def get_value(el: TargetElement) -> str:
 def _new_dialog(el: TargetElement, previous: set[int]) -> str | None:
     __tracebackhide__ = True
     for hwnd in win32.top_level_windows({el.process_id}):
-        if hwnd not in previous:
+        if hwnd not in previous and win32.is_dialog_window(hwnd):
             return win32.window_text(hwnd) or "Untitled"
     return None
 
@@ -1000,7 +1000,6 @@ def set_checked(
                 cause = exc.__cause__ if isinstance(exc.__cause__, InspectorError) else exc
                 if isinstance(cause, InspectorError) and (
                     cause.code in {"timeout", "dispatcherUnavailable"}
-                    and cause.details.get("reason") == "workTimeout"
                 ):
                     dialog = _new_dialog(el, windows)
                     if dialog is not None:
@@ -1107,23 +1106,42 @@ def is_expanded(el: TargetElement) -> bool:
         return False
 
 
+def _grid_selection(
+    el: TargetElement, rows: list[GridRow] | None = None, *, for_removal: bool = False
+) -> dict[str, list[TargetElement]]:
+    """Group selected rows and cells by row identity without reading every cell."""
+    __tracebackhide__ = True
+    row_elements = {
+        row.element.runtime_id: row.element
+        for row in (rows if rows is not None else grid_data_rows(el))
+    }
+    selected: dict[str, list[TargetElement]] = {}
+    for item in patterns.selection(el):
+        try:
+            row_id = item.runtime_id
+            if row_id not in row_elements:
+                parent = item.parent()
+                row_id = parent.runtime_id if parent is not None else ""
+            if row_id in row_elements:
+                selected.setdefault(row_id, []).append(item)
+        except UIAError as exc:
+            if not exc.element_gone:
+                raise
+    if for_removal:
+        for row_id in selected:
+            row = row_elements[row_id]
+            if is_selected(row):
+                selected[row_id] = [row]
+    return selected
+
+
 def selected_items(el: TargetElement) -> list[str]:
     """Names of the selected items of a list-like element."""
     __tracebackhide__ = True
     if _is_grid(el):
         rows = grid_data_rows(el)
-        selected = patterns.selection(el)
-        ids: set[str] = set()
-        for item in selected:
-            try:
-                ids.add(item.runtime_id)
-                parent = item.parent()
-                if parent is not None:
-                    ids.add(parent.runtime_id)
-            except UIAError as exc:
-                if not exc.element_gone:
-                    raise
-        return [row.text for row in rows if row.element.runtime_id in ids]
+        selected = _grid_selection(el, rows)
+        return [row.text for row in rows if row.element.runtime_id in selected]
     if isinstance(el, WpfElement):
         available = _wpf_patterns(el)
         if "Selection" not in available:
@@ -1603,11 +1621,19 @@ def deselect_items(
         raise ActionError("deselect() needs at least one item; use clear_selection() to clear")
     _multi_container(el, 1)
     expected = Counter(selected_items(el))
+    grid = _is_grid(el)
+    selected = _grid_selection(el, for_removal=True) if grid else {}
     for item in unique:
         chosen = _resolve_item(el, item, mode)
-        if is_selected(chosen):
-            _toggle_off(el, chosen, mode)
-            name = _grid_row_text(el, chosen) if _is_grid(el) else chosen.name
+        targets = (
+            selected.pop(chosen.runtime_id, [])
+            if grid
+            else ([chosen] if is_selected(chosen) else [])
+        )
+        if targets:
+            for target in targets:
+                _toggle_off(el, target, mode)
+            name = _grid_row_text(el, chosen) if grid else chosen.name
             expected[name] -= 1
     _verify_selection(el, +expected, timeout)
 
@@ -1619,7 +1645,7 @@ def clear_selection(
     __tracebackhide__ = True
     _multi_container(el, 1)
     chosen_items = (
-        [row.element for row in grid_data_rows(el) if is_selected(row.element)]
+        [item for items in _grid_selection(el, for_removal=True).values() for item in items]
         if _is_grid(el)
         else patterns.selection(el)
     )

@@ -324,3 +324,20 @@ def test_wait_for_state_timeout_message(fake_time: FakeTime) -> None:
         WaitTimeoutError, match=r"Timed out after 0\.5s waiting for x to be disabled"
     ):
         wait_for_state(lambda: element, "disabled", 0.5, "x to be disabled")  # type: ignore[arg-type,return-value]
+
+
+def test_client_chunk_expiry_retries_until_overall_timeout(fake_time: FakeTime) -> None:
+    calls = 0
+
+    def chunk() -> None:
+        nonlocal calls
+        calls += 1
+        fake_time.now += min(2, 10 - fake_time.now)
+        error = InspectorDeadlineError("chunk expired", code="timeout")
+        error.details = {"reason": "clientDeadline"}
+        raise error
+
+    with pytest.raises(WaitTimeoutError):
+        wait_until(chunk, 10, description="visible")
+    assert fake_time.now == pytest.approx(10)
+    assert calls > 1

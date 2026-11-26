@@ -324,6 +324,7 @@ def test_check_reports_new_dialog_without_waiting(monkeypatch: pytest.MonkeyPatc
     windows = [1]
     monkeypatch.setattr(win32, "top_level_windows", lambda pids: list(windows))
     monkeypatch.setattr(win32, "window_text", lambda hwnd: "Confirm")
+    monkeypatch.setattr(win32, "is_dialog_window", lambda hwnd: True)
     monkeypatch.setattr(actions, "is_checked", lambda el: False)
     monkeypatch.setattr(actions, "click", lambda el, mode: windows.append(2))
     start = time.monotonic()
@@ -332,8 +333,10 @@ def test_check_reports_new_dialog_without_waiting(monkeypatch: pytest.MonkeyPatc
     assert time.monotonic() - start < 1
 
 
+@pytest.mark.parametrize("reason", ["workTimeout", "clientDeadline", "queueWait"])
 def test_pattern_check_reports_dialog_on_inspector_work_timeout(
     monkeypatch: pytest.MonkeyPatch,
+    reason: str,
 ) -> None:
     from wintestkit.backends.element import WpfElement
     from wintestkit.errors import InspectorDeadlineError
@@ -343,14 +346,31 @@ def test_pattern_check_reports_dialog_on_inspector_work_timeout(
     windows = [1]
     monkeypatch.setattr(win32, "top_level_windows", lambda pids: list(windows))
     monkeypatch.setattr(win32, "window_text", lambda hwnd: "Confirm")
+    monkeypatch.setattr(win32, "is_dialog_window", lambda hwnd: True)
     monkeypatch.setattr(actions, "_wpf_read", lambda *args: "Off")
 
     def fail(*args: Any) -> None:
         windows.append(2)
         error = InspectorDeadlineError("timeout", code="dispatcherUnavailable")
-        error.details = {"reason": "workTimeout"}
+        error.details = {"reason": reason}
         raise error
 
     monkeypatch.setattr(actions, "_wpf_act", fail)
     with pytest.raises(ActionError, match='dialog "Confirm"'):
         actions.set_checked(checkbox, True)
+
+
+def test_new_dialog_ignores_tool_windows(monkeypatch: pytest.MonkeyPatch) -> None:
+    ex_styles = {2: win32.WS_EX_TOOLWINDOW, 3: win32.WS_EX_NOACTIVATE}
+    monkeypatch.setattr(win32, "top_level_windows", lambda pids: [1, 2, 3, 4])
+    monkeypatch.setattr(win32, "IsWindowVisible", lambda hwnd: True)
+    monkeypatch.setattr(
+        win32,
+        "GetWindowLongW",
+        lambda hwnd, index: ex_styles.get(hwnd, 0) if index == win32.GWL_EXSTYLE else 0,
+    )
+    monkeypatch.setattr(win32, "window_text", lambda hwnd: f"Window {hwnd}")
+    # Window 4 has no caption (custom chrome) but can take focus, so it counts as a dialog.
+    assert actions._new_dialog(FakeElement("CheckBox"), {1}) == "Window 4"
+    monkeypatch.setattr(win32, "top_level_windows", lambda pids: [1, 2, 3])
+    assert actions._new_dialog(FakeElement("CheckBox"), {1}) is None
