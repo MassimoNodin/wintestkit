@@ -871,7 +871,7 @@ def test_unavailable_columns_and_dataitem_groups(
     assert bound.selected_items() == [" ".join(expected[0])]
 
 
-@pytest.mark.parametrize("mode", ["pattern", "mouse"])
+@pytest.mark.parametrize("mode", ["pattern"])
 @pytest.mark.parametrize("clear", [True, False])
 def test_grid_cell_only_selection_is_removed(
     grouped: GroupedGrid, monkeypatch: pytest.MonkeyPatch, mode: str, clear: bool
@@ -897,41 +897,41 @@ def test_grid_cell_only_selection_is_removed(
 
 
 @pytest.mark.parametrize("clear", [True, False])
-def test_mouse_grid_removal_refreshes_stale_targets(
+def test_mouse_grid_removal_clicks_rows_for_cell_selection(
     grouped: GroupedGrid, monkeypatch: pytest.MonkeyPatch, clear: bool
 ) -> None:
-    generation = [0]
-    remaining = {1: 2, 2: 1}
     rows = {1: grouped.rows[1], 2: grouped.rows[2]}
-    monkeypatch.setattr(actions, "is_selected", lambda row: False)
+    state = {1: "cells", 2: "cells"}
+    clicks: list[int] = []
 
     class Cell:
         def __init__(self, index: int) -> None:
             self.index = index
-            self.generation = generation[0]
 
         def parent(self) -> Any:
-            assert self.generation == generation[0], "stale cell"
             return rows[self.index]
 
         @property
         def runtime_id(self) -> str:
-            assert self.generation == generation[0], "stale cell"
-            return f"cell-{self.index}-{self.generation}"
+            return f"cell-{self.index}"
 
     def selection(el: Any) -> list[Any]:
-        return [Cell(index) for index, count in remaining.items() for _ in range(count)]
+        return [Cell(i) if value == "cells" else rows[i] for i, value in state.items() if value]
 
     def click(el: Any, target: Any, mode: str) -> None:
-        assert target.generation == generation[0], "clicked stale cell"
-        remaining[target.index] -= 1
-        generation[0] += 1
+        assert target in rows.values(), "selection cell peer cannot be clicked"
+        index = next(i for i, row in rows.items() if row is target)
+        clicks.append(index)
+        state[index] = "row" if state[index] == "cells" else ""
 
     monkeypatch.setattr(patterns, "selection", selection)
+    monkeypatch.setattr(
+        actions, "is_selected", lambda row: row in [rows[i] for i in rows if state[i] == "row"]
+    )
     monkeypatch.setattr(actions, "_toggle_off", click)
     if clear:
         actions.clear_selection(grouped.grid, mode="mouse")
     else:
         actions.deselect_items(grouped.grid, [0, 1], mode="mouse")
-    assert remaining == {1: 0, 2: 0}
-    assert generation[0] == 3
+    assert state == {1: "", 2: ""}
+    assert clicks == [1, 1, 2, 2]

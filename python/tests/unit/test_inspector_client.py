@@ -1440,3 +1440,26 @@ def test_error_preserves_server_details() -> None:
         {"id": 1, "error": {"code": "limitExceeded", "message": "expired", "details": details}}
     )
     assert error is not None and error.details == details
+
+
+def test_send_short_budget_preserves_session_and_write_has_floor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import wintestkit.inspector.client as client_module
+
+    writes: list[float] = []
+    monkeypatch.setattr(
+        client_module, "write_frame", lambda transport, frame, deadline: writes.append(deadline)
+    )
+    client = InspectorClient(ScriptedTransport(lambda request: None), session())
+    try:
+        with pytest.raises(InspectorDeadlineError) as caught:
+            client._send("test", {}, time.monotonic() + 0.01)
+        assert caught.value.budget_exhausted and caught.value.details["reason"] == "clientDeadline"
+        assert not writes and not client._closed
+        start = time.monotonic()
+        client._send("test", {}, start + 0.1)
+        assert writes[0] >= start + 0.5
+        assert not client._closed
+    finally:
+        client.close()

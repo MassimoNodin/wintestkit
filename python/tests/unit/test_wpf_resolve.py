@@ -684,9 +684,30 @@ def test_route_preserves_busy_reason_and_hint(monkeypatch, reason):
     monkeypatch.setattr(wpf_resolve, "root_handle", lambda window: 1)
     with pytest.raises(InspectorDeadlineError) as caught:
         wpf_resolve.route(window, force=True)
-    assert caught.value is error and caught.value.busy
-    assert "busy.." not in str(error)
+    assert caught.value is not error and caught.value.busy
+    assert "busy.." not in str(caught.value)
     assert caught.value.details["reason"] == reason
-    assert "set backend: uia" not in str(error)
+    assert "set backend: uia" not in str(caught.value)
     if reason == "earlierWorkRunning":
-        assert "dialog" in str(error)
+        assert "dialog" in str(caught.value)
+
+
+def test_route_wraps_without_mutating_original_error(setup, monkeypatch):
+    _, _, window = setup
+    original = InspectorDeadlineError("expired", code="timeout", busy=True)
+    original.details = {"reason": "clientDeadline"}
+    original.method = "attach"
+
+    def fail(*args, **kwargs):
+        raise original
+
+    monkeypatch.setattr(wpf_resolve.runtime, "managed_client_for", fail)
+    errors = []
+    for _ in range(2):
+        with pytest.raises(InspectorDeadlineError) as caught:
+            wpf_resolve.route(window)
+        errors.append(caught.value)
+    assert errors[0] is not errors[1] and str(errors[0]) == str(errors[1])
+    assert str(original) == "expired"
+    assert errors[0].busy and errors[0].details == original.details
+    assert errors[0].method == original.method and errors[0].__cause__ is original

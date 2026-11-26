@@ -136,6 +136,16 @@ class InspectorError(WtkError):
         self.details: dict[str, Any] = {}
         self.method = ""
 
+    def copy_with_message(self, message: str) -> InspectorError:
+        """Make an independent error while preserving inspector diagnostics."""
+        kwargs: dict[str, Any] = {"code": self.code, "audit": self.audit}
+        if isinstance(self, InspectorDeadlineError):
+            kwargs["busy"] = self.busy
+        result = type(self)(message, **kwargs)
+        result.details = self.details.copy()
+        result.method = self.method
+        return result
+
     def to_dict(self) -> dict[str, Any]:
         return {
             **super().to_dict(),

@@ -474,7 +474,7 @@ class InspectorClient:
                     self._abandoned.add(request_id)
                 else:
                     self._pending[request_id] = entry
-            if time.monotonic() >= deadline:
+            if deadline - time.monotonic() < 0.05:
                 with self._lock:
                     self._pending.pop(request_id, None)
                     self._abandoned.discard(request_id)
@@ -491,7 +491,7 @@ class InspectorClient:
                 write_frame(
                     self._transport,
                     {"id": request_id, "method": method, "params": params},
-                    deadline,
+                    max(deadline, time.monotonic() + 0.5),
                 )
             except TimeoutError as error:
                 self.invalidate(
@@ -587,7 +587,10 @@ class InspectorClient:
                             raise InspectorUnavailableError(
                                 "Inspector session is not ready", code="sessionStale"
                             )
-                    if time.monotonic() >= deadline:
+                    remaining = deadline - time.monotonic()
+                    if remaining < 0.05:
+                        if remaining > 0:
+                            time.sleep(remaining)
                         raise entry.error
                     continue
                 if (

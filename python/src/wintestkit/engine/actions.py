@@ -1681,7 +1681,7 @@ def deselect_items(
                 if not targets or current == previous:
                     break
                 previous = current
-                _toggle_off(el, targets[0], mode)
+                _toggle_off(el, chosen, mode)
                 removed = True
             if removed:
                 expected[name] -= 1
@@ -1707,12 +1707,18 @@ def clear_selection(
     if mode == "mouse":
         previous: tuple[str, ...] | None = None
         for _ in range(_MOUSE_DESELECT_LIMIT):
-            chosen_items = (
-                [item for items in _grid_selection(el, for_removal=True).values() for item in items]
-                if _is_grid(el)
-                else patterns.selection(el)
-            )
-            current = _selection_ids(chosen_items)
+            if _is_grid(el):
+                rows = grid_data_rows(el)
+                selected = _grid_selection(el, rows, for_removal=True)
+                chosen_items = [row.element for row in rows if row.element.runtime_id in selected]
+                current = tuple(
+                    value
+                    for row in chosen_items
+                    for value in (row.runtime_id, *_selection_ids(selected[row.runtime_id]))
+                )
+            else:
+                chosen_items = patterns.selection(el)
+                current = _selection_ids(chosen_items)
             # Stop when the last click changed nothing; _verify_selection reports it.
             if not chosen_items or current == previous:
                 break
