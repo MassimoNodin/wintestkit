@@ -67,13 +67,38 @@ class Suggestion:
         return data
 
 
-def attribute_name_for(info: ElementInfo) -> str:
-    source = info.name or info.automation_id or f"{info.control_type}_1"
+def attribute_name_for(info: ElementInfo, locator: Locator | None = None) -> str:
+    """A Python attribute name for the element, from its name, automation id, x:Name or type.
+
+    A peerless WPF object (a Border in a template) has no name, automation id or control type,
+    so the x:Name its locator uses, else its CLR type, names it instead of ``_1``.
+    """
+    x_name = next(
+        (
+            value
+            for key, value in (locator.where if locator is not None and locator.where else ())
+            if key == "clr:Name" and isinstance(value, str)
+        ),
+        "",
+    )
+    clr_type = (
+        re.split(r"[.+]", info.class_name)[-1]
+        if info.framework_id in ("WPF", "WinForms") and info.class_name
+        else ""
+    )
+    source = (
+        info.name
+        or info.automation_id
+        or x_name
+        or (f"{info.control_type}_1" if info.control_type else f"{clr_type}_1" if clr_type else "")
+    )
     source = re.sub(r"([A-Z]+)([A-Z][a-z])", r"\1_\2", source)
     source = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", source)
     name = re.sub(r"[^\w]+", "_", source, flags=re.UNICODE).strip("_").lower()
     if not name:
-        name = info.control_type.lower() + "_1"
+        name = (info.control_type or clr_type).lower() + "_1"
+    if name == "_1":
+        name = "element_1"
     if name[0].isdigit():
         name = "_" + name
     if not name.isidentifier():
@@ -364,7 +389,7 @@ def _suggest_wpf(
             matches: int,
             helpers: tuple[tuple[str, str, Locator], ...] = (),
         ) -> Suggestion:
-            name = attribute_name_for(element.info())
+            name = attribute_name_for(element.info(), locator)
             return Suggestion(
                 locator,
                 render_element_code(locator, helpers[-1][0] if helpers else None),

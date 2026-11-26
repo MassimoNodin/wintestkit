@@ -1599,8 +1599,12 @@
       const lookAlikes = entry ? [...nodes.values()].filter((other) => other.parentId === entry.parentId && other.node.source === entry.node.source && (other.node.identity?.type || "") === (entry.node.identity?.type || "") && (other.node.info.name || "") === (entry.node.info.name || "")).sort((a, b) => a.index - b.index) : [];
       const ordinal = lookAlikes.includes(entry) ? lookAlikes.indexOf(entry) + 1 : undefined;
       const aliases = isManaged(p.source) ? ["ClrClassName", "ClrFullClassName", nameAlias, ...(p.source === "wpf" ? ["WPFControlOrdinalNo"] : []), textKey(p.source)] : [];
+      // An object whose children were never listed (a picked leaf's sibling branches, a collapsed row) has them loaded
+      // in the background, without opening its row, so ChildCount shows a number instead of Unknown.
+      if (entry && entry.node.hasChildren && !entry.loaded && !entry.loading && !entry.wpfBlocked) { entry.loading = true; entry.row.setAttribute("aria-busy", "true"); post("expand", { nodeId: selected }); }
+      const listed = entry?.loaded ? entry.children.querySelectorAll(":scope > li > .node").length : 0;
       const standard = {
-        ChildCount: entry?.node.hasChildren === false ? 0 : entry?.loaded ? entry.children.children.length : undefined,
+        ChildCount: entry?.node.hasChildren === false ? 0 : entry?.loaded ? (entry.children.querySelector(":scope > .tree-message button") ? `${listed}+` : listed) : undefined,
         Enabled: info.isEnabled, Exists: true, FullName: locatorPath,
         Height: info.rect?.height, Left: offset(info.rect?.left, windowRect?.left),
         Name: (isManaged(p.source) && raw[nameKey(p.source)]) || info.name, Parent: actualParent?.label, ScreenLeft: info.rect?.left, ScreenTop: info.rect?.top,
@@ -2535,6 +2539,7 @@
         }
         entry.loaded = !message.blocked;
         entry.loading = false;
+        if (selected === message.nodeId && !message.blocked) renderSidebar();
         if (message.expanded) { entry.open = true; if (message.nodes.length || message.nextPageToken) { entry.node.hasChildren = true; entry.toggle.disabled = false; entry.row.setAttribute("aria-expanded", "true"); } }
         entry.row.removeAttribute("aria-busy");
         if (!message.append && !message.nodes.length && !message.nextPageToken && !message.blocked) {

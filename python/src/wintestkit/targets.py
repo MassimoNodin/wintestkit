@@ -610,8 +610,15 @@ def check_page(
     uniquely found single element saves its preview, as a single-element check does.
     """
     from wintestkit.engine import relocate
+    from wintestkit.engine.resolve import shared_missing_scopes
+    from wintestkit.object_previews import shared_window_scans
 
-    with runtime.config_scope(loader.cfg), relocate.shared_budget():
+    with (
+        runtime.config_scope(loader.cfg),
+        relocate.shared_budget(),
+        shared_missing_scopes(),
+        shared_window_scans(),
+    ):
         return _check_page(app, loader, file, page_name, timeout, capture)
 
 

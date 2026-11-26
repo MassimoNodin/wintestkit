@@ -17,6 +17,21 @@ namespace WinTestKit.Inspector.Agent.Inspection.Members
         public ObjectInspector() : this(Array.Empty<string>()) { }
         public ObjectInspector(IEnumerable<string> extraRedactNames) { redaction = new RedactionPolicy(extraRedactNames ?? throw new ArgumentNullException(nameof(extraRedactNames))); }
         internal bool IsPathRedacted(IReadOnlyList<PathSegment> path) => path.Any(segment => redaction.Match(segment.Name) != null);
+
+        /// <summary>
+        /// The x:Name of a FrameworkElement or FrameworkContentElement for tree identity, with the protection and redaction
+        /// checks a <c>property Name</c> read applies; null when it is empty, protected, redacted or too long to return whole.
+        /// Reading the property directly skips building the object's member catalog, which costs about 7 ms per element.
+        /// </summary>
+        internal string? IdentityName(object target)
+        {
+            if (!(target is FrameworkElement) && !(target is FrameworkContentElement)) return null;
+            if (redaction.Match("Name") != null || RedactionPolicy.IsProtectedIdentity(target)) return null;
+            string name = target is FrameworkElement element ? element.Name : ((FrameworkContentElement)target).Name;
+            if (string.IsNullOrEmpty(name)) return null;
+            ScalarText.Prefix(name, ProtocolLimits.MaxScalarChars, out int length);
+            return length > ProtocolLimits.MaxScalarChars ? null : name;
+        }
         public TypeInfoDto DescribeType(Type type) => TypeInfoBuilder.Build(type);
 
         public IReadOnlyList<MemberInfo> GetMembers(object target, List<Diagnostic> diagnostics)

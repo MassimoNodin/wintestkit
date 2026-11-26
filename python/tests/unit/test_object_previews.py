@@ -935,3 +935,15 @@ def test_single_colour_and_offscreen_skip_reasons(preview, monkeypatch):
     assert capture(preview) is None
     status = json.loads((preview.directory / "status.json").read_text())
     assert "scrolled out of view or hidden" in status["reason"]
+
+
+def test_a_page_check_scans_each_window_for_sensitive_controls_once(preview, monkeypatch):
+    scans = Mock(wraps=object_previews._window_redactions)
+    monkeypatch.setattr(object_previews, "_window_redactions", scans)
+    with object_previews.shared_window_scans():
+        assert capture(preview) is not None
+        assert capture(preview) is not None
+    assert scans.call_count == 1
+    # Outside a page check every preview scans again.
+    assert capture(preview) is not None
+    assert scans.call_count == 2

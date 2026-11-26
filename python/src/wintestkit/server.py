@@ -910,7 +910,9 @@ class Server:
         info = ElementInfo(
             automation_id,
             peer_name,
-            control_type,
+            # A peerless object (a Border in a template) has no UIA control type; the Spy tree
+            # names it by its CLR type, so the Selected object header does too.
+            control_type or node.ref.type.name,
             node.ref.type.full_name,
             "WinForms" if winforms else "WPF",
             node.process_id,

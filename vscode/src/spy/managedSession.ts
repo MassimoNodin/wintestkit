@@ -73,6 +73,12 @@ export function managedErrorState(error: unknown): ManagedState {
 const WORKSPACE_NOT_TRUSTED = { code: "workspaceNotTrusted", hint: "Trust this workspace to attach the inspector." };
 const INSPECTOR_MISSING = { code: "payloadMissing", hint: `The inspector payload is missing or invalid. Install it with ${MANAGED_INSTALL_HINT}.` };
 // Requests about one object. Access denied there means the inspector withholds that object's data, not that the session is blocked.
+/** The token of the page after this one: members, events and Spy methods call it nextToken, items nextPageToken. */
+function nextPageToken(result: unknown): string | undefined {
+  const page = result as { nextToken?: unknown; nextPageToken?: unknown } | undefined;
+  const token = page?.nextToken ?? page?.nextPageToken;
+  return typeof token === "string" && token ? token : undefined;
+}
 const OBJECT_REQUESTS = new Set(["members", "spyMethods", "read", "children", "bindings", "styling", "resource", "events"]);
 
 /** Host-only session state. Never trusts process or session IDs from the webview. */
@@ -90,6 +96,8 @@ export class ManagedInspector {
   private nodeId?: string;
   private sequence = 0;
   private handles = new Set<string>();
+  /** How each page token was reached: the request without its token and how many pages precede the token's page. */
+  private pageTrails = new Map<string, { method: string; params: object; pages: number }>();
   private releasing: Promise<void> = Promise.resolve();
   get sessionInfo(): InspectManagedAttachResult | undefined { return this.session; }
   get targetLabel(): string { return `${this.executable} (PID ${this.session?.process.pid ?? "unknown"})`; }
@@ -100,8 +108,10 @@ export class ManagedInspector {
   private requestPicked<T>(nodeId: string, call: (id: string) => Promise<T>): Promise<T> {
     return this.pickedCall ? this.pickedCall(nodeId, call) : call(nodeId);
   }
-  private fail(error: unknown, facts?: { executable: string; process: { pid: number; creationTimeUtc?: string } }, request?: string): ManagedFailure {
-    const failure = managedFailure(error); this.failure = failure; this.state = managedErrorState(error);
+  /** Logs a failure and, unless `keepState`, makes it the attachment's state. */
+  private fail(error: unknown, facts?: { executable: string; process: { pid: number; creationTimeUtc?: string } }, request?: string, keepState = false): ManagedFailure {
+    const failure = managedFailure(error);
+    if (!keepState) { this.failure = failure; this.state = managedErrorState(error); }
     facts ??= this.targetOf(this.nodeId) ?? (this.session ? { executable: this.executable, process: this.session.process } : undefined);
     const known = facts && facts.executable !== "unknown" ? facts : this.targetOf(this.nodeId) ?? facts;
     const sentence = (value: string) => value.replace(/[.\s]+$/, "");
@@ -249,7 +259,7 @@ export class ManagedInspector {
     const session = this.session; this.invalidate();
     if (session) await this.client.request("inspect.managed.detach", { sessionId: session.sessionId }).catch(() => {});
   }
-  invalidate(): void { this.flushStalls(); this.sequence++; void this.clearSpy(); this.session = undefined; this.handles.clear(); this.state = "detached (idle)"; }
+  invalidate(): void { this.flushStalls(); this.sequence++; void this.clearSpy(); this.session = undefined; this.handles.clear(); this.pageTrails.clear(); this.state = "detached (idle)"; }
   private ordered<T>(action: () => Promise<T>): Promise<T> {
     const result = this.spyQueue.then(action, action);
     this.spyQueue = result.catch(() => undefined);
@@ -293,8 +303,8 @@ export class ManagedInspector {
     const sessionId = this.session?.sessionId, node = this.nodeId, seq = this.sequence;
     if (!sessionId || !node) return;
     try {
-      const request = (id: string) => this.client.request<T>(`inspect.managed.${method}`, { ...params, ...(method === "resolve" ? { nodeId: id } : {}), sessionId });
-      const result = method === "resolve" && node ? await this.requestPicked(node, request) : await request(node ?? "");
+      const request = (id: string, values: object = params) => this.client.request<T>(`inspect.managed.${method}`, { ...values, ...(method === "resolve" ? { nodeId: id } : {}), sessionId });
+      const result = method === "resolve" && node ? await this.requestPicked(node, request) : await this.paged(method, params, (values) => request(node ?? "", values));
       if (!this.current(seq, node, sessionId)) {
         const old = this.handles; this.handles = new Set(); this.remember(result); const ids = [...this.handles]; this.handles = old;
         if (ids.length) await this.releaseIds(sessionId, ids);
@@ -309,6 +319,35 @@ export class ManagedInspector {
       return;
     }
   }
+  /**
+   * Sends a paged request. The agent forgets a page token 30 s after issuing it, so a list continued later (for example
+   * after the getter consent dialog was left open) gets a fresh token by reading its earlier pages again, instead of
+   * failing with invalidPageToken.
+   */
+  private async paged<T>(method: string, params: object, request: (values: object) => Promise<T>): Promise<T> {
+    const token = (params as { pageToken?: unknown }).pageToken;
+    const trail = typeof token === "string" ? this.pageTrails.get(token) : undefined;
+    let result: T;
+    try { result = await request(params); }
+    catch (error) {
+      if (!trail || trail.method !== method || managedFailure(error).code !== "invalidPageToken") throw error;
+      let fresh: string | undefined;
+      for (let page = 0; page < trail.pages; page++) {
+        const earlier = await request(fresh ? { ...trail.params, pageToken: fresh } : trail.params);
+        fresh = nextPageToken(earlier);
+        if (!fresh) throw error;
+      }
+      result = await request({ ...trail.params, pageToken: fresh });
+    }
+    const next = nextPageToken(result);
+    if (next) {
+      if (this.pageTrails.size >= 256) this.pageTrails.clear();
+      const first: Record<string, unknown> = { ...params };
+      delete first.pageToken;
+      this.pageTrails.set(next, { method, params: first, pages: (trail?.pages ?? 0) + 1 });
+    }
+    return result;
+  }
   private callFailed(method: string, error: unknown): void {
     const session = this.session; if (!session) return;
     const code = managedFailure(error).code;
@@ -318,7 +357,9 @@ export class ManagedInspector {
       this.lastWithheldKey = key;
       return;
     }
-    this.fail(error, { executable: this.targetOf(this.nodeId)?.executable ?? this.executable, process: session.process }, method);
+    // An expired page token only ends that list: the attachment works, so the sidebar keeps its values and offers no Attach.
+    const keepState = code === "invalidPageToken";
+    this.fail(error, { executable: this.targetOf(this.nodeId)?.executable ?? this.executable, process: session.process }, method, keepState);
     if (this.state === "detached (idle)") { const process = session.process; this.invalidate(); this.onStale?.(process); }
   }
   async resolve(nodeId: string): Promise<InspectManagedResolveResult | undefined> {

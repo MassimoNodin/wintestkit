@@ -19,6 +19,8 @@ _HINTS = {
     "native x64 Python.",
     "agentVersionMismatch": "Match the agent payload version and restart the application.",
     "payloadMismatch": "Reinstall the matching inspector payload.",
+    "invalidPageToken": "The list's next page expired (pages stay available for 30 s); "
+    "read the list again from the start.",
     "timeout": _BUSY_HINT,
     "dispatcherUnavailable": _BUSY_HINT,
     "busy": _BUSY_HINT,

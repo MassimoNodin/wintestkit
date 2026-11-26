@@ -117,6 +117,12 @@ def test_already_attached_hint():
     assert "close that session or restart the application" in hint
 
 
+def test_expired_page_hint_does_not_blame_the_payload():
+    hint = inspector_error_hint("invalidPageToken")
+    assert "expired" in hint and "read the list again" in hint
+    assert "payload" not in hint
+
+
 def test_quick_never_attaches(setup_agent, monkeypatch):
     cfg, _, _ = setup_agent
     monkeypatch.setattr(doctor, "_check_wpf_agent", lambda *args, **kwargs: pytest.fail("attached"))

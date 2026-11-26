@@ -39,6 +39,22 @@ def test_names(name: str, expected: str) -> None:
     assert attribute_name_for(FakeElement("Edit").info()) == "edit_1"
 
 
+def test_peerless_wpf_objects_are_named_by_x_name_then_type() -> None:
+    from wintestkit.uia.element import ElementInfo
+
+    border = ElementInfo(
+        "", "", "", "System.Windows.Controls.Border", "WPF", 1, None, True, False, False, "r"
+    )
+    by_name = Locator(
+        where={"type:Is": "System.Windows.Controls.Border", "clr:Name": "templateRoot"}
+    )
+    assert attribute_name_for(border, by_name) == "template_root"
+    assert attribute_name_for(border, Locator(where={"type:Is": "x"})) == "border_1"
+    assert attribute_name_for(border) == "border_1"
+    nothing = ElementInfo("", "", "", "", "", 1, None, True, False, False, "r")
+    assert attribute_name_for(nothing) == "element_1"
+
+
 def test_rendering() -> None:
     locator = Locator(
         automation_id='a"b\n',

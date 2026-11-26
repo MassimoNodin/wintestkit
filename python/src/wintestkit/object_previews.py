@@ -13,6 +13,7 @@ import stat
 import time
 import uuid
 from collections.abc import Generator, Iterator
+from contextvars import ContextVar
 from ctypes import wintypes
 from datetime import UTC, datetime
 from pathlib import Path
@@ -234,6 +235,43 @@ def _window_redactions(
     if inspector is None:
         return reason, found
     return (None if reason == _TOO_MANY else reason), [*inspector, *found]
+
+
+#: Redaction scans shared by the previews of one page check: (hwnd, bounds) -> (time, result).
+_window_scans: ContextVar[
+    dict[tuple[int, Rect], tuple[float, tuple[str | None, list[Rect]]]] | None
+] = ContextVar("_window_scans", default=None)
+#: How long a shared scan stays valid; a page check is read-only and takes a few seconds.
+_SHARED_SCAN_SECONDS = 15.0
+
+
+@contextlib.contextmanager
+def shared_window_scans() -> Generator[None]:
+    """Scan each window for sensitive controls once for all previews captured in the block.
+
+    Each preview of a page check scanned the whole window again, about 1.8 s per element in a
+    large WPF window, so checking a page spent most of its time rediscovering the same result.
+    """
+    token = _window_scans.set({})
+    try:
+        yield
+    finally:
+        _window_scans.reset(token)
+
+
+def _shared_window_redactions(
+    element: TargetElement, window: UIAElement, hwnd: int, window_bounds: Rect
+) -> tuple[str | None, list[Rect]]:
+    scans = _window_scans.get()
+    if scans is None:
+        return _window_redactions(element, window, window_bounds)
+    now = time.monotonic()
+    known = scans.get((hwnd, window_bounds))
+    if known is not None and now - known[0] < _SHARED_SCAN_SECONDS:
+        return known[1][0], list(known[1][1])
+    result = _window_redactions(element, window, window_bounds)
+    scans[(hwnd, window_bounds)] = (now, (result[0], list(result[1])))
+    return result
 
 
 def _safe_content(root: UIAElement, bounds: Rect) -> bool:
@@ -538,7 +576,9 @@ def _capture_bound(
         if reason:
             raise _SkipPreview(reason)
         try:
-            window_reason, redactions = _window_redactions(element, window, window_bounds)
+            window_reason, redactions = _shared_window_redactions(
+                element, window, hwnd, window_bounds
+            )
         except Exception:
             window_reason, redactions = "window elements could not be checked", []
         if is_window:

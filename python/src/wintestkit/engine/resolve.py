@@ -6,8 +6,11 @@ resolves again so elements are never stale.
 
 from __future__ import annotations
 
+import contextlib
 import re
 import time
+from collections.abc import Generator
+from contextvars import ContextVar
 from dataclasses import dataclass, replace
 from difflib import SequenceMatcher
 from typing import Any, cast
@@ -441,19 +444,54 @@ def _resolve_link(
     raise AmbiguousElementError(diagnose_ambiguous(matches, link, searched_in, full))
 
 
+#: Chains found missing during one page check: (window, links so far) -> the not-found error.
+_missing_links: ContextVar[dict[tuple[Any, ...], ElementNotFoundError] | None] = ContextVar(
+    "_missing_links", default=None
+)
+
+
+@contextlib.contextmanager
+def shared_missing_scopes() -> Generator[None]:
+    """Search a missing scope root once for every element inside it, within the block.
+
+    A page check of a component that is not on screen would otherwise walk the whole window
+    again for each of its elements (about 1.5 s each in a large WPF window) to rediscover that
+    its root is missing. Only failures are remembered, and only inside the block.
+    """
+    __tracebackhide__ = True
+    token = _missing_links.set({})
+    try:
+        yield
+    finally:
+        _missing_links.reset(token)
+
+
 def _walk(scope: Scope, locator: Locator, final_all: bool) -> list[TargetElement]:
     __tracebackhide__ = True
     window_root = resolve_window(scope.app, locator.window or scope.window)
     links = locator.chain()
     root: TargetElement = route(window_root)
     searched_in = window_root.info().short()
+    missing = _missing_links.get()
+    window_key = (
+        (window_root.native_window_handle, window_root.runtime_id) if missing is not None else ()
+    )
     for position, link in enumerate(links):
         last = position == len(links) - 1
         first = position == 0
         if last and final_all:
             return [m.as_live() for m in _match_link(scope, root, link, locator, first)]
+        key = (*window_key, *(item.describe_link() for item in links[: position + 1]))
         try:
-            element = _resolve_link(scope, root, link, searched_in, locator, first, window_root)
+            known = missing.get(key) if missing is not None else None
+            if known is not None:
+                raise ElementNotFoundError(known.diagnostic)
+            try:
+                element = _resolve_link(scope, root, link, searched_in, locator, first, window_root)
+            except ElementNotFoundError as exc:
+                if missing is not None:
+                    missing[key] = exc
+                raise
         except LocatorError as exc:
             if last:
                 raise

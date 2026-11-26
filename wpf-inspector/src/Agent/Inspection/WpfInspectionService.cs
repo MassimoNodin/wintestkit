@@ -439,6 +439,11 @@ namespace WinTestKit.Inspector.Agent.Inspection
             try
             {
                 ValueDto value;
+                // Tree identity reads x:Name straight from the element: the generic path builds the object's whole member catalog,
+                // about 7 ms per element, which froze the UI thread for ~0.4 s on a pick path through 60 Ribbon template levels.
+                if (segment.Kind == "property" && segment.Name == "Name" && segment.MemberKey == null && inspector is ObjectInspector names &&
+                    (segment.DeclaringType == "System.Windows.FrameworkElement" && target is FrameworkElement || segment.DeclaringType == "System.Windows.FrameworkContentElement" && target is FrameworkContentElement))
+                    return names.IdentityName(target);
                 if (segment.Kind != "uia" && inspector is ObjectInspector objectInspector)
                 {
                     bool protectedTarget = RedactionPolicy.IsProtectedIdentity(target);
