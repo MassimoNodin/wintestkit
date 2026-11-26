@@ -45,10 +45,15 @@ export function wpfNodeSession(nodeId: string | undefined): string | undefined {
   if (!nodeId || !isManagedNodeId(nodeId)) return;
   try { const parts: unknown = JSON.parse(nodeId.slice(nodeId.indexOf(":") + 1)); return Array.isArray(parts) && typeof parts[0] === "string" ? parts[0] : undefined; } catch { return; }
 }
-export type ManagedFailure = { code: string; hint: string; message: string };
+export type ManagedFailure = { code: string; hint: string; message: string; reason?: string; timings?: string; method?: string };
 export function managedFailure(error: unknown): ManagedFailure {
-  const detail = error as { message?: unknown; data?: { code?: unknown; hint?: unknown } } | undefined;
-  return { code: typeof detail?.data?.code === "string" && detail.data.code || "attachFailed", hint: typeof detail?.data?.hint === "string" ? detail.data.hint : typeof detail?.message === "string" ? detail.message : "", message: typeof detail?.message === "string" ? detail.message : "Inspector attachment failed" };
+  const detail = error as { message?: unknown; data?: { code?: unknown; hint?: unknown; method?: unknown; details?: Record<string, unknown> } } | undefined;
+  const diagnostic = detail?.data?.details;
+  const failure: ManagedFailure = { code: typeof detail?.data?.code === "string" && detail.data.code || "attachFailed", hint: typeof detail?.data?.hint === "string" ? detail.data.hint : typeof detail?.message === "string" ? detail.message : "", message: typeof detail?.message === "string" ? detail.message : "Inspector attachment failed" };
+  if (typeof diagnostic?.reason === "string") failure.reason = diagnostic.reason;
+  if (typeof detail?.data?.method === "string") failure.method = detail.data.method;
+  if (diagnostic) failure.timings = ["queuedMs", "ranMs", "runningForMs", "escalated"].filter(key => diagnostic[key] !== undefined).map(key => `${key}=${String(diagnostic[key])}`).join(" ");
+  return failure;
 }
 export function managedErrorState(error: unknown): ManagedState {
   const data = (error as { data?: { code?: string } })?.data;
@@ -76,6 +81,7 @@ export class ManagedInspector {
   state: ManagedState = "not enabled";
   failure?: ManagedFailure;
   private lastFailureKey?: string;
+  private readonly stallCounts = new Map<string, { count: number; last: number; description: string }>();
   private lastWithheldKey?: string;
   private executable = "unknown";
   /** What identify and attach told the host about each node and session, so a failure before identify still names its target. */
@@ -99,15 +105,23 @@ export class ManagedInspector {
     facts ??= this.targetOf(this.nodeId) ?? (this.session ? { executable: this.executable, process: this.session.process } : undefined);
     const known = facts && facts.executable !== "unknown" ? facts : this.targetOf(this.nodeId) ?? facts;
     const sentence = (value: string) => value.replace(/[.\s]+$/, "");
-    const key = `${facts?.process.pid ?? "unknown"}:${facts?.process.creationTimeUtc ?? "unknown"}:${failure.code}`;
-    if (key !== this.lastFailureKey) {
-      if (this.session && ["timeout", "dispatcherUnavailable", "busy"].includes(failure.code))
-        this.logFailure?.(`Spy .NET request to ${facts?.executable ?? this.executable} (PID ${facts?.process.pid ?? this.session.process.pid}) could not complete because its UI thread is busy. The attachment is still ready; Spy retries automatically. ${failure.message}`);
-      else if (request) this.logFailure?.(`Spy .NET ${request} request failed for ${known?.executable ?? "an unknown process"} (PID ${facts?.process.pid ?? "unknown"}): ${failure.code}: ${sentence(failure.message)}. ${failure.hint}`.trim());
+    const method = failure.method || request || "unknown";
+    const key = `${facts?.process.pid ?? "unknown"}:${facts?.process.creationTimeUtc ?? "unknown"}:${failure.code}:${failure.reason ?? "unknown"}:${method}`;
+    if (this.session && ["timeout", "dispatcherUnavailable", "busy"].includes(failure.code)) {
+      const now = Date.now(), previous = this.stallCounts.get(key);
+      const description = `Spy .NET ${method} request to ${facts?.executable ?? this.executable} (PID ${facts?.process.pid ?? this.session.process.pid}): ${failure.code}, reason=${failure.reason ?? "unknown"} ${failure.timings ?? ""}. ${failure.hint}`;
+      if (!previous) { this.logFailure?.(description); this.stallCounts.set(key, { count: 0, last: now, description }); }
+      else { previous.count++; if (now - previous.last >= 30000) { this.logFailure?.(`${description} Repeated ${previous.count} times.`); previous.count = 0; previous.last = now; } }
+    } else if (key !== this.lastFailureKey) {
+      if (request) this.logFailure?.(`Spy .NET ${request} request failed for ${known?.executable ?? "an unknown process"} (PID ${facts?.process.pid ?? "unknown"}): ${failure.code}: ${sentence(failure.message)}. ${failure.hint}`.trim());
       else this.logFailure?.(`Spy .NET attach failed for ${facts?.executable ?? "unknown"} (PID ${facts?.process.pid ?? "unknown"}): ${failure.code}: ${sentence(failure.message)}. ${failure.hint}`.trim());
     }
     this.lastFailureKey = key;
     return failure;
+  }
+  private flushStalls(): void {
+    for (const stall of this.stallCounts.values()) if (stall.count) this.logFailure?.(`${stall.description} Repeated ${stall.count} times.`);
+    this.stallCounts.clear();
   }
   private rememberTarget(key: string, facts: { executable: string; process: { pid: number; creationTimeUtc: string } }): void {
     this.targets.delete(key); this.targets.set(key, { executable: facts.executable, process: facts.process });
@@ -235,7 +249,7 @@ export class ManagedInspector {
     const session = this.session; this.invalidate();
     if (session) await this.client.request("inspect.managed.detach", { sessionId: session.sessionId }).catch(() => {});
   }
-  invalidate(): void { this.sequence++; void this.clearSpy(); this.session = undefined; this.handles.clear(); this.state = "detached (idle)"; }
+  invalidate(): void { this.flushStalls(); this.sequence++; void this.clearSpy(); this.session = undefined; this.handles.clear(); this.state = "detached (idle)"; }
   private ordered<T>(action: () => Promise<T>): Promise<T> {
     const result = this.spyQueue.then(action, action);
     this.spyQueue = result.catch(() => undefined);
@@ -286,6 +300,7 @@ export class ManagedInspector {
         if (ids.length) await this.releaseIds(sessionId, ids);
         return;
       }
+      this.flushStalls();
       this.remember(result);
       if (["timeout", "dispatcherUnavailable", "busy"].includes(this.failure?.code ?? "")) { this.state = "ready"; this.failure = undefined; this.lastFailureKey = undefined; }
       return result;
@@ -345,6 +360,7 @@ export class ManagedInspector {
       this.remember(result);
       // Only a value read proves the UI thread answers again; a read whose getters all timed out does not.
       const answered = result.values.some((entry) => entry.value.status !== "timeout");
+      if (answered) this.flushStalls();
       if (answered && ["timeout", "dispatcherUnavailable", "busy"].includes(this.failure?.code ?? "")) { this.state = "ready"; this.failure = undefined; this.lastFailureKey = undefined; }
       return { result };
     } catch (error) { const busy = ["timeout", "dispatcherUnavailable", "busy"].includes(managedFailure(error).code); return { status: busy ? "timed out" : "unavailable", busy }; }

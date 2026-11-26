@@ -310,3 +310,17 @@ def test_reads_do_not_share_the_attach_lock(reader: Any) -> None:
         thread.start()
         assert answered.wait(2), "keepalive waited for the attachment lock"
     thread.join(timeout=2)
+
+
+@pytest.mark.parametrize("reason", ["workTimeout", "earlierWorkRunning"])
+def test_stalled_batch_does_not_retry(reader: Any, reason: str) -> None:
+    server, output, client = reader
+    client.error = InspectorUnavailableError("stalled", code="dispatcherUnavailable")
+    client.error.details = {"reason": reason}
+    response = spy_read(server, output, [prop("A"), field("f"), prop("B")])
+    assert client.calls == [("read", ["A", "B"])]
+    assert [item["value"]["status"] for item in response["result"]["values"]] == [
+        "timeout",
+        "timeout",
+        "timeout",
+    ]

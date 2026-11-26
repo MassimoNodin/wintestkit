@@ -307,6 +307,43 @@ describe("honest managed failures", () => {
     expect(log).toHaveBeenCalledTimes(1);
     expect(log.mock.calls[0][0]).toContain("mappingFailed: Mapping failed. Refresh the tree.");
   });
+  it("logs stall diagnostics per method and reason and counts repeats", async () => {
+    let reason = "workTimeout";
+    const { inspector, log } = await attached(() => { throw { message: "stalled", data: { code: "dispatcherUnavailable", method: "read", hint: "Inspector request stalled.", details: { reason, ranMs: 2000 } } }; });
+    vi.useFakeTimers(); vi.setSystemTime(1000);
+    try {
+      await inspector.members({ objectId: "o", generation: 1 });
+      await inspector.members({ objectId: "o", generation: 1 });
+      expect(log).toHaveBeenCalledTimes(1);
+      expect(log.mock.calls[0][0]).toContain("reason=workTimeout ranMs=2000");
+      expect(log.mock.calls[0][0]).not.toContain("UI thread is busy");
+      vi.advanceTimersByTime(30000);
+      await inspector.members({ objectId: "o", generation: 1 });
+      expect(log.mock.calls[1][0]).toContain("Repeated 2 times");
+      reason = "earlierWorkRunning";
+      await inspector.members({ objectId: "o", generation: 1 });
+      expect(log).toHaveBeenCalledTimes(3);
+    } finally { vi.useRealTimers(); }
+  });
+  it.each(["success", "dispose"])("flushes a stall burst on %s", async (ending) => {
+    const { inspector, log } = await attached((method) => {
+      if (method.endsWith("members")) throw { message: "stalled", data: { code: "timeout", details: { reason: "workTimeout" } } };
+      return {};
+    });
+    vi.useFakeTimers();
+    try {
+      await inspector.members({ objectId: "o", generation: 1 });
+      await inspector.members({ objectId: "o", generation: 1 });
+      await inspector.members({ objectId: "o", generation: 1 });
+      expect(log).toHaveBeenCalledTimes(1);
+      if (ending === "success") await inspector.children({ objectId: "o", generation: 1, tree: "visual" });
+      else inspector.invalidate(); // Spy disposal resets the managed inspector this way.
+      expect(log).toHaveBeenCalledTimes(2);
+      expect(log.mock.calls[1][0]).toContain("Repeated 2 times.");
+      inspector.invalidate();
+      expect(log).toHaveBeenCalledTimes(2);
+    } finally { vi.useRealTimers(); }
+  });
   it("blames an access-denied resolve on the attachment and says so", async () => {
     const { inspector, log } = await attached((method) => { if (method.endsWith("resolve")) throw denied; return {}; });
     await inspector.resolve("node");

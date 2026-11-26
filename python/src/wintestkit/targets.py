@@ -563,11 +563,9 @@ def resolve_bound(
     except InspectorError as exc:
         from wintestkit.inspector.hints import inspector_error_hint
 
-        hint = inspector_error_hint(exc.code)
+        hint = inspector_error_hint(exc.code, exc.details, exc.method)
         if exc.code in {"timeout", "dispatcherUnavailable", "busy"}:
-            return ElementResult(
-                "not_responding", elapsed(), message=_NOT_RESPONDING, code=exc.code
-            )
+            return ElementResult("not_responding", elapsed(), message=hint, code=exc.code)
         keys = _managed_keys(bound)
         message = str(exc)
         if keys:

@@ -2002,7 +2002,7 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
         if (this.isBusy(code)) {
           this.detailsBusy = true;
           this.scheduleDetailsRetry();
-          this.log.error(`Spy .NET request to ${this.managedInspector?.targetLabel ?? "target"} could not complete because its UI thread is busy. Spy retries automatically. ${String(error)}`);
+          this.log.error(`Spy .NET properties request to ${this.managedInspector?.targetLabel ?? "target"} failed (${code}). Spy retries automatically. ${String(error)}`);
         } else this.log.error("Reading all properties failed: " + String(error));
       }
     } finally {

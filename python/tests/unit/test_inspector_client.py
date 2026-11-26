@@ -1360,3 +1360,37 @@ def test_dispatcher_diagnostic_message_survives_response_mapping() -> None:
     assert error is not None
     assert str(error) == message
     assert error.to_dict()["message"] == message
+
+
+@pytest.mark.parametrize("reason", ["queueWait", "workTimeout", "earlierWorkRunning"])
+def test_dispatcher_diagnostics_are_preserved_and_whitelisted(reason: str) -> None:
+    from wintestkit.inspector.client import _response
+    from wintestkit.inspector.hints import inspector_error_hint
+
+    _, _, error = _response(
+        {
+            "id": 1,
+            "error": {
+                "code": "timeout",
+                "message": "failed",
+                "details": {
+                    "reason": reason,
+                    "queuedMs": 10,
+                    "ranMs": 2000,
+                    "runningForMs": 2500,
+                    "escalated": True,
+                    "secret": "hidden",
+                    "dispatcherBusy": "invalid",
+                },
+            },
+        }
+    )
+    assert error is not None
+    assert "secret" not in error.details and "dispatcherBusy" not in error.details
+    hint = inspector_error_hint(error.code, error.details, "read")
+    if reason == "queueWait":
+        assert "UI thread is busy" in hint
+    elif reason == "workTimeout":
+        assert "request read ran 2000 ms" in hint and "UI thread is busy" not in hint
+    else:
+        assert "running for 2500 ms" in hint and "UI thread is busy" not in hint

@@ -27,7 +27,7 @@
   };
   // The same header the tree shows for a blocked attach: the real code and hint, then where to look.
   const isBusy = (failure) => ["timeout", "dispatcherUnavailable", "busy"].includes(failure?.code);
-  const BUSY_READ_NOTE = "Some values timed out because the application's UI thread is busy; they load automatically when it responds.";
+  const BUSY_READ_NOTE = "Some values timed out; they load automatically when the inspector can read them.";
   const attachHeader = (failure) => isBusy(failure) ? failure.hint : `${failure.code}: ${failure.hint} Run ` + "`wtk doctor --agent`" + " for details.";
   const managedNode = (tag, text) => { const node = document.createElement(tag); node.textContent = text; return node; };
   const managedButton = (label, action) => { const button = managedNode("button", label); button.className = "secondary"; button.addEventListener("click", action); return button; };

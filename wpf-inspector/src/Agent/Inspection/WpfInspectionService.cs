@@ -404,17 +404,29 @@ namespace WinTestKit.Inspector.Agent.Inspection
                         slice.ElapsedMilliseconds < ProtocolLimits.TraversalSliceMs; count++, index++)
                     {
                         token.ThrowIfCancellationRequested();
+                        long itemStart = Stopwatch.GetTimestamp();
                         ManagedNodeDto node = page.Items[index];
-                        if (!registry.TryGetWeak(node.Object.ObjectId, node.Object.Generation, out object target)) continue;
-                        if (WinFormsNative.IsWinFormsObject(target)) { node.Identity = WinFormsIdentity(target); continue; }
-                        var identity = new NodeIdentityDto { SiblingIndex = target is DependencyObject dependency ? VisualSiblingIndex(dependency) : null };
-                        if (target is FrameworkElement || target is FrameworkContentElement)
+                        if (registry.TryGetWeak(node.Object.ObjectId, node.Object.Generation, out object target))
                         {
-                            string declaringType = target is FrameworkElement ? "System.Windows.FrameworkElement" : "System.Windows.FrameworkContentElement";
-                            identity.XName = ReadIdentity(target, new PathSegment { Kind = "property", Name = "Name", DeclaringType = declaringType }, dispatcher, token);
+                            if (WinFormsNative.IsWinFormsObject(target)) node.Identity = WinFormsIdentity(target);
+                            else
+                            {
+                                var identity = new NodeIdentityDto { SiblingIndex = target is DependencyObject dependency ? VisualSiblingIndex(dependency) : null };
+                                if (target is FrameworkElement || target is FrameworkContentElement)
+                                {
+                                    string declaringType = target is FrameworkElement ? "System.Windows.FrameworkElement" : "System.Windows.FrameworkContentElement";
+                                    identity.XName = ReadIdentity(target, new PathSegment { Kind = "property", Name = "Name", DeclaringType = declaringType }, dispatcher, token);
+                                }
+                                identity.AutomationId = ReadIdentity(target, new PathSegment { Kind = "uia", Name = "automation_id" }, dispatcher, token);
+                                node.Identity = identity;
+                            }
                         }
-                        identity.AutomationId = ReadIdentity(target, new PathSegment { Kind = "uia", Name = "automation_id" }, dispatcher, token);
-                        node.Identity = identity;
+                        if ((Stopwatch.GetTimestamp() - itemStart) * 1000.0 / Stopwatch.Frequency > DispatcherExecutor.TraversalItemLimitMs)
+                        {
+                            page.Diagnostics = page.Diagnostics.Concat(new[] { new Diagnostic { Code = "identityCutShort", Message = "Identity collection stopped after a slow item.", Category = "identity" } }).ToArray();
+                            index = page.Items.Count;
+                            break;
+                        }
                     }
                     return true;
                 }, ct).ConfigureAwait(false);
@@ -426,8 +438,14 @@ namespace WinTestKit.Inspector.Agent.Inspection
         {
             try
             {
-                if (segment.Kind != "uia" && inspector is ObjectInspector && RedactionPolicy.IsProtectedIdentity(target)) return null;
-                ValueDto value = inspector.ReadPath(target, new[] { segment }, registry, dispatcher, ct);
+                ValueDto value;
+                if (segment.Kind != "uia" && inspector is ObjectInspector objectInspector)
+                {
+                    bool protectedTarget = RedactionPolicy.IsProtectedIdentity(target);
+                    if (protectedTarget) return null;
+                    value = objectInspector.ReadPath(target, new[] { segment }, registry, dispatcher, ct, protectedTarget);
+                }
+                else value = inspector.ReadPath(target, new[] { segment }, registry, dispatcher, ct);
                 return value.Status == ValueStatus.Ok && value.Scalar is JsonStringNode text && text.Value.Length != 0 ? text.Value : null;
             }
             catch (OperationCanceledException) { throw; }

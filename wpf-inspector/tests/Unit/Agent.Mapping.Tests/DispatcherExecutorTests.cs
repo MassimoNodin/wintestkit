@@ -61,6 +61,8 @@ namespace WinTestKit.Inspector.Agent.Mapping.Tests
                     Assert.Equal(ErrorCodes.Timeout, error.Code);
                     Assert.Contains("Dispatcher queue wait exceeded 500 ms (waited", error.Message);
                     Assert.True(((JsonBoolNode)error.Details!.Get("dispatcherBusy")).Value);
+                    Assert.Equal("queueWait", ((JsonStringNode)error.Details.Get("reason")).Value);
+                    Assert.True(((JsonNumberNode)error.Details.Get("queuedMs")).TryGetInt64(out long queued) && queued >= 0);
                     Assert.True(((JsonBoolNode)error.Details!.Get("escalated")).Value);
                     Assert.Contains("escalated to Normal priority after 250 ms", error.Message);
                 }
@@ -255,6 +257,8 @@ namespace WinTestKit.Inspector.Agent.Mapping.Tests
                         var timeout = await Assert.ThrowsAsync<ProtocolException>(() => operation);
                         Assert.Equal(ErrorCodes.DispatcherUnavailable, timeout.Code);
                         Assert.Contains("Dispatcher work did not finish within 2000 ms (queued", timeout.Message);
+                        Assert.Equal("workTimeout", ((JsonStringNode)timeout.Details!.Get("reason")).Value);
+                        Assert.True(((JsonNumberNode)timeout.Details.Get("ranMs")).TryGetInt64(out long ran) && ran >= 0);
                         Assert.Contains("ran", timeout.Message);
                     }
                     Assert.True(workToken.IsCancellationRequested);
@@ -267,6 +271,8 @@ namespace WinTestKit.Inspector.Agent.Mapping.Tests
                         Assert.True(rejected.IsCompleted);
                         var unavailable = await Assert.ThrowsAsync<ProtocolException>(() => rejected);
                         Assert.Equal(ErrorCodes.DispatcherUnavailable, unavailable.Code);
+                        Assert.Equal("earlierWorkRunning", ((JsonStringNode)unavailable.Details!.Get("reason")).Value);
+                        Assert.True(((JsonNumberNode)unavailable.Details.Get("runningForMs")).TryGetInt64(out long running) && running >= 0);
                         Assert.Contains("Dispatcher is unavailable: earlier work is still running (for", unavailable.Message);
                         Assert.Equal(0, posted);
                     }

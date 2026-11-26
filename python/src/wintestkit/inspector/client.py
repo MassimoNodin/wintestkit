@@ -182,6 +182,18 @@ def _response(value: object) -> tuple[int, object, InspectorError | None]:
         raise ValueError("Invalid error details")
     details = error.get("details")
     result = _error(code, details)
+    if code in {"timeout", "dispatcherUnavailable", "busy"} and isinstance(details, dict):
+        raw = cast(dict[str, object], details)
+        reason = raw.get("reason")
+        if reason in ("queueWait", "workTimeout", "earlierWorkRunning"):
+            result.details["reason"] = reason
+        for key in ("queuedMs", "ranMs", "runningForMs"):
+            value = raw.get(key)
+            if type(value) is int and value >= 0:
+                result.details[key] = value
+        for key in ("escalated", "dispatcherBusy"):
+            if isinstance(raw.get(key), bool):
+                result.details[key] = raw[key]
     if code in {"timeout", "dispatcherUnavailable", "busy"}:
         result.args = (error["message"],)
         result.message = error["message"]
@@ -406,6 +418,8 @@ class InspectorClient:
                             raise ValueError("Duplicate subscription ID")
                         self._subscriptions[subscription_id] = EventSubscription(subscription_id)
                     pending.result = result
+                    if error is not None:
+                        error.method = pending.method
                     pending.error = error
                     pending.event.set()
         except TimeoutError:

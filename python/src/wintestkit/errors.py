@@ -133,9 +133,16 @@ class InspectorError(WtkError):
         super().__init__(message)
         self.code = code
         self.audit = audit
+        self.details: dict[str, Any] = {}
+        self.method = ""
 
     def to_dict(self) -> dict[str, Any]:
-        return {**super().to_dict(), "code": self.code}
+        return {
+            **super().to_dict(),
+            "code": self.code,
+            "details": self.details,
+            "method": self.method,
+        }
 
 
 class InspectorUnavailableError(InspectorError):

@@ -330,7 +330,10 @@ def test_check_reports_inspector_busy_as_neutral(code: str) -> None:
 
     result = targets.resolve_bound(SimpleNamespace(resolve=fail), 0)
     assert result.status == "not_responding"
-    assert "not responding" in result.message and "not found" not in result.message.lower()
+    assert (
+        "inspector request did not complete" in result.message
+        and "not found" not in result.message.lower()
+    )
 
 
 def test_check_reports_hung_window_after_locator_error(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -348,8 +351,10 @@ def test_check_reports_hung_window_after_locator_error(monkeypatch: pytest.Monke
     assert "not found" not in result.message.lower()
 
 
+@pytest.mark.parametrize("reason", ["queueWait", "workTimeout", "earlierWorkRunning", None])
 def test_check_asks_the_inspector_when_windows_does_not_flag_the_hang(
     monkeypatch: pytest.MonkeyPatch,
+    reason: str | None,
 ) -> None:
     from wintestkit.errors import InspectorError
     from wintestkit.inspector import probe
@@ -362,7 +367,9 @@ def test_check_asks_the_inspector_when_windows_does_not_flag_the_hang(
 
     def roots(**kwargs: Any) -> None:
         calls.append(1)
-        raise InspectorError("dispatcher busy", code="timeout")
+        error = InspectorError("dispatcher busy", code="timeout")
+        error.details = {"reason": reason} if reason else {}
+        raise error
 
     client = SimpleNamespace(roots=roots)
     registry = SimpleNamespace(get=lambda identity: client if identity == 42 else None)

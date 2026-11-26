@@ -7,6 +7,10 @@ Unreleased changes must be moved to a dated candidate section before a release c
 
 ## [Unreleased]
 
+- **Busy applications:** Picking or reading elements deep inside Ribbon and other nested templates no longer freezes the application for seconds.
+- **Diagnostics:** When an inspector request times out, the log and messages say whether the application's UI thread was busy or the inspector's own request ran long, with timings.
+- **Spy:** Stops queuing more reads behind a stalled request, and repeated stalls are logged with a count.
+
 ## [0.1.1rc7] - 2026-11-26
 
 Seventh prerelease. Install the extension's pre-release channel together with `pip install --pre "wintestkit[inspector]==0.1.1rc7"`. The first upgrade from rc6 asks to close applications that still have the rc6 inspector loaded.

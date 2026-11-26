@@ -395,7 +395,7 @@ For help investigating an error, [save and review local diagnostics](diagnostics
 | `processExited`, `processReused`, `sessionStale`, `objectStale` | Reselect the live process or element and reattach. |
 | `mappingFailed` | Select a UIA element with a supported, unambiguous peer. |
 | `memberAmbiguous`, `memberNotFound` | Reinspect the element and use the observed member identity. |
-| `dispatcherUnavailable`, `timeout`, `busy` | The application UI thread is busy. Reads queue at background priority and are raised to normal priority after 250 ms, so a UI thread that keeps itself busy at normal priority can still be read within the 500 ms queue limit. The attachment remains ready; allow the UI to respond and retry the selection. Dispatcher diagnostics include queue and execution times and whether the request was raised. A timeout cannot stop running code. |
+| `dispatcherUnavailable`, `timeout`, `busy` | Dispatcher diagnostics distinguish `queueWait` (the UI thread did not start the request within 500 ms), `workTimeout` (the inspector request started but exceeded its deadline), and `earlierWorkRunning` (a previous overrun is still running). Details can include `queuedMs`, `ranMs`, `runningForMs`, `escalated` (raised to normal priority after 250 ms), and `dispatcherBusy`. The attachment remains ready; a timeout cannot stop running code. |
 | `limitExceeded` | Narrow the locator or request fewer paths. |
 | `cancelled` | Retry if the operation is still needed. |
 | `internalError` | Collect non-sensitive diagnostics and report the failure. |

@@ -12,6 +12,7 @@ namespace WinTestKit.Inspector.Agent.Inspection
     /// <summary>Serializes work per dispatcher without blocking a pipe or UI thread.</summary>
     public sealed class DispatcherExecutor
     {
+        internal const int TraversalItemLimitMs = 50;
         private sealed class State
         {
             internal readonly SemaphoreSlim Admission = new SemaphoreSlim(1, 1);
@@ -204,18 +205,31 @@ namespace WinTestKit.Inspector.Agent.Inspection
         private static ProtocolException QueueTimeout(long waited, bool escalated = false)
         {
             var details = new JsonObjectNode();
-            details.Add("dispatcherBusy", new JsonBoolNode(true)); details.Add("escalated", new JsonBoolNode(escalated));
+            details.Add("dispatcherBusy", new JsonBoolNode(true)); details.Add("reason", new JsonStringNode("queueWait")); details.Add("queuedMs", JsonNumberNode.From(waited)); details.Add("escalated", new JsonBoolNode(escalated));
             return new ProtocolException(ErrorCodes.Timeout, string.Format("Dispatcher queue wait exceeded {0} ms (waited {1} ms{2}; the UI thread is busy with higher-priority work)", ProtocolLimits.DispatcherQueueWaitMs, waited, escalated ? string.Format(", escalated to Normal priority after {0} ms", ProtocolLimits.DispatcherEscalateMs) : ""), details);
         }
-        private static ProtocolException WorkTimeout(long elapsed, long queued, bool escalated) =>
-            new ProtocolException(ErrorCodes.DispatcherUnavailable, string.Format("Dispatcher work did not finish within {0} ms (queued {1} ms, ran {2} ms{3})", ProtocolLimits.RequestTimeoutMs, queued, Math.Max(0, elapsed - queued), escalated ? ", escalated to Normal priority" : ""));
+        private static ProtocolException WorkTimeout(long elapsed, long queued, bool escalated)
+        {
+            var details = new JsonObjectNode();
+            details.Add("reason", new JsonStringNode("workTimeout"));
+            details.Add("queuedMs", JsonNumberNode.From(queued));
+            details.Add("ranMs", JsonNumberNode.From(Math.Max(0, elapsed - queued)));
+            details.Add("escalated", new JsonBoolNode(escalated));
+            return new ProtocolException(ErrorCodes.DispatcherUnavailable, string.Format("Dispatcher work did not finish within {0} ms (queued {1} ms, ran {2} ms{3})", ProtocolLimits.RequestTimeoutMs, queued, Math.Max(0, elapsed - queued), escalated ? ", escalated to Normal priority" : ""), details);
+        }
         private static ProtocolException Unavailable(State state)
         {
             long started = Interlocked.Read(ref state.WorkStarted);
             string message = state.Unresponsive && started != 0
                 ? string.Format("Dispatcher is unavailable: earlier work is still running (for {0} ms)", (Stopwatch.GetTimestamp() - started) * 1000 / Stopwatch.Frequency)
                 : "Dispatcher is unavailable.";
-            return new ProtocolException(ErrorCodes.DispatcherUnavailable, message);
+            var details = new JsonObjectNode();
+            if (state.Unresponsive && started != 0)
+            {
+                details.Add("reason", new JsonStringNode("earlierWorkRunning"));
+                details.Add("runningForMs", JsonNumberNode.From(Math.Max(0, (Stopwatch.GetTimestamp() - started) * 1000 / Stopwatch.Frequency)));
+            }
+            return new ProtocolException(ErrorCodes.DispatcherUnavailable, message, details);
         }
     }
 }

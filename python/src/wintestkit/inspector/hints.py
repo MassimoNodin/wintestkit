@@ -25,7 +25,25 @@ _HINTS = {
 }
 
 
-def inspector_error_hint(code: str) -> str:
+def inspector_error_hint(
+    code: str, details: dict[str, object] | None = None, method: str = ""
+) -> str:
+    reason = (details or {}).get("reason")
+    if reason == "workTimeout":
+        duration = (details or {}).get("ranMs", "?")
+        return (
+            f"The inspector's request {method or 'unknown'} ran {duration} ms "
+            "on the application's UI thread and stopped waiting; "
+            "the application froze while it ran."
+        )
+    if reason == "earlierWorkRunning":
+        duration = (details or {}).get("runningForMs", "?")
+        return (
+            f"An earlier inspector request has been running for {duration} ms; "
+            "waiting for it to finish."
+        )
+    if code in {"timeout", "dispatcherUnavailable", "busy"} and reason != "queueWait":
+        return "The inspector request did not complete; retry when it finishes."
     return _HINTS.get(
         code, "Check the inspector payload, target permissions, and application compatibility."
     )

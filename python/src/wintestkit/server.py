@@ -535,8 +535,15 @@ class Server:
                     from wintestkit.inspector.hints import inspector_error_hint
 
                     data["code"] = exc.code
-                    data["hint"] = inspector_error_hint(exc.code)
-                error(request_id, code, str(exc), data)
+                    data["hint"] = inspector_error_hint(exc.code, exc.details, exc.method)
+                error(
+                    request_id,
+                    code,
+                    data["hint"]
+                    if isinstance(exc, InspectorError) and exc.code in _APPLICATION_SLOW
+                    else str(exc),
+                    data,
+                )
             else:
                 if method.startswith("inspect.managed."):
                     log.error("Managed RPC request failed (%s)", type(exc).__name__)
@@ -1933,12 +1940,14 @@ class Server:
         budget = min(deadline, time.monotonic() + SPY_READ_BUDGET)
         values: dict[int, PathValue] = {}
         read_id = ""
+        stalled = False
 
         def timeout(index: int) -> PathValue:
             return PathValue(paths[index], Value("timeout", "unavailable", "", ""))
 
         def one(index: int) -> PathValue:
-            if time.monotonic() >= budget:
+            nonlocal stalled
+            if stalled or time.monotonic() >= budget:
                 return timeout(index)
             single = (
                 client.spy_field_read
@@ -1951,6 +1960,9 @@ class Server:
             except InspectorError as error:
                 if not slow(error):
                     raise
+                stalled = error.code in {"timeout", "dispatcherUnavailable"} and error.details.get(
+                    "reason"
+                ) in {"workTimeout", "earlierWorkRunning"}
                 return timeout(index)
             return found[0]
 
@@ -1969,6 +1981,9 @@ class Server:
             except InspectorError as error:
                 if not slow(error):
                     raise
+                stalled = error.code in {"timeout", "dispatcherUnavailable"} and error.details.get(
+                    "reason"
+                ) in {"workTimeout", "earlierWorkRunning"}
         for index in range(len(paths)):
             if index not in values:
                 values[index] = one(index)
