@@ -72,8 +72,9 @@ export class ManagedPanel {
   private autoBudget = AUTO_BUDGET_MS;
   private makeRows(items: Member[]): Row[] { return items.map((member) => ({ id: String(++this.rowSequence), member })); }
   constructor(private inspector: ManagedInspector, private send: (message: unknown) => void) { this.publish(); }
-  private publish(): void { const rows = (items: Row[]): unknown[] => items.map(({ page, itemPage, children, ...row }) => ({ ...row, ...(itemPage ? { itemPage: { nextToken: !!itemPage.nextPageToken } } : {}), ...(children ? { children: rows(children) } : {}), ...(page ? { page: { complete: page.complete, nextToken: !!page.nextToken } } : {}) })); this.send({ type: "managedPanel", visible: this.inspector.visible, state: this.inspector.state, failure: this.inspector.failure, install: MANAGED_INSTALL_HINT, object: this.object, rows: rows(this.rows), page: this.page && { complete: this.page.complete, nextToken: !!this.page.nextToken, diagnostics: this.page.diagnostics }, methods: { status: this.methodsStatus, items: this.methods, canInvoke: this.canInvoke && this.inspector.state === "ready", invoking: this.invoking, invocation: this.invocation, page: this.methodsPage && { complete: this.methodsPage.complete, nextToken: !!this.methodsPage.nextToken, diagnostics: this.methodsPage.diagnostics } }, bindings: this.bindings, bindingObjects: rows(this.bindingRows), styling: this.styling, stylingObjects: rows(this.stylingRows), events: this.events, readRemaining: this.rows.some((row) => this.autoEligible(row) && !row.value && row.autoStatus === "timed out"), sequence: ++panelSequence }); }
-  select(node?: string, wpf = false): void { if (this.node === node && !wpf) return; this.node = node; const epoch = ++this.epoch; this.canInvoke = false; void this.inspector.clearSpy(); this.object = undefined; this.rows = []; this.page = undefined; this.clearMethods(); this.bindings = []; this.bindingRows = []; this.clearStyling(); const selected = this.inspector.select(node); this.publish(); void Promise.resolve(selected).then(async () => { if (epoch !== this.epoch || !node) return; if (wpf) await this.inspector.reuseTreeSession(node); if (epoch !== this.epoch) return; if (!this.inspector.sessionInfo) { this.publish(); return; } const mapping = await this.inspector.resolve(node); if (epoch !== this.epoch) return; this.object = mapping?.status === "exact" ? mapping.object : undefined; if (this.object) await this.loadSelection(epoch, node, this.object); else this.publish(); }); }
+  private busyRead = false;
+  private publish(): void { const rows = (items: Row[]): unknown[] => items.map(({ page, itemPage, children, ...row }) => ({ ...row, ...(itemPage ? { itemPage: { nextToken: !!itemPage.nextPageToken } } : {}), ...(children ? { children: rows(children) } : {}), ...(page ? { page: { complete: page.complete, nextToken: !!page.nextToken } } : {}) })); this.send({ type: "managedPanel", visible: this.inspector.visible, state: this.inspector.state, failure: this.inspector.failure, install: MANAGED_INSTALL_HINT, object: this.object, rows: rows(this.rows), page: this.page && { complete: this.page.complete, nextToken: !!this.page.nextToken, diagnostics: this.page.diagnostics }, methods: { status: this.methodsStatus, items: this.methods, canInvoke: this.canInvoke && this.inspector.state === "ready", invoking: this.invoking, invocation: this.invocation, page: this.methodsPage && { complete: this.methodsPage.complete, nextToken: !!this.methodsPage.nextToken, diagnostics: this.methodsPage.diagnostics } }, bindings: this.bindings, bindingObjects: rows(this.bindingRows), styling: this.styling, stylingObjects: rows(this.stylingRows), events: this.events, busyRead: this.busyRead, readRemaining: this.rows.some((row) => this.autoEligible(row) && ((!row.value && row.autoStatus === "timed out") || row.value?.status === "timeout")), sequence: ++panelSequence }); }
+  select(node?: string, wpf = false): void { if (this.node === node && !wpf) return; this.busyRead = false; this.node = node; const epoch = ++this.epoch; this.canInvoke = false; void this.inspector.clearSpy(); this.object = undefined; this.rows = []; this.page = undefined; this.clearMethods(); this.bindings = []; this.bindingRows = []; this.clearStyling(); const selected = this.inspector.select(node); this.publish(); void Promise.resolve(selected).then(async () => { if (epoch !== this.epoch || !node) return; if (wpf) await this.inspector.reuseTreeSession(node); if (epoch !== this.epoch) return; if (!this.inspector.sessionInfo) { this.publish(); return; } const mapping = await this.inspector.resolve(node); if (epoch !== this.epoch) return; this.object = mapping?.status === "exact" ? mapping.object : undefined; if (this.object) await this.loadSelection(epoch, node, this.object); else this.publish(); }); }
   dispose(): void { this.disposed = true; this.epoch++; this.canInvoke = false; void this.inspector.clearSpy(); this.object = undefined; this.rows = []; this.clearStyling(); }
   private async loadSelection(epoch: number, node: string, object: ObjectRef): Promise<void> {
     const canInvoke = await this.inspector.bindSpy(node, object);
@@ -135,6 +136,7 @@ export class ManagedPanel {
         const response = await spend(this.inspector.spyRead({ objectId: object.objectId, generation: object.generation, paths: batch.map((row) => [row.member.pathSegment!]) as [ManagedPath, ...ManagedPath[]] }, true));
         if (!live()) { cancelled(); return; }
         const values = response?.result?.values;
+        if (!response || response.busy) this.busyRead = true;
         batch.forEach((row, index) => { const value = values?.length === batch.length ? values[index]?.value : undefined; if (value) row.value = value; else row.autoStatus = response?.status || "timed out"; });
         // The sidebar redraws on every snapshot; a few per second is enough to watch values arrive.
         if (Date.now() - published >= 150) { published = Date.now(); this.publish(); }
@@ -313,17 +315,40 @@ export class ManagedPanel {
     if (expand && rows[0].value?.object) await this.loadChild(rows[0], epoch);
     this.publish();
   }
+  /** Retry only the blocked selection, retaining rows and their expansion state. */
+  async retryBusy(): Promise<boolean> {
+    const epoch = this.epoch, node = this.node;
+    if (!node || this.disposed) return false;
+    this.busyRead = false;
+    if (!this.object || this.inspector.state === "busy (retrying)") {
+      const mapping = await this.inspector.resolve(node);
+      if (epoch !== this.epoch) return false;
+      if (mapping?.status !== "exact" || !mapping.object) return false;
+      if (!this.object) { this.object = mapping.object; await this.loadSelection(epoch, node, this.object); }
+      else await this.handle({ type: "managedReadRemaining" });
+    } else if (!this.page) {
+      await this.loadAutomatic(epoch);
+    } else {
+      await this.handle({ type: "managedReadRemaining" });
+    }
+    if (epoch !== this.epoch) return false;
+    this.publish();
+    return this.inspector.state !== "busy (retrying)" && !this.busyRead;
+  }
   async handle(message: ManagedRequest): Promise<void> {
     if (message.type === "managedReadRemaining") {
       const epoch = this.epoch, object = this.object, run = ++this.autoRun;
       if (!object || !await this.consent() || epoch !== this.epoch || run !== this.autoRun) return;
-      const remaining = this.rows.filter((row) => this.autoEligible(row) && !row.value && row.autoStatus === "timed out");
+      // Type facts first: they identify the object, and a slow getter read before them could hold them up.
+      const remaining = this.rows.filter((row) => this.autoEligible(row) && ((!row.value && row.autoStatus === "timed out") || row.value?.status === "timeout"))
+        .sort((a, b) => Number(b.member.category === "typeMetadata") - Number(a.member.category === "typeMetadata"));
       for (let index = 0; index < remaining.length; index += AUTO_BATCH) {
         if (epoch !== this.epoch || run !== this.autoRun || this.disposed) return;
         const batch = remaining.slice(index, index + AUTO_BATCH);
         const response = await this.inspector.spyRead({ objectId: object.objectId, generation: object.generation, paths: batch.map((row) => [row.member.pathSegment!]) as [ManagedPath, ...ManagedPath[]] }, true);
         if (epoch !== this.epoch || run !== this.autoRun || this.disposed) return;
         const values = response?.result?.values;
+        if (response?.busy) this.busyRead = true;
         batch.forEach((row, offset) => { const value = values?.length === batch.length ? values[offset]?.value : undefined; if (value) { row.value = value; row.autoStatus = undefined; } else row.autoStatus = response?.status || "timed out"; });
         this.publish();
       }

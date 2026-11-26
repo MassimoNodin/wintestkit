@@ -85,6 +85,28 @@ namespace WinTestKit.Inspector.Agent.Inspection
         [DllImport("user32.dll")]
         private static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint processId);
 
+        internal static int? VisualSiblingIndex(DependencyObject node)
+        {
+            if (!(node is Visual) && !(node is System.Windows.Media.Media3D.Visual3D)) return null;
+            var parent = VisualTreeHelper.GetParent(node);
+            if (parent == null) return null;
+            int index = 0;
+            for (int i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++)
+            {
+                var child = VisualTreeHelper.GetChild(parent, i);
+                if (ReferenceEquals(child, node)) return index;
+                if (child.GetType() == node.GetType()) index++;
+            }
+            return null;
+        }
+
+        internal static DependencyObject? VisualHost(DependencyObject? node)
+        {
+            while (node != null && !(node is Visual) && !(node is System.Windows.Media.Media3D.Visual3D))
+                node = LogicalTreeHelper.GetParent(node) ?? (node as FrameworkContentElement)?.Parent;
+            return node;
+        }
+
         public Task<Protocol.HitTestResult> HitTestAsync(long nativeWindowHandle, PointDto point, DateTime deadline, int timeoutMs, CancellationToken ct, bool includePath = false) => RunAsync(async token =>
         {
             IntPtr hwnd;
@@ -120,9 +142,20 @@ namespace WinTestKit.Inspector.Agent.Inspection
                         while (target != null && !(target is UIElement) && !(target is ContentElement))
                             target = VisualTreeHelper.GetParent(target);
                         if (target == null) throw new ProtocolException(ErrorCodes.NotFound, "No hit.");
+                        Protocol.InnerElementDto? inner = null;
                         if (root is UIElement inputRoot && inputRoot.InputHitTest(local) is ContentElement content)
-                            target = content;
-                        var hit = new Protocol.HitTestResult { Handle = registry.Register(target, source.Dispatcher, inspector.DescribeType(target.GetType())) };
+                        {
+                            DependencyObject? host = VisualHost(content);
+                            if (host != null)
+                            {
+                                string? text = content is System.Windows.Documents.Run run ? run.Text : content is System.Windows.Documents.TextElement element ? new System.Windows.Documents.TextRange(element.ContentStart, element.ContentEnd).Text : null;
+                                if (RedactionPolicy.IsProtectedIdentity(host) || redaction.Match("Text") != null || (host is FrameworkElement named && redaction.Match(named.Name) != null) || redaction.Match(System.Windows.Automation.AutomationProperties.GetAutomationId(host)) != null || (text != null && redaction.Match(text) != null)) text = null;
+                                if (text != null && text.Length > 128) text = text.Substring(0, 128);
+                                inner = new Protocol.InnerElementDto { Type = content.GetType().Name, Text = text };
+                                target = host;
+                            }
+                        }
+                        var hit = new Protocol.HitTestResult { Handle = registry.Register(target, source.Dispatcher, inspector.DescribeType(target.GetType())), InnerElement = inner };
                         if (includePath)
                         {
                             var path = new List<ManagedNodeDto>();
@@ -132,14 +165,14 @@ namespace WinTestKit.Inspector.Agent.Inspection
                                 timed.Token.ThrowIfCancellationRequested();
                                 if (path.Count >= 256) throw new ProtocolException(ErrorCodes.LimitExceeded, "Hit test path limit reached.");
                                 AddNode(path, current);
-                                var identity = new NodeIdentityDto();
+                                var identity = new NodeIdentityDto { SiblingIndex = VisualSiblingIndex(current) };
                                 if (current is FrameworkElement || current is FrameworkContentElement)
                                 {
                                     string declaringType = current is FrameworkElement ? "System.Windows.FrameworkElement" : "System.Windows.FrameworkContentElement";
                                     identity.XName = ReadIdentity(current, new PathSegment { Kind = "property", Name = "Name", DeclaringType = declaringType }, source.Dispatcher, timed.Token);
                                 }
                                 identity.AutomationId = ReadIdentity(current, new PathSegment { Kind = "uia", Name = "automation_id" }, source.Dispatcher, timed.Token);
-                                path[path.Count - 1].Identity = identity.XName != null || identity.AutomationId != null ? identity : null;
+                                path[path.Count - 1].Identity = identity;
                                 if (ReferenceEquals(current, root)) break;
                                 current = current is Visual || current is System.Windows.Media.Media3D.Visual3D ? VisualTreeHelper.GetParent(current) : LogicalTreeHelper.GetParent(current);
                             }
@@ -374,14 +407,14 @@ namespace WinTestKit.Inspector.Agent.Inspection
                         ManagedNodeDto node = page.Items[index];
                         if (!registry.TryGetWeak(node.Object.ObjectId, node.Object.Generation, out object target)) continue;
                         if (WinFormsNative.IsWinFormsObject(target)) { node.Identity = WinFormsIdentity(target); continue; }
-                        var identity = new NodeIdentityDto();
+                        var identity = new NodeIdentityDto { SiblingIndex = target is DependencyObject dependency ? VisualSiblingIndex(dependency) : null };
                         if (target is FrameworkElement || target is FrameworkContentElement)
                         {
                             string declaringType = target is FrameworkElement ? "System.Windows.FrameworkElement" : "System.Windows.FrameworkContentElement";
                             identity.XName = ReadIdentity(target, new PathSegment { Kind = "property", Name = "Name", DeclaringType = declaringType }, dispatcher, token);
                         }
                         identity.AutomationId = ReadIdentity(target, new PathSegment { Kind = "uia", Name = "automation_id" }, dispatcher, token);
-                        node.Identity = identity.XName != null || identity.AutomationId != null ? identity : null;
+                        node.Identity = identity;
                     }
                     return true;
                 }, ct).ConfigureAwait(false);

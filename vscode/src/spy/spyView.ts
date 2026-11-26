@@ -23,8 +23,15 @@ import type {
   Suggestion,
 } from "../protocol/generated";
 import {
-  MAX_SHOWN_PROPERTIES,
-  PROPERTY_NAME,
+  BASIC_SETTING,
+  DEFAULT_BASIC_PROPERTIES,
+  MAX_BASIC_PROPERTIES,
+  basicUiaNames,
+  normalizeBasicProperties,
+} from "./basicProperties";
+import {
+  MAX_TREE_WIDTH,
+  MIN_TREE_WIDTH,
   parseSpyRequest,
   type SpyRequest,
   type SpyResponse,
@@ -33,8 +40,14 @@ import type { SetupMonitor } from "../setup/monitor";
 import { readApplicationIcons } from "./appIcons";
 import { livePreviewImages } from "./objectPreviews";
 import { PreviewViewer } from "./previewViewer";
-import { bestMatch, describeSegment, parseSelectionPath, processSegment, segmentOf, type PathSegment } from "./selectionPath";
+import { bestMatch, matchManagedIdentity, describeSegment, parseSelectionPath, processSegment, segmentOf, type PathSegment } from "./selectionPath";
 import * as path from "node:path";
+
+/** The only requests the Properties side panel may send; it mirrors the tree and must never drive it. */
+const PROPERTIES_REQUESTS: ReadonlySet<string> = new Set(["copy", "basicProperty", "resetBasicProperties", "generateLocator", "openPreview", "retryPreview", "showProperties", "tour", "select", "openDefinition", "upgradePackage"]);
+const PROPERTIES_HISTORY_LIMIT = 2000;
+// 2 s, 4 s, 8 s, then every 10 s: about two minutes in all.
+const DETAILS_RETRY_LIMIT = 13;
 
 type SpyConnection = { client?: JsonRpcClient; revision: number };
 
@@ -74,8 +87,11 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
   private selectionProject?: string;
   /** Set for the one refresh that follows a change of scope: that is not a reload of the same view. */
   private skipRestore = false;
+  /** Set when toggling Show Other Apps with an object selected: it is selected again if its process is still listed. */
+  private restoreIfListed = false;
   /** The object the webview shows details for, which a requested locator must belong to. */
   private selectedNodeId?: string;
+  private pickedPoint?: { x: number; y: number; nodeId: string };
   private readonly previewViewer = new PreviewViewer();
   /** Whether the tree on screen was read from the current project and is still usable. */
   private loaded = false;
@@ -112,6 +128,16 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
   private coverageRun = 0;
   private coverageTimer?: NodeJS.Timeout;
   private keepaliveTimer?: NodeJS.Timeout;
+  private processTimer?: NodeJS.Timeout;
+  private rootNodes: NodeInfo[] = [];
+  private retryTimer?: NodeJS.Timeout;
+  private retryRunning = false;
+  private retryWanted = false;
+  private managedRetryNeeded = false;
+  private treeRetryNeeded = false;
+  private detailsBusy = false;
+  private retryGeneration = 0;
+  private retryAttempt = 0;
   private recovering = false;
   private expandedPaths: PathSegment[][] = [];
   private recoveryAttempts = new Map<string, number>();
@@ -142,6 +168,9 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
       vscode.commands.registerCommand("wintestkit.spy.refresh", () =>
         this.safe(() => this.refresh()),
       ),
+      vscode.commands.registerCommand("wintestkit.spy.resetBasicProperties", () =>
+        this.safe(() => this.resetBasicProperties()),
+      ),
       vscode.commands.registerCommand(
         "wintestkit.spy.revealRelocation",
         (path: string) => this.safe(() => this.revealRelocation(path)),
@@ -153,7 +182,7 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
         if (event.affectsConfiguration("wintestkit.spy.traceFile")) this.configureTrace();
         if (
           event.affectsConfiguration("wintestkit.spy.bringWindowToFront") ||
-          event.affectsConfiguration("wintestkit.spy.shownProperties")
+          event.affectsConfiguration("wintestkit.spy." + BASIC_SETTING)
         )
           this.state();
       }),
@@ -278,7 +307,7 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
           for (const item of this.propertiesHistory) void view.webview.postMessage(item);
           if (this.currentPreview) void view.webview.postMessage(this.currentPreview);
           if (this.managedSnapshot) void view.webview.postMessage(this.managedSnapshot);
-        } else void this.safe(() => this.handle(message));
+        } else if (message.type.startsWith("managed") || PROPERTIES_REQUESTS.has(message.type)) void this.safe(() => this.handle(message));
       }),
       view.onDidChangeVisibility(() => {
         this.propertiesShowRequested = false;
@@ -334,7 +363,12 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
   }
   private updateKeepalive(): void {
     clearInterval(this.keepaliveTimer);
+    clearInterval(this.processTimer);
     this.keepaliveTimer = undefined;
+    this.processTimer = undefined;
+    if (!this.view?.visible && !this.propertiesView?.visible) this.cancelDetailsRetry(true);
+    else if (this.detailsBusy || this.managedRetryNeeded || this.treeRetryNeeded) this.scheduleDetailsRetry();
+    if (!this.disposed && (this.view?.visible || this.propertiesView?.visible)) this.processTimer = setInterval(() => this.checkRootProcesses(), 3000);
     if (!this.disposed && (this.view?.visible || this.propertiesView?.visible)) {
       this.keepaliveTimer = setInterval(() => void this.managedInspector?.keepalive(), 60_000);
     }
@@ -402,6 +436,12 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
   private post(message: SpyResponse, tutorial = false): void {
     if (this.tutorialActive() && !tutorial && message.type !== "tour") return;
     if (this.disposed) return;
+    if (message.type === "roots" || message.type === "rootsDiff") this.rootNodes = message.nodes;
+    if (message.type === "roots" || message.type === "selectionCleared" || message.type === "selectionPending") this.cancelDetailsRetry();
+    if (message.type === "wpfDetails" && message.nodeId === this.selectedNodeId) {
+      this.treeRetryNeeded = this.isBusy(message.blocked?.code);
+      if (this.treeRetryNeeded) this.scheduleDetailsRetry();
+    }
     if (message.type === "tour") {
       if (message.tutorial) { this.previewRevision++; this.currentPreview = undefined; }
       this.currentTour = message;
@@ -428,7 +468,7 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
     }
     const locatorTypes = ["suggestion", "suggestionLoading", "suggestionUnavailable"];
     if (message.type === "selectionPending" || message.type === "selected") {
-      this.propertiesHistory = this.propertiesHistory.filter((item) => !["selected", "selectionPending", "allProperties", "propertiesLoading", "progress", "error", "definitions", ...locatorTypes].includes(item.type));
+      this.propertiesHistory = this.propertiesHistory.filter((item) => !["selected", "selectionPending", "pickedObjectGone", "allProperties", "propertiesLoading", "progress", "error", "definitions", ...locatorTypes].includes(item.type));
       if (message.type === "selectionPending") {
         void this.revealProperties();
         this.managedPanel?.select(message.nodeId);
@@ -447,10 +487,20 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
     }
     // The Properties view keeps its own copy of the tree (labels, parents, paths), so every message that
     // changes the tree shape must reach it too; a diff it never saw leaves selected objects without a parent.
-    if (["roots", "rootsDiff", "children", "childrenDiff", "wpfDetails", "state", "selected", "selectionCleared", "selectionPending", "allProperties", "propertiesLoading", "progress", "error"].includes(message.type)) {
+    if (["roots", "rootsDiff", "children", "childrenDiff", "wpfDetails", "state", "selected", "selectionCleared", "selectionPending", "pickedObjectGone", "allProperties", "propertiesLoading", "progress", "error"].includes(message.type)) {
       if (message.type === "state") this.propertiesHistory = this.propertiesHistory.filter((item) => item.type !== "state");
       if (message.type === "progress") this.propertiesHistory = this.propertiesHistory.filter((item) => item.type !== "progress" || item.taskId !== message.taskId);
+      // Each of these carries the full state of its node, so a newer one supersedes the older ones.
+      if (message.type === "children" && !message.append) this.propertiesHistory = this.propertiesHistory.filter((item) => (item.type !== "children" && item.type !== "childrenDiff") || item.nodeId !== message.nodeId);
+      else if (message.type === "childrenDiff" || message.type === "wpfDetails") this.propertiesHistory = this.propertiesHistory.filter((item) => item.type !== message.type || item.nodeId !== message.nodeId);
+      else if (message.type === "rootsDiff") this.propertiesHistory = this.propertiesHistory.filter((item) => item.type !== "rootsDiff");
       if (message.type !== "progress" || !message.done) this.propertiesHistory.push(message);
+      if (this.propertiesHistory.length > PROPERTIES_HISTORY_LIMIT) {
+        const drop = this.propertiesHistory.length - PROPERTIES_HISTORY_LIMIT;
+        const tree = new Set(["children", "childrenDiff", "wpfDetails", "rootsDiff"]);
+        let removed = 0;
+        this.propertiesHistory = this.propertiesHistory.filter((item) => !(removed < drop && tree.has(item.type) && ++removed));
+      }
       if (this.propertiesReady) void this.propertiesView?.webview.postMessage(message);
     }
   }
@@ -618,6 +668,7 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
   }
   private state(): void {
     const project = this.currentProject();
+    const treeWidth = this.treeWidth();
     this.post({
       type: "state",
       picking: this.picking,
@@ -628,7 +679,9 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
       hasProject: !!this.currentProject(),
       showOtherApps: this.showOtherApps,
       bringToFront: this.bringToFront(),
-      shownProperties: this.shownProperties(),
+      basicProperties: this.basicProperties(),
+      basicDefaults: [...DEFAULT_BASIC_PROPERTIES],
+      ...(treeWidth === undefined ? {} : { treeWidth }),
       showRefreshCounts: vscode.workspace.getConfiguration("wintestkit.spy").get<boolean>("showRefreshCounts", false),
     });
     void vscode.commands.executeCommand(
@@ -688,7 +741,7 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
       });
     } catch (error) {
       failed = true;
-      if (isManagedNodeId(nodeId) && this.isStale(error) && !this.recovering) {
+      if (isManagedNodeId(nodeId) && this.isStale(error) && !this.recovering && !this.pickedPoint) {
         await this.recoverStale();
         return undefined as T;
       }
@@ -720,6 +773,8 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
     }
   }
   private unbind(invalidatePick = true): void {
+    this.cancelDetailsRetry();
+    this.rootNodes = [];
     const client = this.client;
     const process = this.managedInspector?.sessionInfo?.process;
     if (process && this.project) this.disconnectedProcess = { project: this.project.root.toString(), process };
@@ -784,10 +839,13 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
       ? path.win32.basename(appProcess).replace(/\.exe$/i, "")
       : undefined;
     this.client = client;
-    this.managedInspector = new ManagedInspector(client, connection.initialized, (process) => void this.safe(() => this.recoverStale(process)), (line) => this.log.error(line), connection.hostCapability, (process) => void this.safe(() => this.recoverStale(process, true)));
+    this.managedInspector = new ManagedInspector(client, connection.initialized, (process) => void this.safe(() => this.recoverStale(process)), (line) => this.log.error(line), connection.hostCapability, (process) => void this.safe(() => this.recoverStale(process, true)), async (nodeId, call) => (await this.pickedCall(client, nodeId, call)).value);
     this.managedPanel = new ManagedPanel(this.managedInspector, (message) => {
       if (this.managedInspector?.visible && !this.tutorialActive()) {
         this.managedSnapshot = message;
+        const snapshot = message as { failure?: { code?: string }; busyRead?: boolean };
+        this.managedRetryNeeded = this.isBusy(snapshot.failure?.code) || !!snapshot.busyRead;
+        if (this.managedRetryNeeded) this.scheduleDetailsRetry();
         if (this.propertiesReady) void this.propertiesView?.webview.postMessage(message);
       }
     });
@@ -808,155 +866,7 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
       client.onNotification("spy.picked", (value) => {
         void this.safe(async () => {
           if (!this.currentPick(client, value)) return;
-          const picked = value as Omit<SpyPickedNotification, "suggestion"> & { suggestion?: Suggestion };
-          if (picked.blocked || picked.attachRequired) {
-            await this.stopPick();
-            const roots = await this.requestRoots(client);
-            if (client !== this.client || this.disposed) return;
-            const revision = ++this.revision;
-            const wasLoaded = this.loaded;
-            if (wasLoaded) this.post({ type: "rootsDiff", nodes: roots, revision });
-            else { this.post({ type: "roots", nodes: roots }); this.loaded = true; }
-            this.trackNodes(client, roots);
-            this.deferIcons(client, roots, revision);
-            const windowNode = roots.find((root) => root.nodeId === picked.node.nodeId || root.info.processId === picked.node.info.processId);
-            if (windowNode && picked.blocked) {
-              await this.managedInspector?.reportTreeFailure(windowNode.nodeId, picked.blocked);
-              this.post({ type: "wpfDetails", nodeId: windowNode.nodeId, missing: false, blocked: picked.blocked });
-              if (!wasLoaded) this.post({ type: "children", nodeId: windowNode.nodeId, nodes: [], expanded: true, blocked: picked.blocked });
-            } else if (windowNode && picked.process) {
-              this.treeProcesses.set(windowNode.nodeId, picked.process);
-              if (await this.managedInspector?.attachTree(windowNode.nodeId, picked.process)) {
-                if (client === this.client && revision === this.revision) {
-                  this.post({ type: "error", message: "Inspector attached. Pick the element again to select its WPF node." });
-                  await this.startPick();
-                }
-              } else if (client === this.client && revision === this.revision) {
-                await this.showChildren(client, windowNode.nodeId, undefined, false);
-              }
-            }
-            return;
-          }
-          const selection = ++this.selection;
-          this.post({ type: "selectionPending", nodeId: picked.node.nodeId });
-          void this.managedInspector?.select(picked.node.nodeId);
-          let treeRevision = this.revision;
-          const pickedScope = this.showOtherApps;
-          const properties = await this.loading(
-            "Inspecting picked object",
-            2,
-            async (phase) => {
-              await phase("Stopping element picker", () => this.stopPick());
-              this.trace.rpc("inspect.properties", picked.node.nodeId);
-              return phase("Reading picked control properties", () =>
-                client.request<InspectPropertiesResult>("inspect.properties", {
-                  nodeId: picked.node.nodeId,
-                  includeAncestors: true,
-                  ...this.includeShown(),
-                }),
-              );
-            },
-            picked.node.nodeId,
-            "details",
-          );
-          if (!this.sameReveal(client, treeRevision, selection)) return;
-          let pickedPath: PathSegment[] | undefined;
-          const revealed = await this.loading(
-            "Revealing picked object",
-            properties.ancestors.length + 2,
-            async (phase) => {
-              const roots = await phase("Reading root windows", () =>
-                this.requestRoots(client, pickedScope),
-              );
-              if (!this.sameReveal(client, treeRevision, selection))
-                return false;
-              treeRevision = ++this.revision;
-              const inPlace = this.loaded;
-              if (inPlace) this.post({ type: "rootsDiff", nodes: roots, revision: treeRevision });
-              else { this.post({ type: "roots", nodes: roots }); this.loaded = true; }
-              this.trackNodes(client, roots, !inPlace);
-              this.deferIcons(client, roots, treeRevision);
-              const rootIndex = properties.ancestors.findIndex((ancestor) =>
-                roots.some((root) => root.nodeId === ancestor.nodeId),
-              );
-              const ancestors =
-                rootIndex < 0 ? [] : properties.ancestors.slice(rootIndex);
-              const processRoot = roots.find((root) => root.nodeId === (ancestors[0]?.nodeId ?? picked.node.nodeId));
-              pickedPath = ancestors.length
-                ? [...(processRoot ? [processSegment(processRoot.info)] : []), ...ancestors.map((ancestor) => segmentOf(ancestor.info)), segmentOf(picked.node.info)]
-                : processRoot ? [processSegment(processRoot.info), segmentOf(picked.node.info)] : undefined;
-              if (isManagedSource(properties.source) && !ancestors.length && !roots.some((root) => root.nodeId === picked.node.nodeId)) {
-                this.post({ type: "error", message: "Picked WPF or WinForms node was not found in the tree." });
-              }
-              const mixedWpfPath = isManagedSource(properties.source) || ancestors.some((ancestor) => isManagedSource(ancestor.source));
-              for (const [index, ancestor] of ancestors.entries()) {
-                if (!this.sameReveal(client, treeRevision, selection))
-                  return false;
-                const nodes = await phase(
-                  "Loading " +
-                    (ancestor.info.name || ancestor.info.controlType),
-                  async () => {
-                    if (!mixedWpfPath) return this.enumerate(client, "inspect.children", { nodeId: ancestor.nodeId });
-                    const target = ancestors[index + 1]?.nodeId ?? picked.node.nodeId;
-                    const nodes: NodeInfo[] = [];
-                    let token: string | undefined;
-                    for (let page = 0; page < 20; page++) {
-                      const result = await this.childrenPage(client, ancestor.nodeId, token);
-                      if (Array.isArray(result)) { nodes.push(...result); break; }
-                      if (!("nodes" in result)) break;
-                      nodes.push(...result.nodes);
-                      token = result.nextPageToken;
-                      if (!token) break;
-                    }
-                    const targetIndex = nodes.findIndex((node) => node.nodeId === target);
-                    if (targetIndex < 0 || token) {
-                      this.post({ type: "error", message: "Picked WPF node was not found in a complete tree page." });
-                      return [];
-                    }
-                    const pathIndex = (processRoot ? 1 : 0) + index + 1;
-                    if (pickedPath) pickedPath[pathIndex] = segmentOf(nodes[targetIndex].info, targetIndex);
-                    return nodes;
-                  },
-                );
-                if (!this.sameReveal(client, treeRevision, selection))
-                  return false;
-                if (inPlace) this.post({ type: "childrenDiff", nodeId: ancestor.nodeId, nodes, revision: treeRevision });
-                else this.post({ type: "children", nodeId: ancestor.nodeId, nodes });
-                this.trackNodes(client, nodes);
-              }
-              return true;
-            },
-            picked.node.nodeId,
-          );
-          if (!revealed || !this.sameReveal(client, treeRevision, selection))
-            return;
-          this.suggestion = picked.suggestion;
-          this.selectedNodeId = picked.node.nodeId;
-          this.managedPanel?.select(picked.node.nodeId, isManagedSource(properties.source));
-          if (pickedPath) this.rememberSelection(pickedPath);
-          this.post({
-            type: "picked",
-            node: picked.node,
-            suggestion: picked.suggestion,
-            ancestors: properties.ancestors,
-          });
-          this.post({
-            type: "selected",
-            nodeId: picked.node.nodeId,
-            properties,
-            suggestion: picked.suggestion,
-          });
-          this.loadSelectionDetails(client, picked.node.nodeId, selection);
-          const choice = await vscode.window.showInformationMessage(
-            "Picked " +
-              picked.node.info.controlType +
-              ' "' +
-              picked.node.info.name +
-              '"',
-            "Open Spy",
-          );
-          if (choice)
-            await vscode.commands.executeCommand("wintestkit.spy.focus");
+          await this.revealPicked(client, value as SpyPickedNotification, true);
         });
       }),
     ];
@@ -1003,7 +913,9 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
     const scopeRevision = this.scopeRevision;
     const showOtherApps = this.showOtherApps;
     const restore = !this.skipRestore;
+    const onlyIfListed = this.restoreIfListed;
     this.skipRestore = false;
+    this.restoreIfListed = false;
     await this.loading("Loading objects", 2, async (phase) => {
       const attempt = await phase("Connecting to automation server", () =>
         this.connect(),
@@ -1037,7 +949,7 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
           try {
             const facts = await client.request<{ process: ManagedProcessIdentity }>("inspect.managed.identify", { nodeId: window.nodeId });
             sameProcess = facts.process.pid === previousProcess.pid && facts.process.creationTimeUtc === previousProcess.creationTimeUtc;
-          } catch { /* A disappeared or unidentifiable process cannot safely retain WPF handles. */ }
+          } catch { sameProcess = status.pids.includes(previousProcess.pid); }
         }
         if (this.disposed || !this.sameScope(scopeRevision, revision)) return;
         if (!sameProcess) {
@@ -1055,7 +967,9 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
       this.loaded = true;
       this.trackNodes(client, nodes, !inPlace);
       this.deferIcons(client, nodes, revision);
-      if (restore && !inPlace) {
+      if (restore && !inPlace && onlyIfListed && !this.selectionProcessListed(nodes)) {
+        this.rememberSelection(undefined);
+      } else if (restore && !inPlace) {
         if (this.recovering) {
           const loaded = new Map<string, NodeInfo[]>();
           await this.restoreExpanded(client, nodes, revision, loaded);
@@ -1091,6 +1005,207 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
    * through the fresh tree and opening each level on the way. If it is not there any more, says
    * so once in a VS Code notification and forgets it.
    */
+  private async revealPicked(client: JsonRpcClient, picked: Omit<SpyPickedNotification, "suggestion"> & { suggestion?: Suggestion }, announce: boolean): Promise<void> {
+          if (picked.blocked || picked.attachRequired) {
+            await this.stopPick();
+            const roots = await this.requestRoots(client);
+            if (client !== this.client || this.disposed) return;
+            const revision = ++this.revision;
+            const wasLoaded = this.loaded;
+            if (wasLoaded) this.post({ type: "rootsDiff", nodes: roots, revision });
+            else { this.post({ type: "roots", nodes: roots }); this.loaded = true; }
+            this.trackNodes(client, roots);
+            this.deferIcons(client, roots, revision);
+            const windowNode = roots.find((root) => root.nodeId === picked.node.nodeId || root.info.processId === picked.node.info.processId);
+            if (windowNode && picked.blocked) {
+              await this.managedInspector?.reportTreeFailure(windowNode.nodeId, picked.blocked);
+              this.post({ type: "wpfDetails", nodeId: windowNode.nodeId, missing: false, blocked: picked.blocked });
+              if (!wasLoaded) this.post({ type: "children", nodeId: windowNode.nodeId, nodes: [], expanded: true, blocked: picked.blocked });
+            } else if (windowNode && picked.process) {
+              this.treeProcesses.set(windowNode.nodeId, picked.process);
+              if (await this.managedInspector?.attachTree(windowNode.nodeId, picked.process)) {
+                if (client === this.client && revision === this.revision) {
+                  this.post({ type: "error", message: "Inspector attached. Pick the element again to select its WPF node." });
+                  await this.startPick();
+                }
+              } else if (client === this.client && revision === this.revision) {
+                await this.showChildren(client, windowNode.nodeId, undefined, false);
+              }
+            }
+            return;
+          }
+          this.pickedPoint = { ...picked.point, nodeId: picked.node.nodeId };
+          this.selectedNodeId = picked.node.nodeId;
+          const selection = ++this.selection;
+          this.post({ type: "selectionPending", nodeId: picked.node.nodeId });
+          void this.managedInspector?.select(picked.node.nodeId);
+          let treeRevision = this.revision;
+          const pickedScope = this.showOtherApps;
+          const properties = await this.loading(
+            "Inspecting picked object",
+            2,
+            async (phase) => {
+              await phase("Stopping element picker", () => this.stopPick());
+              this.trace.rpc("inspect.properties", picked.node.nodeId);
+              return phase("Reading picked control properties", async () => {
+                const read = (id: string) => client.request<InspectPropertiesResult>("inspect.properties", {
+                  nodeId: id, includeAncestors: true, ...this.includeShown(),
+                });
+                return announce ? (await this.pickedCall(client, picked.node.nodeId, read)).value : read(picked.node.nodeId);
+              });
+            },
+            picked.node.nodeId,
+            "details",
+          );
+          if (!this.sameReveal(client, treeRevision, selection)) return;
+          let pickedPath: PathSegment[] | undefined;
+          let treePicked = picked.node;
+          let revealNote: string | undefined;
+          this.log.info(`Pick reveal: ${picked.node.info.controlType} '${picked.node.info.name}' (${picked.node.nodeId}), ${properties.ancestors.length} ancestors`);
+          const revealed = await this.loading(
+            "Revealing picked object",
+            properties.ancestors.length + 2,
+            async (phase) => {
+              const roots = await phase("Reading root windows", () =>
+                this.requestRoots(client, pickedScope),
+              );
+              if (!this.sameReveal(client, treeRevision, selection))
+                return false;
+              treeRevision = ++this.revision;
+              const inPlace = this.loaded;
+              if (inPlace) this.post({ type: "rootsDiff", nodes: roots, revision: treeRevision });
+              else { this.post({ type: "roots", nodes: roots }); this.loaded = true; }
+              this.trackNodes(client, roots, !inPlace);
+              this.deferIcons(client, roots, treeRevision);
+              const rootIndex = properties.ancestors.findIndex((ancestor) =>
+                roots.some((root) => root.nodeId === ancestor.nodeId),
+              );
+              this.log.info(`Pick reveal: rootIndex ${rootIndex}`);
+              const ancestors =
+                rootIndex < 0 ? [] : properties.ancestors.slice(rootIndex);
+              const processRoot = roots.find((root) => root.nodeId === (ancestors[0]?.nodeId ?? picked.node.nodeId));
+              pickedPath = ancestors.length
+                ? [...(processRoot ? [processSegment(processRoot.info)] : []), ...ancestors.map((ancestor) => segmentOf(ancestor.info)), segmentOf(picked.node.info)]
+                : processRoot ? [processSegment(processRoot.info), segmentOf(picked.node.info)] : undefined;
+              let current = processRoot;
+              let reached = current ? 1 : 0;
+              const total = ancestors.length + 1;
+              if (!current) {
+                revealNote = "Picked node was not found among the root windows.";
+                this.log.error(`Pick reveal failed: ${revealNote}`);
+              }
+              const mixedWpfPath = isManagedSource(properties.source) || ancestors.some((ancestor) => isManagedSource(ancestor.source));
+              for (const [index] of ancestors.entries()) {
+                if (!current || !this.sameReveal(client, treeRevision, selection)) break;
+                const wanted = ancestors[index + 1] ?? picked.node;
+                let complete = true;
+                const nodes = await phase("Loading " + (current.info.name || current.info.controlType), async () => {
+                  if (!mixedWpfPath) return this.enumerate(client, "inspect.children", { nodeId: current!.nodeId });
+                  const children: NodeInfo[] = [];
+                  let token: string | undefined;
+                  for (let page = 0; page < 20; page++) {
+                    const result = await this.childrenPage(client, current!.nodeId, token);
+                    if (Array.isArray(result)) { children.push(...result); token = undefined; break; }
+                    if (!("nodes" in result)) { complete = false; break; }
+                    children.push(...result.nodes);
+                    token = result.nextPageToken;
+                    if (!token) break;
+                  }
+                  if (token) complete = false;
+                  return children;
+                });
+                if (!this.sameReveal(client, treeRevision, selection)) return false;
+                if (inPlace) this.post({ type: "childrenDiff", nodeId: current.nodeId, nodes, revision: treeRevision });
+                else this.post({ type: "children", nodeId: current.nodeId, nodes });
+                this.trackNodes(client, nodes);
+                const byId = nodes.find((node) => node.nodeId === wanted.nodeId);
+                const identityMatch = !byId && isManagedSource(wanted.source) ? matchManagedIdentity(wanted, nodes) : undefined;
+                const match = byId ?? (isManagedSource(wanted.source) ? identityMatch?.node : bestMatch(segmentOf(wanted.info), nodes));
+                this.log.info(`Pick reveal level ${index + 1}: wanted ${wanted.info.controlType} '${wanted.info.name}' (${wanted.nodeId}), page had ${nodes.length} children [${nodes.map((node) => node.info.controlType).join(", ")}], found ${match ? "yes" : "no"}, matched by ${byId ? "id" : match ? `identity: ${identityMatch?.attributes.join("+") ?? "type"}` : "none"}`);
+                if (!match || !complete) {
+                  revealNote = `Revealed ${reached} of ${total} levels; the rest of the tree changed while loading.`;
+                  this.log.error(`Pick reveal failed: ${revealNote} ${complete ? "Target missing." : "Tree page incomplete."}`);
+                  break;
+                }
+                current = match;
+                reached++;
+                const pathIndex = (processRoot ? 1 : 0) + index + 1;
+                if (pickedPath) pickedPath[pathIndex] = segmentOf(match.info, nodes.indexOf(match));
+              }
+              if (current) treePicked = current;
+              if (!ancestors.length && processRoot?.nodeId !== picked.node.nodeId) {
+                revealNote = `Revealed ${reached} of ${total} levels; the rest of the tree changed while loading.`;
+                this.log.error(`Pick reveal failed: ${revealNote} No ancestor path.`);
+              }
+              return true;
+            },
+            picked.node.nodeId,
+          );
+          if (!revealed || !this.sameReveal(client, treeRevision, selection))
+            return;
+          this.suggestion = picked.suggestion;
+          this.selectedNodeId = picked.node.nodeId;
+          this.managedPanel?.select(picked.node.nodeId, isManagedSource(properties.source));
+          if (pickedPath) this.rememberSelection(pickedPath);
+          this.post({
+            type: "picked",
+            node: treePicked,
+            suggestion: picked.suggestion,
+            ancestors: properties.ancestors,
+          });
+          this.post({
+            type: "selected",
+            nodeId: picked.node.nodeId,
+            properties,
+            suggestion: picked.suggestion,
+            treeNodeId: treePicked.nodeId,
+            revealNote: [revealNote, picked.innerElement && `Picked ${picked.innerElement.type}${picked.innerElement.text ? ` '${picked.innerElement.text}'` : ""} inside this ${picked.node.info.controlType}.`].filter(Boolean).join(" ") || undefined,
+          });
+          if (!announce) return;
+          this.loadSelectionDetails(client, picked.node.nodeId, selection);
+          const choice = await vscode.window.showInformationMessage(
+            "Picked " +
+              picked.node.info.controlType +
+              ' "' +
+              picked.node.info.name +
+              '"',
+            "Open Spy",
+          );
+          if (choice)
+            await vscode.commands.executeCommand("wintestkit.spy.focus");
+  }
+  private async pickedCall<T>(client: JsonRpcClient, nodeId: string, call: (id: string) => Promise<T>): Promise<{ value: T; nodeId: string }> {
+    try { return { value: await call(nodeId), nodeId }; }
+    catch (error) {
+      const code = (error as { code?: number; data?: { code?: string } })?.data?.code;
+      const point = this.pickedPoint;
+      if (!point || point.nodeId !== nodeId || client !== this.client ||
+        !((error as { code?: number })?.code === -32005 || code === "objectStale" || code === "mappingFailed")) throw error;
+      let replacementId: string | undefined;
+      try {
+        const picked = await client.request<SpyPickedNotification>("spy.repick", { x: point.x, y: point.y, tree: "visual" });
+        if (this.pickedPoint !== point || client !== this.client) throw new Error("Selection changed during re-pick.");
+        if (picked.blocked || picked.attachRequired || !picked.node) throw new Error("Could not re-resolve the picked object.");
+        replacementId = picked.node.nodeId;
+        await this.revealPicked(client, picked, false);
+        if (this.selectedNodeId !== picked.node.nodeId || this.pickedPoint?.nodeId !== picked.node.nodeId) throw new Error("Could not reveal the picked object.");
+        const value = await call(picked.node.nodeId);
+        this.loadSelectionDetails(client, picked.node.nodeId, this.selection);
+        this.log.info(`Picked object was replaced by the app; re-resolved at (${point.x}, ${point.y}).`);
+        return { value, nodeId: picked.node.nodeId };
+      } catch (failure) {
+        this.log.error("Re-pick failed: " + String(failure));
+        if (this.pickedPoint && (this.pickedPoint === point || (replacementId && this.pickedPoint.nodeId === replacementId && this.selectedNodeId === replacementId))) this.post({ type: "pickedObjectGone", nodeId: this.selectedNodeId ?? nodeId });
+        throw failure;
+      }
+    }
+  }
+  private selectionProcessListed(roots: NodeInfo[]): boolean {
+    const first = this.recallSelection()?.[0];
+    if (!first) return false;
+    if (first.controlType !== "Process") return true;
+    return roots.some((root) => processSegment(root.info).automationId === first.automationId);
+  }
   private async restoreSelection(client: JsonRpcClient, roots: NodeInfo[], revision: number, loaded?: Map<string, NodeInfo[]>): Promise<void> {
     const path = this.recallSelection();
     if (!path?.length) return;
@@ -1138,7 +1253,9 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
         current = match;
       }
       if (!current || stale()) return;
-      await this.handle({ type: "select", nodeId: current.nodeId });
+      const previousPick = this.pickedPoint;
+      if (previousPick) this.pickedPoint = { ...previousPick, nodeId: current.nodeId };
+      await this.handle({ type: "select", nodeId: current.nodeId }, !!previousPick);
       this.post({ type: "selectionRestored", nodeId: current.nodeId });
     } catch (error) {
       if (!stale()) {
@@ -1308,6 +1425,7 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
   }
   private async startPick(): Promise<void> {
     if (this.tutorialActive()) return;
+    this.pickedPoint = undefined;
     // The picker comes first: the automatic Properties read stops sending batches until the pick ends.
     this.managedPanel?.pauseAutoRead();
     const token = ++this.pickRevision;
@@ -1391,6 +1509,10 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
       (error instanceof RpcError && error.code === -32005);
   }
   private async childrenPage(client: JsonRpcClient, nodeId: string, pageToken?: string, autoAttach = true, allowFallback = true): Promise<InspectChildrenResult> {
+    const result = await this.pickedCall(client, nodeId, (id) => this.childrenPageRaw(client, id, id === nodeId ? pageToken : undefined, autoAttach, allowFallback));
+    return result.value;
+  }
+  private async childrenPageRaw(client: JsonRpcClient, nodeId: string, pageToken?: string, autoAttach = true, allowFallback = true): Promise<InspectChildrenResult> {
     const params = { nodeId, tree: "visual" as const, ...(pageToken ? { pageToken } : {}) };
     this.trace.rpc("inspect.children", nodeId);
     let result = await client.request<InspectChildrenResult>("inspect.children", params);
@@ -1433,10 +1555,15 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
     return result;
   }
   private async showChildren(client: JsonRpcClient, nodeId: string, pageToken?: string, autoAttach = true, expanded = false, diff = false): Promise<void> {
-    const revision = this.revision;
+    let revision = this.revision;
     let result: InspectChildrenResult;
     try {
+      const picked = this.pickedPoint?.nodeId === nodeId;
       result = await this.childrenPage(client, nodeId, pageToken, autoAttach, !diff);
+      if (picked && this.pickedPoint && this.pickedPoint.nodeId !== nodeId) {
+        nodeId = this.pickedPoint.nodeId;
+        revision = this.revision;
+      }
       if (diff && !Array.isArray(result) && "nodes" in result) {
         const collected = [...result.nodes];
         let token = result.nextPageToken;
@@ -1539,8 +1666,10 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
       client === this.client && selection === this.selection && nodeId === this.selectedNodeId;
     this.post({ type: "suggestionLoading", nodeId });
     try {
-      const suggestion = await client.request<Suggestion>("suggest.locator", { nodeId });
-      if (!current()) return;
+      const retried = await this.pickedCall(client, nodeId, (id) => client.request<Suggestion>("suggest.locator", { nodeId: id }));
+      nodeId = retried.nodeId;
+      const suggestion = retried.value;
+      if (client !== this.client || nodeId !== this.selectedNodeId) return;
       this.suggestion = suggestion;
       this.post({ type: "suggestion", nodeId, suggestion });
     } catch (error) {
@@ -1551,7 +1680,7 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
       if (this.generatingLocatorFor === selection) this.generatingLocatorFor = undefined;
     }
   }
-  private async handle(message: SpyRequest): Promise<void> {
+  private async handle(message: SpyRequest, restoringPick = false): Promise<void> {
     if (message.type === "upgradePackage") {
       const project = this.currentProject();
       if (project) {
@@ -1611,6 +1740,8 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
       return this.refresh();
     }
     if (message.type === "selectionRemoved") {
+      this.cancelDetailsRetry();
+      this.pickedPoint = undefined;
       this.selectedNodeId = undefined;
       this.selection++;
       this.rememberSelection(undefined);
@@ -1660,15 +1791,25 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
     if (message.type === "showOtherApps") {
       if (this.showOtherApps === message.enabled) return;
       this.showOtherApps = message.enabled;
-      this.skipRestore = true;
+      const keep = !!this.selectedNodeId && !!this.recallSelection()?.length;
+      this.skipRestore = !keep;
+      this.restoreIfListed = keep;
       this.invalidateScope();
       return this.refresh();
     }
     if (message.type === "refresh") return this.refresh();
     if (message.type === "pick") return this.startPick();
     if (message.type === "stopPick") { await this.stopPick(); this.managedPanel?.resumeAutoRead(); return; }
-    if (message.type === "pinProperty") {
-      await this.pinProperty(message.name, message.pinned);
+    if (message.type === "basicProperty") {
+      await this.setBasicProperty(message.key, message.pinned);
+      return;
+    }
+    if (message.type === "resetBasicProperties") {
+      await this.resetBasicProperties();
+      return;
+    }
+    if (message.type === "treeWidth") {
+      this.rememberTreeWidth(message.width);
       return;
     }
     if (message.type === "generateLocator") {
@@ -1706,6 +1847,7 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
     }
     const nodeId = "nodeId" in message ? message.nodeId : undefined;
     if (message.type === "select") {
+      if (!restoringPick) this.pickedPoint = undefined;
       this.suggestion = undefined;
       this.selectedNodeId = message.nodeId;
       this.post({ type: "selectionPending", nodeId: message.nodeId });
@@ -1727,31 +1869,33 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
         );
         const selection =
           message.type === "select" ? ++this.selection : this.selection;
-        if (message.type === "select" && nodeId) void this.managedInspector?.select(nodeId);
+        if (message.type === "select" && nodeId && !nodeId.startsWith("process:")) void this.managedInspector?.select(nodeId);
         const attempt = await connection;
         if (!attempt.client) return;
         const client = attempt.client;
         if (!nodeId) return;
         if (message.type === "select") void this.managedInspector?.select(nodeId);
         if (message.type === "select" && selection !== this.selection) return;
-        if (message.type === "expand") {
+        if (message.type === "select" && nodeId.startsWith("process:")) {
+          void this.loadPreview(client, nodeId, selection);
+        } else if (message.type === "expand") {
           await phase("Reading child controls", () => this.showChildren(client, nodeId));
         } else if (message.type === "highlight") {
           const highlight = await phase("Highlighting control", () =>
-            client.request<{ outlinedAncestor?: string; outlinedTarget?: string }>("inspect.highlight", {
-              nodeId,
+            this.pickedCall(client, nodeId, (id) => client.request<{ outlinedAncestor?: string; outlinedTarget?: string }>("inspect.highlight", {
+              nodeId: id,
               bringToFront: this.bringToFront(),
-            }),
+            })).then((result) => result.value),
           );
           if (highlight.outlinedAncestor)
             void vscode.window.showInformationMessage(`${highlight.outlinedTarget ?? "Selected element"} has no on-screen rectangle; outlined ${highlight.outlinedAncestor} instead`);
         } else if (message.type === "select") {
           if (selection !== this.selection) return;
           const properties = await phase("Reading basic properties", () =>
-            client.request<InspectPropertiesResult>("inspect.properties", {
-              nodeId,
+            this.pickedCall(client, nodeId, (id) => client.request<InspectPropertiesResult>("inspect.properties", {
+              nodeId: id,
               ...this.includeShown(),
-            }),
+            })).then((result) => result.value),
           );
           if (
             this.disposed ||
@@ -1770,11 +1914,71 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
         : "tree",
     );
   }
+  private isBusy(code?: string): boolean { return ["timeout", "dispatcherUnavailable", "busy"].includes(code ?? ""); }
+  private cancelDetailsRetry(preserveBusy = false): void {
+    clearTimeout(this.retryTimer); this.retryTimer = undefined;
+    this.retryGeneration++; this.retryAttempt = 0; this.retryWanted = false;
+    if (!preserveBusy) { this.managedRetryNeeded = false; this.treeRetryNeeded = false; this.detailsBusy = false; }
+  }
+  private scheduleDetailsRetry(): void {
+    if (!this.selectedNodeId || !this.client || this.disposed || !(this.view?.visible || this.propertiesView?.visible)) return;
+    if (this.retryRunning) { this.retryWanted = true; return; }
+    if (this.retryTimer) return;
+    const generation = this.retryGeneration;
+    // About two minutes of retries; a getter that always times out must not be polled forever.
+    if (this.retryAttempt >= DETAILS_RETRY_LIMIT) return;
+    const delay = [2000, 4000, 8000][this.retryAttempt++] ?? 10000;
+    this.retryTimer = setTimeout(() => {
+      this.retryTimer = undefined;
+      void this.retryDetails(generation);
+    }, delay);
+  }
+  private async retryDetails(generation: number): Promise<void> {
+    const client = this.client, node = this.selectedNodeId, selection = this.selection;
+    if (!client || !node || this.retryRunning || generation !== this.retryGeneration) return;
+    this.retryRunning = true;
+    let busy = false;
+    // A busy UI thread that failed the properties read also timed out the .NET values read beside it.
+    const managed = this.managedRetryNeeded || this.detailsBusy;
+    try {
+      const result = await this.pickedCall(client, node, (id) => client.request<InspectPropertiesResult>("inspect.properties", { nodeId: id, full: true }));
+      if (generation !== this.retryGeneration) return;
+      this.detailsBusy = false;
+      this.post({ type: "allProperties", nodeId: result.nodeId, properties: result.value });
+      if (this.treeRetryNeeded) {
+        const tree = await this.childrenPage(client, node, undefined, true, false);
+        if (generation !== this.retryGeneration) return;
+        busy = !Array.isArray(tree) && "blocked" in tree && this.isBusy(tree.blocked.code);
+      }
+      if (managed && this.managedPanel) busy = !await this.managedPanel.retryBusy() || busy;
+    } catch (error) { busy = this.isBusy((error as { data?: { code?: string } })?.data?.code); this.detailsBusy = busy; }
+    finally {
+      this.retryRunning = false;
+      const wanted = this.retryWanted; this.retryWanted = false;
+      if (generation === this.retryGeneration && selection === this.selection && client === this.client) {
+        if (busy) this.scheduleDetailsRetry(); else this.retryAttempt = 0;
+      } else if (wanted) this.scheduleDetailsRetry();
+    }
+  }
+  private checkRootProcesses(): void {
+    if (!this.loaded || !(this.view?.visible || this.propertiesView?.visible) || !this.rootNodes.length) return;
+    const dead = new Set<number>();
+    for (const pid of new Set(this.rootNodes.map((node) => node.info.processId).filter((pid): pid is number => !!pid))) {
+      try { process.kill(pid, 0); } catch (error) { if ((error as NodeJS.ErrnoException).code === "ESRCH") dead.add(pid); }
+    }
+    if (!dead.size) return;
+    if (this.appPids.length && this.appPids.every((pid) => dead.has(pid))) {
+      this.cancelDetailsRetry(); this.appPids = []; this.appRunning = false; this.targetName = undefined; this.state();
+    }
+    const nodes = this.rootNodes.filter((node) => !dead.has(node.info.processId ?? 0));
+    this.post({ type: "rootsDiff", nodes, revision: this.revision });
+  }
   // -- selected object details ---------------------------------------------------------------
   private loadSelectionDetails(client: JsonRpcClient, nodeId: string, selection: number): void {
-    void this.loadDefinitions(client, nodeId, selection);
-    void this.loadPreview(client, nodeId, selection);
+    // The server answers these one after another and definitions is the slowest, so the properties come first.
     void this.loadAllProperties(client, nodeId, selection);
+    void this.loadPreview(client, nodeId, selection);
+    void this.loadDefinitions(client, nodeId, selection);
   }
   /**
    * Every UI Automation property and supported pattern of the selected object. The selection was
@@ -1787,14 +1991,18 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
       selection === this.selection && client === this.client;
     this.post({ type: "propertiesLoading", nodeId, loading: true });
     try {
-      const properties = await client.request<InspectPropertiesResult>("inspect.properties", { nodeId, full: true });
-      if (current()) this.post({ type: "allProperties", nodeId, properties });
+      const result = await this.pickedCall(client, nodeId, (id) => client.request<InspectPropertiesResult>("inspect.properties", { nodeId: id, full: true }));
+      nodeId = result.nodeId;
+      const properties = result.value;
+      if (nodeId === this.selectedNodeId && client === this.client) this.post({ type: "allProperties", nodeId, properties });
     } catch (error) {
       // The basic properties are already shown; a failure here only leaves the list short.
       if (current()) {
         const code = (error as { data?: { code?: string } })?.data?.code;
-        if (["timeout", "dispatcherUnavailable", "busy"].includes(code ?? "") && this.managedInspector?.sessionInfo) {
-          this.log.error(`Spy .NET request to ${this.managedInspector.targetLabel} could not complete because its UI thread is busy. The attachment is still ready; Spy retries on the next selection. ${String(error)}`);
+        if (this.isBusy(code)) {
+          this.detailsBusy = true;
+          this.scheduleDetailsRetry();
+          this.log.error(`Spy .NET request to ${this.managedInspector?.targetLabel ?? "target"} could not complete because its UI thread is busy. Spy retries automatically. ${String(error)}`);
         } else this.log.error("Reading all properties failed: " + String(error));
       }
     } finally {
@@ -1808,8 +2016,9 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
       !this.disposed && !this.tutorialActive() && nodeId === this.selectedNodeId &&
       previewRevision === this.previewRevision && selection === this.selection && client === this.client;
     try {
-      const result = livePreviewImages(await client.request("inspect.preview", { nodeId }));
-      if (!current()) return;
+      const response = await this.pickedCall(client, nodeId, (id) => client.request("inspect.preview", { nodeId: id }));
+      if (response.nodeId !== nodeId || !current()) return;
+      const result = livePreviewImages(response.value);
       if (typeof result === "string") this.post({ type: "objectPreview", nodeId, reason: result });
       else this.post({ type: "objectPreview", nodeId, preview: result });
     } catch (error) {
@@ -1842,11 +2051,10 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
     this.definitionTargets = new Map();
     this.post({ type: "definitions", nodeId, state: "loading" });
     try {
-      const result = await client.request<InspectDefinitionsResult>(
-        "inspect.definitions",
-        { nodeId },
-      );
-      if (!current()) return;
+      const response = await this.pickedCall(client, nodeId, (id) => client.request<InspectDefinitionsResult>("inspect.definitions", { nodeId: id }));
+      nodeId = response.nodeId;
+      const result = response.value;
+      if (nodeId !== this.selectedNodeId || client !== this.client) return;
       if (!result) {
         this.post({
           type: "definitions",
@@ -1902,44 +2110,64 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
   }
   // Whether highlighting an object also raises its application window. Off by
   // default: the outline is drawn above every window anyway.
-  /** The properties the user pinned to the default list: a user setting, never project state. */
-  private shownProperties(): string[] {
+  /** The rows of the Basic view: a user setting, never project state. A setting that is not a list reads as empty. */
+  private basicProperties(): string[] {
     const stored = vscode.workspace
       .getConfiguration("wintestkit.spy")
-      .get<unknown>("shownProperties", []);
-    if (!Array.isArray(stored)) return [];
-    return [
-      ...new Set(
-        stored.filter(
-          (name): name is string => typeof name === "string" && PROPERTY_NAME.test(name),
-        ),
-      ),
-    ].slice(0, MAX_SHOWN_PROPERTIES);
+      .get<unknown>(BASIC_SETTING, [...DEFAULT_BASIC_PROPERTIES]);
+    return normalizeBasicProperties(stored);
   }
-  /** Asks the server to read the pinned properties along with the basic ones. */
+  /** Asks the server to read the pinned UI Automation properties along with the basic ones. */
   private includeShown(): { include?: string[] } {
-    const shown = this.shownProperties();
-    return shown.length ? { include: shown } : {};
+    const names = basicUiaNames(this.basicProperties());
+    return names.length ? { include: names } : {};
   }
-  private async pinProperty(name: string, pinned: boolean): Promise<void> {
-    const current = this.shownProperties();
-    if (pinned && !current.includes(name) && current.length >= MAX_SHOWN_PROPERTIES) {
-      // The panel has already drawn it pinned: say why it is not, and put it back.
-      this.post({
-        type: "error",
-        message: "At most " + MAX_SHOWN_PROPERTIES + " properties can be pinned. Unpin one first.",
-      });
+  private basicQueue: Promise<void> = Promise.resolve();
+  /** Changes to the Basic list run one after another, so each starts from what the one before wrote. */
+  private updateBasic(change: () => Promise<void>): Promise<void> {
+    const next = this.basicQueue.then(change);
+    this.basicQueue = next.catch(() => undefined);
+    return next;
+  }
+  private setBasicProperty(key: string, pinned: boolean): Promise<void> {
+    return this.updateBasic(async () => {
+      const current = this.basicProperties();
+      if (pinned && !current.includes(key) && current.length >= MAX_BASIC_PROPERTIES) {
+        // The panel has already drawn it pinned: say why it is not, and put it back.
+        this.post({
+          type: "error",
+          message: "At most " + MAX_BASIC_PROPERTIES + " rows can be pinned to the Basic view. Unpin one first.",
+        });
+        this.state();
+        return;
+      }
+      const next = pinned ? [...current, ...(current.includes(key) ? [] : [key])] : current.filter((item) => item !== key);
+      if (next.length === current.length && next.every((item, index) => item === current[index])) return;
+      await vscode.workspace
+        .getConfiguration("wintestkit.spy")
+        .update(BASIC_SETTING, next, vscode.ConfigurationTarget.Global);
       this.state();
-      return;
-    }
-    const next = pinned
-      ? [...new Set([...current, name])].slice(0, MAX_SHOWN_PROPERTIES)
-      : current.filter((item) => item !== name);
-    if (next.length === current.length && next.every((item, index) => item === current[index])) return;
-    await vscode.workspace
-      .getConfiguration("wintestkit.spy")
-      .update("shownProperties", next, vscode.ConfigurationTarget.Global);
-    this.state();
+    });
+  }
+  /** Drops the user's list, so the setting's default applies again. */
+  private resetBasicProperties(): Promise<void> {
+    return this.updateBasic(async () => {
+      await vscode.workspace
+        .getConfiguration("wintestkit.spy")
+        .update(BASIC_SETTING, undefined, vscode.ConfigurationTarget.Global);
+      this.state();
+    });
+  }
+  // -- the split between the Objects tree and the selected object, kept for each workspace ------
+  private static readonly treeWidthKey = "wintestkit.spy.treeWidth";
+  private treeWidth(): number | undefined {
+    const stored = this.memory?.get<unknown>(SpyView.treeWidthKey);
+    return typeof stored === "number" && Number.isFinite(stored) && stored >= MIN_TREE_WIDTH && stored <= MAX_TREE_WIDTH
+      ? Math.round(stored)
+      : undefined;
+  }
+  private rememberTreeWidth(width: number | null): void {
+    void this.memory?.update(SpyView.treeWidthKey, width ?? undefined);
   }
   private bringToFront(): boolean {
     return vscode.workspace
@@ -2029,6 +2257,7 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
     this.previewViewer.dispose();
     clearTimeout(this.coverageTimer);
     clearInterval(this.keepaliveTimer);
+    clearInterval(this.processTimer);
     this.unbind();
     this.disposed = true;
     [...this.subscriptions, ...this.viewSubscriptions, ...this.propertiesSubscriptions].forEach((subscription) =>

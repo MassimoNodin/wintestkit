@@ -91,6 +91,19 @@ afterEach(async () => {
   vi.useRealTimers();
 });
 describe("server manager", () => {
+  it("waits for a starting server before a configuration restart", async () => {
+    let resolveInterpreter!: (value: string) => void;
+    mocks.interpreter.mockImplementationOnce(() => new Promise<string>((resolve) => { resolveInterpreter = resolve; }));
+    const starting = manager.get(project);
+    const reloading = manager.restart(project);
+    expect(mocks.spawn).not.toHaveBeenCalled();
+    resolveInterpreter("python.exe");
+    await expect(starting).resolves.toBeDefined();
+    await expect(reloading).resolves.toBeDefined();
+    expect(mocks.spawn).toHaveBeenCalledTimes(2);
+    expect(log.error).not.toHaveBeenCalledWith(expect.stringContaining("server stopped"));
+  });
+
   it("creates a fresh private capability for each spawned server", async () => {
     const old = process.env.WINTESTKIT_SPY_HOST_CAPABILITY;
     process.env.WINTESTKIT_SPY_HOST_CAPABILITY = "inherited-secret";

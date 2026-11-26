@@ -2,9 +2,12 @@
   const vscode = acquireVsCodeApi();
   const element = (id) => document.getElementById(id);
   const propertiesView = document.body.classList.contains("properties-view");
+  // The side panel only mirrors the tree the host sends; it never drives it, so its messages stay on this list.
+  const propertiesMessages = new Set(["copy", "basicProperty", "resetBasicProperties", "generateLocator", "openPreview", "retryPreview", "showProperties", "propertiesReady", "tour", "select", "openDefinition", "upgradePackage"]);
   const post = (type, values = {}) => {
+    if (propertiesView && !type.startsWith("managed") && !propertiesMessages.has(type)) return;
     if (tutorialView && type !== "tour" && type !== "ready") return;
-    if (typeof values.nodeId === "string" && values.nodeId.startsWith("process:")) return;
+    if (typeof values.nodeId === "string" && values.nodeId.startsWith("process:") && type !== "select") return;
     vscode.postMessage({ type, ...values });
   };
   // Managed inspection is kept separate from the UI Automation property view.
@@ -23,7 +26,9 @@
     "not attached to this process": "The selected node belongs to another process. Attach to inspect it.",
   };
   // The same header the tree shows for a blocked attach: the real code and hint, then where to look.
-  const attachHeader = (failure) => `${failure.code}: ${failure.hint} Run ` + "`wtk doctor --agent`" + " for details.";
+  const isBusy = (failure) => ["timeout", "dispatcherUnavailable", "busy"].includes(failure?.code);
+  const BUSY_READ_NOTE = "Some values timed out because the application's UI thread is busy; they load automatically when it responds.";
+  const attachHeader = (failure) => isBusy(failure) ? failure.hint : `${failure.code}: ${failure.hint} Run ` + "`wtk doctor --agent`" + " for details.";
   const managedNode = (tag, text) => { const node = document.createElement(tag); node.textContent = text; return node; };
   const managedButton = (label, action) => { const button = managedNode("button", label); button.className = "secondary"; button.addEventListener("click", action); return button; };
   function getterFailureText(value) { return `Getter threw ${String(value.message || "an exception").split(".").pop()}${value.errorMessage ? `: ${value.errorMessage}` : ""}`; }
@@ -32,7 +37,7 @@
     const data = managedSnapshot; if (!data) return;
     element("managed-panel").hidden = propertiesView || !data.visible || !selectedWpf;
     element("managed-state").textContent = data.failure ? data.state.charAt(0).toUpperCase() + data.state.slice(1) + ": " + data.failure.code + "." : data.state;
-    element("managed-explanation").textContent = data.failure ? [data.failure.hint, "Run `wtk doctor --agent` for details."].filter(Boolean).join(" ") : (managedMessages[data.state] || "") + (data.state === "not installed" ? " " + data.install : "");
+    element("managed-explanation").textContent = data.failure ? (isBusy(data.failure) ? data.failure.hint : [data.failure.hint, "Run `wtk doctor --agent` for details."].filter(Boolean).join(" ")) : (managedMessages[data.state] || "") + (data.state === "not installed" ? " " + data.install : "");
     element("managed-install-copy").hidden = data.state !== "not installed";
     const root = element("managed-groups"), wpfRoot = element("wpf-managed-groups"); root.replaceChildren(); wpfRoot.replaceChildren();
     if (!data.object) return;
@@ -517,12 +522,8 @@
   const renderStatus = () => {
     renderBringToFront();
     const otherApps = element("other-apps");
-    const running = !!(appState && appState.appRunning);
     otherApps.hidden = false;
-    otherApps.disabled = !running;
-    otherApps.title = running
-      ? (showOtherApps ? "Show Only Selected App" : "Show Other Apps")
-      : "The selected app is stopped; desktop windows are shown.";
+    otherApps.disabled = false;
     otherApps.setAttribute("aria-pressed", String(showOtherApps));
     const otherAppsText = showOtherApps
       ? "Show Only Selected App"
@@ -629,7 +630,7 @@
           "tree",
           "window",
           "Application not running",
-          "Use the app controls in Test Target, then refresh or pick a control.",
+          (appState.appName || appState.targetName || "The application") + " is not running. Launch it from the WinTestKit view, or use Show Other Apps.",
         );
       else
         emptyState(
@@ -692,7 +693,9 @@
             : "container";
     icon.setAttribute("aria-hidden", "true");
   };
+  let revealNote = "";
   const hint = (text) => {
+    text = revealNote || text;
     element("hint").textContent = text;
     element("hint").hidden = !text;
   };
@@ -778,16 +781,11 @@
     const source = previewImages && (previewMode === "context" ? previewImages.windowDataUrl : previewImages.elementDataUrl);
     if (source) post("openPreview", { view: previewMode === "context" ? "window" : "element", dataUrl: source });
   };
-  // The frame fits every capture inside one rectangle. A capture smaller than the frame is
-  // enlarged to fill it; do that without smoothing, so its pixels stay sharp instead of blurring.
-  // A large one is only ever reduced, which the browser smooths well.
   element("object-preview-image").addEventListener("load", () => {
     const image = element("object-preview-image");
-    const frame = element("object-preview-frame");
-    image.className =
-      image.naturalWidth < frame.clientWidth && image.naturalHeight < frame.clientHeight
-        ? "magnified"
-        : "";
+    const ratio = window.devicePixelRatio || 1;
+    image.style.width = (image.naturalWidth / ratio) + "px";
+    image.style.height = (image.naturalHeight / ratio) + "px";
   });
   element("preview-retry").addEventListener("click", () => {
     if (propertiesView && selected) { loadingPreview(); post("retryPreview"); }
@@ -802,13 +800,11 @@
   // -- All properties: one list, sorted by name, in which nested values fold open ------------
   let currentProperties;
   let selectedProperties;
-  let shownProperties = [];
   const expandedProperties = new Set();
   let propertiesNodeId;
   const propertyToggles = new Map();
   const MAX_PROPERTY_DEPTH = 8;
   const MAX_PROPERTY_ROWS = 4000;
-  const PINNABLE = /^[A-Za-z][A-Za-z0-9]{0,63}$/;
   const compareNames = (left, right) =>
     String(left.name).localeCompare(String(right.name), undefined, { sensitivity: "base", numeric: true });
   const scalarText = (value) =>
@@ -850,28 +846,6 @@
       for (const [name, value] of Object.entries(properties))
         if (!byName.has(name)) byName.set(name, { name, kind: "scalar", value });
     return [...byName.values()].sort(compareNames);
-  };
-  const setPinned = (name, pinned) => {
-    shownProperties = pinned
-      ? [...new Set([...shownProperties, name])]
-      : shownProperties.filter((item) => item !== name);
-    renderPinned();
-    renderAllProperties();
-    renderSidebar();
-    post("pinProperty", { name, pinned });
-  };
-  const pinButton = (name) => {
-    const pinned = shownProperties.includes(name);
-    const button = document.createElement("button");
-    button.className = "property-pin codicon " + (pinned ? "codicon-pinned" : "codicon-pin");
-    button.setAttribute("aria-pressed", String(pinned));
-    const label = pinned
-      ? "Remove " + name + " from the default list"
-      : "Show " + name + " in the default list";
-    button.setAttribute("aria-label", label);
-    button.title = label;
-    button.addEventListener("click", () => setPinned(name, !pinned));
-    return button;
   };
   const propertyRow = (entry, depth, path, visible, children) => {
     const row = document.createElement("tr");
@@ -930,7 +904,6 @@
     value.textContent = propertySummary(entry);
     const actions = document.createElement("td");
     actions.className = "property-actions";
-    if (!depth && PINNABLE.test(entry.name)) actions.append(pinButton(entry.name));
     row.append(heading, value, actions);
     return row;
   };
@@ -966,47 +939,69 @@
     }
     propertyToggles.get(focusPath)?.focus?.();
   };
-  const renderPinned = () => {
-    const body = element("pinned-properties");
-    body.replaceChildren();
-    const values = (currentProperties && currentProperties.properties) || {};
-    for (const name of shownProperties) {
-      const row = document.createElement("tr");
-      row.className = "property-row";
-      row.dataset.name = name;
-      const heading = document.createElement("th");
-      heading.scope = "row";
-      heading.textContent = name;
-      const value = document.createElement("td");
-      value.textContent = scalarText(typeof values[name] === "string" ? values[name] : undefined);
-      const actions = document.createElement("td");
-      actions.className = "property-actions";
-      actions.append(pinButton(name));
-      row.append(heading, value, actions);
-      body.append(row);
-    }
-    element("pinned-group").hidden = shownProperties.length === 0;
-  };
   // The one status line is drawn with the rest of the sidebar, from the tree's notice and the host's snapshot together.
   const renderWpfDetails = () => renderSidebar();
   element("wpf-details-attach").addEventListener("click", () => { if (selected && (nodes.get(selected)?.wpfMissing || nodes.get(selected)?.wpfBlocked)) post("treeAttach", { nodeId: selected }); else post("managedAttach"); });
   const showProperties = (properties) => {
     currentProperties = properties;
-    renderPinned();
     renderAllProperties();
   };
   // The same filter applies to all rows of the active category, including managed values.
   let sidebarTab = "properties";
-  // The row last described, by key, so a redraw (values arrive while it is selected) keeps its description.
-  let describedKey;
+  // -- the Basic view: the rows the user pinned, kept in a user setting by the host ------------
+  // Keys are "<group>/<row name>". Until the host's first state arrives nothing is known, so nothing is shown.
+  let basicProperties;
+  let basicDefaults = [];
+  const BASIC_KEY = /^(Standard|Extended|\.NET|Win32 Window|UI Automation)\/[^\u0000-\u001f]{1,200}$/;
+  const BASIC_ORDER = ["Standard", "Extended", ".NET", "Win32 Window", "UI Automation"];
+  const sameKeys = (left, right) => left.length === right.length && left.every((key) => right.includes(key));
+  const applyBasicState = (message) => {
+    const keys = (list) => [...new Set(list.filter((key) => typeof key === "string" && BASIC_KEY.test(key)))];
+    const next = Array.isArray(message.basicProperties) ? keys(message.basicProperties) : basicProperties;
+    const defaults = Array.isArray(message.basicDefaults) ? keys(message.basicDefaults) : basicDefaults;
+    if (next !== undefined && basicProperties !== undefined && sameKeys(next, basicProperties) && sameKeys(defaults, basicDefaults)) return;
+    basicProperties = next;
+    basicDefaults = defaults;
+    renderSidebar();
+  };
+  /** Adds a row to the Basic view or removes it, and tells the host, which keeps the list. */
+  const setBasic = (key, pinned) => {
+    const current = basicProperties || [];
+    basicProperties = pinned ? (current.includes(key) ? current : [...current, key]) : current.filter((item) => item !== key);
+    renderSidebar();
+    const pin = [...element("sidebar-rows").querySelectorAll(".sidebar-pin")].find((button) => button.dataset.key === key);
+    (pin || element("sidebar-mode")).focus({ preventScroll: true });
+    post("basicProperty", { key, pinned });
+  };
+  const basicPin = (name, key, pinned) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "sidebar-pin codicon " + (pinned ? "codicon-pinned" : "codicon-pin");
+    button.dataset.key = key;
+    button.setAttribute("aria-pressed", String(pinned));
+    const label = pinned ? "Remove " + name + " from Basic view" : "Show " + name + " in Basic view";
+    button.setAttribute("aria-label", label);
+    button.title = label;
+    button.addEventListener("click", (event) => { event.stopPropagation(); setBasic(key, !pinned); });
+    return button;
+  };
+  /** Whether a row can be pinned: it has a stable key, which every row of these groups has except the derived ones. */
+  const pinnable = (groupName, item) => sidebarTab === "properties" && BASIC_ORDER.includes(groupName) && !item.action && !item.noMenu
+    && (groupName === ".NET" ? item.depth === 1 : groupName === "UI Automation" ? item.pin === true : true);
   const rowItems = new Map();
   const displayValue = (item) => item.value === undefined || item.value === null ? "Unknown" : item.value === "" ? ((item.name === "WPFControlText" || item.name === "WinFormsControlText") ? "(empty)" : '""') : String(item.value);
-  const describeSidebar = (item, key) => {
-    const content = element("sidebar-description-content"); content.replaceChildren();
-    describedKey = key;
-    const lines = item.description || [["Name", item.name], ["Value", displayValue(item)], ["Group", item.group]];
-    for (const [label, value] of lines) if (value !== undefined && value !== null && value !== "") content.append(managedNode("div", `${label}: ${value}`));
-    for (const row of element("sidebar-rows").querySelectorAll("tr.sidebar-row")) { const on = row.dataset.key === key; row.classList.toggle("described", on); if (on) row.setAttribute("aria-current", "true"); else row.removeAttribute("aria-current"); }
+  // The tooltip of a row's name: the name, then what the row's description adds to the visible name and value.
+  const TOOLTIP_SKIP = new Set(["Name", "Value", "Group", "Category"]);
+  const rowTooltip = (item) => {
+    const lines = (item.description || [])
+      .filter(([label, value]) => !TOOLTIP_SKIP.has(label) && value !== undefined && value !== null && value !== "")
+      .slice(0, 8)
+      .map(([label, value]) => {
+        const text = String(value).replace(/\s+/g, " ").trim();
+        const short = text.length > 160 ? text.slice(0, 157) + "…" : text;
+        return label === "Meaning" ? short : `${label}: ${short}`;
+      });
+    return [item.name, ...lines].join("\n");
   };
   // What each Standard row means, in one line.
   const STANDARD_MEANING = {
@@ -1106,7 +1101,32 @@
   const rowByKey = (key) => [...element("sidebar-rows").querySelectorAll("tr.sidebar-row")].find((row) => row.dataset.key === key);
   const sidebarBody = element("sidebar-rows");
   const rowOf = (event) => event.target.closest?.("tr.sidebar-row") || null;
-  function copyCell(item, cell, name = false) {
+  const copyToast = element("copy-toast"), copyAnnouncer = element("copy-announcer");
+  let copyTimers = [];
+  let copiedCell;
+  /** A small label beside the pointer (or the cell, for a keyboard copy), kept inside the window; it fades after about a second. */
+  function showCopied(text, cell, anchor) {
+    const rect = cell.getBoundingClientRect();
+    const at = anchor || { x: rect.left, y: rect.top };
+    copyTimers.forEach(clearTimeout);
+    copyToast.textContent = text;
+    copyToast.hidden = false;
+    copyToast.classList.remove("fading");
+    const margin = 4;
+    const left = Math.max(margin, Math.min(at.x + 12, window.innerWidth - copyToast.offsetWidth - margin));
+    const top = Math.max(margin, Math.min(at.y + 14, window.innerHeight - copyToast.offsetHeight - margin));
+    copyToast.style.left = Math.round(left) + "px";
+    copyToast.style.top = Math.round(top) + "px";
+    copyAnnouncer.textContent = text;
+    copiedCell?.classList.remove("copied");
+    copiedCell = cell;
+    cell.classList.add("copied");
+    copyTimers = [
+      setTimeout(() => copyToast.classList.add("fading"), 700),
+      setTimeout(() => { copyToast.hidden = true; copyToast.classList.remove("fading"); copyAnnouncer.textContent = ""; copiedCell?.classList.remove("copied"); copiedCell = undefined; }, 1000),
+    ];
+  }
+  function copyCell(item, cell, name = false, anchor) {
     const menu = item.menu || {};
     if (name) post("copy", { text: menu.name ?? item.name });
     else {
@@ -1114,34 +1134,50 @@
       if (menu.address) post("managedCopy", { kind: "value", ...menu.address });
       else post("copy", { text: displayValue(item) });
     }
-    const feedback = element("sidebar-copy-feedback");
-    feedback.textContent = "Copied";
-    cell.classList.add("copied");
-    clearTimeout(cell.copyTimer);
-    cell.copyTimer = setTimeout(() => { cell.classList.remove("copied"); feedback.textContent = ""; }, 1000);
+    showCopied(name ? "Name copied" : "Value copied", cell, anchor);
   }
   sidebarBody.addEventListener("click", (event) => {
     const row = rowOf(event), item = row && rowItems.get(row.dataset.key);
     if (!item) return;
-    describeSidebar(item, row.dataset.key);
     if (event.target.closest("button, a, input, select, textarea")) return;
-    const cell = event.target.closest("th, td");
-    if (cell === row.cells[0]) copyCell(item, cell, true);
-    else if (cell === row.cells[1]) copyCell(item, cell);
+    const cell = event.target.closest("th, td"), anchor = { x: event.clientX, y: event.clientY };
+    if (cell === row.cells[0]) copyCell(item, cell, true, anchor);
+    else if (cell === row.cells[1]) copyCell(item, cell, false, anchor);
   });
   sidebarBody.addEventListener("keydown", (event) => {
     const row = rowOf(event);
     if (!row || event.target !== row) return;
     const item = rowItems.get(row.dataset.key);
     if (!item) return;
-    if (event.key === "Enter" || (event.ctrlKey && event.key.toLowerCase() === "c")) { event.preventDefault(); describeSidebar(item, row.dataset.key); copyCell(item, row.cells[1]); }
-    else if (event.key === " ") { event.preventDefault(); describeSidebar(item, row.dataset.key); }
+    if (event.key === "Enter" || (event.ctrlKey && event.key.toLowerCase() === "c")) { event.preventDefault(); copyCell(item, row.cells[1]); }
   });
   const sidebarActions = element("sidebar-actions");
   for (const [id, type, payload] of [["sidebar-detach", "managedDetach"], ["sidebar-refresh", "managedRefresh"], ["sidebar-export", "managedCopy", { kind: "export" }]]) {
-    element(id).addEventListener("click", () => { sidebarActions.open = false; post(type, payload); });
+    element(id).addEventListener("click", () => { sidebarActions.open = false; sidebarActions.querySelector("summary").focus(); post(type, payload); });
   }
   document.addEventListener("click", (event) => { if (sidebarActions.open && !sidebarActions.contains(event.target)) sidebarActions.open = false; });
+  const actionItems = () => [...sidebarActions.querySelectorAll('[role="menuitem"]')].filter((item) => !item.disabled);
+  sidebarActions.addEventListener("toggle", () => {
+    sidebarActions.querySelector("summary")?.setAttribute("aria-expanded", String(sidebarActions.open));
+    if (sidebarActions.open) actionItems()[0]?.focus();
+  });
+  sidebarActions.querySelector("summary")?.addEventListener("click", (event) => {
+    event.preventDefault(); sidebarActions.open = !sidebarActions.open;
+    if (sidebarActions.open) actionItems()[0]?.focus();
+    else sidebarActions.querySelector("summary").focus();
+  });
+  sidebarActions.addEventListener("keydown", (event) => {
+    if (event.target === sidebarActions.querySelector("summary") && !sidebarActions.open && ["ArrowDown", "ArrowUp"].includes(event.key)) {
+      event.preventDefault(); sidebarActions.open = true;
+      const items = actionItems(); (event.key === "ArrowDown" ? items[0] : items.at(-1))?.focus(); return;
+    }
+    if (!sidebarActions.open || !["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+    const items = actionItems();
+    if (!items.length) return;
+    event.preventDefault();
+    const at = items.indexOf(document.activeElement);
+    items[event.key === "Home" ? 0 : event.key === "End" ? items.length - 1 : (at + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length].focus();
+  });
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && sidebarActions.open) { sidebarActions.open = false; sidebarActions.querySelector("summary").focus(); }
   });
@@ -1438,13 +1474,17 @@
     }
     return rows;
   }
-  /** The name column is as wide as its longest name needs, up to 60% with Show all properties off (a dozen rows, names up to WPFControlOrdinalNo) and 42% elsewhere; longer names get an ellipsis and their full text as a tooltip. */
+  /** The name column is as wide as its longest name needs, up to half the table; longer names get an ellipsis and their full text as a tooltip. The width never shrinks for the same object and tab, so switching between Basic and All does not move the Value column. */
+  let nameWidth = { key: "", widest: 0 };
   function fitNameColumn() {
     const table = element("sidebar-table"), head = table.querySelector("thead th");
     if (!head || !table.clientWidth) return;
     head.style.width = "25%";
-    const widest = Math.max(0, ...[...table.querySelectorAll("tbody th[scope=row]")].map((cell) => cell.scrollWidth));
-    if (widest) head.style.width = Math.max(25, Math.min(sidebarTab === "properties" && !sidebarShowAll ? 60 : 42, (widest + 2) / table.clientWidth * 100)).toFixed(1) + "%";
+    const key = selected + "|" + sidebarTab;
+    const measured = Math.max(0, ...[...table.querySelectorAll("tbody th[scope=row]")].map((cell) => cell.scrollWidth));
+    const widest = Math.max(measured, nameWidth.key === key ? nameWidth.widest : 0);
+    nameWidth = { key, widest };
+    if (widest) head.style.width = Math.max(25, Math.min(50, (widest + 2) / table.clientWidth * 100)).toFixed(1) + "%";
   }
   if (typeof ResizeObserver !== "undefined") {
     let framePending = false;
@@ -1463,17 +1503,28 @@
     body.replaceChildren();
     sidebarTabs.forEach((button) => button.setAttribute("aria-selected", String(button.dataset.sidebarTab === sidebarTab)));
     element("sidebar-mode-toggle").hidden = sidebarTab !== "properties"; element("sidebar-mode").checked = sidebarShowAll;
+    element("sidebar-mode-row").hidden = sidebarTab !== "properties";
+    element("sidebar-table").dataset.pins = String(sidebarTab === "properties");
+    element("sidebar-reset-basic").disabled = !basicProperties || sameKeys(basicProperties, basicDefaults);
     const entry = nodes.get(selected);
     const status = element("wpf-details-note");
-    status.hidden = !selectedWpf || managedSnapshot?.state === "ready" || !(entry?.wpfMissing || entry?.wpfBlocked || (managedSnapshot?.visible && managedSnapshot.state !== "ready"));
-    element("sidebar-attach-status").textContent = entry?.wpfBlocked ? attachHeader(entry.wpfBlocked) : managedSnapshot?.failure ? attachHeader(managedSnapshot.failure) : (managedSnapshot?.state ? `${managedSnapshot.state}: ${managedMessages[managedSnapshot.state] || ""}` : "WPF details not loaded");
+    // Values that timed out one by one mean the UI thread is busy even when the request itself answered.
+    const busyRead = selectedWpf && !!managedSnapshot?.busyRead && !entry?.wpfBlocked && !managedSnapshot?.failure;
+    status.hidden = !busyRead && (!selectedWpf || (managedSnapshot?.state === "ready" && !isBusy(entry?.wpfBlocked || managedSnapshot?.failure)) || !(entry?.wpfMissing || entry?.wpfBlocked || (managedSnapshot?.visible && managedSnapshot.state !== "ready")));
+    element("sidebar-attach-status").textContent = busyRead ? BUSY_READ_NOTE : entry?.wpfBlocked ? attachHeader(entry.wpfBlocked) : managedSnapshot?.failure ? attachHeader(managedSnapshot.failure) : (managedSnapshot?.state ? `${managedSnapshot.state}: ${managedMessages[managedSnapshot.state] || ""}` : "WPF details not loaded");
+    element("wpf-details-attach").hidden = busyRead || isBusy(entry?.wpfBlocked || managedSnapshot?.failure);
     sidebarActions.hidden = !selectedWpf || managedSnapshot?.state !== "ready";
     if (sidebarActions.hidden) sidebarActions.open = false;
     const query = sidebarSearch.value.trim().toLowerCase();
     let count = 0;
     const matches = (...parts) => !query || parts.some((part) => String(part ?? "").toLowerCase().includes(query));
+    const basicSet = new Set(basicProperties || []);
+    // The Basic view is the stored rows, in the order and groups of the full list.
+    // A search looks through every row; clearing it brings the Basic view back.
+    const everything = sidebarShowAll || !!query;
+    const pinnedOnly = sidebarTab === "properties" && !everything;
     const group = (name, rows) => {
-      const matched = rows.filter((row) => matches(row.name, row.value));
+      const matched = rows.filter((row) => (!pinnedOnly || basicSet.has(name + "/" + row.name)) && matches(row.name, row.value));
       if (!matched.length) return;
       if (body.children.length) {
         const gap = document.createElement("tr"), cell = document.createElement("td");
@@ -1488,21 +1539,22 @@
         const key = name + "/" + item.name;
         item.group = name; rowItems.set(key, item);
         const row = document.createElement("tr"); row.className = "property-row sidebar-row"; row.dataset.name = item.name; row.dataset.key = key;
-        const th = document.createElement("th"); th.scope = "row"; th.textContent = item.name; th.title = item.name; if (item.depth === 1 && item.kind) th.dataset.kind = item.kind;
+        const th = document.createElement("th"); th.scope = "row"; th.textContent = item.name; th.title = rowTooltip(item); if (item.depth === 1 && item.kind) th.dataset.kind = item.kind;
         const value = document.createElement("td");
         if (item.select) { const button = managedButton(String(item.value), () => nodes.has(item.select) ? choose(item.select) : post("select", { nodeId: item.select })); value.append(button); }
         else value.textContent = displayValue(item);
         if (item.tooltip) value.title = item.tooltip;
         const actions = document.createElement("td"); actions.className = "property-actions";
         const toggle = item.toggle || (item.menu?.expand ? { expanded: false, label: "Expand " + item.name, run: () => post("managedExpand", item.menu.address) } : undefined);
-        if (toggle) { const button = document.createElement("button"); button.type = "button"; button.className = "property-toggle codicon " + (toggle.expanded ? "codicon-chevron-down" : "codicon-chevron-right"); button.setAttribute("aria-expanded", String(toggle.expanded)); button.setAttribute("aria-label", toggle.label); button.title = toggle.label; button.addEventListener("click", (event) => { event.stopPropagation(); describeSidebar(item, key); toggle.run(); }); th.prepend(button); }
+        if (toggle) { const button = document.createElement("button"); button.type = "button"; button.className = "property-toggle codicon " + (toggle.expanded ? "codicon-chevron-down" : "codicon-chevron-right"); button.setAttribute("aria-expanded", String(toggle.expanded)); button.setAttribute("aria-label", toggle.label); button.title = toggle.label; button.addEventListener("click", (event) => { event.stopPropagation(); toggle.run(); }); th.prepend(button); }
+        if (pinnable(name, item)) { const pinned = basicSet.has(key); th.prepend(basicPin(item.name, key, pinned)); row.classList.toggle("in-basic", pinned); }
         if (item.action) actions.append(item.action());
         else if (item.invoke || item.menu?.read) {
           const button = document.createElement("button"), icon = document.createElement("span");
           const invoke = item.invoke, label = invoke ? "Invoke\u2026" : "Read again";
           button.type = "button"; button.className = "icon-button secondary row-action-button"; button.setAttribute("aria-label", label); button.title = invoke && !invoke.enabled ? invoke.reason : label;
           button.disabled = !!invoke && !invoke.enabled; icon.className = "codicon " + (invoke ? "codicon-play" : "codicon-refresh"); icon.setAttribute("aria-hidden", "true"); button.append(icon);
-          button.addEventListener("click", (event) => { event.stopPropagation(); describeSidebar(item, key); if (invoke) invoke.open(); else post("managedRead", item.menu.address); }); actions.append(button);
+          button.addEventListener("click", (event) => { event.stopPropagation(); if (invoke) invoke.open(); else post("managedRead", item.menu.address); }); actions.append(button);
         }
         row.tabIndex = 0;
         row.append(th, value, actions); body.append(row); count++;
@@ -1537,7 +1589,7 @@
       for (let up = entry; up && ancestry.length < 64; up = nodes.get(up.parentId)) ancestry.unshift({ nodeId: up.node.nodeId, label: up.name, node: up.node });
       const fromHost = (p.ancestors || []).map((ancestor) => ({ nodeId: ancestor.nodeId, node: ancestor, label: WtkTreeLabels.labelsFor([ancestor])[0] }));
       const route = (entry && ancestry.length > 1 ? ancestry.slice(0, -1) : fromHost).filter((item) => item.node.info.controlType !== "Process");
-      const actualParent = parent && parent.node.info.controlType !== "Process" ? { nodeId: parent.node.nodeId, label: parent.name } : route.at(-1);
+      const actualParent = parent ? { nodeId: parent.node.nodeId, label: parent.name } : route.at(-1);
       const ownLabel = entry?.name || WtkTreeLabels.labelsFor([{ nodeId: selected, source: p.source, info, identity: { type: raw.ClrFullClassName, xName: raw[nameKey(p.source)] } }])[0];
       const locatorPath = suggestion?.unique && suggestion.window ? [suggestion.window.code, ...suggestion.helpers.map((helper) => helper.attributeName + " = " + helper.code), suggestion.code].join("\n") : [...route.map((item) => item.label), ownLabel].join(".");
       // Left and Top are measured from the containing window; a window reports its place on the screen.
@@ -1557,48 +1609,49 @@
         ClrClassName: raw.ClrFullClassName ? String(raw.ClrFullClassName).split(/[.+]/).pop() : undefined, [nameAlias]: raw.AutomationId || info.automationId || raw[nameKey(p.source)] || "", WPFControlOrdinalNo: ordinal,
       };
       const rowFor = (name) => ({ name, value: standard[name], description: standardDescription(name, standard[name]), ...(name === "Parent" && actualParent ? { select: actualParent.nodeId } : {}) });
-      const basic = ["Enabled", "Height", "Name", "Parent", "Visible", "Width"];
-      if (!sidebarShowAll) { group("Standard", basic.map(rowFor)); if (isManaged(p.source)) group(".NET", aliases.map(rowFor)); if (p.window) group("Win32 Window", windowRows(p.window, true)); }
-      else {
-        const names = ["ChildCount", "Enabled", "Exists", "FullName", "Height", "Left", "Name", "Parent", "ScreenLeft", "ScreenTop", "Top", "Visible", "VisibleOnScreen", "Width"];
-        group("Standard", names.map(rowFor));
-        if (p.window) group("Win32 Window", windowRows(p.window, false));
-        // The Win32 Window group already says these; each value appears once.
-        const windowCovered = new Set(p.window ? ["ClassName", "NativeWindowHandle", "ProcessId"] : []);
-        // Each value appears once: x:Name is Name, IsEnabled is Enabled, Bounds is the rectangle rows above.
-        const represented = new Set([...names, "MappedName", "x:Name", "ControlName", "IsEnabled", "Bounds", "ClrFullClassName", textKey(p.source)]);
-        if (isManaged(p.source)) {
-          // AutomationId is the attached AutomationProperties.AutomationId, or empty.
-          const extended = Object.entries(raw).filter(([name]) => !represented.has(name)).map(([name, value]) => ({ name, value: name === "AutomationId" ? (value ?? info.automationId ?? "") : value }));
-          if (!extended.some((row) => row.name === "AutomationId")) extended.unshift({ name: "AutomationId", value: info.automationId ?? "" });
-          group("Extended", extended);
-        }
-        const managed = managedRows(false).filter((row) => row.category === "typeMetadata" || !["Name", "IsEnabled"].includes(row.name)).map((row) => row.category !== "typeMetadata" && row.name !== textKey(p.source) && represented.has(row.name) ? { ...row, name: "CLR " + row.name } : row);
-        if (isManaged(p.source) && !managed.some((row) => row.name === "ClrFullClassName")) managed.unshift({ ...rowFor("ClrFullClassName"), category: "typeMetadata", depth: 1 });
-        for (const alias of aliases) if (!managed.some((row) => row.name === alias) ) managed.push({ ...rowFor(alias), category: "typeMetadata", depth: 1 });
+      const names = ["ChildCount", "Enabled", "Exists", "FullName", "Height", "Left", "Name", "Parent", "ScreenLeft", "ScreenTop", "Top", "Visible", "VisibleOnScreen", "Width"];
+      const sections = [["Standard", names.map(rowFor)]];
+      if (p.window) sections.push(["Win32 Window", windowRows(p.window, false)]);
+      // The Win32 Window group already says these; each value appears once.
+      const windowCovered = new Set(p.window ? ["ClassName", "NativeWindowHandle", "ProcessId"] : []);
+      // Each value appears once: x:Name is Name, IsEnabled is Enabled, Bounds is the rectangle rows above.
+      const represented = new Set([...names, "MappedName", "x:Name", "ControlName", "IsEnabled", "Bounds", "ClrFullClassName", textKey(p.source)]);
+      if (isManaged(p.source)) {
+        // AutomationId is the attached AutomationProperties.AutomationId, or empty.
+        const extended = Object.entries(raw).filter(([name]) => !represented.has(name)).map(([name, value]) => ({ name, value: name === "AutomationId" ? (value ?? info.automationId ?? "") : value }));
+        if (!extended.some((row) => row.name === "AutomationId")) extended.unshift({ name: "AutomationId", value: info.automationId ?? "" });
+        sections.push(["Extended", extended]);
+      }
+      const managed = managedRows(false).filter((row) => row.category === "typeMetadata" || !["Name", "IsEnabled"].includes(row.name)).map((row) => row.category !== "typeMetadata" && row.name !== textKey(p.source) && represented.has(row.name) ? { ...row, name: "CLR " + row.name } : row);
+      if (isManaged(p.source) && !managed.some((row) => row.name === "ClrFullClassName")) managed.unshift({ ...rowFor("ClrFullClassName"), category: "typeMetadata", depth: 1 });
+      for (const alias of aliases) if (!managed.some((row) => row.name === alias) ) managed.push({ ...rowFor(alias), category: "typeMetadata", depth: 1 });
+      // Bindings, styles and events are not Basic rows: they are only read when everything is shown.
+      if (everything) {
         for (const binding of managedSnapshot?.bindings || []) { const member = (managedSnapshot?.rows || []).find((row) => row.member.memberKey === binding.memberKey)?.member; if (member) managed.push(...bindingRows(binding, member)); }
         if (managedSnapshot?.styling) managed.push(...stylingRows(managedSnapshot.styling));
         managed.push(...eventRows());
-        const memberKinds = new Set(["typeMetadata", "clrProperty", "dependencyProperty", "attachedProperty", "staticProperty"]);
-        const blocks = [];
-        for (const row of managed.filter((item) => memberKinds.has(item.category))) { if (row.depth === 1 || !blocks.length) blocks.push([row]); else blocks.at(-1).push(row); }
-        const sortKey = (block) => block[0].name.toLowerCase();
-        blocks.sort((a, b) => sortKey(a) < sortKey(b) ? -1 : sortKey(a) > sortKey(b) ? 1 : 0);
-        group(".NET", blocks.flat());
-        if (!query && managedSnapshot?.readRemaining && !sidebarCollapsed[".NET"]) { const row = document.createElement("tr"), cell = document.createElement("td"); cell.colSpan = 3; cell.append(managedButton("Read remaining", () => post("managedReadRemaining"))); row.append(cell); body.append(row); }
-        for (const [category, heading] of [["binding", "Bindings"], ["style", "Style and template"], ["resource", "Resources"], ["event", "Events"]]) group(heading, managed.filter((row) => row.category === category));
-        const uia = isManaged(p.source) ? p.uia : p;
-        if (uia && (!isManaged(p.source) || p.uiaMapped)) {
-          const flatten = (item, prefix = "") => [{ name: prefix + item.name, value: propertySummary(item), pin: !prefix }, ...nestedEntries(item).flatMap((child) => flatten(child, prefix + item.name + "."))];
-          group("UI Automation", propertyEntries(uia.properties, uia.inspection).filter((item) => !represented.has(item.name) && !windowCovered.has(item.name) && (!isManaged(p.source) || (!Object.hasOwn(raw, item.name) && item.name !== "AutomationId"))).flatMap((item) => flatten(item)));
-        }
       }
-      empty.textContent = query ? "No matching properties." : "No properties loaded.";
+      const memberKinds = new Set(["typeMetadata", "clrProperty", "dependencyProperty", "attachedProperty", "staticProperty"]);
+      const blocks = [];
+      for (const row of managed.filter((item) => memberKinds.has(item.category))) { if (row.depth === 1 || !blocks.length) blocks.push([row]); else blocks.at(-1).push(row); }
+      const sortKey = (block) => block[0].name.toLowerCase();
+      blocks.sort((a, b) => sortKey(a) < sortKey(b) ? -1 : sortKey(a) > sortKey(b) ? 1 : 0);
+      sections.push([".NET", blocks.flat()]);
+      for (const [category, heading] of [["binding", "Bindings"], ["style", "Style and template"], ["resource", "Resources"], ["event", "Events"]]) sections.push([heading, managed.filter((row) => row.category === category)]);
+      const uia = isManaged(p.source) ? p.uia : p;
+      if (uia && (!isManaged(p.source) || p.uiaMapped)) {
+        const flatten = (item, prefix = "") => [{ name: prefix + item.name, value: propertySummary(item), pin: !prefix }, ...nestedEntries(item).flatMap((child) => flatten(child, prefix + item.name + "."))];
+        sections.push(["UI Automation", propertyEntries(uia.properties, uia.inspection).filter((item) => !represented.has(item.name) && !windowCovered.has(item.name) && (!isManaged(p.source) || (!Object.hasOwn(raw, item.name) && item.name !== "AutomationId"))).flatMap((item) => flatten(item))]);
+      }
+      const shown = everything ? sections : BASIC_ORDER.map((name) => sections.find(([heading]) => heading === name)).filter(Boolean);
+      for (const [heading, rows] of shown) {
+        group(heading, rows);
+        if (heading === ".NET" && sidebarShowAll && !query && managedSnapshot?.readRemaining && !sidebarCollapsed[".NET"]) { const row = document.createElement("tr"), cell = document.createElement("td"); cell.colSpan = 3; cell.append(managedButton("Read remaining", () => post("managedReadRemaining"))); row.append(cell); body.append(row); }
+      }
+      empty.textContent = query ? "No matching properties." : !sidebarShowAll && basicProperties ? "Nothing in the Basic view applies to this object. Show all properties to pin rows, or reset the Basic view." : "No properties loaded.";
     }
     empty.hidden = count > 0;
     fitNameColumn();
-    const described = describedKey !== undefined ? rowItems.get(describedKey) : undefined;
-    if (described) describeSidebar(described, describedKey);
     if (focusedKey !== undefined) rowByKey(focusedKey)?.focus({ preventScroll: true });
     const refocused = formFocus?.id ? element(formFocus.id) : undefined;
     if (refocused) { refocused.focus({ preventScroll: true }); if (formFocus.caret) try { refocused.setSelectionRange(...formFocus.caret); } catch { /* not a text field */ } }
@@ -1633,6 +1686,11 @@
   }
   sidebarTabs.forEach((button) => button.addEventListener("click", () => { const previous = sidebarTab; sidebarTab = button.dataset.sidebarTab; if (sidebarTab === "methods" && previous !== "methods") post("managedMethods", { action: "activate" }); else if (previous === "methods" && sidebarTab !== "methods") post("managedMethods", { action: "deactivate" }); renderSidebar(); requestStandardLocator(); }));
   sidebarSearch.addEventListener("input", renderSidebar);
+  element("sidebar-reset-basic").addEventListener("click", () => {
+    basicProperties = [...basicDefaults];
+    renderSidebar();
+    post("resetBasicProperties");
+  });
   let standardLocatorRequested;
   const requestStandardLocator = () => {
     if (!propertiesView || sidebarTab !== "properties" || !sidebarShowAll || !selected || !selectedProperties || suggestion || standardLocatorRequested === selected || tutorialView) return;
@@ -1647,7 +1705,6 @@
     standardLocatorRequested = undefined;
     propertiesNodeId = undefined;
     expandedProperties.clear(); expandedBindings.clear(); expandedStyling.clear();
-    renderPinned();
     renderAllProperties();
   };
   // Whether the selected object has an on-screen rectangle to outline.
@@ -1673,6 +1730,8 @@
     return path.length ? path : undefined;
   };
   const choose = (nodeId) => {
+    revealNote = "";
+    hint("");
     if (propertiesView && !tutorialView) loadingPreview();
     clearProperties();
     focusSelected(nodeId);
@@ -1687,7 +1746,7 @@
       element("selection-name").textContent = `Process: ${info.name}, PID ${info.processId}, ${entry.children.children.length} windows`;
       element("selection-type").textContent = "Process";
       selectionIcon(nodeId);
-      element("object-preview").hidden = true;
+      post("select", { nodeId });
       locatorState("idle");
       element("generate").disabled = true;
       highlightable = false;
@@ -1697,7 +1756,7 @@
       return;
     }
     element("selection-name").textContent =
-      info.name || info.automationId || info.controlType;
+      info.name || info.automationId || entry.name || info.className || info.controlType;
     element("selection-type").textContent = info.controlType;
     setIcon(element("selection-icon"), info.controlType);
     selectionIcon(nodeId);
@@ -1709,6 +1768,7 @@
     post("select", { nodeId, path: selectionPathFor(nodeId) });
   };
   const rememberExpanded = () => {
+    if (propertiesView) return;
     const paths = [...nodes.values()].filter((entry) => entry.open).slice(0, 200)
       .map((entry) => selectionPathFor(entry.node.nodeId)).filter(Boolean);
     post("expandedPaths", { paths });
@@ -1964,7 +2024,7 @@
       else {
         const changed = JSON.stringify(existing.node.info) !== JSON.stringify(node.info);
         existing.node = node;
-        if (changed && selected === node.nodeId && !selecting) post("select", { nodeId: node.nodeId, path: selectionPathFor(node.nodeId) });
+        if (changed && selected === node.nodeId && !selecting && !propertiesView) post("select", { nodeId: node.nodeId, path: selectionPathFor(node.nodeId) });
         existing.toggle.disabled = !node.hasChildren;
         if (!node.hasChildren) { existing.open = false; existing.row.removeAttribute("aria-expanded"); }
         else existing.row.setAttribute("aria-expanded", String(existing.open));
@@ -2020,7 +2080,9 @@
     const idle = state === "idle";
     // Once the locator is shown the button/progress row has nothing to hold, so it must not leave a gap.
     element("locator-slot").hidden = state === "ready";
-    element("generate").hidden = !idle;
+    // "Select a window descendant" can never succeed by retrying, so it is only a note.
+    const permanent = idle && !!reason && /^Select a window descendant/i.test(reason);
+    element("generate").hidden = !idle || permanent;
     element("locator-busy").hidden = state !== "generating";
     element("locator-result").hidden = !(state === "ready" || !!reason);
     element("locator-actions").hidden = state !== "ready";
@@ -2029,6 +2091,7 @@
     if (state !== "ready") {
       element("badge").hidden = true;
       element("code").textContent = reason || "";
+      element("locator-result").title = "";
     }
     for (const id of ["copy", "add"]) element(id).disabled = state !== "ready";
   };
@@ -2047,6 +2110,7 @@
       ),
       value.attributeName + " = " + value.code,
     ].join("\n");
+    element("locator-result").title = element("code").textContent;
     element("badge").dataset.quality =
       value.unique && value.strategy !== "index" ? "unique" : "warning";
     element("badge").textContent =
@@ -2068,9 +2132,11 @@
       entry.row.tabIndex = id === nodeId ? 0 : -1;
     }
   };
-  element("pick").addEventListener("click", () =>
-    post(picking ? "stopPick" : "pick"),
-  );
+  element("pick").addEventListener("click", () => {
+    revealNote = "";
+    hint("");
+    post(picking ? "stopPick" : "pick");
+  });
   element("refresh").addEventListener("click", () => post("refresh"));
   element("search").addEventListener("input", filter);
   element("clear-filter").addEventListener("click", () => {
@@ -2143,13 +2209,69 @@
     for (const entry of element("tree").querySelectorAll(".node[role='treeitem']"))
       entry.tabIndex = entry === row ? 0 : -1;
   });
+  // The stacked layout resizes the tree's height and keeps nothing; the side-by-side layout keeps the tree's width.
+  const workspace = element("workspace");
   const resize = (size) => {
-    const bounds = element("workspace").getBoundingClientRect();
-    const maximum = narrow.matches ? bounds.height - 220 : bounds.width - 280;
-    element("workspace").style.setProperty(
-      narrow.matches ? "--tree-height" : "--tree-width",
-      Math.max(narrow.matches ? 100 : 200, Math.min(maximum, size)) + "px",
-    );
+    const bounds = workspace.getBoundingClientRect();
+    workspace.style.setProperty("--tree-height", Math.max(100, Math.min(bounds.height - 220, size)) + "px");
+  };
+  // The selected object's pane needs 260px, or more when its header or the locator button are wider (a larger
+  // font): measured from the elements themselves, so the Objects pane gets everything else by default.
+  let detailsMin = 260;
+  const fitDetails = () => {
+    const edges = (node) => {
+      const style = window.getComputedStyle(node);
+      return ["paddingLeft", "paddingRight", "borderLeftWidth", "borderRightWidth"].reduce((sum, name) => sum + (parseFloat(style[name]) || 0), 0);
+    };
+    const pane = element("details"), heading = element("details-heading"), title = element("details-title"), highlight = element("highlight");
+    const gap = parseFloat(window.getComputedStyle(heading).columnGap) || 0;
+    const headingNeed = edges(heading) + title.offsetWidth + (highlight.offsetWidth ? gap + highlight.offsetWidth : 0);
+    const panel = element("locator-panel");
+    const locatorNeed = panel.offsetWidth ? edges(panel) + element("generate").offsetWidth : 0;
+    detailsMin = Math.max(260, Math.ceil(Math.max(headingNeed, locatorNeed) + edges(pane)));
+    workspace.style.setProperty("--details-min", detailsMin + "px");
+  };
+  // The width the user chose, in pixels. Without one the Objects pane takes all the room the selected object does not need.
+  let treeWidth;
+  let treeWidthTimer;
+  let treeWidthDragging = false;
+  /** Shows the chosen width, clamped to the window as it is now; the chosen width itself is kept as it was. */
+  const applySplit = () => {
+    if (narrow.matches || treeWidth === undefined) {
+      workspace.style.removeProperty("--tree-width");
+      delete workspace.dataset.split;
+      return undefined;
+    }
+    const bounds = workspace.getBoundingClientRect();
+    const limit = bounds.width ? bounds.width - 25 - detailsMin : Infinity;
+    const shown = Math.round(Math.max(200, Math.min(limit, treeWidth)));
+    workspace.style.setProperty("--tree-width", shown + "px");
+    workspace.dataset.split = "custom";
+    return shown;
+  };
+  /** The user dragged or nudged the splitter: show it, then tell the host once the user has stopped. */
+  const chooseTreeWidth = (size) => {
+    treeWidth = size;
+    const shown = applySplit();
+    if (shown === undefined) return;
+    treeWidth = shown;
+    clearTimeout(treeWidthTimer);
+    treeWidthTimer = setTimeout(() => { treeWidthTimer = undefined; post("treeWidth", { width: shown }); }, 300);
+  };
+  /** The width the host kept for this workspace; what the user is doing right now wins over it. */
+  const restoreTreeWidth = (size) => {
+    if (treeWidthDragging || treeWidthTimer !== undefined || !Number.isFinite(size) || size <= 0 || size === treeWidth) return;
+    treeWidth = size;
+    applySplit();
+  };
+  const resetSplit = () => {
+    clearTimeout(treeWidthTimer);
+    treeWidthTimer = undefined;
+    if (narrow.matches) { workspace.style.removeProperty("--tree-height"); return; }
+    const had = treeWidth !== undefined;
+    treeWidth = undefined;
+    applySplit();
+    if (had) post("treeWidth", { width: null });
   };
   const orientation = () =>
     element("splitter").setAttribute(
@@ -2158,48 +2280,54 @@
     );
   orientation();
   window.addEventListener("resize", () => {
-    const property = narrow.matches ? "--tree-height" : "--tree-width";
-    const size = parseFloat(
-      element("workspace").style.getPropertyValue(property),
-    );
-    if (Number.isFinite(size)) resize(size);
+    fitDetails();
+    if (narrow.matches) {
+      const size = parseFloat(workspace.style.getPropertyValue("--tree-height"));
+      if (Number.isFinite(size)) resize(size);
+    } else applySplit();
   });
+  if (typeof ResizeObserver === "function") {
+    new ResizeObserver(() => applySplit()).observe(workspace);
+    const watcher = new ResizeObserver(() => { fitDetails(); applySplit(); });
+    for (const id of ["generate", "highlight", "locator-panel"]) watcher.observe(element(id));
+  }
+  fitDetails();
   narrow.addEventListener("change", () => {
-    element("workspace").style.removeProperty("--tree-height");
-    element("workspace").style.removeProperty("--tree-width");
+    workspace.style.removeProperty("--tree-height");
+    applySplit();
     orientation();
   });
   element("splitter").addEventListener("pointerdown", (event) => {
     event.preventDefault();
     const splitter = event.currentTarget;
     splitter.setPointerCapture(event.pointerId);
+    treeWidthDragging = true;
     const move = (current) => {
       const bounds = element("tree-pane").getBoundingClientRect();
-      resize(
-        narrow.matches
-          ? current.clientY - bounds.top
-          : current.clientX - bounds.left,
-      );
+      if (narrow.matches) resize(current.clientY - bounds.top);
+      else chooseTreeWidth(current.clientX - bounds.left);
     };
     const stop = () => {
+      treeWidthDragging = false;
       splitter.removeEventListener("pointermove", move);
       splitter.removeEventListener("lostpointercapture", stop);
     };
     splitter.addEventListener("pointermove", move);
     splitter.addEventListener("lostpointercapture", stop);
   });
+  element("splitter").addEventListener("dblclick", resetSplit);
   element("splitter").addEventListener("keydown", (event) => {
     const keys = narrow.matches
       ? ["ArrowUp", "ArrowDown"]
       : ["ArrowLeft", "ArrowRight"];
     if (keys.includes(event.key)) {
       event.preventDefault();
-      resize(
-        (narrow.matches
-          ? element("tree-pane").offsetHeight
-          : element("tree-pane").offsetWidth) +
-          (event.key === keys[1] ? 20 : -20),
-      );
+      const step = event.key === keys[1] ? 20 : -20;
+      if (narrow.matches) resize(element("tree-pane").offsetHeight + step);
+      else chooseTreeWidth(element("tree-pane").offsetWidth + step);
+    } else if (event.key === "Home" || event.key === "Enter") {
+      event.preventDefault();
+      resetSplit();
     }
   });
   element("show-properties").addEventListener("click", () => post("showProperties"));
@@ -2216,6 +2344,10 @@
     }
     if (message.type === "roots") element("upgrade-package").hidden = true;
     if (message.type === "propertiesVisibility") { if (!propertiesView) element("properties-pane").hidden = message.visible; return; }
+    if (message.type === "pickedObjectGone") {
+      if (message.nodeId === selected) { revealNote = "The picked object no longer exists. Pick it again."; hint(""); if (propertiesView) { element("properties-view-status").textContent = revealNote; element("properties-view-status").hidden = false; } }
+      return;
+    }
     if (message.type === "selectionCleared") {
       selected = undefined;
       hasDetails = false;
@@ -2255,14 +2387,8 @@
     } else if (message.type === "state") {
       appState = message;
       updateCounts();
-      if (Array.isArray(message.shownProperties)) {
-        const names = message.shownProperties.filter((name) => typeof name === "string" && PINNABLE.test(name));
-        if (JSON.stringify(names) !== JSON.stringify(shownProperties)) {
-          shownProperties = names;
-          renderPinned();
-          renderAllProperties();
-        }
-      }
+      applyBasicState(message);
+      if (typeof message.treeWidth === "number") restoreTreeWidth(message.treeWidth);
       if (typeof message.showOtherApps === "boolean")
         showOtherApps = message.showOtherApps;
       if (typeof message.bringToFront === "boolean")
@@ -2332,7 +2458,7 @@
       [...element("tree").children].forEach((item, index, all) => { item.firstElementChild.setAttribute("aria-posinset", String(index + 1)); item.firstElementChild.setAttribute("aria-setsize", String(all.length)); });
       filter();
       clearRemovedSelection();
-      if (before) {
+      if (before && !propertiesView) {
         refreshRun = { revision: message.revision, before, queue: [...nodes.values()].filter((entry) => !entry.root && entry.loaded && entry.open && nodes.get(entry.parentId)?.root).map((entry) => entry.node.nodeId), pending: 0 };
         pumpRefresh();
       }
@@ -2401,7 +2527,7 @@
           const item = document.createElement("li");
           item.className = "tree-message";
           item.setAttribute("role", "none");
-          item.textContent = `${message.blocked.code}: ${message.blocked.hint} Run ` + "`wtk doctor --agent`" + " for details. ";
+          item.textContent = `${message.blocked.code}: ${message.blocked.message ? message.blocked.message + " " : ""}${message.blocked.hint} Run ` + "`wtk doctor --agent`" + " for details. ";
           const retry = document.createElement("button"); retry.textContent = "Retry";
           retry.addEventListener("click", () => post("treeAttach", { nodeId: message.nodeId }));
           item.append(retry); entry.children.append(item);
@@ -2479,10 +2605,13 @@
       if (!propertiesView || tutorialView) element("object-preview").hidden = true;
       else loadingPreview();
       // What was open belongs to the object it was opened on; picking another starts closed.
-      if (message.nodeId !== propertiesNodeId) { expandedProperties.clear(); expandedBindings.clear(); expandedStyling.clear(); describedKey = undefined; element("sidebar-description-content").textContent = "Select a row to see its description."; }
+      if (message.nodeId !== propertiesNodeId) { expandedProperties.clear(); expandedBindings.clear(); expandedStyling.clear(); }
       propertiesNodeId = message.nodeId;
+      revealNote = message.revealNote || "";
       hint("");
-      focusSelected(message.nodeId);
+      if (message.revealNote && propertiesView) { element("properties-view-status").textContent = message.revealNote; element("properties-view-status").hidden = false; }
+      focusSelected(message.treeNodeId || message.nodeId);
+      selected = message.nodeId;
       hasDetails = true;
       selecting = false;
       detailsError = "";
@@ -2499,13 +2628,12 @@
       table("wpf-properties", isWpf ? { ClrFullClassName: message.properties.properties.ClrFullClassName, [message.properties.source === "winforms" ? "Name" : "x:Name"]: message.properties.properties[nameKey(message.properties.source)] } : {});
       for (const id of ["uia-state-group", "uia-geometry-group"]) element(id).hidden = true;
       element("uia-automation-group").hidden = isWpf;
-      element("pinned-group").hidden = isWpf;
       element("uia-all-group").hidden = isWpf && !message.properties.uiaMapped;
       element("wpf-uia-group").hidden = !isWpf || !message.properties.uiaMapped;
       element("wpf-uia-group").open = false;
       table("wpf-uia-properties", message.properties.uiaMapped ? { "Control type": info.controlType, "Class name": message.properties.uia?.properties?.ClassName, Patterns: info.patterns?.join(", ") || "Not loaded", ...message.properties.uia?.properties } : {});
       element("selection-name").textContent =
-        info.name || info.automationId || info.controlType;
+        info.name || info.automationId || nodes.get(message.nodeId)?.name || info.className || info.controlType;
       element("selection-type").textContent = [
         info.controlType,
         info.frameworkId,
@@ -2539,7 +2667,6 @@
           : "Not loaded",
       });
       showProperties(isWpf && message.properties.uia ? message.properties.uia : message.properties);
-      if (isWpf) element("pinned-group").hidden = true;
       renderSidebar();
       // A locator the user already asked for keeps its spinner while the details arrive.
       if (message.suggestion || !locatorBusy) renderSuggestion(message.suggestion);

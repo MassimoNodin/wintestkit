@@ -27,12 +27,17 @@ def test_rpc_results(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, validate: 
     server, output, button = make_server(tmp_path, monkeypatch)
 
     class FakeSpy:
-        def __init__(self, hover: Any, pick: Any, cancel: Any, process_filter: Any) -> None:
+        def __init__(
+            self, hover: Any, pick: Any, cancel: Any, process_filter: Any, **kwargs: Any
+        ) -> None:
+            from wintestkit.server import _SpyTarget
+
             self.hover, self.pick, self.cancel = hover, pick, cancel
+            self.target = _SpyTarget(button, extra={"point": {"x": 1, "y": 2}})
 
         def start(self) -> None:
             self.hover(button)
-            self.pick(button)
+            self.pick(self.target)
 
         def stop(self) -> None:
             pass

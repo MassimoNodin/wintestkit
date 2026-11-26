@@ -53,12 +53,16 @@ describe("JSON-RPC client", () => {
   });
   it("times out and rejects pending and future requests on dispose", async () => {
     vi.useFakeTimers();
-    const client = new JsonRpcClient(() => {});
+    const write = vi.fn();
+    const client = new JsonRpcClient(write);
     const timed = expect(client.request("slow", {}, 10)).rejects.toMatchObject({
       code: -1,
     });
     await vi.advanceTimersByTimeAsync(10);
     await timed;
+    expect(JSON.parse(write.mock.calls[1][0])).toEqual({
+      jsonrpc: "2.0", method: "$/cancelRequest", params: { id: 1 },
+    });
     const pending = expect(client.request("pending")).rejects.toThrow(
       "server stopped",
     );

@@ -40,6 +40,7 @@ function actionLabel(action: ElementAction, result?: ActionStatus): string {
       "$(pass-filled) " +
       (action === "highlight" ? "Highlighted" : "Check: Found")
     );
+  if (result.status === "not_responding") return "$(info) App not responding";
   if (result.status === "ambiguous")
     return (
       "$(warning) " +

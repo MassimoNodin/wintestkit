@@ -47,9 +47,9 @@ namespace WinTestKit.Inspector.Protocol
     }
     public sealed class NodeIdentityDto
     {
-        public string? XName { get; set; } public string? AutomationId { get; set; }
-        public JsonObjectNode ToJson() { var o = new JsonObjectNode(); DtoHelpers.Add(o, "xName", XName); DtoHelpers.Add(o, "automationId", AutomationId); FromJson(o); return o; }
-        public static NodeIdentityDto FromJson(JsonNode node) { var o = DtoHelpers.Object(node, "xName", "automationId"); return new NodeIdentityDto { XName = DtoHelpers.Optional(o, "xName", 4096, true), AutomationId = DtoHelpers.Optional(o, "automationId", 4096, true) }; }
+        public string? XName { get; set; } public string? AutomationId { get; set; } public int? SiblingIndex { get; set; }
+        public JsonObjectNode ToJson() { var o = new JsonObjectNode(); DtoHelpers.Add(o, "xName", XName); DtoHelpers.Add(o, "automationId", AutomationId); if (SiblingIndex.HasValue) o.Add("siblingIndex", JsonNumberNode.From(SiblingIndex.Value)); FromJson(o); return o; }
+        public static NodeIdentityDto FromJson(JsonNode node) { var o = DtoHelpers.Object(node, "xName", "automationId", "siblingIndex"); return new NodeIdentityDto { XName = DtoHelpers.Optional(o, "xName", 4096, true), AutomationId = DtoHelpers.Optional(o, "automationId", 4096, true), SiblingIndex = o.TryGet("siblingIndex", out var index) ? (int?)DtoHelpers.Integer(index, 0, int.MaxValue) : null }; }
     }
     public sealed class ManagedNodeDto
     {

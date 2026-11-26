@@ -1,7 +1,19 @@
 ﻿import { createHash } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import * as path from "node:path";
 import { identities, redact, truncate, type Counts, type Identities } from "./redact";
+
+export function injectorLogPart(appData: string | undefined, summary: Record<string, unknown>): Part {
+  return { name: "Inspector injector log", run: async (): Promise<Record<string, string>> => {
+    try {
+      if (!appData) { summary.inspectorInjectorLog = "not present"; return {}; }
+      return { "logs/snoop-injector.log": await readFile(path.join(appData, "Snoop", "SnoopLog.txt"), "utf8") };
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") { summary.inspectorInjectorLog = "not present"; return {}; }
+      throw error;
+    }
+  } };
+}
 
 export interface Part { name: string; run: () => Promise<Record<string, string>> }
 export async function collect(folder: string, summary: Record<string, unknown>, description: string, parts: Part[], ids: Identities = identities(), now = new Date(), counts: Counts = {}): Promise<void> {

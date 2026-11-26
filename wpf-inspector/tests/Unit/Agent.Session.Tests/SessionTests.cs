@@ -21,6 +21,26 @@ public class SessionTests
 {
     [Trait("Category", "Unit")]
     [Fact]
+    public void BootstrapRejectionWritesOnlySafeReasonInsideRoot()
+    {
+        var root = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        Directory.CreateDirectory(root);
+        try
+        {
+            var file = Path.Combine(root, "settings.json");
+            BootstrapReader.WriteRejection(file, root, new InvalidDataException("Bootstrap expired."));
+            Assert.Equal("Bootstrap expired.", File.ReadAllText(file + ".error"));
+            BootstrapReader.WriteRejection(file, root, new Exception("secret"));
+            Assert.Equal("Bootstrap was rejected.", File.ReadAllText(file + ".error"));
+            var outside = Path.Combine(Path.GetTempPath(), Guid.NewGuid() + ".json");
+            BootstrapReader.WriteRejection(outside, root, new Exception("secret"));
+            Assert.False(File.Exists(outside + ".error"));
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Trait("Category", "Unit")]
+    [Fact]
     public async Task EventFramesStayOrderedAndSurviveConcurrentResponsesAndOverflow()
     {
         var settings = Settings();

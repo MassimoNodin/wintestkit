@@ -119,6 +119,7 @@ function client(file: "setup" | "spy", viewport: { width?: number; propertiesVie
           if (type === "message") receive = callback;
         },
         matchMedia: () => ({ matches: false, addEventListener() {} }),
+        getComputedStyle: () => ({}),
       },
       acquireVsCodeApi: () => api,
       requestAnimationFrame: (callback: () => void) => callback(),
@@ -797,80 +798,12 @@ describe("introduction clients", () => {
     });
   });
 
-  describe("pinned properties", () => {
-    type Page = ReturnType<typeof client>;
-    const select = (page: Page, properties: Record<string, string>, nodeId = "control") =>
-      page.send({ type: "selected", nodeId, properties: {
-        info: { name: "Control", controlType: "Button" }, properties,
-        inspection: Object.entries(properties).map(([name, value]) => ({ name, typeName: "str", kind: "scalar", value })),
-      } });
-    const state = (page: Page, shownProperties: unknown) =>
-      page.send({ type: "state", picking: false, appRunning: true, targetName: "App", hasProject: true,
-        showOtherApps: true, bringToFront: false, shownProperties });
-    const pin = (row: ReturnType<Page["element"]>) => row.children[2].children[0].listeners.click();
-    const pinPosts = (page: Page) => page.posts.filter((post) => (post as { type?: string }).type === "pinProperty");
-
-    it("shows a pin only on the row under the pointer or with keyboard focus", () => {
-      const css = readFileSync("media/spy/spy.css", "utf8").replace(/\s+/g, " ");
-      expect(css).toContain(".property-row .property-pin { opacity: 0; }");
-      expect(css).toContain(".property-row:hover .property-pin, .property-row:focus-within .property-pin { opacity: 1; }");
-      // hidden by opacity, not display: the button stays reachable with the keyboard
-      expect(css).not.toMatch(/\.property-pin[^{]*\{[^}]*display: none/);
-    });
-
-    it("offers a pin button on top-level properties only", () => {
+  describe("All properties list", () => {
+    it("has no pin buttons: pinning belongs to the Properties sidebar's Basic view", () => {
       const page = client("spy");
-      page.send({ type: "selected", nodeId: "control", properties: { info: { name: "C", controlType: "Button" }, properties: {},
+      page.send({ type: "selected", nodeId: "control", properties: { info: { name: "C", controlType: "Button" }, properties: { HelpText: "h" },
         inspection: [{ name: "RuntimeId", typeName: "tuple", kind: "array", children: [{ name: "0", kind: "scalar", value: 1 }] }] } });
-      const [parent, child] = page.element("all-properties").children;
-      expect(parent.children[2].children).toHaveLength(1);
-      expect(parent.children[2].children[0].className).toContain("codicon-pin");
-      expect(child.children[2].children).toHaveLength(0);
-    });
-
-    it("pins a property: tells the host, and shows it in the Pinned group with its value", () => {
-      const page = client("spy");
-      select(page, { HelpText: "Saves the file", Name: "Save" });
-      expect(page.element("pinned-group").hidden).toBe(true);
-      pin(page.element("all-properties").children[0]); // HelpText
-      expect(pinPosts(page)).toEqual([{ type: "pinProperty", name: "HelpText", pinned: true }]);
-      expect(page.element("pinned-group").hidden).toBe(false);
-      const [row] = page.element("pinned-properties").children;
-      expect(row.children[0].textContent).toBe("HelpText");
-      expect(row.children[1].textContent).toBe("Saves the file");
-      expect(page.element("all-properties").children[0].children[2].children[0].className).toContain("codicon-pinned");
-    });
-
-    it("unpins from either list", () => {
-      const page = client("spy");
-      state(page, ["HelpText", "Name"]);
-      select(page, { HelpText: "h", Name: "n" });
-      expect(page.element("pinned-properties").children.map((row) => row.children[0].textContent)).toEqual(["HelpText", "Name"]);
-      pin(page.element("pinned-properties").children[0]);
-      expect(pinPosts(page)).toEqual([{ type: "pinProperty", name: "HelpText", pinned: false }]);
-      expect(page.element("pinned-properties").children.map((row) => row.children[0].textContent)).toEqual(["Name"]);
-      pin(page.element("all-properties").children[1]); // Name, from the full list
-      expect(page.element("pinned-group").hidden).toBe(true);
-    });
-
-    it("takes the pinned list from the user's setting, ignoring anything that is not a property name", () => {
-      const page = client("spy");
-      state(page, ["Orientation", "<img>", 5, "has space", "HelpText"]);
-      select(page, {});
-      expect(page.element("pinned-properties").children.map((row) => row.children[0].textContent)).toEqual(["Orientation", "HelpText"]);
-      expect(page.element("pinned-properties").children[0].children[1].textContent).toBe("—"); // not read for this object
-      state(page, undefined);
-      expect(page.element("pinned-group").hidden).toBe(false); // an absent list changes nothing
-      state(page, []);
-      expect(page.element("pinned-group").hidden).toBe(true);
-    });
-
-    it("does not offer a pin for a name the setting cannot hold", () => {
-      const page = client("spy");
-      select(page, { my_alias: "x", Name: "n" });
-      const rows = page.element("all-properties").children;
-      expect(rows[0].children[2].children).toHaveLength(0); // my_alias
-      expect(rows[1].children[2].children).toHaveLength(1); // Name
+      for (const row of page.element("all-properties").children) expect(row.children[2].children).toHaveLength(0);
     });
   });
 
@@ -984,27 +917,14 @@ describe("introduction clients", () => {
       expect(page.element("object-preview-image").src).toBe(element);
     });
 
-    it("enlarges a small capture without smoothing and leaves a large one to the browser", () => {
+    it("keeps captures at their natural size before fitting them to the frame", () => {
       const page = client("spy", { propertiesView: true });
-      select(page);
-      page.send({ type: "objectPreview", nodeId: "control", preview: { elementDataUrl: element, windowDataUrl: context } });
       const image = page.element("object-preview-image");
-      const loaded = () => image.listeners.load();
-      // A 40x20 crop in a 900x220 frame is magnified: nearest-neighbour keeps it crisp.
       image.naturalWidth = 40;
       image.naturalHeight = 20;
-      loaded();
-      expect(image.className).toBe("magnified");
-      // A whole 3440x1408 window is reduced: default smoothing, no pixelated rendering.
-      image.naturalWidth = 3440;
-      image.naturalHeight = 1408;
-      loaded();
-      expect(image.className).toBe("");
-      // Wide but short counts as small only when both sides fit inside the frame.
-      image.naturalWidth = 800;
-      image.naturalHeight = 400;
-      loaded();
-      expect(image.className).toBe("");
+      image.listeners.load();
+      expect(image.style.width).toBe("40px");
+      expect(image.style.height).toBe("20px");
     });
 
     it("keeps the chosen view when another object is selected", () => {

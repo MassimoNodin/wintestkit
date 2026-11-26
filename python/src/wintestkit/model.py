@@ -1094,7 +1094,10 @@ class BoundControl(_BoundBase):
                 try:
                     with diagnostic_query_budget(), query_budget(time.monotonic() + 2):
                         poll()
-                except (InspectorError, LocatorError, UIAError):
+                except InspectorError as error:
+                    if error.code in {"timeout", "dispatcherUnavailable", "busy"}:
+                        raise
+                except (LocatorError, UIAError):
                     pass
             raise WaitTimeoutError(
                 (

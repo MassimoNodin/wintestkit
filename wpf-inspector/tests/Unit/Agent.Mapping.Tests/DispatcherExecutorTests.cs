@@ -61,10 +61,95 @@ namespace WinTestKit.Inspector.Agent.Mapping.Tests
                     Assert.Equal(ErrorCodes.Timeout, error.Code);
                     Assert.Contains("Dispatcher queue wait exceeded 500 ms (waited", error.Message);
                     Assert.True(((JsonBoolNode)error.Details!.Get("dispatcherBusy")).Value);
+                    Assert.True(((JsonBoolNode)error.Details!.Get("escalated")).Value);
+                    Assert.Contains("escalated to Normal priority after 250 ms", error.Message);
                 }
                 finally { unblock.Set(); await blocking; }
                 Assert.Equal(1, await executor.ExecuteAsync(ui.Dispatcher, () => 1, CancellationToken.None));
                 Assert.False(ran);
+            }
+        }
+
+        [Fact]
+        public async Task BusyNormalPriorityLoopStarvesBackgroundWorkUntilItIsEscalated()
+        {
+            using (var ui = new DispatcherThread())
+            {
+                bool stop = false;
+                var priorityChanges = new List<DispatcherPriority>();
+                DispatcherHookEventHandler handler = (_, args) => { lock (priorityChanges) priorityChanges.Add(args.Operation.Priority); };
+                ui.Dispatcher.Hooks.OperationPriorityChanged += handler;
+                Action? pump = null;
+                pump = () =>
+                {
+                    if (Volatile.Read(ref stop)) return;
+                    Thread.Sleep(5);
+                    _ = ui.Dispatcher.InvokeAsync(pump!, DispatcherPriority.Normal);
+                };
+                _ = ui.Dispatcher.InvokeAsync(pump, DispatcherPriority.Normal);
+                try
+                {
+                    var watch = System.Diagnostics.Stopwatch.StartNew();
+                    int result = await new DispatcherExecutor().ExecuteAsync(ui.Dispatcher, () => 7, CancellationToken.None);
+                    watch.Stop();
+                    Assert.Equal(7, result);
+                    Assert.InRange(watch.ElapsedMilliseconds, ProtocolLimits.DispatcherEscalateMs - 20, ProtocolLimits.DispatcherQueueWaitMs);
+                    lock (priorityChanges) Assert.Single(priorityChanges);
+                }
+                finally
+                {
+                    Volatile.Write(ref stop, true);
+                    ui.Dispatcher.Hooks.OperationPriorityChanged -= handler;
+                    await ui.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.Normal).Task;
+                }
+            }
+        }
+
+        [Fact]
+        public async Task IdleDispatcherNeverEscalates()
+        {
+            using (var ui = new DispatcherThread())
+            {
+                int changes = 0;
+                DispatcherHookEventHandler handler = (_, args) => Interlocked.Increment(ref changes);
+                ui.Dispatcher.Hooks.OperationPriorityChanged += handler;
+                try
+                {
+                    var executor = new DispatcherExecutor();
+                    for (int index = 0; index < 5; index++)
+                    {
+                        var watch = System.Diagnostics.Stopwatch.StartNew();
+                        Assert.Equal(index, await executor.ExecuteAsync(ui.Dispatcher, () => index, CancellationToken.None));
+                        Assert.True(watch.ElapsedMilliseconds < ProtocolLimits.DispatcherEscalateMs, "Idle work waited for the escalation delay.");
+                    }
+                    await Task.Delay(ProtocolLimits.DispatcherEscalateMs + 50);
+                    Assert.Equal(0, Volatile.Read(ref changes));
+                }
+                finally { ui.Dispatcher.Hooks.OperationPriorityChanged -= handler; }
+            }
+        }
+
+        [Fact]
+        public async Task CancellationBeforeEscalationDoesNotRaisePriority()
+        {
+            using (var ui = new DispatcherThread())
+            using (var unblock = new ManualResetEventSlim())
+            using (var cancellation = new CancellationTokenSource())
+            {
+                var started = Signal();
+                Task blocking = ui.Dispatcher.InvokeAsync(() => { started.SetResult(true); unblock.Wait(TimeSpan.FromSeconds(10)); }).Task;
+                await started.Task;
+                int changes = 0;
+                DispatcherHookEventHandler handler = (_, args) => Interlocked.Increment(ref changes);
+                ui.Dispatcher.Hooks.OperationPriorityChanged += handler;
+                try
+                {
+                    Task operation = new DispatcherExecutor().ExecuteAsync(ui.Dispatcher, () => 0, cancellation.Token);
+                    cancellation.Cancel();
+                    await Assert.ThrowsAnyAsync<OperationCanceledException>(() => operation);
+                    Assert.Equal(0, Volatile.Read(ref changes));
+                }
+                finally { unblock.Set(); await blocking; ui.Dispatcher.Hooks.OperationPriorityChanged -= handler; }
             }
         }
 

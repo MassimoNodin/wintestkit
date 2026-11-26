@@ -19,6 +19,21 @@ from wintestkit.uia.element import UIAElement, from_point
 log = logging.getLogger("wintestkit.spy")
 
 
+def element_at(
+    horizontal: int, vertical: int, process_filter: Callable[[int], bool] | None = None
+) -> UIAElement | None:
+    element = from_point(horizontal, vertical)
+    if element is None or element.process_id == os.getpid():
+        return None
+    if process_filter is not None and not process_filter(element.process_id):
+        return None
+    if element.control_type == "Text":
+        parent = element.parent()
+        if parent is not None and parent.control_type == "Button":
+            element = parent
+    return element
+
+
 class SpySession:
     def __init__(
         self,
@@ -162,15 +177,9 @@ class SpySession:
             log.exception("Spy callback failed")
 
     def _element_at(self, horizontal: int, vertical: int, pick: bool = False) -> Any:
-        element = from_point(horizontal, vertical)
-        if element is None or element.process_id == os.getpid():
+        element = element_at(horizontal, vertical, self._process_filter)
+        if element is None:
             return None
-        if self._process_filter is not None and not self._process_filter(element.process_id):
-            return None
-        if element.control_type == "Text":
-            parent = element.parent()
-            if parent is not None and parent.control_type == "Button":
-                element = parent
         return self._resolve(element, horizontal, vertical, pick) if self._resolve else element
 
     def _work(self) -> None:

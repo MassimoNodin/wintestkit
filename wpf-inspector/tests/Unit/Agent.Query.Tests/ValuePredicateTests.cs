@@ -163,7 +163,7 @@ namespace WinTestKit.Inspector.Agent.Query.Tests
         {
             WithPredicate((inspector, registry, context) =>
             {
-                foreach (var target in new FrameworkElement[] { new PasswordBox(), new PeerlessElement() })
+                foreach (var target in new FrameworkElement[] { new PasswordBox(), new ProtectedButton() })
                 {
                     bool Match(Predicate predicate) => PredicateFactory.Create(predicate, inspector, registry).Matches(target, context);
                     target.Width = 40; target.Height = 30;

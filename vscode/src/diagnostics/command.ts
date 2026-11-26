@@ -8,7 +8,7 @@ import { parse as parseYaml, stringify as yamlStringify } from "yaml";
 import { checkWintestkit, getInterpreter } from "../python";
 import { configurationNames } from "../settings/files";
 import policy from "../compatibility.json";
-import { collect, type Part } from "./collect";
+import { collect, injectorLogPart, type Part } from "./collect";
 import { redactSecrets } from "./redact";
 import { zip } from "./zip";
 
@@ -39,6 +39,7 @@ async function diskFiles(dir: string, prefix = ""): Promise<{ name: string; data
 export async function saveDiagnostics(context: vscode.ExtensionContext, folder: vscode.Uri | undefined, state: () => unknown): Promise<void> {
   const options = [
     { label: "WinTestKit log", id: "log", picked: true },
+    { label: "Inspector injector log", id: "injector", picked: true },
     { label: "Doctor checks", id: "doctor", picked: true },
     { label: "WinTestKit settings", id: "settings", picked: true },
     { label: "Spy trace", id: "trace", description: "may contain values read from your application", picked: false },
@@ -68,6 +69,7 @@ export async function saveDiagnostics(context: vscode.ExtensionContext, folder: 
     if (!latest) throw new Error("WinTestKit log file was not found");
     return { "logs/wintestkit.log": await readFile(latest.file, "utf8") };
   } });
+  if (chosen.has("injector")) parts.push(injectorLogPart(process.env.APPDATA, summary));
   if (chosen.has("doctor")) parts.push({ name: "Doctor", run: async () => {
     if (!python) throw new Error("No interpreter selected");
     if (!vscode.workspace.isTrusted) throw new Error("Workspace trust is required to run doctor");

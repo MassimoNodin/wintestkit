@@ -40,18 +40,28 @@ def test_app_status_only_claims_unchanged_server_owned_pids(
 ) -> None:
     server, output, _ = make_server(tmp_path, monkeypatch)
     request(server, output, "initialize", {"root": str(tmp_path)})
+    from wintestkit.inspector.models import ProcessIdentity
+
+    identity = ProcessIdentity(1, "2025-01-01T00:00:00Z")
     server._owned_app_pids = {1}
+    server._owned_app_identities = {identity}
     assert request(server, output, "app.status")["result"]["owned"] is True
 
+    monkeypatch.setattr(FakeApp, "pids", property(lambda self: [1, 2]))
+    assert request(server, output, "app.status")["result"]["owned"] is False
+    assert server._owned_app_pids == {1}
+    assert server._owned_app_identities == {identity}
+    monkeypatch.setattr(FakeApp, "pids", property(lambda self: [1]))
+    assert request(server, output, "app.status")["result"]["owned"] is True
     monkeypatch.setattr(FakeApp, "pids", property(lambda self: [2]))
     result = request(server, output, "app.status")["result"]
     assert result == {
         "running": True,
         "pids": [2],
         "owned": False,
-        "mainWindowTitle": "Demo",
     }
     assert server._owned_app_pids is None
+    assert server._owned_app_identities == set()
 
 
 def test_app_launch_owns_only_the_process_it_started(
@@ -79,7 +89,6 @@ def test_app_launch_owns_only_the_process_it_started(
         "running": True,
         "pids": [1],
         "owned": True,
-        "mainWindowTitle": "Demo",
     }
 
 
@@ -99,7 +108,6 @@ def test_server_auto_attach_is_always_unowned(
         "running": True,
         "pids": [1],
         "owned": False,
-        "mainWindowTitle": "Demo",
     }
 
 
@@ -720,3 +728,88 @@ def test_config_errors_and_notifications(tmp_path: Path, monkeypatch: pytest.Mon
     assert server.cfg is None
     server.handle({"jsonrpc": "2.0", "method": "unknown"})
     assert not output.getvalue()
+
+
+def test_missing_app_has_no_desktop_roots(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    server, output, _ = make_server(tmp_path, monkeypatch)
+    request(server, output, "initialize", {"root": str(tmp_path)})
+    monkeypatch.setattr(server, "_app", lambda *args: None)
+    monkeypatch.setattr(
+        "wintestkit.uia.win32.desktop_windows",
+        lambda: (_ for _ in ()).throw(AssertionError("desktop enumerated")),
+    )
+    assert request(server, output, "inspect.roots")["result"] == []
+    result = request(server, output, "inspect.refresh")["result"]
+    assert result["nodes"] == []
+    assert result["status"]["running"] is False
+
+
+def test_children_past_end_and_boolean_summaries(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from wintestkit.server import _summarize
+
+    server, output, _ = make_server(tmp_path, monkeypatch)
+    request(server, output, "initialize", {"root": str(tmp_path)})
+    root = request(server, output, "inspect.roots")["result"][0]
+    params = {"nodeId": root["nodeId"], "tree": "visual", "pageToken": "999"}
+    assert request(server, output, "inspect.children", params)["result"] == {"nodes": []}
+    assert "error" in request(server, output, "inspect.children", {**params, "pageToken": "01"})
+    assert _summarize({"kind": "scalar", "value": True}) == "true"
+    assert (
+        _summarize({"kind": "array", "children": [{"kind": "scalar", "value": False}]}) == "false"
+    )
+
+
+def test_queue_coalescing_cancellation_status_and_bound(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import wintestkit.server as server_module
+
+    server, output, _ = make_server(tmp_path, monkeypatch)
+    request(server, output, "initialize", {"root": str(tmp_path)})
+    monkeypatch.setattr(server_module, "_MAX_QUEUED_INSPECTIONS", 2)
+    entered, release, status = threading.Event(), threading.Event(), threading.Event()
+    calls: list[str] = []
+
+    def dispatch(method: str, params: Any, epoch: Any = None) -> Any:
+        if method == "block":
+            entered.set()
+            assert release.wait(5)
+        if method == "app.status":
+            status.set()
+        if method == "inspect.children":
+            calls.append(params["nodeId"])
+        return method
+
+    monkeypatch.setattr(server, "dispatch", dispatch)
+    monkeypatch.setitem(server_module._PARAMS, "block", (set(), set()))
+
+    class Input:
+        def __iter__(self) -> Any:
+            def line(id: int, method: str, params: Any = None) -> bytes:
+                return (
+                    json.dumps(
+                        {"jsonrpc": "2.0", "id": id, "method": method, "params": params or {}}
+                    )
+                    + "\n"
+                ).encode()
+
+            yield line(1, "block")
+            assert entered.wait(5)
+            yield line(2, "inspect.children", {"nodeId": "a"})
+            yield line(3, "inspect.children", {"nodeId": "a"})
+            yield line(4, "inspect.children", {"nodeId": "b"})
+            yield b'{"jsonrpc":"2.0","method":"$/cancelRequest","params":{"id":4}}\n'
+            yield line(5, "inspect.children", {"nodeId": "c"})
+            yield line(6, "app.status")
+            assert status.wait(5)
+            release.set()
+
+    assert server.serve(Input()) == 0
+    responses = {item["id"]: item for item in map(json.loads, output.getvalue().splitlines())}
+    assert calls == ["a"]
+    assert responses[2]["result"] == responses[3]["result"] == "inspect.children"
+    assert 4 not in responses
+    assert "server busy" in responses[5]["error"]["message"]
+    assert responses[6]["result"] == "app.status"

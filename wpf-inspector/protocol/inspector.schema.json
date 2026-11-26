@@ -1682,6 +1682,7 @@
         "identity": {
           "type": "object",
           "properties": {
+            "siblingIndex": {"type":"integer","minimum":0},
             "xName": {
               "type": "string",
               "maxLength": 4096
@@ -2029,6 +2030,10 @@
             "authenticationFailed",
             "payloadMissing",
             "payloadMismatch",
+            "injectionFailed",
+            "injectionStalled",
+            "bootstrapRejected",
+            "agentNotStarted",
             "alreadyAttached",
             "notAttached",
             "attachFailed",
@@ -3837,6 +3842,7 @@
     "HitTestResult": {
       "type": "object",
       "properties": {
+        "innerElement": {"type":"object","properties":{"type":{"type":"string","minLength":1},"text":{"type":"string","maxLength":128}},"required":["type"],"additionalProperties":false},
         "handle": {
           "$ref": "#/$defs/ObjectRef"
         },

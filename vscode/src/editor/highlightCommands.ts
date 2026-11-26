@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import type { Projects } from "../projects";
 import { normalizedPath } from "../projects";
+import { pageCheckTimeoutMs } from "./checkTimeout";
 import type { DiscoveryStore, LocatedElement } from "../discovery/store";
 import type {
   CheckResult,
@@ -143,10 +144,13 @@ export class HighlightCommands implements vscode.Disposable {
     project: Project,
     method: string,
     params: Record<string, unknown>,
+    timeoutMs?: number,
   ): Promise<Result> {
     const connection = await this.servers.get(project);
     try {
-      return await connection.client.request<Result>(method, params);
+      return await (timeoutMs === undefined
+        ? connection.client.request<Result>(method, params)
+        : connection.client.request<Result>(method, params, timeoutMs));
     } catch (error) {
       if (error instanceof RpcError && error.code === -32002)
         throw new AppNotRunningError(project);
@@ -273,7 +277,7 @@ export class HighlightCommands implements vscode.Disposable {
         },
         () => this.request<ElementCheckResult>(project, "element.check", { ...target }),
       );
-      if (!checked || !["found", "not_found", "ambiguous", "error"].includes(checked.status))
+      if (!checked || !["found", "not_found", "ambiguous", "error", "not_responding"].includes(checked.status))
         throw new Error("The server returned no check result for this element.");
       const result = { ...checked, qualname: target.qualname };
       if (located && this.checks.setFeedback(located, "check", result, pendingStatus))
@@ -352,7 +356,7 @@ export class HighlightCommands implements vscode.Disposable {
           this.request<PageCheckResult>(project, "page.check", {
             file: target.file,
             page: target.page,
-          }),
+          }, pageCheckTimeoutMs(targets.length)),
       );
       const scoped = new Map<string, CheckResult>();
       for (const { resultName, located, nodeId, own } of targets) {
@@ -409,19 +413,10 @@ export class HighlightCommands implements vscode.Disposable {
         }
       }
     } catch (error) {
-      const scoped = new Map<string, CheckResult>();
-      for (const { located, nodeId, own } of targets) {
-        const result = {
-          qualname: located.element.qualname,
-          status: "error" as const,
-          message: error instanceof Error ? error.message : String(error),
-          durationMs: 0,
-        };
-        if (!own) scoped.set(nodeId, result);
-        else if (this.checks.setFeedback(located, "check", result, pendingStatus))
-          this.checks.set({ ...located, result });
-      }
-      this.checks.setScopedResults(scoped);
+      // The request itself failed, so nothing was checked: each element keeps its previous result and only
+      // the checking indicator goes away. The caller shows the one error notification.
+      for (const { located, own } of targets)
+        if (own) this.checks.clearFeedback(located, "check", pendingStatus);
       throw error;
     } finally {
       this.checks.setPageRunning(page.file, page.qualname, false);

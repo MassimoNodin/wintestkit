@@ -210,6 +210,7 @@ vi.mock("../../src/spy/spyView", () => ({
       mocks.registerCommand("wintestkit.spy.startPick", () => {});
       mocks.registerCommand("wintestkit.spy.refresh", () => {});
       mocks.registerCommand("wintestkit.spy.revealRelocation", () => {});
+      mocks.registerCommand("wintestkit.spy.resetBasicProperties", () => {});
     }
     dispose() {}
   },
@@ -292,6 +293,13 @@ describe("extension scaffold", () => {
     );
     mocks.showWarning.mockResolvedValue("Close App");
     subscriptions = [];
+    // VS Code throws when a command id is registered twice, which fails activation outright.
+    const registered = new Set<string>();
+    mocks.registerCommand.mockImplementation((command: string) => {
+      if (registered.has(command)) throw new Error(`command '${command}' already exists`);
+      registered.add(command);
+      return { dispose: vi.fn() };
+    });
     activate({
       subscriptions,
       extension: { packageJSON: manifest },
@@ -567,7 +575,7 @@ describe("extension scaffold", () => {
       )?.[1];
       await callback?.();
       expect(mocks.showWarning).toHaveBeenCalledWith(
-        expect.stringContaining("WinTestKit did not start this process"),
+        expect.stringContaining("instances WinTestKit did not start"),
         { modal: true },
         "Close App",
       );
@@ -597,12 +605,12 @@ describe("extension scaffold", () => {
 
   it("confirms a process that Launch mode did not start", async () => {
     mocks.readConfig.mockResolvedValue({ "app.path": "C:/Apps/Demo.exe", launch: "per-test" });
-    mocks.request.mockResolvedValueOnce({ running: true, pids: [9], owned: false });
+    mocks.request.mockResolvedValueOnce({ running: true, pids: [9, 10], owned: false });
     const callback = mocks.registerCommand.mock.calls.find(
       ([registered]) => registered === "wintestkit.closeApp",
     )?.[1];
     await callback?.();
-    expect(mocks.showWarning).toHaveBeenCalledOnce();
+    expect(mocks.showWarning).toHaveBeenCalledWith(expect.stringContaining("close all running instances, including instances WinTestKit did not start"), { modal: true }, "Close App");
     expect(mocks.request.mock.calls.map(([method]) => method)).toEqual([
       "app.status",
       "app.close",

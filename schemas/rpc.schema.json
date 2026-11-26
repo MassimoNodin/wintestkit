@@ -2,6 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://wintestkit.dev/schemas/rpc.schema.json",
   "$defs": {
+    "CancelRequestNotification": {"type":"object","properties":{"id":{"type":["integer","string"]}},"required":["id"],"additionalProperties":false},
     "InspectManagedIdentifyParams": {"type":"object","properties":{"nodeId":{"type":"string","minLength":1}},"required":["nodeId"],"additionalProperties":false},
     "InspectManagedIdentifyResult": {"type":"object","properties":{"process":{"$ref":"common.schema.json#/$defs/ManagedProcessIdentity"},"executable":{"type":"string"},"runtime":{"enum":["net48","net8","net10",null]},"architecture":{"enum":["x86","x64","arm64","unknown"]},"wpfLoaded":{"type":"boolean"},"winformsLoaded":{"type":"boolean"},"appUnderTest":{"type":"boolean"}},"required":["process","executable","runtime","architecture","wpfLoaded","winformsLoaded","appUnderTest"],"additionalProperties":false},
     "InspectManagedAttachParams": {"type":"object","properties":{"process":{"$ref":"common.schema.json#/$defs/ManagedProcessIdentity"},"hostCapability":{"$ref":"#/$defs/SpyHostCapability"}},"required":["process"],"additionalProperties":false},
@@ -49,7 +50,7 @@
       "properties": {
         "status": {
           "type": "string",
-          "enum": ["found", "not_found", "ambiguous", "error"]
+          "enum": ["found", "not_found", "ambiguous", "error", "not_responding"]
         },
         "element": {
           "$ref": "common.schema.json#/$defs/ElementInfo"
@@ -87,7 +88,7 @@
         "source": {"enum": ["wpf", "winforms", "uia"]},
         "identity": {
           "type": "object",
-          "properties": {"type": {"type": "string"}, "xName": {"type": "string"}, "automationId": {"type": "string"}},
+          "properties": {"type": {"type": "string"}, "xName": {"type": "string"}, "automationId": {"type": "string"}, "siblingIndex": {"type": "integer", "minimum": 0}},
           "required": ["type"],
           "additionalProperties": false
         }
@@ -167,7 +168,7 @@
       "properties": {
         "status": {
           "type": "string",
-          "enum": ["found", "not_found", "ambiguous", "error"]
+          "enum": ["found", "not_found", "ambiguous", "error", "not_responding"]
         },
         "element": {
           "$ref": "common.schema.json#/$defs/ElementInfo"
@@ -792,6 +793,13 @@
       "required": ["stage"],
       "additionalProperties": false
     },
+    "SpyRepickParams": {
+      "type": "object",
+      "properties": {"x": {"type": "integer"}, "y": {"type": "integer"}, "tree": {"enum": ["visual", "logical"]}},
+      "required": ["x", "y"],
+      "additionalProperties": false
+    },
+    "SpyRepickResult": {"$ref": "rpc.schema.json#/$defs/SpyPickedNotification"},
     "SpyStartParams": {
       "type": "object",
       "properties": {
@@ -836,6 +844,8 @@
     "SpyPickedNotification": {
       "type": "object",
       "properties": {
+        "innerElement": {"type":"object","properties":{"type":{"type":"string"},"text":{"type":"string"}},"required":["type"],"additionalProperties":false},
+        "point": {"type": "object", "properties": {"x": {"type": "integer"}, "y": {"type": "integer"}}, "required": ["x", "y"], "additionalProperties": false},
         "sessionId": {"type": "string", "minLength": 1},
         "attachRequired": {"const": true},
         "process": {"$ref": "common.schema.json#/$defs/ManagedProcessIdentity"},
@@ -848,7 +858,7 @@
           "$ref": "rpc.schema.json#/$defs/Suggestion"
         }
       },
-      "required": ["node"],
+      "required": ["node", "point"],
       "additionalProperties": false
     },
     "SpyCancelledNotification": {

@@ -207,15 +207,19 @@ summary:focus-visible {
     border-bottom: 1px solid var(--border);
     background: var(--vscode-inputValidation-infoBackground, var(--raised));
 }
+/* The Objects tree takes all the width the selected object does not need: the pane's own minimum,
+   260px or what its header and the locator button measure when wider (--details-min, set by
+   spy.js). A width the user chose (dragged, or restored for the workspace) takes over through
+   data-split. */
 #workspace {
     display: grid;
-    grid-template-columns: minmax(200px, var(--tree-width, 36%)) 5px minmax(
-            260px,
-            1fr
-        );
+    grid-template-columns: minmax(200px, 1fr) 5px var(--details-min, 260px);
     flex: 1;
     min-height: 0;
     padding: 10px;
+}
+#workspace[data-split="custom"] {
+    grid-template-columns: minmax(200px, var(--tree-width)) 5px minmax(var(--details-min, 260px), 1fr);
 }
 .pane {
     background: var(--surface);
@@ -756,6 +760,7 @@ td {
     font-size: 12px;
     color: var(--muted);
 }
+#locator-result { white-space: pre-wrap; overflow-wrap: anywhere; overflow-x: hidden; }
 #locator-result[hidden],
 #locator-actions[hidden] {
     display: none;
@@ -820,7 +825,8 @@ pre {
     overflow: visible;
 }
 @media (max-width: 620px) {
-    #workspace {
+    #workspace,
+    #workspace[data-split="custom"] {
         grid-template-columns: minmax(0, 1fr);
         grid-template-rows: minmax(100px, var(--tree-height, 38%)) 5px minmax(
                 200px,
@@ -957,11 +963,12 @@ body.tour-dim::after {
 }
 #object-preview-image {
     display: block;
-    width: 100%;
-    height: 100%;
+    max-width: 100%;
+    max-height: 100%;
+    width: auto;
+    height: auto;
     object-fit: contain;
 }
-#object-preview-image.magnified { image-rendering: pixelated; }
 #object-preview-image:not([hidden]) { cursor: pointer; }
 #object-preview-image[hidden] { display: none; }
 #object-preview-status { margin: 6px 12px 10px; }
@@ -993,7 +1000,7 @@ col.property-action-column { width: 34px; }
     white-space: nowrap;
 }
 .property-toggle,
-.property-pin {
+.sidebar-pin {
     width: 20px;
     height: 20px;
     padding: 0;
@@ -1009,21 +1016,24 @@ col.property-action-column { width: 34px; }
     color: var(--accent);
 }
 .property-toggle:hover,
-.property-pin:hover {
+.sidebar-pin:hover {
     color: var(--vscode-foreground, inherit);
     background: var(--vscode-toolbar-hoverBackground, rgba(128, 128, 128, 0.2));
 }
-.property-pin[aria-pressed="true"] {
-    color: var(--accent);
-}
-/* A pin shows only on the row under the pointer, or while it or the row has keyboard focus. It
-   stays in the tab order, so keyboard users reach it. */
-.property-row .property-pin {
+/* A row's pin sits to the left of its name. A row that is not in the Basic view shows its pin only
+   under the pointer or with keyboard focus; a row that is in it always shows a filled, accent pin.
+   Pins stay in the tab order, so keyboard users reach them. */
+.sidebar-row .sidebar-pin {
     opacity: 0;
 }
-.property-row:hover .property-pin,
-.property-row:focus-within .property-pin {
+.sidebar-row:hover .sidebar-pin,
+.sidebar-row:focus-within .sidebar-pin,
+.sidebar-row .sidebar-pin:focus-visible {
     opacity: 1;
+}
+.sidebar-row .sidebar-pin[aria-pressed="true"] {
+    opacity: 1;
+    color: color-mix(in srgb, var(--muted) 65%, var(--vscode-foreground, var(--muted)) 35%);
 }
 .property-toggle-spacer {
     display: inline-block;
@@ -1147,14 +1157,47 @@ body.properties-view #property-groups > section:not(#managed-panel), body.proper
 .sidebar-table tbody th[scope="row"] { padding-left: 18px; position: relative; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; font-weight: normal; }
 .sidebar-table tbody td { overflow-wrap: anywhere; vertical-align: top; }
 .sidebar-table .property-actions { width: 28px; white-space: nowrap; }
-.sidebar-row.described > th, .sidebar-row.described > td { background: var(--vscode-list-inactiveSelectionBackground, transparent); }
 body.properties-view #refresh-counts { display: none !important; }
 body.spy-view #sidebar-inspector { display: none !important; }
 .sidebar-table .row-action-button { width: 22px; height: 22px; padding: 0; }
 .sidebar-table th .property-toggle { position: absolute; left: 0; top: 0; }
+/* The Properties tab reserves a column for the pin in every row, so names line up whether or not a row has one. */
+.sidebar-table[data-pins="true"] tbody th[scope="row"] { padding-left: 42px; }
+.sidebar-table th .sidebar-pin { position: absolute; left: 4px; top: 50%; width: 18px; transform: translateY(-50%); }
+.sidebar-table[data-pins="true"] th .property-toggle { left: 22px; }
+.sidebar-table[data-pins="true"] tbody th[data-kind]::before { left: 26px; }
+.sidebar-mode-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0 12px 8px; }
+.sidebar-mode-row[hidden] { display: none; }
+.sidebar-mode-row .sidebar-toggle { margin: 0; }
+#sidebar-reset-basic { flex-shrink: 0; display: inline-flex; align-items: center; gap: 4px; padding: 2px 6px; }
+@media (forced-colors: active) {
+  .sidebar-row .sidebar-pin[aria-pressed="true"] { color: CanvasText; }
+}
 .sidebar-table .copied { background: var(--vscode-list-hoverBackground, var(--surface)); }
-.sidebar-table .copied::after { content: "Copied"; position: absolute; z-index: 3; padding: 2px 5px; border-radius: 3px; background: var(--vscode-editorHoverWidget-background, var(--surface)); color: var(--vscode-editorHoverWidget-foreground, inherit); }
-.sidebar-copy-feedback { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+/* "Name copied" / "Value copied": a small green-tinted label beside the pointer (or the cell, for the keyboard). */
+.copy-toast {
+  position: fixed;
+  z-index: 20;
+  max-width: calc(100vw - 8px);
+  padding: 2px 7px;
+  border: 1px solid var(--vscode-testing-iconPassed, var(--vscode-charts-green, #388a34));
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--vscode-testing-iconPassed, var(--vscode-charts-green, #388a34)) 24%, var(--vscode-editorHoverWidget-background, var(--vscode-editor-background, Canvas)));
+  color: var(--vscode-editorHoverWidget-foreground, var(--vscode-foreground, CanvasText));
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 1;
+  transition: opacity 0.3s ease-out;
+}
+.copy-toast[hidden] { display: none; }
+.copy-toast.fading { opacity: 0; }
+body.vscode-high-contrast .copy-toast,
+body.vscode-high-contrast-light .copy-toast { border-color: var(--vscode-contrastBorder, var(--vscode-testing-iconPassed)); background: var(--vscode-editorHoverWidget-background, Canvas); }
+@media (prefers-reduced-motion: reduce) { .copy-toast { transition: none; } }
+@media (forced-colors: active) { .copy-toast { forced-color-adjust: none; border-color: CanvasText; background: Canvas; color: CanvasText; } }
+.copy-announcer { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
 #sidebar-actions { position: relative; flex-shrink: 0; }
 #sidebar-actions > summary { display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 0; border-radius: 4px; background: color-mix(in srgb, var(--vscode-foreground) 20%, var(--vscode-sideBar-background, transparent)); }
 #sidebar-actions > summary:hover { background: var(--vscode-toolbar-hoverBackground); }
@@ -1162,7 +1205,8 @@ body.spy-view #sidebar-inspector { display: none !important; }
 .sidebar-actions-menu { position: absolute; right: 0; top: calc(100% + 2px); z-index: 5; min-width: 160px; padding: 4px; border: 1px solid var(--vscode-menu-border, var(--border)); border-radius: 4px; color: var(--vscode-menu-foreground, inherit); background: var(--vscode-menu-background, var(--surface)); box-shadow: 0 2px 8px var(--vscode-widget-shadow, rgba(0, 0, 0, .3)); }
 #sidebar-actions summary { cursor: pointer; list-style: none; }
 #sidebar-actions[open] { z-index: 2; }
-#sidebar-actions button { display: block; white-space: nowrap; width: 100%; text-align: left; }
+#sidebar-actions .sidebar-actions-menu button { display: block; white-space: nowrap; width: 100%; padding: 4px 10px; border: 0; border-radius: 3px; text-align: left; color: var(--vscode-menu-foreground, inherit); background: transparent; }
+#sidebar-actions .sidebar-actions-menu button:hover, #sidebar-actions .sidebar-actions-menu button:focus { color: var(--vscode-menu-selectionForeground, inherit); background: var(--vscode-menu-selectionBackground, var(--vscode-list-hoverBackground)); outline: none; }
 /* A method's argument form and its result sit in their own rows under the method. */
 .invoke-form { display: flex; flex-direction: column; gap: 6px; padding: 6px 4px 8px 12px; border-left: 2px solid var(--vscode-focusBorder); }
 .invoke-field { display: flex; flex-direction: column; gap: 2px; }
@@ -1171,4 +1215,3 @@ body.spy-view #sidebar-inspector { display: none !important; }
 .invoke-null { display: flex; align-items: center; gap: 4px; }
 .invoke-actions { display: flex; gap: 6px; }
 .invoke-result td { padding: 2px 4px 6px 12px; overflow-wrap: anywhere; }
-#sidebar-description { border-top: 1px solid var(--vscode-panel-border); padding: 8px 12px; }

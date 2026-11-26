@@ -137,7 +137,18 @@ namespace WinTestKit.Inspector.Agent.Inspection
         {
             if (RedactionPolicy.IsProtectedIdentity(target)) return null;
             string name = WinFormsNative.Name(target);
-            return name.Length == 0 ? null : new NodeIdentityDto { XName = name, AutomationId = name };
+            int? index = null;
+            object? parent = WinFormsNative.ParentOf(target);
+            if (parent != null)
+            {
+                int count = 0;
+                foreach (object sibling in WinFormsNative.Children(parent))
+                {
+                    if (ReferenceEquals(sibling, target)) { index = count; break; }
+                    if (sibling.GetType() == target.GetType()) count++;
+                }
+            }
+            return new NodeIdentityDto { XName = name.Length == 0 ? null : name, AutomationId = name.Length == 0 ? null : name, SiblingIndex = index };
         }
 
         private async Task<Protocol.HitTestResult> HitTestWinFormsAsync(IntPtr hwnd, PointDto point, DateTime deadline, int timeoutMs, bool includePath, CancellationToken token)

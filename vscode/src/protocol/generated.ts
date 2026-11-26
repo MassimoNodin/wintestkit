@@ -997,6 +997,7 @@ export interface ProtocolContracts {
   BootstrapSettings?: BootstrapSettings;
   CallArgument?: CallArgument;
   CancelParams?: CancelParams;
+  CancelRequestNotification?: CancelRequestNotification;
   CancelResult?: CancelResult;
   Candidate?: Candidate;
   CandidateRequest?: CandidateRequest;
@@ -1203,6 +1204,8 @@ export interface ProtocolContracts {
   SpyInvokeParams?: SpyInvokeParams;
   SpyInvokeResult?: SpyInvokeResult;
   SpyPickedNotification?: SpyPickedNotification;
+  SpyRepickParams?: SpyRepickParams;
+  SpyRepickResult?: SpyRepickResult;
   SpyStartParams?: SpyStartParams;
   SpyStartResult?: SpyStartResult;
   SpyStopParams?: SpyStopParams;
@@ -1704,6 +1707,13 @@ export interface CancelParams {
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "CancelRequestNotification".
+ */
+export interface CancelRequestNotification {
+  id: number | string;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
  * via the `definition` "CancelResult".
  */
 export interface CancelResult {
@@ -1801,7 +1811,7 @@ export interface PathValue {
  * via the `definition` "CheckResult".
  */
 export interface CheckResult {
-  status: "found" | "not_found" | "ambiguous" | "error";
+  status: "found" | "not_found" | "ambiguous" | "error" | "not_responding";
   element?: ElementInfo;
   diagnostic?: Diagnostic;
   message?: string;
@@ -2151,7 +2161,7 @@ export interface ElementCheckParams {
   qualname: string;
 }
 export interface ElementCheckResult {
-  status: "found" | "not_found" | "ambiguous" | "error";
+  status: "found" | "not_found" | "ambiguous" | "error" | "not_responding";
   element?: ElementInfo;
   diagnostic?: Diagnostic;
   message?: string;
@@ -2171,7 +2181,7 @@ export interface ElementHighlightParams {
   durationMs?: number;
 }
 export interface ElementHighlightResult {
-  status: "found" | "not_found" | "ambiguous" | "error";
+  status: "found" | "not_found" | "ambiguous" | "error" | "not_responding";
   element?: ElementInfo;
   diagnostic?: Diagnostic;
   message?: string;
@@ -2186,7 +2196,7 @@ export interface ElementHighlightResult {
  * via the `definition` "ElementResult".
  */
 export interface ElementResult {
-  status: "found" | "not_found" | "ambiguous" | "error";
+  status: "found" | "not_found" | "ambiguous" | "error" | "not_responding";
   element?: ElementInfo;
   diagnostic?: Diagnostic;
   message?: string;
@@ -2375,6 +2385,10 @@ export interface HitTestParams {
  * via the `definition` "HitTestResult".
  */
 export interface HitTestResult {
+  innerElement?: {
+    type: string;
+    text?: string;
+  };
   handle: ObjectRef;
   /**
    * @maxItems 256
@@ -2392,6 +2406,7 @@ export interface ManagedNode {
   hasLogicalChildren: boolean;
   runtimeId?: RuntimeId;
   identity?: {
+    siblingIndex?: number;
     xName?: string;
     automationId?: string;
   };
@@ -2457,6 +2472,7 @@ export interface NodeInfo {
     type: string;
     xName?: string;
     automationId?: string;
+    siblingIndex?: number;
   };
 }
 export interface ManagedProcessIdentity {
@@ -3613,6 +3629,10 @@ export interface ManagedErrorInfo {
     | "authenticationFailed"
     | "payloadMissing"
     | "payloadMismatch"
+    | "injectionFailed"
+    | "injectionStalled"
+    | "bootstrapRejected"
+    | "agentNotStarted"
     | "alreadyAttached"
     | "notAttached"
     | "attachFailed"
@@ -4121,6 +4141,14 @@ export interface SpyInvokeResult {
  * via the `definition` "SpyPickedNotification".
  */
 export interface SpyPickedNotification {
+  innerElement?: {
+    type: string;
+    text?: string;
+  };
+  point: {
+    x: number;
+    y: number;
+  };
   sessionId?: string;
   attachRequired?: true;
   process?: ManagedProcessIdentity;
@@ -4152,6 +4180,35 @@ export interface Suggestion {
     code: string;
     locator: WindowLocatorData;
   };
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "SpyRepickParams".
+ */
+export interface SpyRepickParams {
+  x: number;
+  y: number;
+  tree?: "visual" | "logical";
+}
+export interface SpyRepickResult {
+  innerElement?: {
+    type: string;
+    text?: string;
+  };
+  point: {
+    x: number;
+    y: number;
+  };
+  sessionId?: string;
+  attachRequired?: true;
+  process?: ManagedProcessIdentity;
+  blocked?: {
+    code: string;
+    hint: string;
+  };
+  source?: "uia";
+  node: NodeInfo;
+  suggestion?: Suggestion;
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
@@ -4590,7 +4647,7 @@ export interface DiscoveryResult1 {
  * via the `definition` "ElementCheckResult".
  */
 export interface ElementResult1 {
-  status: "found" | "not_found" | "ambiguous" | "error";
+  status: "found" | "not_found" | "ambiguous" | "error" | "not_responding";
   element?: ElementInfo;
   diagnostic?: Diagnostic;
   message?: string;
@@ -4605,7 +4662,7 @@ export interface ElementResult1 {
  * via the `definition` "ElementHighlightResult".
  */
 export interface ElementResult2 {
-  status: "found" | "not_found" | "ambiguous" | "error";
+  status: "found" | "not_found" | "ambiguous" | "error" | "not_responding";
   element?: ElementInfo;
   diagnostic?: Diagnostic;
   message?: string;
@@ -4800,6 +4857,30 @@ export interface StylingResult1 {
 export interface InspectRootsParams1 {
   includeOtherApps?: boolean;
   foregroundForProcessId?: number;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "SpyRepickResult".
+ */
+export interface SpyPickedNotification1 {
+  innerElement?: {
+    type: string;
+    text?: string;
+  };
+  point: {
+    x: number;
+    y: number;
+  };
+  sessionId?: string;
+  attachRequired?: true;
+  process?: ManagedProcessIdentity;
+  blocked?: {
+    code: string;
+    hint: string;
+  };
+  source?: "uia";
+  node: NodeInfo;
+  suggestion?: Suggestion;
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema

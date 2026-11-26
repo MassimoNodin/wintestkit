@@ -71,6 +71,7 @@ class CapturedSpy:
         self, hover: Any, pick: Any, cancel: Any, process_filter: Any, **kwargs: Any
     ) -> None:
         self.hover, self.pick, self.cancel = hover, pick, cancel
+        self.resolve = kwargs["resolve"]
         self.stopped = False
 
     def start(self) -> None:
@@ -78,6 +79,41 @@ class CapturedSpy:
 
     def stop(self) -> None:
         self.stopped = True
+
+
+def test_pick_and_repick_carry_screen_point(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from wintestkit.server import _SpyTarget
+
+    server, output, button = make_server(tmp_path, monkeypatch)
+    request(server, output, "initialize", {"root": str(tmp_path)})
+    monkeypatch.setattr(spy, "SpySession", CapturedSpy)
+    monkeypatch.setattr(spy, "element_at", lambda x, y: button)
+    calls: list[tuple[int, int, bool, str]] = []
+
+    def resolve(element: Any, x: int, y: int, pick: bool, tree: str) -> _SpyTarget:
+        calls.append((x, y, pick, tree))
+        return _SpyTarget(element)
+
+    monkeypatch.setattr(server, "_spy_resolve", resolve)
+    request(server, output, "spy.start", {"tree": "logical"})
+    session = server.spy
+    session.pick(session.resolve(button, 12, -3, True))
+    notification = json.loads(output.getvalue().splitlines()[-1])
+    assert notification["params"]["point"] == {"x": 12, "y": -3}
+    result = request(server, output, "spy.repick", {"x": 12, "y": -3, "tree": "logical"})["result"]
+    assert result["point"] == {"x": 12, "y": -3}
+    assert result["node"]["nodeId"] == notification["params"]["node"]["nodeId"]
+    assert calls == [(12, -3, True, "logical"), (12, -3, True, "logical")]
+
+
+def test_repick_miss(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    server, output, _ = make_server(tmp_path, monkeypatch)
+    request(server, output, "initialize", {"root": str(tmp_path)})
+    monkeypatch.setattr(spy, "element_at", lambda x, y: None)
+    error = request(server, output, "spy.repick", {"x": 1, "y": 2})["error"]
+    assert "No element" in error["message"]
 
 
 @pytest.mark.parametrize("session_id", [None, "picker-2"])
@@ -397,7 +433,7 @@ def test_desktop_roots_report_unavailable_windows_by_source_index(
 
     monkeypatch.setattr("wintestkit.uia.win32.desktop_windows", lambda: list(windows))
     monkeypatch.setattr("wintestkit.uia.element.from_handle", from_handle)
-    params = {"includeOtherApps": True} if attached else {}
+    params = {"includeOtherApps": True}
     error = request(server, output, method, params)["error"]
     assert error["code"] == -32005
     data = error["data"]
@@ -506,3 +542,34 @@ def test_stopped_spy_worker_drops_callbacks() -> None:
     session._stop.set()
     session._callback(lambda: calls.append(True))
     assert calls == []
+
+
+def test_refresh_retains_cached_window_while_process_and_handle_exist(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    server, output, _ = make_server(tmp_path, monkeypatch)
+    request(server, output, "initialize", {"root": str(tmp_path)})
+    cached = {
+        "nodeId": "window",
+        "info": {"processId": 42, "nativeWindowHandle": 123},
+        "hasChildren": True,
+        "source": "wpf",
+    }
+    server._root_cache[123] = cached
+    monkeypatch.setattr(
+        server, "_app", lambda *args: SimpleNamespace(pids=[42], top_level_windows=lambda: [])
+    )
+    monkeypatch.setattr(win32, "top_level_windows", lambda pids: [123])
+    result = request(server, output, "inspect.refresh")["result"]
+    assert result["nodes"] == [cached]
+    monkeypatch.setattr(win32, "top_level_windows", lambda pids: [])
+    monkeypatch.setattr(win32, "window_pid", lambda hwnd: 42)
+    monkeypatch.setattr(win32, "is_hung_window", lambda hwnd: True)
+    assert request(server, output, "inspect.refresh")["result"]["nodes"] == [cached]
+    monkeypatch.setattr(win32, "is_hung_window", lambda hwnd: False)
+    assert request(server, output, "inspect.refresh")["result"]["nodes"] == []
+    server._root_cache[123] = cached
+    monkeypatch.setattr(
+        server, "_app", lambda *args: SimpleNamespace(pids=[], top_level_windows=lambda: [])
+    )
+    assert request(server, output, "inspect.refresh")["result"]["nodes"] == []

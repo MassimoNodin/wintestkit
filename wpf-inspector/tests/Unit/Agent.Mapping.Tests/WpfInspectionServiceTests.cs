@@ -188,7 +188,7 @@ namespace WinTestKit.Inspector.Agent.Mapping.Tests
         }
 
         [Fact]
-        public async Task HitTestReturnsContentElement()
+        public async Task HitTestReturnsVisualHostForContentElement()
         {
             using (var window = new MappingWindow())
             using (var service = new WpfInspectionService("hit", new FakeInspector()))
@@ -205,7 +205,8 @@ namespace WinTestKit.Inspector.Agent.Mapping.Tests
                 var result = await service.HitTestAsync(window.Handle.ToInt64(), new PointDto { X = screen.X, Y = screen.Y }, DateTime.UtcNow.AddSeconds(60), 1000, None, true);
                 var registry = (ObjectRegistry)typeof(WpfInspectionService).GetField("registry", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(service)!;
                 Assert.True(registry.TryGet(result.Handle.ObjectId, result.Handle.Generation, out object target, out _));
-                Assert.IsAssignableFrom<ContentElement>(target);
+                Assert.IsType<TextBlock>(target);
+                Assert.NotNull(result.InnerElement);
                 Assert.NotNull(result.Path);
                 Assert.Equal(result.Handle.ObjectId, result.Path!.Last().Object.ObjectId);
             }
@@ -306,7 +307,7 @@ namespace WinTestKit.Inspector.Agent.Mapping.Tests
                     token = page.NextToken;
                 } while (token != null);
                 Assert.Equal(601, nodes.Count);
-                Assert.Null(Assert.Single(nodes, node => node.Label == "Border").Identity);
+                Assert.NotNull(Assert.Single(nodes, node => node.Label == "Border").Identity?.SiblingIndex);
                 Assert.Equal(600, nodes.Count(node => node.Identity?.AutomationId != null));
                 Assert.Contains(nodes, node => node.Identity?.XName == "NamedButton" && node.Identity.AutomationId == "selection-0");
                 var registry = (ObjectRegistry)typeof(WpfInspectionService).GetField("registry", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(service)!;

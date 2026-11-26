@@ -125,3 +125,28 @@ export function bestMatch(segment: PathSegment, candidates: NodeInfo[]): NodeInf
   if (only.weak && !only.here) return;
   return only.candidate;
 }
+
+/** Match a recreated managed node using the identity supplied with the original hit. */
+export function matchManagedIdentity(wanted: NodeInfo, candidates: NodeInfo[]): { node: NodeInfo; attributes: string[] } | undefined {
+  const scored = candidates.map((node) => {
+    if (node.info.controlType !== wanted.info.controlType || (wanted.identity?.type && node.identity?.type !== wanted.identity.type)) return undefined;
+    const attributes = ["type"];
+    let score = 1;
+    const compare = (label: string, a: string | undefined, b: string | undefined, weight: number) => {
+      if (a && b && a === b) { score += weight; attributes.push(label); }
+    };
+    compare("xName", wanted.identity?.xName, node.identity?.xName, 64);
+    compare("automationId", wanted.info.automationId, node.info.automationId, 32);
+    compare("text", wanted.info.name, node.info.name, 16);
+    compare("class", wanted.info.className, node.info.className, 8);
+    if (wanted.identity?.siblingIndex !== undefined && wanted.identity.siblingIndex === node.identity?.siblingIndex) { score += 4; attributes.push("siblingIndex"); }
+    const a = wanted.info.rect, b = node.info.rect;
+    const overlap = a && b ? Math.max(0, Math.min(a.left + a.width, b.left + b.width) - Math.max(a.left, b.left)) * Math.max(0, Math.min(a.top + a.height, b.top + b.height) - Math.max(a.top, b.top)) : 0;
+    return { node, attributes, score, overlap };
+  }).filter((entry): entry is NonNullable<typeof entry> => !!entry);
+  scored.sort((a, b) => b.score - a.score || b.overlap - a.overlap);
+  const first = scored[0], second = scored[1];
+  if (!first || (second && first.score === second.score && first.overlap === second.overlap)) return;
+  if (first.overlap && second && first.score === second.score) first.attributes.push("bounds");
+  return first;
+}

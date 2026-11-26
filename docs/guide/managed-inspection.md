@@ -319,7 +319,11 @@ Detach ends the session; it does not unload the injected agent. Restart the targ
 
 Built-in case-insensitive name rules include `password`, `passwd`, `pwd`, `secret`, `token`,
 `credential`, `connectionstring`, `apikey`, and `privatekey`; password controls receive
-additional protection. Add application-specific names with `redact_names`. Matching names
+additional protection. Only password fields are protected objects: a `PasswordBox`, any part of
+its template, an element whose own automation peer reports `IsPassword`, and a WinForms text box
+with password characters. Other elements, including windows and panels without an automation
+peer, are not protected, so their bindings, text and member values are readable unless a
+redaction name matches. Add application-specific names with `redact_names`. Matching names
 may over-redact benign values, while name-based rules cannot identify every secret. Do not
 put secrets in locator `where` clauses, logs, or test data merely because redaction exists.
 Non-secret type identity and permitted base members of protected controls remain available;
@@ -379,6 +383,10 @@ For help investigating an error, [save and review local diagnostics](diagnostics
 | `accessDenied`, `blockedByPolicy` | Check account, session and integrity; ask your security administrator about a security-product block. Never disable protection to attach. |
 | `authenticationFailed` | Retry attachment; investigate local session security if it persists. |
 | `payloadMissing`, `payloadMismatch` | Install or repair the matching inspector payload. |
+| `injectionFailed` | See `%APPDATA%\Snoop\SnoopLog.txt` and run `wtk doctor --agent`. |
+| `injectionStalled` | Retry; restart the application if needed and check security software. |
+| `bootstrapRejected` | Retry the attachment; restart the application if it continues to fail. |
+| `agentNotStarted` | Restart the application and retry; run `wtk doctor --agent` if needed. |
 | `agentVersionMismatch` | Restart the target after upgrading, then attach again. |
 | `alreadyAttached` | Another WinTestKit session owns the agent; close that session or restart the application. |
 | `inspectorDisabled` | Set `[tool.wintestkit.inspector] enabled = true` in the project config. |
@@ -387,7 +395,7 @@ For help investigating an error, [save and review local diagnostics](diagnostics
 | `processExited`, `processReused`, `sessionStale`, `objectStale` | Reselect the live process or element and reattach. |
 | `mappingFailed` | Select a UIA element with a supported, unambiguous peer. |
 | `memberAmbiguous`, `memberNotFound` | Reinspect the element and use the observed member identity. |
-| `dispatcherUnavailable`, `timeout`, `busy` | The application UI thread is busy. The attachment remains ready; allow the UI to respond and retry the selection. Dispatcher diagnostics include queue and execution times. A timeout cannot stop running code. |
+| `dispatcherUnavailable`, `timeout`, `busy` | The application UI thread is busy. Reads queue at background priority and are raised to normal priority after 250 ms, so a UI thread that keeps itself busy at normal priority can still be read within the 500 ms queue limit. The attachment remains ready; allow the UI to respond and retry the selection. Dispatcher diagnostics include queue and execution times and whether the request was raised. A timeout cannot stop running code. |
 | `limitExceeded` | Narrow the locator or request fewer paths. |
 | `cancelled` | Retry if the operation is still needed. |
 | `internalError` | Collect non-sensitive diagnostics and report the failure. |

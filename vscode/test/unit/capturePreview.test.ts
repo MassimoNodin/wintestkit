@@ -146,6 +146,22 @@ describe("pinned capture preview", () => {
     client.get("capture-image").emit("load");
     expect(client.get("capture-image").classes.has("magnified")).toBe(true);
   });
+  it("shows a window's single image and leaves the app context unavailable", () => {
+    const client = boot();
+    client.select("window");
+    client.respond({ image: crop, message: "Captured 1 minute ago. Not a live image." });
+    expect(client.get("capture-image").src).toBe(crop);
+    expect(client.get("capture-element").disabled).toBe(false);
+    expect(client.get("capture-context").disabled).toBe(true);
+  });
+  it("shows why a window or collection preview was not saved", () => {
+    const client = boot();
+    client.select("rows");
+    client.respond({ message: "Preview not saved: element contains a password field" });
+    expect(client.get("capture-message").textContent).toBe("Preview not saved: element contains a password field");
+    expect(client.get("capture-image").hidden).toBe(true);
+    expect(client.get("capture-open").disabled).toBe(true);
+  });
   it("can run in minimal navigation hosts without a preview", () => {
     expect(() => vm.runInNewContext(CAPTURE_PREVIEW_SCRIPT, { document: { getElementById: () => null } })).not.toThrow();
   });

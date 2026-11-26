@@ -104,7 +104,7 @@ namespace WinTestKit.Inspector.Agent.Mapping.Tests
                 var executor = new DispatcherExecutor();
                 using (var registry = new ObjectRegistry("session", executor))
                 {
-                    var root = await ui.Dispatcher.InvokeAsync(() => new StackPanel()).Task;
+                    var root = await ui.Dispatcher.InvokeAsync(() => new PasswordBox()).Task;
                     var handle = registry.Register(root, ui.Dispatcher, TypeInfoBuilder.Build(root.GetType()));
                     var locator = new Locator { Scope = new Scope { Kind = "object", Handle = handle }, Tree = "logical", DepthMode = "tree", Depth = 0, Limit = 1 };
                     var condition = new WaitCondition { Kind = "propertyEquals", Locator = locator, Path = new[] { new PathSegment { Kind = "property", Name = "Tag" } }, Value = new JsonStringNode("secret") };

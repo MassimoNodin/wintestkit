@@ -42,9 +42,15 @@ namespace WinTestKit.Inspector.Agent.Writes.Tests
             public static void Static() { }
             public string this[long index] { get => ""; set { } }
         }
-        public sealed class ProtectedTarget : DependencyObject
+        public sealed class ProtectedTarget : System.Windows.Controls.Button
         {
             [System.Diagnostics.Contracts.Pure] public string PureValue() => "secret";
+            protected override System.Windows.Automation.Peers.AutomationPeer OnCreateAutomationPeer() => new PasswordPeer(this);
+            private sealed class PasswordPeer : System.Windows.Automation.Peers.ButtonAutomationPeer
+            {
+                public PasswordPeer(ProtectedTarget owner) : base(owner) { }
+                protected override bool IsPasswordCore() => true;
+            }
         }
         public class Base { public string Text { get; set; } = ""; }
         public interface IText { string Text { get; set; } }
@@ -262,8 +268,8 @@ namespace WinTestKit.Inspector.Agent.Writes.Tests
         {
             using (var ui = new Ui())
             {
-                var element = await ui.Dispatcher.InvokeAsync(() => new FrameworkElement()).Task;
-                var key = ReflectionCatalog.Get(typeof(FrameworkElement)).Single(d => d.Name == "Width" && d.Property != null).Key;
+                var element = await ui.Dispatcher.InvokeAsync(() => new PasswordBox()).Task;
+                var key = ReflectionCatalog.Get(typeof(PasswordBox)).Single(d => d.Name == "Width" && d.Property != null).Key;
                 var engine = new WriteEngine(new DispatcherExecutor(), new WriteAllowlist(new[] { new PropertyAllowEntry(typeof(FrameworkElement).FullName!, "Width") }, Array.Empty<AllowEntry>()), Array.Empty<string>());
                 await ui.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle).Task;
                 var error = await Assert.ThrowsAsync<ProtocolException>(() => engine.ExecuteAsync(ui.Dispatcher, element, "setProperty", key, new JsonNode[] { new JsonNumberNode("12.5") }, DateTime.UtcNow.AddSeconds(60), 2000, CancellationToken.None));

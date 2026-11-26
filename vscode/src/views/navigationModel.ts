@@ -107,6 +107,7 @@ export function checkPresentation(status: CheckResult["status"] | undefined):
   | undefined {
   if (!status) return undefined;
   if (status === "found") return { icon: "pass", color: "testing.iconPassed" };
+  if (status === "not_responding") return { icon: "warning", color: "list.warningForeground" };
   if (status === "ambiguous")
     return { icon: "warning", color: "list.warningForeground" };
   return { icon: "error", color: "testing.iconFailed" };

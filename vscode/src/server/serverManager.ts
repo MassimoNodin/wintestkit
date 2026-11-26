@@ -308,6 +308,9 @@ export class ServerManager implements vscode.Disposable {
   async restart(project: Project): Promise<ServerConnection> {
     const entry = this.entries.get(project.root.toString());
     if (entry) {
+      if (entry.promise && !entry.connection) {
+        try { await entry.promise; } catch { /* Restart after a failed startup. */ }
+      }
       await this.stop(entry);
       entry.crashes = [];
       entry.blocked = false;

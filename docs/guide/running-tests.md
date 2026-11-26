@@ -253,22 +253,37 @@ saved results but cannot create frames for an older run.
 
 ## Check Element captures
 
-Click a declared single element's **Check exists** CodeLens in VS Code to save two images
-after a successful unique lookup: a clean element crop and its owning application window
-with the element outlined in red. Only that element is checked and captured. Test runs, flows,
+Click a declared element's, collection's or window's **Check exists** CodeLens in VS Code to save
+two images after a successful lookup: a clean crop and its owning application window with the
+object outlined in red. Only that object is checked and captured. Test runs, flows,
 discovery, Spy inspection, **Highlight**, and whole-page checks do not update these images.
-Hover over the element name in Python to view the saved crop and capture time, with links to
-open the full crop or app context. Viewing an image never takes another capture.
+Hover over the name in Python, or select it in the Page Tree, to view the saved crop and
+capture time, with links to open the full crop or app context. Viewing an image never takes
+another capture. When nothing was saved, the hover and the Page Tree panel say why
+(`Preview not saved: ...`).
+
+- **Windows:** the crop is the whole window and the context is the same window without an
+  outline, so the app context link is not offered. Password and sensitive controls are blacked
+  out in both images (a window is never saved when its controls cannot all be checked).
+- **Collections** (`Elements`): the first match is captured, with its window context outlined.
+  The manifest records the match count (`matchCount`) and the editor says the image is the
+  first of N matches. Item-index locators (`rows[2]`) are not captured.
 
 Capture is best-effort and never changes the check result. Password or sensitive targets,
 unavailable windows, and untrustworthy or partially visible bounds are skipped. Capture uses
 the owning window rather than a desktop screenshot, without bringing it forward. It may be
 unavailable for applications whose windows cannot be captured reliably.
 
-A bounded privacy scan also skips windows with recognized sensitive controls, or when the
-control tree cannot be checked completely within its limits. This is not a guarantee that all
-secrets can be detected in application pixels. Derived grid rows and cells do not replace the
-image belonging to the declared grid.
+A bounded privacy scan checks the target subtree and skips sensitive targets. Recognized password
+and sensitive controls are blacked out in the window image. For a window of an application with an
+attached .NET inspector, the inspector finds every WPF `PasswordBox` in the window and that is
+sufficient for the context image; the UI Automation scan for sensitive names then blacks out what
+it finds within its budget (4096 elements or 4 seconds) without dropping the context when it runs
+out. Without an inspector the whole-window UI Automation scan must finish within that budget, or
+the saved context is limited to the element crop. The latest skip or context limitation is logged
+and stored in `status.json`; the editor displays the reason when no capture exists. WPF elements
+without an automation peer can be captured using their inspector bounds. These checks cannot detect
+all secrets in application pixels. Derived grid rows and cells do not replace the declared grid image.
 
 The latest published pair and its manifest live under `object-previews/` in the project root,
 keyed by the declaring page member. This is separate from `wtk-report/`: clearing reports

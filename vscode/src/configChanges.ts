@@ -32,6 +32,7 @@ async function fingerprint(file: string): Promise<string> {
  */
 export class ConfigChanges {
   private readonly seen = new Map<string, string>();
+  private readonly priming = new Map<string, Promise<void>>();
 
   private static key(file: string): string {
     return path.resolve(file).toLowerCase();
@@ -39,18 +40,23 @@ export class ConfigChanges {
 
   /** Records what a project's config files contain now, unless they have been looked at already. */
   async prime(root: string): Promise<void> {
-    await Promise.all(
-      CONFIG_FILES.map(async (name) => {
-        const file = path.join(root, name);
-        const key = ConfigChanges.key(file);
-        if (!this.seen.has(key)) this.seen.set(key, await fingerprint(file));
-      }),
-    );
+    await Promise.all(CONFIG_FILES.map(async (name) => {
+      const file = path.join(root, name);
+      const key = ConfigChanges.key(file);
+      if (this.seen.has(key)) return;
+      let pending = this.priming.get(key);
+      if (!pending) {
+        pending = fingerprint(file).then((value) => { if (!this.seen.has(key)) this.seen.set(key, value); });
+        this.priming.set(key, pending);
+      }
+      try { await pending; } finally { if (this.priming.get(key) === pending) this.priming.delete(key); }
+    }));
   }
 
   /** Whether ``file`` now holds something different from when it was last looked at. */
   async changed(file: string): Promise<boolean> {
     const key = ConfigChanges.key(file);
+    await this.priming.get(key);
     const now = await fingerprint(file);
     const before = this.seen.get(key);
     this.seen.set(key, now);

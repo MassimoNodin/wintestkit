@@ -55,6 +55,10 @@ ERROR_CODES = frozenset(
         "authenticationFailed",
         "payloadMissing",
         "payloadMismatch",
+        "injectionFailed",
+        "injectionStalled",
+        "bootstrapRejected",
+        "agentNotStarted",
         "alreadyAttached",
         "notAttached",
         "attachFailed",
@@ -923,13 +927,15 @@ class Mapping(WireModel):
 class NodeIdentity(WireModel):
     x_name: str | None = None
     automation_id: str | None = None
+    sibling_index: int | None = None
 
     @classmethod
     def from_json(cls, value: object) -> NodeIdentity:
-        data = _obj(value, "", "xName automationId")
+        data = _obj(value, "", "xName automationId siblingIndex")
         return cls(
             _optional(data, "xName", lambda v: _str(v, 4096, empty=True)),
             _optional(data, "automationId", lambda v: _str(v, 4096, empty=True)),
+            _optional(data, "siblingIndex", _int),
         )
 
 

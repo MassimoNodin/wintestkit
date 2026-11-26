@@ -638,7 +638,9 @@ def test_picker_agent_resolution(managed_server: Any, monkeypatch: pytest.Monkey
 
     def hit_test(hwnd: int, x: int, y: int, **kwargs: Any) -> HitTestResult:
         calls.append((hwnd, kwargs["include_path"]))
-        return HitTestResult(REF, path if kwargs["include_path"] else None)
+        return HitTestResult(
+            REF, path if kwargs["include_path"] else None, {"type": "Run", "text": "Save"}
+        )
 
     client.hit_test = hit_test
     client.state_get = lambda *a, **kw: SimpleNamespace(
@@ -657,6 +659,7 @@ def test_picker_agent_resolution(managed_server: Any, monkeypatch: pytest.Monkey
     picked = server._spy_resolve(fallback, 10, 20, True, "visual")
     assert calls[-1] == (999, True)
     assert picked.node["identity"]["xName"] == "Peerless"
+    assert picked.extra["innerElement"] == {"type": "Run", "text": "Save"}
     monkeypatch.setattr(SpySession, "start", lambda self: None)
     assert request(server, output, "spy.start", {"tree": "visual"})["result"] is None
     assert server.spy is not None
@@ -674,6 +677,11 @@ def test_picker_agent_resolution(managed_server: Any, monkeypatch: pytest.Monkey
         {"nodeId": picked.node["nodeId"], "includeAncestors": True},
     )["result"]
     assert [ancestor["nodeId"] for ancestor in result["ancestors"]] == ["window"]
+    # A hit on RootVisual itself is represented by the existing UIA window row.
+    client.hit_test = lambda *a, **kw: HitTestResult(root, (path[0],))
+    root_pick = server._spy_resolve(fallback, 10, 20, True, "visual")
+    assert root_pick.node["nodeId"] == "window"
+    assert "window" in server._wpf_windows
     client.hit_test = lambda *a, **kw: None
     assert server._spy_resolve(fallback, 0, 0, False, "visual").extra == {"source": "uia"}
 
@@ -1059,6 +1067,13 @@ def test_wpf_coverage_definitions_and_suggestion(
         return peer
 
     monkeypatch.setattr(WpfElement, "as_uia", as_uia)
+    monkeypatch.setattr(
+        WpfElement, "state", lambda self: SimpleNamespace(window_handle=123, uia_runtime_id=(1, 2))
+    )
+    monkeypatch.setattr(
+        "wintestkit.backends.mapping.map_runtime_ids",
+        lambda groups: {(123, (1, 2)): peer} if mapped else {},
+    )
     monkeypatch.setattr(server, "_app", lambda *args: object())
 
     class FakeCoverage:
@@ -1924,3 +1939,162 @@ def test_sidebar_release_preserves_tree_handles(managed_server: Any) -> None:
     assert "result" in result
     assert any(call[0] == "children" and call[1][0] == "object" for call in client.calls)
     node.forget_release()
+
+
+@pytest.mark.parametrize("case", ["missing", "broken", "released", "failure"])
+def test_properties_repairs_managed_ancestors(
+    managed_server: Any, monkeypatch: pytest.MonkeyPatch, caplog: Any, case: str
+) -> None:
+    from wintestkit.backends.element import WpfElement
+    from wintestkit.server import _managed_node_id
+    from wintestkit.uia import element as uia_element
+    from wintestkit.uia import win32
+
+    server, output, client = managed_server
+    leaf, middle, upper, root = (
+        replace(REF, object_id=name) for name in ("leaf", "middle", "upper", "root")
+    )
+    ids = [_managed_node_id(ref) for ref in (leaf, middle, upper)]
+    server.nodes[ids[0]] = WpfElement(client, leaf, 42)
+    server._managed_clients["session"] = client
+    state = SimpleNamespace(
+        bounds=None,
+        window_handle=7,
+        uia_runtime_id=None,
+        enabled=True,
+        offscreen=False,
+        visible=True,
+        focused=False,
+    )
+    monkeypatch.setattr(WpfElement, "is_alive", lambda self: True)
+    monkeypatch.setattr(WpfElement, "as_live", lambda self: self)
+    monkeypatch.setattr(WpfElement, "state", lambda self: state)
+    monkeypatch.setattr(WpfElement, "_get_state", lambda self: state)
+    monkeypatch.setattr(server, "_wpf_control_text", lambda *args: None)
+    window = SimpleNamespace(process_id=42, framework_id="WPF")
+    monkeypatch.setattr(win32, "root_window", lambda hwnd: hwnd)
+    monkeypatch.setattr(uia_element, "from_handle", lambda hwnd: window)
+
+    def register(element: Any) -> dict[str, Any]:
+        server.nodes["window"] = element
+        return {"nodeId": "window", "info": {}, "hasChildren": True, "source": "wpf"}
+
+    monkeypatch.setattr(server, "_register", register)
+    parents = {"leaf": middle, "middle": upper, "upper": root, "root": None}
+
+    def parent(object_id: str, generation: int, *, deadline: float) -> Any:
+        assert deadline > time.monotonic()
+        if case == "failure":
+            raise RuntimeError("parent failed")
+        return parents[object_id]
+
+    client.parent = parent
+    if case != "missing":
+        server._wpf_parents[ids[0]] = ids[1]
+        server.nodes[ids[1]] = WpfElement(client, middle, 42)
+        if case == "released":
+            with server._node_lock:
+                server._release_tree_node(server.nodes.pop(ids[1]))
+            assert ("release", ["middle"]) in client.calls
+        if case in ("released", "failure"):
+            server._wpf_descriptions[ids[1]] = {
+                "nodeId": ids[1],
+                "info": {},
+                "hasChildren": True,
+                "source": "wpf",
+            }
+    result = request(
+        server, output, "inspect.properties", {"nodeId": ids[0], "includeAncestors": True}
+    )
+    assert "result" in result
+    ancestors = result["result"]["ancestors"]
+    if case == "failure":
+        assert [item["nodeId"] for item in ancestors] == [ids[1]]
+        assert ids[0] in caplog.text and "WARNING" in caplog.text
+    else:
+        assert [item["nodeId"] for item in ancestors] == ["window", ids[2], ids[1]]
+        assert isinstance(server.nodes[ids[1]], WpfElement)
+        assert server._wpf_parents[ids[2]] == "window"
+
+
+@pytest.mark.parametrize(
+    ("node_id", "expected"),
+    [
+        ("process:1234", {"reason": "windows of 1234"}),
+        ("process:abc", {"reason": "The process identity is invalid."}),
+    ],
+)
+def test_process_row_preview_is_answered_with_a_reason(
+    managed_server: Any, monkeypatch: pytest.MonkeyPatch, node_id: str, expected: dict[str, str]
+) -> None:
+    from wintestkit import live_preview
+
+    server, output, _ = managed_server
+    monkeypatch.setattr(
+        live_preview, "capture_process_preview", lambda pid: {"reason": f"windows of {pid}"}
+    )
+    assert request(server, output, "inspect.preview", {"nodeId": node_id})["result"] == expected
+
+
+def test_coverage_maps_many_wpf_nodes_in_one_call(
+    managed_server: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from wintestkit.backends.element import WpfElement
+    from wintestkit.uia.element import ElementInfo
+
+    server, output, client = managed_server
+    info = ElementInfo("id", "name", "Button", "Button", "WPF", 42, None, True, False, False, "1.2")
+    nodes = []
+    for i in range(43):
+        node = WpfElement(client, REF, 42)
+        node._state = SimpleNamespace(window_handle=123, uia_runtime_id=(1, i))
+        server.nodes[str(i)] = node
+        server.node_infos[str(i)] = info
+        nodes.append(node)
+    calls = []
+
+    def mapping(groups: Any) -> Any:
+        calls.append(groups)
+        return {
+            (123, (1, i)): SimpleNamespace(
+                info=lambda i=i: __import__("dataclasses").replace(info, runtime_id=f"1.{i}")
+            )
+            for i in range(43)
+        }
+
+    monkeypatch.setattr("wintestkit.backends.mapping.map_runtime_ids", mapping)
+    monkeypatch.setattr(server, "_app", lambda *args: object())
+    monkeypatch.setattr(
+        server,
+        "_coverage",
+        lambda: SimpleNamespace(
+            covered_nodes=lambda app, infos: {"covered": {key: {} for key in infos}, "pending": []}
+        ),
+    )
+    result = request(server, output, "inspect.coverage", {"nodeIds": [str(i) for i in range(43)]})[
+        "result"
+    ]
+    assert len(calls) == 1 and len(calls[0][123]) == 43
+    assert len(result["covered"]) == 43
+    assert all(node.cached_uia is not None for node in nodes)
+    for node in nodes:
+        node.forget_release()
+
+
+def test_identify_reads_a_listed_window_process_without_uia(
+    managed_server: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from types import SimpleNamespace
+
+    from wintestkit.uia import win32
+
+    server, output, _ = managed_server
+    server.node_infos["window"] = SimpleNamespace(process_id=42, native_window_handle=77)
+
+    def blocked(node_id: str) -> Any:
+        raise AssertionError("a busy UI thread blocks live UIA reads")
+
+    monkeypatch.setattr(server, "_node", blocked)
+    monkeypatch.setattr(win32, "window_pid", lambda hwnd: 42 if hwnd == 77 else 0)
+    result = request(server, output, "inspect.managed.identify", {"nodeId": "window"})
+    assert result["result"]["process"]["pid"] == 42

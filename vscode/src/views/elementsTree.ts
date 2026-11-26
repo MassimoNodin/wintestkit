@@ -160,7 +160,7 @@ export class ElementsTree implements vscode.Disposable {
       if (data.type === "capturePreview" || data.type === "openCapture") {
         if (typeof data.id !== "string" || !this.previews) return;
         const node = findNode(this.sectionNodes(), data.id);
-        if (node?.kind !== "element" || !node.file || !node.qualname) return;
+        if (!node?.file || !node.qualname || !["element", "elements", "window"].includes(node.kind)) return;
         if (data.type === "capturePreview") {
           if (!Number.isSafeInteger(data.requestId)) return;
           const view = this.view;
@@ -335,7 +335,7 @@ export class ElementsTree implements vscode.Disposable {
     const message = {
       type: "render" as const,
       section: this.session.section,
-      captureSelection: selected?.kind === "element" && selected.qualname
+      captureSelection: selected?.qualname && ["element", "elements", "window"].includes(selected.kind)
         ? { id: selected.id, qualname: selected.qualname }
         : undefined,
       html: renderBody({

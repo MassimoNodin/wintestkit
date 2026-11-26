@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -11,6 +12,21 @@ from wintestkit.inspector.models import ProcessIdentity
 
 _POLICY_ERRORS = {225, 577, 1260, 1655}
 _POLICY_EXITS = {0xC0000428, 0xC0000603, 0xC0000361, 1260, 577}
+
+
+def log_tail() -> str:
+    """Read only the end of the launcher log; diagnostics must never mask failure."""
+    try:
+        root = os.environ.get("APPDATA")
+        if not root:
+            return ""
+        with (Path(root) / "Snoop" / "SnoopLog.txt").open("rb") as stream:
+            stream.seek(0, 2)
+            stream.seek(max(0, stream.tell() - 65536))
+            lines = stream.read().decode("utf-8", errors="replace").splitlines()
+        return next((line.strip()[:300] for line in reversed(lines) if line.strip()), "")
+    except OSError:
+        return ""
 
 
 def launch(

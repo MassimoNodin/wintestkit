@@ -9,3 +9,5 @@ The bundle includes version and interpreter information, compatibility policy, s
 User name, computer name, domain, home path and email addresses are replaced in collected text; settings whose keys resemble passwords, tokens, secrets, keys or credentials are also redacted. Counts and collection errors appear in the README and manifest. Automatic redaction cannot identify every sensitive value: inspect the contents, including application names and paths, before sharing. Edits made during review are included as written.
 
 A maintainer can unzip the bundle and point a coding agent at `README.md`. Start with the last failure, log errors and doctor checks.
+
+The optional **Inspector injector log** is selected by default. It includes `%APPDATA%\Snoop\SnoopLog.txt` as `logs/snoop-injector.log`, redacted and capped at 5 MB. If absent, the summary records it as not present.

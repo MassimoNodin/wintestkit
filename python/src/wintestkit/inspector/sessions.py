@@ -279,6 +279,8 @@ class SessionRegistry:
             writes_allow=self._writes_allow,
             **({"spy_invoke": True} if spy_invoke else {}),
         )
+        inject_started = time.monotonic()
+        inject_budget = max(1, round(deadline - inject_started))
         process = None
         client = None
         pipe = None
@@ -296,9 +298,17 @@ class SessionRegistry:
             process = launcher.launch(executable, agent, identity, settings.path)
 
             def check() -> None:
-                _remaining(deadline, entry.cancel)
                 assert process is not None
                 launcher.policy_failure(process, executable)
+                result = process.poll()
+                if result is not None and result != 0:
+                    tail = launcher.log_tail()
+                    detail = f": {tail}" if tail else ""
+                    raise InspectorUnavailableError(
+                        f"The inspector injector failed (exit code {result}){detail}",
+                        code="injectionFailed",
+                    )
+                _remaining(deadline, entry.cancel)
 
             pipe = WindowsPipe.connect(settings.pipe_name, identity, deadline, check=check)
             client = InspectorClient.authenticate(
@@ -350,6 +360,41 @@ class SessionRegistry:
                     "A different inspector build is already loaded; "
                     "restart the application to load the matching inspector",
                     code="agentVersionMismatch",
+                ) from error
+            if (
+                isinstance(error, InspectorError)
+                and error.code == "timeout"
+                and pipe is None
+                and process is not None
+            ):
+                result = process.poll()
+                if result is not None and result != 0:
+                    tail = launcher.log_tail()
+                    raise InspectorUnavailableError(
+                        f"The inspector injector failed (exit code {result})"
+                        + (f": {tail}" if tail else ""),
+                        code="injectionFailed",
+                    ) from error
+                if result is None:
+                    raise InspectorUnavailableError(
+                        f"Injecting the inspector did not finish within {inject_budget} s. "
+                        "The application may be blocked, or security software may be holding "
+                        "the injection.",
+                        code="injectionStalled",
+                    ) from error
+                try:
+                    reason = (
+                        Path(str(settings.path) + ".error")
+                        .read_text(encoding="utf-8")[:300]
+                        .strip()
+                    )
+                except (OSError, UnicodeError):
+                    reason = ""
+                if reason:
+                    raise InspectorUnavailableError(reason, code="bootstrapRejected") from error
+                raise InspectorUnavailableError(
+                    "The inspector was injected but did not open its connection.",
+                    code="agentNotStarted",
                 ) from error
             raise
         finally:

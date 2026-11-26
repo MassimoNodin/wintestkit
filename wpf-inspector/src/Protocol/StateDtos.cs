@@ -37,10 +37,16 @@ namespace WinTestKit.Inspector.Protocol
         public JsonObjectNode ToJson() { var o = new JsonObjectNode(); o.Add("nativeWindowHandle",JsonNumberNode.From(NativeWindowHandle)); o.Add("point",Point.ToJson()); o.Add("timeoutMs",JsonNumberNode.From(TimeoutMs)); if (IncludePath) o.Add("includePath",new JsonBoolNode(true)); FromJson(o); return o; }
         public static HitTestParams FromJson(JsonNode n) { var o = DtoHelpers.Object(n,"nativeWindowHandle","point","timeoutMs","includePath"); return new HitTestParams { NativeWindowHandle = DtoHelpers.Integer(o.Get("nativeWindowHandle"),long.MinValue), Point = PointDto.FromJson(o.Get("point")), TimeoutMs = (int)DtoHelpers.Integer(o.Get("timeoutMs"),1,2000), IncludePath = o.TryGet("includePath",out var p) && DtoHelpers.Boolean(p) }; }
     }
+    public sealed class InnerElementDto
+    {
+        public string Type { get; set; } = ""; public string? Text { get; set; }
+        public JsonObjectNode ToJson() { var o = new JsonObjectNode(); DtoHelpers.Add(o,"type",Type); DtoHelpers.Add(o,"text",Text); FromJson(o); return o; }
+        public static InnerElementDto FromJson(JsonNode n) { var o = DtoHelpers.Object(n,"type","text"); return new InnerElementDto { Type = DtoHelpers.Required(o,"type",1024), Text = DtoHelpers.Optional(o,"text",128,true) }; }
+    }
     public sealed class HitTestResult
     {
-        public ObjectRef Handle { get; set; } = new ObjectRef(); public IReadOnlyList<ManagedNodeDto>? Path { get; set; }
-        public JsonObjectNode ToJson() { var o = new JsonObjectNode(); o.Add("handle",Handle.ToJson()); if (Path != null) { var a = new JsonArrayNode(); foreach (var node in Path) a.Add(node.ToJson()); o.Add("path",a); } FromJson(o); return o; }
-        public static HitTestResult FromJson(JsonNode n) { var o = DtoHelpers.Object(n,"handle","path"); var x = new HitTestResult { Handle = ObjectRef.FromJson(o.Get("handle")) }; if (o.TryGet("path",out var p)) { var a = new List<ManagedNodeDto>(); foreach (var node in DtoHelpers.Array(p,256).Items) a.Add(ManagedNodeDto.FromJson(node)); x.Path = a; } return x; }
+        public ObjectRef Handle { get; set; } = new ObjectRef(); public IReadOnlyList<ManagedNodeDto>? Path { get; set; } public InnerElementDto? InnerElement { get; set; }
+        public JsonObjectNode ToJson() { var o = new JsonObjectNode(); o.Add("handle",Handle.ToJson()); if (Path != null) { var a = new JsonArrayNode(); foreach (var node in Path) a.Add(node.ToJson()); o.Add("path",a); } if (InnerElement != null) o.Add("innerElement",InnerElement.ToJson()); FromJson(o); return o; }
+        public static HitTestResult FromJson(JsonNode n) { var o = DtoHelpers.Object(n,"handle","path","innerElement"); var x = new HitTestResult { Handle = ObjectRef.FromJson(o.Get("handle")) }; if (o.TryGet("path",out var p)) { var a = new List<ManagedNodeDto>(); foreach (var node in DtoHelpers.Array(p,256).Items) a.Add(ManagedNodeDto.FromJson(node)); x.Path = a; } if (o.TryGet("innerElement",out var inner)) x.InnerElement = InnerElementDto.FromJson(inner); return x; }
     }
 }

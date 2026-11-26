@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import * as path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { definitionPreviewKey, livePreviewImages, readObjectPreview, validatePreviewWebp } from "../../src/spy/objectPreviews";
+import { definitionPreviewKey, livePreviewImages, readObjectPreview, readObjectPreviewStatus, validatePreviewWebp } from "../../src/spy/objectPreviews";
 
 const definitionId = "pages/Login.py::LoginPage.submit";
 const image = Buffer.from("UklGRhoAAABXRUJQVlA4TA0AAAAvAAAAEAcQERGIiP4HAA==", "base64");
@@ -50,6 +50,18 @@ describe("saved definition object previews", () => {
     const url = "data:image/webp;base64," + image.toString("base64");
     expect(preview).toMatchObject({ definitionId, capturedAt: "2026-10-20T12:34:56.000Z", width: 1, height: 1,
       cropDataUrl: url, windowDataUrl: url });
+  });
+
+  it("reads a collection's match count and leaves it out for single objects", async () => {
+    expect((await readObjectPreview((await fixture({ matchCount: 7 })).root, definitionId))?.matchCount).toBe(7);
+    const single = await readObjectPreview((await fixture()).root, definitionId);
+    expect(single).toBeDefined();
+    expect(single && "matchCount" in single).toBe(false);
+  });
+
+  it.each([0, -1, 1.5, "3", null])("rejects an invalid match count %j", async (matchCount) => {
+    const { root } = await fixture({ matchCount });
+    await expect(readObjectPreview(root, definitionId)).rejects.toThrow("Invalid saved preview manifest");
   });
 
   it("rejects a saved window image that is not a still WebP", async () => {
@@ -132,5 +144,44 @@ describe("live preview results", () => {
     { element: entry, window: { data: entry.data, width: 1.5, height: 1 } },
   ])("rejects a malformed result %#", (value) => {
     expect(typeof livePreviewImages(value)).toBe("string");
+  });
+});
+
+
+describe("saved preview status", () => {
+  const valid = { schemaVersion: 1, definitionId, reason: "capture failed", at: "2026-10-20T12:34:56Z" };
+  it("reads a valid status", async () => {
+    const { root, directory } = await fixture();
+    await writeFile(path.join(directory, "status.json"), JSON.stringify(valid));
+    expect(await readObjectPreviewStatus(root, definitionId)).toBe(valid.reason);
+  });
+  it.each([{ schemaVersion: 2 }, { definitionId: "pages/Other.py::Other.field" }])("ignores invalid status %j", async (override) => {
+    const { root, directory } = await fixture();
+    await writeFile(path.join(directory, "status.json"), JSON.stringify({ ...valid, ...override }));
+    expect(await readObjectPreviewStatus(root, definitionId)).toBeUndefined();
+  });
+  it("ignores oversized status", async () => {
+    const { root, directory } = await fixture();
+    await writeFile(path.join(directory, "status.json"), " ".repeat(65537));
+    expect(await readObjectPreviewStatus(root, definitionId)).toBeUndefined();
+  });
+  it("ignores a linked status file outside the project", async () => {
+    const { root, directory } = await fixture();
+    const outside = await mkdtemp(path.join(tmpdir(), "wtk-outside-"));
+    temporary.push(outside);
+    const file = path.join(outside, "status.json");
+    await writeFile(file, JSON.stringify(valid));
+    try { await symlink(file, path.join(directory, "status.json"), "file"); }
+    catch (error) { if ((error as NodeJS.ErrnoException).code === "EPERM") return; throw error; }
+    expect(await readObjectPreviewStatus(root, definitionId)).toBeUndefined();
+  });
+  it("ignores a linked preview directory outside the project", async () => {
+    const { root, directory } = await fixture();
+    const outside = await mkdtemp(path.join(tmpdir(), "wtk-outside-"));
+    temporary.push(outside);
+    await writeFile(path.join(outside, "status.json"), JSON.stringify(valid));
+    await rm(directory, { recursive: true });
+    await symlink(outside, directory, "junction");
+    expect(await readObjectPreviewStatus(root, definitionId)).toBeUndefined();
   });
 });

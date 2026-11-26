@@ -1,9 +1,9 @@
 ﻿import { describe, expect, it } from "vitest";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import { inflateRawSync } from "node:zlib";
-import { collect } from "../../src/diagnostics/collect";
+import { collect, injectorLogPart } from "../../src/diagnostics/collect";
 import { LIMIT, redact, redactSecrets, truncate } from "../../src/diagnostics/redact";
 import { crc32, zip } from "../../src/diagnostics/zip";
 
@@ -32,6 +32,25 @@ describe("diagnostics", () => {
       expect(manifest.files[0].sha256).toMatch(/^[a-f0-9]{64}$/); expect(manifest.failures.broken).toContain('<computer>'); expect(manifest.summary.interpreter).toBe('<home>\\python.exe');
       expect(await readFile(path.join(dir, 'logs/a.log'), 'utf8')).toBe('<user>');
     } finally { await rm(dir, { recursive: true, force: true }); }
+  });
+  it("collects and redacts the injector log, and records a missing log", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "wtk-injector-"));
+    const output = await mkdtemp(path.join(os.tmpdir(), "wtk-output-"));
+    try {
+      const summary: Record<string, unknown> = {};
+      await collect(output, summary, "", [injectorLogPart(root, summary)], ids);
+      const missing = JSON.parse(await readFile(path.join(output, "manifest.json"), "utf8"));
+      expect(missing.summary.inspectorInjectorLog).toBe("not present");
+      expect(missing.failures).toEqual({});
+      await mkdir(path.join(root, "Snoop"));
+      await writeFile(path.join(root, "Snoop", "SnoopLog.txt"), "Alice\n" + "x\n".repeat(LIMIT / 2));
+      await collect(output, {}, "", [injectorLogPart(root, {})], ids);
+      const log = await readFile(path.join(output, "logs", "snoop-injector.log"));
+      expect(log.length).toBeLessThanOrEqual(LIMIT);
+      expect(log.toString()).toMatch(/^\[Truncated/);
+      const manifest = JSON.parse(await readFile(path.join(output, "manifest.json"), "utf8"));
+      expect(manifest.files[0].path).toBe("logs/snoop-injector.log");
+    } finally { await rm(root, { recursive: true, force: true }); await rm(output, { recursive: true, force: true }); }
   });
   it("writes ZIP entries readable from the central directory", () => {
     const archive = zip([{ name: 'a.txt', data: Buffer.from('hello') }, { name: 'logs/é.txt', data: Buffer.from('world') }]);

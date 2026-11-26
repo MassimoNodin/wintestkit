@@ -202,6 +202,11 @@
         "icon": "$(refresh)"
       },
       {
+        "command": "wintestkit.spy.resetBasicProperties",
+        "title": "Reset Spy Basic View",
+        "category": "WinTestKit"
+      },
+      {
         "command": "wintestkit.spy.revealRelocation",
         "title": "Reveal Relocated Element in Spy",
         "category": "WinTestKit"
@@ -389,17 +394,36 @@
           "default": false,
           "description": "Show only the class check lens. Element highlight and check lenses are hidden; Page Tree controls remain available."
         },
-        "wintestkit.spy.shownProperties": {
+        "wintestkit.spy.basicProperties": {
           "type": "array",
-          "default": [],
+          "default": [
+            "Standard/Enabled",
+            "Standard/Height",
+            "Standard/Name",
+            "Standard/Parent",
+            "Standard/Visible",
+            "Standard/Width",
+            ".NET/ClrClassName",
+            ".NET/ClrFullClassName",
+            ".NET/WPFControlName",
+            ".NET/WinFormsControlName",
+            ".NET/WPFControlOrdinalNo",
+            ".NET/WPFControlText",
+            ".NET/WinFormsControlText",
+            "Win32 Window/Window Class",
+            "Win32 Window/Control ID",
+            "Win32 Window/Text",
+            "Win32 Window/Handle",
+            "Win32 Window/Styles"
+          ],
           "uniqueItems": true,
-          "maxItems": 64,
+          "maxItems": 256,
           "scope": "application",
           "items": {
             "type": "string",
-            "pattern": "^[A-Za-z][A-Za-z0-9]{0,63}$"
+            "pattern": "^(Standard|Extended|\\.NET|Win32 Window|UI Automation)/.{1,200}$"
           },
-          "markdownDescription": "UI Automation properties Spy shows for every selected object, in addition to the built-in ones, in the order listed. Add one with the pin button beside a property under **All properties**. This is a user setting: it is kept with your VS Code settings and never in a project or its git repository."
+          "markdownDescription": "The rows of the Spy Properties view's Basic view, as `Group/Row name` keys such as `Standard/Enabled`. Pin or unpin a row with the pin beside its name in the Properties view, or use **Reset Basic view** to restore this list. This is a user setting: it is kept with your VS Code settings and never in a project or its git repository."
         },
         "wintestkit.spy.suppressGetterWarning": {
           "type": "boolean",

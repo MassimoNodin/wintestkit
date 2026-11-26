@@ -82,6 +82,22 @@ describe("managed Spy host", () => {
     expect(inspector.state).toBe("ready");
     expect(log.mock.calls[0][0]).toContain("events withheld for the selected object");
   });
+  it("names the failing request and the process in the log instead of calling it an attach failure", async () => {
+    const process = { pid: 87020, creationTimeUtc: "request-log" };
+    const request = vi.fn(async (method: string) => {
+      if (method.endsWith("children")) throw { message: "The page token is not valid.", data: { code: "invalidPageToken" } };
+      return method.endsWith("identify") ? { ...facts, process } : { ...session, process };
+    });
+    const log = vi.fn(), inspector = new ManagedInspector({ request } as unknown as JsonRpcClient, initialized(true), undefined, log); mock.trusted = true; mock.warning.mockResolvedValue("Attach");
+    await inspector.select("n"); await inspector.attach();
+    await inspector.children({ objectId: "object", generation: 4, pageToken: "old" } as never);
+    expect(log).toHaveBeenCalledOnce();
+    const line = String(log.mock.calls[0][0]);
+    expect(line).toContain("children request failed for C:/App.exe (PID 87020)");
+    expect(line).toContain("invalidPageToken");
+    expect(line).not.toContain("attach failed");
+    expect(line).not.toContain("unknown");
+  });
   it("keeps the attachment ready when a Methods cursor expires", async () => {
     const process = { pid: 87011, creationTimeUtc: "expired-methods" };
     const request = vi.fn(async (method: string) => {
@@ -458,5 +474,20 @@ describe("managed node ids", () => {
     expect(wpfNodeSession("winforms:not json")).toBeUndefined();
     expect(wpfNodeSession("42.1234")).toBeUndefined();
     expect([isManagedSource("wpf"), isManagedSource("winforms"), isManagedSource("uia"), isManagedSource(undefined)]).toEqual([true, true, false, false]);
+  });
+  it("stays busy after a read whose getters all timed out and recovers on the first value", async () => {
+    const timedOut = { values: [{ path: [], value: { status: "timeout", kind: "unavailable" } }], readId: "r" };
+    const answered = { values: [{ path: [], value: { status: "ok", kind: "string", scalar: "x" } }], readId: "r" };
+    let reply: unknown = timedOut;
+    const request = vi.fn(async () => reply);
+    const inspector = new ManagedInspector({ request } as unknown as JsonRpcClient, initialized(true));
+    const state = inspector as unknown as { session: unknown; nodeId: string; failure?: { code: string }; state: string };
+    state.session = session; state.nodeId = "n"; state.failure = { code: "busy" }; state.state = "busy (retrying)";
+    const params = { objectId: "o", generation: 1, paths: [[{ kind: "property", name: "A" }]] } as unknown as Parameters<ManagedInspector["spyRead"]>[0];
+    await inspector.spyRead(params, true);
+    expect([inspector.state, inspector.failure?.code]).toEqual(["busy (retrying)", "busy"]);
+    reply = answered;
+    await inspector.spyRead(params, true);
+    expect([inspector.state, inspector.failure]).toEqual(["ready", undefined]);
   });
 });

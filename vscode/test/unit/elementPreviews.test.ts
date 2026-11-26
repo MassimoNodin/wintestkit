@@ -7,6 +7,8 @@ const mocks = vi.hoisted(() => ({
   register: vi.fn(),
   definitions: vi.fn(),
   read: vi.fn(),
+  status: vi.fn(),
+  info: vi.fn(),
   show: vi.fn(),
   dispose: vi.fn(),
   error: vi.fn(),
@@ -25,7 +27,7 @@ vi.mock("vscode", () => ({
     },
   },
   workspace: { get isTrusted() { return mocks.trusted; } },
-  window: { showErrorMessage: mocks.error },
+  window: { showErrorMessage: mocks.error, showInformationMessage: mocks.info },
   Uri: { file: (fsPath: string) => ({ fsPath }) },
   MarkdownString: class {
     value = "";
@@ -36,7 +38,7 @@ vi.mock("vscode", () => ({
     constructor(public contents: unknown, public range: unknown) {}
   },
 }));
-vi.mock("../../src/spy/objectPreviews", () => ({ readObjectPreview: mocks.read }));
+vi.mock("../../src/spy/objectPreviews", () => ({ readObjectPreview: mocks.read, readObjectPreviewStatus: mocks.status }));
 vi.mock("../../src/spy/previewViewer", () => ({
   PreviewViewer: class {
     show = mocks.show;
@@ -108,11 +110,18 @@ describe("element capture hovers", () => {
     mocks.read.mockRejectedValueOnce(new Error("Invalid manifest"));
     expect(await provider.treeCapture(file, "Login.submit")).toMatchObject({ message: expect.stringContaining("Saved capture unavailable") });
   });
-  it.each(["disabled", "untrusted", "unknown", "window"])("does not read a tree capture when %s", async (state) => {
+  it("shows the saved reason in the tree, hover and open command", async () => {
+    mocks.read.mockResolvedValue(undefined);
+    mocks.status.mockResolvedValue("element has no on-screen rectangle");
+    expect((await provider.treeCapture(file, "Login.submit"))?.message).toBe("Preview not saved: element has no on-screen rectangle");
+    expect(content(await hover()).value).toContain("Preview not saved: element has no on-screen rectangle");
+    await mocks.commands.get("wintestkit.openElementCapture")?.({ file, qualname: "Login.submit", view: "element" });
+    expect(mocks.info).toHaveBeenCalledWith("Preview not saved: element has no on-screen rectangle");
+  });
+  it.each(["disabled", "untrusted", "unknown"])("does not read a tree capture when %s", async (state) => {
     if (state === "disabled") mocks.enabled = false;
     if (state === "untrusted") mocks.trusted = false;
     if (state === "unknown") mocks.byName.mockReturnValue(undefined);
-    if (state === "window") mocks.byName.mockReturnValue({ ...located, element: { ...located.element, kind: "window" } });
     expect(await provider.treeCapture(file, "Login.submit")).toBeUndefined();
     expect(mocks.read).not.toHaveBeenCalled();
   });
@@ -178,10 +187,59 @@ describe("element capture hovers", () => {
     expect(content(await hover()).value).toContain("Saved capture unavailable");
     expect(mocks.error).toHaveBeenCalled();
   });
-  it.each(["window", "elements"])("does not advertise captures for %s definitions", async (kind) => {
-    mocks.nameAt.mockReturnValue({ ...located, element: { ...located.element, kind } });
-    expect(await hover()).toBeUndefined();
-    expect(mocks.read).not.toHaveBeenCalled();
+  const locate = (kind: string) => {
+    const target = { ...located, element: { ...located.element, kind } };
+    mocks.nameAt.mockReturnValue(target);
+    mocks.byName.mockReturnValue(target);
+  };
+  const openLinks = (value: string) => [...value.matchAll(/\[([^\]]+)\]\(command:wintestkit\.openElementCapture\?([^)]+)\)/g)]
+    .map((match) => ({ label: match[1], view: (JSON.parse(decodeURIComponent(match[2])) as { view: string }[])[0].view }));
+  it("offers only the whole image for a window definition", async () => {
+    locate("window");
+    const value = content(await hover()).value;
+    expect(value).toContain(preview.cropDataUrl);
+    expect(openLinks(value)).toEqual([{ label: "Open full image", view: "element" }]);
+    expect(value).not.toContain("Show app context");
+    expect(await provider.treeCapture(file, "Login.submit")).toEqual({
+      qualname: "Login.submit", image: preview.cropDataUrl, width: 640, height: 200,
+      contextImage: undefined,
+      message: "Captured by Check Element 25 minutes ago. Not a live image.",
+    });
+  });
+  it("opens a window's saved image whichever view is asked for", async () => {
+    locate("window");
+    for (const view of ["element", "window"])
+      await mocks.commands.get("wintestkit.openElementCapture")?.({ file, qualname: "Login.submit", view });
+    expect(mocks.show.mock.calls).toEqual([["element", preview.cropDataUrl], ["element", preview.cropDataUrl]]);
+  });
+  it("keeps the app context for elements and collections", async () => {
+    for (const kind of ["element", "elements"]) {
+      locate(kind);
+      expect(openLinks(content(await hover()).value).map((link) => link.view)).toEqual(["element", "window"]);
+      expect((await provider.treeCapture(file, "Login.submit"))?.contextImage).toBe(preview.windowDataUrl);
+    }
+    mocks.show.mockClear();
+    await mocks.commands.get("wintestkit.openElementCapture")?.({ file, qualname: "Login.submit", view: "window" });
+    expect(mocks.show).toHaveBeenCalledWith("window", preview.windowDataUrl);
+  });
+  it.each([[3, "First of 3 matches."], [1, "First of 1 match."]])("says a collection capture is its first of %i matches", async (matchCount, text) => {
+    locate("elements");
+    mocks.read.mockResolvedValue({ ...preview, matchCount });
+    expect(content(await hover()).value).toContain(text);
+    expect((await provider.treeCapture(file, "Login.submit"))?.message).toBe("Captured by Check Element 25 minutes ago. " + text + " Not a live image.");
+  });
+  it("does not mention a match count for a single element", async () => {
+    mocks.read.mockResolvedValue({ ...preview, matchCount: 3 });
+    expect((await provider.treeCapture(file, "Login.submit"))?.message).not.toContain("match");
+  });
+  it.each(["window", "elements"])("shows the saved reason for %s definitions", async (kind) => {
+    locate(kind);
+    mocks.read.mockResolvedValue(undefined);
+    mocks.status.mockResolvedValue("capture failed");
+    expect(content(await hover()).value).toContain("Preview not saved: capture failed");
+    expect((await provider.treeCapture(file, "Login.submit"))?.message).toBe("Preview not saved: capture failed");
+    await mocks.commands.get("wintestkit.openElementCapture")?.({ file, qualname: "Login.submit", view: "element" });
+    expect(mocks.info).toHaveBeenCalledWith("Preview not saved: capture failed");
   });
   it("resolves an element reference through the Python definition provider", async () => {
     mocks.nameAt.mockReturnValueOnce(undefined).mockReturnValueOnce(located);

@@ -57,6 +57,7 @@ namespace WinTestKit.Inspector.Agent.Inspection.Members
             return false;
         }
 
+        /// <summary>Only password fields are protected: a PasswordBox, its template parts, an element whose own peer reports IsPassword, or a WinForms password text box.</summary>
         internal static bool IsProtectedIdentity(object target)
         {
             if (WinFormsNative.IsWinFormsObject(target)) return WinFormsNative.IsPasswordText(target);
@@ -64,15 +65,30 @@ namespace WinTestKit.Inspector.Agent.Inspection.Members
             try
             {
                 dependency.VerifyAccess();
+                if (IsPasswordBoxOrTemplatePart(dependency)) return true;
                 AutomationPeer? peer = dependency is UIElement element ?
                     UIElementAutomationPeer.FromElement(element) ?? UIElementAutomationPeer.CreatePeerForElement(element) :
                     dependency is ContentElement contentElement ?
                     ContentElementAutomationPeer.FromElement(contentElement) ?? ContentElementAutomationPeer.CreatePeerForElement(contentElement) : null;
                 bool owned = peer is UIElementAutomationPeer ui && ReferenceEquals(ui.Owner, dependency) ||
                     peer is ContentElementAutomationPeer content && ReferenceEquals(content.Owner, dependency);
-                return !owned || peer!.IsPassword();
+                return owned && peer!.IsPassword();
             }
             catch (Exception) { return true; }
         }
-    }
+
+        private static bool IsPasswordBoxOrTemplatePart(DependencyObject dependency)
+        {
+            DependencyObject? current = dependency;
+            for (int depth = 0; current != null && depth < 256; depth++)
+            {
+                if (current is PasswordBox) return true;
+                DependencyObject? templated = current is FrameworkElement frameworkElement ? frameworkElement.TemplatedParent as DependencyObject :
+                    current is FrameworkContentElement contentElement ? contentElement.TemplatedParent as DependencyObject : null;
+                if (templated != null && IsPasswordBoxOrTemplatePart(templated)) return true;
+                current = current is System.Windows.Media.Visual || current is System.Windows.Media.Media3D.Visual3D ? System.Windows.Media.VisualTreeHelper.GetParent(current) :
+                    current is ContentElement content ? ContentOperations.GetParent(content) ?? (content as FrameworkContentElement)?.Parent : null;
+            }
+            return false;
+        }    }
 }

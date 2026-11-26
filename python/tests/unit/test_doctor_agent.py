@@ -65,7 +65,7 @@ def test_ok_and_closed(setup_agent):
         ("unsupportedTarget", "x64 Python"),
         ("agentVersionMismatch", "version"),
         ("payloadMismatch", "payload"),
-        ("timeout", "readiness"),
+        ("timeout", "UI thread is busy"),
         ("attachFailed", "permissions"),
     ],
 )

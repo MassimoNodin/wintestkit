@@ -27,6 +27,16 @@ describe("config change detection", () => {
     expect(await changes.changed(file)).toBe(false);
   });
 
+  it("waits for priming when a watcher event arrives during startup", async () => {
+    const changes = new ConfigChanges();
+    const initial = changes.prime(root);
+    const event = changes.changed(file);
+    await initial;
+    expect(await event).toBe(false);
+    await writeFile(file, "timeout: 20\n");
+    expect(await changes.changed(file)).toBe(true);
+  });
+
   it("reports a real edit once, then settles", async () => {
     const changes = new ConfigChanges();
     await changes.prime(root);

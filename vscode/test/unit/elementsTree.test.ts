@@ -479,6 +479,30 @@ describe("navigation view", () => {
     expect(mocks.posted.at(-1)).toMatchObject({ captureSelection: undefined });
     expect(mocks.execute).not.toHaveBeenCalled();
   });
+  it.each(["window", "elements"] as const)("resolves capture requests for a %s definition", async (kind) => {
+    const discovery = structuredClone(result);
+    discovery.pages[0].elements.splice(0, discovery.pages[0].elements.length, {
+      id: "Main.thing", name: "thing", qualname: "Main.thing", kind,
+      range, nameRange: range, locator: { name: "thing" }, dynamic: false,
+    });
+    const capture = { qualname: "Main.thing", message: "Preview not saved: element has no on-screen rectangle" };
+    const treeCapture = vi.fn(async () => capture);
+    const { tree } = createTree(hostFor(), { result: discovery, previews: { treeCapture } });
+    resolve(tree);
+    const node = tree.getChildren()[0].children[0];
+    tree.handleMessage({ type: "ready" });
+    tree.handleMessage({ type: "open", id: node.id });
+    expect(mocks.posted.at(-1)).toMatchObject({ captureSelection: { id: node.id, qualname: "Main.thing" } });
+    tree.handleMessage({ type: "capturePreview", id: node.id, requestId: 5 });
+    await Promise.resolve();
+    expect(treeCapture).toHaveBeenCalledWith("/project/pages/main.py", "Main.thing");
+    expect(mocks.posted.at(-1)).toEqual({ type: "capturePreview", id: node.id, requestId: 5, capture });
+    mocks.execute.mockResolvedValue(undefined);
+    tree.handleMessage({ type: "openCapture", id: node.id, view: "element" });
+    expect(mocks.execute).toHaveBeenCalledWith("wintestkit.openElementCapture", {
+      file: "/project/pages/main.py", qualname: "Main.thing", view: "element",
+    });
+  });
   it("does not publish capture results after the tree is disposed", async () => {
     const discovery = structuredClone(result);
     discovery.pages[0].elements.push({

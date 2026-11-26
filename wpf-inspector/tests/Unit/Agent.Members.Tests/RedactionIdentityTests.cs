@@ -14,7 +14,7 @@ namespace WinTestKit.Inspector.Agent.Members.Tests
 {
     public sealed class RedactionIdentityTests
     {
-        private sealed class ProtectedControl : Button
+        private class ProtectedControl : Button
         {
             public bool Protected = true;
             public bool ThrowOnPassword;
@@ -63,12 +63,12 @@ namespace WinTestKit.Inspector.Agent.Members.Tests
             });
         }
 
-        private sealed class ShadowName : FrameworkElement
+        private sealed class ShadowName : ProtectedControl
         {
             public new string Name => "hidden";
         }
 
-        private sealed class ShadowVisible : FrameworkElement
+        private sealed class ShadowVisible : ProtectedControl
         {
             public new bool IsVisible => true;
         }
@@ -78,7 +78,7 @@ namespace WinTestKit.Inspector.Agent.Members.Tests
         {
             Sta(() =>
             {
-                foreach (var target in new FrameworkElement[] { new PasswordBox(), new NoPeer() })
+                foreach (var target in new FrameworkElement[] { new PasswordBox(), new ProtectedControl() })
                 {
                     var reader = new Reader(target);
                     foreach (string name in new[] { "Name", "IsVisible", "IsEnabled", "IsFocused", "IsKeyboardFocused", "IsKeyboardFocusWithin", "IsMouseOver", "IsHitTestVisible", "Visibility", "Opacity", "Width", "Height", "ActualWidth", "ActualHeight" })
@@ -107,14 +107,76 @@ namespace WinTestKit.Inspector.Agent.Members.Tests
             });
         }
 
-        [Fact] public void MissingPeerFailsClosed()
+        [Fact] public void PeerlessElementsAreNotProtected()
         {
             Sta(() =>
             {
                 var target = new NoPeer();
-                Assert.Equal("identity", new Reader(target).Read(Property("VisibleValue")).RedactionRule);
-                Assert.Equal(0, target.Calls);
+                Assert.False(RedactionPolicy.IsProtectedIdentity(target));
+                Assert.Equal(ValueStatus.Ok, new Reader(target).Read(Property("VisibleValue")).Status);
+                Assert.Equal(1, target.Calls);
+                foreach (DependencyObject panel in new DependencyObject[] { new Grid(), new DockPanel(), new StackPanel(), new Border(), new System.Windows.Documents.Run("x") })
+                    Assert.False(RedactionPolicy.IsProtectedIdentity(panel));
+                Assert.False(RedactionPolicy.IsProtectedIdentity(new object()));
             });
         }
-    }
+
+        [Fact] public void OwnedPeerNotReportingPasswordIsNotProtectedAndFailureIsClosed()
+        {
+            Sta(() =>
+            {
+                var target = new ProtectedControl { Protected = false };
+                Assert.False(RedactionPolicy.IsProtectedIdentity(target));
+                Assert.False(RedactionPolicy.IsProtectedIdentity(new TextBox()));
+                target.Protected = true;
+                Assert.True(RedactionPolicy.IsProtectedIdentity(target));
+                target.ThrowOnPassword = true;
+                Assert.True(RedactionPolicy.IsProtectedIdentity(target));
+            });
+        }
+
+        [Fact] public void PasswordBoxAndItsTemplatePartsAreProtected()
+        {
+            Sta(() =>
+            {
+                var box = new PasswordBox();
+                Assert.True(RedactionPolicy.IsProtectedIdentity(box));
+                var border = new FrameworkElementFactory(typeof(Border));
+                var host = new FrameworkElementFactory(typeof(ScrollViewer));
+                host.SetValue(FrameworkElement.NameProperty, "PART_ContentHost");
+                var inner = new FrameworkElementFactory(typeof(Grid));
+                host.AppendChild(inner);
+                border.AppendChild(host);
+                box.Template = new ControlTemplate(typeof(PasswordBox)) { VisualTree = border };
+                Assert.True(box.ApplyTemplate());
+                var part = (DependencyObject)box.Template.FindName("PART_ContentHost", box);
+                Assert.NotNull(part);
+                Assert.True(RedactionPolicy.IsProtectedIdentity(part));
+                Assert.True(RedactionPolicy.IsProtectedIdentity(System.Windows.Media.VisualTreeHelper.GetParent(part)));
+                Assert.False(RedactionPolicy.IsProtectedIdentity(new Grid()));
+                var unrelated = new Grid();
+                unrelated.Children.Add(new Border());
+                Assert.False(RedactionPolicy.IsProtectedIdentity(unrelated));
+                Assert.False(RedactionPolicy.IsProtectedIdentity(unrelated.Children[0]));
+            });
+        }
+
+        [Fact] public void VisualAncestorPasswordBoxProtectsDescendants()
+        {
+            Sta(() =>
+            {
+                var box = new PasswordBox();
+                var template = new FrameworkElementFactory(typeof(Grid));
+                template.AppendChild(new FrameworkElementFactory(typeof(Border)));
+                box.Template = new ControlTemplate(typeof(PasswordBox)) { VisualTree = template };
+                box.ApplyTemplate();
+                var grid = (DependencyObject)System.Windows.Media.VisualTreeHelper.GetChild(box, 0);
+                var child = System.Windows.Media.VisualTreeHelper.GetChild(grid, 0);
+                Assert.True(RedactionPolicy.IsProtectedIdentity(grid));
+                Assert.True(RedactionPolicy.IsProtectedIdentity(child));
+                var outside = new Grid();
+                outside.Children.Add(new Border());
+                Assert.False(RedactionPolicy.IsProtectedIdentity(outside.Children[0]));
+            });
+        }    }
 }

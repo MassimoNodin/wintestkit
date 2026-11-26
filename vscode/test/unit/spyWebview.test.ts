@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { JSDOM, VirtualConsole } from "jsdom";
 import { expect, it } from "vitest";
+import { DEFAULT_BASIC_PROPERTIES } from "../../src/spy/basicProperties";
 
 it("expands a WPF window and displays an attachment failure", () => {
   const errors: Error[] = [];
@@ -55,7 +56,8 @@ it("rebuilds expanded branches and clears old selections when roots are replaced
   send({ type: "roots", nodes: [root("old")] });
   (dom.window.document.querySelector('[data-node-id="old"] .toggle') as HTMLButtonElement).click();
   send({ type: "children", nodeId: "old", nodes: [child("old-child")] });
-  expect(posts).toContainEqual(expect.objectContaining({ type: "expandedPaths" }));
+  // The side panel mirrors the tree; it never reports expansion or asks for children itself.
+  expect(posts.map((post) => (post as { type: string }).type)).toEqual(["propertiesReady"]);
   send({ type: "selected", nodeId: "old-child", properties: { source: "wpf", info: child("old-child").info, properties: {} } });
   send({ type: "objectPreview", nodeId: "old-child", reason: "Inspector session ended. Reconnecting" });
   expect(dom.window.document.querySelector("#object-preview-status")?.textContent).toContain("Reconnecting");
@@ -105,7 +107,7 @@ it("renders managed failure codes and hints", () => {
 
 it("groups windows and keeps process rows when windows change", () => {
   const dom = new JSDOM(readFileSync("media/spy/spy.html", "utf8").replace("{{viewClass}}", "spy-view"), { runScripts: "outside-only" });
-  const posts: { type: string; path?: unknown[] }[] = [];
+  const posts: { type: string; nodeId?: string; path?: unknown[] }[] = [];
   Object.assign(dom.window, { acquireVsCodeApi: () => ({ postMessage: (message: typeof posts[number]) => posts.push(message) }), matchMedia: () => ({ matches: false, addEventListener() {} }), requestAnimationFrame: (fn: () => void) => fn() });
   dom.window.eval(readFileSync("media/spy/treeLabels.js", "utf8") + "\n" + readFileSync("media/spy/spy.js", "utf8"));
   const send = (data: unknown) => dom.window.dispatchEvent(new dom.window.MessageEvent("message", { data }));
@@ -136,7 +138,7 @@ it("groups windows and keeps process rows when windows change", () => {
   const image = process.querySelector("img")!; image.dispatchEvent(new dom.window.Event("load")); expect(image.hidden).toBe(false);
   posts.length = 0;
   (process.querySelector(".label") as HTMLButtonElement).click();
-  expect(posts).toEqual([]);
+  expect(posts).toEqual([{ type: "select", nodeId: "process:42" }]);
   expect(doc.querySelector("#selection-name")?.textContent).toBe("Process: Fixture, PID 42, 2 windows");
   expect((doc.querySelector("#generate") as HTMLButtonElement).disabled).toBe(true);
   (process.querySelector(".toggle") as HTMLButtonElement).click();
@@ -146,7 +148,7 @@ it("groups windows and keeps process rows when windows change", () => {
   send({ type: "children", nodeId: "a", nodes: [], expanded: true });
   expect(process.getAttribute("aria-expanded")).toBe("true");
   (doc.querySelector('[data-node-id="b"] .label') as HTMLButtonElement).click();
-  expect(posts.find((post) => post.type === "select")?.path?.[0]).toEqual({ controlType: "Process", automationId: "process:fixture", name: "Fixture", className: "" });
+  expect(posts.find((post) => post.type === "select" && post.nodeId === "b")?.path?.[0]).toEqual({ controlType: "Process", automationId: "process:fixture", name: "Fixture", className: "" });
   send({ type: "roots", nodes: [b, c, u] });
   expect(doc.querySelector('[data-node-id="process:42"]')).toBe(process);
   expect(doc.querySelector('[data-node-id="a"]')).toBeNull();
@@ -389,6 +391,7 @@ it("renders searchable sidebar tabs and remembers the property mode", () => {
   const doc = dom.window.document;
   const win = { nodeId: "win", source: "wpf", hasChildren: true, info: { controlType: "Window", name: "Fixture", processId: 1 } };
   const child = { nodeId: "child", source: "wpf", hasChildren: false, info: { controlType: "Button", name: "Save", isEnabled: true, rect: { left: 10, top: 20, width: 30, height: 40 } } };
+  send({ type: "state", basicProperties: [...DEFAULT_BASIC_PROPERTIES], basicDefaults: [...DEFAULT_BASIC_PROPERTIES] });
   send({ type: "roots", nodes: [win] });
   send({ type: "children", nodeId: "win", nodes: [child], expanded: true });
   send({ type: "selected", nodeId: "child", properties: { source: "wpf", info: child.info, properties: { ClrFullClassName: "Example.Button", Visible: "True", Custom: "custom value" }, uiaMapped: false } });
@@ -397,7 +400,7 @@ it("renders searchable sidebar tabs and remembers the property mode", () => {
   expect(doc.querySelector('[data-name="WPFControlText"] td')?.textContent).toBe("Unknown");
   send({ type: "definitions", nodeId: "child", state: "ready", definitions: [{ kind: "element", qualname: "Page.save", file: "page.py", line: 1, pages: [], pageCount: 1 }] });
   expect(doc.querySelector('[data-name="MappedName"]')).toBeNull();
-  (doc.querySelector('[data-name="Parent"] button') as HTMLButtonElement).click();
+  (doc.querySelector('[data-name="Parent"] td button') as HTMLButtonElement).click();
   expect(posts).toContainEqual(expect.objectContaining({ type: "select", nodeId: "win" }));
   send({ type: "selected", nodeId: "child", properties: { source: "wpf", info: child.info, properties: { ClrFullClassName: "Example.Button", Custom: "custom value" }, uiaMapped: false } });
   (doc.querySelector("#sidebar-mode") as HTMLInputElement).click();
@@ -455,7 +458,7 @@ it("renders searchable sidebar tabs and remembers the property mode", () => {
   dom.window.close();
 });
 
-it("offers managed row actions, descriptions, pins, and readiness controls", () => {
+it("offers managed row actions, tooltips, pins, and readiness controls", () => {
   const dom = new JSDOM(readFileSync("media/spy/spy.html", "utf8").replace("{{viewClass}}", "properties-view"), { runScripts: "outside-only" });
   const posts: unknown[] = []; let state: Record<string, unknown> = { sidebarShowAll: true };
   Object.assign(dom.window, { acquireVsCodeApi: () => ({ postMessage: (message: unknown) => posts.push(message), getState: () => state, setState: (next: Record<string, unknown>) => { state = next; } }), matchMedia: () => ({ matches: false, addEventListener() {} }), requestAnimationFrame: (fn: () => void) => fn() });
@@ -473,9 +476,10 @@ it("offers managed row actions, descriptions, pins, and readiness controls", () 
   send(snapshot);
   expect((doc.querySelector("#wpf-details-note") as HTMLElement).hidden).toBe(true);
   expect((doc.querySelector("#sidebar-actions") as HTMLElement).hidden).toBe(false);
-  const row = doc.querySelector('[data-name="Title"]') as HTMLTableRowElement; row.click();
-  expect(doc.querySelector("#sidebar-description")?.textContent).toContain("Runtime type: System.String");
-  expect(doc.querySelector("#sidebar-description")?.textContent).toContain("Binding: Binding; active; Name");
+  const row = doc.querySelector('[data-name="Title"]') as HTMLTableRowElement;
+  expect(doc.querySelector("#sidebar-description")).toBeNull();
+  expect((row.cells[0] as HTMLElement).title).toContain("Runtime type: System.String");
+  expect((row.cells[0] as HTMLElement).title).toContain("Binding: Binding; active; Name");
   row.cells[0]!.click(); row.cells[1]!.click();
   expect(posts).toContainEqual({ type: "managedCopy", kind: "value", memberKey: "clr:Title" });
   row.querySelector<HTMLButtonElement>('[aria-label="Read again"]')!.click();

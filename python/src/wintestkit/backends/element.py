@@ -237,6 +237,15 @@ class WpfElement:
         state = self._get_state()
         return bool(state.uia_runtime_id) and self.runtime_id == other.runtime_id
 
+    @property
+    def cached_uia(self) -> UIAElement | None:
+        """The UIA peer found by an earlier mapping, which may have gone stale since."""
+        return self._uia
+
+    @cached_uia.setter
+    def cached_uia(self, peer: UIAElement | None) -> None:
+        self._uia = peer
+
     def as_uia(self) -> UIAElement:
         """Map the agent handle to its UIA peer for UIA-only operations."""
         state = self._get_state()

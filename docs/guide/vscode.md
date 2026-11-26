@@ -204,7 +204,9 @@ and its fix rather than silently falling back to UI Automation. See [Managed ins
   taking keyboard focus from VS Code when using **Highlight**.
 - The toolbar starts with **Pick element**, **Refresh objects**, **Collapse all** and the pin button. **Pick
   element** (or `wtk spy` in a terminal): hold **Ctrl** and click a control in the application.
-  The WPF picker also finds elements without automation peers and popup content.
+  The WPF picker also finds elements without automation peers and popup content. If the tree
+  changes during a pick, Spy reveals the closest available row and keeps the picked properties
+  visible with a note. Reveal details are recorded in the WinTestKit output channel.
   **Esc** cancels. **Refresh objects** reloads the tree. **Pick element** and **Refresh objects**
   stay in the Spy toolbar.
 - While the application is running, a button at the right end of the toolbar switches the tree
@@ -225,12 +227,29 @@ and its fix rather than silently falling back to UI Automation. See [Managed ins
   `ControllerFor › 0 › BoundingRectangle`). Nesting can go several levels deep: a list of
   elements, each element, and the arrays inside it. Opening is remembered only for the
   selected object. UI Automation values are external values, not arbitrary .NET members.
-- To always see a property, click the pin beside it in **All properties**. Pinned properties
-  appear in a **Pinned** group for every object you select, in the order you pinned them; click
-  the pin again, in either list, to remove one. The list is the user setting
-  `wintestkit.spy.shownProperties`: it lives in your VS Code user settings, applies to every
-  project, and is never written to a project or its git repository. At most 64 properties can be
-  pinned.
+- The **Objects** tree takes all the width the **Selected object** pane does not need. That
+  pane keeps 260 px, or the width its header and the **Generate suggested locator** button
+  measure when a larger font makes them wider. Drag the splitter between them (or focus it and
+  use the left and right arrow keys) to give the selected object more room. The width you choose
+  is remembered per workspace in VS Code's own storage, never in a project, and is kept within
+  the window when it is resized. Double-click the splitter, or press **Home** while it has the
+  focus, to return to the default and forget the stored width. When the panel is narrow the two
+  panes stack and the splitter resizes their heights, which is not remembered.
+- Which rows the Properties view shows when **Show all properties** is off (its Basic view) is
+  yours to choose, with one pin per row. Point at a row that is not in the Basic view, or focus
+  it, and a pin appears to the left of its name; click it to add the row to the Basic view, in its
+  own group and in the group's usual order. A row that is in the Basic view always shows a filled,
+  accent-coloured pin, in both views; click it to remove the row, whichever row it is, the
+  built-in ones included. **Reset Basic view**, beside the **Show all properties** switch (or the
+  **WinTestKit: Reset Spy Basic View** command), restores the default rows. The pins are keyed by
+  group and row name, for example `Standard/Enabled`, `.NET/ClrClassName`,
+  `Win32 Window/Window Class` or `UI Automation/HelpText`, and the list is the user setting
+  `wintestkit.spy.basicProperties`: it lives in your VS Code user settings, applies to every
+  project, and is never written to a project or its git repository. At most 256 rows can be
+  pinned. Standard, Extended, .NET members, Win32 Window and UI Automation rows can be pinned;
+  the rows of bindings, styles, resources and events, the members nested under another value,
+  fields and methods have no stable key and have no pin. A pinned UI Automation property is read
+  with every selection.
 - Spy keeps your selection through a reload. After **Refresh objects**, a server restart, or
   reloading VS Code, it expands the tree down to the object you had selected and selects it
   again. It finds the object by what it is, not by an id that changes on restart: the type,
@@ -244,11 +263,14 @@ and its fix rather than silently falling back to UI Automation. See [Managed ins
   just the element; **In App context** switches to its whole window with the object outlined in red.
   Both fit the same fixed-size frame, however large or small the image, and the choice stays
   while you select other objects. It is a live capture taken when you select the object; the
-  window is rendered without being brought forward. Click the image, or the button beside the
+  window is rendered without being brought forward. Every row has a preview: WPF and WinForms
+  objects, UI Automation nodes and native Win32 windows are cropped from their window. A
+  top-level window, and a **Process** row (its first titled, not minimized window), is
+  shown whole as the element image. Click the image, or the button beside the
   toggle, to open the current view in VS Code’s built-in image viewer for zooming and panning;
   it is the only time an image is written to disk (see below). There is no image
-  when the object has no on-screen rectangle or its window is minimized or cannot be rendered,
-  and the section says why. Opening an image saves it to a private temporary folder, deletes it
+  when the object has no on-screen rectangle, a process has no visible window, or the window is
+  minimized, hidden or cannot be rendered, and the section says which. Opening an image saves it to a private temporary folder, deletes it
   when its editor tab closes and removes the rest when VS Code shuts down; the viewer shows the
   capture at the size sent: the real size of the window or element, and only a capture over 7680 px
   on its longest edge is scaled down. Live previews need `wintestkit` 0.1.1 or newer in the project's
@@ -268,15 +290,15 @@ nested folders and multi-root workspaces. Each project has its own server, tests
 The guided setup creates the starter files described in
 [Getting started](getting-started.md).
 
-With **Show all properties** off, the Properties sidebar groups values under **Standard** and, for managed objects, **.NET**. The .NET rows include the short and full CLR class names, control name and text, and for WPF an ordinal among loaded siblings of the same type and text. With **Show all properties** on, it shows Standard, Win32 Window when available, Extended, an alphabetical .NET member list, Bindings, Style and template, Resources, Events and UI Automation when available. Expanded member values stay beneath their parent. Markers distinguish dependency, attached and static properties; the Description pane also identifies their kind. Fields and methods are grouped by instance or static membership. All section headings collapse, search hides empty sections, and collapsed headings are remembered. Automatic reads retain their five-second per-object budget; choose **Read remaining** to continue reading timed-out rows in batches, subject to the same getter limit. Click a row's name or value to copy it; Enter or Ctrl+C on a focused row copies its value. Use the arrow to expand a value, the refresh icon to read an eligible managed member again, or the play icon to open a method's invocation form. The actions button beside search offers detach, refresh metadata, and export metadata.
+With **Show all properties** off, the Properties sidebar shows its Basic view: exactly the rows pinned to it (see above), grouped under **Standard**, **Extended**, **.NET**, **Win32 Window** and **UI Automation**, and only for the rows the selected object has. By default these are Enabled, Height, Name, Parent, Visible and Width, for managed objects the short and full CLR class names, control name and text, and for WPF an ordinal among loaded siblings of the same type and text, and for a control with a window handle its class, control ID, text, handle and styles. With **Show all properties** on, it shows Standard, Win32 Window when available, Extended, an alphabetical .NET member list, Bindings, Style and template, Resources, Events and UI Automation when available. Expanded member values stay beneath their parent. Markers distinguish dependency, attached and static properties. There is no Description section: hover a row's name for a tooltip with what it adds, such as what a Standard row means or a member's declared, runtime and declaring types, and its kind. Fields and methods are grouped by instance or static membership. All section headings collapse, search hides empty sections, and collapsed headings are remembered. Automatic reads retain their five-second per-object budget; choose **Read remaining** to continue reading timed-out rows in batches, subject to the same getter limit. Click a row's name or value to copy it; a small green label beside the pointer says **Name copied** or **Value copied** and fades after about a second, and screen readers are told. Enter or Ctrl+C on a focused row copies its value and puts the label beside the cell. Use the arrow to expand a value, the refresh icon to read an eligible managed member again, or the play icon to open a method's invocation form. The actions button beside search offers detach, refresh metadata, and export metadata.
 
 The inspector shows the essential properties first, then fills in the complete UI Automation
 property list and supported patterns by itself; there is nothing to click. A control that owns a
 window handle (Win32, MFC and WinForms controls, dialogs, top-level windows) also gets a
 **Win32 Window** group: window class, control ID, text, handle, decoded window and extended
 styles (with the raw values), process and thread, owner and parent, rectangles, visibility, state
-and DPI. With **Show all properties** off, it shows the class, control ID, text, handle and styles;
-with it on, it shows everything. Such controls appear in the tree as `Window("Class", "text", index)`, with only
+and DPI. By default the Basic view shows the class, control ID, text, handle and styles;
+with **Show all properties** on, it shows everything, and any row can be pinned to the Basic view. Such controls appear in the tree as `Window("Class", "text", index)`, with only
 the arguments needed to tell siblings apart. Locator generation does not block the property display.
 
 ## Project Configuration
@@ -404,6 +426,7 @@ file settings when running tests. See [configuration](running-tests.md#configura
 | `wintestkit.run.highlightActions` | `false` | Flash each element before acting during runs from VS Code |
 | `wintestkit.server.logLevel` | `"info"` | Log level of the Python server |
 | `wintestkit.promptDisablePytestExplorer` | `true` | Offer to disable the Python extension's pytest explorer |
+| `wintestkit.spy.basicProperties` | the default Basic rows | User setting: the rows of the Properties view's Basic view, as `Group/Row name` keys; changed with the pins, restored with **Reset Basic view** |
 
 Logs are in the **WinTestKit** output channel (**WinTestKit: Show Output**).
 

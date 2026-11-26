@@ -88,17 +88,22 @@ export class ManagedInspector {
   get sessionInfo(): InspectManagedAttachResult | undefined { return this.session; }
   get targetLabel(): string { return `${this.executable} (PID ${this.session?.process.pid ?? "unknown"})`; }
   private spyQueue: Promise<unknown> = Promise.resolve();
-  constructor(private readonly client: JsonRpcClient, initialized: InitializeResult, private readonly onStale?: (process?: { pid: number; creationTimeUtc: string }) => void, private readonly logFailure?: (line: string) => void, private readonly capability?: string, private readonly onReattached?: (process?: { pid: number; creationTimeUtc: string }) => void) {
+  constructor(private readonly client: JsonRpcClient, initialized: InitializeResult, private readonly onStale?: (process?: { pid: number; creationTimeUtc: string }) => void, private readonly logFailure?: (line: string) => void, private readonly capability?: string, private readonly onReattached?: (process?: { pid: number; creationTimeUtc: string }) => void, private readonly pickedCall?: <T>(nodeId: string, call: (id: string) => Promise<T>) => Promise<T>) {
     this.visible = initialized.capabilities?.managedInspector === true;
   }
-  private fail(error: unknown, facts?: { executable: string; process: { pid: number; creationTimeUtc?: string } }): ManagedFailure {
+  private requestPicked<T>(nodeId: string, call: (id: string) => Promise<T>): Promise<T> {
+    return this.pickedCall ? this.pickedCall(nodeId, call) : call(nodeId);
+  }
+  private fail(error: unknown, facts?: { executable: string; process: { pid: number; creationTimeUtc?: string } }, request?: string): ManagedFailure {
     const failure = managedFailure(error); this.failure = failure; this.state = managedErrorState(error);
     facts ??= this.targetOf(this.nodeId) ?? (this.session ? { executable: this.executable, process: this.session.process } : undefined);
+    const known = facts && facts.executable !== "unknown" ? facts : this.targetOf(this.nodeId) ?? facts;
     const sentence = (value: string) => value.replace(/[.\s]+$/, "");
     const key = `${facts?.process.pid ?? "unknown"}:${facts?.process.creationTimeUtc ?? "unknown"}:${failure.code}`;
     if (key !== this.lastFailureKey) {
       if (this.session && ["timeout", "dispatcherUnavailable", "busy"].includes(failure.code))
-        this.logFailure?.(`Spy .NET request to ${facts?.executable ?? this.executable} (PID ${facts?.process.pid ?? this.session.process.pid}) could not complete because its UI thread is busy. The attachment is still ready; Spy retries on the next selection. ${failure.message}`);
+        this.logFailure?.(`Spy .NET request to ${facts?.executable ?? this.executable} (PID ${facts?.process.pid ?? this.session.process.pid}) could not complete because its UI thread is busy. The attachment is still ready; Spy retries automatically. ${failure.message}`);
+      else if (request) this.logFailure?.(`Spy .NET ${request} request failed for ${known?.executable ?? "an unknown process"} (PID ${facts?.process.pid ?? "unknown"}): ${failure.code}: ${sentence(failure.message)}. ${failure.hint}`.trim());
       else this.logFailure?.(`Spy .NET attach failed for ${facts?.executable ?? "unknown"} (PID ${facts?.process.pid ?? "unknown"}): ${failure.code}: ${sentence(failure.message)}. ${failure.hint}`.trim());
     }
     this.lastFailureKey = key;
@@ -155,7 +160,7 @@ export class ManagedInspector {
     this.failure = undefined;
     let facts: InspectManagedIdentifyResult | undefined;
     try {
-      facts = await this.client.request<InspectManagedIdentifyResult>("inspect.managed.identify", { nodeId: node });
+      facts = await this.requestPicked(node, (id) => this.client.request<InspectManagedIdentifyResult>("inspect.managed.identify", { nodeId: id }));
       this.executable = facts.executable; this.rememberTarget(`node:${node}`, facts);
       if (!this.current(seq, node, oldSession)) return;
       if (this.session?.state === "ready" && identityKey(this.session.process) === identityKey(facts.process)) { this.state = "ready"; this.lastFailureKey = undefined; return this.session; }
@@ -170,9 +175,9 @@ export class ManagedInspector {
       return session;
     } catch (error) { if (this.current(seq, node, oldSession)) this.fail(error, facts ?? this.targetOf(node)); return; }
   }
-  treeFailure?: { code: string; hint: string };
+  treeFailure?: { code: string; hint: string; message?: string };
   async reportTreeFailure(nodeId: string, blocked: { code: string; hint: string }): Promise<void> {
-    const facts = await this.client.request<InspectManagedIdentifyResult>("inspect.managed.identify", { nodeId }).catch(() => undefined);
+    const facts = await this.requestPicked(nodeId, (id) => this.client.request<InspectManagedIdentifyResult>("inspect.managed.identify", { nodeId: id })).catch(() => undefined);
     this.fail({ message: "Inspector attachment failed", data: blocked }, facts?.process ? facts : this.targetOf(nodeId));
   }
   async attachTree(nodeId: string, process: { pid: number; creationTimeUtc: string }, automatic = false): Promise<boolean> {
@@ -182,7 +187,7 @@ export class ManagedInspector {
     if (this.session?.state === "ready" && identityKey(this.session.process) === identityKey(process)) { this.lastFailureKey = undefined; return true; }
     let facts: InspectManagedIdentifyResult | undefined;
     try {
-      facts = await this.client.request<InspectManagedIdentifyResult>("inspect.managed.identify", { nodeId });
+      facts = await this.requestPicked(nodeId, (id) => this.client.request<InspectManagedIdentifyResult>("inspect.managed.identify", { nodeId: id }));
       this.executable = facts.executable; this.rememberTarget(`node:${nodeId}`, facts);
       if (identityKey(facts.process) !== identityKey(process)) {
         this.treeFailure = { code: "processChanged", hint: "The target process changed. Refresh the object tree and try again." };
@@ -195,7 +200,7 @@ export class ManagedInspector {
       if (result.state !== "ready") { const { code, hint } = this.fail({ message: `Inspector attachment ended in state ${result.state}`, data: { code: result.error || "attachFailed" } }, facts); this.treeFailure = { code, hint }; }
       return result.state === "ready";
     } catch (error) {
-      const { code, hint } = this.fail(error, facts ?? { executable: this.targetOf(nodeId)?.executable ?? "unknown", process }); this.treeFailure = { code, hint };
+      const { code, hint, message } = this.fail(error, facts ?? { executable: this.targetOf(nodeId)?.executable ?? "unknown", process }); this.treeFailure = message === hint ? { code, hint } : { code, hint, message };
       return false;
     }
   }
@@ -204,7 +209,7 @@ export class ManagedInspector {
     const sequence = this.sequence, oldSession = this.session?.sessionId;
     let facts: InspectManagedIdentifyResult | undefined;
     try {
-      facts = await this.client.request<InspectManagedIdentifyResult>("inspect.managed.identify", { nodeId });
+      facts = await this.requestPicked(nodeId, (id) => this.client.request<InspectManagedIdentifyResult>("inspect.managed.identify", { nodeId: id }));
       this.rememberTarget(`node:${nodeId}`, facts);
       if (!this.current(sequence, nodeId, oldSession)) return;
       if (this.session?.state === "ready" && identityKey(this.session.process) === identityKey(facts.process)) return;
@@ -274,13 +279,16 @@ export class ManagedInspector {
     const sessionId = this.session?.sessionId, node = this.nodeId, seq = this.sequence;
     if (!sessionId || !node) return;
     try {
-      const result = await this.client.request<T>(`inspect.managed.${method}`, { ...params, sessionId });
+      const request = (id: string) => this.client.request<T>(`inspect.managed.${method}`, { ...params, ...(method === "resolve" ? { nodeId: id } : {}), sessionId });
+      const result = method === "resolve" && node ? await this.requestPicked(node, request) : await request(node ?? "");
       if (!this.current(seq, node, sessionId)) {
         const old = this.handles; this.handles = new Set(); this.remember(result); const ids = [...this.handles]; this.handles = old;
         if (ids.length) await this.releaseIds(sessionId, ids);
         return;
       }
-      this.remember(result); return result;
+      this.remember(result);
+      if (["timeout", "dispatcherUnavailable", "busy"].includes(this.failure?.code ?? "")) { this.state = "ready"; this.failure = undefined; this.lastFailureKey = undefined; }
+      return result;
     } catch (error) {
       if (this.current(seq, node, sessionId) && !(method === "spyMethods" && managedFailure(error).code === "invalidPageToken")) this.callFailed(method, error);
       return;
@@ -295,7 +303,7 @@ export class ManagedInspector {
       this.lastWithheldKey = key;
       return;
     }
-    this.fail(error, { executable: this.executable, process: session.process });
+    this.fail(error, { executable: this.targetOf(this.nodeId)?.executable ?? this.executable, process: session.process }, method);
     if (this.state === "detached (idle)") { const process = session.process; this.invalidate(); this.onStale?.(process); }
   }
   async resolve(nodeId: string): Promise<InspectManagedResolveResult | undefined> {
@@ -305,12 +313,12 @@ export class ManagedInspector {
     // A handle from a detached session cannot be mapped by the new one; the tree walk that follows Attach replaces it.
     if (this.nodeIsStale()) return;
     try {
-      const facts = await this.client.request<InspectManagedIdentifyResult>("inspect.managed.identify", { nodeId });
+      const facts = await this.requestPicked(nodeId, (id) => this.client.request<InspectManagedIdentifyResult>("inspect.managed.identify", { nodeId: id }));
       this.rememberTarget(`node:${nodeId}`, facts);
       if (!this.current(sequence, nodeId, session.sessionId)) return;
       if (facts.process.pid !== session.process.pid || facts.process.creationTimeUtc !== session.process.creationTimeUtc) { this.state = "not attached to this process"; return; }
       this.state = "ready";
-    } catch (error) { if (this.current(sequence, nodeId, session.sessionId)) this.fail(error, { executable: this.executable, process: session.process }); return; }
+    } catch (error) { if (this.current(sequence, nodeId, session.sessionId)) this.fail(error, { executable: this.targetOf(nodeId)?.executable ?? this.executable, process: session.process }, "identify"); return; }
     const result = await this.call<InspectManagedResolveResult>("resolve", { nodeId });
     if (result && result.status !== "exact") this.state = "mapping unavailable";
     return result;
@@ -328,14 +336,18 @@ export class ManagedInspector {
   /** Wait while a user action (picker, refresh, tree expand, keepalive...) is in flight; resolves with the time waited. */
   yieldToUser(maxMs: number): Promise<number> { return this.client.foregroundIdle(maxMs); }
   /** Reads one to 32 paths. `background` marks the automatic read, which user actions take precedence over. */
-  async spyRead(params: Omit<InspectManagedReadParams, "sessionId">, background = false): Promise<{ result?: InspectManagedReadResult; status?: string }> {
+  async spyRead(params: Omit<InspectManagedReadParams, "sessionId">, background = false): Promise<{ result?: InspectManagedReadResult; status?: string; busy?: boolean }> {
     const sessionId = this.session?.sessionId, node = this.nodeId, seq = this.sequence;
     if (!sessionId || !node) return { status: "unavailable" };
     try {
       const result = await this.client.request<InspectManagedReadResult>("inspect.managed.spyRead", { ...params, sessionId }, background ? 10_000 : 30_000, { background });
       if (!this.current(seq, node, sessionId)) { const old = this.handles; this.handles = new Set(); this.remember(result); const ids = [...this.handles]; this.handles = old; if (ids.length) await this.releaseIds(sessionId, ids); return { status: "unavailable" }; }
-      this.remember(result); return { result };
-    } catch (error) { return { status: managedFailure(error).code === "timeout" ? "timed out" : "unavailable" }; }
+      this.remember(result);
+      // Only a value read proves the UI thread answers again; a read whose getters all timed out does not.
+      const answered = result.values.some((entry) => entry.value.status !== "timeout");
+      if (answered && ["timeout", "dispatcherUnavailable", "busy"].includes(this.failure?.code ?? "")) { this.state = "ready"; this.failure = undefined; this.lastFailureKey = undefined; }
+      return { result };
+    } catch (error) { const busy = ["timeout", "dispatcherUnavailable", "busy"].includes(managedFailure(error).code); return { status: busy ? "timed out" : "unavailable", busy }; }
   }
   children(params: Omit<InspectManagedChildrenParams, "sessionId">) { return this.call<InspectManagedChildrenResult>("children", params); }
   bindings(params: Omit<InspectManagedBindingsParams, "sessionId">) { return this.call<InspectManagedBindingsResult>("bindings", params); }

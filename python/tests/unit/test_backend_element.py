@@ -241,3 +241,18 @@ def test_peerless_bound_highlight_uses_agent(setup, monkeypatch):
 
     Bound().highlight()
     assert flashed == [Rect(1, 3, 11, 4)]
+
+
+def test_mapping_43_ids_uses_two_uia_queries(monkeypatch: pytest.MonkeyPatch) -> None:
+    from types import SimpleNamespace
+
+    from wintestkit.backends.mapping import map_runtime_ids
+
+    batches = []
+    window = SimpleNamespace(
+        runtime_id="0", find_all=lambda scope, condition, cached: batches.append(condition) or []
+    )
+    monkeypatch.setattr("wintestkit.uia.element.from_handle", lambda hwnd: window)
+    monkeypatch.setattr("wintestkit.uia.com.create_runtime_ids_condition", lambda ids: ids)
+    assert map_runtime_ids({123: [(1, i) for i in range(43)]}) == {}
+    assert [len(batch) for batch in batches] == [25, 18]

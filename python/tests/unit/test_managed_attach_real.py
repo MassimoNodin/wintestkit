@@ -12,7 +12,7 @@ from typing import Any
 import pytest
 from live_dotnet import live_dotnet_root
 
-from wintestkit import runtime
+from wintestkit import object_previews, runtime
 from wintestkit.config import load_config
 from wintestkit.errors import InspectorUnavailableError
 from wintestkit.inspector.hints import inspector_error_hint
@@ -312,3 +312,123 @@ def test_different_loaded_build_reports_restart(
     check = doctor._check_wpf_agent(cfg)
     assert check.status == "fail"
     assert "agentVersionMismatch" in check.detail
+
+
+def test_peerless_panel_saves_preview(tmp_path: Path, target: Any) -> None:
+    import hashlib
+    import shutil
+
+    from wintestkit.app import App
+    from wintestkit.uia import win32
+
+    shutil.copy(ROOT / "examples/wpf-fixture-tests/pages.py", tmp_path / "pages.py")
+    output = io.BytesIO()
+    server = Server(output)
+    server.cfg = load_config(tmp_path, {"inspector.enabled": True, "inspector.attach": "on-demand"})
+    server.loader = ModuleLoader(server.cfg)
+    server.app = App.attach(pid=target.pid)
+    hwnd = win32.top_level_windows({target.pid})[0]
+    import ctypes
+
+    ctypes.windll.user32.ShowWindow(hwnd, 9)
+    ctypes.windll.user32.SetForegroundWindow(hwnd)
+    result = _check(server, output)
+    assert result["status"] == "found", result
+    panel_rect = result["element"]["rect"]
+    key = hashlib.sha256(b"pages.py::FixturePage.content").hexdigest()
+    manifest = tmp_path / "object-previews" / key / "manifest.json"
+    status = manifest.parent / "status.json"
+    assert manifest.exists(), status.read_text() if status.exists() else "no status"
+    from PIL import Image
+
+    data = json.loads(manifest.read_text(encoding="utf-8"))
+    with Image.open(manifest.parent / data["crop"]) as crop:
+        assert crop.size == (data["width"], data["height"])
+        assert crop.size == (panel_rect["width"], panel_rect["height"])
+        assert crop.width > 0 and crop.height > 0
+
+
+def _saved_manifest(root: Path, definition_id: str) -> tuple[dict[str, Any], Path]:
+    import hashlib
+
+    directory = root / "object-previews" / hashlib.sha256(definition_id.encode()).hexdigest()
+    manifest = directory / "manifest.json"
+    status = directory / "status.json"
+    assert manifest.exists(), status.read_text() if status.exists() else "no status"
+    return json.loads(manifest.read_text(encoding="utf-8")), directory
+
+
+def test_window_and_collection_save_previews(
+    tmp_path: Path, target: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import ctypes
+    import shutil
+
+    from PIL import Image
+
+    from wintestkit.app import App
+    from wintestkit.uia import win32
+
+    pages = (ROOT / "examples/wpf-fixture-tests/pages.py").read_text(encoding="utf-8")
+    pages = pages.replace("import Button, Element,", "import Button, Element, Elements,")
+    pages += (
+        "\n\nclass ButtonsPage(Page):\n"
+        '    window = Window(where={"type:FullName": "WinTestKit.Fixture.MainWindow"})\n'
+        '    buttons = Elements(where={"type:Is": "System.Windows.Controls.Button"})\n'
+    )
+    (tmp_path / "pages.py").write_text(pages, encoding="utf-8")
+    shutil.rmtree(tmp_path / "object-previews", ignore_errors=True)
+    output = io.BytesIO()
+    server = Server(output)
+    server.cfg = load_config(tmp_path, {"inspector.enabled": True, "inspector.attach": "on-demand"})
+    server.loader = ModuleLoader(server.cfg)
+    server.app = App.attach(pid=target.pid)
+    hwnd = win32.top_level_windows({target.pid})[0]
+    ctypes.windll.user32.ShowWindow(hwnd, 9)
+    ctypes.windll.user32.SetForegroundWindow(hwnd)
+
+    window = _result(
+        server, output, "element.check", {"file": "pages.py", "qualname": "FixturePage.window"}
+    )
+    assert window["status"] == "found", window
+    data, directory = _saved_manifest(tmp_path, "pages.py::FixturePage.window")
+    assert "matchCount" not in data
+    with (
+        Image.open(directory / data["crop"]) as crop,
+        Image.open(directory / data["window"]) as full,
+    ):
+        assert crop.size == full.size == (data["width"], data["height"])
+        assert crop.convert("RGB").tobytes() == full.convert("RGB").tobytes()  # no outline
+
+    collection = _result(
+        server,
+        output,
+        "element.check",
+        {"file": "pages.py", "qualname": "ButtonsPage.buttons"},
+    )
+    assert collection["status"] == "found", collection
+    data, directory = _saved_manifest(tmp_path, "pages.py::ButtonsPage.buttons")
+    assert data["matchCount"] >= 1
+    with (
+        Image.open(directory / data["crop"]) as crop,
+        Image.open(directory / data["window"]) as full,
+    ):
+        assert crop.size == (data["width"], data["height"])
+        assert full.width >= crop.width and full.height >= crop.height
+
+    # An element keeps its window context even when the UI Automation scan alone could not
+    # clear the window: the inspector password query over the window is what clears it.
+    monkeypatch.setattr(object_previews, "_WINDOW_SCAN_NODES", 1)
+    for qualname in ("FixturePage.fixture_control", "FixturePage.content"):
+        element = _result(
+            server, output, "element.check", {"file": "pages.py", "qualname": qualname}
+        )
+        assert element["status"] == "found", element
+        data, directory = _saved_manifest(tmp_path, f"pages.py::{qualname}")
+        assert not (directory / "status.json").exists(), qualname
+        with (
+            Image.open(directory / data["crop"]) as crop,
+            Image.open(directory / data["window"]) as full,
+        ):
+            assert crop.size == (data["width"], data["height"])
+            assert full.width >= crop.width and full.height > crop.height, qualname

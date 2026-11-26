@@ -78,6 +78,20 @@ namespace WinTestKit.Inspector.Agent.Session
                 return settings;
         }
 
+        /// <summary>Writes a safe, fixed rejection message beside a validated bootstrap.</summary>
+        public static void WriteRejection(string path, string bootstrapRoot, Exception error)
+        {
+            try
+            {
+                if (!IsWithinRoot(path, bootstrapRoot)) return;
+                CheckReparsePoints(Path.GetDirectoryName(Path.GetFullPath(path))!, bootstrapRoot);
+                string reason = error.Message == "Bootstrap expired." || error.Message == "Process identity mismatch." || error.Message == "Agent version mismatch."
+                    ? error.Message : "Bootstrap was rejected.";
+                File.WriteAllText(path + ".error", reason);
+            }
+            catch (Exception) { }
+        }
+
         private static void CheckReparsePoints(string path, string bootstrapRoot)
         {
             string root = Path.GetFullPath(bootstrapRoot).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);

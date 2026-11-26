@@ -100,8 +100,8 @@ stay in this toolbar.
 
 The inspector groups properties into Identity, State, Geometry and Automation, with
 every property under **All properties**, sorted by name, where nested values (arrays, UI
-Automation elements) open in place. Pin a property there to show it for every object, kept in
-the user setting `wintestkit.spy.shownProperties` and never in a project. Locator quality is
+Automation elements) open in place. In the Properties view, pin a row to its Basic view with the pin
+beside its name, kept in the user setting `wintestkit.spy.basicProperties` and never in a project. Locator quality is
 beside **Suggested locator**.
 Selection first reads only the essential identity, state and geometry information and displays
 it before locator generation finishes; the complete property list and supported patterns follow

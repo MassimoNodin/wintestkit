@@ -96,6 +96,7 @@ _PARAMS: dict[str, tuple[set[str], set[str]]] = {
     "inspect.definitions": ({"nodeId"}, set()),
     "inspect.coverage": ({"nodeIds"}, set()),
     "spy.start": (set(), {"sessionId", "foregroundForProcessId", "tree"}),
+    "spy.repick": ({"x", "y"}, {"tree"}),
     "spy.stop": (set(), set()),
 }
 
@@ -125,6 +126,7 @@ _APPLICATION_READS = frozenset(
     }
 )
 _READ_WORKERS = 4
+_MAX_QUEUED_INSPECTIONS = 128
 _APPLICATION_SLOW = frozenset({"timeout", "dispatcherUnavailable", "busy"})
 # Changing which processes are attached is the only managed work that is serialized.
 _MANAGED_LIFECYCLE = frozenset(
@@ -154,12 +156,16 @@ def _managed_node_id(ref: Any) -> str:
     )
 
 
+def _property_text(value: Any) -> str:
+    return str(value).lower() if isinstance(value, bool) else str(value)
+
+
 def _summarize(description: dict[str, Any]) -> str:
     """One line for a described property, as the flat property map shows it."""
     children = cast("list[dict[str, Any]]", description.get("children", []))
     if description["kind"] == "array" and children:
         if all(child["kind"] == "scalar" for child in children):
-            return ", ".join(str(child.get("value")) for child in children)
+            return ", ".join(_property_text(child.get("value")) for child in children)
         return f"{len(children)} items"
     if description["kind"] == "object" and children:
         named = {child["name"]: child.get("value") for child in children}
@@ -172,7 +178,7 @@ def _summarize(description: dict[str, Any]) -> str:
             if part
         )
         return label or "element"
-    return str(description.get("value", description.get("status", "")))
+    return _property_text(description.get("value", description.get("status", "")))
 
 
 def _is_popup_surface(window: UIAElement) -> bool:
@@ -246,9 +252,11 @@ class Server:
         # Ownership is deliberately independent of the configured launch mode. The server can
         # attach to a process it did not start.
         self._owned_app_pids: set[int] | None = None
+        self._app_state_lock = threading.Lock()
         self._owned_app_identities: set[ProcessIdentity] = set()
         self.nodes: OrderedDict[str, TargetElement] = OrderedDict()
         self._wpf_windows: set[str] = set()
+        self._root_cache: dict[int, dict[str, Any]] = {}
         self.node_infos: dict[str, ElementInfo] = {}
         self._wpf_parents: dict[str, str] = {}
         self._wpf_descriptions: dict[str, dict[str, Any]] = {}
@@ -341,7 +349,10 @@ class Server:
                 raise RpcError(-32602, "paging requires tree")
             return params
         for key, value in params.items():
-            if key == "durationMs":
+            if key in ("x", "y") and method == "spy.repick":
+                if type(value) is not int:
+                    raise RpcError(-32602, f"{key} must be an integer")
+            elif key == "durationMs":
                 if (
                     isinstance(value, bool)
                     or not isinstance(value, int | float)
@@ -462,7 +473,7 @@ class Server:
         except (ValueError, TypeError, OverflowError, UnicodeError) as exc:
             raise RpcError(-32602, "invalid managed parameters") from exc
 
-    def handle(self, request: Any) -> None:
+    def handle(self, request: Any, response_ids: list[Any] | None = None) -> None:
         if not isinstance(request, dict):
             self._error(None, -32600, "invalid request")
             return
@@ -482,21 +493,28 @@ class Server:
         request_id = request.get("id")
         notification = "id" not in request
         method = request["method"]
+        ids = response_ids if response_ids is not None else [request_id]
+
+        def error(_id: Any, code: int, message: str, data: Any = None) -> None:
+            for response_id in ids:
+                self._error(response_id, code, message, data)
+
         try:
             if self.cfg is None and method not in ("initialize", "shutdown"):
                 raise RpcError(-32600, "not initialized")
             params = self._params(method, request.get("params", {}))
             result = self.dispatch(method, params, request.get("_spyEpoch"))
             if not notification and (not self._stopping.is_set() or method == "shutdown"):
-                self._write({"jsonrpc": "2.0", "id": request_id, "result": result})
+                for response_id in ids:
+                    self._write({"jsonrpc": "2.0", "id": response_id, "result": result})
         except Exception as exc:
             if notification or self._stopping.is_set():
                 return
             if method == "inspect.managed.spyInvoke" and isinstance(exc, WtkError):
-                self._error(request_id, -32000, "Spy invocation failed")
+                error(request_id, -32000, "Spy invocation failed")
                 return
             if isinstance(exc, RpcError):
-                self._error(request_id, exc.code, exc.message, exc.data)
+                error(request_id, exc.code, exc.message, exc.data)
             elif isinstance(exc, WtkError):
                 from wintestkit.errors import InspectorError
                 from wintestkit.targets import TargetError
@@ -518,14 +536,14 @@ class Server:
 
                     data["code"] = exc.code
                     data["hint"] = inspector_error_hint(exc.code)
-                self._error(request_id, code, str(exc), data)
+                error(request_id, code, str(exc), data)
             else:
                 if method.startswith("inspect.managed."):
                     log.error("Managed RPC request failed (%s)", type(exc).__name__)
-                    self._error(request_id, -32603, "internal error")
+                    error(request_id, -32603, "internal error")
                 else:
                     log.exception("RPC request failed")
-                    self._error(request_id, -32603, "internal error", {"message": str(exc)})
+                    error(request_id, -32603, "internal error", {"message": str(exc)})
 
     @staticmethod
     def _raise_for_highlight(element: TargetElement) -> TargetElement:
@@ -569,8 +587,10 @@ class Server:
 
         if self.app is not None and self.app.is_running():
             return self.app
-        self.app = None
-        self._owned_app_pids = None
+        with self._app_state_lock:
+            self.app = None
+            self._owned_app_pids = None
+            self._owned_app_identities.clear()
         if self.cfg is not None and self.cfg.app is not None:
             with contextlib.suppress(AppNotRunningError):
                 self.app = App.attach(process=self.cfg.app.process_name)
@@ -715,6 +735,27 @@ class Server:
         except Exception:
             log.debug("native window facts unavailable", exc_info=True)
         return result
+
+    def _known_process_id(self, node_id: str, node: TargetElement) -> int:
+        """The process id recorded when the node was listed, else a live read.
+
+        A live UIA read goes through the provider, which blocks for UIA's timeout while the
+        application's UI thread is busy.
+        """
+        with self._node_lock:
+            info = self.node_infos.get(node_id)
+        return info.process_id if info is not None and info.process_id else node.process_id
+
+    def _window_process_id(self, node_id: str) -> int | None:
+        """The process of a listed top-level window, from Win32 instead of the UIA provider."""
+        from wintestkit.uia import win32
+
+        with self._node_lock:
+            info = self.node_infos.get(node_id)
+        hwnd = info.native_window_handle if info is not None else 0
+        if not hwnd or info is None or win32.window_pid(hwnd) != info.process_id:
+            return None
+        return info.process_id
 
     def _node(self, node_id: str) -> UIAElement:
         with self._node_lock:
@@ -880,9 +921,9 @@ class Server:
             "Name": peer_name,
             "ControlType": control_type,
             "Bounds": str(state.bounds.to_json() if state.bounds is not None else ""),
-            "Visible": str(state.visible),
-            "IsEnabled": str(state.enabled),
-            "HasKeyboardFocus": str(state.focused),
+            "Visible": _property_text(state.visible),
+            "IsEnabled": _property_text(state.enabled),
+            "HasKeyboardFocus": _property_text(state.focused),
             "ProcessId": str(node.process_id),
             "WindowHandle": str(state.window_handle or 0),
         }
@@ -910,26 +951,7 @@ class Server:
             "uiaMapped": False,
         }
         if params.get("includeAncestors", False):
-            with self._node_lock:
-                parent_id = self._wpf_parents.get(params["nodeId"])
-                seen = {params["nodeId"]}
-                ancestors: list[dict[str, Any]] = []
-                while parent_id and parent_id not in seen and len(ancestors) < 100:
-                    seen.add(parent_id)
-                    description = self._wpf_descriptions.get(parent_id)
-                    if description is None:
-                        info = self.node_infos.get(parent_id)
-                        if info is None:
-                            break
-                        description = {
-                            "nodeId": parent_id,
-                            "info": info.to_dict(),
-                            "hasChildren": True,
-                            "source": source,
-                        }
-                    ancestors.append(description)
-                    parent_id = self._wpf_parents.get(parent_id)
-                result["ancestors"] = list(reversed(ancestors))
+            result["ancestors"] = self._wpf_ancestors(node, params["nodeId"], state.window_handle)
         if peer is None and state.uia_runtime_id:
             try:
                 peer = node.as_uia()
@@ -969,6 +991,123 @@ class Server:
                 uia_inspection.append(description)
             result["uia"] = {"properties": uia_properties, "inspection": uia_inspection}
         return result
+
+    def _wpf_ancestors(self, node: Any, node_id: str, hwnd: int | None) -> list[dict[str, Any]]:
+        """Repair a partial managed path before returning its root-to-parent descriptions."""
+        from wintestkit.backends.element import WpfElement
+        from wintestkit.uia import element as uia_element
+        from wintestkit.uia import win32
+        from wintestkit.uia.element import ElementInfo
+
+        def walk() -> tuple[list[dict[str, Any]], str, Any, bool]:
+            descriptions: list[dict[str, Any]] = []
+            current_id, current = node_id, node
+            seen = {node_id}
+            with self._node_lock:
+                if node_id in self._wpf_windows:
+                    return descriptions, current_id, current, True
+                while len(descriptions) < 100:
+                    parent_id = self._wpf_parents.get(current_id)
+                    if not parent_id or parent_id in seen:
+                        break
+                    description = self._wpf_descriptions.get(parent_id)
+                    parent = self.nodes.get(parent_id)
+                    info = self.node_infos.get(parent_id)
+                    if description is None and info is not None:
+                        description = {
+                            "nodeId": parent_id,
+                            "info": info.to_dict(),
+                            "hasChildren": True,
+                            "source": _ref_source(node.ref),
+                        }
+                    if description is None:
+                        break
+                    descriptions.append(description)
+                    if parent_id in self._wpf_windows:
+                        return descriptions, parent_id, parent, True
+                    if not isinstance(parent, WpfElement):
+                        break
+                    seen.add(parent_id)
+                    current_id, current = parent_id, parent
+            return descriptions, current_id, current, False
+
+        ancestors, current_id, current, complete = walk()
+        if not complete and hwnd:
+            assert self.cfg is not None
+            deadline = time.monotonic() + self.cfg.inspector.request_timeout
+            try:
+                window = uia_element.from_handle(win32.root_window(int(hwnd)))
+                root = self._register(window)
+                root["source"] = self._managed_kind(window) or _ref_source(node.ref)
+                with self._node_lock:
+                    self._wpf_windows.add(root["nodeId"])
+                    self._wpf_descriptions[root["nodeId"]] = root
+                seen = {current.ref.object_id}
+                ref = node.client.parent(
+                    current.ref.object_id, current.ref.generation, deadline=deadline
+                )
+                for _ in range(63):
+                    if ref is None:
+                        # The top managed element represents the UIA window row itself.
+                        break
+                    if ref.object_id in seen:
+                        raise ValueError("cycle in managed parent chain")
+                    seen.add(ref.object_id)
+                    self._remember_managed(node.client.session.session_id, ref.to_json())
+                    parent_id = _managed_node_id(ref)
+                    with self._node_lock:
+                        existing_parent = self.nodes.get(parent_id)
+                    # Ask whether this is the window object before adding it as a tree row.
+                    if time.monotonic() >= deadline:
+                        raise TimeoutError("parent lookup deadline expired")
+                    next_ref = node.client.parent(ref.object_id, ref.generation, deadline=deadline)
+                    if next_ref is None:
+                        with self._node_lock:
+                            self._wpf_parents[current_id] = root["nodeId"]
+                        break
+                    info = ElementInfo(
+                        "",
+                        "",
+                        ref.type.name,
+                        ref.type.full_name,
+                        "WinForms" if ref.is_winforms else "WPF",
+                        node.process_id,
+                        None,
+                        True,
+                        False,
+                        False,
+                        parent_id,
+                    )
+                    with self._node_lock:
+                        if not isinstance(existing_parent, WpfElement):
+                            self.nodes[parent_id] = WpfElement(node.client, ref, node.process_id)
+                            self.node_infos[parent_id] = info
+                            self.nodes.move_to_end(parent_id)
+                            if len(self.nodes) > 5000:
+                                evicted, old = self.nodes.popitem(last=False)
+                                self.node_infos.pop(evicted, None)
+                                self._wpf_text.pop(evicted, None)
+                                self._wpf_windows.discard(evicted)
+                                self._release_tree_node(old)
+                        self._wpf_descriptions.setdefault(
+                            parent_id,
+                            {
+                                "nodeId": parent_id,
+                                "info": info.to_dict(),
+                                "hasChildren": True,
+                                "source": _ref_source(ref),
+                                "identity": {"type": ref.type.full_name},
+                            },
+                        )
+                        self._wpf_parents[current_id] = parent_id
+                        current_id, current = parent_id, self.nodes[parent_id]
+                    ref = next_ref
+                else:
+                    raise ValueError("managed parent chain exceeds 64 levels")
+            except Exception:
+                log.warning("Unable to recover WPF ancestors for node %s", node_id, exc_info=True)
+            ancestors, _, _, _ = walk()
+        return list(reversed(ancestors))
 
     def _managed_kind(self, element: UIAElement) -> str | None:
         """``wpf`` or ``winforms`` when the agent can show this window's tree, else None."""
@@ -1011,7 +1150,10 @@ class Server:
             node_id = item["nodeId"]
             with self._node_lock:
                 node = self.nodes.get(node_id)
-            kind = self._managed_kind(cast("UIAElement", node)) if node is not None else None
+            kind = None
+            if node is not None:
+                with contextlib.suppress(Exception):
+                    kind = self._managed_kind(cast("UIAElement", node))
             if kind is not None:
                 item["source"] = kind
                 self._wpf_windows.add(node_id)
@@ -1155,15 +1297,27 @@ class Server:
                     ref = entry.object_ref
                     self._remember_managed(client.session.session_id, ref.to_json())
                     node_id = _managed_node_id(ref)
-                    identity_data = {"type": ref.type.full_name}
+                    identity_data: dict[str, Any] = {"type": ref.type.full_name}
                     if entry.identity is not None:
                         if entry.identity.x_name:
                             identity_data["xName"] = entry.identity.x_name
                         if entry.identity.automation_id:
                             identity_data["automationId"] = entry.identity.automation_id
+                    if entry.identity is not None and entry.identity.sibling_index is not None:
+                        identity_data["siblingIndex"] = entry.identity.sibling_index
+                    text = self._wpf_control_text(
+                        client,
+                        ref,
+                        (
+                            ref.type.full_name,
+                            identity_data.get("xName"),
+                            identity_data.get("automationId"),
+                        ),
+                        deadline,
+                    )
                     info = ElementInfo(
                         identity_data.get("automationId", ""),
-                        identity_data.get("xName", ""),
+                        (text or "")[:100],
                         ref.type.name,
                         ref.type.full_name,
                         "WinForms" if ref.is_winforms else "WPF",
@@ -1203,14 +1357,23 @@ class Server:
                             self._wpf_windows.discard(evicted)
                             self._release_tree_node(old)
                     parent_id = node_id
-                if pick and len(entries) > 1:
+                if pick:
                     root_description = self._register(window)
                     root_description["source"] = self._managed_kind(window) or "wpf"
-                    first_id = _managed_node_id(entries[1].object_ref)
                     with self._node_lock:
                         self._wpf_windows.add(root_description["nodeId"])
                         self._wpf_descriptions[root_description["nodeId"]] = root_description
-                        self._wpf_parents[first_id] = root_description["nodeId"]
+                        if len(entries) > 1:
+                            first_id = _managed_node_id(entries[1].object_ref)
+                            self._wpf_parents[first_id] = root_description["nodeId"]
+                    if len(entries) == 1:
+                        return _SpyTarget(
+                            window,
+                            root_description,
+                            {"innerElement": hit.inner_element}
+                            if pick and hit.inner_element
+                            else {},
+                        )
                 if self._is_hwnd_host(hit.handle):
                     # Only accept UIA hits below this host's peer, never its siblings.
                     try:
@@ -1245,7 +1408,11 @@ class Server:
                         log.debug("Unable to resolve hosted HWND hit", exc_info=True)
                 # Fetch geometry here so failures still fall back for this event.
                 _ = target.rect
-                return _SpyTarget(target, description)
+                return _SpyTarget(
+                    target,
+                    description,
+                    {"innerElement": hit.inner_element} if pick and hit.inner_element else {},
+                )
         except Exception:
             log.debug("WPF Spy hit test failed", exc_info=True)
             fallback.extra = {"source": "uia"}
@@ -1274,7 +1441,7 @@ class Server:
                 client, ref = node.client, node.ref
                 process_id = node.process_id
             else:
-                process_id = node.process_id
+                process_id = self._known_process_id(parent_id, node)
                 identity = current_identity(process_id)
                 registry = runtime.inspector_sessions()
                 client = registry.get(identity)
@@ -1351,13 +1518,15 @@ class Server:
                     text_deadline,
                 )
                 self._remember_managed(client.session.session_id, child_ref.to_json())
-                identity_data: dict[str, str] = {"type": child_ref.type.full_name}
+                identity_data: dict[str, Any] = {"type": child_ref.type.full_name}
                 if child.identity is not None:
                     if child.identity.x_name:
                         identity_data["xName"] = child.identity.x_name
                     if child.identity.automation_id:
                         identity_data["automationId"] = child.identity.automation_id
                 node_id = _managed_node_id(child_ref)
+                if child.identity is not None and child.identity.sibling_index is not None:
+                    identity_data["siblingIndex"] = child.identity.sibling_index
                 info = ElementInfo(
                     identity_data.get("automationId", ""),
                     (text or "")[:100],
@@ -1527,7 +1696,9 @@ class Server:
                         raise RpcError(-32005, "unknown node id")
                     pid = selected.process_id
                 else:
-                    pid = self._node(params["nodeId"]).process_id
+                    pid = self._window_process_id(params["nodeId"])
+                    if pid is None:
+                        pid = self._node(params["nodeId"]).process_id
                 facts = identify(pid)
                 return {
                     "process": facts.identity.to_json(),
@@ -1942,9 +2113,20 @@ class Server:
     def _app_status(
         self, app: App | None, pids: list[int], windows: list[UIAElement] | None = None
     ) -> dict[str, Any]:
-        owned = bool(pids) and self._owned_app_pids == set(pids)
-        if self._owned_app_pids is not None and not owned:
-            self._owned_app_pids = None
+        with self._app_state_lock:
+            running = set(pids)
+            owned = (
+                bool(running)
+                and self._owned_app_pids is not None
+                and running <= self._owned_app_pids
+            )
+            if (
+                app is self.app
+                and self._owned_app_pids is not None
+                and not running.intersection(self._owned_app_pids)
+            ):
+                self._owned_app_pids = None
+                self._owned_app_identities.clear()
         status: dict[str, Any] = {"running": bool(pids), "pids": pids, "owned": owned}
         if app is not None:
             if windows is None:
@@ -2030,18 +2212,39 @@ class Server:
             overrides = {Path(path): source for path, source in params.get("overrides", {}).items()}
             return discover(self.cfg.root, overrides=overrides).to_dict()
         if method == "app.status":
-            app = self._app(False)
+            # Status is read concurrently with the ordered worker; do not mutate app state.
+            from wintestkit.app import App
+
+            app = self.app
+            if app is not None and not app.is_running():
+                app = None
+            if app is None and self.cfg.app is not None:
+                with contextlib.suppress(AppNotRunningError):
+                    app = App.attach(process=self.cfg.app.process_name)
             pids = app.pids if app is not None else []
-            return self._app_status(app, pids)
+            status = self._app_status(app, pids, [])
+            if pids:
+                # GetWindowText reads another process's caption without messaging its UI thread,
+                # so a hung app still reports its title here.
+                from wintestkit.uia import win32
+
+                for hwnd in win32.top_level_windows(set(pids)):
+                    title = "" if win32.window_owner(hwnd) else win32.window_text(hwnd)
+                    if title:
+                        status["mainWindowTitle"] = title
+                        break
+            return status
         if method == "app.launch":
             app = self._app(False)
             if app is None:
                 from wintestkit.pytest_plugin import launch_app
 
-                app = self.app = launch_app(
+                app = launch_app(
                     self.cfg, progress=lambda stage: self.notify("app.starting", {"stage": stage})
                 )
-                self._owned_app_pids = set(app.pids) or None
+                with self._app_state_lock:
+                    self.app = app
+                    self._owned_app_pids = set(app.pids) or None
                 from wintestkit.inspector.probe import current_identity
 
                 self._owned_app_identities.clear()
@@ -2063,8 +2266,10 @@ class Server:
             app = self._app(False)
             if app is not None:
                 app.close(timeout=self.cfg.app.close_timeout if self.cfg.app is not None else 10)
-                self.app = None
-                self._owned_app_pids = None
+                with self._app_state_lock:
+                    self.app = None
+                    self._owned_app_pids = None
+                    self._owned_app_identities.clear()
                 with self._node_lock:
                     self.nodes.clear()
                     self.node_infos.clear()
@@ -2108,7 +2313,7 @@ class Server:
             return response
         if method == "inspect.coverage":
             from wintestkit.backends.element import WpfElement
-            from wintestkit.errors import NoUiaPeerError
+            from wintestkit.backends.mapping import map_runtime_ids
 
             app = self._app(False)
             if app is None:
@@ -2125,16 +2330,39 @@ class Server:
                 for node_id, selected_node in selected_nodes.items()
                 if not isinstance(selected_node, WpfElement)
             }
+            groups: dict[int, list[tuple[int, ...]]] = {}
+            unresolved: list[tuple[str, WpfElement, tuple[int, tuple[int, ...]]]] = []
             for node_id, selected_node in selected_nodes.items():
-                if isinstance(selected_node, WpfElement):
-                    del infos[node_id]
+                if not isinstance(selected_node, WpfElement):
+                    continue
+                del infos[node_id]
+                state = selected_node.state()
+                if not state.window_handle or not state.uia_runtime_id:
+                    continue
+                key = (state.window_handle, state.uia_runtime_id)
+                peer = selected_node.cached_uia
+                if peer is not None:
                     try:
-                        peer = selected_node.as_live().as_uia()
-                        info = peer.info()
-                        infos[info.runtime_id] = info
-                        aliases.setdefault(info.runtime_id, []).append(node_id)
-                    except NoUiaPeerError:
-                        continue
+                        if not peer.is_alive() or peer.runtime_id != ".".join(map(str, key[1])):
+                            peer = None
+                    except Exception:
+                        peer = None
+                if peer is None:
+                    selected_node.cached_uia = None
+                    groups.setdefault(key[0], []).append(key[1])
+                    unresolved.append((node_id, selected_node, key))
+                    continue
+                info = peer.info()
+                infos[info.runtime_id] = info
+                aliases.setdefault(info.runtime_id, []).append(node_id)
+            mapped = map_runtime_ids(groups) if groups else {}
+            for node_id, selected_node, key in unresolved:
+                peer = mapped.get(key)
+                if peer is not None:
+                    selected_node.cached_uia = peer
+                    info = peer.info()
+                    infos[info.runtime_id] = info
+                    aliases.setdefault(info.runtime_id, []).append(node_id)
             result = self._coverage().covered_nodes(app, infos)
             result["covered"] = {
                 alias: value
@@ -2168,7 +2396,7 @@ class Server:
                 return {"nodes": nodes, "status": status} if status is not None else nodes
             include_other = params.get("includeOtherApps", False)
             roots: list[UIAElement | None]
-            if app is not None and not include_other:
+            if not include_other:
                 roots = list(windows)
                 source_indices = list(range(len(roots)))
             else:
@@ -2205,15 +2433,64 @@ class Server:
                         seen.add(runtime_id)
                         roots.append(window)
                         source_indices.append(index)
-            nodes = self._register_nodes(
-                [
-                    root if root is not None and not _is_popup_surface(root) else None
-                    for root in roots
-                ],
-                source_indices=source_indices,
-            )
+            partial_error: RpcError | None = None
+            partial_data: dict[str, Any] = {}
+            try:
+                nodes = self._register_nodes(
+                    [
+                        root if root is not None and not _is_popup_surface(root) else None
+                        for root in roots
+                    ],
+                    source_indices=source_indices,
+                )
+            except RpcError as error:
+                raw_data: object = error.data
+                data: dict[str, Any] = (
+                    cast("dict[str, Any]", raw_data) if isinstance(raw_data, dict) else {}
+                )
+                if "nodes" not in data:
+                    raise
+                partial_error, partial_data = error, data
+                nodes = cast("list[dict[str, Any]]", data["nodes"])
             self._mark_roots(nodes)
+            from wintestkit.uia import win32
+
+            live_handles: set[int] = set(win32.top_level_windows(set(pids))) if pids else set()
+            current_handles = {n["info"].get("nativeWindowHandle") for n in nodes}
+            for hwnd, cached in list(self._root_cache.items()):
+                pid = cached["info"].get("processId")
+                # Windows hides a hung window behind a ghost copy, so a hung one is kept while
+                # its handle still belongs to the process; a closed or hidden window is dropped.
+                kept = hwnd in live_handles or (
+                    win32.window_pid(hwnd) == pid and win32.is_hung_window(hwnd)
+                )
+                if pid not in pids or not kept:
+                    del self._root_cache[hwnd]
+                elif hwnd not in current_handles:
+                    nodes.append(cached)
+            for node in nodes:
+                hwnd = node["info"].get("nativeWindowHandle")
+                if hwnd in live_handles:
+                    self._root_cache[hwnd] = node
+            if partial_error is not None:
+                partial_data["nodes"] = nodes
+                raise partial_error
             return {"nodes": nodes, "status": status} if status is not None else nodes
+        if method == "spy.repick":
+            from wintestkit.engine.spy import element_at
+
+            x, y = params["x"], params["y"]
+            if any(type(value) is not int for value in (x, y)):
+                raise RpcError(-32602, "x and y must be integers")
+            tree = params.get("tree", "visual")
+            if tree not in ("visual", "logical"):
+                raise RpcError(-32602, "invalid tree")
+            element = element_at(x, y)
+            if element is None:
+                raise RpcError(-32005, "No element at the requested screen point")
+            target = self._spy_resolve(element, x, y, True, tree)
+            node = target.node if target.node is not None else self._register(target.element)
+            return {"node": node, "point": {"x": x, "y": y}, **target.extra}
         if method == "spy.start":
             from wintestkit.engine.overlay import parse_color
             from wintestkit.engine.spy import SpySession
@@ -2268,15 +2545,16 @@ class Server:
                     return None
                 if self.spy is None:
                     epoch = self._spy_epoch
-                    options: dict[str, Any] = {}
-                    if "tree" in params:
 
-                        def resolve(
-                            element: UIAElement, x: int, y: int, picked: bool
-                        ) -> _SpyTarget:
-                            return self._spy_resolve(element, x, y, picked, params["tree"])
+                    def resolve(element: UIAElement, x: int, y: int, picked: bool) -> _SpyTarget:
+                        target = self._spy_resolve(
+                            element, x, y, picked, params.get("tree", "visual")
+                        )
+                        if picked:
+                            target.extra["point"] = {"x": x, "y": y}
+                        return target
 
-                        options["resolve"] = resolve
+                    options: dict[str, Any] = {"resolve": resolve}
                     session = SpySession(
                         hover,
                         pick,
@@ -2405,6 +2683,14 @@ class Server:
                 return self._coverage().definitions_of(
                     self._app(False), peer.runtime_id, peer.info()
                 )
+        if method == "inspect.preview" and params["nodeId"].startswith("process:"):
+            from wintestkit.live_preview import capture_process_preview
+
+            try:
+                pid = int(params["nodeId"].removeprefix("process:"))
+            except ValueError:
+                return {"reason": "The process identity is invalid."}
+            return capture_process_preview(pid)
         node = self._node(params["nodeId"])
         if method == "inspect.definitions":
             app = self._app(False)
@@ -2413,8 +2699,6 @@ class Server:
             from wintestkit.uia.constants import TreeScope
             from wintestkit.uia.element import ElementEnumerationError
 
-            if self.coverage is not None:
-                self.coverage.invalidate()
             try:
                 children = node.find_all(TreeScope.Children, cached=True)
             except ElementEnumerationError as exc:
@@ -2429,8 +2713,6 @@ class Server:
             ):
                 raise InspectorError("invalid page token", code="invalidPageToken")
             offset = int(token) if token is not None else 0
-            if token is not None and offset >= len(children):
-                raise InspectorError("invalid page token", code="invalidPageToken")
             end = offset + params.get("pageSize", 200)
             if params["nodeId"] in self._wpf_parents:
                 page_nodes = self._hosted_nodes(children[offset:end], params["nodeId"], offset)
@@ -2447,7 +2729,7 @@ class Server:
         if method == "inspect.preview":
             from wintestkit.live_preview import capture_live_preview
 
-            return capture_live_preview(node)
+            return capture_live_preview(node, whole_window=params["nodeId"] in self._wpf_windows)
         if method == "suggest.locator":
             from wintestkit.engine.suggest import WindowSelectedError, suggest_locator
 
@@ -2484,7 +2766,7 @@ class Server:
             if not full:
                 values = inspection_values(node, self.cfg.property_aliases, base=())
                 inspection.extend(inspection_property(key, value) for key, value in values.items())
-                properties.update({key: str(value) for key, value in values.items()})
+                properties.update({key: _property_text(value) for key, value in values.items()})
                 # Properties the user pinned to the default list are read with every selection.
                 for name in dict.fromkeys(params.get("include", ())):
                     if name in PROPERTY_IDS and name not in properties:
@@ -2497,7 +2779,7 @@ class Server:
                     properties[alias] = properties[property_name]
             ancestors: list[dict[str, Any]] = []
             parent = node.parent() if params.get("includeAncestors", False) else None
-            hosted_parent = self._wpf_parents.get(params["nodeId"]) if parent is not None else None
+            hosted_parent = self._wpf_parents.get(params["nodeId"])
             seen = {params["nodeId"]}
             while hosted_parent and len(ancestors) < 100:
                 registered = self._wpf_descriptions.get(hosted_parent)
@@ -2533,13 +2815,26 @@ class Server:
         requests: queue.Queue[Any] = queue.Queue()
         finished = object()
         reads = ThreadPoolExecutor(max_workers=_READ_WORKERS, thread_name_prefix="wtk-rpc-read")
+        statuses = ThreadPoolExecutor(max_workers=2, thread_name_prefix="wtk-rpc-status")
+        pending_lock = threading.Lock()
+        pending: dict[str, dict[str, Any]] = {}
+        queued: dict[Any, dict[str, Any]] = {}
 
         def work() -> None:
             while not self._stopping.is_set():
-                request = requests.get()
-                if request is finished:
+                entry = requests.get()
+                if entry is finished:
                     break
-                self.handle(request)
+                with pending_lock:
+                    key = entry["key"]
+                    if key is not None:
+                        pending.pop(key, None)
+                    ids = entry["ids"]
+                    for request_id in ids:
+                        queued.pop(request_id, None)
+                # Cancelled queued requests receive no response: the client has timed out.
+                if ids or not entry["has_id"]:
+                    self.handle(entry["request"], ids if entry["has_id"] else None)
 
         worker = threading.Thread(target=work, name="wtk-rpc-worker", daemon=True)
         previous_stdout = sys.stdout
@@ -2555,9 +2850,9 @@ class Server:
                 except (ValueError, UnicodeError):
                     self._error(None, -32700, "parse error")
                     continue
-                if isinstance(request, dict):
-                    request = cast("dict[str, Any]", request)
-                if isinstance(request, dict) and cast("dict[str, Any]", request).get("method") in (
+                # The same request as a typed mapping, None when it is not a JSON object.
+                message = cast("dict[str, Any]", request) if isinstance(request, dict) else None
+                if message is not None and message.get("method") in (
                     "spy.stop",
                     "shutdown",
                 ):
@@ -2565,17 +2860,79 @@ class Server:
                     if self._stopping.is_set():
                         break
                 elif (
-                    isinstance(request, dict)
-                    and cast("dict[str, Any]", request).get("method") in _APPLICATION_READS
+                    message is not None
+                    and message.get("jsonrpc") == "2.0"
+                    and message.get("method") == "$/cancelRequest"
+                    and "id" not in message
                 ):
+                    params: object = message.get("params")
+                    cancel_id = (
+                        cast("dict[str, Any]", params).get("id")
+                        if isinstance(params, dict)
+                        else None
+                    )
+                    if isinstance(cancel_id, str | int) and not isinstance(cancel_id, bool):
+                        with pending_lock:
+                            entry = queued.pop(cancel_id, None)
+                            if entry is not None:
+                                entry["ids"].remove(cancel_id)
+                elif (
+                    message is not None
+                    and message.get("method") == "app.status"
+                    and self.cfg is not None
+                ):
+                    statuses.submit(self.handle, request)
+                elif message is not None and message.get("method") in _APPLICATION_READS:
                     reads.submit(self.handle, request)
                 else:
-                    if isinstance(request, dict):
-                        request["_spyEpoch"] = self._spy_epoch
-                    requests.put(request)
+                    if message is not None:
+                        message["_spyEpoch"] = self._spy_epoch
+                    method = message.get("method") if message is not None else None
+                    request_id = message.get("id") if message is not None else None
+                    valid_id = isinstance(request_id, str | int) and not isinstance(
+                        request_id, bool
+                    )
+                    has_id = message is not None and "id" in message
+                    key = None
+                    if (
+                        method == "inspect.children"
+                        and valid_id
+                        and message is not None
+                        and message.get("jsonrpc") == "2.0"
+                    ):
+                        key = json.dumps(
+                            message.get("params", {}), sort_keys=True, separators=(",", ":")
+                        )
+                    with pending_lock:
+                        entry = pending.get(key) if key is not None else None
+                        if entry is not None and request_id not in queued:
+                            entry["ids"].append(request_id)
+                            queued[request_id] = entry
+                        elif (
+                            isinstance(method, str)
+                            and method.startswith("inspect.")
+                            and requests.qsize() >= _MAX_QUEUED_INSPECTIONS
+                        ):
+                            if has_id:
+                                self._error(
+                                    request_id, -32000, "server busy: inspection queue is full"
+                                )
+                        else:
+                            queued_entry: dict[str, Any] = {
+                                "request": request,
+                                "key": key,
+                                "ids": [request_id] if has_id else [],
+                                "has_id": has_id,
+                            }
+                            if key is not None:
+                                pending[key] = queued_entry
+                            if valid_id:
+                                queued[request_id] = queued_entry
+                            requests.put(queued_entry)
             requests.put(finished)
             self.stop_spy()
             worker.join(timeout=5 if self._stopping.is_set() else None)
+            statuses.shutdown(wait=True)
         finally:
             from wintestkit import runtime
 
@@ -2585,6 +2942,7 @@ class Server:
             self.stop_spy()
             requests.put(finished)
             reads.shutdown(wait=False, cancel_futures=True)
+            statuses.shutdown(wait=True)
             logger.removeHandler(handler)
             sys.stdout = previous_stdout
         return 0

@@ -7,6 +7,49 @@ Unreleased changes must be moved to a dated candidate section before a release c
 
 ## [Unreleased]
 
+- Pick objects in about 4 s instead of 9 s on large WPF panels: Spy maps a page of tree rows to UI Automation in batched searches instead of one search per row.
+- Keep Spy usable while the application's UI thread is busy: Refresh keeps the tree and the selection and answers in about 2 s, the Properties sidebar says the UI thread is busy instead of offering Attach, and its values load again by themselves when the application responds.
+- Report "App not responding" instead of "not found" in Check exists and Check all when the application's UI thread is busy, without red underlines.
+- Drop processes that exit from the Spy tree without a Refresh, and keep Show Other Apps available while the app under test is stopped.
+- Show `true` and `false` for WPF Visible, IsEnabled and HasKeyboardFocus, a top-level window's process as its Parent, the tree label for unnamed objects in the Selected object header, and the Properties preview at no more than its natural size.
+- Focus the first item when the Properties **…** menu opens and return focus to its button when it closes.
+- Remember that WinTestKit launched the app while any process it launched still runs, and say when Close App would also close instances WinTestKit did not start.
+
+- Give the Spy Objects tree all the width the Selected object pane does not need when it opens: that pane keeps its 260 px minimum, or the width its header and the locator button measure when larger.
+- Remember the Spy splitter per workspace: the dragged width is stored in VS Code's workspace state, sent back with the initial state, kept within the window on restore and resize, and a double-click on the splitter (or Home) restores the default and forgets it.
+- Replace the Properties "Copied" note in the header with a small green label beside the pointer reading "Name copied" or "Value copied", placed beside the cell for keyboard copies, fading after about a second and announced to screen readers.
+- Remove the Properties Description section: descriptions are now native tooltips on each row's name.
+- Let you choose the rows of the Properties Basic view. A pin to the left of a row's name adds it to Basic (shown on hover or focus in the Advanced view) or, filled and highlighted, removes it, built-in rows included. **Reset Basic view** (also the **WinTestKit: Reset Spy Basic View** command) restores the default list. The list is the user setting `wintestkit.spy.basicProperties`, which replaces `wintestkit.spy.shownProperties` and its Pinned group.
+
+- Raise a queued inspector read to normal dispatcher priority after 250 ms so a busy application UI thread no longer starves it, and report in the timeout whether it was raised.
+
+- Protect only password fields (a PasswordBox, its template parts, or an element whose own peer reports IsPassword) instead of every element without an automation peer, so bindings, text and values of windows and panels are readable.
+
+- Keep the window context image for elements in large windows by finding password fields with the inspector, and use the whole-window scan budget for windows without an inspector.
+
+- Save Check exists previews for windows (the whole window, with sensitive controls blacked out) and show them, or why they were not saved, in the editor hover, Page Tree panel and open command.
+- Save Check exists previews for collections (the first match with its window context and the match count) and show them in the same places.
+- Show a live Spy preview for every row: managed, UI Automation and native objects, top-level windows (whole) and Process rows (their main window), with the specific reason when there is nothing to capture.
+
+- Explain why an element preview was not saved in the editor and output log.
+- Capture peerless WPF elements using inspector bounds and their owned window.
+- Redact sensitive window controls and retain the crop when the window scan exceeds its budget.
+
+- Reveal the visual host when picking WPF content and identify the inner element.
+
+- Match recreated managed tree nodes using their full identity during pick reveal.
+
+- Re-resolve a picked object at its screen position when the app replaces it.
+
+- Repair missing managed ancestors so Spy can reveal picked WPF elements.
+
+- Keep inspecting large managed trees by demoting least recently used strong object leases.
+
+- Log Spy pick reveal steps and preserve a note when only part of a picked path can be revealed.
+
+- Report precise inspector injection and bootstrap failures, and include the injector log in diagnostics.
+- Avoid unnecessary server restarts during configuration initialization.
+
 ## [0.1.1rc6] - 2026-11-24
 
 Sixth prerelease. Install the extension's pre-release channel together with `pip install --pre "wintestkit[inspector]==0.1.1rc6"`. The first upgrade from rc5 asks to close applications that still have the rc5 inspector loaded.

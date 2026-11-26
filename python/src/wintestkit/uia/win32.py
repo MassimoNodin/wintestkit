@@ -523,6 +523,13 @@ def window_pid(hwnd: int) -> int:
     return int(pid.value)
 
 
+def is_hung_window(hwnd: int) -> bool:
+    """Ask Windows whether a window's UI thread has stopped processing messages."""
+    user32.IsHungAppWindow.argtypes = [wintypes.HWND]
+    user32.IsHungAppWindow.restype = wintypes.BOOL
+    return bool(user32.IsHungAppWindow(hwnd))
+
+
 def top_level_windows(pid_set: set[int] | None = None, visible_only: bool = True) -> list[int]:
     """HWNDs of top-level windows in z-order (topmost first), optionally filtered by process."""
     found: list[int] = []

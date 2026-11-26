@@ -127,8 +127,8 @@
                 class="pane"
                 aria-label="Selected object inspector"
             >
-                <div class="pane-heading">
-                    <h2>Selected object</h2>
+                <div id="details-heading" class="pane-heading">
+                    <h2 id="details-title">Selected object</h2>
                     <div
                         id="details-loading"
                         class="pane-loading"
@@ -276,10 +276,10 @@
                             <div id="sidebar-inspector" hidden>
                                 <p id="wpf-details-note" hidden><span id="sidebar-attach-status"></span> <button id="wpf-details-attach" class="secondary">Attach</button></p>
                                 <div class="sidebar-tabs" role="tablist" aria-label="Inspection categories"><button role="tab" id="sidebar-tab-properties" data-sidebar-tab="properties">Properties</button><button role="tab" id="sidebar-tab-fields" data-sidebar-tab="fields">Fields</button><button role="tab" id="sidebar-tab-methods" data-sidebar-tab="methods">Methods</button></div>
-                                <div class="sidebar-search-row"><label class="sidebar-search"><span class="codicon codicon-search" aria-hidden="true"></span><input id="sidebar-search" type="search" aria-label="Search" placeholder="Search" /></label><details id="sidebar-actions"><summary class="icon-button secondary" aria-label="Properties actions" title="Properties actions"><span class="codicon codicon-kebab-horizontal" aria-hidden="true"></span></summary><div class="sidebar-actions-menu" role="menu"><button id="sidebar-detach">Detach</button><button id="sidebar-refresh">Refresh metadata</button><button id="sidebar-export">Export metadata</button></div></details></div>
-                                <label id="sidebar-mode-toggle" class="sidebar-toggle"><input id="sidebar-mode" type="checkbox" role="switch" /><span>Show all properties</span></label>
+                                <div class="sidebar-search-row"><label class="sidebar-search"><span class="codicon codicon-search" aria-hidden="true"></span><input id="sidebar-search" type="search" aria-label="Search" placeholder="Search" /></label><details id="sidebar-actions"><summary class="icon-button secondary" aria-label="Properties actions" aria-haspopup="menu" aria-expanded="false" title="Properties actions"><span class="codicon codicon-kebab-horizontal" aria-hidden="true"></span></summary><div class="sidebar-actions-menu" role="menu"><button id="sidebar-detach" role="menuitem">Detach</button><button id="sidebar-refresh" role="menuitem">Refresh metadata</button><button id="sidebar-export" role="menuitem">Export metadata</button></div></details></div>
+                                <div id="sidebar-mode-row" class="sidebar-mode-row"><label id="sidebar-mode-toggle" class="sidebar-toggle"><input id="sidebar-mode" type="checkbox" role="switch" /><span>Show all properties</span></label><button id="sidebar-reset-basic" class="secondary" type="button" title="Restore the default rows of the Basic view"><span class="codicon codicon-discard" aria-hidden="true"></span>Reset Basic view</button></div>
                                 <table id="sidebar-table" class="sidebar-table"><thead><tr><th>Name</th><th>Value</th><th></th></tr></thead><tbody id="sidebar-rows"></tbody></table>
-                                <span id="sidebar-copy-feedback" class="sidebar-copy-feedback" aria-live="polite"></span><p id="sidebar-empty" class="muted" hidden></p><section id="sidebar-description" aria-label="Description"><h3>Description</h3><div id="sidebar-description-content">Select a row to see its description.</div></section>
+                                <p id="sidebar-empty" class="muted" hidden></p>
 
                             </div>
                             <div id="property-groups" hidden>
@@ -314,22 +314,6 @@
                                     <table><tbody id="wpf-uia-properties"></tbody></table>
                                 </details>
 
-                                <section
-                                    id="pinned-group"
-                                    class="property-group"
-                                    aria-label="Pinned properties"
-                                    hidden
-                                >
-                                    <h3>Pinned</h3>
-                                    <table>
-                                        <colgroup>
-                                            <col class="property-name-column" />
-                                            <col />
-                                            <col class="property-action-column" />
-                                        </colgroup>
-                                        <tbody id="pinned-properties"></tbody>
-                                    </table>
-                                </section>
                                 <div id="uia-all-group"><section
                                     id="all-properties-section"
                                     class="property-group"
@@ -359,6 +343,8 @@
                 </div>
             </section>
         </main>
+        <span id="copy-announcer" class="copy-announcer" role="status" aria-live="polite"></span>
+        <div id="copy-toast" class="copy-toast" aria-hidden="true" hidden></div>
         <script nonce="{{nonce}}" src="{{treeLabelsJs}}"></script>
         <script nonce="{{nonce}}" src="{{js}}"></script>
     </body>

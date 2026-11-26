@@ -230,6 +230,25 @@ describe("automatic reading reaches every public value", () => {
     const { send, panel } = make([row("Slow", "dependencyProperty"), row("Fast", "clrProperty")], async (p) => ({ result: { values: p.paths.map(([{ name }]) => ({ value: name === "Slow" ? { status: "timeout", kind: "unavailable" } : { status: "ok", kind: "string", scalar: "fast" } })) } }));
     panel.select("node");
     await vi.waitFor(() => expect(send.mock.calls.at(-1)![0].rows.map((r: { value?: { status: string } }) => r.value?.status)).toEqual(["timeout", "ok"]));
+    // One slow getter is not a busy UI thread: nothing is read again by itself.
+    expect(send.mock.calls.at(-1)![0].busyRead).toBe(false);
+  });
+
+  it("reads timed-out values again when Spy retries a busy selection", async () => {
+    mocks.warning.mockReset().mockResolvedValue("Read automatically");
+    let busy = true;
+    const { send, panel } = make([row("Fast", "clrProperty"), row("Type", "typeMetadata")], async (p) => busy ? { status: "timed out", busy: true } : ok(p));
+    panel.select("node");
+    await vi.waitFor(() => expect(send.mock.calls.at(-1)![0].busyRead).toBe(true));
+    busy = false;
+    const { inspector } = (panel as unknown as { inspector: { spyRead: { mock: { calls: { paths: { name: string }[][] }[][] } } } });
+    const before = inspector.spyRead.mock.calls.length;
+    expect(await panel.retryBusy()).toBe(true);
+    const last = send.mock.calls.at(-1)![0];
+    expect(last.rows.map((r: { value?: { status: string } }) => r.value?.status)).toEqual(["ok", "ok"]);
+    // The type facts are read before the other rows.
+    expect(inspector.spyRead.mock.calls[before][0].paths.map(([{ name }]) => name)).toEqual(["Type", "Fast"]);
+    expect(last.busyRead).toBe(false);
   });
 
   it("marks a whole batch the request failed for as timed out and carries on with the next", async () => {

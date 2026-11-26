@@ -63,21 +63,35 @@ namespace WinTestKit.Inspector.Agent.Inspection
                 lock (gate) if (state.Unresponsive) throw Unavailable(state);
                 ct.ThrowIfCancellationRequested();
                 if (dispatcher.HasShutdownStarted || dispatcher.HasShutdownFinished) throw Unavailable(state);
+                int escalated = 0;
                 DispatcherOperation<T> operation = dispatcher.InvokeAsync(() =>
                 {
                     ct.ThrowIfCancellationRequested();
-                    if (elapsed.ElapsedMilliseconds >= ProtocolLimits.DispatcherQueueWaitMs) throw QueueTimeout(elapsed.ElapsedMilliseconds);
+                    if (elapsed.ElapsedMilliseconds >= ProtocolLimits.DispatcherQueueWaitMs) throw QueueTimeout(elapsed.ElapsedMilliseconds, Volatile.Read(ref escalated) != 0);
                     Interlocked.Exchange(ref queuedMs, elapsed.ElapsedMilliseconds);
                     Interlocked.Exchange(ref state.WorkStarted, Stopwatch.GetTimestamp());
                     return action(workCancellation.Token);
                 }, DispatcherPriority.Background);
+                // Background work starves behind a busy UI thread: after DispatcherEscalateMs still pending, requeue at Normal.
                 Task completed = await Task.WhenAny(operation.Task,
-                    Task.Delay(Remaining(ProtocolLimits.DispatcherQueueWaitMs, elapsed), ct)).ConfigureAwait(false);
+                    Task.Delay(Remaining(ProtocolLimits.DispatcherEscalateMs, elapsed), ct)).ConfigureAwait(false);
+                if (completed != operation.Task && !ct.IsCancellationRequested && operation.Status == DispatcherOperationStatus.Pending)
+                {
+                    try
+                    {
+                        operation.Priority = DispatcherPriority.Normal;
+                        Volatile.Write(ref escalated, 1);
+                    }
+                    catch (InvalidOperationException) { }
+                }
+                if (completed != operation.Task)
+                    completed = await Task.WhenAny(operation.Task,
+                        Task.Delay(Remaining(ProtocolLimits.DispatcherQueueWaitMs, elapsed), ct)).ConfigureAwait(false);
                 if (completed != operation.Task && operation.Abort())
                 {
                     Observe(operation.Task);
                     ct.ThrowIfCancellationRequested();
-                    throw QueueTimeout(elapsed.ElapsedMilliseconds);
+                    throw QueueTimeout(elapsed.ElapsedMilliseconds, Volatile.Read(ref escalated) != 0);
                 }
                 Task deadline = Task.Delay(Remaining(ProtocolLimits.RequestTimeoutMs, elapsed), ct);
                 completed = await Task.WhenAny(operation.Task, deadline).ConfigureAwait(false);
@@ -100,7 +114,7 @@ namespace WinTestKit.Inspector.Agent.Inspection
                     }, CancellationToken.None,
                         TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
                     ct.ThrowIfCancellationRequested();
-                    throw WorkTimeout(elapsed.ElapsedMilliseconds, Interlocked.Read(ref queuedMs));
+                    throw WorkTimeout(elapsed.ElapsedMilliseconds, Interlocked.Read(ref queuedMs), Volatile.Read(ref escalated) != 0);
                 }
                 T result;
                 try { result = await operation.Task.ConfigureAwait(false); }
@@ -111,7 +125,7 @@ namespace WinTestKit.Inspector.Agent.Inspection
                 }
                 if (elapsed.ElapsedMilliseconds >= ProtocolLimits.RequestTimeoutMs)
                 {
-                    throw WorkTimeout(elapsed.ElapsedMilliseconds, Interlocked.Read(ref queuedMs));
+                    throw WorkTimeout(elapsed.ElapsedMilliseconds, Interlocked.Read(ref queuedMs), Volatile.Read(ref escalated) != 0);
                 }
                 ct.ThrowIfCancellationRequested();
                 return result;
@@ -187,14 +201,14 @@ namespace WinTestKit.Inspector.Agent.Inspection
             state.Unavailable.Cancel();
         }
         private static void Observe(Task task) { if (task.IsFaulted) _ = task.Exception; }
-        private static ProtocolException QueueTimeout(long waited)
+        private static ProtocolException QueueTimeout(long waited, bool escalated = false)
         {
             var details = new JsonObjectNode();
-            details.Add("dispatcherBusy", new JsonBoolNode(true));
-            return new ProtocolException(ErrorCodes.Timeout, string.Format("Dispatcher queue wait exceeded {0} ms (waited {1} ms; the UI thread is busy with higher-priority work)", ProtocolLimits.DispatcherQueueWaitMs, waited), details);
+            details.Add("dispatcherBusy", new JsonBoolNode(true)); details.Add("escalated", new JsonBoolNode(escalated));
+            return new ProtocolException(ErrorCodes.Timeout, string.Format("Dispatcher queue wait exceeded {0} ms (waited {1} ms{2}; the UI thread is busy with higher-priority work)", ProtocolLimits.DispatcherQueueWaitMs, waited, escalated ? string.Format(", escalated to Normal priority after {0} ms", ProtocolLimits.DispatcherEscalateMs) : ""), details);
         }
-        private static ProtocolException WorkTimeout(long elapsed, long queued) =>
-            new ProtocolException(ErrorCodes.DispatcherUnavailable, string.Format("Dispatcher work did not finish within {0} ms (queued {1} ms, ran {2} ms)", ProtocolLimits.RequestTimeoutMs, queued, Math.Max(0, elapsed - queued)));
+        private static ProtocolException WorkTimeout(long elapsed, long queued, bool escalated) =>
+            new ProtocolException(ErrorCodes.DispatcherUnavailable, string.Format("Dispatcher work did not finish within {0} ms (queued {1} ms, ran {2} ms{3})", ProtocolLimits.RequestTimeoutMs, queued, Math.Max(0, elapsed - queued), escalated ? ", escalated to Normal priority" : ""));
         private static ProtocolException Unavailable(State state)
         {
             long started = Interlocked.Read(ref state.WorkStarted);

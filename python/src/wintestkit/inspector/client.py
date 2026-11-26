@@ -75,6 +75,7 @@ from wintestkit.inspector.transport import ByteTransport, read_frame, write_fram
 class HitTestResult:
     handle: ObjectRef
     path: tuple[ManagedNode, ...] | None = None
+    inner_element: dict[str, str] | None = None
 
 
 _trace_lock = threading.Lock()
@@ -149,6 +150,10 @@ def _error(code: str, details: object = None) -> InspectorError:
         "authenticationFailed",
         "payloadMissing",
         "payloadMismatch",
+        "injectionFailed",
+        "injectionStalled",
+        "bootstrapRejected",
+        "agentNotStarted",
         "alreadyAttached",
         "notAttached",
         "attachFailed",
@@ -782,13 +787,19 @@ class InspectorClient:
         self._feature("hitTest")
 
         def parse(value: object) -> HitTestResult:
-            data = _obj(value, "handle", "path")
+            data = _obj(value, "handle", "path innerElement")
             reference = ObjectRef.from_json(data["handle"])
             self._object_ref(reference)
             path = _array(data["path"], self._node, 256) if "path" in data else None
             if include_path != (path is not None):
                 raise ValueError("Unexpected hit test path")
-            return HitTestResult(reference, path)
+            inner = None
+            if "innerElement" in data:
+                raw_inner = _obj(data["innerElement"], "type", "text")
+                inner = {"type": _str(raw_inner["type"], 1024)}
+                if "text" in raw_inner:
+                    inner["text"] = _str(raw_inner["text"], 128, empty=True)
+            return HitTestResult(reference, path, inner)
 
         try:
             result = self._request(

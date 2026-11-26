@@ -26,7 +26,9 @@ namespace WinTestKit.Inspector.Agent
         {
             try
             {
-                var settings = BootstrapReader.Read(path);
+                WinTestKit.Inspector.Protocol.BootstrapSettings settings;
+                try { settings = BootstrapReader.Read(path); }
+                catch (Exception error) { BootstrapReader.WriteRejection(path, BootstrapReader.BootstrapRoot, error); throw; }
                 var type = typeof(EntryPoint).Assembly.GetType("WinTestKit.Inspector.Agent.Inspection.WpfInspectionServiceFactory", false);
                 if (type == null || !(Activator.CreateInstance(type) is IInspectionServiceFactory factory))
                 {

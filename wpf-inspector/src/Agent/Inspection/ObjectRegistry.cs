@@ -82,9 +82,16 @@ namespace WinTestKit.Inspector.Agent.Inspection
         {
             if (entry.Lease == null)
             {
+                Prune();
                 int count = 0;
-                foreach (Entry item in entries.Values) if (item.Lease != null) count++;
-                if (count >= ProtocolLimits.MaxStrongHandles) throw Limit();
+                Entry? oldest = null;
+                foreach (Entry item in entries.Values)
+                    if (item.Lease != null)
+                    {
+                        count++;
+                        if (oldest == null || item.LastUse < oldest.LastUse) oldest = item;
+                    }
+                if (count >= ProtocolLimits.MaxStrongHandles && oldest != null) oldest.Lease = null;
             }
             entry.Lease = target; entry.LastUse = now();
         }

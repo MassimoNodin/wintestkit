@@ -16,6 +16,8 @@ export interface ObjectPreview {
   locatorFingerprint: string;
   width: number;
   height: number;
+  /** How many objects a collection matched when it was checked; absent for single objects. */
+  matchCount?: number;
   cropDataUrl: string;
   windowDataUrl: string;
 }
@@ -152,6 +154,7 @@ async function readObjectPreviewOnce(projectRoot: string, definitionId: string):
     new Date(manifest.capturedAt).toISOString().slice(0, 19) !== manifest.capturedAt.slice(0, 19) ||
     typeof manifest.locatorFingerprint !== "string" || !manifest.locatorFingerprint || manifest.locatorFingerprint.length > 2048 ||
     manifest.crop !== manifest.captureId + ".element.webp" || manifest.window !== manifest.captureId + ".window.webp" ||
+    (manifest.matchCount !== undefined && (!Number.isSafeInteger(manifest.matchCount) || (manifest.matchCount as number) < 1)) ||
     !Number.isInteger(manifest.width) || !Number.isInteger(manifest.height) ||
     (manifest.width as number) < 1 || (manifest.height as number) < 1 ||
     (manifest.width as number) > dimensionLimit || (manifest.height as number) > dimensionLimit ||
@@ -166,10 +169,37 @@ async function readObjectPreviewOnce(projectRoot: string, definitionId: string):
   return {
     definitionId, captureId: manifest.captureId, capturedAt: manifest.capturedAt,
     locatorFingerprint: manifest.locatorFingerprint,
+    ...(manifest.matchCount === undefined ? {} : { matchCount: manifest.matchCount as number }),
     width: manifest.width as number, height: manifest.height as number,
     cropDataUrl: "data:image/webp;base64," + crop.toString("base64"),
     windowDataUrl: "data:image/webp;base64," + window.toString("base64"),
   };
+}
+
+/** Read a bounded, validated explanation for the latest unsuccessful capture. */
+export async function readObjectPreviewStatus(projectRoot: string, definitionId: string): Promise<string | undefined> {
+  try {
+    return await readObjectPreviewStatusOnce(projectRoot, definitionId);
+  } catch {
+    return undefined;
+  }
+}
+
+async function readObjectPreviewStatusOnce(projectRoot: string, definitionId: string): Promise<string | undefined> {
+  const key = definitionPreviewKey(definitionId);
+  const root = await realpath(projectRoot);
+  let file: string;
+  try {
+    file = await checkedPath(root, ["object-previews", key, "status.json"], manifestLimit);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+    throw error;
+  }
+  const status = JSON.parse((await boundedRead(root, file, manifestLimit)).toString("utf8")) as Record<string, unknown>;
+  if (!status || typeof status !== "object" || Array.isArray(status) || status.schemaVersion !== 1 ||
+    status.definitionId !== definitionId || typeof status.reason !== "string" || !status.reason || status.reason.length > 2048 ||
+    typeof status.at !== "string" || !Number.isFinite(Date.parse(status.at))) throw new Error("Invalid saved preview status.");
+  return status.reason;
 }
 
 /** Validates a live capture from the automation server before it reaches the webview. */

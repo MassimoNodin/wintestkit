@@ -4,6 +4,7 @@ import type { DiscoveryStore } from "../discovery/store";
 import type { ServerManager } from "../server/serverManager";
 import { readConfiguration } from "../settings/files";
 import type { FlowEntry, PageCheckResult, PageEntry, FlowRunResult } from "../protocol/generated";
+import { pageCheckTimeoutMs } from "./checkTimeout";
 import { rememberedPageFlows, type Binding } from "./checkAfterFlow";
 
 export function classifySweepBindings(
@@ -130,14 +131,18 @@ export class ProjectSweep implements vscode.Disposable {
             result = await connection.client.request<PageCheckResult>(
               "page.check",
               { file: binding.file, page: binding.page },
+              pageCheckTimeoutMs(
+                pages.find((page) => normalizedPath(page.file) === normalizedPath(binding.file) && page.qualname === binding.page)?.elements.length ?? 0,
+              ),
             );
           } catch (error) {
             entries.push(`- ${binding.page}: check failed: ${String(error)}`);
             continue;
           }
-          const failures = result.results.filter((item) => item.status !== "found");
+          const busy = result.results.filter((item) => item.status === "not_responding");
+          const failures = result.results.filter((item) => item.status !== "found" && item.status !== "not_responding");
           entries.push(
-            `- ${binding.page}: ${result.results.length - failures.length}/${result.results.length} found${failures.length ? `; ${failures.length} not found or errors` : ""}`,
+            `- ${binding.page}: ${result.results.length - failures.length - busy.length}/${result.results.length} found${failures.length ? `; ${failures.length} not found or errors` : ""}${busy.length ? `; ${busy.length} app not responding` : ""}`,
           );
           for (const failure of failures) {
             const definition = pages

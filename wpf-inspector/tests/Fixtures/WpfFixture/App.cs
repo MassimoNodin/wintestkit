@@ -262,6 +262,10 @@ public sealed class MainWindow : Window
         var contentDock = new DockPanel { Name = "_mainWindowDockPanel" };
         contentDock.Children.Add(new TextBlock { Text = "Content" });
         panel.Children.Add(contentDock);
+        var pickText = Id(new TextBlock { Name = "PickTextHost" }, "PickTextHost");
+        pickText.Inlines.Add(new Run("Save"));
+        pickText.Inlines.Add(new Hyperlink(new Run(" Link")));
+        panel.Children.Add(pickText);
         var effect = Id(new TextBlock { Text = "Ready" }, "ActionEffect");
         var fancy = Id(new FancyButton { Name = "FancyXName", Content = "Fancy action", Tag = "fancy" }, "FancyAutomationId");
         int clicks = 0; fancy.Click += (_, _) => effect.Text = "Clicked " + ++clicks;

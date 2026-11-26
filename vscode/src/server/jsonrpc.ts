@@ -88,6 +88,9 @@ export class JsonRpcClient implements Disposable {
     return new Promise<Result>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.forget(requestId);
+        try {
+          this.write(serialize({ jsonrpc: "2.0", method: "$/cancelRequest", params: { id: requestId } }) + "\n");
+        } catch { /* The timeout remains the relevant error if the transport is closed. */ }
         reject(new RpcError(-1, `request timed out: ${method}`));
       }, timeoutMs);
       const background = options.background === true;

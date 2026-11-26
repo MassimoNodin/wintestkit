@@ -64,15 +64,27 @@ describe("Spy message contract", () => {
       parseSpyRequest({ type: "addToPage", suggestion: { code: "unsafe" } }),
     ).toEqual({ type: "addToPage" });
   });
-  it("accepts a pin request only for a property name and a boolean", () => {
-    expect(parseSpyRequest({ type: "pinProperty", name: "HelpText", pinned: true, x: 1 })).toEqual({
-      type: "pinProperty", name: "HelpText", pinned: true,
+  it("accepts a Basic view request only for a group-qualified key and a boolean", () => {
+    expect(parseSpyRequest({ type: "basicProperty", key: "Standard/Enabled", pinned: true, x: 1 })).toEqual({
+      type: "basicProperty", key: "Standard/Enabled", pinned: true,
     });
+    for (const key of ["Standard/Enabled", "Extended/AutomationId", ".NET/Content", "Win32 Window/Window Class", "UI Automation/HelpText"])
+      expect(parseSpyRequest({ type: "basicProperty", key, pinned: false })).toEqual({ type: "basicProperty", key, pinned: false });
     for (const request of [
-      { name: "has space", pinned: true }, { name: "", pinned: true }, { name: "1Name", pinned: true },
-      { name: "a".repeat(65), pinned: true }, { name: 5, pinned: true }, { name: "HelpText", pinned: "yes" },
-      { name: "HelpText" },
+      { key: "Enabled", pinned: true }, { key: "Other/Enabled", pinned: true }, { key: "Standard/", pinned: true },
+      { key: "Standard/" + "a".repeat(201), pinned: true }, { key: "Standard/a\nb", pinned: true }, { key: 5, pinned: true },
+      { key: "Standard/Enabled", pinned: "yes" }, { key: "Standard/Enabled" }, { key: "standard/Enabled", pinned: true },
     ])
-      expect(parseSpyRequest({ type: "pinProperty", ...request })).toBeUndefined();
+      expect(parseSpyRequest({ type: "basicProperty", ...request })).toBeUndefined();
+    expect(parseSpyRequest({ type: "pinProperty", name: "HelpText", pinned: true })).toBeUndefined();
+  });
+  it("accepts the reset request", () => {
+    expect(parseSpyRequest({ type: "resetBasicProperties", extra: 1 })).toEqual({ type: "resetBasicProperties" });
+  });
+  it("accepts a tree width in pixels, or null to forget it, and nothing else", () => {
+    expect(parseSpyRequest({ type: "treeWidth", width: 412.4 })).toEqual({ type: "treeWidth", width: 412 });
+    expect(parseSpyRequest({ type: "treeWidth", width: null })).toEqual({ type: "treeWidth", width: null });
+    for (const width of [99, 10001, NaN, Infinity, "400", undefined, -5])
+      expect(parseSpyRequest({ type: "treeWidth", width })).toBeUndefined();
   });
 });

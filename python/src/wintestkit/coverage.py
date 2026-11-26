@@ -350,7 +350,7 @@ class Coverage:
         )
 
     def definitions_of(self, app: Any, node_id: str, info: ElementInfo) -> dict[str, Any]:
-        """Every definition that resolves to exactly ``node_id``, re-resolved now."""
+        """Every definition that resolves to exactly ``node_id`` in the current epoch."""
         with runtime.config_scope(self.cfg):
             snapshot = _SnapshotApp(app) if app is not None else None
             self._ensure_fresh(snapshot)
@@ -367,7 +367,7 @@ class Coverage:
             for entry in self._candidates(info, self._kinds(info)):
                 key = entry.resolution_key
                 if key not in fresh:
-                    fresh[key] = self._ids(snapshot, entry, fresh=True)
+                    fresh[key] = self._ids(snapshot, entry)
                 if node_id in fresh[key]:
                     grouped.setdefault(entry.definition_id, []).append(entry.page_path)
             matches = [

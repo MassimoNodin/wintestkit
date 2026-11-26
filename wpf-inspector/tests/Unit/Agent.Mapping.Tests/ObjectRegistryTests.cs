@@ -92,22 +92,28 @@ namespace WinTestKit.Inspector.Agent.Mapping.Tests
         }
 
         [Fact]
-        public void StrongLeaseLimitAndRefreshUseInjectedClock()
+        public void StrongLeasesDemoteLeastRecentlyUsedAndReuseExpiredSlots()
         {
             DateTime now = DateTime.UtcNow;
             using (var ui = new DispatcherThread())
             using (var registry = Registry(() => now))
             {
-                object[] targets = Enumerable.Range(0, ProtocolLimits.MaxStrongHandles + 1).Select(_ => new object()).ToArray();
+                object[] targets = Enumerable.Range(0, 301).Select(_ => new object()).ToArray();
                 ObjectRef[] handles = targets.Select(target => registry.Register(target, ui.Dispatcher, new TypeInfoDto())).ToArray();
-                for (int index = 0; index < ProtocolLimits.MaxStrongHandles; index++)
+                for (int index = 0; index < 300; index++)
+                {
                     Assert.True(registry.TryGet(handles[index].ObjectId, handles[index].Generation, out _, out _));
-                ObjectRef overflow = handles[handles.Length - 1];
-                Assert.Equal(ErrorCodes.LimitExceeded, Assert.Throws<ProtocolException>(() => registry.TryGet(overflow.ObjectId, overflow.Generation, out _, out _)).Code);
-                now = now.AddMilliseconds(ProtocolLimits.LeaseInactivityMs - 1);
-                Assert.True(registry.TryGet(handles[0].ObjectId, handles[0].Generation, out _, out _));
-                now = now.AddMilliseconds(1);
-                Assert.True(registry.TryGet(overflow.ObjectId, overflow.Generation, out _, out _));
+                    now = now.AddMilliseconds(1);
+                }
+                var entries = (System.Collections.IDictionary)typeof(ObjectRegistry).GetField("entries", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(registry)!;
+                object oldest = entries[handles[0].ObjectId]!;
+                var lease = oldest.GetType().GetField("Lease", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+                Assert.Null(lease.GetValue(oldest));
+                Assert.True(registry.TryGet(handles[0].ObjectId, handles[0].Generation, out object resolved, out _));
+                Assert.Same(targets[0], resolved);
+                now = now.AddMilliseconds(ProtocolLimits.LeaseInactivityMs);
+                Assert.True(registry.TryGet(handles[300].ObjectId, handles[300].Generation, out _, out _));
+                Assert.Null(lease.GetValue(oldest));
                 GC.KeepAlive(targets);
             }
         }

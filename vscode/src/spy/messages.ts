@@ -7,12 +7,13 @@ import type {
   Suggestion,
 } from "../protocol/generated";
 import type { TourView } from "../setup/tour";
+import { isBasicKey } from "./basicProperties";
 import { MAX_PREVIEW_DATA_URL, type PreviewImages } from "./objectPreviews";
 import { parseSelectionPath, type PathSegment } from "./selectionPath";
 
-/** A UI Automation property name, as listed under All properties. */
-export const PROPERTY_NAME = /^[A-Za-z][A-Za-z0-9]{0,63}$/;
-export const MAX_SHOWN_PROPERTIES = 64;
+/** The tree pane's width is kept between this many pixels, inclusive; the panel clamps it to the window. */
+export const MIN_TREE_WIDTH = 100;
+export const MAX_TREE_WIDTH = 10000;
 
 export const SPY_TOUR_ACTIONS = ["back", "next", "close", "disable", "skip", "finish"] as const;
 
@@ -27,7 +28,7 @@ export type ManagedRequest =
 
 export type SpyRequest =
   | ManagedRequest
-  | { type: "showProperties" | "propertiesReady" | "upgradePackage" | "selectionRemoved" | "retryPreview" }
+  | { type: "showProperties" | "propertiesReady" | "upgradePackage" | "selectionRemoved" | "retryPreview" | "resetBasicProperties" }
   | { type: "expandedPaths"; paths: PathSegment[][] }
   | { type: "refreshChildren"; nodeId: string; revision: number }
   | { type: "refreshCounts"; added: number; removed: number; kept: number; redrawn: number }
@@ -53,12 +54,16 @@ export type SpyRequest =
   | { type: "select"; nodeId: string; path?: PathSegment[] }
   | { type: "copy"; text: string }
   | { type: "generateLocator"; nodeId: string }
-  | { type: "pinProperty"; name: string; pinned: boolean }
+  /** Adds a row to the Basic view or removes it; `key` is "<group>/<row name>". */
+  | { type: "basicProperty"; key: string; pinned: boolean }
+  /** The width the user gave the Objects pane; null forgets it and returns to the default split. */
+  | { type: "treeWidth"; width: number | null }
   | { type: "openPreview"; view: "element" | "window"; dataUrl: string }
   | { type: "openDefinition"; id: string };
 export type SpyResponse =
   | { type: "compatibilityBlocked"; message: string; label: string }
   | { type: "propertiesVisibility"; visible: boolean }
+  | { type: "pickedObjectGone"; nodeId: string }
   | { type: "selectionCleared" }
   | { type: "selectionPending"; nodeId: string }
   | { type: "wpfDetails"; nodeId: string; missing: boolean; blocked?: { code: string; hint: string } }
@@ -91,8 +96,11 @@ export type SpyResponse =
       hasProject: boolean;
       showOtherApps: boolean;
       bringToFront: boolean;
-      /** Properties the user pinned to the default list (a user setting). */
-      shownProperties?: string[];
+      /** The rows of the Basic view, as group-qualified keys (a user setting), and the list Reset restores. */
+      basicProperties?: string[];
+      basicDefaults?: string[];
+      /** The Objects pane width stored for this workspace, in pixels. */
+      treeWidth?: number;
       showRefreshCounts?: boolean;
     }
   | { type: "roots"; nodes: NodeInfo[] }
@@ -104,6 +112,8 @@ export type SpyResponse =
       nodeId: string;
       properties: InspectPropertiesResult;
       suggestion?: Suggestion;
+      treeNodeId?: string;
+      revealNote?: string;
     }
   | { type: "suggestionLoading"; nodeId: string }
   | { type: "suggestion"; nodeId: string; suggestion: Suggestion }
@@ -158,7 +168,7 @@ export function parseSpyRequest(value: unknown): SpyRequest | undefined {
     return SPY_TOUR_ACTIONS.includes(message.action as (typeof SPY_TOUR_ACTIONS)[number])
       ? { type: "tour", action: message.action as (typeof SPY_TOUR_ACTIONS)[number] }
       : undefined;
-  if (message.type === "showProperties" || message.type === "propertiesReady" || message.type === "upgradePackage" || message.type === "selectionRemoved" || message.type === "retryPreview") return { type: message.type };
+  if (message.type === "showProperties" || message.type === "propertiesReady" || message.type === "upgradePackage" || message.type === "selectionRemoved" || message.type === "retryPreview" || message.type === "resetBasicProperties") return { type: message.type };
   if (message.type === "ready")
     return typeof message.showOtherApps === "boolean"
       ? { type: "ready", showOtherApps: message.showOtherApps }
@@ -196,13 +206,14 @@ export function parseSpyRequest(value: unknown): SpyRequest | undefined {
     message.text.length <= 100000
   )
     return { type: "copy", text: message.text };
+  if (message.type === "basicProperty" && isBasicKey(message.key) && typeof message.pinned === "boolean")
+    return { type: "basicProperty", key: message.key, pinned: message.pinned };
   if (
-    message.type === "pinProperty" &&
-    typeof message.name === "string" &&
-    PROPERTY_NAME.test(message.name) &&
-    typeof message.pinned === "boolean"
+    message.type === "treeWidth" &&
+    (message.width === null ||
+      (typeof message.width === "number" && Number.isFinite(message.width) && message.width >= MIN_TREE_WIDTH && message.width <= MAX_TREE_WIDTH))
   )
-    return { type: "pinProperty", name: message.name, pinned: message.pinned };
+    return { type: "treeWidth", width: message.width === null ? null : Math.round(message.width as number) };
   if (
     message.type === "openPreview" &&
     (message.view === "element" || message.view === "window") &&

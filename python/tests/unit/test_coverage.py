@@ -194,7 +194,7 @@ def test_each_distinct_locator_is_resolved_once_and_kept(
 
 
 @pytest.mark.parametrize("partial", [False, True])
-def test_fresh_children_invalidate_replaced_descendants_without_rebuilding_catalogue(
+def test_children_preserve_cached_resolutions_until_refresh(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, partial: bool
 ) -> None:
     server, output, nodes = _project(tmp_path, monkeypatch)
@@ -223,8 +223,10 @@ def test_fresh_children_invalidate_replaced_descendants_without_rebuilding_catal
     else:
         children = response["result"]
     assert [node["nodeId"] for node in children] == [replacement.runtime_id]
-    assert engine._resolved == {}
+    assert engine._resolved
     assert engine.catalogue is catalogue
+    request(server, output, "inspect.roots")
+    assert engine._resolved == {}
     infos = {replacement.runtime_id: server.node_infos[replacement.runtime_id]}
     pending = engine.covered_nodes(server.app, infos, budget=0)
     assert pending == {"covered": {}, "pending": [replacement.runtime_id]}
@@ -377,3 +379,27 @@ def test_coverage_params_are_validated(tmp_path: Path, monkeypatch: pytest.Monke
         "covered": {},
         "pending": [],
     }
+
+
+def test_definitions_reuse_resolutions_until_epoch_changes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    server, output, nodes = _project(tmp_path, monkeypatch)
+    engine = server._coverage()
+    calls: list[str] = []
+    original = engine._resolve
+
+    def counting(app: Any, entry: Any) -> Any:
+        calls.append(entry.page_path)
+        return original(app, entry)
+
+    monkeypatch.setattr(engine, "_resolve", counting)
+    params = {"nodeId": nodes["ok"]["nodeId"]}
+    first = request(server, output, "inspect.definitions", params)["result"]
+    count = len(calls)
+    assert count > 0
+    assert request(server, output, "inspect.definitions", params)["result"] == first
+    assert len(calls) == count
+    monkeypatch.setattr(engine, "_ui_epoch", lambda app: ("changed",))
+    request(server, output, "inspect.definitions", params)
+    assert len(calls) > count

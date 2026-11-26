@@ -20,7 +20,15 @@ from wintestkit.config import load_config
 from wintestkit.engine.diagnose import Diagnostic
 from wintestkit.engine.locator import ItemSelector
 from wintestkit.errors import AmbiguousElementError, ElementNotFoundError, ElementTypeError
-from wintestkit.model import BoundControl, BoundElement, Element, Elements
+from wintestkit.model import (
+    BoundControl,
+    BoundElement,
+    BoundElements,
+    BoundWindow,
+    Element,
+    Elements,
+    Window,
+)
 from wintestkit.pytest_plugin import _Controller
 from wintestkit.uia import screenshot, win32
 from wintestkit.uia.element import Rect
@@ -29,6 +37,7 @@ from wintestkit.uia.element import Rect
 class Declaring:
     submit = Element(automation_id="Submit")
     rows = Elements(control_type="Button")
+    main = Window(title="Example")
 
 
 class Inherited(Declaring):
@@ -43,6 +52,7 @@ def preview(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     source = tmp_path / "Pages" / "Shared.py"
     monkeypatch.setattr(Declaring.submit, "source", (str(source), 7))
     monkeypatch.setattr(Declaring.rows, "source", (str(source), 8))
+    monkeypatch.setattr(Declaring.main, "source", (str(source), 9))
     bounds = Rect(-88, 212, 4, 3)
     window_bounds = Rect(-90, 210, 12, 10)
     window = SimpleNamespace(
@@ -71,13 +81,16 @@ def preview(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     element.info = lambda: SimpleNamespace()
     element.iter_children = lambda: iter(())
     window.as_live = lambda: window
+    window.info = lambda: SimpleNamespace()
     window.iter_children = lambda: iter((element,))
     bound = BoundElement(SimpleNamespace(), Inherited.submit)
     calls = []
 
     def frame(hwnd, expected_pid):
         calls.append((hwnd, expected_pid, threading.get_ident()))
-        return window_bounds, bytes((17, 37, 57)) * (window_bounds.width * window_bounds.height)
+        return window_bounds, bytes((18, 37, 57)) + bytes((17, 37, 57)) * (
+            window_bounds.width * window_bounds.height - 1
+        )
 
     monkeypatch.setattr(win32, "root_window", lambda hwnd: hwnd)
     monkeypatch.setattr(win32, "window_pid", lambda hwnd: 123)
@@ -133,7 +146,7 @@ def test_pair_contract_clean_crop_and_declaring_identity(preview, monkeypatch):
     with Image.open(preview.directory / manifest["window"]) as window:
         assert window.size == (12, 10)
         assert window.convert("RGB").getpixel((2, 2)) == (255, 0, 0)
-        assert window.convert("RGB").getpixel((0, 0)) == (17, 37, 57)
+        assert window.convert("RGB").getpixel((0, 0)) == (18, 37, 57)
     assert not (preview.root / "wtk-report").exists()
     assert not list(preview.directory.glob("*.png"))
 
@@ -184,7 +197,7 @@ def test_unbounded_container_is_scanned_with_its_children(preview, sensitive):
     container.as_live = lambda: container
     container.iter_children = lambda: iter((preview.element,))
     preview.window.iter_children = lambda: iter((container,))
-    assert (capture(preview) is not None) is not sensitive
+    assert capture(preview) is not None
 
 
 def test_pytest_has_no_capture_call_wrapper():
@@ -222,6 +235,105 @@ def test_collection_item_does_not_capture(preview):
     bound = BoundElement(SimpleNamespace(), Declaring.rows)
     assert targets.resolve_bound(bound, 0, capture=True).status == "found"
     assert preview.calls == []
+
+
+def definition_directory(preview, qualname):
+    definition_id = f"Pages/Shared.py::{qualname}"
+    return preview.root / "object-previews" / hashlib.sha256(definition_id.encode()).hexdigest()
+
+
+def check_window(preview, monkeypatch):
+    monkeypatch.setattr(model, "resolve_window", lambda app, locator: preview.window)
+    bound = BoundWindow(SimpleNamespace(app=SimpleNamespace(pids=[123])), Declaring.main)
+    assert targets.resolve_bound(bound, 0, capture=True).uia is preview.window
+    directory = definition_directory(preview, "Declaring.main")
+    manifest = directory / "manifest.json"
+    return directory, json.loads(manifest.read_text("utf-8")) if manifest.exists() else None
+
+
+def test_window_check_saves_the_whole_window_twice_without_an_outline(preview, monkeypatch):
+    directory, manifest = check_window(preview, monkeypatch)
+    assert manifest["schemaVersion"] == 2
+    assert manifest["definitionId"] == "Pages/Shared.py::Declaring.main"
+    assert (manifest["width"], manifest["height"]) == (12, 10)
+    assert "matchCount" not in manifest
+    assert preview.calls == [(42, 123, threading.get_ident())]
+    expected = bytes((18, 37, 57)) + bytes((17, 37, 57)) * 119
+    for key in ("crop", "window"):
+        with Image.open(directory / manifest[key]) as image:
+            assert image.size == (12, 10)
+            assert image.convert("RGB").tobytes() == expected
+    assert not (directory / "status.json").exists()
+
+
+@pytest.mark.parametrize("kind", ["password", "sensitive"])
+def test_window_check_blacks_out_sensitive_controls_in_both_images(preview, monkeypatch, kind):
+    preview.element.automation_id = "AccessToken" if kind == "sensitive" else "Other"
+    preview.element.get_property = lambda name: kind == "password"
+    directory, manifest = check_window(preview, monkeypatch)
+    assert manifest is not None
+    for key in ("crop", "window"):
+        with Image.open(directory / manifest[key]) as image:
+            rgb = image.convert("RGB")
+            assert rgb.getpixel((3, 3)) == (0, 0, 0)  # inside the control (2, 2, 4x3)
+            assert rgb.getpixel((0, 0)) == (18, 37, 57)
+            assert rgb.getpixel((8, 8)) == (17, 37, 57)
+
+
+def test_window_check_with_unsafe_content_saves_nothing_and_says_why(preview, monkeypatch):
+    preview.element.get_property = lambda name: None
+    directory, manifest = check_window(preview, monkeypatch)
+    assert manifest is None
+    status = json.loads((directory / "status.json").read_text("utf-8"))
+    assert status["reason"] == "could not determine whether an element is a password field"
+    assert status["definitionId"] == "Pages/Shared.py::Declaring.main"
+
+
+def test_window_check_off_screen_reports_the_reason(preview, monkeypatch):
+    monkeypatch.setattr(win32, "virtual_screen_rect", lambda: Rect(0, 0, 5, 5))
+    directory, manifest = check_window(preview, monkeypatch)
+    assert manifest is None
+    assert "no on-screen rectangle" in (directory / "status.json").read_text("utf-8")
+
+
+def test_window_check_with_a_sensitive_title_locator_is_skipped(preview, monkeypatch):
+    monkeypatch.setattr(Declaring.main, "locator", Window(title="Enter password").locator)
+    directory, manifest = check_window(preview, monkeypatch)
+    assert manifest is None
+    assert "locator looks sensitive" in (directory / "status.json").read_text("utf-8")
+
+
+def check_collection(preview, monkeypatch, matches=3):
+    monkeypatch.setattr(model, "resolve_all", lambda scope, locator: [preview.element] * matches)
+    bound = BoundElements(SimpleNamespace(), Declaring.rows)
+    assert targets.resolve_bound(bound, 0, capture=True).uia is preview.element
+    directory = definition_directory(preview, "Declaring.rows")
+    manifest = directory / "manifest.json"
+    return directory, json.loads(manifest.read_text("utf-8")) if manifest.exists() else None
+
+
+def test_collection_check_saves_the_first_match_with_its_count(preview, monkeypatch):
+    directory, manifest = check_collection(preview, monkeypatch)
+    assert manifest["definitionId"] == "Pages/Shared.py::Declaring.rows"
+    assert manifest["matchCount"] == 3
+    assert (manifest["width"], manifest["height"]) == (4, 3)
+    with Image.open(directory / manifest["crop"]) as crop:
+        assert crop.size == (4, 3)
+    with Image.open(directory / manifest["window"]) as window:
+        assert window.size == (12, 10)
+        assert window.convert("RGB").getpixel((2, 2)) == (255, 0, 0)  # the outline
+
+
+def test_collection_check_of_a_single_match_records_one(preview, monkeypatch):
+    _, manifest = check_collection(preview, monkeypatch, matches=1)
+    assert manifest["matchCount"] == 1
+
+
+def test_collection_check_with_a_password_match_says_why(preview, monkeypatch):
+    preview.element.get_property = lambda name: True
+    directory, manifest = check_collection(preview, monkeypatch)
+    assert manifest is None
+    assert "element contains a password field" in (directory / "status.json").read_text("utf-8")
 
 
 def test_preview_failure_never_fails_check(preview, monkeypatch):
@@ -286,7 +398,9 @@ def test_untrustworthy_capture_is_best_effort(preview, monkeypatch, reason):
         if reason == "moved":
             preview.element.rect = Rect(-87, 212, 4, 3)
         origin = -87 if reason == "partial" else -90
-        pixels = bytes(360) if reason == "black" else bytes((17, 37, 57)) * 120
+        pixels = (
+            bytes(360) if reason == "black" else bytes((18, 37, 57)) + bytes((17, 37, 57)) * 119
+        )
         return Rect(origin, 210, 12, 10), pixels
 
     monkeypatch.setattr(screenshot, "capture_window_frame", frame)
@@ -400,22 +514,32 @@ def test_sensitive_window_content_prevents_pair_capture(preview, location, kind)
         preview.window.iter_children = lambda: iter((preview.element, child))
     else:
         preview.element.iter_children = lambda: iter((child,))
-    assert capture(preview) is None
-    assert preview.calls == []
+    result = capture(preview)
+    if location == "descendant":
+        assert result is None
+    else:
+        assert result is not None
+        with Image.open(preview.directory / result["window"]) as image:
+            if kind != "unknown":
+                assert image.convert("RGB").getpixel((3, 3)) == (0, 0, 0)
 
 
 @pytest.mark.parametrize("limit", ["nodes", "depth", "time", "enumeration"])
 def test_incomplete_privacy_scan_prevents_capture(preview, monkeypatch, limit):
     if limit == "nodes":
-        monkeypatch.setattr(object_previews, "_SCAN_NODES", 1)
+        monkeypatch.setattr(object_previews, "_WINDOW_SCAN_NODES", 1)
     elif limit == "depth":
         monkeypatch.setattr(object_previews, "_SCAN_DEPTH", 0)
     elif limit == "time":
         monkeypatch.setattr(object_previews, "_SCAN_SECONDS", 0)
     else:
         preview.element.iter_children = Mock(side_effect=OSError("stale child"))
-    assert capture(preview) is None
-    assert preview.calls == []
+    result = capture(preview)
+    if limit in ("nodes", "depth"):
+        assert result is not None
+        assert "window context not saved" in (preview.directory / "status.json").read_text()
+    else:
+        assert result is None
 
 
 def test_content_turning_sensitive_during_capture_keeps_previous_pair(preview, monkeypatch):
@@ -551,6 +675,13 @@ def test_wpf_capture_uses_agent_bounds_and_fails_closed_without_peer(preview, mo
     bounds = Rect(-87, 213, 2, 2)
     monkeypatch.setattr(WpfElement, "as_live", lambda self: self)
     monkeypatch.setattr(WpfElement, "rect", property(lambda self: bounds))
+    monkeypatch.setattr(WpfElement, "process_id", property(lambda self: 123))
+    monkeypatch.setattr(WpfElement, "is_offscreen", property(lambda self: False))
+    monkeypatch.setattr(WpfElement, "automation_id", property(lambda self: "Panel"))
+    monkeypatch.setattr(WpfElement, "class_name", property(lambda self: "DockPanel"))
+    monkeypatch.setattr(WpfElement, "name", property(lambda self: ""))
+    monkeypatch.setattr(WpfElement, "state", lambda self: SimpleNamespace(window_handle=42))
+    monkeypatch.setattr("wintestkit.uia.element.from_handle", lambda hwnd: preview.window)
 
     def as_uia(self):
         if not mapped:
@@ -558,11 +689,249 @@ def test_wpf_capture_uses_agent_bounds_and_fails_closed_without_peer(preview, mo
         return preview.element
 
     monkeypatch.setattr(WpfElement, "as_uia", as_uia)
+    monkeypatch.setattr(object_previews, "_wpf_passwords", lambda root: [])
+    monkeypatch.setattr(object_previews, "_wpf_window_redactions", lambda *args: [])
     object_previews.capture_bound(preview.bound, node)
     manifest = preview.directory / "manifest.json"
-    assert manifest.exists() is mapped
+    assert manifest.exists()
     if mapped:
         data = json.loads(manifest.read_text(encoding="utf-8"))
         assert (data["width"], data["height"]) == (2, 2)
     else:
-        assert not preview.calls
+        assert preview.calls
+
+
+def test_status_logged_and_cleared_after_success(preview, caplog):
+    import logging
+
+    preview.element.rect = None
+    with caplog.at_level(logging.INFO, logger="wintestkit.object_previews"):
+        assert capture(preview) is None
+    status = json.loads((preview.directory / "status.json").read_text())
+    assert status["reason"] == "element has no on-screen rectangle"
+    assert "element has no on-screen rectangle" in caplog.text
+    preview.element.rect = Rect(-88, 212, 4, 3)
+    assert capture(preview) is not None
+    assert not (preview.directory / "status.json").exists()
+
+
+def test_large_window_saves_crop_and_ancestor_name_is_allowed(preview):
+    preview.window.name = "Token settings"
+    preview.window.iter_children = lambda: iter([preview.element] * 5000)
+    result = capture(preview)
+    assert result is not None
+    assert (
+        "window context not saved: too many elements to check"
+        in (preview.directory / "status.json").read_text()
+    )
+    with Image.open(preview.directory / result["window"]) as image:
+        assert image.size == (4, 3)
+
+
+@pytest.mark.parametrize(
+    "reason",
+    [
+        "object previews are disabled",
+        "definition is a collection",
+        "definition has no declared source",
+        "definition refers to a collection item",
+        "locator looks sensitive",
+        "element has no on-screen rectangle",
+        "element has no owned on-screen window",
+        "element looks sensitive",
+        "element contains a password field",
+        "too many elements to check",
+        "could not determine whether an element is a password field",
+        "could not check the element's contents for password fields: limit exceeded",
+        "another capture is publishing",
+        "window capture failed",
+        "element is outside the window or the window is blank",
+        "element or window changed during capture",
+        "capture failed: unexpected error",
+    ],
+)
+def test_each_skip_reason_is_persisted_and_logged(preview, monkeypatch, caplog, reason):
+    import logging
+
+    def skip(bound, element):
+        raise object_previews._SkipPreview(reason)
+
+    monkeypatch.setattr(object_previews, "_capture_bound", skip)
+    with caplog.at_level(logging.INFO, logger="wintestkit.object_previews"):
+        object_previews.capture_bound(preview.bound, preview.element)
+    status = json.loads((preview.directory / "status.json").read_text(encoding="utf-8"))
+    assert status["schemaVersion"] == 1
+    assert status["definitionId"] == preview.definition_id
+    assert status["reason"] == reason
+    assert reason in caplog.text
+
+
+def test_wpf_password_query_fails_closed_on_incomplete_or_error(monkeypatch):
+    from wintestkit.backends.element import WpfElement
+
+    node = object.__new__(WpfElement)
+    node.client = SimpleNamespace(query_find_all=Mock(return_value=SimpleNamespace(complete=False)))
+    node.ref = object()
+    assert "inspector query did not complete" in object_previews._wpf_crop_reason(node)
+    node.client.query_find_all.side_effect = RuntimeError("deadline")
+    assert object_previews._wpf_crop_reason(node) == (
+        "could not check the element's contents for password fields: deadline"
+    )
+    monkeypatch.setattr(object_previews, "_wpf_passwords", lambda root: [object()])
+    assert object_previews._wpf_crop_reason(node) == "element contains a password field"
+
+
+def test_element_in_a_window_over_the_crop_budget_still_gets_its_context(preview):
+    # more than the 512 nodes an element crop may scan, within the whole-window budget
+    preview.window.iter_children = lambda: iter([preview.element] * 2000)
+    result = capture(preview)
+    assert result is not None
+    assert not (preview.directory / "status.json").exists()
+    with Image.open(preview.directory / result["window"]) as image:
+        assert image.size == (12, 10)
+
+
+def _wpf_node(preview, monkeypatch, *, passwords=()):
+    from wintestkit.backends.element import WpfElement
+
+    node = object.__new__(WpfElement)
+    node.client = SimpleNamespace()
+    node.ref = object()
+    bounds = preview.element.rect
+    monkeypatch.setattr(WpfElement, "as_live", lambda self: self)
+    monkeypatch.setattr(WpfElement, "rect", property(lambda self: bounds))
+    monkeypatch.setattr(WpfElement, "process_id", property(lambda self: 123))
+    monkeypatch.setattr(WpfElement, "is_offscreen", property(lambda self: False))
+    monkeypatch.setattr(WpfElement, "automation_id", property(lambda self: "Panel"))
+    monkeypatch.setattr(WpfElement, "class_name", property(lambda self: "DockPanel"))
+    monkeypatch.setattr(WpfElement, "name", property(lambda self: ""))
+    monkeypatch.setattr(WpfElement, "as_uia", lambda self: preview.element)
+    monkeypatch.setattr(object_previews, "_wpf_passwords", lambda root: [])
+    redactions = Mock(return_value=list(passwords))
+    monkeypatch.setattr(object_previews, "_wpf_window_redactions", redactions)
+    return node, redactions
+
+
+def _password_child(rect):
+    secret = SimpleNamespace(
+        rect=rect,
+        is_offscreen=False,
+        automation_id="Password",
+        class_name="PasswordBox",
+        name="",
+        get_property=lambda name: True,
+        iter_children=lambda: iter(()),
+    )
+    secret.as_live = lambda: secret
+    return secret
+
+
+def test_managed_window_over_the_uia_budget_keeps_its_context_with_inspector_redactions(
+    preview, monkeypatch
+):
+    node, redactions = _wpf_node(preview, monkeypatch, passwords=[Rect(-89, 211, 2, 2)])
+    preview.window.iter_children = lambda: iter([preview.element] * 5000)
+    object_previews.capture_bound(preview.bound, node)
+    data = json.loads((preview.directory / "manifest.json").read_text(encoding="utf-8"))
+    redactions.assert_called_once()
+    assert not (preview.directory / "status.json").exists()
+    with Image.open(preview.directory / data["window"]) as image:
+        assert image.size == (12, 10)
+        assert image.convert("RGB").getpixel((1, 1)) == (0, 0, 0)
+        assert image.convert("RGB").getpixel((11, 9)) != (0, 0, 0)
+
+
+def test_managed_window_blacks_out_what_the_uia_scan_finds_before_its_budget_runs_out(
+    preview, monkeypatch
+):
+    node, _ = _wpf_node(preview, monkeypatch)
+    secret = _password_child(Rect(-90, 210, 2, 2))
+    preview.window.iter_children = lambda: iter([secret, *[preview.element] * 5000])
+    object_previews.capture_bound(preview.bound, node)
+    data = json.loads((preview.directory / "manifest.json").read_text(encoding="utf-8"))
+    with Image.open(preview.directory / data["window"]) as image:
+        assert image.size == (12, 10)
+        assert image.convert("RGB").getpixel((0, 0)) == (0, 0, 0)
+
+
+def test_managed_window_still_stops_on_a_password_it_cannot_black_out(preview, monkeypatch):
+    node, _ = _wpf_node(preview, monkeypatch)
+    preview.window.iter_children = lambda: iter([_password_child(None)])
+    object_previews.capture_bound(preview.bound, node)
+    data = json.loads((preview.directory / "manifest.json").read_text(encoding="utf-8"))
+    assert "sensitive element has no rectangle" in (preview.directory / "status.json").read_text()
+    with Image.open(preview.directory / data["window"]) as image:
+        assert image.size == (4, 3)
+
+
+def test_managed_window_without_inspector_redactions_saves_only_the_crop(preview, monkeypatch):
+    node, redactions = _wpf_node(preview, monkeypatch)
+    redactions.side_effect = RuntimeError("window mapping is ambiguous")
+    object_previews.capture_bound(preview.bound, node)
+    data = json.loads((preview.directory / "manifest.json").read_text(encoding="utf-8"))
+    assert (
+        "window context not saved: window elements could not be checked"
+        in (preview.directory / "status.json").read_text()
+    )
+    with Image.open(preview.directory / data["window"]) as image:
+        assert image.size == (4, 3)
+
+
+def test_uia_element_in_an_attached_process_uses_the_inspector_for_passwords(preview, monkeypatch):
+    client = SimpleNamespace()
+    monkeypatch.setattr(object_previews, "_attached_client", lambda pid: client)
+    redactions = Mock(return_value=[Rect(-89, 211, 2, 2)])
+    monkeypatch.setattr(object_previews, "_wpf_window_redactions", redactions)
+    preview.window.iter_children = lambda: iter([preview.element] * 5000)
+    result = capture(preview)
+    redactions.assert_called_once_with(client, 123, preview.window)
+    assert result is not None
+    assert not (preview.directory / "status.json").exists()
+    with Image.open(preview.directory / result["window"]) as image:
+        assert image.size == (12, 10)
+        assert image.convert("RGB").getpixel((1, 1)) == (0, 0, 0)
+
+
+def test_uia_element_falls_back_to_the_uia_scan_when_the_inspector_query_fails(
+    preview, monkeypatch
+):
+    monkeypatch.setattr(object_previews, "_attached_client", lambda pid: SimpleNamespace())
+    monkeypatch.setattr(
+        object_previews, "_wpf_window_redactions", Mock(side_effect=RuntimeError("mapping"))
+    )
+    preview.window.iter_children = lambda: iter([preview.element] * 5000)
+    result = capture(preview)
+    assert result is not None
+    assert "too many elements to check" in (preview.directory / "status.json").read_text()
+
+
+def test_attached_client_requires_enabled_inspector_and_never_attaches(monkeypatch):
+    from wintestkit.inspector import probe
+
+    runtime.reset()
+    assert object_previews._attached_client(123) is None
+    registry = Mock()
+    registry.get.return_value = "client"
+    config = SimpleNamespace(inspector=SimpleNamespace(enabled=True))
+    monkeypatch.setattr(runtime, "get_config", lambda: config)
+    monkeypatch.setattr(runtime, "inspector_sessions", lambda: registry)
+    monkeypatch.setattr(probe, "current_identity", lambda pid: ("identity", pid))
+    assert object_previews._attached_client(123) == "client"
+    registry.get.assert_called_once_with(("identity", 123))
+    monkeypatch.setattr(probe, "current_identity", Mock(side_effect=OSError("gone")))
+    assert object_previews._attached_client(123) is None
+
+
+def test_single_colour_and_offscreen_skip_reasons(preview, monkeypatch):
+    monkeypatch.setattr(
+        screenshot,
+        "capture_window_frame",
+        lambda *args: (Rect(-90, 210, 12, 10), bytes((255, 255, 255)) * 120),
+    )
+    assert capture(preview) is None
+    status = json.loads((preview.directory / "status.json").read_text())
+    assert "single colour" in status["reason"]
+    preview.element.is_offscreen = True
+    assert capture(preview) is None
+    status = json.loads((preview.directory / "status.json").read_text())
+    assert "scrolled out of view or hidden" in status["reason"]

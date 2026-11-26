@@ -36,6 +36,7 @@ pytestmark = [
 CAPABILITY = base64.b64encode(bytes(range(32))).decode("ascii")
 PEERLESS = "ContentPresenter"
 PEERED = "ScrollViewer"
+PASSWORD = "PasswordBox"  # the only protected element
 
 
 class Rpc(Protocol):
@@ -178,8 +179,8 @@ def read_value(rpc: Rpc, base: dict[str, Any], row: dict[str, Any]) -> dict[str,
 
 def check_selection(rpc: Rpc, pid: int) -> None:
     with attached(rpc, pid) as (window, session):
-        found = find(rpc, window, {PEERLESS, PEERED})
-        for name, protected in ((PEERLESS, True), (PEERED, False)):
+        found = find(rpc, window, {PEERLESS, PEERED, PASSWORD})
+        for name, protected in ((PEERLESS, False), (PEERED, False), (PASSWORD, True)):
             node = found[name]
             ref = select_like_the_host(rpc, session, node)
             base = {
@@ -204,10 +205,10 @@ def check_selection(rpc: Rpc, pid: int) -> None:
                 assert value["status"] == "ok", (name, member, value)
             assert read_value(rpc, base, by_name["ActualWidth"])["scalar"] > 0
             others = [read_value(rpc, base, by_name[m])["status"] for m in ("Margin", "Cursor")]
-            # Peered elements return every public getter; peerless ones only the safe base-class ones.
+            # Only a password field is protected; every other element returns its public getters.
             assert others == (["redacted"] * 2 if protected else ["ok"] * 2), (name, others)
             result(rpc, "inspect.managed.spyMethods", base)
-            # Binding metadata is withheld for peerless elements: accessDenied for that one request only.
+            # Binding metadata is withheld for a password field: accessDenied for that one request only.
             keys = [
                 item["memberKey"]
                 for item in members
@@ -269,8 +270,8 @@ def auto_eligible(member: dict[str, Any]) -> bool:
 def check_every_row_is_read(rpc: Rpc, pid: int) -> None:
     """Each automatic row ends with a value, "timed out" or "threw X" - never left unread."""
     with attached(rpc, pid) as (window, session):
-        found = find(rpc, window, {PEERLESS, PEERED})
-        for name, protected in ((PEERED, False), (PEERLESS, True)):
+        found = find(rpc, window, {PEERLESS, PEERED, PASSWORD})
+        for name, protected in ((PEERED, False), (PEERLESS, False), (PASSWORD, True)):
             node = found[name]
             ref = select_like_the_host(rpc, session, node)
             base = {
@@ -303,13 +304,14 @@ def check_every_row_is_read(rpc: Rpc, pid: int) -> None:
                     assert value.get("message"), "the row shows (threw X): X is the exception type"
                 elif status == "redacted":
                     assert protected, (name, member["name"], value)
-                    assert value["redactionRule"] == "identity", value
+                    # a name rule ("PasswordChar") or the protected identity itself
+                    assert value["redactionRule"] in ("identity", "password"), value
                 elif status not in ("ok", "timeout", "truncated", "unsupported", "cycle"):
                     unread.append(f"{member['category']}:{member['name']}: {status}")
             assert not unread, (name, unread)
             assert sum(outcomes.values()) == len(rows)
             if protected:
-                # No peer: most getters are redacted by design and say why; the base ones still read.
+                # Password field: most getters are redacted by design and say why; the base ones still read.
                 assert outcomes.get("redacted", 0) > 0 and outcomes.get("ok", 0) > 0, outcomes
             else:
                 assert outcomes.get("redacted", 0) == 0, outcomes
@@ -495,3 +497,79 @@ def test_binding_details_over_stdio(owned: Any) -> None:
         check_binding_details(server, scope.app.main_window().process_id)
     finally:
         server.close()
+
+
+def test_pick_recovers_missing_parents_real(owned: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    from wintestkit.uia import win32
+
+    scope, path = owned
+    rpc = InProcess(path, scope.app)
+    pid = scope.app.main_window().process_id
+    with attached(rpc, pid) as (window, _session):
+        node = find(rpc, window, {PEERED})[PEERED]
+        element = rpc.server.nodes[node["nodeId"]]
+        bounds = element.state().bounds
+        assert bounds is not None
+        native = rpc.server.nodes[window["nodeId"]]
+        monkeypatch.setattr(win32, "WindowFromPoint", lambda point: native.native_window_handle)
+        picked = rpc.server._spy_resolve(  # pyright: ignore[reportPrivateUsage]
+            native,
+            int(bounds.x + bounds.width / 2),
+            int(bounds.y + bounds.height / 2),
+            True,
+            "visual",
+        )
+        assert picked.node is not None
+        original = result(
+            rpc, "inspect.properties", {"nodeId": picked.node["nodeId"], "includeAncestors": True}
+        )
+        assert len(original["ancestors"]) > 1
+        rpc.server._wpf_parents.clear()  # pyright: ignore[reportPrivateUsage]
+        repaired = result(
+            rpc, "inspect.properties", {"nodeId": picked.node["nodeId"], "includeAncestors": True}
+        )
+        assert [n["nodeId"] for n in repaired["ancestors"]] == [
+            n["nodeId"] for n in original["ancestors"]
+        ]
+        assert repaired["ancestors"][0]["nodeId"] == window["nodeId"]
+
+
+def test_pick_content_host_real(owned: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    from wintestkit.uia import win32
+
+    scope, path = owned
+    rpc = InProcess(path, scope.app)
+    pid = scope.app.main_window().process_id
+    with attached(rpc, pid) as (window, _session):
+        pending = [window]
+        host = None
+        while pending and host is None:
+            node = pending.pop(0)
+            children = result(rpc, "inspect.children", {"nodeId": node["nodeId"], "tree": "visual"})
+            for child in children["nodes"]:
+                if child.get("identity", {}).get("automationId") == "PickTextHost":
+                    host = child
+                    break
+                pending.append(child)
+        assert host is not None
+        bounds = rpc.server.nodes[host["nodeId"]].state().bounds
+        assert bounds is not None
+        native = rpc.server.nodes[window["nodeId"]]
+        monkeypatch.setattr(win32, "WindowFromPoint", lambda point: native.native_window_handle)
+        picked = rpc.server._spy_resolve(  # pyright: ignore[reportPrivateUsage]
+            native, int(bounds.x + 10), int(bounds.y + bounds.height / 2), True, "visual"
+        )
+        assert picked.node is not None
+        assert picked.node["identity"]["type"].endswith("TextBlock")
+        assert picked.extra["innerElement"]["type"] == "Run"
+        assert picked.extra["innerElement"]["text"] == "Save"
+        properties = result(
+            rpc, "inspect.properties", {"nodeId": picked.node["nodeId"], "includeAncestors": True}
+        )
+        ancestors = properties["ancestors"]
+        assert ancestors and ancestors[0]["nodeId"] == window["nodeId"]
+        for parent, child in zip(ancestors, [*ancestors[1:], picked.node], strict=True):
+            children = result(
+                rpc, "inspect.children", {"nodeId": parent["nodeId"], "tree": "visual"}
+            )
+            assert any(item["nodeId"] == child["nodeId"] for item in children["nodes"])

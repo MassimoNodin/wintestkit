@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { JSDOM, VirtualConsole } from "jsdom";
 import { describe, expect, it } from "vitest";
+import { DEFAULT_BASIC_PROPERTIES } from "../../src/spy/basicProperties";
 
 /**
  * Headless acceptance tests for the Properties sidebar and the Spy panel. Both are the same page
@@ -16,7 +17,7 @@ const css = readFileSync("media/spy/spy.css", "utf8");
 const labels = readFileSync("media/spy/treeLabels.js", "utf8");
 const script = readFileSync("media/spy/spy.js", "utf8");
 
-function open(surface: Surface, state: Record<string, unknown> = {}) {
+function open(surface: Surface, state: Record<string, unknown> = {}, options: { narrow?: boolean } = {}) {
   const errors: string[] = [];
   const virtualConsole = new VirtualConsole();
   virtualConsole.on("jsdomError", (error) => errors.push(`jsdomError: ${error.message}`));
@@ -34,7 +35,7 @@ function open(surface: Surface, state: Record<string, unknown> = {}) {
       getState: () => saved,
       setState: (next: Record<string, unknown>) => { saved = next; },
     }),
-    matchMedia: () => ({ matches: false, addEventListener() {} }),
+    matchMedia: () => ({ matches: !!options.narrow, addEventListener() {} }),
     requestAnimationFrame: (fn: () => void) => fn(),
   });
   dom.window.addEventListener("error", (event) => errors.push(`error event: ${event.message}`));
@@ -100,10 +101,14 @@ const managed = (extra: Record<string, unknown> = {}): Message => ({
   ],
   ...extra,
 });
+// What the host's state message carries for the Basic view: the stored rows and the list Reset restores.
+const basicState: Message = { type: "state", basicProperties: [...DEFAULT_BASIC_PROPERTIES], basicDefaults: [...DEFAULT_BASIC_PROPERTIES] };
+// The tooltip on a row's name cell: the description other rows have, as native title text.
+const tooltip = (view: { doc: Document }, name: string) => view.doc.querySelector<HTMLElement>(`#sidebar-rows [data-name="${name}"] th`)?.title ?? "";
 // The messages the host replays or sends, in the order it sends them for a selected object.
 const hostSession = (): Message[] => [
   { type: "tour", dim: false, spyLit: false },
-  { type: "state", picking: false, appRunning: true, targetName: "demo", appName: "Fixture", appPids: [42], hasProject: true, showOtherApps: true, bringToFront: false, shownProperties: [], showRefreshCounts: false },
+  { type: "state", picking: false, appRunning: true, targetName: "demo", appName: "Fixture", appPids: [42], hasProject: true, showOtherApps: true, bringToFront: false, basicProperties: [...DEFAULT_BASIC_PROPERTIES], basicDefaults: [...DEFAULT_BASIC_PROPERTIES], showRefreshCounts: false },
   { type: "roots", nodes: [windowNode] },
   { type: "children", nodeId: "win", nodes: [borderNode], expanded: true },
   { type: "children", nodeId: "border", nodes: [presenterNode], expanded: true },
@@ -176,13 +181,15 @@ describe("Properties sidebar visibility", () => {
     expect(view.errors).toEqual([]);
   });
 
-  it("shows tabs, search, the mode switch, the rows and the description once a WPF object is selected", () => {
+  it("shows tabs, search, the mode switch and the rows once a WPF object is selected, with no Description section", () => {
     const view = open("properties-view");
     view.send(...hostSession());
-    for (const selector of ["#sidebar-tab-properties", "#sidebar-tab-fields", "#sidebar-tab-methods", "#sidebar-search", "#sidebar-mode", "#sidebar-rows tr[data-name]", "#sidebar-description", "#sidebar-description-content", "#object-preview"]) {
+    for (const selector of ["#sidebar-tab-properties", "#sidebar-tab-fields", "#sidebar-tab-methods", "#sidebar-search", "#sidebar-mode", "#sidebar-rows tr[data-name]", "#object-preview"]) {
       expect(view.hiddenReason(selector), selector).toBeUndefined();
     }
     expect(view.visible("#properties-empty")).toBe(false);
+    expect(view.doc.querySelector("#sidebar-description, #sidebar-description-content, #sidebar-copy-feedback")).toBeNull();
+    expect(view.doc.body.textContent).not.toContain("Select a row to see its description");
     expect(view.names().length).toBeGreaterThan(0);
     expect(view.text("#sidebar-tab-properties")).toBe("Properties");
     expect(view.errors).toEqual([]);
@@ -210,7 +217,7 @@ describe("Spy panel visibility", () => {
     for (const selector of ["#selection-summary", "#selection-name", "#definitions-group", "#locator-panel", "#generate", "#tree"]) {
       expect(view.hiddenReason(selector), selector).toBeUndefined();
     }
-    expect(view.text("#selection-name")).toBe("Pane");
+    expect(view.text("#selection-name")).toBe('WPFObject("contentSite")');
     // The sidebar owns the property list and the preview; the panel must not repeat either.
     for (const selector of ["#sidebar-inspector", "#sidebar-search", "#sidebar-rows", "#object-preview", "#preview-element", "#preview-context", "#properties-empty", "#managed-panel", "#property-groups"]) {
       expect(view.visible(selector), selector).toBe(false);
@@ -240,10 +247,10 @@ describe("Properties sidebar acceptance", () => {
     expect(view.value("WPFControlName")).toBe("contentSite");
     expect(view.value("WPFControlOrdinalNo")).toBe("2");
     const detached = open("properties-view");
-    detached.send({ type: "selected", nodeId: "missing", properties: presenterProperties });
+    detached.send(basicState, { type: "selected", nodeId: "missing", properties: presenterProperties });
     expect(detached.value("WPFControlOrdinalNo")).toBe("Unknown");
     const forms = open("properties-view");
-    forms.send({ type: "selected", nodeId: "missing", properties: { ...presenterProperties, source: "winforms", properties: { ClrFullClassName: "A.Outer+Inner", ControlName: "button1", WinFormsControlText: "Go" } } });
+    forms.send(basicState, { type: "selected", nodeId: "missing", properties: { ...presenterProperties, source: "winforms", properties: { ClrFullClassName: "A.Outer+Inner", ControlName: "button1", WinFormsControlText: "Go" } } });
     expect(forms.value("ClrClassName")).toBe("Inner");
     expect(forms.value("WinFormsControlName")).toBe("button1");
     expect(forms.value("WinFormsControlText")).toBe("Go");
@@ -276,8 +283,7 @@ describe("Properties sidebar acceptance", () => {
     for (const [name, kind] of [["DataContext", "dependencyProperty"], ["DataContextMiddle", "attachedProperty"], ["Zoo", "staticProperty"]]) {
       expect(view.doc.querySelector(`#sidebar-rows tr[data-name="${name}"] th`)?.getAttribute("data-kind")).toBe(kind);
     }
-    (view.doc.querySelector('[data-name="DataContext"]') as HTMLElement).click();
-    expect(view.text("#sidebar-description")).toContain("Dependency property");
+    expect(tooltip(view, "DataContext")).toContain("Kind: Dependency property");
     const headings = [...view.doc.querySelectorAll("#sidebar-rows tr.sidebar-group")];
     for (const heading of headings.slice(1)) expect(heading.previousElementSibling?.matches('tr.sidebar-gap[aria-hidden="true"]')).toBe(true);
     expect(view.doc.querySelectorAll("#sidebar-rows tr.sidebar-gap")).toHaveLength(headings.length - 1);
@@ -438,7 +444,7 @@ describe("Properties sidebar acceptance", () => {
     // A unique locator from the host replaces the tree path.
     view.send({ type: "suggestion", nodeId: "presenter", suggestion: { unique: true, strategy: "automationId", helpers: [], window: { code: "Window(title='Fixture')" }, code: "WPFObject('contentSite')" } });
     expect(view.value("FullName")).toBe("Window(title='Fixture')\nWPFObject('contentSite')");
-    (view.doc.querySelector('[data-name="Parent"] button') as HTMLButtonElement).click();
+    (view.doc.querySelector('[data-name="Parent"] td button') as HTMLButtonElement).click();
     expect(view.posts).toContainEqual(expect.objectContaining({ type: "select", nodeId: "border" }));
     expect(view.errors).toEqual([]);
   });
@@ -446,22 +452,20 @@ describe("Properties sidebar acceptance", () => {
   it("3.4 still has Parent and FullName when the sidebar's tree never saw the object", () => {
     const view = open("properties-view");
     // The host sent no tree, only the selection and the ancestors it read with it.
-    view.send({ type: "selected", nodeId: "presenter", properties: presenterProperties });
+    view.send(basicState, { type: "selected", nodeId: "presenter", properties: presenterProperties });
     expect(view.value("Parent")).toBe('WPFObject("Border")');
     (view.doc.querySelector("#sidebar-mode") as HTMLInputElement).click();
     expect(view.value("FullName")).toBe('Window("FixtureWindow").WPFObject("Border").WPFObject("contentSite")');
-    (view.doc.querySelector('[data-name="Parent"] button') as HTMLButtonElement).click();
+    (view.doc.querySelector('[data-name="Parent"] td button') as HTMLButtonElement).click();
     expect(view.posts).toContainEqual({ type: "select", nodeId: "border" });
     expect(view.errors).toEqual([]);
   });
 
-  it("shows getter errors in the row and description", () => {
+  it("shows getter errors in the row", () => {
     const view = open("properties-view", { sidebarShowAll: true });
     view.send(...hostSession());
     view.send(managed({ sequence: 2, rows: [{ member: member("Content"), value: { status: "exception", kind: "unavailable", message: "System.InvalidOperationException", errorMessage: "broken" } }] }));
     expect(view.value("Content")).toBe("Getter threw InvalidOperationException: broken");
-    (view.doc.querySelector('[data-name="Content"]') as HTMLElement).click();
-    expect(view.text("#sidebar-description-content")).toContain("Getter threw InvalidOperationException: broken");
   });
 
   it("copies cells and reads managed rows without a menu", () => {
@@ -473,7 +477,7 @@ describe("Properties sidebar acceptance", () => {
     row.querySelector<HTMLButtonElement>('[aria-label="Read again"]')!.click();
     expect(view.posts).toEqual(expect.arrayContaining([{ type: "copy", text: "Content" }, { type: "managedCopy", kind: "value", memberKey: "clr:Content" }, { type: "managedRead", memberKey: "clr:Content" }]));
     expect(view.doc.querySelector("#sidebar-row-menu, .row-menu-button")).toBeNull();
-    expect(view.text("#sidebar-description-content")).toContain("Runtime type: System.String");
+    expect(tooltip(view, "Content")).toContain("Runtime type: System.String");
     expect(view.doc.querySelector('[data-name="Height"] [aria-label="Read again"]')).toBeNull();
     expect(view.headings()).not.toContain("Pinned");
     expect(view.errors).toEqual([]);
@@ -569,10 +573,10 @@ describe("Properties sidebar review fixes", () => {
     height.cells[0]!.click(); height.cells[1]!.click();
     expect(view.posts).toContainEqual({ type: "copy", text: "Height" });
     expect(view.posts).toContainEqual({ type: "copy", text: height.cells[1]!.textContent });
-    expect(view.text("#sidebar-copy-feedback")).toBe("Copied");
+    expect(view.text("#copy-toast")).toBe("Value copied");
     key(view, height, { key: "Enter" }); key(view, height, { key: "c", ctrlKey: true });
     const before = view.posts.filter((p) => p.type === "copy" || p.type === "managedCopy").length;
-    (view.doc.querySelector('[data-name="Parent"] button') as HTMLButtonElement).click();
+    (view.doc.querySelector('[data-name="Parent"] td button') as HTMLButtonElement).click();
     (view.doc.querySelector('[data-name="CLR Parent"] .property-toggle') as HTMLButtonElement).click();
     expect(view.posts.filter((p) => p.type === "copy" || p.type === "managedCopy")).toHaveLength(before);
     expect(view.posts).toContainEqual({ type: "managedExpand", memberKey: "clr:Parent" });
@@ -643,9 +647,8 @@ describe("Properties sidebar review fixes", () => {
     view.send({ type: "selected", nodeId: "win", properties: { ...presenterProperties, info: win.info, ancestors: [] } });
     expect(view.value("Left")).toBe("100");
     expect(view.value("Top")).toBe("50");
-    // The meaning is documented in the Description pane.
-    (view.doc.querySelector('[data-name="Left"]') as HTMLElement).click();
-    expect(view.text("#sidebar-description-content")).toContain("containing window");
+    // The meaning is documented in the tooltip of the name.
+    expect(tooltip(view, "Left")).toContain("containing window");
     expect(view.errors).toEqual([]);
   });
 
@@ -660,7 +663,7 @@ describe("Properties sidebar review fixes", () => {
     expect(view.value("AutomationId")).toBe('""');
   });
 
-  it("5. hides the refresh counts in the sidebar and keeps them in the Spy panel", () => {
+  it("5. never runs the refresh walk in the sidebar, and keeps the counts in the Spy panel", () => {
     const drive = (surface: Surface) => {
       const view = open(surface);
       const child = { nodeId: "child", hasChildren: false, info: { controlType: "Button", name: "Save" } };
@@ -672,9 +675,8 @@ describe("Properties sidebar review fixes", () => {
     expect(panel.text("#refresh-counts")).toMatch(/^Refresh: \+0 added, -0 removed, \d+ kept, 0 redrawn$/);
     expect(panel.hiddenReason("#refresh-counts")).toBeUndefined();
     const sidebar = drive("properties-view");
-    expect(sidebar.text("#refresh-counts")).toContain("Refresh:");
-    expect((sidebar.doc.querySelector("#refresh-counts") as HTMLElement).hidden).toBe(false);
-    expect(sidebar.hiddenReason("#refresh-counts")).toContain("display:none");
+    expect(sidebar.text("#refresh-counts")).toBe("");
+    expect(sidebar.hiddenReason("#refresh-counts")).toBeDefined();
     expect(panel.errors.concat(sidebar.errors)).toEqual([]);
   });
 
@@ -693,7 +695,7 @@ describe("Properties sidebar review fixes", () => {
     view.send(...hostSession());
     const head = view.doc.querySelector<HTMLTableCellElement>("#sidebar-table thead th")!;
     expect(head.style.width).toBe("");
-    for (const row of rowsOf(view)) expect((row.querySelector("th") as HTMLElement).title).toBe(row.dataset.name);
+    for (const row of rowsOf(view)) expect((row.querySelector("th") as HTMLElement).title.split("\n")[0]).toBe(row.dataset.name);
     expect(view.errors).toEqual([]);
   });
 
@@ -707,48 +709,39 @@ describe("Properties sidebar review fixes", () => {
       configurable: true, get() { return this.matches('tbody th[scope="row"]') ? widest : 0; },
     });
     view.send(...hostSession());
-    expect(head.style.width).toBe("51.2%");
+    expect(head.style.width).toBe("50%");
+    // The column never shrinks for the same object, so Basic and All keep the Value column where it is.
     widest = 250;
     (view.doc.querySelector("#sidebar-mode") as HTMLElement).click();
-    expect(head.style.width).toBe("42%");
-    (view.doc.querySelector("#sidebar-mode") as HTMLElement).click();
-    expect(head.style.width).toBe("60%");
+    expect(head.style.width).toBe("50%");
     widest = 90;
     (view.doc.querySelector("#sidebar-mode") as HTMLElement).click();
-    (view.doc.querySelector("#sidebar-mode") as HTMLElement).click();
-    expect(head.style.width).toBe("31.4%");
+    expect(head.style.width).toBe("50%");
     expect(view.errors).toEqual([]);
   });
 
-  it("7. shows the metadata of the row that was clicked, and what a Standard row means", () => {
+  it("7. keeps what a row means as a tooltip on its name: a Standard row's meaning, a member's types, a binding", () => {
     const view = open("properties-view", { sidebarShowAll: true });
     view.send(...hostSession());
-    expect(view.text("#sidebar-description-content")).toBe("Select a row to see its description.");
-    (view.doc.querySelector('[data-name="Content"]') as HTMLElement).click();
-    const text = () => view.text("#sidebar-description-content");
-    for (const line of ["Name: Content", "Value: Hello", "Declared type: System.Object", "Runtime type: System.String", "Declaring type: System.Windows.Controls.ContentPresenter", "Category: clrProperty"]) expect(text()).toContain(line);
-    expect(text()).not.toContain("Select a row");
-    expect((view.doc.querySelector('[data-name="Content"]') as HTMLElement).getAttribute("aria-current")).toBe("true");
-    (view.doc.querySelector('[data-name="Enabled"]') as HTMLElement).click();
-    expect(text()).toContain("Name: Enabled");
-    expect(text()).toContain("Meaning: Whether the control accepts input");
-    expect(view.doc.querySelectorAll('#sidebar-rows [aria-current="true"]')).toHaveLength(1);
-    // A value source and a binding appear when the row has them.
-    view.send(managed({
-      sequence: 2,
-      bindings: [{ memberKey: "dp:Text", kind: "Binding", status: "active", path: "Title" }],
-      rows: [{ member: { memberKey: "dp:Text", name: "Text", category: "dependencyProperty", visibility: "public", readable: true, pathSegment: { kind: "dependency", name: "Text", ownerType: "T", ownerAssembly: "A" }, declaringType: "T", declaredType: "System.String" }, value: { status: "ok", kind: "string", scalar: "x", runtimeType: "System.String", dependencySource: { baseValueSource: "Local" } } }],
-    }));
-    (view.doc.querySelector('[data-name="Text"]') as HTMLElement).click();
-    expect(text()).toContain("Value source: Local");
-    expect(text()).toContain("Binding: Binding; active; Title");
-    // Redraws while values arrive keep the description of the selected row, with its fresh value.
-    view.send(managed({ sequence: 3, rows: [{ member: { memberKey: "dp:Text", name: "Text", category: "dependencyProperty", visibility: "public", readable: true, pathSegment: { kind: "dependency", name: "Text", ownerType: "T", ownerAssembly: "A" }, declaringType: "T", declaredType: "System.String" }, value: { status: "ok", kind: "string", scalar: "changed", runtimeType: "System.String" } }] }));
-    expect(text()).toContain("Value: changed");
+    expect(view.doc.querySelector("#sidebar-description")).toBeNull();
+    // The name comes first; the name, value and group are on screen already, so the tooltip adds only the rest.
+    const content = tooltip(view, "Content").split("\n");
+    expect(content[0]).toBe("Content");
+    for (const line of ["Declared type: System.Object", "Runtime type: System.String", "Declaring type: System.Windows.Controls.ContentPresenter", "Kind: CLR property"]) expect(content).toContain(line);
+    for (const hidden of ["Name: Content", "Value: Hello", "Category: clrProperty", "Group: .NET"]) expect(content).not.toContain(hidden);
+    expect(tooltip(view, "Enabled").split("\n")).toEqual(["Enabled", "Whether the control accepts input (UI Automation IsEnabled)."]);
+    // A value source and a binding appear when the row has them, and follow the row as values arrive.
+    const text = { memberKey: "dp:Text", name: "Text", category: "dependencyProperty", visibility: "public", readable: true, pathSegment: { kind: "dependency", name: "Text", ownerType: "T", ownerAssembly: "A" }, declaringType: "T", declaredType: "System.String" };
+    view.send(managed({ sequence: 2, bindings: [{ memberKey: "dp:Text", kind: "Binding", status: "active", path: "Title" }], rows: [{ member: text, value: { status: "ok", kind: "string", scalar: "x", runtimeType: "System.String", dependencySource: { baseValueSource: "Local" } } }] }));
+    expect(tooltip(view, "Text")).toContain("Value source: Local");
+    expect(tooltip(view, "Text")).toContain("Binding: Binding; active; Title");
+    // Clicking a name copies it; it no longer selects a row to describe.
+    (view.doc.querySelector('[data-name="Text"] th') as HTMLElement).click();
+    expect(view.doc.querySelector('#sidebar-rows [aria-current="true"], #sidebar-rows .described')).toBeNull();
     expect(view.errors).toEqual([]);
   });
 
-  it("7. describes a row clicked on its name cell, through the table body", () => {
+  it("7. copies a row clicked on its name cell, through the table body, after a redraw", () => {
     const view = open("properties-view");
     view.send(...hostSession());
     const stale = view.doc.querySelector('[data-name="Name"]') as HTMLElement;
@@ -756,7 +749,8 @@ describe("Properties sidebar review fixes", () => {
     view.send(managed({ sequence: 2 }));
     expect(stale.isConnected).toBe(false);
     (view.doc.querySelector('[data-name="Name"] th') as HTMLElement).click();
-    expect(view.text("#sidebar-description-content")).toContain("Name: Name");
+    expect(view.posts).toContainEqual({ type: "copy", text: "Name" });
+    expect(view.text("#copy-toast")).toBe("Name copied");
   });
 
   it("keeps the default rows without row menus or pinned group", () => {
@@ -873,7 +867,7 @@ describe("Methods tab invocation", () => {
     }
   });
 
-  it("shows the Methods value as the return type and flags only, with the rest in the tooltip and the description", () => {
+  it("shows the Methods value as the return type and flags only, with the rest in the tooltips", () => {
     const view = methodsView([method({ name: "Hidden", visibility: "private", isStatic: true, returnType: "System.Void", parameters: [{ name: "x", type: "App.Thing", isOut: false }], unsupportedReason: "A parameter type is not supported." }), method({ key: "k2", name: "Both", visibility: "protectedInternal", parameters: [] })]);
     const hidden = rowFor(view, "Hidden(App.Thing x)");
     expect((hidden.children[1] as HTMLElement).textContent).toBe("System.Void private static");
@@ -881,8 +875,7 @@ describe("Methods tab invocation", () => {
     expect(view.text("#sidebar-rows")).not.toContain("A parameter type is not supported.");
     expect(view.text("#sidebar-rows")).not.toContain("WinTestKit.Fixture.FixtureControl");
     expect(view.value("Both()")).toBe("System.String protected internal instance");
-    hidden.click();
-    const description = view.text("#sidebar-description-content");
+    const description = (hidden.children[0] as HTMLElement).title;
     for (const line of ["Declaring type: WinTestKit.Fixture.FixtureControl", "Returns: System.Void", "Access: private static", "Not supported: A parameter type is not supported.", "Invocation: Invocation unavailable: A parameter type is not supported."]) expect(description).toContain(line);
     expect(view.errors).toEqual([]);
   });
@@ -975,7 +968,7 @@ describe("Methods tab invocation", () => {
     expect(forms(view)).toHaveLength(1);
   });
 
-  it("shows the result inline under the row, and in the Description pane", () => {
+  it("shows the result inline under the row, and in the tooltip of the method", () => {
     const view = methodsView();
     invokeItem(view).click();
     view.send(snapshot([method()], { invocation: { key: "k1", text: "Result: written-1" } }, 3));
@@ -983,16 +976,15 @@ describe("Methods tab invocation", () => {
     expect(result.textContent).toBe("Result: written-1");
     expect(result.previousElementSibling).toBe(forms(view)[0]);
     expect(view.doc.querySelector("#sidebar-rows details")).toBeNull();
-    // The description of the method shows it too (the menu already described the row).
-    expect(view.text("#sidebar-description-content")).toContain("Result: written-1");
+    // The tooltip of the method's name carries it too.
+    expect((rowFor(view).children[0] as HTMLElement).title).toContain("Result: written-1");
     // With the form closed, the result stays directly under the method row.
     key(view, field(view, 0), { key: "Escape" });
     expect(rowFor(view).nextElementSibling?.textContent).toBe("Result: written-1");
     // A failure is shown the same way, and only under the method it belongs to.
     view.send(snapshot([method(), method({ key: "k9", name: "Other", parameters: [] })], { invocation: { key: "k1", text: "Invocation failed or timed out. The method may still have had an effect." } }, 4));
     expect(view.doc.querySelectorAll("#sidebar-rows tr.invoke-result")).toHaveLength(1);
-    rowFor(view).click();
-    expect(view.text("#sidebar-description-content")).toContain("Outcome: Invocation failed or timed out.");
+    expect((rowFor(view).children[0] as HTMLElement).title).toContain("Outcome: Invocation failed or timed out.");
     expect(view.errors).toEqual([]);
   });
 
@@ -1088,7 +1080,7 @@ describe("Win32 window rows", () => {
   };
   const session = (properties: Record<string, unknown>): Message[] => [
     { type: "tour", dim: false, spyLit: false },
-    { type: "state", picking: false, appRunning: true, targetName: "demo", appName: "Fixture", appPids: [7], hasProject: true, showOtherApps: true, bringToFront: false, shownProperties: [], showRefreshCounts: false },
+    { type: "state", picking: false, appRunning: true, targetName: "demo", appName: "Fixture", appPids: [7], hasProject: true, showOtherApps: true, bringToFront: false, basicProperties: [...DEFAULT_BASIC_PROPERTIES], basicDefaults: [...DEFAULT_BASIC_PROPERTIES], showRefreshCounts: false },
     { type: "roots", nodes: [dialog] },
     { type: "children", nodeId: "dlg", nodes: [edit], expanded: true },
     { type: "selectionPending", nodeId: "edit" },
@@ -1141,13 +1133,11 @@ describe("Win32 window rows", () => {
     expect(view.errors).toEqual([]);
   });
 
-  it("describes each style with the bits it stands for and offers the row menu", () => {
+  it("lists the bits each style stands for in its tooltip and copies from the row", () => {
     const view = open("properties-view", { sidebarShowAll: true });
     view.send(...session({ window: facts }));
     const row = view.doc.querySelector('#sidebar-rows [data-name="Styles"]') as HTMLTableRowElement;
-    row.click();
-    const description = view.text("#sidebar-description-content");
-    expect(description).toContain("Group: Win32 Window");
+    const description = (row.cells[0] as HTMLElement).title;
     expect(description).toContain("WS_CHILD: 0x40000000");
     expect(description).toContain("ES_MULTILINE: 0x00000004");
     expect(description).toContain("Unnamed bits: 0x00000100");
@@ -1226,7 +1216,7 @@ describe("Properties sidebar for a WinForms object", () => {
   });
   const session = (): Message[] => [
     { type: "tour", dim: false, spyLit: false },
-    { type: "state", picking: false, appRunning: true, targetName: "demo", appName: "Fixture", appPids: [42], hasProject: true, showOtherApps: true, bringToFront: false, shownProperties: [], showRefreshCounts: false },
+    { type: "state", picking: false, appRunning: true, targetName: "demo", appName: "Fixture", appPids: [42], hasProject: true, showOtherApps: true, bringToFront: false, basicProperties: [...DEFAULT_BASIC_PROPERTIES], basicDefaults: [...DEFAULT_BASIC_PROPERTIES], showRefreshCounts: false },
     { type: "roots", nodes: [formNode] },
     { type: "children", nodeId: "form", nodes: [buttonNode], expanded: true },
     { type: "selectionPending", nodeId: "winforms:button" },
@@ -1707,13 +1697,623 @@ describe("Events in the Properties sidebar", () => {
     expect(view.errors).toEqual([]);
   });
 
-  it("describes an event in the description pane", () => {
+  it("describes an event in the tooltip of its name", () => {
     const view = show();
-    row(view, "Idle")!.click();
-    const text = view.text("#sidebar-description-content");
+    const text = row(view, "Idle")!.querySelector("th")!.title;
     expect(text).toContain("Demo.Model");
     expect(text).toContain("System.EventHandler");
     expect(text).toContain("CLR event");
     expect(view.errors).toEqual([]);
+  });
+});
+
+describe("Basic view pins", () => {
+  const css1 = css.replace(/\s+/g, " ");
+  const pinOf = (view: ReturnType<typeof open>, name: string) => view.doc.querySelector<HTMLButtonElement>(`#sidebar-rows tr[data-name="${name}"] .sidebar-pin`);
+  const advanced = (basic: string[] = [...DEFAULT_BASIC_PROPERTIES]) => {
+    const view = open("properties-view", { sidebarShowAll: true });
+    view.send(...hostSession(), { ...basicState, basicProperties: basic });
+    return view;
+  };
+  const toggleMode = (view: ReturnType<typeof open>) => (view.doc.querySelector("#sidebar-mode") as HTMLInputElement).click();
+  const sent = (view: ReturnType<typeof open>) => view.posts.filter((post) => post.type === "basicProperty" || post.type === "resetBasicProperties");
+
+  it("shows exactly the stored rows that exist for the object, grouped as the full list is", () => {
+    const view = open("properties-view");
+    view.send(...hostSession(), { ...basicState, basicProperties: ["Standard/Name", "Extended/AutomationId", ".NET/Content", "Win32 Window/Text", "UI Automation/ClassName", "Standard/Missing"] });
+    expect(view.headings()).toEqual(["Standard", "Extended", ".NET", "UI Automation"]);
+    expect(view.names()).toEqual(["Name", "AutomationId", "Content", "ClassName"]);
+    expect(view.value("Content")).toBe("Hello");
+    view.send({ ...basicState, basicProperties: [] });
+    expect(view.names()).toEqual([]);
+    expect(view.visible("#sidebar-empty")).toBe(true);
+    expect(view.text("#sidebar-empty")).toContain("Nothing in the Basic view");
+    expect(view.errors).toEqual([]);
+  });
+
+  it("ignores entries of the stored list that are not keys", () => {
+    const view = open("properties-view");
+    view.send(...hostSession(), { ...basicState, basicProperties: ["Standard/Name", "bogus", 5, "Elsewhere/Name", "Standard/Name"] });
+    expect(view.names()).toEqual(["Name"]);
+  });
+
+  it("puts a pin to the left of every name: highlighted for Basic rows, plain for the others, in the Advanced view", () => {
+    const view = advanced();
+    const height = pinOf(view, "Height")!, margin = pinOf(view, "Margin")!;
+    expect(height.getAttribute("aria-pressed")).toBe("true");
+    expect(height.classList.contains("codicon-pinned")).toBe(true);
+    expect(height.getAttribute("aria-label")).toBe("Remove Height from Basic view");
+    expect(margin.getAttribute("aria-pressed")).toBe("false");
+    expect(margin.classList.contains("codicon-pin")).toBe(true);
+    expect(margin.getAttribute("aria-label")).toBe("Show Margin in Basic view");
+    for (const pin of [height, margin]) {
+      expect(pin.tagName).toBe("BUTTON");
+      expect(pin.type).toBe("button");
+      expect(pin.tabIndex).not.toBe(-1);
+      // The first thing in the name cell, so before the name (and before the arrow of a row that opens).
+      const cell = pin.closest("th")!;
+      expect(cell.firstChild).toBe(pin);
+      expect(cell.textContent).toBe(pin.closest("tr")!.dataset.name);
+    }
+    expect(pin1(view, "Content").parentElement?.firstChild).toBe(pin1(view, "Content"));
+    // The stylesheet shows a pin that is not pressed only under the pointer or with the focus; a pressed one always.
+    const style = (pin: Element) => view.dom.window.getComputedStyle(pin);
+    expect(style(height).opacity).toBe("1");
+    expect(style(margin).opacity).toBe("0");
+    expect(css1).toContain(".sidebar-row .sidebar-pin { opacity: 0; }");
+    expect(css1).toContain(".sidebar-row:hover .sidebar-pin, .sidebar-row:focus-within .sidebar-pin, .sidebar-row .sidebar-pin:focus-visible { opacity: 1; }");
+    expect(css1).toMatch(/\.sidebar-row \.sidebar-pin\[aria-pressed="true"\] \{ opacity: 1; color: color-mix\(in srgb, var\(--muted\) 65%, var\(--vscode-foreground, var\(--muted\)\) 35%\); \}/);
+    // Hidden by opacity, not display: the button stays reachable with the keyboard.
+    expect(css1).not.toMatch(/\.sidebar-pin[^{]*\{[^}]*display: none/);
+    expect(view.errors).toEqual([]);
+  });
+  const pin1 = (view: ReturnType<typeof open>, name: string) => pinOf(view, name)!;
+
+  it("shows only highlighted pins in the Basic view, since every row there is in it", () => {
+    const view = advanced();
+    toggleMode(view);
+    const pins = [...view.doc.querySelectorAll<HTMLButtonElement>("#sidebar-rows .sidebar-pin")];
+    expect(pins.length).toBeGreaterThan(0);
+    for (const pin of pins) {
+      expect(pin.getAttribute("aria-pressed")).toBe("true");
+      expect(pin.classList.contains("codicon-pinned")).toBe(true);
+      expect(pin.closest("tr")!.classList.contains("in-basic")).toBe(true);
+    }
+    expect(pins.map((pin) => pin.closest("tr")!.dataset.name)).toEqual(view.names());
+  });
+
+  it("reserves the pin's room in every row of the Properties tab, so names line up with or without a pin", () => {
+    const view = advanced();
+    view.send(managed({ sequence: 2, rows: [{ member: member("DataContext", { category: "dependencyProperty" }), value: { status: "ok", kind: "object" }, children: [{ member: member("Zed"), value: { status: "ok", kind: "string", scalar: "child" } }] }] }));
+    expect(view.doc.querySelector<HTMLElement>("#sidebar-table")!.dataset.pins).toBe("true");
+    expect(css1).toContain('.sidebar-table[data-pins="true"] tbody th[scope="row"] { padding-left: 42px; }');
+    expect(css1).toContain('.sidebar-table[data-pins="true"] th .property-toggle { left: 22px; }');
+    expect(css1).toMatch(/\.sidebar-table th \.sidebar-pin \{ position: absolute; left: 4px; top: 50%; width: 18px; transform: translateY\(-50%\); \}/);
+    // A row that cannot be pinned still has its cell (and so its room) in the same table.
+    expect(view.doc.querySelector('[data-name="DataContext.Zed"] th')).not.toBeNull();
+    expect(pinOf(view, "DataContext.Zed")).toBeNull();
+    expect(pinOf(view, "DataContext")).not.toBeNull();
+    (view.doc.querySelector('[data-sidebar-tab="fields"]') as HTMLButtonElement).click();
+    expect(view.doc.querySelector<HTMLElement>("#sidebar-table")!.dataset.pins).toBe("false");
+  });
+
+  it("adds a row to Basic from its pin, tells the host, and keeps it in its group's order in the Basic view", () => {
+    const view = advanced();
+    pinOf(view, "Content")!.click();
+    expect(sent(view)).toEqual([{ type: "basicProperty", key: ".NET/Content", pinned: true }]);
+    expect(pinOf(view, "Content")!.getAttribute("aria-pressed")).toBe("true");
+    expect(pinOf(view, "Content")!.getAttribute("aria-label")).toBe("Remove Content from Basic view");
+    // Pinning is not copying.
+    expect(view.posts.some((post) => post.type === "copy")).toBe(false);
+    toggleMode(view);
+    expect(view.names()).toEqual(["Enabled", "Height", "Name", "Parent", "Visible", "Width", "ClrClassName", "ClrFullClassName", "Content", "WPFControlName", "WPFControlOrdinalNo", "WPFControlText"]);
+    // The host keeps the list and sends it back: the same answer, no change.
+    view.send({ ...basicState, basicProperties: [...DEFAULT_BASIC_PROPERTIES, ".NET/Content"] });
+    expect(view.names()).toContain("Content");
+    expect(view.errors).toEqual([]);
+  });
+
+  it("removes any row from Basic from its highlighted pin, the built-in ones included", () => {
+    const view = advanced();
+    pinOf(view, "Enabled")!.click();
+    expect(sent(view)).toEqual([{ type: "basicProperty", key: "Standard/Enabled", pinned: false }]);
+    expect(pinOf(view, "Enabled")!.getAttribute("aria-pressed")).toBe("false");
+    toggleMode(view);
+    expect(view.names()).not.toContain("Enabled");
+    expect(view.names()).toContain("Height");
+    // In the Basic view the row goes as soon as it is unpinned.
+    pinOf(view, "Height")!.click();
+    expect(view.names()).not.toContain("Height");
+    expect(sent(view).at(-1)).toEqual({ type: "basicProperty", key: "Standard/Height", pinned: false });
+    expect(view.errors).toEqual([]);
+  });
+
+  it("pins rows of every kind that has a stable key, and no row that has none", () => {
+    const view = advanced();
+    const rows = ["typeMetadata", "clrProperty", "dependencyProperty", "attachedProperty", "staticProperty", "event", "style", "resource"].map((category, index) => ({ member: member(index === 0 ? "Name" : `Member${index}`, { category, memberKey: `key${index}` }), value: { status: "ok", kind: "string", scalar: `value${index}` } }));
+    view.send(managed({ sequence: 2, rows, bindings: [{ memberKey: "key2", kind: "Binding", status: "active", path: "Title" }] }));
+    // Standard, Extended, .NET members and UI Automation properties have keys.
+    for (const [name, key] of [["Height", "Standard/Height"], ["AutomationId", "Extended/AutomationId"], ["Member1", ".NET/Member1"], ["Member3", ".NET/Member3"], ["ClassName", "UI Automation/ClassName"]] as const) {
+      expect(pinOf(view, name)?.dataset.key, name).toBe(key);
+      expect(view.doc.querySelector(`#sidebar-rows tr[data-name="${name}"]`)?.getAttribute("data-key")).toBe(key);
+    }
+    // Binding, style, resource and event rows are derived from structures that have no member key: no pin.
+    for (const group of ["Bindings", "Style and template", "Resources", "Events"]) {
+      const inGroup = [...view.doc.querySelectorAll(`#sidebar-rows tr.sidebar-row[data-key^="${group}/"]`)];
+      expect(inGroup.length, group).toBeGreaterThan(0);
+      for (const row of inGroup) expect(row.querySelector(".sidebar-pin"), `${group}/${(row as HTMLElement).dataset.name}`).toBeNull();
+    }
+    // The keys are unique, so a pin always means one row.
+    const keys = [...view.doc.querySelectorAll<HTMLElement>("#sidebar-rows .sidebar-pin")].map((pin) => pin.dataset.key);
+    expect(new Set(keys).size).toBe(keys.length);
+    for (const key of keys) expect(key).toMatch(/^(Standard|Extended|\.NET|Win32 Window|UI Automation)\//);
+  });
+
+  it("offers a pin for a Win32 Window row with its own group in the key", () => {
+    const view = open("properties-view", { sidebarShowAll: true });
+    view.send(...hostSession(), { ...basicState }, { type: "selected", nodeId: "presenter", properties: { ...presenterProperties, window: { className: "Edit", text: "hello", handle: 199242, rawStyle: 1, rawExStyle: 0, styles: [], exStyles: [] } } });
+    expect(pinOf(view, "Window Class")?.dataset.key).toBe("Win32 Window/Window Class");
+    expect(pinOf(view, "Window Class")?.getAttribute("aria-pressed")).toBe("true");
+    expect(pinOf(view, "Raw Style")?.dataset.key).toBe("Win32 Window/Raw Style");
+    expect(pinOf(view, "Raw Style")?.getAttribute("aria-pressed")).toBe("false");
+  });
+
+  it("has no pins on the Fields and Methods tabs", () => {
+    const view = advanced();
+    for (const tab of ["fields", "methods"]) {
+      (view.doc.querySelector(`[data-sidebar-tab="${tab}"]`) as HTMLButtonElement).click();
+      expect(view.doc.querySelectorAll("#sidebar-rows .sidebar-pin")).toHaveLength(0);
+    }
+  });
+
+  it("restores the default list with Reset Basic view, which is only offered on the Properties tab and enabled when the list differs", () => {
+    const view = advanced();
+    const reset = view.doc.querySelector<HTMLButtonElement>("#sidebar-reset-basic")!;
+    expect(reset.textContent?.trim()).toBe("Reset Basic view");
+    expect(view.visible("#sidebar-reset-basic")).toBe(true);
+    expect(reset.disabled).toBe(true);
+    pinOf(view, "Margin")!.click();
+    pinOf(view, "Enabled")!.click();
+    expect(reset.disabled).toBe(false);
+    reset.click();
+    expect(sent(view).at(-1)).toEqual({ type: "resetBasicProperties" });
+    expect(pinOf(view, "Margin")!.getAttribute("aria-pressed")).toBe("false");
+    expect(pinOf(view, "Enabled")!.getAttribute("aria-pressed")).toBe("true");
+    expect(reset.disabled).toBe(true);
+    toggleMode(view);
+    expect(view.names().slice(0, 6)).toEqual(["Enabled", "Height", "Name", "Parent", "Visible", "Width"]);
+    (view.doc.querySelector('[data-sidebar-tab="fields"]') as HTMLButtonElement).click();
+    expect(view.visible("#sidebar-reset-basic")).toBe(false);
+    expect(view.errors).toEqual([]);
+  });
+
+  it("follows the setting when it changes elsewhere, and its default when that changes", () => {
+    const view = open("properties-view");
+    view.send(...hostSession());
+    expect(view.names()).toContain("Enabled");
+    view.send({ ...basicState, basicProperties: ["Standard/Width"] });
+    expect(view.names()).toEqual(["Width"]);
+    expect(view.doc.querySelector<HTMLButtonElement>("#sidebar-reset-basic")!.disabled).toBe(false);
+    view.send({ ...basicState, basicProperties: ["Standard/Width"], basicDefaults: ["Standard/Width"] });
+    expect(view.doc.querySelector<HTMLButtonElement>("#sidebar-reset-basic")!.disabled).toBe(true);
+  });
+
+  it("keeps the focus on the pin that was pressed", () => {
+    const view = advanced();
+    view.doc.body.focus();
+    pinOf(view, "Margin")!.click();
+    expect(view.doc.activeElement).toBe(pinOf(view, "Margin"));
+  });
+
+  it("no longer carries the old pinned list, its message or its setting", () => {
+    expect(script).not.toContain("pinProperty");
+    expect(script).not.toContain("shownProperties");
+    expect(html).not.toContain("pinned-group");
+    expect(css).not.toContain(".property-pin");
+    const view = open("properties-view");
+    view.send(...hostSession(), { ...basicState, shownProperties: ["HelpText"] });
+    expect(view.posts.some((post) => post.type === "pinProperty")).toBe(false);
+  });
+});
+
+describe("Copy label", () => {
+  const view = () => {
+    const page = open("properties-view", { sidebarShowAll: true });
+    page.send(...hostSession());
+    return page;
+  };
+  const click = (page: ReturnType<typeof open>, cell: Element, x: number, y: number) =>
+    cell.dispatchEvent(new page.dom.window.MouseEvent("click", { bubbles: true, clientX: x, clientY: y }));
+  const toast = (page: ReturnType<typeof open>) => page.doc.querySelector<HTMLElement>("#copy-toast")!;
+
+  it("says Name copied beside the pointer for the name cell and Value copied for the value cell, and fades after about a second", async () => {
+    const page = view();
+    const row = page.doc.querySelector<HTMLTableRowElement>('[data-name="Height"]')!;
+    expect(toast(page).hidden).toBe(true);
+    click(page, row.cells[0]!, 120, 80);
+    expect(toast(page).hidden).toBe(false);
+    expect(toast(page).textContent).toBe("Name copied");
+    expect(toast(page).style.left).toBe("132px");
+    expect(toast(page).style.top).toBe("94px");
+    expect(page.text("#copy-announcer")).toBe("Name copied");
+    click(page, row.cells[1]!, 200, 90);
+    expect(toast(page).textContent).toBe("Value copied");
+    expect(toast(page).style.left).toBe("212px");
+    // The old header feedback is gone.
+    expect(page.doc.querySelector("#sidebar-copy-feedback")).toBeNull();
+    expect(row.cells[1]!.classList.contains("copied")).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 780));
+    expect(toast(page).classList.contains("fading")).toBe(true);
+    expect(toast(page).hidden).toBe(false);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(toast(page).hidden).toBe(true);
+    expect(page.text("#copy-announcer")).toBe("");
+    expect(row.cells[1]!.classList.contains("copied")).toBe(false);
+    expect(page.errors).toEqual([]);
+  });
+
+  it("keeps the label inside the window", () => {
+    const page = view();
+    const row = page.doc.querySelector<HTMLTableRowElement>('[data-name="Height"]')!;
+    click(page, row.cells[0]!, 5000, 5000);
+    expect(parseFloat(toast(page).style.left)).toBeLessThanOrEqual(page.dom.window.innerWidth - 4);
+    expect(parseFloat(toast(page).style.top)).toBeLessThanOrEqual(page.dom.window.innerHeight - 4);
+    click(page, row.cells[0]!, -50, -50);
+    expect(toast(page).style.left).toBe("4px");
+    expect(toast(page).style.top).toBe("4px");
+    Object.defineProperty(toast(page), "offsetWidth", { configurable: true, value: 90 });
+    Object.defineProperty(toast(page), "offsetHeight", { configurable: true, value: 20 });
+    click(page, row.cells[0]!, page.dom.window.innerWidth - 10, page.dom.window.innerHeight - 5);
+    expect(parseFloat(toast(page).style.left) + 90).toBeLessThanOrEqual(page.dom.window.innerWidth - 4);
+    expect(parseFloat(toast(page).style.top) + 20).toBeLessThanOrEqual(page.dom.window.innerHeight - 4);
+  });
+
+  it("places the label at the cell for a copy from the keyboard, and announces it", () => {
+    const page = view();
+    const row = page.doc.querySelector<HTMLTableRowElement>('[data-name="Height"]')!;
+    row.cells[1]!.getBoundingClientRect = () => ({ left: 100, top: 200, right: 160, bottom: 220, width: 60, height: 20, x: 100, y: 200, toJSON() {} });
+    key(page, row, { key: "Enter" });
+    expect(toast(page).textContent).toBe("Value copied");
+    expect(toast(page).style.left).toBe("112px");
+    expect(toast(page).style.top).toBe("214px");
+    expect(page.text("#copy-announcer")).toBe("Value copied");
+    key(page, row, { key: "c", ctrlKey: true });
+    expect(toast(page).textContent).toBe("Value copied");
+  });
+
+  it("announces politely, stays out of the accessibility tree itself and takes no pointer events", () => {
+    const page = view();
+    const announcer = page.doc.querySelector("#copy-announcer")!;
+    expect(announcer.getAttribute("role")).toBe("status");
+    expect(announcer.getAttribute("aria-live")).toBe("polite");
+    expect(toast(page).getAttribute("aria-hidden")).toBe("true");
+    const css1 = css.replace(/\s+/g, " ");
+    expect(css1).toContain("pointer-events: none");
+  });
+
+  it("copies nothing and shows nothing for a value that cannot be copied", () => {
+    const page = view();
+    const row = page.doc.querySelector<HTMLTableRowElement>('[data-name="Content"]')!;
+    page.send(managed({ sequence: 2, rows: [{ member: member("Content"), value: { status: "exception", kind: "unavailable", message: "System.InvalidOperationException" } }] }));
+    const failed = page.doc.querySelector<HTMLTableRowElement>('[data-name="Content"]')!;
+    expect(row.isConnected).toBe(false);
+    failed.cells[1]!.click();
+    expect(failed.cells[1]!.classList.contains("copied")).toBe(false);
+  });
+
+  it("is green-tinted from theme colours, readable in light, dark, high-contrast and forced-colour themes", () => {
+    const css1 = css.replace(/\s+/g, " ");
+    const rule = css1.slice(css1.indexOf(".copy-toast {"), css1.indexOf("}", css1.indexOf(".copy-toast {")) + 1);
+    expect(rule).toContain("--vscode-testing-iconPassed");
+    expect(rule).toContain("--vscode-charts-green");
+    expect(rule).toMatch(/background: color-mix\(in srgb, var\(--vscode-testing-iconPassed[^;]*var\(--vscode-editorHoverWidget-background/);
+    expect(rule).toContain("color: var(--vscode-editorHoverWidget-foreground");
+    expect(rule).toContain("position: fixed");
+    expect(css1).toContain("body.vscode-high-contrast .copy-toast");
+    expect(css1).toMatch(/@media \(forced-colors: active\) \{ \.copy-toast \{[^}]*border-color: CanvasText/);
+    expect(css1).toMatch(/@media \(prefers-reduced-motion: reduce\) \{ \.copy-toast \{ transition: none; \} \}/);
+  });
+});
+
+describe("Description section", () => {
+  it("is gone from the page, the stylesheet and the script", () => {
+    expect(html).not.toContain("sidebar-description");
+    expect(html).not.toContain("Select a row to see its description");
+    expect(css).not.toContain("sidebar-description");
+    expect(css).not.toContain(".described");
+    expect(script).not.toContain("describeSidebar");
+    expect(script).not.toContain("describedKey");
+    expect(script).not.toContain("sidebar-description");
+  });
+
+  it("keeps descriptions as native tooltips on the name cell, which also carry the full name", () => {
+    const page = open("properties-view", { sidebarShowAll: true });
+    page.send(...hostSession());
+    for (const row of page.doc.querySelectorAll<HTMLTableRowElement>("#sidebar-rows tr.sidebar-row")) {
+      const title = (row.cells[0] as HTMLElement).title;
+      expect(title.split("\n")[0], row.dataset.name).toBe(row.dataset.name);
+      // One compact line or a few short lines.
+      expect(title.split("\n").length).toBeLessThanOrEqual(9);
+      for (const line of title.split("\n")) expect(line.length).toBeLessThanOrEqual(175);
+    }
+    expect(tooltip(page, "Enabled")).toContain("Whether the control accepts input");
+    expect(tooltip(page, "Visible")).toContain("Whether the object is shown");
+  });
+
+  it("shortens a long description line", () => {
+    const page = open("properties-view", { sidebarShowAll: true });
+    page.send(...hostSession(), managed({ sequence: 2, rows: [{ member: member("Content", { declaredType: "T".repeat(400) }), value: { status: "ok", kind: "string", scalar: "x", runtimeType: "System.String" } }] }));
+    const lines = tooltip(page, "Content").split("\n");
+    expect(lines.some((line) => line.endsWith("…"))).toBe(true);
+    expect(Math.max(...lines.map((line) => line.length))).toBeLessThanOrEqual(175);
+  });
+});
+
+describe("Splitter", () => {
+  const workspace = (page: ReturnType<typeof open>) => page.doc.querySelector<HTMLElement>("#workspace")!;
+  const treeWidthPosts = (page: ReturnType<typeof open>) => page.posts.filter((post) => post.type === "treeWidth");
+  const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+  const withWidth = (page: ReturnType<typeof open>, width: number) => {
+    workspace(page).getBoundingClientRect = () => ({ left: 0, top: 0, right: width, bottom: 600, width, height: 600, x: 0, y: 0, toJSON() {} });
+  };
+  const drag = (page: ReturnType<typeof open>, ...positions: number[]) => {
+    const splitter = page.doc.querySelector<HTMLElement>("#splitter")!;
+    (splitter as unknown as { setPointerCapture: (id: number) => void }).setPointerCapture = () => {};
+    const down = new page.dom.window.MouseEvent("pointerdown", { bubbles: true, cancelable: true });
+    Object.assign(down, { pointerId: 1 });
+    splitter.dispatchEvent(down);
+    for (const x of positions) splitter.dispatchEvent(new page.dom.window.MouseEvent("pointermove", { bubbles: true, clientX: x }));
+    return () => splitter.dispatchEvent(new page.dom.window.Event("lostpointercapture"));
+  };
+  const state = (page: ReturnType<typeof open>, extra: Record<string, unknown> = {}) => page.send({ type: "state", appRunning: true, hasProject: true, ...extra });
+
+  it("starts with the default split: the tree takes everything except what the selected object's pane needs", () => {
+    const page = open("spy-view");
+    page.send(...hostSession());
+    expect(workspace(page).dataset.split).toBeUndefined();
+    expect(workspace(page).style.getPropertyValue("--tree-width")).toBe("");
+    expect(workspace(page).style.getPropertyValue("--details-min")).toBe("260px");
+    const css1 = css.replace(/\s+/g, " ");
+    expect(css1).toContain("#workspace { display: grid; grid-template-columns: minmax(200px, 1fr) 5px var(--details-min, 260px);");
+    expect(css1).toContain('#workspace[data-split="custom"] { grid-template-columns: minmax(200px, var(--tree-width)) 5px minmax(var(--details-min, 260px), 1fr); }');
+    expect(css1).not.toContain("36%");
+    expect(page.errors).toEqual([]);
+  });
+
+  it("measures the selected object's pane: 260px, or what its header and locator button need when more", () => {
+    const page = open("spy-view");
+    page.send(...hostSession());
+    const wide = (id: string, width: number) => Object.defineProperty(page.doc.getElementById(id)!, "offsetWidth", { configurable: true, value: width });
+    wide("details-title", 90); wide("highlight", 100); wide("locator-panel", 330); wide("generate", 300);
+    page.dom.window.dispatchEvent(new page.dom.window.Event("resize"));
+    const measured = parseFloat(workspace(page).style.getPropertyValue("--details-min"));
+    // The panel's padding and border are added to the button; the header's to its two parts.
+    expect(measured).toBeGreaterThanOrEqual(300 + 24);
+    expect(measured).toBeLessThanOrEqual(300 + 24 + 8);
+    wide("generate", 150); wide("locator-panel", 180);
+    page.dom.window.dispatchEvent(new page.dom.window.Event("resize"));
+    expect(workspace(page).style.getPropertyValue("--details-min")).toBe("260px");
+  });
+
+  it("restores the width the host kept, clamped to the window, without telling the host back", async () => {
+    const page = open("spy-view");
+    withWidth(page, 1000);
+    state(page, { treeWidth: 420 });
+    expect(workspace(page).dataset.split).toBe("custom");
+    expect(workspace(page).style.getPropertyValue("--tree-width")).toBe("420px");
+    state(page, { treeWidth: 900 });
+    expect(workspace(page).style.getPropertyValue("--tree-width")).toBe("715px"); // 1000 - 25 - 260
+    state(page, { treeWidth: 50 });
+    expect(workspace(page).style.getPropertyValue("--tree-width")).toBe("200px");
+    await wait(350);
+    expect(treeWidthPosts(page)).toEqual([]);
+    expect(page.errors).toEqual([]);
+  });
+
+  it("keeps the chosen width when the window shrinks and grows again", () => {
+    const page = open("spy-view");
+    withWidth(page, 1400);
+    state(page, { treeWidth: 900 });
+    expect(workspace(page).style.getPropertyValue("--tree-width")).toBe("900px");
+    withWidth(page, 800);
+    page.dom.window.dispatchEvent(new page.dom.window.Event("resize"));
+    expect(workspace(page).style.getPropertyValue("--tree-width")).toBe("515px");
+    withWidth(page, 1400);
+    page.dom.window.dispatchEvent(new page.dom.window.Event("resize"));
+    expect(workspace(page).style.getPropertyValue("--tree-width")).toBe("900px");
+  });
+
+  it("shows a width restored before the window had a size, once it has one", () => {
+    const page = open("spy-view");
+    state(page, { treeWidth: 650 });
+    expect(workspace(page).style.getPropertyValue("--tree-width")).toBe("650px");
+    withWidth(page, 700);
+    page.dom.window.dispatchEvent(new page.dom.window.Event("resize"));
+    expect(workspace(page).style.getPropertyValue("--tree-width")).toBe("415px");
+  });
+
+  it("keeps a dragged width: one message after the drag settles, with the clamped width", async () => {
+    const page = open("spy-view");
+    withWidth(page, 1000);
+    const release = drag(page, 300, 350, 400);
+    expect(workspace(page).style.getPropertyValue("--tree-width")).toBe("400px");
+    expect(workspace(page).dataset.split).toBe("custom");
+    expect(treeWidthPosts(page)).toEqual([]);
+    // A state that arrives mid-drag does not pull the splitter back.
+    state(page, { treeWidth: 250 });
+    expect(workspace(page).style.getPropertyValue("--tree-width")).toBe("400px");
+    release();
+    await wait(350);
+    expect(treeWidthPosts(page)).toEqual([{ type: "treeWidth", width: 400 }]);
+    // Dragged past the limit, the width kept is the one on screen.
+    drag(page, 5000)();
+    expect(workspace(page).style.getPropertyValue("--tree-width")).toBe("715px");
+    await wait(350);
+    expect(treeWidthPosts(page).at(-1)).toEqual({ type: "treeWidth", width: 715 });
+    expect(page.errors).toEqual([]);
+  });
+
+  it("keeps a width set with the keyboard too", async () => {
+    const page = open("spy-view");
+    withWidth(page, 1000);
+    Object.defineProperty(page.doc.getElementById("tree-pane")!, "offsetWidth", { configurable: true, value: 500 });
+    page.doc.getElementById("splitter")!.dispatchEvent(new page.dom.window.KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
+    expect(workspace(page).style.getPropertyValue("--tree-width")).toBe("520px");
+    page.doc.getElementById("splitter")!.dispatchEvent(new page.dom.window.KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true }));
+    expect(workspace(page).style.getPropertyValue("--tree-width")).toBe("480px");
+    await wait(350);
+    expect(treeWidthPosts(page)).toEqual([{ type: "treeWidth", width: 480 }]);
+  });
+
+  it("returns to the default and forgets the stored width on a double-click", async () => {
+    const page = open("spy-view");
+    withWidth(page, 1000);
+    state(page, { treeWidth: 420 });
+    page.doc.getElementById("splitter")!.dispatchEvent(new page.dom.window.MouseEvent("dblclick", { bubbles: true }));
+    expect(workspace(page).dataset.split).toBeUndefined();
+    expect(workspace(page).style.getPropertyValue("--tree-width")).toBe("");
+    expect(treeWidthPosts(page)).toEqual([{ type: "treeWidth", width: null }]);
+    // Nothing is left to say a moment later, and a width dragged just before is not sent after the reset.
+    drag(page, 333)();
+    page.doc.getElementById("splitter")!.dispatchEvent(new page.dom.window.MouseEvent("dblclick", { bubbles: true }));
+    await wait(350);
+    expect(treeWidthPosts(page)).toEqual([{ type: "treeWidth", width: null }, { type: "treeWidth", width: null }]);
+    // With nothing to forget, a double-click says nothing.
+    page.doc.getElementById("splitter")!.dispatchEvent(new page.dom.window.MouseEvent("dblclick", { bubbles: true }));
+    expect(treeWidthPosts(page)).toHaveLength(2);
+  });
+
+  it("resets from the keyboard with Home", () => {
+    const page = open("spy-view");
+    withWidth(page, 1000);
+    state(page, { treeWidth: 420 });
+    page.doc.getElementById("splitter")!.dispatchEvent(new page.dom.window.KeyboardEvent("keydown", { key: "Home", bubbles: true }));
+    expect(workspace(page).dataset.split).toBeUndefined();
+    expect(treeWidthPosts(page)).toEqual([{ type: "treeWidth", width: null }]);
+  });
+
+  it("leaves the stacked layout alone: it resizes the tree's height and keeps nothing", async () => {
+    const page = open("spy-view", {}, { narrow: true });
+    workspace(page).getBoundingClientRect = () => ({ left: 0, top: 0, right: 400, bottom: 800, width: 400, height: 800, x: 0, y: 0, toJSON() {} });
+    state(page, { treeWidth: 420 });
+    expect(workspace(page).style.getPropertyValue("--tree-width")).toBe("");
+    expect(workspace(page).dataset.split).toBeUndefined();
+    drag(page, 0)();
+    page.doc.getElementById("splitter")!.dispatchEvent(new page.dom.window.MouseEvent("pointermove", { bubbles: true, clientY: 300 }));
+    page.doc.getElementById("splitter")!.dispatchEvent(new page.dom.window.MouseEvent("dblclick", { bubbles: true }));
+    expect(workspace(page).style.getPropertyValue("--tree-height")).toBe("");
+    await wait(350);
+    expect(treeWidthPosts(page)).toEqual([]);
+    expect(css.replace(/\s+/g, " ")).toContain('@media (max-width: 620px) { #workspace, #workspace[data-split="custom"] { grid-template-columns: minmax(0, 1fr);');
+  });
+});
+
+describe("review fixes for the Spy and Properties webviews", () => {
+  const types = (posts: Message[]) => posts.map((post) => post.type as string);
+  const tree = () => {
+    const child = { nodeId: "border", hasChildren: true, info: { controlType: "Pane", name: "Border", className: "Border" } };
+    const leaf = { nodeId: "leaf", hasChildren: false, info: { controlType: "Button", name: "Save" } };
+    return { child, leaf };
+  };
+  const refresh = (view: ReturnType<typeof open>) => {
+    const { child, leaf } = tree();
+    view.send({ type: "state", hasProject: true }, { type: "roots", nodes: [windowNode] }, { type: "children", nodeId: "win", nodes: [child], expanded: true }, { type: "children", nodeId: "border", nodes: [leaf], expanded: true });
+    view.posts.length = 0;
+    view.send({ type: "rootsDiff", nodes: [windowNode], revision: 1, refresh: true });
+    view.send({ type: "childrenDiff", nodeId: "win", nodes: [child], revision: 1 });
+    view.send({ type: "childrenDiff", nodeId: "border", nodes: [leaf], revision: 1 });
+  };
+
+  it("refreshes each open node once in the Spy panel and never from the Properties sidebar", () => {
+    const panel = open("spy-view");
+    refresh(panel);
+    const asked = panel.posts.filter((post) => post.type === "refreshChildren").map((post) => post.nodeId);
+    expect(asked).toEqual(["win", "border"]);
+    expect(types(panel.posts)).toContain("refreshCounts");
+    const sidebar = open("properties-view");
+    refresh(sidebar);
+    expect(sidebar.posts).toEqual([]);
+    expect(sidebar.errors.concat(panel.errors)).toEqual([]);
+  });
+
+  it("does not let the sidebar's stale copy clear the selection or overwrite the remembered expansion", () => {
+    const sidebar = open("properties-view");
+    const { child, leaf } = tree();
+    sidebar.send({ type: "roots", nodes: [windowNode] }, { type: "children", nodeId: "win", nodes: [child], expanded: true }, { type: "children", nodeId: "border", nodes: [leaf], expanded: true }, { type: "selected", nodeId: "leaf", properties: { source: "wpf", info: leaf.info, properties: {} } });
+    sidebar.posts.length = 0;
+    sidebar.send({ type: "rootsDiff", nodes: [windowNode], revision: 1 }, { type: "childrenDiff", nodeId: "win", nodes: [], revision: 1 });
+    expect(types(sidebar.posts).filter((type) => ["selectionRemoved", "expandedPaths", "refreshChildren", "expand", "treeMore", "treeAttach", "select"].includes(type))).toEqual([]);
+  });
+
+  it("does not offer Try again for the permanent window reason, and still does for others", () => {
+    const view = open("spy-view");
+    view.send({ type: "selected", nodeId: "win", properties: { source: "wpf", info: windowNode.info, properties: {} } });
+    view.send({ type: "suggestionUnavailable", nodeId: "win", reason: "Select a window descendant to generate an element locator" });
+    expect(view.doc.querySelector<HTMLElement>("#generate")!.hidden).toBe(true);
+    expect(view.text("#code")).toContain("Select a window descendant");
+    view.send({ type: "suggestionUnavailable", nodeId: "win", reason: "Timed out" });
+    expect(view.doc.querySelector<HTMLElement>("#generate")!.hidden).toBe(false);
+    expect(view.text("#generate-label")).toBe("Try again");
+  });
+
+  it("says which application is not running when no roots are listed", () => {
+    const view = open("spy-view");
+    view.send({ type: "state", hasProject: true, appRunning: false, targetName: "Contoso", appName: "Contoso.exe" }, { type: "roots", nodes: [] });
+    expect(view.text("#tree-empty-description")).toBe("Contoso.exe is not running. Launch it from the WinTestKit view, or use Show Other Apps.");
+  });
+
+  it("marks the actions menu items as menu items, moves between them with the arrow keys and styles them as menu entries", () => {
+    const view = open("properties-view");
+    const items = [...view.doc.querySelectorAll<HTMLButtonElement>(".sidebar-actions-menu button")];
+    expect(items.map((item) => item.getAttribute("role"))).toEqual(["menuitem", "menuitem", "menuitem"]);
+    const actions = view.doc.querySelector<HTMLDetailsElement>("#sidebar-actions")!;
+    for (let node: HTMLElement | null = actions; node; node = node.parentElement) node.hidden = false;
+    const button = actions.querySelector<HTMLElement>("summary")!;
+    button.click();
+    expect(actions.open).toBe(true);
+    expect(view.doc.activeElement).toBe(items[0]);
+    const press = (key: string) => items[0]!.dispatchEvent(new view.dom.window.KeyboardEvent("keydown", { key, bubbles: true }));
+    expect(view.doc.activeElement?.id).toBe("sidebar-detach");
+    press("ArrowDown");
+    expect(view.doc.activeElement).toBe(items[1]);
+    press("ArrowUp"); press("ArrowUp");
+    expect(view.doc.activeElement).toBe(items[2]);
+    items[2]!.dispatchEvent(new view.dom.window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    expect(actions.open).toBe(false);
+    expect(view.doc.activeElement).toBe(button);
+    expect(css).toMatch(/\.sidebar-actions-menu button \{[^}]*background: transparent/);
+    expect(css).toMatch(/\.sidebar-actions-menu button:hover[^{]*\{[^}]*menu-selectionBackground/);
+  });
+
+  it("wraps the suggested locator and shows the full text as a tooltip", () => {
+    const view = open("spy-view");
+    view.send({ type: "selected", nodeId: "win", properties: { source: "wpf", info: windowNode.info, properties: {} } }, { type: "suggestion", nodeId: "win", suggestion: { attributeName: "save", code: 'by.name("a very long locator name")', strategy: "name", unique: true, matchCount: 1, helpers: [] } });
+    expect(view.doc.querySelector<HTMLElement>("#locator-result")!.title).toBe('save = by.name("a very long locator name")');
+    expect(css).toMatch(/#locator-result \{[^}]*white-space: pre-wrap[^}]*overflow-wrap: anywhere/);
+  });
+
+  it("searches every row while the search box has text and returns to the Basic rows when it is cleared", () => {
+    const view = open("properties-view");
+    view.send(basicState, ...hostSession());
+    const search = view.doc.querySelector<HTMLInputElement>("#sidebar-search")!;
+    const basicRows = view.names();
+    view.type(search, "ClassName");
+    const searched = view.names();
+    expect(searched.length).toBeGreaterThan(0);
+    for (const row of searched) expect(row?.toLowerCase() + " ").toBeDefined();
+    view.type(search, "");
+    expect(view.names()).toEqual(basicRows);
+    expect(view.doc.querySelector<HTMLInputElement>("#sidebar-mode")!.checked).toBe(false);
+  });
+
+  it("clears the copied highlight of the first cell when a second cell is copied", () => {
+    const view = open("properties-view", { sidebarShowAll: true });
+    view.send(...hostSession());
+    const row = view.doc.querySelector<HTMLTableRowElement>('[data-name="Height"]')!;
+    const click = (cell: Element) => cell.dispatchEvent(new view.dom.window.MouseEvent("click", { bubbles: true }));
+    click(row.cells[0]!);
+    click(row.cells[1]!);
+    expect(row.cells[0]!.classList.contains("copied")).toBe(false);
+    expect(row.cells[1]!.classList.contains("copied")).toBe(true);
   });
 });

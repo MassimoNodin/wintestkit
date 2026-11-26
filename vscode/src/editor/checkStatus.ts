@@ -6,7 +6,8 @@ export function summarizeChecks(results: readonly CheckResult[]): string {
     results.filter((r) => r.status === status).length;
   const found = count("found");
   const broken = count("not_found");
-  const errors = results.length - found - broken;
+  const busy = count("not_responding");
+  const errors = results.length - found - broken - busy;
   return (
     "Checked " +
     results.length +
@@ -15,6 +16,7 @@ export function summarizeChecks(results: readonly CheckResult[]): string {
     " found, " +
     broken +
     " not found (possibly off-screen, broken, or moved)" +
+    (busy ? ", " + busy + " not responding" : "") +
     (errors ? ", " + errors + " errors" : "") +
     "."
   );

@@ -338,7 +338,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
             config["app.process"] ?? appStatus.mainWindowTitle ?? "the app",
           ).replace(/\.exe$/i, "");
           const answer = await vscode.window.showWarningMessage(
-            `Close ${name}? WinTestKit did not start this process, and unsaved work may be lost.`,
+            `Close ${name}? This will close all running instances, including instances WinTestKit did not start. Unsaved work may be lost.`,
             { modal: true },
             "Close App",
           );
@@ -505,6 +505,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
         "wintestkit.spy.startPick",
         "wintestkit.spy.refresh",
         "wintestkit.spy.revealRelocation",
+        "wintestkit.spy.resetBasicProperties",
         "wintestkit.dev.resetRepository",
       ].includes(contribution.command)
     )

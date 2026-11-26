@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
   feedback: vi.fn(),
   pageRunning: vi.fn(),
   scoped: vi.fn(),
+  clear: vi.fn(),
   info: vi.fn(),
   warning: vi.fn(),
   error: vi.fn(),
@@ -82,6 +83,7 @@ beforeEach(() => {
       setFeedback: mocks.feedback,
       setPageRunning: mocks.pageRunning,
       setScopedResults: mocks.scoped,
+      clearFeedback: mocks.clear,
     } as unknown as CheckResultsStore,
     {
       info: mocks.log,
@@ -436,6 +438,30 @@ describe("editor highlight commands", () => {
     mocks.request.mockRejectedValue(new Error("boom"));
     await run();
     expect(mocks.pageRunning.mock.calls.map((call) => call[2])).toEqual([true, false]);
+  });
+  it("keeps every element's previous result when the page check request itself fails", async () => {
+    mocks.request.mockRejectedValue(new Error("request timed out: page.check"));
+    await mocks.commands.get("wintestkit.checkPage")?.({ file: page.file, page: page.qualname });
+    // Nothing was checked: no per-element error results or diagnostics, only the checking indicator is cleared.
+    expect(mocks.set).not.toHaveBeenCalled();
+    expect(mocks.scoped).not.toHaveBeenCalled();
+    expect(mocks.feedback.mock.calls.map((call) => call[2].status)).toEqual(Array(page.elements.length).fill("running"));
+    expect(mocks.clear).toHaveBeenCalledTimes(page.elements.length);
+    expect(mocks.clear.mock.calls.every((call) => call[1] === "check" && call[2].status === "running")).toBe(true);
+    // One notification carries the reason.
+    expect(mocks.error).toHaveBeenCalledOnce();
+    expect(mocks.error.mock.calls[0][0]).toBe("request timed out: page.check");
+  });
+  it("gives a whole-page check a timeout that grows with the number of elements", async () => {
+    mocks.request.mockResolvedValue({ results: [] });
+    await mocks.commands.get("wintestkit.checkPage")?.({ file: page.file, page: page.qualname });
+    const call = mocks.request.mock.calls.find(([method]) => method === "page.check")!;
+    const { pageCheckTimeoutMs } = await import("../../src/editor/checkTimeout");
+    expect(call[2]).toBe(pageCheckTimeoutMs(page.elements.length));
+    expect(call[2]).toBeGreaterThan(30_000);
+    expect(pageCheckTimeoutMs(0)).toBe(30_000);
+    expect(pageCheckTimeoutMs(10)).toBeGreaterThan(pageCheckTimeoutMs(5));
+    expect(pageCheckTimeoutMs(100_000)).toBe(10 * 60 * 1000);
   });
   it("reports missing server results instead of leaving checking stuck", async () => {
     mocks.request.mockResolvedValue({ results: [] });

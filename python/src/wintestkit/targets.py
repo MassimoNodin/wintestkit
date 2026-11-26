@@ -462,6 +462,62 @@ def _managed_keys(bound: Any) -> list[str]:
     return list(dict.fromkeys(keys))
 
 
+_NOT_RESPONDING = (
+    "The application is not responding (its UI thread is busy); try again when it responds."
+)
+_BUSY_CODES = frozenset({"timeout", "dispatcherUnavailable", "busy"})
+
+
+def _not_responding(app: Any) -> bool:
+    """Whether a not-found result is really the application's UI thread being busy.
+
+    Windows only flags a window as hung when it stops answering sent messages; a UI thread
+    blocked in a COM-pumping wait still answers them. The attached .NET inspector runs its
+    requests on the dispatcher, so a short tree request tells the two apart.
+    """
+    from wintestkit.uia import win32
+
+    try:
+        pids = frozenset(app.pids)
+    except Exception:
+        return False
+    if not pids:
+        return False
+    # One probe answers for every element of a page check: (pids, monotonic time, verdict).
+    cached = getattr(app, "_wtk_responding_probe", None)
+    if cached is not None and cached[0] == pids and time.monotonic() - cached[1] < 5:
+        return bool(cached[2])
+    busy = any(win32.is_hung_window(hwnd) for hwnd in win32.top_level_windows(set(pids)))
+    if not busy:
+        from wintestkit.inspector.probe import current_identity
+
+        registry = runtime.inspector_sessions()
+        for pid in pids:
+            try:
+                client = registry.get(current_identity(pid))
+            except Exception:
+                continue
+            if client is None:
+                continue
+            try:
+                page = client.roots(page_size=1, deadline=time.monotonic() + 1)
+            except InspectorError as error:
+                busy = error.code in _BUSY_CODES or getattr(error, "busy", False)
+            except Exception:
+                continue
+            else:
+                with suppress(Exception):
+                    client.release(
+                        [node.object_ref.object_id for node in page.items],
+                        deadline=time.monotonic() + 1,
+                    )
+            if busy:
+                break
+    with suppress(AttributeError):
+        app._wtk_responding_probe = (pids, time.monotonic(), busy)
+    return busy
+
+
 def resolve_bound(
     bound: Any, timeout: float, started: float | None = None, *, capture: bool = False
 ) -> ElementResult:
@@ -473,9 +529,14 @@ def resolve_bound(
     def elapsed() -> float:
         return (time.perf_counter() - started) * 1000
 
+    # A busy UI thread makes every UIA read wait out its timeout, so an immediate check asks
+    # first instead of spending seconds per element before reporting "not found".
+    app = getattr(getattr(bound, "page", None), "app", None)
+    if timeout == 0 and app is not None and _not_responding(app):
+        return ElementResult("not_responding", elapsed(), message=_NOT_RESPONDING)
     try:
+        collection = bound if isinstance(bound, BoundElements) else None
         if isinstance(bound, BoundElements):
-            capture = False
             bound = bound.first()
         from wintestkit.engine.managed import instant_resolution
 
@@ -486,11 +547,13 @@ def resolve_bound(
             with suppress(Exception):
                 from wintestkit.object_previews import capture_bound
 
-                capture_bound(bound, element)
+                capture_bound(bound if collection is None else collection, element)
         return result
     except AmbiguousElementError as exc:
         return ElementResult("ambiguous", elapsed(), diagnostic=exc.diagnostic, message=str(exc))
     except LocatorError as exc:
+        if app is not None and _not_responding(app):
+            return ElementResult("not_responding", elapsed(), message=_NOT_RESPONDING)
         return ElementResult(
             "not_found",
             elapsed(),
@@ -501,6 +564,10 @@ def resolve_bound(
         from wintestkit.inspector.hints import inspector_error_hint
 
         hint = inspector_error_hint(exc.code)
+        if exc.code in {"timeout", "dispatcherUnavailable", "busy"}:
+            return ElementResult(
+                "not_responding", elapsed(), message=_NOT_RESPONDING, code=exc.code
+            )
         keys = _managed_keys(bound)
         message = str(exc)
         if keys:

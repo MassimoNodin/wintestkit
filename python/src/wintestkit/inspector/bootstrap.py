@@ -221,6 +221,7 @@ class Bootstrap:
             _no_reparse(self.directory, self.root)
             try:
                 self.path.unlink(missing_ok=True)
+                Path(str(self.path) + ".error").unlink(missing_ok=True)
             finally:
                 self.directory.rmdir()
         except FileNotFoundError:

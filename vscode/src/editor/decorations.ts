@@ -103,6 +103,15 @@ export class CheckResultsStore implements vscode.Disposable {
     this.changed.fire();
     return true;
   }
+  /** Removes a pending status without recording a result, unless something newer replaced it. */
+  clearFeedback(entry: LocatedElement, action: ElementAction, expected: ActionStatus): void {
+    const current = this.feedback.get(entry.element.id);
+    if (!current || current[action] !== expected) return;
+    const rest = { ...current };
+    delete rest[action];
+    this.feedback.set(entry.element.id, rest);
+    this.changed.fire();
+  }
   set(entry: CheckedElement): void {
     this.entries.set(entry.element.id, entry);
     this.results.set(entry.element.id, entry.result);
@@ -144,7 +153,7 @@ export class CheckDecorations implements vscode.Disposable {
     this.diagnostics.clear();
     const diagnostics = new Map<string, vscode.Diagnostic[]>();
     for (const entry of this.results.entries.values()) {
-      if (entry.result.status === "found") continue;
+      if (entry.result.status === "found" || entry.result.status === "not_responding") continue;
       const range = entry.element.nameRange;
       const diagnostic = new vscode.Diagnostic(
         new vscode.Range(

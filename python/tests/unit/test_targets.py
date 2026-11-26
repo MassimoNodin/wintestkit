@@ -254,7 +254,7 @@ def test_explicit_check_resolves_only_requested_member_once(
     assert captured[0][0].definition.name == member
 
 
-def test_explicit_collection_check_resolves_first_without_capture(
+def test_explicit_collection_check_resolves_first_and_captures_the_collection(
     project: tuple[ModuleLoader, Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     loader, file = project
@@ -266,14 +266,18 @@ def test_explicit_collection_check_resolves_first_without_capture(
         return element
 
     monkeypatch.setattr(model.BoundElement, "resolve", resolve)
+    captured = []
     monkeypatch.setattr(
-        object_previews, "capture_bound", lambda *args: pytest.fail("collection must not capture")
+        object_previews, "capture_bound", lambda bound, actual: captured.append((bound, actual))
     )
     result = targets.resolve_target(
         SimpleNamespace(), loader, Target(file, "Main.many"), capture=True
     )
     assert result.status == "found" and result.uia is element
     assert resolved == ["many"]
+    # The collection itself is captured (its first match, with the match count), not item 0.
+    assert [(type(bound), actual) for bound, actual in captured] == [(model.BoundElements, element)]
+    assert captured[0][0].definition.name == "many"
 
 
 def test_normal_resolution_page_checks_and_flows_never_capture(
@@ -306,8 +310,8 @@ def test_page_check_captures_each_single_element_when_asked(
     )
     results = targets.check_page(SimpleNamespace(), loader, file, "Main", capture=True)
     assert [result.qualname for result in results] == ["Main.window", "Main.ok", "Main.many"]
-    # The collection resolves its first member but is never captured.
-    assert captured == ["Main.window", "Main.ok"]
+    # The collection resolves its first member and is captured as the collection.
+    assert captured == ["Main.window", "Main.ok", "Main.many"]
 
 
 def test_check_rejects_no_pages(project: tuple[ModuleLoader, Path]) -> None:
@@ -315,3 +319,87 @@ def test_check_rejects_no_pages(project: tuple[ModuleLoader, Path]) -> None:
     file.write_text("VALUE = 1\n", encoding="utf-8")
     with pytest.raises(TargetError, match="no pages"):
         targets.check_page(SimpleNamespace(), loader, file)
+
+
+@pytest.mark.parametrize("code", ["timeout", "dispatcherUnavailable", "busy"])
+def test_check_reports_inspector_busy_as_neutral(code: str) -> None:
+    from wintestkit.errors import InspectorError
+
+    def fail(timeout: float) -> None:
+        raise InspectorError("unavailable", code=code)
+
+    result = targets.resolve_bound(SimpleNamespace(resolve=fail), 0)
+    assert result.status == "not_responding"
+    assert "not responding" in result.message and "not found" not in result.message.lower()
+
+
+def test_check_reports_hung_window_after_locator_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    from wintestkit.uia import win32
+
+    monkeypatch.setattr(win32, "top_level_windows", lambda pids: [123])
+    monkeypatch.setattr(win32, "is_hung_window", lambda hwnd: True)
+
+    def fail(timeout: float) -> None:
+        raise ElementNotFoundError(Diagnostic("not_found", "missing", "Button", "Demo", 0))
+
+    bound = SimpleNamespace(resolve=fail, page=SimpleNamespace(app=SimpleNamespace(pids=[42])))
+    result = targets.resolve_bound(bound, 0)
+    assert result.status == "not_responding"
+    assert "not found" not in result.message.lower()
+
+
+def test_check_asks_the_inspector_when_windows_does_not_flag_the_hang(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from wintestkit.errors import InspectorError
+    from wintestkit.inspector import probe
+    from wintestkit.uia import win32
+
+    monkeypatch.setattr(win32, "top_level_windows", lambda pids: [123])
+    monkeypatch.setattr(win32, "is_hung_window", lambda hwnd: False)
+    monkeypatch.setattr(probe, "current_identity", lambda pid: pid)
+    calls: list[int] = []
+
+    def roots(**kwargs: Any) -> None:
+        calls.append(1)
+        raise InspectorError("dispatcher busy", code="timeout")
+
+    client = SimpleNamespace(roots=roots)
+    registry = SimpleNamespace(get=lambda identity: client if identity == 42 else None)
+    monkeypatch.setattr(targets.runtime, "inspector_sessions", lambda: registry)
+
+    def fail(timeout: float) -> None:
+        raise ElementNotFoundError(Diagnostic("not_found", "missing", "Button", "Demo", 0))
+
+    app = SimpleNamespace(pids=[42])
+    bound = SimpleNamespace(resolve=fail, page=SimpleNamespace(app=app))
+    assert targets.resolve_bound(bound, 0).status == "not_responding"
+    assert targets.resolve_bound(bound, 0).status == "not_responding"
+    assert calls == [1]  # one probe answers for the whole page check
+
+
+def test_check_keeps_not_found_when_the_inspector_answers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from wintestkit.inspector import probe
+    from wintestkit.uia import win32
+
+    monkeypatch.setattr(win32, "top_level_windows", lambda pids: [123])
+    monkeypatch.setattr(win32, "is_hung_window", lambda hwnd: False)
+    monkeypatch.setattr(probe, "current_identity", lambda pid: pid)
+    released: list[list[str]] = []
+    node = SimpleNamespace(object_ref=SimpleNamespace(object_id="o1"))
+    client = SimpleNamespace(
+        roots=lambda **kwargs: SimpleNamespace(items=(node,)),
+        release=lambda ids, **kwargs: released.append(list(ids)),
+    )
+    monkeypatch.setattr(
+        targets.runtime, "inspector_sessions", lambda: SimpleNamespace(get=lambda i: client)
+    )
+
+    def fail(timeout: float) -> None:
+        raise ElementNotFoundError(Diagnostic("not_found", "missing", "Button", "Demo", 0))
+
+    bound = SimpleNamespace(resolve=fail, page=SimpleNamespace(app=SimpleNamespace(pids=[42])))
+    assert targets.resolve_bound(bound, 0).status == "not_found"
+    assert released == [["o1"]]
