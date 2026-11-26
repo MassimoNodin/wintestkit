@@ -315,3 +315,42 @@ def test_click_header_uses_an_offset_on_the_first_row(uia: Any) -> None:
     control.rect = Rect(100, 200, 600, 48)
     actions.click_header(control, 16)
     assert calls == [("click", (140, 208), {"button": "left", "count": 1})]
+
+
+def test_check_reports_new_dialog_without_waiting(monkeypatch: pytest.MonkeyPatch) -> None:
+    import time
+
+    checkbox = FakeElement("CheckBox")
+    windows = [1]
+    monkeypatch.setattr(win32, "top_level_windows", lambda pids: list(windows))
+    monkeypatch.setattr(win32, "window_text", lambda hwnd: "Confirm")
+    monkeypatch.setattr(actions, "is_checked", lambda el: False)
+    monkeypatch.setattr(actions, "click", lambda el, mode: windows.append(2))
+    start = time.monotonic()
+    with pytest.raises(ActionError, match='dialog "Confirm"'):
+        actions.set_checked(checkbox, True, mode="mouse", timeout=10)
+    assert time.monotonic() - start < 1
+
+
+def test_pattern_check_reports_dialog_on_inspector_work_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from wintestkit.backends.element import WpfElement
+    from wintestkit.errors import InspectorDeadlineError
+
+    checkbox = WpfElement.__new__(WpfElement)
+    checkbox._process_id = 1
+    windows = [1]
+    monkeypatch.setattr(win32, "top_level_windows", lambda pids: list(windows))
+    monkeypatch.setattr(win32, "window_text", lambda hwnd: "Confirm")
+    monkeypatch.setattr(actions, "_wpf_read", lambda *args: "Off")
+
+    def fail(*args: Any) -> None:
+        windows.append(2)
+        error = InspectorDeadlineError("timeout", code="dispatcherUnavailable")
+        error.details = {"reason": "workTimeout"}
+        raise error
+
+    monkeypatch.setattr(actions, "_wpf_act", fail)
+    with pytest.raises(ActionError, match='dialog "Confirm"'):
+        actions.set_checked(checkbox, True)

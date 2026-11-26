@@ -672,7 +672,7 @@ def test_agent_wait_preserves_non_chunk_failures(setup, monkeypatch, error):
 
 @pytest.mark.parametrize("reason", ["queueWait", "workTimeout", "earlierWorkRunning"])
 def test_route_preserves_busy_reason_and_hint(monkeypatch, reason):
-    error = InspectorDeadlineError("busy", code="dispatcherUnavailable", busy=True)
+    error = InspectorDeadlineError("busy.", code="dispatcherUnavailable", busy=True)
     error.details = {"reason": reason, "runningForMs": 123, "ranMs": 456}
     error.method = "act.toggle"
 
@@ -685,6 +685,7 @@ def test_route_preserves_busy_reason_and_hint(monkeypatch, reason):
     with pytest.raises(InspectorDeadlineError) as caught:
         wpf_resolve.route(window, force=True)
     assert caught.value is error and caught.value.busy
+    assert "busy.." not in str(error)
     assert caught.value.details["reason"] == reason
     assert "set backend: uia" not in str(error)
     if reason == "earlierWorkRunning":

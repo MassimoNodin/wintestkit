@@ -61,6 +61,7 @@ def normalize(
     columns: Sequence[str | int] | None,
     headers: Sequence[str],
     count: int,
+    default_columns: Sequence[int] | None = None,
 ) -> Table:
     """Resolve the expected rows against the grid's columns.
 
@@ -71,7 +72,7 @@ def normalize(
     if columns is not None:
         wanted = [_column_index(column, headers, count) for column in columns]
     elif any(not isinstance(row, Mapping) for row in expected):
-        wanted = list(range(count))
+        wanted = list(range(count) if default_columns is None else default_columns)
     else:
         wanted: list[int] = []
         for row in expected:

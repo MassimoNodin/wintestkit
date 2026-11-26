@@ -914,6 +914,17 @@ def press(el: TargetElement, keys: str) -> None:
 
 
 def get_text(el: TargetElement) -> str:
+    """Return text, treating unavailable elements as empty."""
+    __tracebackhide__ = True
+    try:
+        return _get_text(el)
+    except UIAError as exc:
+        if exc.element_gone:
+            return ""
+        raise
+
+
+def _get_text(el: TargetElement) -> str:
     """The element's text: its value, document text or UIA name."""
     __tracebackhide__ = True
     if isinstance(el, WpfElement):
@@ -945,6 +956,14 @@ def get_value(el: TargetElement) -> str:
 # -- state ----------------------------------------------------------------------------------------
 
 
+def _new_dialog(el: TargetElement, previous: set[int]) -> str | None:
+    __tracebackhide__ = True
+    for hwnd in win32.top_level_windows({el.process_id}):
+        if hwnd not in previous:
+            return win32.window_text(hwnd) or "Untitled"
+    return None
+
+
 def set_checked(
     el: TargetElement, checked: bool, *, mode: InputMode = "pattern", timeout: float | None = None
 ) -> None:
@@ -953,9 +972,15 @@ def set_checked(
     if mode == "mouse":
         if is_checked(el) == checked:
             return
+        windows = set(win32.top_level_windows({el.process_id}))
         click(el, mode="mouse")
         deadline = time.monotonic() + (runtime.get_config().timeout if timeout is None else timeout)
         while is_checked(el) != checked:
+            dialog = _new_dialog(el, windows)
+            if dialog is not None:
+                raise ActionError(
+                    f'The click opened a dialog "{dialog}"; the checked state did not change.'
+                )
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 raise ActionError(
@@ -968,7 +993,22 @@ def set_checked(
         for _ in range(3):
             if _wpf_read(el, "toggle_state", "Toggle") == target_name:
                 return
-            _wpf_act(el, "toggle", "Toggle")
+            windows = set(win32.top_level_windows({el.process_id}))
+            try:
+                _wpf_act(el, "toggle", "Toggle")
+            except (InspectorError, UIAError) as exc:
+                cause = exc.__cause__ if isinstance(exc.__cause__, InspectorError) else exc
+                if isinstance(cause, InspectorError) and (
+                    cause.code in {"timeout", "dispatcherUnavailable"}
+                    and cause.details.get("reason") == "workTimeout"
+                ):
+                    dialog = _new_dialog(el, windows)
+                    if dialog is not None:
+                        raise ActionError(
+                            f'The toggle opened a dialog "{dialog}"; '
+                            "the checked state did not change."
+                        ) from exc
+                raise
         if _wpf_read(el, "toggle_state", "Toggle") != target_name:
             raise ActionError(f"{_short(el)} did not reach the {target_name} state")
         return
@@ -1083,11 +1123,7 @@ def selected_items(el: TargetElement) -> list[str]:
             except UIAError as exc:
                 if not exc.element_gone:
                     raise
-        return [
-            row.text
-            for row in rows
-            if row.element.runtime_id in ids or any(cell.runtime_id in ids for cell in row.cells)
-        ]
+        return [row.text for row in rows if row.element.runtime_id in ids]
     if isinstance(el, WpfElement):
         available = _wpf_patterns(el)
         if "Selection" not in available:
@@ -1582,7 +1618,12 @@ def clear_selection(
     """Deselect every selected item."""
     __tracebackhide__ = True
     _multi_container(el, 1)
-    for chosen in patterns.selection(el):
+    chosen_items = (
+        [row.element for row in grid_data_rows(el) if is_selected(row.element)]
+        if _is_grid(el)
+        else patterns.selection(el)
+    )
+    for chosen in chosen_items:
         try:
             _toggle_off(el, chosen, mode)
         except UIAError as exc:
@@ -1615,7 +1656,14 @@ class GridRow:
     """A data row whose cells and display text are fetched on demand."""
 
     def __init__(
-        self, raw_index: int, element: UIAElement, grid: UIAElement, first: UIAElement, columns: int
+        self,
+        raw_index: int,
+        element: UIAElement,
+        grid: UIAElement,
+        first: UIAElement,
+        columns: int,
+        hidden: set[int],
+        headers: list[str],
     ) -> None:
         __tracebackhide__ = True
         self.raw_index = raw_index
@@ -1623,6 +1671,13 @@ class GridRow:
         self._grid = grid
         self._cells: list[UIAElement | None] = [first, *([None] * (columns - 1))]
         self._texts: list[str] | None = None
+        self.hidden = hidden
+        self.headers = headers
+
+    @property
+    def column_count(self) -> int:
+        __tracebackhide__ = True
+        return len(self._cells)
 
     def cell(self, column: int) -> UIAElement:
         """One cell, fetched on first use (the other cells are not touched)."""
@@ -1641,22 +1696,64 @@ class GridRow:
     def texts(self) -> list[str]:
         __tracebackhide__ = True
         if self._texts is None:
-            self._texts = [get_text(cell).strip() for cell in self.cells]
+            self._texts = [self.cell_text(i) for i in range(len(self._cells))]
         return self._texts
+
+    def cell_text(self, column: int) -> str:
+        __tracebackhide__ = True
+        if column in self.hidden:
+            return ""
+        try:
+            cell = self.cell(column)
+            if column >= len(self.headers) or not self.headers[column]:
+                cell.get_property("IsPassword")
+            value = get_text(cell).strip()
+        except UIAError as exc:
+            if not exc.element_gone:
+                raise
+            if column >= len(self.headers) or not self.headers[column]:
+                self.hidden.add(column)
+            return ""
+        return value
 
     @property
     def text(self) -> str:
         __tracebackhide__ = True
-        return " ".join(self.texts)
+        return " ".join(text for i, text in enumerate(self.texts) if i not in self.hidden)
+
+
+def _managed_group_row(grid: WpfElement, row: UIAElement) -> bool | None:
+    """Identify a WPF group item when the managed row can be mapped."""
+    __tracebackhide__ = True
+    try:
+        rid, hwnd = runtime.managed_element_identity(row)
+        mapping = grid.client.resolve(rid, hwnd, deadline=operation_deadline(2))
+        if mapping.status != "exact" or mapping.object_ref is None:
+            return None
+        ref = mapping.object_ref
+        values, _ = grid.client.read(
+            ref.object_id,
+            ref.generation,
+            [(PathSegment("property", "Item"),)],
+            deadline=operation_deadline(2),
+        )
+        value = values[0].value
+        if value.status != "ok":
+            return None
+        info = value.type_info or (value.object_ref.type if value.object_ref else None)
+        names = [value.runtime_type]
+        if info is not None:
+            names.extend(info.base_types)
+        return any("CollectionViewGroup" in name for name in names)
+    except (InspectorError, UIAError):
+        return None
 
 
 def grid_data_rows(el: TargetElement, limit: int | None = None) -> list[GridRow]:
     """Data rows (no group headers or placeholders), stopping after ``limit`` when it is given.
 
-    A row is classified from the row element alone; its cells and their texts are read only when
-    the caller asks for them (:class:`GridRow`), so index access costs a few reads per row up to
-    the wanted one instead of every cell of the grid. Without a limit the whole grid is walked
-    and refused beyond ``MAX_TABLE_ROWS`` rows.
+    Named rows are checked lazily until a readable nonempty cell is found. Without a limit,
+    the whole grid is walked and refused beyond ``MAX_TABLE_ROWS`` rows.
     """
     __tracebackhide__ = True
     from wintestkit.engine.table import MAX_TABLE_ROWS
@@ -1668,6 +1765,8 @@ def grid_data_rows(el: TargetElement, limit: int | None = None) -> list[GridRow]
             f"{_short(el)} has {count} rows; reading a table is limited to {MAX_TABLE_ROWS} rows"
         )
     result: list[GridRow] = []
+    headers = grid_headers(el)
+    hidden: set[int] = set()
     if not columns or limit == 0:
         return result
     for index in range(count):
@@ -1683,7 +1782,15 @@ def grid_data_rows(el: TargetElement, limit: int | None = None) -> list[GridRow]
                     break
                 if row.name in ("{NewItemPlaceholder}", "NewItemPlaceholder"):
                     break
-                result.append(GridRow(index, row, grid, first, columns))
+                candidate = GridRow(index, row, grid, first, columns, hidden, headers)
+                managed_group = _managed_group_row(el, row) if isinstance(el, WpfElement) else None
+                if managed_group is True or (
+                    managed_group is None
+                    and row.name
+                    and not any(candidate.cell_text(c) for c in range(columns))
+                ):
+                    break
+                result.append(candidate)
                 break
             except UIAError as exc:
                 if not exc.element_gone:
@@ -1735,7 +1842,13 @@ def read_grid(el: TargetElement, columns: Sequence[int] | None = None) -> list[l
     """Read cell texts of data rows, excluding group headers and placeholders."""
     __tracebackhide__ = True
     rows = grid_data_rows(el)
+    if rows and columns is None:
+        _ = rows[0].texts
     return [
-        [row.texts[column] for column in (range(len(row.cells)) if columns is None else columns)]
+        [
+            row.cell_text(column)
+            for column in (range(row.column_count) if columns is None else columns)
+            if columns is not None or column not in row.hidden
+        ]
         for row in rows
     ]

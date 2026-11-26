@@ -135,7 +135,11 @@ def run(args: argparse.Namespace) -> int:
         _write(root / relative, content, force=args.force)
     for relative, text in skill_files().items():
         _write(root / ".claude/skills/wintestkit-tests" / relative, text, force=args.force)
+    ignore_path = root / ".gitignore"
+    old_ignore = ignore_path.read_bytes() if ignore_path.exists() else None
     ensure_local_ignores(root)
+    if ignore_path.read_bytes() != old_ignore:
+        print(f"{'Updated' if old_ignore is not None else 'Created'} {ignore_path}")
     _write(
         root / "wintestkit.yaml",
         "# Shared project settings. Machine paths belong in wintestkit.local.yaml.\n{}\n",
@@ -151,7 +155,13 @@ def run(args: argparse.Namespace) -> int:
         local += "  args: " + json.dumps(launch_args, ensure_ascii=False) + "\n"
     if args.app or "wintestkit" not in tool:
         _write(root / "wintestkit.local.yaml", local, force=False)
-    print("\nNext: install wintestkit and pytest, select your app in wintestkit.local.yaml and")
-    print("pages/main.py, then run wtk doctor and wtk run from the project directory.")
+    if process or app_path:
+        print(
+            "\nNext: install wintestkit and pytest, then run wtk doctor and wtk run "
+            "from the project directory."
+        )
+    else:
+        print("\nNext: install wintestkit and pytest, select your app in wintestkit.local.yaml and")
+        print("pages/main.py, then run wtk doctor and wtk run from the project directory.")
     print("AI coding tools find the wintestkit-tests skill in .claude/skills/wintestkit-tests.")
     return common.EXIT_OK

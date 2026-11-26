@@ -601,10 +601,10 @@ def _apply_item(
     item: ItemSelector | None = link.item
     if item is None:
         return element
-    element = uia_of(element)
     from wintestkit.engine.actions import grid_data_rows
 
     data_rows = grid_data_rows(element, item.row + 1)
+    element = uia_of(element)
     rows, columns = len(data_rows), patterns.grid_size(element)[1]
     short = element.info().short()
     if item.row >= rows:

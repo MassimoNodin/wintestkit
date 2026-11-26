@@ -348,8 +348,15 @@ class Expectation:
             __tracebackhide__ = True
             headers = actions.grid_headers(element)
             _, count = patterns.grid_size(element)
-            wanted = table.normalize(expected, columns, headers, count)
-            rows = actions.read_grid(element, wanted.columns)
+            data_rows = actions.grid_data_rows(element)
+            if data_rows and columns is None:
+                # Discover unavailable blank-header columns once, on the first data row.
+                _ = data_rows[0].texts
+                default_columns = [i for i in range(count) if i not in data_rows[0].hidden]
+            else:
+                default_columns = list(range(count))
+            wanted = table.normalize(expected, columns, headers, count, default_columns)
+            rows = [[row.cell_text(i) for i in wanted.columns] for row in data_rows]
             problem = table.compare(wanted, rows, ordered=ordered)
             if not problem:
                 return _Outcome(True, f"{len(rows)} matching rows")

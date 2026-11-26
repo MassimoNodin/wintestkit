@@ -85,7 +85,7 @@ def route(window: UIAElement, *, force: bool = False) -> UIAElement | WpfElement
             if error.code in {"timeout", "dispatcherUnavailable", "busy"}
             else "Enable the inspector, attach to the process, or set backend: uia."
         )
-        error.message = f"WPF backend unavailable ({error.code}): {error}. {hint}"
+        error.message = f"WPF backend unavailable ({error.code}): {str(error).rstrip('.')}. {hint}"
         error.args = (error.message,)
         raise
 

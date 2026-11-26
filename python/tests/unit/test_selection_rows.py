@@ -374,12 +374,16 @@ def grid_world(monkeypatch: pytest.MonkeyPatch) -> list[list[str]]:
     monkeypatch.setattr(patterns, "has_pattern", lambda el, name: True)
     monkeypatch.setattr(patterns, "grid_size", lambda el: (len(rows), len(HEADERS)))
     monkeypatch.setattr(actions, "grid_headers", lambda el: HEADERS)
+    fake_rows = [FakeElement("DataItem") for _ in rows]
+    for index, row in enumerate(fake_rows):
+        for column in range(len(HEADERS)):
+            row.add(FakeElement("Custom", properties={"position": (index, column)}))
+    monkeypatch.setattr(actions, "uia_of", lambda el: el)
+    monkeypatch.setattr(patterns, "grid_item", lambda el, r, c: fake_rows[r].children()[c])
     monkeypatch.setattr(
         actions,
-        "read_grid",
-        lambda el, columns=None: [
-            [row[c] for c in (range(len(HEADERS)) if columns is None else columns)] for row in rows
-        ],
+        "get_text",
+        lambda cell: rows[cell.properties["position"][0]][cell.properties["position"][1]],
     )
     return rows
 
@@ -503,6 +507,7 @@ def test_read_grid_refuses_big_grids(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_read_grid_reads_the_requested_columns(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(actions, "grid_headers", lambda el: [])
     monkeypatch.setattr(patterns, "grid_size", lambda el: (2, 3))
     rows = [FakeElement("DataItem") for _ in range(2)]
     for r, row in enumerate(rows):
@@ -584,7 +589,9 @@ class GroupedGrid:
         )
         monkeypatch.setattr(patterns, "add_to_selection", lambda row: self.selected.append(row))
         monkeypatch.setattr(
-            patterns, "remove_from_selection", lambda cell: self.selected.remove(cell.parent())
+            patterns,
+            "remove_from_selection",
+            lambda row: self.selected.remove(row if row in self.selected else row.parent()),
         )
 
 
@@ -661,9 +668,10 @@ def test_indexed_cell_reads_only_first_row(monkeypatch: pytest.MonkeyPatch, page
 
     resolver = importlib.import_module("wintestkit.engine.resolve")
     grid = FakeElement("DataGrid", "grid")
+    monkeypatch.setattr(actions, "grid_headers", lambda el: [])
     rows = []
-    for index in range(500):
-        row = grid.add(FakeElement("DataItem", str(index), class_name="DataGridRow"))
+    for _index in range(500):
+        row = grid.add(FakeElement("DataItem", "", class_name="DataGridRow"))
         row.add(FakeElement("Custom", "first"))
         row.add(FakeElement("Custom", "second"))
         rows.append(row)
@@ -692,7 +700,7 @@ class BigGrid:
         self.grid = FakeElement("DataGrid", "grid", automation_id="Grid")
         self.rows: list[FakeElement] = []
         for index in range(500):
-            row = self.grid.add(FakeElement("DataItem", str(index), class_name="DataGridRow"))
+            row = self.grid.add(FakeElement("DataItem", "", class_name="DataGridRow"))
             row.add(FakeElement("Custom", properties={"text": f"name {index}"}))
             row.add(FakeElement("Custom", properties={"text": f"value {index}"}))
             self.rows.append(row)
@@ -772,3 +780,82 @@ def test_indexed_access_is_not_limited_to_500_rows(monkeypatch: pytest.MonkeyPat
     assert actions.grid_data_rows(big.grid, 2)[1].element is big.rows[1]
     with pytest.raises(ActionError, match="limited to"):
         actions.grid_data_rows(big.grid)
+
+
+def test_unavailable_columns_and_dataitem_groups(
+    monkeypatch: pytest.MonkeyPatch, page: Demo, tmp_path: Path
+) -> None:
+    import importlib
+    import time
+
+    from wintestkit.errors import UIAError
+
+    resolver = importlib.import_module("wintestkit.engine.resolve")
+    runtime.set_config(load_config(tmp_path, {"timeout": 2.0, "input_mode": "pattern"}))
+    hidden = {0, *range(4, 8), *range(11, 22)}
+
+    class Unavailable(FakeElement):
+        def get_property(self, name: str) -> Any:
+            raise UIAError("gone", element_gone=True)
+
+    grid = FakeElement("DataGrid", "grid")
+    rows = []
+    for name in ["Pending orders", "Order 1", "Order 2", "Other", "Order 3", "Order 4"]:
+        row = grid.add(FakeElement("DataItem", name, class_name="DataGridRow"))
+        group = name in {"Pending orders", "Other"}
+        for col in range(22):
+            row.add(
+                Unavailable("Custom")
+                if col in hidden
+                else FakeElement("Custom", "" if group else (name if col == 1 else f"v{col}"))
+            )
+        rows.append(row)
+    selected: list[Any] = []
+    monkeypatch.setattr(actions, "uia_of", lambda el: el)
+    monkeypatch.setattr(resolver, "uia_of", lambda el: el)
+    monkeypatch.setattr(model, "resolve", lambda scope, locator: grid)
+    monkeypatch.setattr(patterns, "grid_size", lambda el: (len(rows), 22))
+    monkeypatch.setattr(patterns, "grid_item", lambda el, r, c: rows[r].children()[c])
+    headers = ["" if i in hidden else ("Order Name" if i == 1 else f"C{i}") for i in range(22)]
+    monkeypatch.setattr(
+        patterns, "column_headers", lambda el: [FakeElement("HeaderItem", h) for h in headers]
+    )
+    monkeypatch.setattr(patterns, "has_pattern", lambda el, name: name in ("Selection", "Grid"))
+    monkeypatch.setattr(patterns, "can_select_multiple", lambda el: True)
+    monkeypatch.setattr(patterns, "selection", lambda el: [row.children()[1] for row in selected])
+    monkeypatch.setattr(actions, "is_selected", lambda row: row in selected)
+    monkeypatch.setattr(actions, "_scroll_item", lambda row: None)
+    monkeypatch.setattr(
+        actions, "select_self", lambda row: selected.__setitem__(slice(None), [row])
+    )
+    monkeypatch.setattr(patterns, "add_to_selection", selected.append)
+    monkeypatch.setattr(patterns, "remove_from_selection", selected.remove)
+    assert actions.get_text(rows[1].children()[0]) == ""
+    monkeypatch.setattr(actions, "get_text", lambda cell: cell.name)
+    bound = page.grid
+    assert bound.row_count() == 4
+    assert resolver._apply_item(grid, bound.row(0).locator, "window", bound.locator) is rows[1]
+    assert (
+        resolver._apply_item(grid, bound.cell(0, "Order Name").locator, "window", bound.locator)
+        is rows[1].children()[1]
+    )
+    assert (
+        resolver._apply_item(grid, bound.cell(0, 1).locator, "window", bound.locator)
+        is rows[1].children()[1]
+    )
+    assert bound.find_row("Order Name", "Order 3").locator.item.row == 2
+    with pytest.raises(Exception, match="missing"):
+        bound.find_row("Order Name", "missing")
+    expected = [[f"Order {i}", "v2", "v3", "v8", "v9", "v10"] for i in range(1, 5)]
+    expect(bound).to_have_rows(expected)
+    assert actions.read_grid(grid) == expected
+    with pytest.raises(AssertionError, match="Order 1"):
+        expect(bound, timeout=0).to_have_rows([["wrong", *expected[0][1:]]])
+    bound.select([1, 3])
+    assert bound.selected_items() == [" ".join(expected[i]) for i in (1, 3)]
+    start = time.monotonic()
+    bound.clear_selection()
+    assert time.monotonic() - start < 1
+    assert bound.selected_items() == []
+    bound.select("Order 1")
+    assert bound.selected_items() == [" ".join(expected[0])]

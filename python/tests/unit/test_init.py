@@ -228,3 +228,22 @@ def test_init_records_launch_arguments(tmp_path: Path) -> None:
 
 def test_init_args_need_an_app(tmp_path: Path) -> None:
     assert main(["init", str(tmp_path), "--args", "/sandbox"]) != 0
+
+
+def test_init_reports_next_steps_and_gitignore(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert main(["init", str(tmp_path), "--app", "C:/App.exe"]) == 0
+    output = capsys.readouterr().out
+    assert "select your app" not in output
+    assert "Created " + str(tmp_path / ".gitignore") in output
+    (tmp_path / ".gitignore").write_text("existing\n", encoding="utf-8")
+    assert main(["init", str(tmp_path)]) == 0
+    output = capsys.readouterr().out
+    assert "Updated " + str(tmp_path / ".gitignore") in output
+    assert "select your app" not in output
+
+
+def test_init_prompts_for_missing_app(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    assert main(["init", str(tmp_path)]) == 0
+    assert "select your app" in capsys.readouterr().out
