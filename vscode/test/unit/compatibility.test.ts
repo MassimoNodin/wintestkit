@@ -14,7 +14,7 @@ describe("compatibility policy", () => {
     expect(packageCompatibility(version)?.kind).toBe(ALLOW_PRERELEASE ? undefined : "unknown");
   });
   it("bounds both sides and recommends the correct fix", () => {
-    expect(PYTHON_REQUIREMENT).toBe("wintestkit>=0.1.1rc6,<0.2.0");
+    expect(PYTHON_REQUIREMENT).toBe("wintestkit>=0.1.1rc7,<0.2.0");
     expect(packageCompatibility("0.1.0")).toMatchObject({ kind: "older", updateExtension: false });
     expect(packageCompatibility("0.2.0rc1")).toMatchObject({ kind: "newer", updateExtension: true });
     expect(packageCompatibility("0.2.0")).toMatchObject({ kind: "newer", updateExtension: true });
@@ -28,9 +28,9 @@ describe("compatibility policy", () => {
     expect(packageCompatibility("0.1.1rc1")?.kind).toBe("older");
     expect(packageCompatibility("0.1.1rc3", "0.1.1rc1")?.kind).toBe("older");
     expect(packageCompatibility("0.1.1", "0.1.1rc3")?.kind).toBe("older");
-    expect(packageCompatibility("0.1.1rc6", "0.1.1rc6+local")).toBeUndefined();
-    expect(UPGRADE_LABEL).toBe("Upgrade wintestkit to 0.1.1rc6");
-    expect(UPGRADE_REQUIREMENT).toBe("wintestkit[inspector]==0.1.1rc6");
+    expect(packageCompatibility("0.1.1rc7", "0.1.1rc7+local")).toBeUndefined();
+    expect(UPGRADE_LABEL).toBe("Upgrade wintestkit to 0.1.1rc7");
+    expect(UPGRADE_REQUIREMENT).toBe("wintestkit[inspector]==0.1.1rc7");
   });
   it.each([undefined, null, "1", 0, -1, 1.5, 2])("rejects incompatible protocol %s", (protocol) => {
     const issue = protocolCompatibility("0.1.1", protocol);

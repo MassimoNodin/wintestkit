@@ -154,7 +154,7 @@ describe("server manager", () => {
   });
   it.each([
     ["Update Extension", "wintestkit.updateExtension"],
-    ["Upgrade wintestkit to 0.1.1rc6", "wintestkit.installCompatiblePackage"],
+    ["Upgrade wintestkit to 0.1.1rc7", "wintestkit.installCompatiblePackage"],
     ["Choose Interpreter", "wintestkit.selectInterpreter"],
   ])("routes the %s recovery action", async (choice, command) => {
     mocks.installed.mockResolvedValue({ installed: true, version: "0.2.0" });

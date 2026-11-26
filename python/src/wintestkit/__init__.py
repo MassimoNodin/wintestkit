@@ -5,7 +5,7 @@ from __future__ import annotations
 import importlib
 from typing import TYPE_CHECKING, Any
 
-__version__ = "0.1.1rc6"
+__version__ = "0.1.1rc7"
 
 if TYPE_CHECKING:
     from wintestkit import errors as errors
