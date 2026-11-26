@@ -217,7 +217,9 @@ def test_init_reports_updated_for_an_existing_pyproject(
 
 
 def test_init_records_launch_arguments(tmp_path: Path) -> None:
-    assert main(["init", str(tmp_path), "--app", "C:/App.exe", "--args", '/sandbox --name "a b"']) == 0
+    assert (
+        main(["init", str(tmp_path), "--app", "C:/App.exe", "--args", '/sandbox --name "a b"']) == 0
+    )
     config = load_config(tmp_path)
     assert config.app is not None
     assert config.app.args == ("/sandbox", "--name", "a b")
