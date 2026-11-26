@@ -150,6 +150,7 @@ class FakeApp:
     def __init__(self, windows: list[FakeElement], process_name: str = "DemoApp.exe") -> None:
         self.windows = windows
         self.process_name = process_name
+        self.launched = True
 
     @property
     def pids(self) -> list[int]:

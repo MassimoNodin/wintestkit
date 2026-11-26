@@ -337,7 +337,7 @@ class Expectation:
         columns: Sequence[str | int] | None = None,
         ordered: bool = True,
     ) -> None:
-        """Compare a grid's rows with ``expected``: lists of cell texts, or dicts by column header.
+        """Compare data rows (excluding group headers) with lists of cells or dicts by header.
 
         ``columns`` limits and orders the compared columns; ``ordered=False`` ignores row order.
         A cell may be a compiled regex. A dict row compares only the columns it names.

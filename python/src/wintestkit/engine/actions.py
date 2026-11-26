@@ -14,6 +14,7 @@ from collections import Counter
 from collections.abc import Sequence
 from typing import Any, Literal
 
+from wintestkit import runtime
 from wintestkit.backends.element import TargetElement, WpfElement, uia_of
 from wintestkit.engine import waits
 from wintestkit.engine.diagnose import Candidate, Diagnostic, quote
@@ -944,9 +945,24 @@ def get_value(el: TargetElement) -> str:
 # -- state ----------------------------------------------------------------------------------------
 
 
-def set_checked(el: TargetElement, checked: bool) -> None:
+def set_checked(
+    el: TargetElement, checked: bool, *, mode: InputMode = "pattern", timeout: float | None = None
+) -> None:
     """Toggle a check box or toggle button until it reaches the requested state."""
     __tracebackhide__ = True
+    if mode == "mouse":
+        if is_checked(el) == checked:
+            return
+        click(el, mode="mouse")
+        deadline = time.monotonic() + (runtime.get_config().timeout if timeout is None else timeout)
+        while is_checked(el) != checked:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise ActionError(
+                    "The click did not change the checked state; it may have opened a dialog."
+                )
+            time.sleep(min(waits.POLL_INTERVAL, remaining))
+        return
     if isinstance(el, WpfElement):
         target_name = "On" if checked else "Off"
         for _ in range(3):
@@ -974,8 +990,11 @@ def is_checked(el: TargetElement) -> bool:
     return patterns.toggle_state(el) == ToggleState.On
 
 
-def toggle(el: TargetElement) -> None:
+def toggle(el: TargetElement, *, mode: InputMode = "pattern", timeout: float | None = None) -> None:
     __tracebackhide__ = True
+    if mode == "mouse":
+        set_checked(el, not is_checked(el), mode=mode, timeout=timeout)
+        return
     if isinstance(el, WpfElement):
         _wpf_act(el, "toggle", "Toggle")
         return
@@ -1051,6 +1070,24 @@ def is_expanded(el: TargetElement) -> bool:
 def selected_items(el: TargetElement) -> list[str]:
     """Names of the selected items of a list-like element."""
     __tracebackhide__ = True
+    if _is_grid(el):
+        rows = grid_data_rows(el)
+        selected = patterns.selection(el)
+        ids: set[str] = set()
+        for item in selected:
+            try:
+                ids.add(item.runtime_id)
+                parent = item.parent()
+                if parent is not None:
+                    ids.add(parent.runtime_id)
+            except UIAError as exc:
+                if not exc.element_gone:
+                    raise
+        return [
+            row.text
+            for row in rows
+            if row.element.runtime_id in ids or any(cell.runtime_id in ids for cell in row.cells)
+        ]
     if isinstance(el, WpfElement):
         available = _wpf_patterns(el)
         if "Selection" not in available:
@@ -1235,11 +1272,9 @@ def _item_by_index(el: UIAElement, index: int) -> UIAElement | None:
     __tracebackhide__ = True
     if index < 0:
         return None
-    if el.control_type == "DataGrid" or patterns.has_pattern(el, "Grid"):
-        rows, _ = patterns.grid_size(el)
-        if index >= rows:
-            return None
-        return patterns.grid_item(el, index, 0).parent()
+    if _is_grid(el):
+        rows = grid_data_rows(el, index + 1)
+        return rows[index].element if index < len(rows) else None
     if patterns.has_pattern(el, "ItemContainer"):
         current: UIAElement | None = None
         for _ in range(index + 1):
@@ -1338,6 +1373,14 @@ def _wpf_select(el: WpfElement, item: Item, *, mode: InputMode, combo: bool) -> 
 def select(el: TargetElement, item: Item, *, mode: InputMode = "pattern") -> None:
     """Select an item of a combo box, list, grid, tree or tab control by name, regex or index."""
     __tracebackhide__ = True
+    if _is_grid(el):
+        chosen = _resolve_grid_item(el, item)
+        if mode == "mouse":
+            _click_item(el, chosen, ())
+        else:
+            _scroll_item(chosen)
+            select_self(chosen)
+        return
     if isinstance(el, WpfElement):
         kind = str(_wpf_read(el, "control_type"))
         if kind != "ComboBox" and "Selection" not in _wpf_patterns(el):
@@ -1397,6 +1440,8 @@ def _resolve_item(el: TargetElement, item: Item, mode: InputMode) -> TargetEleme
     The agent has no add or remove selection verbs, so pattern input goes through the UIA tree.
     """
     __tracebackhide__ = True
+    if _is_grid(el):
+        return _resolve_grid_item(el, item)
     if isinstance(el, WpfElement) and mode == "mouse":
         return _wpf_realize(el, item)
     uia = uia_of(el)
@@ -1502,7 +1547,7 @@ def select_items(
     expected = Counter(selected_items(el)) if add else Counter[str]()
     for position, item in enumerate(unique):
         chosen = _resolve_item(el, item, mode)
-        name = chosen.name
+        name = _grid_row_text(el, chosen) if _is_grid(el) else chosen.name
         if position == 0 and not add:
             _select_only(el, chosen, mode)
             expected = Counter({name: 1})
@@ -1526,7 +1571,8 @@ def deselect_items(
         chosen = _resolve_item(el, item, mode)
         if is_selected(chosen):
             _toggle_off(el, chosen, mode)
-            expected[chosen.name] -= 1
+            name = _grid_row_text(el, chosen) if _is_grid(el) else chosen.name
+            expected[name] -= 1
     _verify_selection(el, +expected, timeout)
 
 
@@ -1537,7 +1583,11 @@ def clear_selection(
     __tracebackhide__ = True
     _multi_container(el, 1)
     for chosen in patterns.selection(el):
-        _toggle_off(el, chosen, mode)
+        try:
+            _toggle_off(el, chosen, mode)
+        except UIAError as exc:
+            if not exc.element_gone:
+                raise
     _verify_selection(el, Counter[str](), timeout)
 
 
@@ -1553,18 +1603,139 @@ def grid_headers(el: TargetElement) -> list[str]:
         return []
 
 
-def read_grid(el: TargetElement, columns: Sequence[int] | None = None) -> list[list[str]]:
-    """The cell texts of every row (of the given columns); refuses grids beyond 500 rows."""
+def _is_grid(el: TargetElement) -> bool:
+    """Whether selection uses grid rows rather than generic list items."""
+    __tracebackhide__ = True
+    if isinstance(el, WpfElement):
+        return str(_wpf_read(el, "control_type")) == "DataGrid"
+    return el.control_type == "DataGrid"
+
+
+class GridRow:
+    """A data row whose cells and display text are fetched on demand."""
+
+    def __init__(
+        self, raw_index: int, element: UIAElement, grid: UIAElement, first: UIAElement, columns: int
+    ) -> None:
+        __tracebackhide__ = True
+        self.raw_index = raw_index
+        self.element = element
+        self._grid = grid
+        self._cells: list[UIAElement | None] = [first, *([None] * (columns - 1))]
+        self._texts: list[str] | None = None
+
+    def cell(self, column: int) -> UIAElement:
+        """One cell, fetched on first use (the other cells are not touched)."""
+        __tracebackhide__ = True
+        found = self._cells[column]
+        if found is None:
+            found = self._cells[column] = patterns.grid_item(self._grid, self.raw_index, column)
+        return found
+
+    @property
+    def cells(self) -> list[UIAElement]:
+        __tracebackhide__ = True
+        return [self.cell(column) for column in range(len(self._cells))]
+
+    @property
+    def texts(self) -> list[str]:
+        __tracebackhide__ = True
+        if self._texts is None:
+            self._texts = [get_text(cell).strip() for cell in self.cells]
+        return self._texts
+
+    @property
+    def text(self) -> str:
+        __tracebackhide__ = True
+        return " ".join(self.texts)
+
+
+def grid_data_rows(el: TargetElement, limit: int | None = None) -> list[GridRow]:
+    """Data rows (no group headers or placeholders), stopping after ``limit`` when it is given.
+
+    A row is classified from the row element alone; its cells and their texts are read only when
+    the caller asks for them (:class:`GridRow`), so index access costs a few reads per row up to
+    the wanted one instead of every cell of the grid. Without a limit the whole grid is walked
+    and refused beyond ``MAX_TABLE_ROWS`` rows.
+    """
     __tracebackhide__ = True
     from wintestkit.engine.table import MAX_TABLE_ROWS
 
-    rows, count = patterns.grid_size(el)
-    if rows > MAX_TABLE_ROWS:
+    grid = uia_of(el)
+    count, columns = patterns.grid_size(grid)
+    if limit is None and count > MAX_TABLE_ROWS:
         raise ActionError(
-            f"{_short(el)} has {rows} rows; reading a table is limited to {MAX_TABLE_ROWS} rows"
+            f"{_short(el)} has {count} rows; reading a table is limited to {MAX_TABLE_ROWS} rows"
         )
-    wanted = list(range(count)) if columns is None else list(columns)
+    result: list[GridRow] = []
+    if not columns or limit == 0:
+        return result
+    for index in range(count):
+        for attempt in range(2):
+            try:
+                first = patterns.grid_item(grid, index, 0)
+                row = first.parent()
+                if row is None or row.control_type in ("Group", "Header", "HeaderItem"):
+                    break
+                if row.class_name in ("GroupItem", "DataGridColumnHeader"):
+                    break
+                if row.framework_id == "WPF" and row.class_name and row.class_name != "DataGridRow":
+                    break
+                if row.name in ("{NewItemPlaceholder}", "NewItemPlaceholder"):
+                    break
+                result.append(GridRow(index, row, grid, first, columns))
+                break
+            except UIAError as exc:
+                if not exc.element_gone:
+                    raise
+                if attempt == 1:
+                    break
+        if limit is not None and len(result) >= limit:
+            break
+    return result
+
+
+def _resolve_grid_item(el: TargetElement, item: Item) -> UIAElement:
+    __tracebackhide__ = True
+    rows = (
+        grid_data_rows(el, item + 1 if item >= 0 else None)
+        if isinstance(item, int)
+        else grid_data_rows(el)
+    )
+    if isinstance(item, int):
+        found = rows[item] if 0 <= item < len(rows) else None
+    else:
+        found = next(
+            (
+                row
+                for row in rows
+                if _item_matches(item, row.text)
+                or any(_item_matches(item, text) for text in row.texts)
+            ),
+            None,
+        )
+    if found is not None:
+        return found.element
+    names = [row.text for row in rows]
+    shown = ", ".join(quote(name[:120]) for name in names[:10]) or "none"
+    if len(names) > 10:
+        shown += f", ... {len(names) - 10} more"
+    raise ActionError(f"No grid row {_describe_item(item)} (available: {shown})")
+
+
+def _grid_row_text(el: TargetElement, chosen: TargetElement) -> str:
+    __tracebackhide__ = True
+    for row in grid_data_rows(el):
+        if row.element.same_as(uia_of(chosen)):
+            return row.text
+    raise ActionError("The selected grid row is no longer available")
+
+
+def read_grid(el: TargetElement, columns: Sequence[int] | None = None) -> list[list[str]]:
+    """Read cell texts of data rows, excluding group headers and placeholders."""
+    __tracebackhide__ = True
+    rows = grid_data_rows(el)
     return [
-        [get_text(patterns.grid_item(el, row, column)).strip() for column in wanted]
-        for row in range(rows)
+        [row.texts[column] for column in (range(len(row.cells)) if columns is None else columns)]
+        for row in rows
     ]

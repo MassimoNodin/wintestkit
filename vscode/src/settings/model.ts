@@ -114,12 +114,24 @@ export const settingFields: SettingField[] = [
     group: "Application",
   },
   {
+    key: "app.close_existing",
+    label: "Close running copy before launch",
+    kind: "boolean",
+    description: {
+      user: "Close an already running copy of the app before tests launch a fresh one. Off: tests attach to it and leave it running.",
+      repository: "Close an already running copy of the app before tests launch a fresh one. Off: tests attach to it and leave it running. WinTestKit never force-kills an app it did not start.",
+    },
+    default: false,
+    group: "Application",
+  },
+  {
     key: "app.close_timeout",
     label: "Close timeout (seconds)",
     kind: "number",
     description: {
       user: "Seconds to wait for the app to close. Raise it on a slow machine.",
-      repository: "Seconds to wait for the app to close before it is stopped.",
+      repository:
+        "Seconds to wait for the app to close; only an app WinTestKit launched is then stopped.",
     },
     default: 10,
     minimum: 0.001,

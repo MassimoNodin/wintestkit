@@ -21,6 +21,12 @@ Rerunning initialization adds missing rules without duplicating them. The new
 until you explicitly enable settings. `--app` writes the executable path to ignored `wintestkit.local.yaml`.
 Existing configuration is preserved. In VS Code, use the gear in **Test Target** to edit
 these YAML files with the configuration form.
+
+The starter page and test target the configured application: `pages/main.py` locates its window by the
+process name of the executable (or `app.process`). Add `--args` to record launch arguments in
+`wintestkit.local.yaml`, for example `wtk init --app "C:/Apps/Orders.exe" --args "/sandbox"`; every launch
+then passes them. Without a usable `.exe` name, `wtk init` marks the window locator `TODO` and the
+starter test fails with an explanation until you configure the app.
 Ignore rules do not untrack files already committed to Git.
 
 `wtk init` also writes the `wintestkit-tests` agent skill to `.claude/skills/wintestkit-tests/`. It teaches AI

@@ -113,10 +113,17 @@ class BoundCheckBox(_Clickable, _Checkable):
 
     required_patterns = ("Toggle",)
 
-    def toggle(self, *, timeout: float | None = None) -> None:
+    def toggle(
+        self, *, timeout: float | None = None, mode: actions.InputMode | None = None
+    ) -> None:
         __tracebackhide__ = True
         with self.step("toggle"):
-            self.perform(timeout, actions.toggle)
+            self.perform(
+                timeout,
+                lambda el: actions.toggle(
+                    el, mode=mode or runtime.get_config().input_mode, timeout=timeout
+                ),
+            )
 
 
 class BoundRadioButton(_Clickable):
@@ -484,10 +491,17 @@ class BoundToggleButton(_Clickable, _Checkable):
         if element.control_type != "Button" or not patterns.has_pattern(element, "Toggle"):
             raise self.type_mismatch(element, "is not a Button with the Toggle pattern")
 
-    def toggle(self, *, timeout: float | None = None) -> None:
+    def toggle(
+        self, *, timeout: float | None = None, mode: actions.InputMode | None = None
+    ) -> None:
         __tracebackhide__ = True
         with self.step("toggle"):
-            self.perform(timeout, actions.toggle)
+            self.perform(
+                timeout,
+                lambda el: actions.toggle(
+                    el, mode=mode or runtime.get_config().input_mode, timeout=timeout
+                ),
+            )
 
 
 class BoundHyperlink(_Clickable):
@@ -569,7 +583,7 @@ class ListItem(Element[BoundListItem]):
 
 
 class DataGrid(Element[BoundDataGrid]):
-    """A data grid or table."""
+    """A data grid or table; row indices count data rows, excluding group headers."""
 
 
 class TreeView(Element[BoundTreeView]):

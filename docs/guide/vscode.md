@@ -34,8 +34,9 @@ that opens the settings.
   to launch, attach to a running app that has a window, or open the settings. The choice is saved
   to `wintestkit.local.yaml`.
 - **Mode** (**Attach** or **Launch for tests**). **Attach** uses the app that is already running and never
-  closes it; **Launch for tests** starts the app for the tests (closing a running copy first) and closes it
-  when they finish. Click to switch.
+  closes it; **Launch for tests** starts the app for the tests and closes it
+  when they finish; a copy that is already running is used for the session and left running unless
+  `app.close_existing` is set. Click to switch.
 - **Python interpreter** (first tile, with the package strip under it). Click to choose another interpreter.
 - **Launch**, or **Restart** and **Close** while it runs. For a process-only attach setup the section
   says it is waiting for the app: start it yourself, then **Check again**.
@@ -178,13 +179,11 @@ Reloading the extension during the optional walkthrough restores it paused rathe
 blocking UI. Resume it explicitly from the setup guide. Spy never dims itself solely because
 another view owns a setup step without a local tutorial callout.
 
-Initialization keeps `pages/main.py` and `MainPage`. Its example window targets the
-frontmost `Code.exe` window, and `content = Element(depth=1, index=1)` identifies the second
-direct child without using a workspace title. This is a real definition shown under
-**Defined in pages**, not tutorial-only display data. Existing page files are not overwritten;
-adapt the example locators when testing a different application. If the VS Code window or
-its expected content pane cannot be identified, the guide explains why instead of choosing
-another object.
+Initialization keeps `pages/main.py` and `MainPage`, but their window targets the application you
+configured (the starter is marked `TODO` until an application is set), not VS Code. Existing page
+files are not overwritten. The walkthrough therefore shows the VS Code content pane without a
+matching page definition under **Defined in pages**. If the VS Code window or its expected content
+pane cannot be identified, the guide explains why instead of choosing another object.
 
 The **Spy** view in the bottom panel, explores the live WPF tree for WPF windows, the live control
 tree for WinForms windows (.NET Framework 4.8, .NET 8 and .NET 10; rows read `WinFormsObject("button1")`

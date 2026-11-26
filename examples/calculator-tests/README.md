@@ -12,8 +12,8 @@ Install Windows Calculator if necessary and keep at most one Calculator window o
 The project's `launch` setting decides how Calculator is obtained: with `attach` (the default here)
 the tests use a Calculator you have already opened; with `per-test` WinTestKit starts it
 using the executable from `app.path` (set `C:\Windows\System32\calc.exe` in
-`wintestkit.local.yaml`), closes any copy that is already open first, and closes the one it
-started when each test finishes. In VS Code, use the **Mode** tile of the Test Target view.
+`wintestkit.local.yaml`), attaches to a copy that is already open instead of closing it (unless
+`app.close_existing` is set), and closes the one it started when each test finishes. In VS Code, use the **Mode** tile of the Test Target view.
 Use an English-language Calculator because navigation headings and result text are asserted
 in English. Control identifiers may need adapting for other Calculator versions.
 

@@ -78,11 +78,16 @@ def route(window: UIAElement, *, force: bool = False) -> UIAElement | WpfElement
             )
         return WpfElement(client, mapping.object_ref, window.process_id)
     except InspectorError as error:
-        raise type(error)(
-            f"WPF backend unavailable ({error.code}): {error}. "
-            "Enable the inspector, attach to the process, or set backend: uia.",
-            code=error.code,
-        ) from error
+        from wintestkit.inspector.hints import inspector_error_hint
+
+        hint = (
+            inspector_error_hint(error.code, error.details, error.method)
+            if error.code in {"timeout", "dispatcherUnavailable", "busy"}
+            else "Enable the inspector, attach to the process, or set backend: uia."
+        )
+        error.message = f"WPF backend unavailable ({error.code}): {error}. {hint}"
+        error.args = (error.message,)
+        raise
 
 
 def matches_root(root: WpfElement, conditions: list[ManagedCondition]) -> bool:

@@ -432,6 +432,15 @@ def test_grid_items_use_uia_peer(setup, monkeypatch):
     root = wpf_resolve.route(window)
     peer = SimpleNamespace(info=lambda: SimpleNamespace(short=lambda: "grid"))
     cell = SimpleNamespace(as_live=lambda: "live cell")
+    from wintestkit.engine import actions
+
+    monkeypatch.setattr(
+        actions,
+        "grid_data_rows",
+        lambda el, limit=None: (
+            [SimpleNamespace(element=peer, cells=[cell, cell], cell=lambda column: cell)] * 2
+        ),
+    )
     monkeypatch.setattr(resolver, "uia_of", lambda element: peer)
     monkeypatch.setattr(resolver.patterns, "grid_size", lambda element: (2, 2))
     monkeypatch.setattr(resolver.patterns, "grid_item", lambda element, row, column: cell)
@@ -659,3 +668,24 @@ def test_agent_wait_preserves_non_chunk_failures(setup, monkeypatch, error):
     with query_budget(time.monotonic() + 5), pytest.raises(type(error)) as raised:
         resolver.wait_link(scope, Locator(automation_id="id"), "attached")
     assert raised.value is error
+
+
+@pytest.mark.parametrize("reason", ["queueWait", "workTimeout", "earlierWorkRunning"])
+def test_route_preserves_busy_reason_and_hint(monkeypatch, reason):
+    error = InspectorDeadlineError("busy", code="dispatcherUnavailable", busy=True)
+    error.details = {"reason": reason, "runningForMs": 123, "ranMs": 456}
+    error.method = "act.toggle"
+
+    def fail(*args, **kwargs):
+        raise error
+
+    monkeypatch.setattr(wpf_resolve.runtime, "managed_client_for", fail)
+    window = SimpleNamespace(framework_id="WPF", process_id=1)
+    monkeypatch.setattr(wpf_resolve, "root_handle", lambda window: 1)
+    with pytest.raises(InspectorDeadlineError) as caught:
+        wpf_resolve.route(window, force=True)
+    assert caught.value is error and caught.value.busy
+    assert caught.value.details["reason"] == reason
+    assert "set backend: uia" not in str(error)
+    if reason == "earlierWorkRunning":
+        assert "dialog" in str(error)

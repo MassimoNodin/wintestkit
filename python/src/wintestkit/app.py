@@ -222,7 +222,7 @@ class App:
     # -- shutdown -------------------------------------------------------------------------------
 
     def close(self, timeout: float = 10.0) -> None:
-        """Ask every window to close (owned ones first), then kill if it does not exit."""
+        """Ask every window to close; force termination only for launched instances."""
         __tracebackhide__ = True
         self.detach_inspector()
         windows = self.top_level_windows()
@@ -234,8 +234,11 @@ class App:
                 win32.PostMessageW(window.native_window_handle, win32.WM_CLOSE, 0, 0)
             time.sleep(0.05)
         if not self.wait_for_exit(timeout):
-            log.warning("%s did not exit within %.1fs; killing it", self.process_name, timeout)
-            self.kill()
+            if self.launched:
+                log.warning("%s did not exit within %.1fs; killing it", self.process_name, timeout)
+                self.kill()
+            else:
+                log.warning("%s did not exit within %.1fs", self.process_name, timeout)
 
     def detach_inspector(self) -> None:
         """Release inspector sessions without closing the application."""

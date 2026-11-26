@@ -150,7 +150,7 @@ def test_password_uses_keys_without_sending_value(target, monkeypatch, caplog):
 
 def test_selection_names_are_individual_reads(target):
     client, el = target
-    client.values.update(supported_patterns="Selection", selection_count=2)
+    client.values.update(supported_patterns="Selection", selection_count=2, control_type="List")
     client.values["selection_name_0"] = "a,b"
     client.values["selection_name_1"] = "c\nd"
     assert actions.selected_items(el) == ["a,b", "c\nd"]
@@ -578,7 +578,10 @@ def test_wpf_select_items(item_target, monkeypatch, kind, mode, item):
             client.values["expand_state"] = "Expanded" if expanded else "Collapsed"
 
         monkeypatch.setattr(actions, "_wpf_expand_collapse_mouse", expand_mouse)
-    actions.select(el, item, mode=mode)
+    if kind == "DataGrid":
+        actions._wpf_select(el, item, mode=mode, combo=False)
+    else:
+        actions.select(el, item, mode=mode)
     calls = client.calls
     if mode == "mouse":
         assert ("click", "gridRowHeader" if kind == "DataGrid" else None) in calls
@@ -617,7 +620,7 @@ def test_wpf_grid_mouse_falls_back_when_header_unsafe(item_target, monkeypatch):
         raise actions.ActionError("no safe row header")
 
     monkeypatch.setattr(actions, "_wpf_mouse_target", unsafe)
-    actions.select(el, "Alpha", mode="mouse")
+    actions._wpf_select(el, "Alpha", mode="mouse", combo=False)
     assert [call[0] for call in client.calls] == ["realize", "act_select"]
 
 

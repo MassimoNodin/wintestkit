@@ -602,18 +602,17 @@ def _apply_item(
     if item is None:
         return element
     element = uia_of(element)
-    rows, columns = patterns.grid_size(element)
+    from wintestkit.engine.actions import grid_data_rows
+
+    data_rows = grid_data_rows(element, item.row + 1)
+    rows, columns = len(data_rows), patterns.grid_size(element)[1]
     short = element.info().short()
     if item.row >= rows:
         raise _item_error(
             f"row={item.row} is out of range: {short} has {rows} rows", searched_in, full, rows
         )
     if item.kind == "row":
-        row = patterns.grid_item(element, item.row, 0).parent()
-        if row is None:
-            raise _item_error(
-                f"row={item.row} of {short} has no row element", searched_in, full, rows
-            )
+        row = data_rows[item.row].element
         return row.as_live()
 
     column = item.column
@@ -639,4 +638,4 @@ def _apply_item(
             full,
             columns,
         )
-    return patterns.grid_item(element, item.row, column).as_live()
+    return data_rows[item.row].cell(column).as_live()

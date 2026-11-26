@@ -42,7 +42,7 @@ def inspector_error_hint(
         duration = (details or {}).get("runningForMs", "?")
         return (
             f"An earlier inspector request has been running for {duration} ms; "
-            "waiting for it to finish."
+            "waiting for it to finish. A dialog opened by an earlier action may be blocking it."
         )
     if code in {"timeout", "dispatcherUnavailable", "busy"} and reason != "queueWait":
         return "The inspector request did not complete; retry when it finishes."

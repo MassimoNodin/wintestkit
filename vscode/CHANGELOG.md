@@ -7,6 +7,12 @@ Unreleased changes must be moved to a dated candidate section before a release c
 
 ## [Unreleased]
 
+- **Initialization:** `wtk init --app X` generates a starter page and test for your application instead of VS Code (or a clearly marked `TODO` and a starter test that fails with an explanation when no executable name is known), `--args` records launch arguments, and a new `pyproject.toml` is reported as "Created".
+- **App lifecycle:** Launch for tests no longer closes or kills an application that was already running: it attaches to it for the session, says so once, and leaves it running. The new `app.close_existing` setting closes it gracefully first, and a blocked close fails the run instead of force-killing an app WinTestKit did not start. Relaunches keep the configured launch arguments.
+- **Grid access:** Indexed row and cell access (`cell(r, c)`, `row(i)`, selecting by index) stops at the wanted row and reads no cell text, and `find_row` reads only the searched column, so large grids are much faster.
+- **Grids:** DataGrid helpers skip group headers when counting, selecting and comparing rows, and selected items show their cell text.
+- **Checks and toggles:** Immediate element and collection checks now work when the WPF inspector needs to attach, and checkbox actions honor mouse input mode.
+
 - **Busy applications:** Picking or reading elements deep inside Ribbon and other nested templates no longer freezes the application for seconds.
 - **Diagnostics:** When an inspector request times out, the log and messages say whether the application's UI thread was busy or the inspector's own request ran long, with timings.
 - **Spy:** Stops queuing more reads behind a stalled request, and repeated stalls are logged with a count.

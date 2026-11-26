@@ -9,7 +9,6 @@ passed.
 
 from __future__ import annotations
 
-import contextlib
 import dataclasses
 import logging
 import os
@@ -33,7 +32,13 @@ from wintestkit.config import (
     find_project_root,
     load_config,
 )
-from wintestkit.errors import AppNotRunningError, AttachNotRunningError, ConfigError, WtkError
+from wintestkit.errors import (
+    AppError,
+    AppNotRunningError,
+    AttachNotRunningError,
+    ConfigError,
+    WtkError,
+)
 from wintestkit.events import EventSink, open_sink
 from wintestkit.replay import ReplayRecorder
 from wintestkit.report.html import write_report
@@ -76,9 +81,11 @@ def _marker_kwargs(node: Any, name: str) -> dict[str, Any]:
 def launch_app(config: WtkConfig, progress: Callable[[str], None] | None = None) -> App:
     """Start the application described by ``[tool.wintestkit.app]``.
 
-    Launching owns the application's lifecycle: a copy that is already running is closed first, so
-    the tests get a fresh one and nothing is left running once the launched app is closed.
-    ``progress`` reports the launch stages (see :meth:`App.launch`).
+    A copy that is already running was not started by WinTestKit, so it is never closed or killed:
+    the returned :class:`App` is attached to it and has ``launched == False``. Only with
+    ``app.close_existing`` is it asked to close gracefully first; if it does not close (for example
+    a save prompt), launching fails instead of force-killing it. ``progress`` reports the launch
+    stages (see :meth:`App.launch`).
     """
     from wintestkit.app import App
     from wintestkit.errors import AppNotRunningError
@@ -92,9 +99,16 @@ def launch_app(config: WtkConfig, progress: Callable[[str], None] | None = None)
         )
     name = settings.process or Path(settings.path).name
     if win32.pids_by_name(name):
-        log.info("closing the running %s before launching a fresh copy", name)
-        with contextlib.suppress(AppNotRunningError):  # it may exit on its own meanwhile
-            App.attach(process=name).close(timeout=settings.close_timeout)
+        try:
+            existing = App.attach(process=name)
+        except AppNotRunningError:
+            pass  # It exited during discovery.
+        else:
+            if not settings.close_existing:
+                return existing
+            existing.close(timeout=settings.close_timeout)
+            if existing.is_running():
+                raise AppError(f"{name} did not close; resolve its prompt before launching")
     return App.launch(
         settings.path,
         args=settings.args,
@@ -103,6 +117,7 @@ def launch_app(config: WtkConfig, progress: Callable[[str], None] | None = None)
         process=settings.process,
         startup_timeout=settings.startup_timeout,
         progress=progress,
+        owned_only=True,
     )
 
 
@@ -191,6 +206,7 @@ def _is_wintestkit_run(config: pytest.Config) -> bool:
 
 
 CONTROLLER_KEY = pytest.StashKey["_Controller"]()
+_EXISTING_APP = pytest.StashKey["App"]()
 
 
 def pytest_configure(config: pytest.Config) -> None:
@@ -697,14 +713,37 @@ def app(request: pytest.FixtureRequest) -> Generator[App, None, None]:
             attached.detach_inspector()
     else:
         with runtime.step("app.start", name, _app_path(config)):
-            launched = launch_app(config)
+            launched = request.config.stash.get(_EXISTING_APP, None)
+            if launched is not None and not launched.is_running():
+                launched = None
+                del request.config.stash[_EXISTING_APP]
+            if launched is None:
+                launched = launch_app(config)
+                if not launched.launched:
+                    _announce(
+                        request.config,
+                        f"WinTestKit: attaching to the already-running {name} for this session "
+                        "(set app.close_existing to launch a fresh copy instead).",
+                    )
+                    request.config.stash[_EXISTING_APP] = launched
+                    request.session.addfinalizer(launched.detach_inspector)
             _verify_started(launched, config)
         runtime.set_current_app(launched)
         try:
             yield launched
         finally:
             runtime.set_current_app(None)
-            launched.close(timeout=config.app.close_timeout if config.app else 10.0)
+            if launched.launched:
+                launched.close(timeout=config.app.close_timeout if config.app else 10.0)
+
+
+def _announce(config: pytest.Config, message: str) -> None:
+    """Print a line in the pytest output, even when output capture is on."""
+    reporter: Any = config.pluginmanager.get_plugin("terminalreporter")
+    if reporter is not None:
+        reporter.write_line(message)
+    else:
+        print(message)
 
 
 def _app_name(config: WtkConfig) -> str:

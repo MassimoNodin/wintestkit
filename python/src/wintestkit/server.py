@@ -2261,7 +2261,7 @@ class Server:
                 )
                 with self._app_state_lock:
                     self.app = app
-                    self._owned_app_pids = set(app.pids) or None
+                    self._owned_app_pids = (set(app.pids) or None) if app.launched else None
                 from wintestkit.inspector.probe import current_identity
 
                 self._owned_app_identities.clear()

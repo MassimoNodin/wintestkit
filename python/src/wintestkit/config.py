@@ -97,7 +97,16 @@ _TOP_LEVEL_KEYS = {
     "object_previews",
     "object_previews_share",
 }
-_APP_KEYS = {"path", "args", "cwd", "env", "process", "startup_timeout", "close_timeout"}
+_APP_KEYS = {
+    "path",
+    "args",
+    "cwd",
+    "env",
+    "process",
+    "startup_timeout",
+    "close_timeout",
+    "close_existing",
+}
 _INSPECTOR_KEYS = {
     "enabled",
     "attach",
@@ -134,6 +143,7 @@ class AppConfig:
     process: str | None = None
     startup_timeout: float = 30.0
     close_timeout: float = 10.0
+    close_existing: bool = False
 
     @property
     def process_name(self) -> str:
@@ -483,6 +493,7 @@ def _build_app(root: Path, values: Mapping[str, Any]) -> AppConfig | None:
         "app.process": _string,
         "app.startup_timeout": lambda k, v: _number(k, v, positive=True),
         "app.close_timeout": lambda k, v: _number(k, v, positive=True),
+        "app.close_existing": _boolean,
     }
     converted = {key[4:]: converters[key](key, values[key]) for key in keys}
     return AppConfig(**converted)
