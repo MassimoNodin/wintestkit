@@ -33,6 +33,7 @@ class FakeTime:
 class Row:
     def __init__(self, name: str) -> None:
         self.name = name
+        self.runtime_id = name
         self.selected = False
 
 
@@ -251,6 +252,15 @@ def test_mouse_that_does_not_change_the_selection_is_an_error(world: ListWorld) 
     message = str(failure.value)
     assert "['Two', 'Four']" in message
     assert "is []" in message
+
+
+def test_mouse_clear_selection_stops_when_a_click_changes_nothing(world: ListWorld) -> None:
+    actions.select_items(world.container, ["Two", "Four"], mode="mouse")
+    world.log.clear()
+    world.clicks_work = False
+    with pytest.raises(ActionError, match=r"expected \[\]"):
+        actions.clear_selection(world.container, mode="mouse", timeout=0.1)
+    assert [e[1] for e in world.log] == ["Two"]
 
 
 def test_selection_is_verified_with_a_bounded_wait(
@@ -884,3 +894,44 @@ def test_grid_cell_only_selection_is_removed(
         actions.deselect_items(grouped.grid, [1], mode=mode)
     assert removed == [(cell, mode) for cell in cells]
     assert not selected
+
+
+@pytest.mark.parametrize("clear", [True, False])
+def test_mouse_grid_removal_refreshes_stale_targets(
+    grouped: GroupedGrid, monkeypatch: pytest.MonkeyPatch, clear: bool
+) -> None:
+    generation = [0]
+    remaining = {1: 2, 2: 1}
+    rows = {1: grouped.rows[1], 2: grouped.rows[2]}
+    monkeypatch.setattr(actions, "is_selected", lambda row: False)
+
+    class Cell:
+        def __init__(self, index: int) -> None:
+            self.index = index
+            self.generation = generation[0]
+
+        def parent(self) -> Any:
+            assert self.generation == generation[0], "stale cell"
+            return rows[self.index]
+
+        @property
+        def runtime_id(self) -> str:
+            assert self.generation == generation[0], "stale cell"
+            return f"cell-{self.index}-{self.generation}"
+
+    def selection(el: Any) -> list[Any]:
+        return [Cell(index) for index, count in remaining.items() for _ in range(count)]
+
+    def click(el: Any, target: Any, mode: str) -> None:
+        assert target.generation == generation[0], "clicked stale cell"
+        remaining[target.index] -= 1
+        generation[0] += 1
+
+    monkeypatch.setattr(patterns, "selection", selection)
+    monkeypatch.setattr(actions, "_toggle_off", click)
+    if clear:
+        actions.clear_selection(grouped.grid, mode="mouse")
+    else:
+        actions.deselect_items(grouped.grid, [0, 1], mode="mouse")
+    assert remaining == {1: 0, 2: 0}
+    assert generation[0] == 3

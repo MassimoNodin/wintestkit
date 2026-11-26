@@ -177,3 +177,10 @@ class InspectorDeadlineError(InspectorLimitError):
     ) -> None:
         super().__init__(message, code=code, audit=audit)
         self.busy = busy
+
+    @property
+    def budget_exhausted(self) -> bool:
+        return self.details.get("deadline") is True or self.details.get("reason") in {
+            "clientDeadline",
+            "queryBudget",
+        }

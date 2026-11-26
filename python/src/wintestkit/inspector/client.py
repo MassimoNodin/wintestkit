@@ -118,7 +118,7 @@ def validate_spy_arguments(arguments: object) -> list[dict[str, object]]:
     return values
 
 
-def _error(code: str, details: object = None) -> InspectorError:
+def _error_kind(code: str, details: object = None) -> InspectorError:
     if code == "writeDenied":
         return WriteDeniedError("Inspector request failed: writeDenied", code=code)
     if code == "writeRateExceeded":
@@ -167,6 +167,13 @@ def _error(code: str, details: object = None) -> InspectorError:
     return InspectorError(f"Inspector request failed: {code}", code=code)
 
 
+def _error(code: str, details: object = None) -> InspectorError:
+    result = _error_kind(code, details)
+    if isinstance(details, dict):
+        result.details = cast(dict[str, object], details).copy()
+    return result
+
+
 def _response(value: object) -> tuple[int, object, InspectorError | None]:
     data = _obj(value, "id", "result error")
     request_id = _int(data["id"], 1)
@@ -183,6 +190,7 @@ def _response(value: object) -> tuple[int, object, InspectorError | None]:
     details = error.get("details")
     result = _error(code, details)
     if code in {"timeout", "dispatcherUnavailable", "busy"} and isinstance(details, dict):
+        result.details = {}
         raw = cast(dict[str, object], details)
         reason = raw.get("reason")
         if reason in ("queueWait", "workTimeout", "earlierWorkRunning"):

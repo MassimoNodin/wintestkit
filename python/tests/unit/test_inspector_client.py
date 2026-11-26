@@ -1428,3 +1428,15 @@ def test_local_expiry_has_distinct_reason() -> None:
         assert exc.value.method == "state.get"
     finally:
         client.close()
+
+
+def test_error_preserves_server_details() -> None:
+    details = {"deadline": True, "extra": 3}
+    assert _error("limitExceeded", details).details == details
+    assert _error("writeDenied", details).details == details
+    from wintestkit.inspector.client import _response
+
+    _, _, error = _response(
+        {"id": 1, "error": {"code": "limitExceeded", "message": "expired", "details": details}}
+    )
+    assert error is not None and error.details == details

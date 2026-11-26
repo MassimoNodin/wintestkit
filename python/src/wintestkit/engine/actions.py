@@ -997,9 +997,17 @@ def set_checked(
             try:
                 _wpf_act(el, "toggle", "Toggle")
             except (InspectorError, UIAError) as exc:
-                cause = exc.__cause__ if isinstance(exc.__cause__, InspectorError) else exc
-                if isinstance(cause, InspectorError) and (
-                    cause.code in {"timeout", "dispatcherUnavailable"}
+                cause: BaseException | None = exc
+                seen: set[int] = set()
+                while cause is not None and id(cause) not in seen:
+                    seen.add(id(cause))
+                    if isinstance(cause, InspectorDeadlineError) or (
+                        isinstance(cause, InspectorError) and cause.code == "dispatcherUnavailable"
+                    ):
+                        break
+                    cause = cause.__cause__
+                if isinstance(cause, InspectorDeadlineError) or (
+                    isinstance(cause, InspectorError) and cause.code == "dispatcherUnavailable"
                 ):
                     dialog = _new_dialog(el, windows)
                     if dialog is not None:
@@ -1611,6 +1619,42 @@ def select_items(
     _verify_selection(el, expected, timeout)
 
 
+_MOUSE_DESELECT_LIMIT = 256
+
+
+def _selection_ids(items: Sequence[TargetElement]) -> tuple[str, ...]:
+    """Runtime ids of a fresh selection read; an item that vanished meanwhile is skipped."""
+    __tracebackhide__ = True
+    ids: list[str] = []
+    for item in items:
+        try:
+            ids.append(item.runtime_id)
+        except UIAError as exc:
+            if not exc.element_gone:
+                raise
+    return tuple(ids)
+
+
+def _selected_grid_row_targets(el: TargetElement, row: TargetElement) -> list[TargetElement]:
+    """Read the current selection for one freshly resolved grid row."""
+    __tracebackhide__ = True
+    if is_selected(row):
+        return [row]
+    row_id = row.runtime_id
+    targets: list[TargetElement] = []
+    for selected in patterns.selection(el):
+        try:
+            parent = selected.parent()
+            if selected.runtime_id == row_id or (
+                parent is not None and parent.runtime_id == row_id
+            ):
+                targets.append(selected)
+        except UIAError as exc:
+            if not exc.element_gone:
+                raise
+    return targets
+
+
 def deselect_items(
     el: TargetElement, items: Items, *, mode: InputMode = "pattern", timeout: float = 2.0
 ) -> None:
@@ -1622,19 +1666,35 @@ def deselect_items(
     _multi_container(el, 1)
     expected = Counter(selected_items(el))
     grid = _is_grid(el)
-    selected = _grid_selection(el, for_removal=True) if grid else {}
+    selected = _grid_selection(el, for_removal=True) if grid and mode != "mouse" else {}
     for item in unique:
         chosen = _resolve_item(el, item, mode)
-        targets = (
-            selected.pop(chosen.runtime_id, [])
-            if grid
-            else ([chosen] if is_selected(chosen) else [])
-        )
-        if targets:
+        name = _grid_row_text(el, chosen) if grid else chosen.name
+        if grid and mode == "mouse":
+            removed = False
+            previous: tuple[str, ...] | None = None
+            for _ in range(_MOUSE_DESELECT_LIMIT):
+                chosen = _resolve_item(el, item, mode)
+                targets = _selected_grid_row_targets(el, chosen)
+                current = _selection_ids(targets)
+                # Stop when the last click changed nothing; _verify_selection reports it.
+                if not targets or current == previous:
+                    break
+                previous = current
+                _toggle_off(el, targets[0], mode)
+                removed = True
+            if removed:
+                expected[name] -= 1
+        else:
+            targets = (
+                selected.pop(chosen.runtime_id, [])
+                if grid
+                else ([chosen] if is_selected(chosen) else [])
+            )
             for target in targets:
                 _toggle_off(el, target, mode)
-            name = _grid_row_text(el, chosen) if grid else chosen.name
-            expected[name] -= 1
+            if targets:
+                expected[name] -= 1
     _verify_selection(el, +expected, timeout)
 
 
@@ -1644,17 +1704,36 @@ def clear_selection(
     """Deselect every selected item."""
     __tracebackhide__ = True
     _multi_container(el, 1)
-    chosen_items = (
-        [item for items in _grid_selection(el, for_removal=True).values() for item in items]
-        if _is_grid(el)
-        else patterns.selection(el)
-    )
-    for chosen in chosen_items:
-        try:
-            _toggle_off(el, chosen, mode)
-        except UIAError as exc:
-            if not exc.element_gone:
-                raise
+    if mode == "mouse":
+        previous: tuple[str, ...] | None = None
+        for _ in range(_MOUSE_DESELECT_LIMIT):
+            chosen_items = (
+                [item for items in _grid_selection(el, for_removal=True).values() for item in items]
+                if _is_grid(el)
+                else patterns.selection(el)
+            )
+            current = _selection_ids(chosen_items)
+            # Stop when the last click changed nothing; _verify_selection reports it.
+            if not chosen_items or current == previous:
+                break
+            previous = current
+            try:
+                _toggle_off(el, chosen_items[0], mode)
+            except UIAError as exc:
+                if not exc.element_gone:
+                    raise
+    else:
+        chosen_items = (
+            [item for items in _grid_selection(el, for_removal=True).values() for item in items]
+            if _is_grid(el)
+            else patterns.selection(el)
+        )
+        for chosen in chosen_items:
+            try:
+                _toggle_off(el, chosen, mode)
+            except UIAError as exc:
+                if not exc.element_gone:
+                    raise
     _verify_selection(el, Counter[str](), timeout)
 
 
