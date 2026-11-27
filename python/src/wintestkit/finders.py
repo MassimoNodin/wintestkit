@@ -21,7 +21,7 @@ from wintestkit.engine.locator import Locator, is_window_node
 from wintestkit.engine.managed import diagnostic_query_budget
 from wintestkit.engine.properties import AsText
 from wintestkit.engine.resolve import Scope, resolve_all, resolve_window
-from wintestkit.engine.wpf_resolve import managed_capable, route
+from wintestkit.engine.wpf_resolve import route, wpf_capable
 from wintestkit.errors import (
     AmbiguousElementError,
     AmbiguousMatchWarning,
@@ -935,7 +935,7 @@ def _legacy_reader(prop: str) -> Callable[[Any, TargetElement | None], Any]:
 
     def read(target: Any, element: TargetElement | None) -> Any:
         __tracebackhide__ = True
-        wpf = element is None or isinstance(element, WpfElement) or managed_capable(element)
+        wpf = element is None or isinstance(element, WpfElement) or wpf_capable(element)
         key = map_property(prop, wpf=wpf)
         if not wpf and key.startswith("clr:") and key[4:] in PROPERTY_IDS:
             key = key[4:]  # a UIA property of a window that is not WPF, by its own name

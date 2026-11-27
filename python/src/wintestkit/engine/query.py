@@ -99,7 +99,7 @@ def reject_managed(condition: ManagedCondition, root: UIAElement | None = None) 
     raise InvalidLocatorError(
         f"Managed key {condition.key!r} requires the WPF backend; "
         f"backend: {backend}, window framework: {framework}. "
-        "Use backend: auto with a WPF window."
+        "Use backend: auto with a WPF window or a WinForms window."
     )
 
 

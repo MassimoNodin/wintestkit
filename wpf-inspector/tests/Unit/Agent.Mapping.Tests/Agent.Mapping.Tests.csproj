@@ -12,6 +12,7 @@
     <ProjectReference Include="../../../src/Protocol/Protocol.csproj" />
     <Reference Include="System.Windows.Forms" Condition="'$(TargetFramework)' == 'net48'" />
     <Reference Include="System.Drawing" Condition="'$(TargetFramework)' == 'net48'" />
+    <Reference Include="WindowsFormsIntegration" Condition="'$(TargetFramework)' == 'net48'" />
     <Compile Include="../../../src/Agent/Contracts/**/*.cs" LinkBase="Contracts" />
     <Compile Include="../../../src/Agent/Events/**/*.cs" LinkBase="Events" />
     <Compile Include="../../../src/Agent/Actions/**/*.cs" LinkBase="Actions" />

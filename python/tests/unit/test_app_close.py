@@ -188,3 +188,32 @@ def test_a_helper_is_killed_by_name_with_taskkill(monkeypatch: pytest.MonkeyPatc
         ["taskkill", "/PID", "42", "/T", "/F"],
     ]
     assert alive == [(43, "other.exe")] and not helper.is_running()
+
+
+@pytest.mark.parametrize("name", ["explorer.exe", "Explorer", "EXPLORER.EXE"])
+def test_the_windows_shell_is_not_closed_without_force(world: World, name: str) -> None:
+    world.app.process_name = name
+    with pytest.raises(ActionError, match=r"Windows shell.*every File Explorer window.*force=True"):
+        world.app.close_gracefully()
+    with pytest.raises(ActionError, match="Windows shell"):
+        world.app.close()
+    assert world.posted == [] and world.killed == 0 and world.steps == []
+
+
+def test_the_shell_is_closed_when_forced(world: World) -> None:
+    world.app.process_name = "explorer.exe"
+    world.at(0.4, world.exit)
+    assert world.app.close_gracefully(force=True) == "exited"
+    assert world.posted == [(MAIN, win32.WM_CLOSE)]
+    world.running = True
+    world.windows = [MAIN]
+    world.at(world.now + 0.2, world.exit)
+    world.app.close(force=True)
+    assert (MAIN, win32.WM_CLOSE) in world.posted and world.killed == 0
+
+
+def test_leaving_a_launched_shell_app_does_not_raise_or_close_it(world: World) -> None:
+    world.app.process_name = "explorer.exe"
+    with world.app:
+        pass
+    assert world.posted == [] and world.killed == 0 and world.running

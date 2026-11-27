@@ -118,7 +118,7 @@ namespace WinTestKit.Inspector.Agent.Wait
                         {
                             var state = StateReader.Read(target, match.Match, adapter);
                             bool satisfied = condition.Kind == "exists" || condition.Kind == "visible" && state.Visible || condition.Kind == "enabled" && state.Enabled ||
-                                predicate != null && predicate.Matches((DependencyObject)target, new QueryPredicateContext(end));
+                                predicate != null && predicate.Matches(target, dispatcher, new QueryPredicateContext(end));
                             return satisfied ? new WaitUntilResult { Satisfied = true, Handle = match.Match, State = state } : null;
                         }, ct).ConfigureAwait(false);
                         if (result != null) return result;

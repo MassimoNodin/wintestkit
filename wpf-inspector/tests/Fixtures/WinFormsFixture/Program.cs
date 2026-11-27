@@ -15,6 +15,7 @@ namespace WinTestKit.WinFormsFixture;
 public sealed class MainForm : Form
 {
     internal readonly FixtureUserControl Custom = new FixtureUserControl { Location = new Point(12, 520) };
+    internal readonly SeriesChartControl Chart = new SeriesChartControl { Location = new Point(12, 594) };
     private readonly List<Form> opened = new List<Form>();
 
     public MainForm()
@@ -63,7 +64,7 @@ public sealed class MainForm : Form
         grid.Rows.Add("row 1", "10");
         grid.Rows.Add("row 2", "20");
 
-        Controls.AddRange(new Control[] { menu, button1, button2, textBox1, password, label1, checkBox1, comboBox1, listBox1, group, tabs, grid, Custom });
+        Controls.AddRange(new Control[] { menu, button1, button2, textBox1, password, label1, checkBox1, comboBox1, listBox1, group, tabs, grid, Custom, Chart });
     }
 
     /// <summary>Test-setup scenarios that open and close windows; they change no inspected value.</summary>

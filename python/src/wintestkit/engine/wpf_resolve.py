@@ -61,19 +61,54 @@ def to_managed(element: UIAElement) -> WpfElement:
         if mapping.status != "exact" or mapping.object_ref is None:
             raise InspectorMappingError(f"Element mapping is {mapping.status}", code=mapping.status)
     except InspectorError as error:
+        kind = "WinForms" if is_winforms_element(element) else "WPF"
         raise error.copy_with_message(
-            f"{element.info().short()} cannot be read through the WPF inspector "
+            f"{element.info().short()} cannot be read through the {kind} inspector "
             f"({error.code}): {str(error).rstrip('.')}."
         ) from error
     return WpfElement(client, mapping.object_ref, element.process_id)
 
 
-def managed_capable(element: object) -> bool:
+#: UI Automation's FrameworkId of a WinForms window or control.
+WINFORMS_FRAMEWORKS = frozenset({"WinForm", "WinForms"})
+
+
+def is_winforms_element(element: object) -> bool:
+    """Whether a UI Automation element is a WinForms window or control.
+
+    A control hosted in a WPF ``WindowsFormsHost`` counts: it is a WinForms control whatever
+    window holds it. UI Automation names the framework ``WinForm``; a control whose provider
+    reports a plain window (``Win32``) is told by its ``WindowsForms10`` class name.
+    """
+    if isinstance(element, WpfElement):
+        return element.ref.is_winforms
+    framework = getattr(element, "framework_id", None)
+    if framework in WINFORMS_FRAMEWORKS:
+        return True
+    class_name = getattr(element, "class_name", "") if framework == "Win32" else ""
+    return isinstance(class_name, str) and class_name.startswith("WindowsForms")
+
+
+def wpf_capable(element: object) -> bool:
     """Whether an element is a UI Automation element of a WPF window the inspector can map."""
     return (
         not isinstance(element, WpfElement)
         and runtime.get_config().backend == "auto"
         and getattr(element, "framework_id", None) == "WPF"
+    )
+
+
+def managed_capable(element: object) -> bool:
+    """Whether the inspector can map a UI Automation element to its managed object.
+
+    That is an element of a WPF window or a WinForms window or control (also one hosted in WPF):
+    the agent maps it by its UI Automation runtime ID or window handle and reads its native
+    members on the thread that owns it.
+    """
+    return wpf_capable(element) or (
+        not isinstance(element, WpfElement)
+        and runtime.get_config().backend == "auto"
+        and is_winforms_element(element)
     )
 
 
@@ -94,6 +129,19 @@ def with_unreadable(diagnostic: Diagnostic, unreadable: QueryUnreadable | None) 
     if unreadable is None:
         return diagnostic
     return replace(diagnostic, message=f"{diagnostic.message}; {unreadable.describe()}")
+
+
+def winforms_form(link: Locator) -> Locator:
+    """The link as it is searched below a WinForms control.
+
+    The migration object tree is WPF's. Below a WinForms control a migrated link is searched as UI
+    Automation counts it (``Control.Controls`` levels, name and zero-based index): its UIA form.
+    A link without one (a declared locator that asks for ``tree="objects"``) keeps its keys and
+    drops the tree, which the agent walks by ``Control.Controls`` whatever the kind.
+    """
+    if link.tree is None:
+        return link
+    return link.for_uia() if link.uia_form is not None else replace(link, tree=None)
 
 
 def route(window: UIAElement, *, force: bool = False) -> UIAElement | WpfElement:
@@ -218,6 +266,8 @@ def query(
     ``root_level`` is for an object-tree search from a window: the root visual is the window
     node's child, so it counts as depth 1 and may match; it is ignored for the UIA-like trees.
     """
+    if root.ref.is_winforms:
+        locator = winforms_form(locator)
     root_level = root_level and locator.tree == "objects"
     constraints = resolve_where(locator.where, locator.describe_link(), locator.taken())
     pushed: list[Condition | ManagedCondition] = []

@@ -3,13 +3,16 @@
     <DefineConstants>$(DefineConstants);CONTRACTS_FULL</DefineConstants>
     <OutputType>WinExe</OutputType><TargetFrameworks>net48;net8.0-windows;net10.0-windows</TargetFrameworks>
     <RuntimeIdentifiers>win-x86;win-x64</RuntimeIdentifiers>
-    <UseWPF>true</UseWPF><AssemblyName>WinTestKit.Fixture</AssemblyName><RootNamespace>WinTestKit.Fixture</RootNamespace>
+    <UseWPF>true</UseWPF><UseWindowsForms>true</UseWindowsForms><AssemblyName>WinTestKit.Fixture</AssemblyName><RootNamespace>WinTestKit.Fixture</RootNamespace>
     <SelfContained>false</SelfContained><PublishTrimmed>false</PublishTrimmed><PublishSingleFile>false</PublishSingleFile>
     <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects><GenerateBindingRedirectsOutputType>true</GenerateBindingRedirectsOutputType>
+    <!-- A test target: its public properties are inspected, not designed. -->
+    <NoWarn>$(NoWarn);WFO1000</NoWarn>
   </PropertyGroup>
   <ItemGroup><PackageReference Include="Newtonsoft.Json" /></ItemGroup>
   <ItemGroup Condition="'$(TargetFramework)' == 'net48'">
     <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" PrivateAssets="all" />
     <PackageReference Include="System.Text.Json" /><PackageReference Include="System.Memory" />
+    <Reference Include="WindowsFormsIntegration" />
   </ItemGroup>
 </Project>

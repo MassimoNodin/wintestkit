@@ -26,7 +26,7 @@ def read_property(element: TargetElement, name: str) -> Any:
         raise InvalidLocatorError(
             f"Managed key {target!r} requires the WPF backend; "
             f"backend: {config.backend}, window framework: {element.framework_id}. "
-            "Use backend: auto with a WPF window."
+            "Use backend: auto with a WPF window or a WinForms window."
         )
     path = parse_managed_key(target)
     if target == "type:Is":

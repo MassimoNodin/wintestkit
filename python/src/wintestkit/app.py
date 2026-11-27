@@ -466,9 +466,26 @@ class App:
 
     # -- shutdown -------------------------------------------------------------------------------
 
-    def close(self, timeout: float = 10.0) -> None:
-        """Ask every window to close; force termination only for launched instances."""
+    def _refuse_shell(self, action: str, force: bool) -> None:
+        """Refuse to close the Windows shell: one process (explorer.exe) owns the desktop, the
+        taskbar and every File Explorer window, so closing it would close all of them."""
         __tracebackhide__ = True
+        if force or not _same_exe(self.process_name, "explorer.exe"):
+            return
+        raise ActionError(
+            f"{action}: {self.process_name} is the Windows shell, which owns the desktop, the "
+            "taskbar and every File Explorer window; closing it would close all of them. "
+            "Close the one window you opened instead, or pass force=True to close them all."
+        )
+
+    def close(self, timeout: float = 10.0, *, force: bool = False) -> None:
+        """Ask every window to close; force termination only for launched instances.
+
+        An application attached to the Windows shell (``explorer.exe``) is refused, because it would
+        close every shell window; ``force=True`` closes them all anyway.
+        """
+        __tracebackhide__ = True
+        self._refuse_shell("close", force)
         self.detach_inspector()
         windows = self.top_level_windows()
         windows.sort(key=lambda w: 0 if win32.window_owner(w.native_window_handle) else 1)
@@ -523,6 +540,7 @@ class App:
         prompt_timeout: float = 3.0,
         exit_timeout: float = 30.0,
         kill: bool = False,
+        force: bool = False,
     ) -> CloseOutcome:
         """Close the application the way a user does, answering a prompt it raises, then wait.
 
@@ -535,10 +553,14 @@ class App:
         Returns ``"exited"`` (it closed by itself), ``"killed"`` or ``"running"`` (still there:
         nothing was forced), which a test usually asserts. Unlike :meth:`close` it asks the main
         window only and never force-kills unless told to, whoever launched the app.
+
+        An application attached to the Windows shell (``explorer.exe``) is refused, because it would
+        close every shell window; ``force=True`` allows it.
         """
         __tracebackhide__ = True
         from wintestkit import runtime
 
+        self._refuse_shell("close_gracefully", force)
         args = {"method": method, "prompt_timeout": prompt_timeout, "exit_timeout": exit_timeout}
         with runtime.step("app.close", self.process_name, method, args) as record:
             hwnd = self.main_window().native_window_handle
@@ -616,6 +638,10 @@ class App:
     ) -> None:
         __tracebackhide__ = True
         if self.launched:
+            if _same_exe(self.process_name, "explorer.exe"):
+                log.warning("%s is the Windows shell; leaving its windows open", self.process_name)
+                self.detach_inspector()
+                return
             self.close()
 
     # -- internals ------------------------------------------------------------------------------

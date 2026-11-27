@@ -1,6 +1,7 @@
 using System;
 using System.Threading;
 using System.Windows;
+using System.Windows.Threading;
 using WinTestKit.Inspector.Agent.Inspection.Members;
 using WinTestKit.Inspector.Protocol;
 
@@ -50,6 +51,8 @@ namespace WinTestKit.Inspector.Agent.Query
     internal interface IQueryPredicate
     {
         bool Matches(DependencyObject target, QueryPredicateContext context);
+        /// <summary>Any searched object: a WPF element, or a WinForms control or tool strip item, with the dispatcher of its thread.</summary>
+        bool Matches(object target, Dispatcher dispatcher, QueryPredicateContext context);
         /// <summary>Relative evaluation cost; cheaper predicates run first so expensive reads see fewer elements.</summary>
         int Cost { get; }
     }
@@ -69,7 +72,8 @@ namespace WinTestKit.Inspector.Agent.Query
             private readonly string fullName;
             internal AssignablePredicate(string fullName) { this.fullName = fullName; }
             public int Cost => 0;
-            public bool Matches(DependencyObject target, QueryPredicateContext context)
+            public bool Matches(DependencyObject target, QueryPredicateContext context) => Matches((object)target, target.Dispatcher, context);
+            public bool Matches(object target, Dispatcher dispatcher, QueryPredicateContext context)
             {
                 Type type = target.GetType();
                 for (Type? current = type; current != null; current = current.BaseType)

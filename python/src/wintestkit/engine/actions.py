@@ -22,7 +22,7 @@ from wintestkit.engine.diagnose import Candidate, Diagnostic, quote
 from wintestkit.engine.locator import Locator
 from wintestkit.engine.managed import in_query_budget, operation_deadline
 from wintestkit.engine.query import query_all
-from wintestkit.engine.wpf_resolve import managed_capable, to_managed
+from wintestkit.engine.wpf_resolve import to_managed, wpf_capable
 from wintestkit.errors import (
     ActionError,
     ElementNotFoundError,
@@ -205,7 +205,7 @@ def scrolls_through_agent(el: TargetElement) -> bool:
     the ScrollItem pattern: the agent scrolls the WPF object.
     """
     __tracebackhide__ = True
-    return managed_capable(el) and getattr(el, "control_type", "") in _SCROLLABLE_ITEMS
+    return wpf_capable(el) and getattr(el, "control_type", "") in _SCROLLABLE_ITEMS
 
 
 def _settled_visible(el: UIAElement) -> bool:
@@ -236,7 +236,7 @@ def _scroll_realized_item(el: UIAElement) -> None:
         if _settled_visible(el):
             return
         node = node.parent()
-    if not managed_capable(el):
+    if not wpf_capable(el):
         return
     try:
         managed = to_managed(el)

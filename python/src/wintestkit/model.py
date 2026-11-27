@@ -1233,7 +1233,13 @@ class BoundControl(_BoundBase):
             raise ActionError("Writes require the WPF backend")
         element = self.resolve()
         if not isinstance(element, WpfElement):
-            raise ActionError("Writes require the WPF backend and a WPF element")
+            from wintestkit.engine.wpf_resolve import managed_capable, to_managed
+
+            if not managed_capable(element):
+                raise ActionError("Writes require the WPF backend and a WPF or WinForms element")
+            # An element found through UI Automation (a WinForms control, a grid row): map it to
+            # its managed object; the agent applies the same allowlist to either kind.
+            element = to_managed(cast(Any, element))
         return element
 
     def _write(

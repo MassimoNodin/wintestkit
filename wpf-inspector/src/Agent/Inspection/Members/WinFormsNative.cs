@@ -104,6 +104,49 @@ namespace WinTestKit.Inspector.Agent.Inspection.Members
         [MethodImpl(MethodImplOptions.NoInlining)]
         internal static string Name(object target) => (target as Control)?.Name ?? (target as ToolStripItem)?.Name ?? "";
 
+        /// <summary>The control's or item's Text: the migrated <c>wpf:Text</c> of a WinForms object. Must run on the owning thread.</summary>
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        internal static string Text(object target) => (target as Control)?.Text ?? (target as ToolStripItem)?.Text ?? "";
+
+        /// <summary>The 1-based position among the siblings of the same runtime type, in natural order; 1 without a parent.</summary>
+        internal static int Ordinal(object target)
+        {
+            object? parent = ParentOf(target);
+            if (parent == null) return 1;
+            int count = 0;
+            foreach (object sibling in Children(parent))
+            {
+                if (sibling.GetType() == target.GetType()) count++;
+                if (ReferenceEquals(sibling, target)) return count;
+            }
+            return 1;
+        }
+
+        private const string HostTypeName = "System.Windows.Forms.Integration.WindowsFormsHost";
+        private static readonly Dictionary<Type, System.Reflection.PropertyInfo?> HostChildren = new Dictionary<Type, System.Reflection.PropertyInfo?>();
+
+        /// <summary>
+        /// The WinForms control a WPF <c>WindowsFormsHost</c> holds, or null for any other object. The host is recognised by type
+        /// name, so neither WinForms nor the integration assembly is loaded for a WPF-only process. Must run on the host's thread.
+        /// </summary>
+        internal static object? HostedChild(object target)
+        {
+            Type type = target.GetType();
+            System.Reflection.PropertyInfo? property;
+            bool known;
+            lock (HostChildren) known = HostChildren.TryGetValue(type, out property);
+            if (!known)
+            {
+                property = null;
+                for (Type? current = type; current != null && property == null; current = current.BaseType)
+                    if (current.FullName == HostTypeName) property = current.GetProperty("Child", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
+                lock (HostChildren) HostChildren[type] = property;
+            }
+            if (property == null) return null;
+            object? child = property.GetValue(target, null);
+            return IsWinFormsObject(child) ? child : null;
+        }
+
         [MethodImpl(MethodImplOptions.NoInlining)]
         internal static bool IsTopLevel(object target) => target is Control control && control.Parent == null;
 

@@ -128,6 +128,7 @@ namespace WinTestKit.Inspector.Agent.Inspection.Members
             {
                 if (name == "Ordinal")
                 {
+                    if (WinFormsNative.IsWinFormsObject(root)) return ValueSerializer.Serialize(WinFormsNative.Ordinal(root), typeof(int), registry, dispatcher);
                     if (!(root is DependencyObject element)) return new ValueDto { Status = "unavailable", Kind = "unavailable" };
                     int ordinal = cache != null ? cache.Ordinal(element) : ObjectTree.Ordinal(element);
                     return ValueSerializer.Serialize(ordinal, typeof(int), registry, dispatcher);
@@ -144,6 +145,12 @@ namespace WinTestKit.Inspector.Agent.Inspection.Members
             ct.ThrowIfCancellationRequested();
             if (value == null) return string.Empty;
             if (value is string text) return text;
+            if (WinFormsNative.IsWinFormsObject(value))
+            {
+                if (RedactionPolicy.IsProtectedIdentity(value)) throw new Unreadable(new ValueDto { Status = "redacted", Kind = "unavailable", RedactionRule = "identity" });
+                if (!seen.Add(value)) return string.Empty;
+                return Member("Text", redaction, ct, seen, () => WinFormsNative.Text(value));
+            }
             if (value is UIElement || value is ContentElement)
             {
                 var element = (DependencyObject)value;

@@ -40,6 +40,7 @@ scripts or test routines. Output: pages, components, flows, tests.
 | `Keys(text)`, `Sys.Desktop.Keys(text)` | `finders.send_keys(el, text)`, `keyboard.keys(text)` (`[Hold]` before or after a prefix works) |
 | `Activate()`, `Close()`, `Refresh()` | `el.activate()`, `el.close()`, `el.refresh()` |
 | Reading object properties (e.g. `obj.DataContext.Name`) | `el.get("clr:DataContext.Name")`; indexers work: `clr:Rows[3].Value` (`Items.Item[0]` means `Items[0]`) |
+| Native members of a WinForms control (an int `SeriesCount`, a nested `Footer.Text`) | `el.get("clr:SeriesCount")`, `el.get("clr:Footer.Text")`, `where={"clr:SeriesCount": 3}`: UIA finds the control, the agent reads it (also inside a `WindowsFormsHost`); `WinFormsControlName` stays `automation_id` (the control's `Name`), `ClrClassName` is `type:Name` |
 | `<path>.ClrClassName` / `.ClrFullClassName` | `type:Name@DataContext` / `type:FullName@DataContext`: the type of the value at the path |
 | Numbers/booleans passed as strings | `AsText("15")` compares a managed value's invariant text; `find_child` applies it to plain strings on property paths |
 | `WaitProperty(prop, value, timeout_ms)` | `finders.wait_property(el, prop, value, timeout_ms)`: returns `True`/`False`, never raises (`Exists` `False` waits for disappearance); `el.wait_for_property(name, expected)` raises on timeout |
@@ -142,7 +143,7 @@ are emitted as qualified keys with `--managed-class-names`, which also emits `tr
 
 - Strict matching: an existing mapping may resolve to the first of several matches; WinTestKit fails.
   Expect to add roots or properties while migrating.
-- WPF uses the managed tree under `backend: auto`; other windows use UIA. There is no image or OCR recognition.
+- WPF uses the managed tree under `backend: auto`; other windows use UIA, and a WinForms control is read or matched by the agent only when a `clr:`/`type:`/`field:`/`wpf:` key asks for it. There is no image or OCR recognition.
 - Mouse input is the default for clicks; use `click(mode="pattern")` for automation patterns.
 - There is no recorder: use the Spy and write Python.
 

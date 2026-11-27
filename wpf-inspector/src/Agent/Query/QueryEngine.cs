@@ -98,9 +98,9 @@ namespace WinTestKit.Inspector.Agent.Query
         }
         private sealed class Frame
         {
-            internal readonly IEnumerator<DependencyObject> Children;
+            internal readonly IEnumerator<object> Children;
             internal readonly int Depth;
-            internal Frame(IEnumerator<DependencyObject> children, int depth) { Children = children; Depth = depth; }
+            internal Frame(IEnumerator<object> children, int depth) { Children = children; Depth = depth; }
         }
         /// <summary>The state of one traversal, kept between the requests that make it up.</summary>
         private sealed class Scan
@@ -111,7 +111,7 @@ namespace WinTestKit.Inspector.Agent.Query
             internal readonly List<IQueryPredicate> Cheap = new List<IQueryPredicate>();
             internal readonly List<IQueryPredicate> Deferred = new List<IQueryPredicate>();
             internal readonly List<PresentationSource> Sources = new List<PresentationSource>();
-            internal DependencyObject? Scoped;
+            internal object? Scoped;
             internal Dispatcher? ScopedDispatcher;
             internal readonly HashSet<object> Seen = new HashSet<object>(ReferenceComparer.Instance);
             internal Stack<Frame> Stack = new Stack<Frame>();
@@ -144,11 +144,11 @@ namespace WinTestKit.Inspector.Agent.Query
             {
                 ObjectRef handle = locator.Scope.Handle!;
                 Dispatcher? scopedDispatcher = null;
-                if (!registry.TryGet(handle.ObjectId, handle.Generation, out object target, out scopedDispatcher) || !(target is DependencyObject dependencyObject))
+                if (!registry.TryGet(handle.ObjectId, handle.Generation, out object target, out scopedDispatcher) || !(target is DependencyObject || WinFormsNative.IsWinFormsObject(target)))
                     throw new ProtocolException(ErrorCodes.ObjectStale, "Unknown or stale object handle.");
                 ObjectRef actual = registry.Register(target, scopedDispatcher, TypeInfoBuilder.Build(target.GetType()));
                 if (actual.SessionId != handle.SessionId) throw new ProtocolException(ErrorCodes.ObjectStale, "Unknown or stale object handle.");
-                scan.Scoped = dependencyObject;
+                scan.Scoped = target;
                 scan.ScopedDispatcher = scopedDispatcher;
                 if (locator.Scope.Kind == "window" && !(scan.Scoped is Window))
                     throw new ProtocolException(ErrorCodes.InvalidParams, "Window scope requires a window root.");
@@ -239,7 +239,7 @@ namespace WinTestKit.Inspector.Agent.Query
                     {
                         if (!scan.Initialized)
                         {
-                            DependencyObject? root = scan.Scoped ?? (source!.IsDisposed ? null : source.RootVisual as DependencyObject);
+                            object? root = scan.Scoped ?? (source!.IsDisposed ? null : source.RootVisual as DependencyObject);
                             if (root != null) scan.Stack.Push(new Frame(Single(root).GetEnumerator(), 0));
                             scan.Initialized = true;
                         }
@@ -255,13 +255,15 @@ namespace WinTestKit.Inspector.Agent.Query
                             Frame frame = scan.Stack.Peek();
                             if (!frame.Children.MoveNext()) { scan.Stack.Pop().Children.Dispose(); continue; }
                             steps++;
-                            DependencyObject current = frame.Children.Current;
-                            if (current.Dispatcher != dispatcher || !scan.Seen.Add(current)) continue;
+                            object current = frame.Children.Current;
+                            // A WinForms control hosted in WPF lives on its host's thread, and a form's controls on the form's: only WPF objects can belong to another dispatcher.
+                            if (current is DependencyObject owned && owned.Dispatcher != dispatcher || !scan.Seen.Add(current)) continue;
                             result.Visited++;
                             scan.RequestVisited++;
                             // The object tree counts its own levels; peers and tree depth modes apply to the visual and logical trees.
                             bool peerDepth = !objectTree && locator.DepthMode == "peers";
-                            bool hasPeer = peerDepth && frame.Depth > 0 && PeerIdentity.GetPeer(current) != null;
+                            // A WinForms object has no peer, but it is a level of its own tree.
+                            bool hasPeer = peerDepth && frame.Depth > 0 && (current is DependencyObject peered ? PeerIdentity.GetPeer(peered) != null : true);
                             int currentDepth = peerDepth && frame.Depth > 0 ? frame.Depth - 1 + (hasPeer ? 1 : 0) : frame.Depth;
                             if (currentDepth > locator.Depth) continue;
                             // Predicates run cheapest first and stop at the first one that rejects the element: a mismatch, or a value
@@ -270,7 +272,7 @@ namespace WinTestKit.Inspector.Agent.Query
                             string? unreadable = null;
                             foreach (IQueryPredicate predicate in scan.Cheap.Concat(scan.Deferred))
                             {
-                                try { if (!predicate.Matches(current, context)) { matches = false; break; } }
+                                try { if (!predicate.Matches(current, dispatcher, context)) { matches = false; break; } }
                                 catch (ProtocolException error) when (UnreadableReason(error) != null) { matches = false; unreadable = UnreadableReason(error); break; }
                             }
                             if (unreadable != null) result.NoteUnreadable(unreadable);
@@ -294,18 +296,31 @@ namespace WinTestKit.Inspector.Agent.Query
             result.Finished = true;
             return false;
         }
-        private static IEnumerable<DependencyObject> Single(DependencyObject target) { yield return target; }
-        private static IEnumerable<DependencyObject> Children(DependencyObject target, string tree)
+        private static IEnumerable<object> Single(object target) { yield return target; }
+
+        /// <summary>
+        /// The children of a searched object. A WinForms control or tool strip item has its Controls or items whatever the tree kind;
+        /// a WPF WindowsFormsHost has, besides its WPF children, the WinForms control it hosts, so a query reaches it from a WPF window.
+        /// </summary>
+        private static IEnumerable<object> Children(object target, string tree)
         {
+            if (!(target is DependencyObject element))
+            {
+                // A snapshot: the traversal pauses between slices, and the control may add or remove children meanwhile.
+                foreach (object child in new List<object>(WinFormsNative.Children(target))) yield return child;
+                yield break;
+            }
             if (tree == "objects")
             {
-                target.VerifyAccess();
-                foreach (DependencyObject child in ObjectTree.Children(target)) yield return child;
+                element.VerifyAccess();
+                foreach (DependencyObject child in ObjectTree.Children(element)) yield return child;
             }
             if (tree == "visual" || tree == "combined")
-                foreach (DependencyObject child in TreeWalker.EnumerateChildren(target, TreeKind.Visual)) yield return child;
+                foreach (DependencyObject child in TreeWalker.EnumerateChildren(element, TreeKind.Visual)) yield return child;
             if (tree == "logical" || tree == "combined")
-                foreach (DependencyObject child in TreeWalker.EnumerateChildren(target, TreeKind.Logical)) yield return child;
+                foreach (DependencyObject child in TreeWalker.EnumerateChildren(element, TreeKind.Logical)) yield return child;
+            object? hosted = WinFormsNative.HostedChild(element);
+            if (hosted != null) yield return hosted;
         }
     }
 }

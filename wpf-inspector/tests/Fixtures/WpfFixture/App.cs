@@ -240,6 +240,7 @@ public sealed class MainWindow : Window
     private readonly Popup popup;
     private readonly ListBox rows;
     private Window? second;
+    private Window? hosted;
     private Window? large;
     private Window? controls;
     private readonly StackPanel dynamicTree = new();
@@ -530,6 +531,7 @@ public sealed class MainWindow : Window
                 var thread = new Thread(() => { var window = new Window { Name = "SecondFixtureWindow", Title = "Fixture second dispatcher", Width = 300, Height = 200, Content = new Button { Content = "Second dispatcher" } }; AutomationProperties.SetAutomationId(window, "SecondWindow"); second = window; window.Closed += (_, _) => Dispatcher.CurrentDispatcher.BeginInvokeShutdown(DispatcherPriority.Background); window.Show(); Dispatcher.Run(); });
                 thread.SetApartmentState(ApartmentState.STA); thread.IsBackground = true; thread.Start(); break;
             case "closeWindow": if (second != null) { var window = second; second = null; window.Dispatcher.BeginInvoke(new Action(window.Close)); } break;
+            case "openHostedWinForms": if (hosted == null) { hosted = HostedWinForms.Open(); hosted.Closed += (_, _) => hosted = null; } break;
         }
     }
 }

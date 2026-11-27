@@ -50,11 +50,13 @@ from wintestkit.engine.query import query_all, reject_managed
 from wintestkit.engine.wpf_query import UnsupportedQuery, translate
 from wintestkit.engine.wpf_resolve import (
     identity_value,
+    is_winforms_element,
     managed_capable,
     matches_root,
     merge_unreadable,
     route,
     to_managed,
+    winforms_form,
     with_unreadable,
     x_name,
 )
@@ -137,8 +139,8 @@ def resolve_window(app: App, wl: WindowLocator | None) -> UIAElement:
             reject_managed(managed[0], matches[0] if matches else None)
         filtered: list[UIAElement] = []
         for window in matches:
-            if window.framework_id == "WPF":
-                root = route(window)
+            if window.framework_id == "WPF" or is_winforms_element(window):
+                root = route(window) if window.framework_id == "WPF" else route(window, force=True)
                 assert isinstance(root, WpfElement)
                 managed_types[id(window)] = root.ref.type.full_name
                 if matches_root(root, managed):
@@ -488,8 +490,14 @@ def _resolve_link(
 ) -> TargetElement:
     __tracebackhide__ = True
     matches = _match_link(scope, root, link, full, first, use_index=True, root_level=root_level)
-    # A migrated locator carries its ordinal as an index only in the UIA form.
-    index = link.index if isinstance(root, WpfElement) else link.for_uia().index
+    # A migrated locator carries its ordinal as an index only in the UIA form, which is also how a
+    # WinForms control is searched, through the agent or not.
+    if is_winforms_element(root):
+        index = winforms_form(link).index
+    elif isinstance(root, WpfElement):
+        index = link.index
+    else:
+        index = link.for_uia().index
     if index is not None:
         if getattr(matches, "indexed", False):
             if matches:
@@ -621,9 +629,16 @@ def _app_walk(scope: Scope, locator: Locator, final_all: bool) -> list[TargetEle
         constraints = resolve_where(link.where, link.describe_link(), link.taken())
         managed = [c for c in constraints if not isinstance(c, Condition)]
         uia = [c for c in constraints if isinstance(c, Condition)]
-        if managed and not wpf_window:
+        # A WinForms window is searched through the agent only when the link has managed keys.
+        winforms = (
+            bool(managed)
+            and not wpf_window
+            and runtime.get_config().backend == "auto"
+            and is_winforms_element(window)
+        )
+        if managed and not (wpf_window or winforms):
             continue
-        root = route(window)
+        root = route(window, force=True) if winforms else route(window)
         objects = link.tree == "objects"
         node_name = ""
         ordinals = _NodeOrdinals(0, 0)

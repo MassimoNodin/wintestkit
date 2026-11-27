@@ -41,6 +41,8 @@ namespace WinTestKit.Inspector.Agent.Query
 
         public bool Matches(DependencyObject target, QueryPredicateContext context) => MatchesObject(target, target.Dispatcher, context);
 
+        public bool Matches(object target, Dispatcher dispatcher, QueryPredicateContext context) => MatchesObject(target, dispatcher, context);
+
         internal bool MatchesObject(object target, Dispatcher dispatcher, QueryPredicateContext context)
         {
             if (context.Remaining <= TimeSpan.Zero) throw ProtocolException.Deadline("Query deadline reached.");
@@ -110,7 +112,8 @@ namespace WinTestKit.Inspector.Agent.Query
                 entry.Property.Name == first.Name && Declaration.TypeName(entry.Property.OwnerType) == first.OwnerType &&
                 Declaration.AssemblyName(entry.Property.OwnerType) == first.OwnerAssembly &&
                 (first.MemberKey == null || entry.Key == first.MemberKey)))) return false;
-            if (first.Kind == "uia" && first.Name != "automation_id")
+            // A WinForms control reads its identity itself (WinFormsNative.ReadUia); only a WPF element needs a peer.
+            if (first.Kind == "uia" && first.Name != "automation_id" && !WinFormsNative.IsWinFormsObject(target))
             {
                 try { if (!(target is DependencyObject element) || PeerIdentity.GetPeer(element) == null) return false; }
                 catch (Exception) { throw Unreadable("exception"); }

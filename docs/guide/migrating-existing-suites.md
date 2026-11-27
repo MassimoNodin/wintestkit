@@ -28,13 +28,14 @@ This guide helps you migrate an existing **WPF desktop test suite** to WinTestKi
 | `WPFObject(...)` / `Window(...)` call chains and `Sys.Process(...)` | `.WPFObject(...)` / `.Window(...)` on `App`, elements and windows (or `wpf_object`, `window`, `from_label`): see [object labels](#object-labels-wpfobject-and-window) |
 | A `Name` property in `FindChild`, holding an object label | `find_child(parent, "Name", 'WPFObject("Button", "OK", 2)', depth)` |
 | Walking to an object's parent or children, and naming an object | `el.parent`, `el.children()`, `el.child_count`, `el.label`, `el.full_name` |
-| `ClrClassName` | `where={"type:Name": "OrderWindow"}` (managed short type name) |
+| `ClrClassName` | `where={"type:Name": "OrderWindow"}` (managed short type name, of a WPF element or a WinForms control) |
 | `<path>.ClrClassName` / `<path>.ClrFullClassName` | `where={"type:Name@DataContext": "OrderViewModel"}`: the type of the value at the path |
 | Numbers and booleans passed as strings | `AsText("15")`: compares the managed value's invariant text; `find_child` and the importer apply it to plain string values on property paths |
 | `Items.Item[0].Name` | `clr:Items[0].Name` (both spellings are accepted) |
 | `WndClass` / `ClassName` | `class_name` (UIA peer class) |
 | `WndCaption` | `name`, with mnemonic ampersands removed |
-| `ControlId` / `WinFormsControlName` | `automation_id`; numeric IDs become decimal strings |
+| `ControlId` / `WinFormsControlName` | `automation_id`; numeric IDs become decimal strings. The agent reads it as the control's `Name` on a WinForms control; UI Automation reports the same value |
+| Native members of a WinForms control (an int such as `SeriesCount`, a nested `Footer.Text`) | `el.get("clr:SeriesCount")`, `el.get("clr:Footer.Text")`, `where={"clr:SeriesCount": 3}`: UI Automation locates the control and the agent reads it, also inside a `WindowsFormsHost` (see [WinForms controls](managed-inspection.md#winforms-controls)) |
 | `FrameworkId` / `LocalizedControlType` | UIA `where` properties |
 | `VisibleOnScreen` | On-screen visibility condition |
 | `ClrFullClassName` | `where={"type:FullName": "Namespace.Type"}`; `type:Is` includes derived types |
@@ -478,7 +479,9 @@ assert main.close_gracefully(on_prompt=answer_no, prompt_timeout=3, exit_timeout
 
 `on_prompt` is called once, when a window that was not open before the request appears (within `prompt_timeout`); it answers
 it with the usual finders and clicks. `App.close()` (also what the `app` fixture does at the end of a test for an app it launched)
-asks every window to close and kills a launched app that stays after `close_timeout`.
+asks every window to close and kills a launched app that stays after `close_timeout`. An `App` attached to the Windows shell
+(`explorer.exe`) is refused by `close()` and `close_gracefully()` with an error, because the shell owns the desktop, the taskbar
+and every File Explorer window; pass `force=True` to close them all anyway. Leaving a `with` block does not close a shell.
 
 A **stop-test event handler** ("close the app only when a flag is set or a watermark is not visible") is a fixture with a
 teardown, which runs whatever the outcome of the test:

@@ -24,14 +24,17 @@ Framework-dependent WPF targets include .NET Framework 4.8, .NET 8 and .NET 10 o
 and x64. Check `wtk doctor --agent` on the actual machine and target.
 
 Spy also attaches to WinForms applications on the same runtimes: it lists the control tree and
-shows the members of a control. Locators and queries stay WPF only.
+shows the members of a control. Tests also read and match WinForms controls by managed keys: see
+[WinForms controls](#winforms-controls).
 
 Unsupported targets include ARM64, applications with neither a WPF nor a WinForms UI, NativeAOT, trimmed, self-contained or
 single-file applications, multiple WPF runtimes or AppDomains in one process, different
 users or Windows sessions, protected processes, and mismatched integrity levels. Unlisted
 .NET versions are not assumed compatible. Use an interactive Windows desktop.
 
-With the default `backend: auto`, WPF windows use the agent and non-WPF windows use UIA.
+With the default `backend: auto`, WPF windows use the agent and non-WPF windows use UIA. A WinForms
+window or control uses the agent only when a read or a locator names a managed key (see
+[WinForms controls](#winforms-controls)); a plain lookup stays on UIA and never attaches.
 Agent failures do not fall back silently: if security software blocks the agent, WPF tests
 fail until it is allow-listed. Run `wtk doctor --agent`; use `backend: uia` to opt out.
 The default `input_mode: mouse` sends real input on both backends; use `input_mode: pattern`
@@ -361,6 +364,52 @@ backslashes again in ordinary Python string literals). `dp:` uses
 escape literal slashes as `\/` and backslashes as `\\` in those segments. Paths allow at
 most eight segments and 1,024 UTF-8 bytes; whitespace and method calls are not
 supported. Do not guess paths or dependency owners.
+
+### WinForms controls
+
+A WinForms control is read and matched like a WPF element, with the same agent, redaction and time
+limits. This is what a suite needs when a control exposes native .NET members (an int such as
+`SeriesCount`, a nested object such as `Footer.Text`) that UI Automation does not show:
+
+```python
+# pseudo-code
+chart = find_child(window, "WinFormsControlName", "chart1")
+chart.get("clr:SeriesCount")                  # 3
+chart.get("clr:Footer.Text")                  # "Page 1 of 2"
+chart.get("clr:Series[1].Title")              # indexers and nested types work as on WPF
+chart.get("type:Name")                        # "SeriesChartControl"
+expect(chart).to_have_property("clr:SeriesCount", 3)
+Element(where={"type:Name": "SeriesChartControl", "clr:SeriesCount": 5})
+```
+
+- **Where it works.** A control found by UI Automation in a WinForms window, in a window that holds it
+  through a WPF `WindowsFormsHost`, or by a managed `where` on either. A UI Automation element is mapped
+  by its window handle (`Control.FromHandle`) and its members are read on the thread that owns the
+  control. A control without a window handle of its own (a tool strip item, a control drawn by its
+  parent) cannot be mapped from a UI Automation element; find it by a managed `where` from its
+  parent instead.
+- **Attaching.** The first managed key attaches the agent on demand under the same rules as for a WPF
+  process (same user, session and integrity; `inspector.attach: manual` refuses and says to attach
+  first). A WinForms process needs no WPF UI; `wtk doctor --agent` checks it. Lookups that use only
+  UI Automation properties never attach.
+- **`where` on WinForms windows.** A link with a managed key (`clr:`, `field:`, `type:`, `wpf:`) is
+  matched by the agent below the window, a control or a `WindowsFormsHost`. The search uses the UIA
+  form of the link: depth counts `Control.Controls` levels (1 is the direct children),
+  `WPFControlText` is the UIA name and `WPFControlOrdinalNo` a zero-based index over all matches. In a
+  WPF window the hosted control is one object-tree level below its `WindowsFormsHost`.
+- **Names.** `WinFormsControlName` is `automation_id`. UI Automation reports a control's `Name` as its
+  AutomationId, and the agent reads `automation_id` of a control (or tool strip item) as its `Name`, so
+  both give the same result; without the agent the UIA value is used. `ClrClassName` and
+  `ClrFullClassName` are `type:Name` and `type:FullName` of the control's runtime type. `wpf:Text`
+  is the control's `Text` and `wpf:Ordinal` its 1-based position among siblings of the same type;
+  a password box has no readable text.
+- **Safety.** Reads execute the control's getters on its UI thread under the usual time limit; a
+  getter that throws is unreadable for that candidate, not a failure of the search. A password text
+  box and the names in `inspector.redact` are redacted, and a password box never matches a value.
+  Writes and method calls (`set_property`, `call`) need the same allowlist entries, naming the
+  control's full type, and are audited. `dp:` keys have no meaning on WinForms.
+- **Limits.** The Spy tree does not show a hosted control below its `WindowsFormsHost` node (pick it
+  with the pointer), and `parent` of a hosted control stops at the host's container.
 
 ### Indexers
 
