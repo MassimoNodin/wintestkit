@@ -198,6 +198,8 @@ the types they apply to:
 | `items()` / `items(path)` | `ComboBox` (expands and collapses it), `ListBox`, `TreeView` (also accepts a path), `TabControl` |
 | `row_count()`, `column_count()`, `row(i)`, `cell(row, column)`, `find_row(column, value)` | `DataGrid` |
 
+DataGrid row indices are zero-based and count data rows only; group headers and new-item placeholders are excluded.
+
 
 ```python
 # pseudo-code

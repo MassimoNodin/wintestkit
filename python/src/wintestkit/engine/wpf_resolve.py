@@ -78,11 +78,21 @@ def route(window: UIAElement, *, force: bool = False) -> UIAElement | WpfElement
             )
         return WpfElement(client, mapping.object_ref, window.process_id)
     except InspectorError as error:
-        raise type(error)(
-            f"WPF backend unavailable ({error.code}): {error}. "
-            "Enable the inspector, attach to the process, or set backend: uia.",
-            code=error.code,
-        ) from error
+        from wintestkit.inspector.hints import inspector_error_hint
+
+        hint = (
+            inspector_error_hint(error.code, error.details, error.method)
+            if error.code in {"timeout", "dispatcherUnavailable", "busy"}
+            else "Enable the inspector, attach to the process, or set backend: uia."
+        )
+        message = f"WPF backend unavailable ({error.code}): {str(error).rstrip('.')}. {hint}"
+        raise error.copy_with_message(message) from error
+
+
+def _query_budget_exhausted() -> InspectorDeadlineError:
+    error = InspectorDeadlineError("WPF query exhausted its budget", code="limitExceeded")
+    error.details = {"reason": "queryBudget"}
+    return error
 
 
 def matches_root(root: WpfElement, conditions: list[ManagedCondition]) -> bool:
@@ -92,7 +102,7 @@ def matches_root(root: WpfElement, conditions: list[ManagedCondition]) -> bool:
     timeout = max(1, min(2000, int((deadline - time.monotonic()) * 1000)))
     result = root.client.query_find_all(wire, timeout_ms=timeout, deadline=deadline)
     if not result.complete:
-        raise InspectorDeadlineError("WPF query exhausted its budget", code="limitExceeded")
+        raise _query_budget_exhausted()
     return root.ref in result.matches
 
 
@@ -160,7 +170,7 @@ def query(root: WpfElement, locator: Locator, *, use_index: bool = False) -> Que
     timeout = max(1, min(2000, int((deadline - time.monotonic()) * 1000)))
     result = root.client.query_find_all(wire, timeout_ms=timeout, deadline=deadline)
     if not result.complete and len(result.matches) < wire.limit:
-        raise InspectorDeadlineError("WPF query exhausted its budget", code="limitExceeded")
+        raise _query_budget_exhausted()
     if (local or identities) and not result.complete and (not use_index or locator.index is None):
         raise InspectorLimitError(
             "WPF query exceeded 200 candidates for local filtering; narrow the locator",
@@ -201,7 +211,7 @@ def query(root: WpfElement, locator: Locator, *, use_index: bool = False) -> Que
                     code="limitExceeded",
                 )
             if time.monotonic() >= deadline:
-                raise InspectorDeadlineError("WPF query exhausted its budget", code="limitExceeded")
+                raise _query_budget_exhausted()
             indexed = replace(wire, index=raw_index)
             timeout = max(1, min(2000, int((deadline - time.monotonic()) * 1000)))
             try:
@@ -216,9 +226,7 @@ def query(root: WpfElement, locator: Locator, *, use_index: bool = False) -> Que
                             middle = (low + high) // 2
                             timeout = max(1, min(2000, int((deadline - time.monotonic()) * 1000)))
                             if time.monotonic() >= deadline:
-                                raise InspectorDeadlineError(
-                                    "WPF query exhausted its budget", code="limitExceeded"
-                                ) from None
+                                raise _query_budget_exhausted() from None
                             try:
                                 probe = root.client.query_find(
                                     replace(wire, index=middle),

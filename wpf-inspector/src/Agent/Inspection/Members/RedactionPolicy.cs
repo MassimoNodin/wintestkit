@@ -4,6 +4,7 @@ using System.Windows;
 using System.Windows.Automation.Peers;
 using System.Windows.Controls;
 using WinTestKit.Inspector.Protocol;
+using WinTestKit.Inspector.Agent.Mapping;
 
 namespace WinTestKit.Inspector.Agent.Inspection.Members
 {
@@ -80,14 +81,16 @@ namespace WinTestKit.Inspector.Agent.Inspection.Members
         private static bool IsPasswordBoxOrTemplatePart(DependencyObject dependency)
         {
             DependencyObject? current = dependency;
-            for (int depth = 0; current != null && depth < 256; depth++)
+            var visited = new HashSet<object>(ReferenceComparer.Instance);
+            for (int depth = 0; current != null && depth < 256 && visited.Add(current); depth++)
             {
                 if (current is PasswordBox) return true;
                 DependencyObject? templated = current is FrameworkElement frameworkElement ? frameworkElement.TemplatedParent as DependencyObject :
                     current is FrameworkContentElement contentElement ? contentElement.TemplatedParent as DependencyObject : null;
-                if (templated != null && IsPasswordBoxOrTemplatePart(templated)) return true;
-                current = current is System.Windows.Media.Visual || current is System.Windows.Media.Media3D.Visual3D ? System.Windows.Media.VisualTreeHelper.GetParent(current) :
+                if (templated is PasswordBox) return true;
+                DependencyObject? parent = current is System.Windows.Media.Visual || current is System.Windows.Media.Media3D.Visual3D ? System.Windows.Media.VisualTreeHelper.GetParent(current) :
                     current is ContentElement content ? ContentOperations.GetParent(content) ?? (content as FrameworkContentElement)?.Parent : null;
+                current = parent ?? templated ?? (current as FrameworkElement)?.Parent ?? LogicalTreeHelper.GetParent(current);
             }
             return false;
         }    }

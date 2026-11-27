@@ -316,6 +316,28 @@ namespace WinTestKit.Inspector.Agent.Mapping.Tests
             }
         }
 
+        [Theory]
+        [InlineData(false)]
+        [InlineData(true)]
+        public async Task ChildrenIdentityNamesKeepPasswordProtectionAndRedaction(bool redactNames)
+        {
+            using (var window = new MappingWindow(1))
+            using (var service = new WpfInspectionService("identity", new WinTestKit.Inspector.Agent.Inspection.Members.ObjectInspector(redactNames ? new[] { "name" } : Array.Empty<string>())))
+            {
+                await window.Thread.Dispatcher.InvokeAsync(() =>
+                {
+                    window.Panel.Children.Add(new Border { Name = "Plain" });
+                    window.Panel.Children.Add(new PasswordBox { Name = "Pin" });
+                    window.Panel.Children.Add(new TextBlock { Text = "unnamed" });
+                }).Task;
+                ObjectRef panel = await PanelHandle(service, window);
+                var nodes = (await service.ChildrenAsync(panel.ObjectId, panel.Generation, TreeKind.Logical, 200, null, None)).Items;
+                Assert.Equal(redactNames ? null : "Plain", Assert.Single(nodes, node => node.Label == "Border").Identity!.XName);
+                Assert.Null(Assert.Single(nodes, node => node.Label == "PasswordBox").Identity!.XName);
+                Assert.Null(Assert.Single(nodes, node => node.Label == "TextBlock").Identity!.XName);
+            }
+        }
+
         [Fact]
         public async Task TokensRejectExpiredForeignOperationObjectTreeAndMalformedCursors()
         {

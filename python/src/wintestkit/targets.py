@@ -15,7 +15,7 @@ import os
 import sys
 import time
 import traceback
-from contextlib import suppress
+from contextlib import nullcontext, suppress
 from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType
@@ -538,10 +538,7 @@ def resolve_bound(
         collection = bound if isinstance(bound, BoundElements) else None
         if isinstance(bound, BoundElements):
             bound = bound.first()
-        from wintestkit.engine.managed import instant_resolution
-
-        with instant_resolution(timeout == 0):
-            element = bound.resolve(timeout)
+        element = bound.resolve(timeout)
         result = ElementResult("found", elapsed(), element=element.info(), uia=element)
         if capture and runtime.get_config().object_previews:
             with suppress(Exception):
@@ -563,11 +560,9 @@ def resolve_bound(
     except InspectorError as exc:
         from wintestkit.inspector.hints import inspector_error_hint
 
-        hint = inspector_error_hint(exc.code)
+        hint = inspector_error_hint(exc.code, exc.details, exc.method)
         if exc.code in {"timeout", "dispatcherUnavailable", "busy"}:
-            return ElementResult(
-                "not_responding", elapsed(), message=_NOT_RESPONDING, code=exc.code
-            )
+            return ElementResult("not_responding", elapsed(), message=hint, code=exc.code)
         keys = _managed_keys(bound)
         message = str(exc)
         if keys:
@@ -612,8 +607,15 @@ def check_page(
     uniquely found single element saves its preview, as a single-element check does.
     """
     from wintestkit.engine import relocate
+    from wintestkit.engine.resolve import shared_missing_scopes
+    from wintestkit.object_previews import shared_window_scans
 
-    with runtime.config_scope(loader.cfg), relocate.shared_budget():
+    with (
+        runtime.config_scope(loader.cfg),
+        relocate.shared_budget(),
+        shared_missing_scopes() if timeout == 0 else nullcontext(),
+        shared_window_scans(),
+    ):
         return _check_page(app, loader, file, page_name, timeout, capture)
 
 

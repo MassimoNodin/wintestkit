@@ -330,7 +330,10 @@ def test_check_reports_inspector_busy_as_neutral(code: str) -> None:
 
     result = targets.resolve_bound(SimpleNamespace(resolve=fail), 0)
     assert result.status == "not_responding"
-    assert "not responding" in result.message and "not found" not in result.message.lower()
+    assert (
+        "inspector request did not complete" in result.message
+        and "not found" not in result.message.lower()
+    )
 
 
 def test_check_reports_hung_window_after_locator_error(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -348,8 +351,10 @@ def test_check_reports_hung_window_after_locator_error(monkeypatch: pytest.Monke
     assert "not found" not in result.message.lower()
 
 
+@pytest.mark.parametrize("reason", ["queueWait", "workTimeout", "earlierWorkRunning", None])
 def test_check_asks_the_inspector_when_windows_does_not_flag_the_hang(
     monkeypatch: pytest.MonkeyPatch,
+    reason: str | None,
 ) -> None:
     from wintestkit.errors import InspectorError
     from wintestkit.inspector import probe
@@ -362,7 +367,9 @@ def test_check_asks_the_inspector_when_windows_does_not_flag_the_hang(
 
     def roots(**kwargs: Any) -> None:
         calls.append(1)
-        raise InspectorError("dispatcher busy", code="timeout")
+        error = InspectorError("dispatcher busy", code="timeout")
+        error.details = {"reason": reason} if reason else {}
+        raise error
 
     client = SimpleNamespace(roots=roots)
     registry = SimpleNamespace(get=lambda identity: client if identity == 42 else None)
@@ -403,3 +410,33 @@ def test_check_keeps_not_found_when_the_inspector_answers(
     bound = SimpleNamespace(resolve=fail, page=SimpleNamespace(app=SimpleNamespace(pids=[42])))
     assert targets.resolve_bound(bound, 0).status == "not_found"
     assert released == [["o1"]]
+
+
+@pytest.mark.parametrize(("timeout", "expected"), [(0, True), (1, False)])
+def test_page_missing_scope_cache_only_for_immediate_checks(
+    project: tuple[ModuleLoader, Path],
+    monkeypatch: pytest.MonkeyPatch,
+    timeout: int,
+    expected: bool,
+) -> None:
+    from contextlib import contextmanager
+
+    from wintestkit.engine import resolve
+
+    active = []
+
+    @contextmanager
+    def cache():
+        active.append(True)
+        yield
+        active.pop()
+
+    monkeypatch.setattr(resolve, "shared_missing_scopes", cache)
+
+    def check(*args: Any) -> list[Any]:
+        assert bool(active) is expected
+        return []
+
+    monkeypatch.setattr(targets, "_check_page", check)
+    loader, file = project
+    targets.check_page(SimpleNamespace(), loader, file, timeout=timeout)

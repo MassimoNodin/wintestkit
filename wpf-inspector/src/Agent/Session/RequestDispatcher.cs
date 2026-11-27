@@ -128,11 +128,15 @@ namespace WinTestKit.Inspector.Agent.Session
                 catch (ProtocolException) { return null; }
             }
             if (error.Code == ErrorCodes.ValueUnreadable) return error.Details;
-            if (error.Code == ErrorCodes.Timeout && error.Details != null &&
-                error.Details.TryGet("dispatcherBusy", out var busy) && busy is JsonBoolNode busyBoolean && busyBoolean.Value)
+            if ((error.Code == ErrorCodes.Timeout || error.Code == ErrorCodes.DispatcherUnavailable || error.Code == ErrorCodes.Busy) && error.Details != null)
             {
                 var details = new JsonObjectNode();
-                details.Add("dispatcherBusy", new JsonBoolNode(true));
+                if (error.Details.TryGet("reason", out var reason) && reason is JsonStringNode text &&
+                    (text.Value == "queueWait" || text.Value == "workTimeout" || text.Value == "earlierWorkRunning")) details.Add("reason", reason);
+                foreach (string name in new[] { "queuedMs", "ranMs", "runningForMs" })
+                    if (error.Details.TryGet(name, out var value) && value is JsonNumberNode number && number.TryGetInt64(out long duration) && duration >= 0) details.Add(name, value);
+                foreach (string name in new[] { "escalated", "dispatcherBusy" })
+                    if (error.Details.TryGet(name, out var value) && value is JsonBoolNode) details.Add(name, value);
                 return details;
             }
             if (error.Code == ErrorCodes.LimitExceeded && error.Details != null &&

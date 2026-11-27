@@ -348,3 +348,33 @@ def test_elements_reached_twice_are_deduplicated(demo: Demo) -> None:
     scope = Scope(FakeApp([twin_window]))  # type: ignore[arg-type]
     assert len(resolve_all(scope, Locator(control_type="Button", name="Once"))) == 1
     assert resolve(scope, Locator(control_type="Button", name="Once")).name == "Once"
+
+
+def test_a_page_check_searches_a_missing_scope_root_once(
+    demo: Demo, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from wintestkit.engine import resolve as resolve_module
+
+    searches: list[str] = []
+    original = resolve_module._resolve_link  # pyright: ignore[reportPrivateUsage]
+
+    def counting(*args: Any, **kwargs: Any) -> Any:
+        searches.append(args[2].describe_link())
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(resolve_module, "_resolve_link", counting)
+    missing = Locator(control_type="Group", name="Panel C")
+    first = Locator(control_type="Button", name="OK", within=missing)
+    second = Locator(control_type="Edit", within=missing)
+    with resolve_module.shared_missing_scopes():
+        for locator in (first, second):
+            with pytest.raises(ElementNotFoundError) as exc_info:
+                resolve(demo.scope, locator)
+            assert exc_info.value.diagnostic.kind == "within_failed"
+            assert exc_info.value.diagnostic.within is not None
+            assert exc_info.value.diagnostic.within.kind == "not_found"
+    assert searches.count('Group[name="Panel C"]') == 1
+    # The memory ends with the check: a later resolution searches again.
+    with pytest.raises(ElementNotFoundError):
+        resolve(demo.scope, first)
+    assert searches.count('Group[name="Panel C"]') == 2

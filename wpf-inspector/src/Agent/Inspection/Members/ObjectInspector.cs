@@ -17,6 +17,21 @@ namespace WinTestKit.Inspector.Agent.Inspection.Members
         public ObjectInspector() : this(Array.Empty<string>()) { }
         public ObjectInspector(IEnumerable<string> extraRedactNames) { redaction = new RedactionPolicy(extraRedactNames ?? throw new ArgumentNullException(nameof(extraRedactNames))); }
         internal bool IsPathRedacted(IReadOnlyList<PathSegment> path) => path.Any(segment => redaction.Match(segment.Name) != null);
+
+        /// <summary>
+        /// The x:Name of a FrameworkElement or FrameworkContentElement for tree identity, with the protection and redaction
+        /// checks a <c>property Name</c> read applies; null when it is empty, protected, redacted or too long to return whole.
+        /// Reading the property directly skips building the object's member catalog, which costs about 7 ms per element.
+        /// </summary>
+        internal string? IdentityName(object target)
+        {
+            if (!(target is FrameworkElement) && !(target is FrameworkContentElement)) return null;
+            if (redaction.Match("Name") != null || RedactionPolicy.IsProtectedIdentity(target)) return null;
+            string name = target is FrameworkElement element ? element.Name : ((FrameworkContentElement)target).Name;
+            if (string.IsNullOrEmpty(name)) return null;
+            ScalarText.Prefix(name, ProtocolLimits.MaxScalarChars, out int length);
+            return length > ProtocolLimits.MaxScalarChars ? null : name;
+        }
         public TypeInfoDto DescribeType(Type type) => TypeInfoBuilder.Build(type);
 
         public IReadOnlyList<MemberInfo> GetMembers(object target, List<Diagnostic> diagnostics)
@@ -104,16 +119,19 @@ namespace WinTestKit.Inspector.Agent.Inspection.Members
             return method.IsPublic ? "public" : method.IsFamilyOrAssembly ? "protectedInternal" : method.IsFamilyAndAssembly ? "privateProtected" : method.IsFamily ? "protected" : method.IsAssembly ? "internal" : "private";
         }
         public ValueDto ReadPath(object root, IReadOnlyList<PathSegment> path, IObjectRegistry registry, Dispatcher dispatcher, CancellationToken ct)
-            => ReadPathCore(root, path, registry, dispatcher, ct, false);
+            => ReadPathCore(root, path, registry, dispatcher, ct, false, null);
+
+        internal ValueDto ReadPath(object root, IReadOnlyList<PathSegment> path, IObjectRegistry registry, Dispatcher dispatcher, CancellationToken ct, bool protectedRoot)
+            => ReadPathCore(root, path, registry, dispatcher, ct, false, protectedRoot);
 
         public ValueDto ReadSpyField(object root, IReadOnlyList<PathSegment> path, IObjectRegistry registry, Dispatcher dispatcher, CancellationToken ct)
         {
             if (path.Count != 1 || path[0].Kind != "field" || string.IsNullOrEmpty(path[0].MemberKey) || string.IsNullOrEmpty(path[0].DeclaringType))
                 throw new ProtocolException(ErrorCodes.InvalidParams, "Spy field reads require one exact field");
-            return ReadPathCore(root, path, registry, dispatcher, ct, true);
+            return ReadPathCore(root, path, registry, dispatcher, ct, true, null);
         }
 
-        private ValueDto ReadPathCore(object root, IReadOnlyList<PathSegment> path, IObjectRegistry registry, Dispatcher dispatcher, CancellationToken ct, bool spyField)
+        private ValueDto ReadPathCore(object root, IReadOnlyList<PathSegment> path, IObjectRegistry registry, Dispatcher dispatcher, CancellationToken ct, bool spyField, bool? knownProtectedRoot)
         {
             if (path.Count == 0 || path.Count > ProtocolLimits.MaxPathSegments || (path.Count != 1 && path.Any(x => x.Kind == "type" || x.Kind == "uia"))) throw new ProtocolException(ErrorCodes.InvalidParams, "Invalid path");
             foreach (PathSegment segment in path) segment.ToJson();
@@ -135,7 +153,8 @@ namespace WinTestKit.Inspector.Agent.Inspection.Members
                 catch (Exception) { return new ValueDto { Status = "exception", Kind = "unavailable", FailedSegment = 0 }; }
                 return PeerIdentity.Read(root, first.Name, registry, dispatcher);
             }
-            if (RedactionPolicy.IsProtectedIdentity(root) && path[0].Kind == "type" && !RedactionPolicy.IsAllowedOnProtected(path, null)) return new ValueDto { Status = "redacted", Kind = "unavailable", RedactionRule = "identity" };
+            bool protectedRoot = knownProtectedRoot ?? RedactionPolicy.IsProtectedIdentity(root);
+            if (protectedRoot && path[0].Kind == "type" && !RedactionPolicy.IsAllowedOnProtected(path, null)) return new ValueDto { Status = "redacted", Kind = "unavailable", RedactionRule = "identity" };
             if (path[0].Kind == "type")
             {
                 TypeInfoDto t = DescribeType(root.GetType());
@@ -149,7 +168,7 @@ namespace WinTestKit.Inspector.Agent.Inspection.Members
             for (int i = 0; i < path.Count; i++)
             {
                 ct.ThrowIfCancellationRequested();
-                bool protectedIdentity = RedactionPolicy.IsProtectedIdentity(current!);
+                bool protectedIdentity = i == 0 ? protectedRoot : RedactionPolicy.IsProtectedIdentity(current!);
                 if (protectedIdentity && (path.Count != 1 || (path[0].Kind != "property" && path[0].Kind != "dependency"))) return new ValueDto { Status = "redacted", Kind = "unavailable", RedactionRule = "identity" };
                 dependencySource = null;
                 PathSegment segment = path[i];

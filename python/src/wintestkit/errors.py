@@ -133,9 +133,26 @@ class InspectorError(WtkError):
         super().__init__(message)
         self.code = code
         self.audit = audit
+        self.details: dict[str, Any] = {}
+        self.method = ""
+
+    def copy_with_message(self, message: str) -> InspectorError:
+        """Make an independent error while preserving inspector diagnostics."""
+        kwargs: dict[str, Any] = {"code": self.code, "audit": self.audit}
+        if isinstance(self, InspectorDeadlineError):
+            kwargs["busy"] = self.busy
+        result = type(self)(message, **kwargs)
+        result.details = self.details.copy()
+        result.method = self.method
+        return result
 
     def to_dict(self) -> dict[str, Any]:
-        return {**super().to_dict(), "code": self.code}
+        return {
+            **super().to_dict(),
+            "code": self.code,
+            "details": self.details,
+            "method": self.method,
+        }
 
 
 class InspectorUnavailableError(InspectorError):
@@ -170,3 +187,10 @@ class InspectorDeadlineError(InspectorLimitError):
     ) -> None:
         super().__init__(message, code=code, audit=audit)
         self.busy = busy
+
+    @property
+    def budget_exhausted(self) -> bool:
+        return self.details.get("deadline") is True or self.details.get("reason") in {
+            "clientDeadline",
+            "queryBudget",
+        }

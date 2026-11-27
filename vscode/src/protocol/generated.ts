@@ -3659,7 +3659,14 @@ export interface ManagedErrorInfo {
     | "writeDenied"
     | "writeRateExceeded";
   message: string;
-  details?: Record<string, never>;
+  details?: {
+    reason?: "queueWait" | "workTimeout" | "earlierWorkRunning";
+    queuedMs?: number;
+    ranMs?: number;
+    runningForMs?: number;
+    escalated?: boolean;
+    dispatcherBusy?: boolean;
+  };
 }
 export interface ManagedNodePage1 {
   /**

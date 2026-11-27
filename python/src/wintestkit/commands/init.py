@@ -4,20 +4,23 @@ from __future__ import annotations
 
 import argparse
 import json
+import shlex
 import tomllib
 from importlib.resources import files
 from importlib.resources.abc import Traversable
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Any, cast
 
 from wintestkit.commands import common
-from wintestkit.config import ensure_local_ignores
+from wintestkit.config import ensure_local_ignores, load_config
+from wintestkit.errors import ConfigError
 
 
 def add_parser(subparsers: Any) -> None:
     parser = subparsers.add_parser("init", help="create a WinTestKit project")
     parser.add_argument("directory", nargs="?", metavar="DIR")
     parser.add_argument("--app", metavar="PATH")
+    parser.add_argument("--args", default="", metavar="ARGS", help="application launch arguments")
     parser.add_argument(
         "--force",
         action="store_true",
@@ -52,9 +55,28 @@ def _write(path: Path, text: str, *, force: bool) -> None:
     print(f"Created {path}")
 
 
+def _starter_process(root: Path, app_path: Path | None) -> str:
+    """The process name the starter page targets: the configured app, else the ``--app`` file.
+
+    Returns an empty string when no usable ``.exe`` name is known.
+    """
+    try:
+        configured = load_config(root).app
+    except ConfigError:
+        configured = None
+    path = configured.path if configured and configured.path else app_path
+    process = (
+        configured.process
+        if configured and configured.process
+        else (PureWindowsPath(str(path)).name if path else "")
+    )
+    return process if process.lower().endswith(".exe") and len(process) > len(".exe") else ""
+
+
 def run(args: argparse.Namespace) -> int:
     root = Path(args.directory or args.root or ".").resolve()
     config_path = root / "pyproject.toml"
+    config_exists = config_path.exists()
     original = config_path.read_text(encoding="utf-8") if config_path.exists() else ""
     try:
         config = tomllib.loads(original)
@@ -62,6 +84,8 @@ def run(args: argparse.Namespace) -> int:
         raise common.CommandError(
             f"cannot update invalid pyproject.toml: {error}", common.EXIT_USAGE
         ) from error
+    if args.args and not args.app:
+        raise common.CommandError("--args needs --app", common.EXIT_USAGE)
     app_path = Path(args.app) if args.app else None
     additions: list[str] = []
     tool_value: object = config.get("tool", {})
@@ -86,21 +110,36 @@ def run(args: argparse.Namespace) -> int:
             ) from error
         root.mkdir(parents=True, exist_ok=True)
         config_path.write_text(combined, encoding="utf-8")
-        print(f"Updated {config_path}")
+        print(f"{'Updated' if config_exists else 'Created'} {config_path}")
     else:
         print("Skipped existing pyproject.toml configuration")
+    process = _starter_process(root, app_path)
+    page = _template("main.py.tmpl").replace(
+        "__PROCESS__", json.dumps(process or "TODO: set your app process", ensure_ascii=False)
+    )
+    note = (
+        ""
+        if process
+        else "    # TODO: set the process name of your app (for example Orders.exe).\n"
+    )
+    page = page.replace("__NOTE__", note)
+    smoke = _template("test_smoke.py.tmpl" if process else "test_smoke_todo.py.tmpl")
     for relative, content in {
         "pages/__init__.py": "",
-        "pages/main.py": _template("main.py.tmpl"),
+        "pages/main.py": page,
         "flows/__init__.py": "",
         "flows/main.py": _template("flow_main.py.tmpl"),
         "tests/__init__.py": "",
-        "tests/test_smoke.py": _template("test_smoke.py.tmpl"),
+        "tests/test_smoke.py": smoke,
     }.items():
         _write(root / relative, content, force=args.force)
     for relative, text in skill_files().items():
         _write(root / ".claude/skills/wintestkit-tests" / relative, text, force=args.force)
+    ignore_path = root / ".gitignore"
+    old_ignore = ignore_path.read_bytes() if ignore_path.exists() else None
     ensure_local_ignores(root)
+    if ignore_path.read_bytes() != old_ignore:
+        print(f"{'Updated' if old_ignore is not None else 'Created'} {ignore_path}")
     _write(
         root / "wintestkit.yaml",
         "# Shared project settings. Machine paths belong in wintestkit.local.yaml.\n{}\n",
@@ -111,9 +150,18 @@ def run(args: argparse.Namespace) -> int:
         if app_path
         else "{}\n"
     )
+    if app_path and args.args:
+        launch_args = [part.strip('"') for part in shlex.split(args.args, posix=False)]
+        local += "  args: " + json.dumps(launch_args, ensure_ascii=False) + "\n"
     if args.app or "wintestkit" not in tool:
         _write(root / "wintestkit.local.yaml", local, force=False)
-    print("\nNext: install wintestkit and pytest, select your app in wintestkit.local.yaml and")
-    print("pages/main.py, then run wtk doctor and wtk run from the project directory.")
+    if process or app_path:
+        print(
+            "\nNext: install wintestkit and pytest, then run wtk doctor and wtk run "
+            "from the project directory."
+        )
+    else:
+        print("\nNext: install wintestkit and pytest, select your app in wintestkit.local.yaml and")
+        print("pages/main.py, then run wtk doctor and wtk run from the project directory.")
     print("AI coding tools find the wintestkit-tests skill in .claude/skills/wintestkit-tests.")
     return common.EXIT_OK

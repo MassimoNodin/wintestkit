@@ -126,6 +126,8 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
   // Tree nodes the panel currently shows, so markers can be refreshed after a page file is saved.
   private loadedNodeIds = new Set<string>();
   private coverageRun = 0;
+  /** Picks being revealed: coverage waits, because it shares the server's inspection worker with the reveal's tree pages. */
+  private revealing = 0;
   private coverageTimer?: NodeJS.Timeout;
   private keepaliveTimer?: NodeJS.Timeout;
   private processTimer?: NodeJS.Timeout;
@@ -1036,6 +1038,11 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
           }
           this.pickedPoint = { ...picked.point, nodeId: picked.node.nodeId };
           this.selectedNodeId = picked.node.nodeId;
+          this.revealing++;
+          try { await this.revealPickedPath(client, picked, announce); }
+          finally { this.revealing--; if (!this.revealing) this.resumeCoverage(client); }
+  }
+  private async revealPickedPath(client: JsonRpcClient, picked: Omit<SpyPickedNotification, "suggestion"> & { suggestion?: Suggestion }, announce: boolean): Promise<void> {
           const selection = ++this.selection;
           this.post({ type: "selectionPending", nodeId: picked.node.nodeId });
           void this.managedInspector?.select(picked.node.nodeId);
@@ -2002,7 +2009,7 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
         if (this.isBusy(code)) {
           this.detailsBusy = true;
           this.scheduleDetailsRetry();
-          this.log.error(`Spy .NET request to ${this.managedInspector?.targetLabel ?? "target"} could not complete because its UI thread is busy. Spy retries automatically. ${String(error)}`);
+          this.log.error(`Spy .NET properties request to ${this.managedInspector?.targetLabel ?? "target"} failed (${code}). Spy retries automatically. ${String(error)}`);
         } else this.log.error("Reading all properties failed: " + String(error));
       }
     } finally {
@@ -2213,6 +2220,9 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
     if (!nodeIds.length || this.tutorialActive() || !this.appRunning || !this.markersEnabled()) return;
     const run = this.coverageRun;
     for (const nodeId of nodeIds) this.coveragePending.add(nodeId);
+    // Each coverage request spends up to 250 ms on the server's single inspection worker; during a reveal that
+    // delayed every tree level behind it, so a deep pick took 13 s instead of 4 s. The reveal resumes it.
+    if (this.revealing) return;
     if (this.coverageWorker?.generation === run) return this.coverageWorker.promise;
     const promise = this.drainCoverage(client, run);
     const worker = { generation: run, promise };
@@ -2223,6 +2233,11 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
       if (this.coverageWorker === worker) this.coverageWorker = undefined;
     }
   }
+  /** Marks what a reveal loaded once it has finished; the nodes waited in the pending set. */
+  private resumeCoverage(client: JsonRpcClient): void {
+    if (this.disposed || client !== this.client || !this.coveragePending.size) return;
+    void this.loadCoverage(client, [...this.coveragePending]);
+  }
   private async drainCoverage(client: JsonRpcClient, run: number): Promise<void> {
     const revision = this.revision;
     const stale = () =>
@@ -2232,7 +2247,7 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
       revision !== this.revision;
     try {
       for (let round = 0; round < 60 && this.coveragePending.size; round++) {
-        if (stale()) return;
+        if (stale() || this.revealing) return;
         const batch = [...this.coveragePending].slice(0, 500);
         for (const nodeId of batch) this.coveragePending.delete(nodeId);
         const result = await client.request<InspectCoverageResult>(

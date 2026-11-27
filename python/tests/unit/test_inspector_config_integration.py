@@ -185,9 +185,13 @@ def test_manual_on_demand_failure_cache_explicit_retry_and_timeout(
         assert registry.timeout == 0.25 and registry.attempts == 0
     cfg = replace(cfg, inspector=replace(cfg.inspector, attach="on-demand"))
     with runtime.config_scope(cfg):
-        for _ in range(2):
-            with pytest.raises(InspectorUnavailableError, match="injection failed"):
+        failures = []
+        for _ in range(3):
+            with pytest.raises(InspectorUnavailableError, match="injection failed") as error:
                 runtime.managed_client_for(42, deadline=time.monotonic() + 1, target_hwnd=None)
+            failures.append(error.value)
+        assert len({id(error) for error in failures}) == 3
+        assert len({str(error) for error in failures}) == 1
         assert registry.attempts == 1
         registry.fail = False
         client = runtime.attach_managed(IDENTITY, deadline=time.monotonic() + 1)
@@ -327,3 +331,24 @@ def test_concurrent_wait_respects_its_own_deadline(
         finish.set()
         thread.join(timeout=5)
     assert not thread.is_alive()
+
+
+def test_caller_limited_attach_timeout_is_retried(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(sessions, "SessionRegistry", FakeRegistry)
+    monkeypatch.setattr(probe, "current_identity", _identity)
+    cfg = load_config(tmp_path, {"inspector.enabled": True, "inspector.attach": "on-demand"})
+    with runtime.config_scope(cfg):
+        registry = runtime.inspector_sessions()
+        calls = []
+
+        def fail(*args: Any, **kwargs: Any) -> Any:
+            calls.append(1)
+            raise InspectorUnavailableError("readiness deadline expired", code="timeout")
+
+        monkeypatch.setattr(registry, "attach", fail)
+        for _ in range(2):
+            with pytest.raises(InspectorUnavailableError, match="deadline expired"):
+                runtime.managed_client_for(42, deadline=time.monotonic() + 0.5, target_hwnd=None)
+        assert len(calls) == 2

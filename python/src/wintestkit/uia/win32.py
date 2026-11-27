@@ -593,6 +593,20 @@ def window_class_name(hwnd: int) -> str:
     return buffer.value
 
 
+def is_dialog_window(hwnd: int) -> bool:
+    """Identify a visible top-level window that can take focus, such as a dialog.
+
+    Tooltips, menus and other popups are tool windows or never activate, so they are excluded.
+    No caption is required: dialogs with custom chrome have none.
+    """
+    if not IsWindowVisible(hwnd):
+        return False
+    if int(GetWindowLongW(hwnd, GWL_STYLE)) & WS_CHILD:
+        return False
+    ex_style = int(GetWindowLongW(hwnd, GWL_EXSTYLE)) & 0xFFFFFFFF
+    return not ex_style & (WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE)
+
+
 def window_text(hwnd: int) -> str:
     buffer = ctypes.create_unicode_buffer(512)
     GetWindowTextW(hwnd, buffer, len(buffer))

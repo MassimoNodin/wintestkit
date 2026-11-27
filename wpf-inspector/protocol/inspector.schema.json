@@ -2066,7 +2066,15 @@
           "maxLength": 1024
         },
         "details": {
-          "type": "object"
+          "type": "object",
+          "properties": {
+            "reason": {"enum": ["queueWait", "workTimeout", "earlierWorkRunning"]},
+            "queuedMs": {"type": "integer", "minimum": 0},
+            "ranMs": {"type": "integer", "minimum": 0},
+            "runningForMs": {"type": "integer", "minimum": 0},
+            "escalated": {"type": "boolean"},
+            "dispatcherBusy": {"type": "boolean"}
+          }
         }
       },
       "required": [

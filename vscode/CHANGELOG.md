@@ -7,6 +7,21 @@ Unreleased changes must be moved to a dated candidate section before a release c
 
 ## [Unreleased]
 
+- **Initialization:** `wtk init --app X` generates a starter page and test for your application instead of VS Code (or a clearly marked `TODO` and a starter test that fails with an explanation when no executable name is known), `--args` records launch arguments, and a new `pyproject.toml` is reported as "Created".
+- **App lifecycle:** Launch for tests no longer closes or kills an application that was already running: it attaches to it for the session, says so once, and leaves it running. The new `app.close_existing` setting closes it gracefully first, and a blocked close fails the run instead of force-killing an app WinTestKit did not start. Relaunches keep the configured launch arguments.
+- **Grid access:** Indexed row and cell access (`cell(r, c)`, `row(i)`, selecting by index) stops at the wanted data row, and `find_row` reads the searched column.
+- **Grids:** DataGrid helpers skip group headers when counting, selecting and comparing rows, omit unavailable blank-header columns from row text and default comparisons, and show selected items by their cell text. Explicit access to an unavailable cell returns empty text.
+- **Checks and toggles:** Immediate element and collection checks now work when the WPF inspector needs to attach, and checkbox actions honor mouse input mode.
+
+- **Busy applications:** Picking or reading elements deep inside Ribbon and other nested templates no longer freezes the application for seconds.
+- **Diagnostics:** When an inspector request times out, the log and messages say whether the application's UI thread was busy or the inspector's own request ran long, with timings.
+- **Spy:** Stops queuing more reads behind a stalled request, and repeated stalls are logged with a count.
+- **Picking:** Ctrl+Click on an element deep inside Ribbon or other templates no longer freezes the application for about 0.4 s, because the inspector reads each ancestor's x:Name directly instead of building its whole member list.
+- **Spy:** Revealing a picked element 50 to 60 levels deep takes about 3 s instead of 13 s, because the defined-object markers wait until the reveal has finished instead of delaying every level.
+- **Spy:** A Properties list continued after its page expired (for example after the getter dialog stayed open for more than 30 s) reads its earlier pages again instead of showing `invalidPageToken` with an Attach button, and an expired page no longer counts as an attach failure.
+- **Spy:** An object without a UI Automation peer, such as a Border in a template, shows its type in the Selected object header, ChildCount counts its children without expanding its row, and its suggested locator is named after its x:Name or type instead of `_1`.
+- **Check all:** Checking a page with elements that are not on screen takes about 13 s instead of 75 s, because all previews share one scan of the window for sensitive controls and a missing component root is searched once for all of its elements.
+
 ## [0.1.1rc7] - 2026-11-26
 
 Seventh prerelease. Install the extension's pre-release channel together with `pip install --pre "wintestkit[inspector]==0.1.1rc7"`. The first upgrade from rc6 asks to close applications that still have the rc6 inspector loaded.

@@ -12,6 +12,7 @@ using static WinTestKit.Inspector.Agent.Members.Tests.ValueTestSupport;
 
 namespace WinTestKit.Inspector.Agent.Members.Tests
 {
+    [Trait("Category", "Unit")]
     public sealed class RedactionIdentityTests
     {
         private class ProtectedControl : Button
@@ -143,9 +144,7 @@ namespace WinTestKit.Inspector.Agent.Members.Tests
                 Assert.True(RedactionPolicy.IsProtectedIdentity(box));
                 var border = new FrameworkElementFactory(typeof(Border));
                 var host = new FrameworkElementFactory(typeof(ScrollViewer));
-                host.SetValue(FrameworkElement.NameProperty, "PART_ContentHost");
-                var inner = new FrameworkElementFactory(typeof(Grid));
-                host.AppendChild(inner);
+                host.Name = "PART_ContentHost";
                 border.AppendChild(host);
                 box.Template = new ControlTemplate(typeof(PasswordBox)) { VisualTree = border };
                 Assert.True(box.ApplyTemplate());
@@ -158,6 +157,52 @@ namespace WinTestKit.Inspector.Agent.Members.Tests
                 unrelated.Children.Add(new Border());
                 Assert.False(RedactionPolicy.IsProtectedIdentity(unrelated));
                 Assert.False(RedactionPolicy.IsProtectedIdentity(unrelated.Children[0]));
+            });
+        }
+
+        [Fact] public void TextBoxAndItsTemplatePartAreNotProtected()
+        {
+            Sta(() =>
+            {
+                var box = new TextBox();
+                var part = new FrameworkElementFactory(typeof(Border));
+                part.Name = "Part";
+                box.Template = new ControlTemplate(typeof(TextBox)) { VisualTree = part };
+                Assert.True(box.ApplyTemplate());
+                Assert.False(RedactionPolicy.IsProtectedIdentity(box));
+                var templatePart = (DependencyObject)box.Template.FindName("Part", box);
+                Assert.NotNull(templatePart);
+                Assert.False(RedactionPolicy.IsProtectedIdentity(templatePart));
+            });
+        }
+
+        [Fact] public void DeepNestedTemplatesAreCheckedQuicklyAndCorrectly()
+        {
+            Sta(() =>
+            {
+                foreach (Control root in new Control[] { new ContentControl(), new PasswordBox() })
+                {
+                    Control current = root;
+                    for (int i = 0; i < 10; i++)
+                    {
+                        var factory = new FrameworkElementFactory(typeof(ContentControl));
+                        factory.Name = "Nested";
+                        current.Template = new ControlTemplate(current.GetType()) { VisualTree = factory };
+                        Assert.True(current.ApplyTemplate());
+                        current = (Control)current.Template.FindName("Nested", current);
+                    }
+                    bool expected = root is PasswordBox;
+                    Assert.Equal(expected, RedactionPolicy.IsProtectedIdentity(current));
+                    var samples = new long[9];
+                    for (int i = 0; i < samples.Length; i++)
+                    {
+                        long start = System.Diagnostics.Stopwatch.GetTimestamp();
+                        Assert.Equal(expected, RedactionPolicy.IsProtectedIdentity(current));
+                        samples[i] = System.Diagnostics.Stopwatch.GetTimestamp() - start;
+                    }
+                    Array.Sort(samples);
+                    Assert.True(samples[samples.Length / 2] * 1000.0 / System.Diagnostics.Stopwatch.Frequency < 5);
+                }
             });
         }
 

@@ -67,6 +67,7 @@ app:
   process: Orders.exe
   startup_timeout: 30
   close_timeout: 10
+  close_existing: false
 ```
 
 `backend: auto` selects the WPF tree for WPF windows and UI Automation for other windows.
@@ -114,8 +115,15 @@ The `app` fixture provides the application under test:
 
 | Mode | Behaviour |
 |---|---|
-| `per-test` (default; **Launch for tests** in the Test Target view) | Launch a fresh app for every test and close it when the test ends. A copy that is already running is closed first, so every test starts from a clean app and nothing is left running afterwards |
+| `per-test` (default; **Launch for tests** in the Test Target view) | Launch a fresh app for each test and close it afterwards. If an instance is already running, WinTestKit attaches to it for the whole session, says so once in the output, and leaves it running |
 | `attach` | Attach to an already running instance (`app.process`, or the exe name of `app.path`); never launch or close it |
+
+WinTestKit never closes or kills an application instance it did not start. To start every test from a
+fresh copy instead, set `app.close_existing: true`: a running copy is then asked to close gracefully
+(waiting up to `close_timeout`) before the launch. If it does not close, for example because it asks to
+save, the run fails with that message and the copy keeps running. Only an instance that WinTestKit
+launched is force-killed when its own graceful close is blocked. Every launch passes `app.args`
+(record them with `wtk init --app PATH --args "..."`).
 
 The Test Target view offers exactly these two choices, and the setting it saves is the only one that decides how the app is obtained: **Attach** (use the app that is
 running) and **Launch for tests** (WinTestKit starts the app and closes it when the tests finish).
@@ -130,7 +138,7 @@ def test_first_start_shows_the_welcome_page(app): ...
 
 ### Resetting state between tests
 
-Each test gets a fresh application, so most tests need no reset. If your application keeps state
+When WinTestKit launches the application, each test gets a fresh instance. An existing instance is shared, so tests may need a reset. If your application keeps state
 outside the process (a database, files, a server), put the reset in an autouse fixture; for
 example, using the application's own **File > Reset**:
 

@@ -465,3 +465,16 @@ def test_warning_is_recorded_in_junit(pytester: pytest.Pytester) -> None:
     )
     result.assert_outcomes(passed=1)
     assert "check the setup" in (pytester.path / "out.xml").read_text(encoding="utf-8")
+
+
+def test_existing_app_is_attached_once_for_session(
+    pytester: pytest.Pytester, fake_apps: list[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from wintestkit.uia import win32
+
+    monkeypatch.setattr(win32, "pids_by_name", lambda name: [42])
+    project(pytester, tests=TWO_TESTS)
+    result = pytester.runpytest("-p", "no:cacheprovider")
+    result.assert_outcomes(passed=2)
+    assert fake_apps == ["attach FakeApp.exe"]  # never launched, closed or killed
+    assert result.stdout.str().count("attaching to the already-running") == 1

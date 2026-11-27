@@ -52,8 +52,9 @@ def test_init_creates_a_valid_starter_project(tmp_path: Path) -> None:
     for relative in ["pages/main.py", "flows/main.py", "tests/test_smoke.py"]:
         ast.parse((root / relative).read_text(encoding="utf-8"))
     page = (root / "pages/main.py").read_text(encoding="utf-8")
-    assert 'Window(process="Code.exe", index=0)' in page
-    assert "content = Element(depth=1, index=1)" in page
+    assert 'Window(process="My App.exe", index=0)' in page
+    assert "Code.exe" not in page
+    assert "TODO" not in page
     assert "class MainPage(Page)" in page
     assert (root / ".gitignore").read_text(encoding="utf-8").splitlines() == [
         "wintestkit.local.toml",
@@ -104,7 +105,7 @@ def test_force_replaces_only_starter_files(tmp_path: Path) -> None:
     page = tmp_path / "pages" / "main.py"
     page.write_text("custom = True\n", encoding="utf-8")
     assert main(["init", str(tmp_path), "--force", "--app", "C:/Replacement.exe"]) == 0
-    assert 'Window(process="Code.exe", index=0)' in page.read_text(encoding="utf-8")
+    assert 'Window(process="Original.exe", index=0)' in page.read_text(encoding="utf-8")
     config = load_config(tmp_path)
     assert config.app is not None
     assert config.app.path == Path("C:/Original.exe")
@@ -184,3 +185,67 @@ def test_skill_links_resolve_and_sizes_are_reasonable() -> None:
     assert len(body.splitlines()) < 300
     for target in re.findall(r"\]\((references/[^)#]+)", body):
         assert target in written
+
+
+def test_init_without_an_app_generates_a_todo_page_and_failing_test(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert main(["init", str(tmp_path)]) == 0
+    assert "Created " + str(tmp_path / "pyproject.toml") in capsys.readouterr().out
+    page = (tmp_path / "pages/main.py").read_text(encoding="utf-8")
+    ast.parse(page)
+    assert "TODO: set your app process" in page
+    assert "Code.exe" not in page
+    test = (tmp_path / "tests/test_smoke.py").read_text(encoding="utf-8")
+    ast.parse(test)
+    assert "pytest.fail(" in test
+    assert "No application is configured" in test
+
+
+def test_init_with_an_unusable_executable_name_generates_todo(tmp_path: Path) -> None:
+    assert main(["init", str(tmp_path), "--app", "C:/Apps/run.bat"]) == 0
+    assert "TODO: set your app process" in (tmp_path / "pages/main.py").read_text(encoding="utf-8")
+    assert "pytest.fail(" in (tmp_path / "tests/test_smoke.py").read_text(encoding="utf-8")
+
+
+def test_init_reports_updated_for_an_existing_pyproject(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (tmp_path / "pyproject.toml").write_text('[project]\nname = "test"\n', encoding="utf-8")
+    assert main(["init", str(tmp_path), "--app", "C:/App.exe"]) == 0
+    assert "Updated " + str(tmp_path / "pyproject.toml") in capsys.readouterr().out
+
+
+def test_init_records_launch_arguments(tmp_path: Path) -> None:
+    assert (
+        main(["init", str(tmp_path), "--app", "C:/App.exe", "--args", '/sandbox --name "a b"']) == 0
+    )
+    config = load_config(tmp_path)
+    assert config.app is not None
+    assert config.app.args == ("/sandbox", "--name", "a b")
+    assert 'Window(process="App.exe", index=0)' in (tmp_path / "pages/main.py").read_text(
+        encoding="utf-8"
+    )
+
+
+def test_init_args_need_an_app(tmp_path: Path) -> None:
+    assert main(["init", str(tmp_path), "--args", "/sandbox"]) != 0
+
+
+def test_init_reports_next_steps_and_gitignore(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert main(["init", str(tmp_path), "--app", "C:/App.exe"]) == 0
+    output = capsys.readouterr().out
+    assert "select your app" not in output
+    assert "Created " + str(tmp_path / ".gitignore") in output
+    (tmp_path / ".gitignore").write_text("existing\n", encoding="utf-8")
+    assert main(["init", str(tmp_path)]) == 0
+    output = capsys.readouterr().out
+    assert "Updated " + str(tmp_path / ".gitignore") in output
+    assert "select your app" not in output
+
+
+def test_init_prompts_for_missing_app(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    assert main(["init", str(tmp_path)]) == 0
+    assert "select your app" in capsys.readouterr().out

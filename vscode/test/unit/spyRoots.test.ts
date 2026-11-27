@@ -93,7 +93,7 @@ describe("Spy child response rows", () => {
     const children = new ChildNode();
     const entry = { children, row: new ChildNode(), toggle: new ChildNode(), node: { hasChildren: true }, open: true, loaded: false, loading: false };
     const sent: unknown[] = []; const rendered: string[] = [];
-    const context = { nodes: new Map([["parent", entry]]), document: { createElement: () => new ChildNode() }, post: (type: string, data: unknown) => sent.push({ type, ...(data as object) }), filter: () => {}, expand: () => {}, revealLabels: () => {}, renderNodes: (_parent: ChildNode, values: string[], append: boolean) => { if (!append) rendered.length = 0; rendered.push(...values); } };
+    const context = { selected: undefined, renderSidebar: () => {}, nodes: new Map([["parent", entry]]), document: { createElement: () => new ChildNode() }, post: (type: string, data: unknown) => sent.push({ type, ...(data as object) }), filter: () => {}, expand: () => {}, revealLabels: () => {}, renderNodes: (_parent: ChildNode, values: string[], append: boolean) => { if (!append) rendered.length = 0; rendered.push(...values); } };
     const receive = (message: object) => runInNewContext('(function(message) {' + script.slice(start, stop) + '})', context)(message);
     return { receive, children, sent, rendered };
   };

@@ -122,8 +122,9 @@ In VS Code, use the **Test Target** gear above the Explorer to edit these files 
 YAML configuration editor. `pyproject.toml` retains pytest configuration, and legacy
 `[tool.wintestkit]` settings remain supported. Use your real executable path; relative paths
 resolve from the project directory.
-`per-test` starts a fresh app for every test and closes it afterwards. Use `attach` to use an
-application that is already running.
+`per-test` starts a fresh app for every test and closes it afterwards, but it never closes or
+kills a copy that was already running: it attaches to that copy instead (set `app.close_existing: true`
+to close it gracefully first). Use `attach` to always use an application that is already running.
 See [configuration and launch modes](docs/guide/running-tests.md).
 
 Check the environment before continuing:

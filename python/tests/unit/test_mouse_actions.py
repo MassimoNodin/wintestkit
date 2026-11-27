@@ -315,3 +315,92 @@ def test_click_header_uses_an_offset_on_the_first_row(uia: Any) -> None:
     control.rect = Rect(100, 200, 600, 48)
     actions.click_header(control, 16)
     assert calls == [("click", (140, 208), {"button": "left", "count": 1})]
+
+
+def test_check_reports_new_dialog_without_waiting(monkeypatch: pytest.MonkeyPatch) -> None:
+    import time
+
+    checkbox = FakeElement("CheckBox")
+    windows = [1]
+    monkeypatch.setattr(win32, "top_level_windows", lambda pids: list(windows))
+    monkeypatch.setattr(win32, "window_text", lambda hwnd: "Confirm")
+    monkeypatch.setattr(win32, "is_dialog_window", lambda hwnd: True)
+    monkeypatch.setattr(actions, "is_checked", lambda el: False)
+    monkeypatch.setattr(actions, "click", lambda el, mode: windows.append(2))
+    start = time.monotonic()
+    with pytest.raises(ActionError, match='dialog "Confirm"'):
+        actions.set_checked(checkbox, True, mode="mouse", timeout=10)
+    assert time.monotonic() - start < 1
+
+
+@pytest.mark.parametrize("reason", ["workTimeout", "clientDeadline", "queueWait"])
+def test_pattern_check_reports_dialog_on_inspector_work_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+    reason: str,
+) -> None:
+    from wintestkit.backends.element import WpfElement
+    from wintestkit.errors import InspectorDeadlineError
+
+    checkbox = WpfElement.__new__(WpfElement)
+    checkbox._process_id = 1
+    windows = [1]
+    monkeypatch.setattr(win32, "top_level_windows", lambda pids: list(windows))
+    monkeypatch.setattr(win32, "window_text", lambda hwnd: "Confirm")
+    monkeypatch.setattr(win32, "is_dialog_window", lambda hwnd: True)
+    monkeypatch.setattr(actions, "_wpf_read", lambda *args: "Off")
+
+    def fail(*args: Any) -> None:
+        windows.append(2)
+        error = InspectorDeadlineError("timeout", code="dispatcherUnavailable")
+        error.details = {"reason": reason}
+        raise error
+
+    monkeypatch.setattr(actions, "_wpf_act", fail)
+    with pytest.raises(ActionError, match='dialog "Confirm"'):
+        actions.set_checked(checkbox, True)
+
+
+def test_new_dialog_ignores_tool_windows(monkeypatch: pytest.MonkeyPatch) -> None:
+    ex_styles = {2: win32.WS_EX_TOOLWINDOW, 3: win32.WS_EX_NOACTIVATE}
+    monkeypatch.setattr(win32, "top_level_windows", lambda pids: [1, 2, 3, 4])
+    monkeypatch.setattr(win32, "IsWindowVisible", lambda hwnd: True)
+    monkeypatch.setattr(
+        win32,
+        "GetWindowLongW",
+        lambda hwnd, index: ex_styles.get(hwnd, 0) if index == win32.GWL_EXSTYLE else 0,
+    )
+    monkeypatch.setattr(win32, "window_text", lambda hwnd: f"Window {hwnd}")
+    # Window 4 has no caption (custom chrome) but can take focus, so it counts as a dialog.
+    assert actions._new_dialog(FakeElement("CheckBox"), {1}) == "Window 4"
+    monkeypatch.setattr(win32, "top_level_windows", lambda pids: [1, 2, 3])
+    assert actions._new_dialog(FakeElement("CheckBox"), {1}) is None
+
+
+def test_pattern_check_reports_dialog_for_nested_budget_deadline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from wintestkit.backends.element import WpfElement
+    from wintestkit.errors import UIAError
+    from wintestkit.inspector.client import _error
+
+    checkbox = WpfElement.__new__(WpfElement)
+    checkbox._process_id = 1
+    windows = [1]
+    monkeypatch.setattr(win32, "top_level_windows", lambda pids: list(windows))
+    monkeypatch.setattr(win32, "window_text", lambda hwnd: "Confirm")
+    monkeypatch.setattr(win32, "is_dialog_window", lambda hwnd: True)
+    monkeypatch.setattr(actions, "_wpf_read", lambda *args: "Off")
+
+    def fail(*args: Any) -> None:
+        windows.append(2)
+        try:
+            raise _error("limitExceeded", {"deadline": True})
+        except Exception as error:
+            try:
+                raise RuntimeError("intermediate") from error
+            except RuntimeError as intermediate:
+                raise UIAError("wrapper") from intermediate
+
+    monkeypatch.setattr(actions, "_wpf_act", fail)
+    with pytest.raises(ActionError, match='toggle opened a dialog "Confirm"'):
+        actions.set_checked(checkbox, True)

@@ -109,6 +109,44 @@ describe("managed Spy host", () => {
     await expect(inspector.spyMethods({ objectId: "object", generation: 4, pageToken: "expired" })).resolves.toBeUndefined();
     expect(inspector.state).toBe("ready");
   });
+  it("replaces an expired members page token by reading the earlier pages again", async () => {
+    const process = { pid: 87014, creationTimeUtc: "expired-members" };
+    let issued = 0;
+    const expired = new Set<string>();
+    const request = vi.fn(async (method: string, params?: unknown) => {
+      if (method.endsWith("members")) {
+        const token = (params as { pageToken?: string }).pageToken;
+        if (token && expired.has(token)) throw { data: { code: "invalidPageToken" } };
+        const page = token ? Number(token.split("-")[1]) + 1 : 1;
+        return { items: [{ name: `m${page}` }], complete: page === 3, snapshotId: "snap", diagnostics: [], ...(page < 3 ? { nextToken: `p-${page}-${++issued}` } : {}) };
+      }
+      return method.endsWith("identify") ? { ...facts, process } : { ...session, process };
+    });
+    const log = vi.fn(), inspector = new ManagedInspector({ request } as unknown as JsonRpcClient, initialized(true), undefined, log); mock.trusted = true; mock.warning.mockResolvedValue("Attach");
+    await inspector.select("n"); await inspector.attach();
+    const first = await inspector.members({ objectId: "object", generation: 4 });
+    const second = await inspector.members({ objectId: "object", generation: 4, pageToken: first!.nextToken });
+    // Both tokens issued so far expire, as they do in the agent 30 s after issue.
+    expired.add(first!.nextToken!); expired.add(second!.nextToken!);
+    const third = await inspector.members({ objectId: "object", generation: 4, pageToken: second!.nextToken });
+    expect(third?.items).toEqual([{ name: "m3" }]);
+    const membersCalls = request.mock.calls.filter(([method]) => method.endsWith("members")).map(([, params]) => (params as { pageToken?: string }).pageToken);
+    // Expired page 3 token, then page 1 and page 2 again for a fresh token, then page 3 with it.
+    expect(membersCalls.slice(2)).toEqual([second!.nextToken, undefined, expect.stringMatching(/^p-1-/), expect.stringMatching(/^p-2-/)]);
+    expect(log).not.toHaveBeenCalled();
+    expect(inspector.state).toBe("ready");
+  });
+  it("still reports an expired token it cannot replace", async () => {
+    const process = { pid: 87015, creationTimeUtc: "unknown-token" };
+    const request = vi.fn(async (method: string) => {
+      if (method.endsWith("members")) throw { data: { code: "invalidPageToken" } };
+      return method.endsWith("identify") ? { ...facts, process } : { ...session, process };
+    });
+    const log = vi.fn(), inspector = new ManagedInspector({ request } as unknown as JsonRpcClient, initialized(true), undefined, log); mock.trusted = true; mock.warning.mockResolvedValue("Attach");
+    await inspector.select("n"); await inspector.attach();
+    expect(await inspector.members({ objectId: "object", generation: 4, pageToken: "never-issued" })).toBeUndefined();
+    expect(String(log.mock.calls[0][0])).toContain("invalidPageToken");
+  });
   it("logs server-blocked tree failures once per process and code", async () => {
     const request = vi.fn(async () => facts), log = vi.fn();
     const inspector = new ManagedInspector({ request } as unknown as JsonRpcClient, initialized(true), undefined, log);
@@ -306,6 +344,43 @@ describe("honest managed failures", () => {
     expect(inspector.failure).toMatchObject({ code: "mappingFailed", hint: "Refresh the tree." });
     expect(log).toHaveBeenCalledTimes(1);
     expect(log.mock.calls[0][0]).toContain("mappingFailed: Mapping failed. Refresh the tree.");
+  });
+  it("logs stall diagnostics per method and reason and counts repeats", async () => {
+    let reason = "workTimeout";
+    const { inspector, log } = await attached(() => { throw { message: "stalled", data: { code: "dispatcherUnavailable", method: "read", hint: "Inspector request stalled.", details: { reason, ranMs: 2000 } } }; });
+    vi.useFakeTimers(); vi.setSystemTime(1000);
+    try {
+      await inspector.members({ objectId: "o", generation: 1 });
+      await inspector.members({ objectId: "o", generation: 1 });
+      expect(log).toHaveBeenCalledTimes(1);
+      expect(log.mock.calls[0][0]).toContain("reason=workTimeout ranMs=2000");
+      expect(log.mock.calls[0][0]).not.toContain("UI thread is busy");
+      vi.advanceTimersByTime(30000);
+      await inspector.members({ objectId: "o", generation: 1 });
+      expect(log.mock.calls[1][0]).toContain("Repeated 2 times");
+      reason = "earlierWorkRunning";
+      await inspector.members({ objectId: "o", generation: 1 });
+      expect(log).toHaveBeenCalledTimes(3);
+    } finally { vi.useRealTimers(); }
+  });
+  it.each(["success", "dispose"])("flushes a stall burst on %s", async (ending) => {
+    const { inspector, log } = await attached((method) => {
+      if (method.endsWith("members")) throw { message: "stalled", data: { code: "timeout", details: { reason: "workTimeout" } } };
+      return {};
+    });
+    vi.useFakeTimers();
+    try {
+      await inspector.members({ objectId: "o", generation: 1 });
+      await inspector.members({ objectId: "o", generation: 1 });
+      await inspector.members({ objectId: "o", generation: 1 });
+      expect(log).toHaveBeenCalledTimes(1);
+      if (ending === "success") await inspector.children({ objectId: "o", generation: 1, tree: "visual" });
+      else inspector.invalidate(); // Spy disposal resets the managed inspector this way.
+      expect(log).toHaveBeenCalledTimes(2);
+      expect(log.mock.calls[1][0]).toContain("Repeated 2 times.");
+      inspector.invalidate();
+      expect(log).toHaveBeenCalledTimes(2);
+    } finally { vi.useRealTimers(); }
   });
   it("blames an access-denied resolve on the attachment and says so", async () => {
     const { inspector, log } = await attached((method) => { if (method.endsWith("resolve")) throw denied; return {}; });

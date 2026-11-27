@@ -1360,3 +1360,106 @@ def test_dispatcher_diagnostic_message_survives_response_mapping() -> None:
     assert error is not None
     assert str(error) == message
     assert error.to_dict()["message"] == message
+
+
+@pytest.mark.parametrize("reason", ["queueWait", "workTimeout", "earlierWorkRunning"])
+def test_dispatcher_diagnostics_are_preserved_and_whitelisted(reason: str) -> None:
+    from wintestkit.inspector.client import _response
+    from wintestkit.inspector.hints import inspector_error_hint
+
+    _, _, error = _response(
+        {
+            "id": 1,
+            "error": {
+                "code": "timeout",
+                "message": "failed",
+                "details": {
+                    "reason": reason,
+                    "queuedMs": 10,
+                    "ranMs": 2000,
+                    "runningForMs": 2500,
+                    "escalated": True,
+                    "secret": "hidden",
+                    "dispatcherBusy": "invalid",
+                },
+            },
+        }
+    )
+    assert error is not None
+    assert "secret" not in error.details and "dispatcherBusy" not in error.details
+    hint = inspector_error_hint(error.code, error.details, "read")
+    if reason == "queueWait":
+        assert "UI thread is busy" in hint
+    elif reason == "workTimeout":
+        assert "request read ran 2000 ms" in hint and "UI thread is busy" not in hint
+    else:
+        assert "running for 2500 ms" in hint and "UI thread is busy" not in hint
+
+
+def test_wire_timeout_has_headroom_and_preserves_server_details() -> None:
+    def handler(request: dict[str, Any]) -> object:
+        return {
+            "id": request["id"],
+            "error": {
+                "code": "timeout",
+                "message": "late",
+                "details": {"reason": "workTimeout", "ranMs": 1700},
+            },
+        }
+
+    transport = ScriptedTransport(handler)
+    client = InspectorClient(transport, session())
+    try:
+        with pytest.raises(InspectorDeadlineError) as exc:
+            client._request("act.toggle", {"timeoutMs": 2000}, time.monotonic() + 10)
+        assert 1 <= transport.requests[0]["params"]["timeoutMs"] <= 1700
+        assert exc.value.details == {"reason": "workTimeout", "ranMs": 1700}
+        assert exc.value.method == "act.toggle"
+    finally:
+        client.close()
+
+
+def test_local_expiry_has_distinct_reason() -> None:
+    client = InspectorClient(ScriptedTransport(lambda request: None), session())
+    try:
+        with pytest.raises(InspectorDeadlineError) as exc:
+            client._request("state.get", {}, time.monotonic() - 1)
+        assert exc.value.details["reason"] == "clientDeadline"
+        assert exc.value.method == "state.get"
+    finally:
+        client.close()
+
+
+def test_error_preserves_server_details() -> None:
+    details = {"deadline": True, "extra": 3}
+    assert _error("limitExceeded", details).details == details
+    assert _error("writeDenied", details).details == details
+    from wintestkit.inspector.client import _response
+
+    _, _, error = _response(
+        {"id": 1, "error": {"code": "limitExceeded", "message": "expired", "details": details}}
+    )
+    assert error is not None and error.details == details
+
+
+def test_send_short_budget_preserves_session_and_write_has_floor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import wintestkit.inspector.client as client_module
+
+    writes: list[float] = []
+    monkeypatch.setattr(
+        client_module, "write_frame", lambda transport, frame, deadline: writes.append(deadline)
+    )
+    client = InspectorClient(ScriptedTransport(lambda request: None), session())
+    try:
+        with pytest.raises(InspectorDeadlineError) as caught:
+            client._send("test", {}, time.monotonic() + 0.01)
+        assert caught.value.budget_exhausted and caught.value.details["reason"] == "clientDeadline"
+        assert not writes and not client._closed
+        start = time.monotonic()
+        client._send("test", {}, start + 0.1)
+        assert writes[0] >= start + 0.5
+        assert not client._closed
+    finally:
+        client.close()

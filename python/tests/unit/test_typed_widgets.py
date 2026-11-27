@@ -544,8 +544,10 @@ def test_toggle_button_checks_and_clicks(
     world.element = FakeElement("Button", "Bold", class_name="ToggleButton")
     world.supported = {"Toggle"}
     log: list[str] = []
-    monkeypatch.setattr(actions, "set_checked", lambda el, checked: log.append(f"set:{checked}"))
-    monkeypatch.setattr(actions, "toggle", lambda el: log.append("toggle"))
+    monkeypatch.setattr(
+        actions, "set_checked", lambda el, checked, **kwargs: log.append(f"set:{checked}")
+    )
+    monkeypatch.setattr(actions, "toggle", lambda el, **kwargs: log.append("toggle"))
     monkeypatch.setattr(actions, "is_checked", lambda el: True)
     monkeypatch.setattr(actions, "click", lambda el, **k: log.append("click") or "toggle")
     page.bold.check()
@@ -603,3 +605,21 @@ def test_status_bar_lists_the_leaf_texts(page: Widgets, world: World) -> None:
     world.element.add(FakeElement("Text", "Line 3", class_name="StatusBarItem"))
     world.element.add(FakeElement("Text", "", class_name="StatusBarItem"))
     assert page.status.texts() == ["Status ready", "Line 3"]
+
+
+def test_checkable_modes_follow_configuration_and_override(
+    page: Widgets, world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import dataclasses
+
+    world.element = FakeElement("Button", "Bold", class_name="ToggleButton")
+    world.supported = {"Toggle"}
+    runtime.set_config(dataclasses.replace(runtime.get_config(), input_mode="mouse"))
+    modes: list[str] = []
+    monkeypatch.setattr(actions, "set_checked", lambda el, checked, **kw: modes.append(kw["mode"]))
+    monkeypatch.setattr(actions, "toggle", lambda el, **kw: modes.append(kw["mode"]))
+    page.bold.check()
+    page.bold.uncheck(mode="pattern")
+    page.bold.toggle()
+    page.bold.toggle(mode="pattern")
+    assert modes == ["mouse", "pattern", "mouse", "pattern"]

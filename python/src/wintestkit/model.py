@@ -1658,8 +1658,8 @@ class _TextEntry(_Valued):
             def enter(el: TargetElement) -> str:
                 __tracebackhide__ = True
                 nonlocal secret
-                rec.sensitive = True
                 secret = secret or classifier.is_password(el)
+                rec.sensitive = secret
                 rec.set_arguments(args, secret=secret)
                 return actions.type_text(el, text, clear=clear, keys=keys)
 
@@ -1680,8 +1680,8 @@ class _TextEntry(_Valued):
             def send(el: TargetElement) -> None:
                 __tracebackhide__ = True
                 nonlocal secret
-                rec.sensitive = True
                 secret = secret or classifier.is_password(el)
+                rec.sensitive = secret
                 rec.set_arguments({"keys": keys}, secret=secret)
                 actions.press(el, keys)
 
@@ -1689,15 +1689,25 @@ class _TextEntry(_Valued):
 
 
 class _Checkable(BoundControl):
-    def check(self, *, timeout: float | None = None) -> None:
+    def check(self, *, timeout: float | None = None, mode: InputMode | None = None) -> None:
         __tracebackhide__ = True
         with self.step("check"):
-            self.perform(timeout, lambda el: actions.set_checked(el, True))
+            self.perform(
+                timeout,
+                lambda el: actions.set_checked(
+                    el, True, mode=mode or runtime.get_config().input_mode, timeout=timeout
+                ),
+            )
 
-    def uncheck(self, *, timeout: float | None = None) -> None:
+    def uncheck(self, *, timeout: float | None = None, mode: InputMode | None = None) -> None:
         __tracebackhide__ = True
         with self.step("uncheck"):
-            self.perform(timeout, lambda el: actions.set_checked(el, False))
+            self.perform(
+                timeout,
+                lambda el: actions.set_checked(
+                    el, False, mode=mode or runtime.get_config().input_mode, timeout=timeout
+                ),
+            )
 
     def is_checked(self) -> bool:
         __tracebackhide__ = True
@@ -1804,20 +1814,20 @@ class _Expandable(BoundControl):
 
 class _GridControl(BoundControl):
     def row(self, i: int) -> BoundElement:
-        """Row ``i`` (0-based) of a grid element."""
+        """Data row ``i`` (0-based), excluding group headers and placeholders."""
         __tracebackhide__ = True
         locator = self.locator.with_item(ItemSelector("row", i))
         return BoundElement(self.page, self.definition, locator)
 
     def cell(self, row: int, column: int | str) -> BoundElement:
-        """The cell at ``row`` and ``column`` (index or header name) of a grid element."""
+        """The cell at data row ``row`` (0-based) and column index or header name."""
         __tracebackhide__ = True
         locator = self.locator.with_item(ItemSelector("cell", row, column))
         return BoundElement(self.page, self.definition, locator)
 
     def row_count(self) -> int:
         __tracebackhide__ = True
-        return patterns.grid_size(self.resolve())[0]
+        return len(actions.grid_data_rows(self.resolve()))
 
     def column_count(self) -> int:
         __tracebackhide__ = True
@@ -1826,10 +1836,11 @@ class _GridControl(BoundControl):
     def find_row(
         self, column: int | str, value: Matcher, *, timeout: float | None = None
     ) -> BoundElement:
-        """The first row whose ``column`` cell equals (or matches) ``value``."""
+        """The first data row whose ``column`` cell equals (or matches) ``value``."""
         __tracebackhide__ = True
         grid = self.resolve(timeout)
-        rows, columns = patterns.grid_size(grid)
+        data_rows = actions.grid_data_rows(grid)
+        rows, columns = len(data_rows), patterns.grid_size(grid)[1]
         if rows > _MAX_FIND_ROW_ROWS:
             raise ActionError(
                 f"find_row() refuses to scan {rows} rows (limit {_MAX_FIND_ROW_ROWS}); "
@@ -1844,8 +1855,8 @@ class _GridControl(BoundControl):
             column_index = column
         if not 0 <= column_index < columns:
             raise ActionError(f"column {column!r} is out of range (grid has {columns} columns)")
-        for index in range(rows):
-            cell = patterns.grid_item(grid, index, column_index)
+        for index, row in enumerate(data_rows):
+            cell = row.cell(column_index)
             if match_value(value, actions.get_text(cell)):
                 return self.row(index)
         shown = value if isinstance(value, str) else f"/{value.pattern}/"

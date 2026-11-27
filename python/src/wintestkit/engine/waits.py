@@ -66,7 +66,7 @@ def wait_until[T](
         except InspectorDeadlineError as error:
             if operation_deadline is not None:
                 raise
-            if not error.busy:
+            if not error.busy and not error.budget_exhausted:
                 if _clock() < start + timeout - 0.001:
                     raise
                 waited = _clock() - start

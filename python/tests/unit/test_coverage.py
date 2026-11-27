@@ -8,7 +8,6 @@ from fakes import FakeApp, FakeElement
 from rpc_support import RpcElement, make_server, request
 
 from wintestkit import coverage as coverage_module
-from wintestkit.commands.init import _template
 from wintestkit.engine import query
 
 PAGES = """
@@ -67,15 +66,24 @@ def _project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Any, Any,
     return server, output, registered
 
 
+VSCODE_PAGE = """from wintestkit import Element, Page, Window
+
+
+class MainPage(Page):
+    window = Window(process="Code.exe", index=0)
+    content = Element(depth=1, index=1)
+"""
+
+
 @pytest.mark.parametrize(
     "title",
     ["test - Visual Studio Code", "Different workspace - Visual Studio Code", "Visual Studio Code"],
 )
-def test_generated_mainpage_matches_the_second_direct_child_for_any_workspace(
+def test_second_direct_child_definition_matches_for_any_workspace(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, title: str
 ) -> None:
     server, output, _ = make_server(tmp_path, monkeypatch)
-    (tmp_path / "page.py").write_text(_template("main.py.tmpl"), encoding="utf-8")
+    (tmp_path / "page.py").write_text(VSCODE_PAGE, encoding="utf-8")
     first = RpcElement("Pane")
     second = RpcElement("Pane", title, children=[RpcElement("Pane", "nested")])
     window = RpcElement("Window", title, children=[first, second])

@@ -118,7 +118,7 @@ def validate_spy_arguments(arguments: object) -> list[dict[str, object]]:
     return values
 
 
-def _error(code: str, details: object = None) -> InspectorError:
+def _error_kind(code: str, details: object = None) -> InspectorError:
     if code == "writeDenied":
         return WriteDeniedError("Inspector request failed: writeDenied", code=code)
     if code == "writeRateExceeded":
@@ -167,6 +167,13 @@ def _error(code: str, details: object = None) -> InspectorError:
     return InspectorError(f"Inspector request failed: {code}", code=code)
 
 
+def _error(code: str, details: object = None) -> InspectorError:
+    result = _error_kind(code, details)
+    if isinstance(details, dict):
+        result.details = cast(dict[str, object], details).copy()
+    return result
+
+
 def _response(value: object) -> tuple[int, object, InspectorError | None]:
     data = _obj(value, "id", "result error")
     request_id = _int(data["id"], 1)
@@ -182,6 +189,19 @@ def _response(value: object) -> tuple[int, object, InspectorError | None]:
         raise ValueError("Invalid error details")
     details = error.get("details")
     result = _error(code, details)
+    if code in {"timeout", "dispatcherUnavailable", "busy"} and isinstance(details, dict):
+        result.details = {}
+        raw = cast(dict[str, object], details)
+        reason = raw.get("reason")
+        if reason in ("queueWait", "workTimeout", "earlierWorkRunning"):
+            result.details["reason"] = reason
+        for key in ("queuedMs", "ranMs", "runningForMs"):
+            value = raw.get(key)
+            if type(value) is int and value >= 0:
+                result.details[key] = value
+        for key in ("escalated", "dispatcherBusy"):
+            if isinstance(raw.get(key), bool):
+                result.details[key] = raw[key]
     if code in {"timeout", "dispatcherUnavailable", "busy"}:
         result.args = (error["message"],)
         result.message = error["message"]
@@ -236,6 +256,12 @@ class EventSubscription:
                 except queue.Empty:
                     break
             return True
+
+
+def _client_deadline(message: str) -> InspectorDeadlineError:
+    error = InspectorDeadlineError(message, code="timeout")
+    error.details = {"reason": "clientDeadline"}
+    return error
 
 
 class InspectorClient:
@@ -406,6 +432,8 @@ class InspectorClient:
                             raise ValueError("Duplicate subscription ID")
                         self._subscriptions[subscription_id] = EventSubscription(subscription_id)
                     pending.result = result
+                    if error is not None:
+                        error.method = pending.method
                     pending.error = error
                     pending.event.set()
         except TimeoutError:
@@ -430,7 +458,7 @@ class InspectorClient:
     ) -> _Pending:
         remaining = deadline - time.monotonic()
         if remaining <= 0 or not self._write_lock.acquire(timeout=max(0, remaining)):
-            raise InspectorDeadlineError("Inspector request deadline expired", code="timeout")
+            raise _client_deadline("Inspector request deadline expired")
         entry = _Pending(threading.Event(), method=method)
         try:
             with self._lock:
@@ -446,24 +474,30 @@ class InspectorClient:
                     self._abandoned.add(request_id)
                 else:
                     self._pending[request_id] = entry
-            if time.monotonic() >= deadline:
+            if deadline - time.monotonic() < 0.05:
                 with self._lock:
                     self._pending.pop(request_id, None)
                     self._abandoned.discard(request_id)
-                raise InspectorDeadlineError("Inspector request deadline expired", code="timeout")
+                raise _client_deadline("Inspector request deadline expired")
             try:
+                if "timeoutMs" in params:
+                    remaining_ms = int((deadline - time.monotonic()) * 1000)
+                    params = {
+                        **params,
+                        "timeoutMs": min(
+                            _int(params["timeoutMs"], 1, 2000), max(1, remaining_ms - 300)
+                        ),
+                    }
                 write_frame(
                     self._transport,
                     {"id": request_id, "method": method, "params": params},
-                    deadline,
+                    max(deadline, time.monotonic() + 0.5),
                 )
             except TimeoutError as error:
                 self.invalidate(
                     InspectorUnavailableError("Inspector pipe write failed", code="sessionStale")
                 )
-                raise InspectorDeadlineError(
-                    "Inspector pipe write timed out", code="timeout"
-                ) from error
+                raise _client_deadline("Inspector pipe write timed out") from error
             except (ValueError, EOFError, OSError, UnicodeError) as error:
                 self.invalidate(
                     InspectorUnavailableError("Inspector pipe write failed", code="sessionStale")
@@ -525,9 +559,7 @@ class InspectorClient:
                                 name="WinTestKit inspector cancel",
                                 daemon=True,
                             ).start()
-                            raise InspectorDeadlineError(
-                                "Inspector request deadline expired", code="timeout"
-                            )
+                            raise _client_deadline("Inspector request deadline expired")
                 if (
                     isinstance(entry.error, InspectorDeadlineError)
                     and entry.error.busy
@@ -555,7 +587,10 @@ class InspectorClient:
                             raise InspectorUnavailableError(
                                 "Inspector session is not ready", code="sessionStale"
                             )
-                    if time.monotonic() >= deadline:
+                    remaining = deadline - time.monotonic()
+                    if remaining < 0.05:
+                        if remaining > 0:
+                            time.sleep(remaining)
                         raise entry.error
                     continue
                 if (
@@ -579,6 +614,8 @@ class InspectorClient:
                 busy=error.busy,
             )
             wrapped.audit = error.audit
+            wrapped.details = error.details.copy()
+            wrapped.method = error.method or method
             raise wrapped from error
         except InspectorError as error:
             outcome = error.code if error.code in ERROR_CODES else "error"
@@ -709,7 +746,7 @@ class InspectorClient:
             raise InspectorError("Invalid request timeout", code="invalidParams") from error
         remaining = int((deadline - time.monotonic()) * 1000)
         if remaining < 1:
-            raise InspectorDeadlineError("Inspector request deadline expired", code="timeout")
+            raise _client_deadline("Inspector request deadline expired")
         return min(requested, remaining)
 
     def _query(self, method: str, locator: Locator, timeout_ms: int, deadline: float) -> object:

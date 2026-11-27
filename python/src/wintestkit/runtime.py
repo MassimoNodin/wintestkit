@@ -233,7 +233,9 @@ def _attach_managed(
     spy_invoke: bool = False,
 ) -> InspectorClient:
     __tracebackhide__ = True
-    from wintestkit.errors import InspectorUnavailableError
+    from copy import copy
+
+    from wintestkit.errors import InspectorError, InspectorUnavailableError
 
     require_managed()
     config = get_config().inspector
@@ -260,23 +262,37 @@ def _attach_managed(
                 return client
         with _inspector_lock:
             if not explicit and identity in _inspector_failures:
-                raise _inspector_failures[identity]
+                cached = _inspector_failures[identity]
+                fresh = (
+                    cached.copy_with_message(str(cached))
+                    if isinstance(cached, InspectorError)
+                    else copy(cached)
+                )
+                raise fresh from cached
             if not explicit and identity in _inspector_attempted:
                 raise InspectorUnavailableError(
                     "Inspector session ended; explicitly attach again", code="notAttached"
                 )
             _inspector_attempted.add(identity)
+        attach_limit = time.monotonic() + config.attach_timeout
+        caller_limited = deadline < attach_limit
         try:
             client = registry.attach(
                 identity,
                 target_hwnd=target_hwnd,
-                deadline=min(deadline, time.monotonic() + config.attach_timeout),
+                deadline=min(deadline, attach_limit),
                 **({"spy_invoke": True} if spy_invoke else {}),
             )
         except Exception as exc:
             with _inspector_lock:
                 if epoch == _inspector_epoch:
-                    _inspector_failures[identity] = exc
+                    if caller_limited and (
+                        isinstance(exc, TimeoutError)
+                        or (isinstance(exc, InspectorError) and exc.code == "timeout")
+                    ):
+                        _inspector_attempted.discard(identity)
+                    else:
+                        _inspector_failures[identity] = exc
             raise
         with _inspector_lock:
             valid = epoch == _inspector_epoch and registry is _inspector_registry

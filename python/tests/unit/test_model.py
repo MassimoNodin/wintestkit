@@ -380,6 +380,39 @@ def test_id_only_password_and_explicit_secret_hide_input_and_provider_errors(
 
 
 @pytest.mark.parametrize("method", ["type", "press"])
+@pytest.mark.parametrize("classification", ["password", "ordinary", "raises"])
+def test_text_entry_classifies_before_recording_failure(
+    page: MainPage,
+    recorder: Recorder,
+    monkeypatch: pytest.MonkeyPatch,
+    runtime_setup: list[runtime.StepRecord],
+    method: str,
+    classification: str,
+) -> None:
+    sentinel = "PRIVATE_INPUT_SENTINEL"
+
+    def classify(self: Any, element: Any) -> bool:
+        if classification == "raises":
+            raise ActionError(f"classification failed: {sentinel}")
+        return classification == "password"
+
+    def fail(*args: Any, **kwargs: Any) -> None:
+        raise ActionError(f"provider failed: {sentinel}")
+
+    monkeypatch.setattr(actions.PasswordClassifier, "is_password", classify)
+    monkeypatch.setattr(actions, "type_text" if method == "type" else "press", fail)
+    with pytest.raises(ActionError) as failure:
+        getattr(page.status, method)(sentinel)
+    record = runtime_setup[-1]
+    if classification == "ordinary":
+        assert f"provider failed: {sentinel}" in str(failure.value)
+        assert sentinel in str(record.to_dict())
+    else:
+        assert sentinel not in str(failure.value)
+        assert sentinel not in str(record.to_dict())
+
+
+@pytest.mark.parametrize("method", ["type", "press"])
 @pytest.mark.parametrize("password", [False, True])
 def test_text_action_keeps_wpf_classification_on_later_deadline(
     page, recorder, monkeypatch, runtime_setup, method, password
@@ -1027,3 +1060,65 @@ def test_drag_by_and_scroll_record_their_arguments(
     assert calls[1] == ("scroll", -3, {"offset": (1, 1), "horizontal": True})
     assert runtime_setup[0].args == {"dx": 10, "dy": -5, "source_offset": [2, 2]}
     assert runtime_setup[1].args == {"x": 1, "y": 1, "clicks": -3, "horizontal": True}
+
+
+def test_instant_managed_collection_and_element_have_operation_budget(
+    page: MainPage, recorder: Recorder, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import time
+
+    from wintestkit.engine.managed import locator_deadline
+
+    attached = False
+
+    def query(*args: Any) -> list[FakeElement]:
+        nonlocal attached
+        assert locator_deadline() > time.monotonic() + 1
+        attached = True
+        return [recorder.element] * 13
+
+    def single(*args: Any) -> FakeElement:
+        assert query()
+        return recorder.element
+
+    monkeypatch.setattr(model, "resolve", single)
+    monkeypatch.setattr(model, "resolve_all", query)
+    assert page.sign_in.exists()
+    assert attached
+    assert page.oks.count() == 13
+    assert len(page.oks) == 13
+    assert len(page.oks.all()) == 13
+    assert len(list(page.oks)) == 13
+
+
+def test_instant_managed_busy_propagates(page: MainPage, recorder: Recorder) -> None:
+    recorder.error = InspectorDeadlineError("busy", code="timeout", busy=True)
+    with pytest.raises(InspectorDeadlineError, match="busy"):
+        page.sign_in.exists()
+
+
+def test_unclassified_resolution_failure_remains_sensitive(
+    page: MainPage, recorder: Recorder
+) -> None:
+    recorder.error = InspectorDeadlineError("dispatcher unavailable", code="dispatcherUnavailable")
+    with pytest.raises(ActionError, match="details redacted"):
+        page.status.type("ordinary text")
+
+
+def test_mouse_checked_state_and_unchanged_dialog(monkeypatch: pytest.MonkeyPatch) -> None:
+    element = FakeElement("CheckBox", "Choice")
+    state = [False]
+    clicks: list[str] = []
+    monkeypatch.setattr(actions, "is_checked", lambda el: state[0])
+
+    def click(el: Any, *, mode: str) -> str:
+        clicks.append(mode)
+        state[0] = True
+        return mode
+
+    monkeypatch.setattr(actions, "click", click)
+    actions.set_checked(element, True, mode="mouse", timeout=0)
+    actions.set_checked(element, True, mode="mouse", timeout=0)
+    assert clicks == ["mouse"]
+    with pytest.raises(ActionError, match="may have opened a dialog"):
+        actions.set_checked(element, False, mode="mouse", timeout=0)

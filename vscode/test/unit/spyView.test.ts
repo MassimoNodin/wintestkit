@@ -2529,6 +2529,36 @@ describe("Spy view bridge", () => {
     expect(mocks.icons).toHaveBeenCalledWith([123]);
     fixture.provider.dispose();
   });
+  it("holds defined-object markers back until a pick reveal has loaded its levels", async () => {
+    const node = (nodeId: string) => ({ nodeId, hasChildren: true, info: { name: nodeId, controlType: "Pane", processId: 123 } });
+    const root = node("app"), panel = node("panel"), inner = node("inner"), picked = node("picked");
+    const order: string[] = [];
+    mocks.request.mockImplementation((method: string, params?: { nodeId?: string; nodeIds?: string[] }) => {
+      order.push(method === "inspect.children" ? `children:${params?.nodeId}` : method);
+      if (method === "app.status") return Promise.resolve({ running: true, pids: [123] });
+      if (method === "inspect.refresh") return Promise.resolve({ nodes: [root], status: { running: true, pids: [123] } });
+      if (method === "inspect.properties") return Promise.resolve({ info: picked.info, properties: {}, ancestors: [root, panel, inner] });
+      if (method === "inspect.roots") return Promise.resolve([root]);
+      if (method === "inspect.children") return Promise.resolve(params?.nodeId === "app" ? [panel] : params?.nodeId === "panel" ? [inner] : [picked]);
+      if (method === "inspect.coverage") return Promise.resolve({ covered: {}, pending: [] });
+      return Promise.resolve(undefined);
+    });
+    const fixture = await create();
+    fixture.receive({ type: "ready", showOtherApps: false });
+    await vi.waitFor(() => expect(order).toContain("inspect.coverage"));
+    fixture.receive({ type: "pick" });
+    await vi.waitFor(() => expect(latestSession()).toBeTypeOf("string"));
+    order.length = 0;
+    mocks.notifications.get("spy.picked")?.({ sessionId: latestSession(), node: picked, suggestion: { helpers: [], code: "Element()" } });
+    await vi.waitFor(() => expect(fixture.sent.some((message) => message.type === "selected")).toBe(true));
+    await vi.waitFor(() => expect(order).toContain("inspect.coverage"));
+    const levels = ["children:app", "children:panel", "children:inner"].map((step) => order.indexOf(step));
+    expect(levels.every((index) => index >= 0)).toBe(true);
+    // Each coverage request costs up to 250 ms on the server's one inspection worker, so none runs between levels.
+    expect(order.indexOf("inspect.coverage")).toBeGreaterThan(Math.max(...levels));
+    expect(mocks.request).toHaveBeenCalledWith("inspect.coverage", { nodeIds: expect.arrayContaining(["panel", "inner", "picked"]) });
+    fixture.provider.dispose();
+  });
   it("reads the basic properties first, then every property without a button press", async () => {
     mocks.request.mockImplementation((method: string, params: { full?: boolean }) =>
       Promise.resolve(

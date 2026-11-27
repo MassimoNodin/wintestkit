@@ -63,3 +63,15 @@ def test_replacement_and_close_release_identities(monkeypatch: pytest.MonkeyPatc
     assert removed == [first]
     app.close(timeout=0)
     assert removed == [first, second]
+
+
+@pytest.mark.parametrize("launched", [False, True])
+def test_blocked_close_only_kills_launched(monkeypatch: pytest.MonkeyPatch, launched: bool) -> None:
+    app = App("fake", launched=launched)
+    killed: list[bool] = []
+    monkeypatch.setattr(app, "detach_inspector", lambda: None)
+    monkeypatch.setattr(app, "top_level_windows", lambda: [])
+    monkeypatch.setattr(app, "wait_for_exit", lambda timeout: False)
+    monkeypatch.setattr(app, "kill", lambda: killed.append(True))
+    app.close(timeout=0)
+    assert bool(killed) is launched

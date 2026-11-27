@@ -1,8 +1,8 @@
-"""A VS Code example that works without a workspace-specific window title."""
+"""Starter page: adjust the window locator for your application."""
 
-from wintestkit import Element, Page, Window
+from wintestkit import Page, Window
 
 
 class MainPage(Page):
-    window = Window(process="Code.exe", index=0)
-    content = Element(depth=1, index=1)
+    # The main window of the configured app. Refine the locator if the app has several windows.
+__NOTE__    window = Window(process=__PROCESS__, index=0)
