@@ -40,6 +40,11 @@ to request automation-peer or UIA pattern actions instead.
 WPF can find hidden descendants of collapsed expanders and peerless elements that UIA may
 omit. Peerless elements require mouse actions. DataGrid row/cell reads and counts still use
 UIA Grid patterns, and mouse row selection may use a row header or pattern fallback.
+The elements `row()`, `cell()` and `find_row()` return come from UIA, but managed reads and
+`where` conditions on them (`cell.get('clr:DataContext.Name')`, `type:Name@DataContext`) go
+through the WPF object behind them, like on any other element of a WPF window. An off-screen row,
+cell or list item that is realized is scrolled into view through its ScrollItem pattern or its
+row's, and otherwise by the agent, even when its peer does not offer the pattern.
 A visible irregular region may have no safe click point; unrooted handles may go stale.
 
 ## Installation and configuration
@@ -438,7 +443,7 @@ Reading text runs application getters and `ToString` overrides, with the same sa
 reads: the per-request time limit, redaction (a protected identity such as a `PasswordBox`, or a member or
 type name matching a redaction rule, gives a redacted result instead of text), and exception capture (a throwing
 `ToString` is an unreadable value with the sanitized error). A password field never matches a `wpf:Text`
-condition, so it does not fail a search that passes it; any other unreadable value does. `wpf:Text` and
+condition, so it does not fail a search that passes it. `wpf:Text` and
 `wpf:Ordinal` work in `where`, in `el.get(...)` and in aliases.
 
 Agent queries search the combined WPF tree, including elements without UIA peers.
@@ -450,11 +455,26 @@ completes, or raises a limit error when it runs out of time or elements; 200 inc
 are returned because ambiguity is already evident.
 Within one search a path such as `clr:DataContext.Status` is evaluated once per distinct
 intermediate object (elements sharing a DataContext read it once), type and identity conditions
-run before member reads, and per-type member lookups are cached. Managed keys require `backend: auto` and a WPF window; they are not supported by the UIA
+run before member reads, and per-type member lookups are cached. A path is finite, so an object
+met twice on it is not a cycle: an element that is its own DataContext (`DataContext = this`) or a view
+model that points back at its view reads normally inside a search. Managed keys require `backend: auto` and a WPF window; they are not supported by the UIA
 backend. Equality and regular expressions use the
 normal `where` matching rules; managed scalar comparison distinguishes booleans from numbers
 and supports enum names or integer values. Redacted, unsupported or ambiguous values cannot
 be treated as ordinary matches. See [property matching](property-matching.md).
+
+#### Unreadable candidates
+
+A search looks at elements of every type, so some candidates cannot be read: the member is missing,
+an index is out of range, an intermediate value is null, a getter throws, the member is not readable or
+its value is not comparable, the value is redacted or the element is protected (a password field).
+In a search each such candidate is a **non-match**, whatever the other conditions say, and the search
+goes on; the value is never compared, so a redacted one cannot leak. A candidate stops at the first
+condition that rejects it, cheapest conditions first, so only candidates that reach an unreadable
+condition are counted. When nothing matches, the not-found message says how many candidates were
+unreadable and why, for example `3 candidates could not be read (exception: 2, unsupported: 1)`; the
+reasons are the value statuses above plus `ambiguous`. Reading a value yourself with `el.get(...)` is
+not a search: it still raises when the value cannot be read.
 
 ## CLI
 

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
@@ -341,7 +342,7 @@ namespace WinTestKit.Inspector.Agent.Query.Tests
         }
         [Trait("Category", "Unit")]
         [Fact]
-        public void MismatchDoesNotHideUnreadablePredicate()
+        public void AnUnreadableValueIsANonMatchThatTheResultCounts()
         {
             OnSta(() =>
             {
@@ -350,20 +351,38 @@ namespace WinTestKit.Inspector.Agent.Query.Tests
                 {
                     var model = new Model();
                     ObjectRef handle = registry.Register(model, model.Dispatcher, TypeInfoBuilder.Build(model.GetType()));
-                    var locator = new Locator
+                    QueryFindAllResult Search(params Predicate[] predicates)
                     {
-                        Scope = new Scope { Kind = "object", Handle = handle },
-                        Tree = "logical", DepthMode = "tree",
-                        Depth = 0,
-                        Limit = 1,
-                        Predicates = new[] { Equal("TextValue", new JsonStringNode("mismatch")), Equal("SecretValue", new JsonStringNode("x")) }
-                    };
-                    var task = new QueryEngine(executor, registry).FindAsync(locator, DateTime.UtcNow.AddSeconds(60), CancellationToken.None);
-                    var frame = new DispatcherFrame();
-                    task.ContinueWith(_ => frame.Continue = false, TaskScheduler.Default);
-                    Dispatcher.PushFrame(frame);
-                    var error = Assert.Throws<ProtocolException>(() => task.GetAwaiter().GetResult());
-                    Assert.Equal(ErrorCodes.ValueUnreadable, error.Code);
+                        var locator = new Locator
+                        {
+                            Scope = new Scope { Kind = "object", Handle = handle },
+                            Tree = "logical", DepthMode = "tree",
+                            Depth = 0,
+                            Limit = 1,
+                            Predicates = predicates
+                        };
+                        var task = new QueryEngine(executor, registry).FindAllAsync(locator, DateTime.UtcNow.AddSeconds(60), CancellationToken.None);
+                        var frame = new DispatcherFrame();
+                        task.ContinueWith(_ => frame.Continue = false, TaskScheduler.Default);
+                        Dispatcher.PushFrame(frame);
+                        return task.GetAwaiter().GetResult();
+                    }
+                    // A redacted value is never compared: the candidate does not match and the reason is reported, not the value.
+                    QueryFindAllResult unreadable = Search(Equal("SecretValue", new JsonStringNode("not disclosed")));
+                    Assert.True(unreadable.Complete);
+                    Assert.Empty(unreadable.Matches);
+                    Assert.Equal(1, unreadable.Unreadable!.Count);
+                    Assert.Equal(1, unreadable.Unreadable.Reasons["redacted"]);
+                    Assert.DoesNotContain("not disclosed", Encoding.UTF8.GetString(StrictJson.Serialize(unreadable.ToJson())));
+                    // A candidate stops at the first predicate that rejects it (cheapest first), so a mismatch that
+                    // comes before the unreadable read is not reported as unreadable.
+                    QueryFindAllResult mismatch = Search(Equal("TextValue", new JsonStringNode("mismatch")), Equal("SecretValue", new JsonStringNode("x")), Equal("Name", new JsonStringNode("y")));
+                    Assert.Empty(mismatch.Matches);
+                    Assert.Null(mismatch.Unreadable);
+                    // An unreadable value of an element that would match otherwise still cannot make it match.
+                    QueryFindAllResult broken = Search(Equal("BrokenValue", new JsonStringNode("x")));
+                    Assert.Empty(broken.Matches);
+                    Assert.Equal(1, broken.Unreadable!.Reasons["exception"]);
                     GC.KeepAlive(model);
                 }
             });

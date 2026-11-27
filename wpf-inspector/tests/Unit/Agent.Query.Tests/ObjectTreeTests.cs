@@ -470,7 +470,7 @@ namespace WinTestKit.Inspector.Agent.Query.Tests
 
         [Trait("Category", "Unit")]
         [Fact]
-        public void APasswordFieldNeverMatchesTextAndABrokenToStringIsReported()
+        public void APasswordFieldNeverMatchesTextAndABrokenToStringIsASkippedCandidate()
         {
             OnSta(() =>
             {
@@ -484,8 +484,11 @@ namespace WinTestKit.Inspector.Agent.Query.Tests
                     // The password field is skipped instead of failing the whole search.
                     Assert.Equal(Ids(registry, match), Pump(FindAll(engine, ObjectScope(registry, root, 256, Equal("Text", new JsonStringNode("ok"))))).Matches.Select(item => item.ObjectId).ToArray());
                     root.Children.Add(new Button { Content = new Throws() });
-                    var error = Assert.Throws<ProtocolException>(() => Pump(FindAll(engine, ObjectScope(registry, root, 256, Equal("Text", new JsonStringNode("ok"))))));
-                    Assert.Equal(ErrorCodes.ValueUnreadable, error.Code);
+                    // An element whose text cannot be read is a non-match too; the search reports how many it skipped.
+                    QueryFindAllResult skipped = Pump(FindAll(engine, ObjectScope(registry, root, 256, Equal("Text", new JsonStringNode("ok")))));
+                    Assert.Equal(Ids(registry, match), skipped.Matches.Select(item => item.ObjectId).ToArray());
+                    Assert.Equal(1, skipped.Unreadable!.Count);
+                    Assert.Equal(1, skipped.Unreadable.Reasons["exception"]);
                     GC.KeepAlive(root);
                 }
             });

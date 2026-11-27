@@ -2,6 +2,7 @@
 
 import os
 from dataclasses import replace
+from xml.sax.saxutils import escape
 
 import pytest
 from test_wpf_query_gate_real import config
@@ -24,6 +25,38 @@ pytestmark = pytest.mark.skipif(
 
 class FixturePage(Page):
     group = Element(automation_id="ParityGroup")
+
+
+def _node(name, key, value, children="", *, extended=True):
+    flag = ' ExtendedFind="True"' if extended else ""
+    return (
+        f'<Child Name="{name}" Key="{key}"{flag}><Properties><Property Name="WPFControlName">'
+        f'<Value Value="{value}" /></Property></Properties>'
+        + (f"<Children>{children}</Children>" if children else "")
+        + "</Child>"
+    )
+
+
+def export_for(title):
+    """A NameMapping export of the owned fixture: its window and boxes, as a real file is laid out."""
+    window = (
+        f'<Child Name="Main" Key="{{W}}"><Properties><Property Name="WndCaption">'
+        f'<Value Value="{escape(title, {chr(34): "&quot;"})}" /></Property></Properties><Children>'
+        + _node("group", "{G}", "ParityGroup", _node("nested", "{N}", "NestedButto?"))
+        + _node("fancy", "{F}", "FancyAutomationId")
+        + _node("missing", "{M}", "NestedButton", extended=False)
+        + "</Children></Child>"
+    )
+    process = (
+        '<Child Name="App" Key="{P}"><Properties><Property Name="ProcessName">'
+        f'<Value Value="App" /></Property></Properties><Children>{window}</Children></Child>'
+    )
+    return (
+        '<Root Signature="{X}" NameMappingVersion="7" SaveImages="0"><Nodes Name="NameMapping" '
+        'Key="{N0}"><Children><Child Name="Sys" Key="{S}"><Properties><Property Name="Name">'
+        f'<Value Value="Sys" /></Property></Properties><Children>{process}</Children></Child>'
+        "</Children></Nodes></Root>"
+    )
 
 
 SAMPLES = [
@@ -161,22 +194,13 @@ def test_migration_samples(owned, backend, record_property):
 
 def test_namemapping_round_trip(owned, tmp_path):
     scope, path = owned
-    source = tmp_path / "NameMapping.xml"
-    source.write_text(
-        """<Root><Item alias="group" extendedFind="True"><Properties>
-      <Property name="WPFControlName" value="ParityGroup" /></Properties>
-      <Item alias="nested" extendedFind="True"><Properties>
-      <Property name="WPFControlName" value="NestedButto?" /></Properties></Item>
-      </Item><Item alias="fancy" extendedFind="True"><Properties>
-      <Property name="WPFControlName" value="FancyAutomationId" /></Properties></Item>
-      <Item alias="missing"><Properties><Property name="WPFControlName" value="NestedButton" /></Properties></Item>
-      </Root>""",
-        encoding="utf-8",
-    )
-    namespace = {}
-    exec(compile(convert(source), str(source), "exec"), namespace)
-    page = namespace["ImportedPage"](scope.app)
     with runtime.config_scope(replace(config(path, "agent"), backend="auto")):
+        title = scope.app.main_window().name
+        source = tmp_path / "NameMapping.xml"
+        source.write_text(export_for(title), encoding="utf-8")
+        namespace = {}
+        exec(compile(convert(source), str(source), "exec"), namespace)
+        page = namespace["Main"](scope.app)
         for alias, automation_id in (
             ("group", "ParityGroup"),
             ("nested", "NestedButton"),

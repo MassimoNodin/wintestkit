@@ -1122,3 +1122,16 @@ def test_mouse_checked_state_and_unchanged_dialog(monkeypatch: pytest.MonkeyPatc
     assert clicks == ["mouse"]
     with pytest.raises(ActionError, match="may have opened a dialog"):
         actions.set_checked(element, False, mode="mouse", timeout=0)
+
+
+def test_exists_mode_acts_on_an_offscreen_item_the_agent_can_scroll(
+    page: MainPage, recorder: Recorder, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A realized grid cell or list item has no ScrollItem pattern of its own but still scrolls."""
+    recorder.element.is_offscreen = True
+    monkeypatch.setattr(model.patterns, "has_pattern", lambda el, name: False)
+    monkeypatch.setattr(actions, "scrolls_through_agent", lambda el: True)
+    seen: list[Any] = []
+    monkeypatch.setattr(actions, "click", lambda el, *, mode, **_kw: seen.append(el))
+    page.sign_in.click(timeout=1)
+    assert len(seen) == 1

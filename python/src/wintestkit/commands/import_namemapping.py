@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
 from typing import Any
 
 from wintestkit.commands import common
-from wintestkit.name_mapping import convert
+from wintestkit.name_mapping import convert_detailed
 
 
 def add_parser(subparsers: Any) -> None:
@@ -30,10 +31,16 @@ def run(args: argparse.Namespace) -> int:
     if target.exists() and not args.force:
         raise common.CommandError(f"{target} exists; pass --force to overwrite", common.EXIT_USAGE)
     try:
-        text = convert(source, managed_class_names=args.managed_class_names)
+        result = convert_detailed(source, managed_class_names=args.managed_class_names)
     except (OSError, ValueError) as exc:
         raise common.CommandError(str(exc), common.EXIT_USAGE) from exc
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(text, encoding="utf-8")
-    print(f"Generated {target}; review aliases and locators before use.")
+    target.write_text(result.code, encoding="utf-8")
+    for warning in result.warnings:
+        print(f"warning: {warning}", file=sys.stderr)
+    todos = "1 TODO comment" if result.todos == 1 else f"{result.todos} TODO comments"
+    print(
+        f"Generated {target}: {result.declared} windows and elements, {todos}; "
+        "review aliases and locators before use."
+    )
     return common.EXIT_OK

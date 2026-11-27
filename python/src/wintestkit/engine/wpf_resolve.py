@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Iterable
 from dataclasses import replace
 from typing import cast
 
 from wintestkit import runtime
 from wintestkit.backends.element import WpfElement, uia_of
+from wintestkit.engine.diagnose import Diagnostic
 from wintestkit.engine.locator import Locator, Matcher, match_value
 from wintestkit.engine.managed import ManagedCondition, locator_deadline
 from wintestkit.engine.properties import Condition, matches, read, resolve_where
@@ -22,6 +24,7 @@ from wintestkit.errors import (
     InspectorReadError,
     NoUiaPeerError,
 )
+from wintestkit.inspector.models import QueryUnreadable
 from wintestkit.inspector.paths import PathSegment
 from wintestkit.uia.element import UIAElement
 
@@ -33,9 +36,64 @@ class QueryMatches(list[WpfElement]):
     indexed = False
     complete = True
     total_count: int | None = None
+    #: Candidates the agent could not read: they were non-matches, not failures of the search.
+    unreadable: QueryUnreadable | None = None
 
     def __len__(self) -> int:
         return self.total_count if self.total_count is not None else super().__len__()
+
+
+def to_managed(element: UIAElement) -> WpfElement:
+    """The WPF object behind a UI Automation element, for the elements UIA hands out itself.
+
+    Rows, cells and the other helpers of a grid come from UI Automation; this maps one of them
+    to the agent's object so managed keys can be read and matched on it like on any element found
+    in the object tree.
+    """
+    __tracebackhide__ = True
+    deadline = locator_deadline()
+    try:
+        client = runtime.managed_client_for(
+            element.process_id, deadline=deadline, target_hwnd=root_handle(element)
+        )
+        rid, hwnd = runtime.managed_element_identity(element)
+        mapping = client.resolve(rid, hwnd, deadline=deadline)
+        if mapping.status != "exact" or mapping.object_ref is None:
+            raise InspectorMappingError(f"Element mapping is {mapping.status}", code=mapping.status)
+    except InspectorError as error:
+        raise error.copy_with_message(
+            f"{element.info().short()} cannot be read through the WPF inspector "
+            f"({error.code}): {str(error).rstrip('.')}."
+        ) from error
+    return WpfElement(client, mapping.object_ref, element.process_id)
+
+
+def managed_capable(element: object) -> bool:
+    """Whether an element is a UI Automation element of a WPF window the inspector can map."""
+    return (
+        not isinstance(element, WpfElement)
+        and runtime.get_config().backend == "auto"
+        and getattr(element, "framework_id", None) == "WPF"
+    )
+
+
+def merge_unreadable(parts: Iterable[QueryUnreadable | None]) -> QueryUnreadable | None:
+    """The unreadable candidates of several searches as one count by reason."""
+    totals: dict[str, int] = {}
+    for part in parts:
+        if part is not None:
+            for reason, number in part.reasons:
+                totals[reason] = totals.get(reason, 0) + number
+    if not totals:
+        return None
+    return QueryUnreadable(sum(totals.values()), tuple(sorted(totals.items())))
+
+
+def with_unreadable(diagnostic: Diagnostic, unreadable: QueryUnreadable | None) -> Diagnostic:
+    """A not-found diagnostic that also says how many candidates could not be read."""
+    if unreadable is None:
+        return diagnostic
+    return replace(diagnostic, message=f"{diagnostic.message}; {unreadable.describe()}")
 
 
 def route(window: UIAElement, *, force: bool = False) -> UIAElement | WpfElement:
@@ -212,6 +270,7 @@ def query(
 
     filtered = QueryMatches(element for element in elements if accepts(element))
     filtered.complete = result.complete
+    filtered.unreadable = result.unreadable
     if (
         use_index
         and locator.index is not None

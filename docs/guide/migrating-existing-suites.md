@@ -132,18 +132,47 @@ ordered, and the first wins.
 change their identities. `find` includes a bound parent; rootless pages and scopes start at their window, whose root
 visual is depth 1 on WPF windows and cannot be included elsewhere. Managed properties
 require inspector access, and UIA cannot discover elements without automation peers.
-An `App` parent searches all top-level windows and their descendants; depth 1 is the window nodes, depth 2 the root visuals. Window titles accept wildcards. `Exists=True` adds no condition and `Exists=False` raises an error. A trailing `.OleValue` is stripped from property paths. The NameMapping extended-find XML spellings accepted below are unconfirmed.
+An `App` parent searches all top-level windows and their descendants; depth 1 is the window nodes, depth 2 the root visuals. Window titles accept wildcards. `Exists=True` adds no condition and `Exists=False` raises an error. A trailing `.OleValue` is stripped from property paths.
+An element found from an `App` (a dialog, a message box, a popup, any window's descendant) is a parent like
+any other: `find_child(dialog, "WndClass", "Edit", 5)` searches inside the dialog, not in the main window.
+A search skips candidates whose value cannot be read and says how many it skipped when nothing matches
+(see [unreadable candidates](managed-inspection.md#unreadable-candidates)).
 
 ## NameMapping importer
 
-Run `wtk import-namemapping NameMapping.xml pages/imported.py`. The command generates an editable
-`Page` skeleton, preserving mapped parent relationships with `within=`. Direct searches use
-`depth=1`; extended searches use the default descendant depth. It assumes children are nested
-`Item`, `Node`, or `MappedObject` elements (possibly inside containers), and accepts the
-unverified flag forms `extendedFind="True"` on the object or an `ExtendedFind` property.
+Run `wtk import-namemapping NameMapping.xml pages/imported.py`. The command reads the export
+and generates an editable skeleton: a `Page` class per top-level window, with the window's `Window(...)`
+and an `Element` for every mapped object below it, preserving the mapped parent relationships with
+`within=`. It prints how many `# TODO` comments the output holds and writes warnings to stderr.
 It does not yet convert OR groups; add `any_of` manually. It does not migrate actions or tests. Existing output is preserved; pass `--force` to replace it.
 
-`WPFControlName` becomes `automation_id` (verify the AutomationId or WPF x:Name fallback in Spy).
+The export is an XML file whose root is `Root`. The importer reads these parts and ignores `Storages`:
+
+- **Mapped objects** are the `Child` elements below `Nodes/Children`, nested through
+  `Children/Child`. Each holds one `Properties` element of `Property Name` / `Value Value` pairs
+  (the identifying value is the `Value` attribute); `Image` and `TypeInfo` are ignored. All
+  properties of a node are combined with AND. `ExtendedFind="True"` searches all descendants
+  (no `depth`); without it the node is a direct child (`depth=1`).
+- **Values** follow `Type`: absent is a string, `0` an integer and `6` a boolean (`True`, in any case).
+  `*` and `?` in a string are wildcards (compiled whole-value patterns); an empty string tests for empty text.
+- **The top.** `Sys` is the system node and each `ProcessName` node below it a process; neither becomes
+  an element. The process nodes name the applications (the generated module says which; with several
+  processes each `Window` gets `process=`). The children of a process node are its top-level windows:
+  `WndCaption` is the window's `title`, `WndClass` its `class_name`, `WinFormsControlName` its
+  `automation_id`, and `RootVisual.ClrClassName`, `RootVisual.ClrFullClassName` and `RootVisual.Name` describe
+  the WPF root visual (the class-name keys below, and the automation id). Everything under a window is an element.
+- **Aliases** are the `Child` elements nested directly in `LogicalNodes Name="Aliases"`; `Owner` is the
+  `Key` of a mapped node. Tests use the alias names, so the generated attributes and page classes are named by
+  alias, falling back to the mapped name for a node without one. An alias may point at a descendant of
+  its alias parent's node: aliases skip mapped levels, so the skipped nodes are declared under their mapped
+  names and `within=` follows the mapped tree. A node with several aliases is named by the first. An alias
+  whose `Owner` matches no node is skipped with a warning.
+- **Unknown** elements and attributes, malformed values and duplicate keys give warnings, not failures.
+
+`ObjectIdentifier` and `ObjectGroupIndex` have no WinTestKit equivalent and are emitted as `# TODO`
+comments with their values; `FrameworkId`, `ClassName` and `LocalizedControlType` become UIA properties.
+
+`WPFControlName` (and `RootVisual.Name`) becomes `automation_id` (verify the AutomationId or WPF x:Name fallback in Spy).
 `ClrFullClassName` and `ClrClassName` are retained as corresponding `where` aliases by default. Configure
 the managed alias described below when the inspector is enabled, or use
 `property_aliases: {ClrFullClassName: ItemStatus}` only if the application exposes the full
@@ -164,7 +193,8 @@ authorized attachment. Confirm values in Spy; use the ItemStatus alias above as 
 
 Input is limited to 10 MiB. DTD/entity declarations and malformed XML are rejected. This parser
 does not execute XML or resolve external entities. It reads properties only from each mapped
-object's direct `Properties` collection, avoiding ancestor/descendant property duplication.
+object's own `Properties`, avoiding ancestor/descendant property duplication. Files in other
+shapes (for example `Item` or `MappedObject` elements) are not recognised.
 
 ## A migrated test
 

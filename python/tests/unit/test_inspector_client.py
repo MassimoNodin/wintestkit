@@ -1533,3 +1533,79 @@ def test_find_all_returns_the_incomplete_result_when_the_deadline_passes() -> No
         assert len(transport.requests) >= 1
     finally:
         client.close()
+
+
+def test_nested_type_read_round_trips_through_the_client() -> None:
+    """``type:Name@DataContext`` is a property segment followed by the type facet."""
+    from wintestkit.inspector.paths import parse_managed_key
+
+    segments = parse_managed_key("type:FullName@DataContext").segments
+    wire = [segment.to_json() for segment in segments]
+    assert wire == [
+        {"kind": "property", "name": "DataContext"},
+        {"kind": "type", "name": "FullName"},
+    ]
+
+    def handler(request: dict[str, Any]) -> object:
+        if request["method"] == "session.close":
+            return {"id": request["id"], "result": {"closed": True}}
+        return {
+            "id": request["id"],
+            "result": {
+                "readId": "read",
+                "values": [
+                    {
+                        "path": request["params"]["paths"][0],
+                        "value": {
+                            "status": "ok",
+                            "kind": "string",
+                            "declaredType": "System.String",
+                            "runtimeType": "System.String",
+                            "scalar": "Example.OrderViewModel",
+                        },
+                    }
+                ],
+            },
+        }
+
+    transport = ScriptedTransport(handler)
+    client = InspectorClient(transport, session())
+    try:
+        values, _ = client.read("object", 1, [segments], deadline=time.monotonic() + 2)
+        assert values[0].value.scalar == "Example.OrderViewModel"
+        assert transport.requests[0]["params"]["paths"] == [wire]
+        # The facet ends a path: it cannot start or sit inside one.
+        with pytest.raises(InspectorError) as bad:
+            client.read("object", 1, [tuple(reversed(segments))], deadline=time.monotonic() + 2)
+        assert bad.value.code == "invalidParams"
+    finally:
+        client.close()
+
+
+def test_find_all_result_reports_unreadable_candidates() -> None:
+    from wintestkit.inspector.models import QueryFindAllResult
+
+    parsed = QueryFindAllResult.from_json(
+        {
+            "matches": [],
+            "complete": True,
+            "count": 0,
+            "unreadable": {"count": 3, "reasons": {"redacted": 1, "exception": 2}},
+        }
+    )
+    assert parsed.unreadable is not None
+    assert parsed.unreadable.reasons == (("exception", 2), ("redacted", 1))
+    assert (
+        parsed.unreadable.describe() == "3 candidates could not be read (exception: 2, redacted: 1)"
+    )
+    assert QueryFindAllResult.from_json({"matches": [], "complete": True}).unreadable is None
+    for bad in (
+        {"count": 5, "reasons": {"exception": 2}},
+        {"count": 1, "reasons": {"mystery": 1}},
+        {"count": 1, "reasons": {}},
+        {"count": 0, "reasons": {"exception": 0}},
+        {"count": 1},
+        {"count": 1, "reasons": {"exception": 1}, "extra": 1},
+    ):
+        with pytest.raises(ValueError):
+            QueryFindAllResult.from_json({"matches": [], "complete": True, "unreadable": bad})

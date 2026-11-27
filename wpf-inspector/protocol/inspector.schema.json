@@ -3748,6 +3748,44 @@
       "additionalProperties": false,
       "description": "continuation resumes the traversal a previous incomplete result paused; it must be sent with the same locator."
     },
+    "QueryUnreadable": {
+      "type": "object",
+      "properties": {
+        "count": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "reasons": {
+          "type": "object",
+          "minProperties": 1,
+          "propertyNames": {
+            "enum": [
+              "unavailable",
+              "notRead",
+              "notReadable",
+              "exception",
+              "redacted",
+              "truncated",
+              "cycle",
+              "timeout",
+              "unsupported",
+              "ambiguous",
+              "other"
+            ]
+          },
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      },
+      "required": [
+        "count",
+        "reasons"
+      ],
+      "additionalProperties": false,
+      "description": "Candidates whose value a search could not read. Each is a non-match, never a failure; count is the sum of the reasons."
+    },
     "QueryFindAllResult": {
       "type": "object",
       "properties": {
@@ -3770,6 +3808,9 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 128
+        },
+        "unreadable": {
+          "$ref": "#/$defs/QueryUnreadable"
         }
       },
       "required": [

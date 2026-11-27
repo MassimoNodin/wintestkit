@@ -1176,6 +1176,7 @@ export interface ProtocolContracts {
   QueryFindAllResult?: QueryFindAllResult;
   QueryFindParams?: QueryFindParams;
   QueryFindResult?: QueryFindResult;
+  QueryUnreadable?: QueryUnreadable;
   Range?: Range;
   ReadBatchParams?: ReadBatchParams;
   ReadBatchResult?: ReadBatchResult;
@@ -3824,6 +3825,19 @@ export interface QueryFindAllResult {
   count?: number;
   complete: boolean;
   continuation?: string;
+  unreadable?: QueryUnreadable;
+}
+/**
+ * Candidates whose value a search could not read. Each is a non-match, never a failure; count is the sum of the reasons.
+ *
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "QueryUnreadable".
+ */
+export interface QueryUnreadable {
+  count: number;
+  reasons: {
+    [k: string]: number;
+  };
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema

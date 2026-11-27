@@ -326,8 +326,13 @@ class _FindElement(_FirstElement):
 
     def resolve_once(self) -> Any:
         target = self.parent.resolve_once()
+        # A parent found at application level may be in any window: search where it was found.
         locator = replace(
-            self.match_locator, depth=None, index=None, window=self.parent.locator.window
+            self.match_locator,
+            depth=None,
+            index=None,
+            window=self.parent.locator.window,
+            app_scope=self.parent.locator.app_scope,
         )
         candidates = resolve_all(cast(Any, model)._scope(self.parent.page), locator)
         if any(cast(Any, target).same_as(candidate) for candidate in candidates):

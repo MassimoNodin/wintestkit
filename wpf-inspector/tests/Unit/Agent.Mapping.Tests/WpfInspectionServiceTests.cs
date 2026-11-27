@@ -459,6 +459,23 @@ namespace WinTestKit.Inspector.Agent.Mapping.Tests
         }
 
         [Fact]
+        public async Task ATypeFacetMayEndAMultiSegmentReadPathButNeverStartOrInterruptIt()
+        {
+            var inspector = new FakeInspector();
+            using (var window = new MappingWindow())
+            using (var service = new WpfInspectionService("nested-type", inspector))
+            {
+                ObjectRef root = await WindowHandle(service, window);
+                IReadOnlyList<PathSegment> nested = new[] { new PathSegment { Kind = SegmentKind.Property, Name = "DataContext" }, new PathSegment { Kind = SegmentKind.Type, Name = "Name" } };
+                ReadResult result = await service.ReadAsync(root.ObjectId, root.Generation, new[] { nested }, None);
+                Assert.Equal(new[] { "DataContext", "Name" }, Assert.Single(result.Values).Path.Select(segment => segment.Name));
+                IReadOnlyList<PathSegment> inner = new[] { new PathSegment { Kind = SegmentKind.Type, Name = "Name" }, new PathSegment { Kind = SegmentKind.Property, Name = "DataContext" } };
+                await Error(ErrorCodes.InvalidParams, () => service.ReadAsync(root.ObjectId, root.Generation, new[] { inner }, None));
+                await Error(ErrorCodes.InvalidParams, () => service.ReadBatchAsync(new[] { new CandidateRequest(new[] { 42 }, null) }, new[] { inner }, None));
+            }
+        }
+
+        [Fact]
         public async Task BatchResolvesOnceKeepsOrderAndReadsOnlyExactCandidates()
         {
             var inspector = new FakeInspector();

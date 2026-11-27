@@ -402,3 +402,45 @@ def test_indexed_property_names_are_accepted():
     for bad in ("Items[]", "Items[x]", "Items[0]x", "[0]", "Items.[0]"):
         with pytest.raises(ValueError, match="invalid property name"):
             to_locator(bad, "x")
+
+
+def test_app_level_results_are_parents_that_resolve_in_their_own_window(monkeypatch):
+    """A dialog found from the application anchors its children, whatever the main window holds."""
+    from fakes import FakeElement
+
+    from wintestkit import runtime
+    from wintestkit.app import App
+    from wintestkit.engine import query
+    from wintestkit.errors import ElementNotFoundError
+    from wintestkit.finders import find, find_all_children, find_child
+
+    monkeypatch.setenv("WTK_BACKEND", "uia")
+    runtime.reset()
+    monkeypatch.setattr(query, "make_condition", lambda **props: props)
+    main_edit = FakeElement("Edit", "Search", class_name="Edit")
+    main = FakeElement("Window", "Orders", class_name="Window", children=[main_edit])
+    dialog_edit = FakeElement("Edit", "File name", class_name="Edit")
+    dialog_pane = FakeElement("Pane", "", class_name="Pane", children=[dialog_edit])
+    dialog = FakeElement("Window", "Open", class_name="#32770", children=[dialog_pane])
+    app = object.__new__(App)
+    monkeypatch.setattr(app, "top_level_windows", lambda: [main, dialog])
+    # The main window is not needed (and, here, not even available): the anchor is the dialog.
+    monkeypatch.setattr(app, "main_window", lambda: pytest.fail("the main window was searched"))
+
+    dlg = find_child(app, ["WndClass", "WndCaption"], ["#32770", "Open"], 1)
+    assert dlg.resolve_once() is dialog
+    assert find_child(dlg, "WndClass", "Edit", 5).resolve_once() is dialog_edit
+    assert find_child(dlg, "WndClass", "Pane", 1).resolve_once() is dialog_pane
+    assert find_child(
+        find_child(dlg, "WndClass", "Pane", 1), "WndClass", "Edit", 1
+    ).resolve_once() is (dialog_edit)
+    assert [e.resolve_once() for e in find_all_children(dlg, "WndClass", "Edit", None)] == [
+        dialog_edit
+    ]
+    # find() includes the parent itself, found in the application rather than in the main window.
+    assert find(dlg, "WndClass", "#32770", 1).resolve_once() is dialog
+    # An App-level link that matches nothing fails there, naming the link, not the child.
+    gone = find_child(app, "WndCaption", "Nope", 1)
+    with pytest.raises(ElementNotFoundError, match="Nope"):
+        find_child(gone, "WndClass", "Edit", 1).resolve_once()
+    runtime.reset()

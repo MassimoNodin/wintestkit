@@ -46,7 +46,15 @@ from wintestkit.engine.properties import matches as matches_property
 from wintestkit.engine.property_read import property_matches
 from wintestkit.engine.query import query_all, reject_managed
 from wintestkit.engine.wpf_query import UnsupportedQuery, translate
-from wintestkit.engine.wpf_resolve import identity_value, matches_root, route
+from wintestkit.engine.wpf_resolve import (
+    identity_value,
+    managed_capable,
+    matches_root,
+    merge_unreadable,
+    route,
+    to_managed,
+    with_unreadable,
+)
 from wintestkit.engine.wpf_resolve import query as wpf_query
 from wintestkit.errors import (
     AmbiguousElementError,
@@ -189,6 +197,18 @@ def _popup_matches(
     return found
 
 
+def _query_root(root: TargetElement, link: Locator) -> TargetElement:
+    """A UI Automation root (a grid row or cell) is searched through its WPF object when the link
+    holds managed conditions, which only the agent can evaluate."""
+    __tracebackhide__ = True
+    if managed_capable(root) and any(
+        isinstance(condition, ManagedCondition)
+        for condition in resolve_where(link.where, link.describe_link(), link.taken())
+    ):
+        return to_managed(cast(UIAElement, root))
+    return root
+
+
 def _match_link(
     scope: Scope,
     root: TargetElement,
@@ -199,6 +219,7 @@ def _match_link(
     use_index: bool = False,
 ) -> list[TargetElement]:
     __tracebackhide__ = True
+    root = _query_root(root, link)
     if link.has is not None:
         return _match_has(scope, root, link, full, first, use_index=use_index)
     if link.any_of:
@@ -211,7 +232,8 @@ def _match_link(
     else:
         matches = list(query_all(uia_of(root), link.for_uia()))
     if not matches and first and full.window is None and scope.window is None:
-        matches = _popup_matches(scope, root, link, use_index=use_index)
+        # An empty popup search keeps the window's result, which knows the unreadable candidates.
+        matches = _popup_matches(scope, root, link, use_index=use_index) or matches
     return matches
 
 
@@ -252,6 +274,7 @@ def _contains(candidate: TargetElement, child: Locator) -> bool:
     """True when ``child`` (properties, where, any_of, depth) matches below ``candidate``."""
     __tracebackhide__ = True
     for alternative in expand_alternatives(child):
+        candidate = _query_root(candidate, alternative)
         if isinstance(candidate, WpfElement):
             if len(wpf_query(candidate, alternative)):
                 return True
@@ -308,10 +331,13 @@ def _match_alternatives(
                 merged.append(element)
 
     for alternative in alternatives:
-        if isinstance(root, WpfElement):
-            collect(cast(list[TargetElement], list(wpf_query(root, alternative, root_level=first))))
+        searched = _query_root(root, alternative)
+        if isinstance(searched, WpfElement):
+            collect(
+                cast(list[TargetElement], list(wpf_query(searched, alternative, root_level=first)))
+            )
         else:
-            collect(list(query_all(uia_of(root), alternative.for_uia())))
+            collect(list(query_all(uia_of(searched), alternative.for_uia())))
     if not merged and first and full.window is None and scope.window is None:
         for alternative in alternatives:
             collect(_popup_matches(scope, root, alternative))
@@ -450,7 +476,9 @@ def _resolve_link(
             hint = _wpf_id_hint(scope, root, window_root, link.automation_id)
             if hint:
                 diagnostic = replace(diagnostic, hint=hint)
-        raise ElementNotFoundError(diagnostic)
+        raise ElementNotFoundError(
+            with_unreadable(diagnostic, getattr(matches, "unreadable", None))
+        )
     raise AmbiguousElementError(diagnose_ambiguous(matches, link, searched_in, full))
 
 
@@ -513,6 +541,7 @@ def _app_walk(scope: Scope, locator: Locator, final_all: bool) -> list[TargetEle
     __tracebackhide__ = True
     found: list[TargetElement] = []
     forms: set[bool] = set()
+    unreadable: list[Any] = []
     for position, window in enumerate(scope.app.top_level_windows()):
         wpf_window = window.framework_id == "WPF" and runtime.get_config().backend == "auto"
         forms.add(wpf_window)
@@ -571,7 +600,9 @@ def _app_walk(scope: Scope, locator: Locator, final_all: bool) -> list[TargetEle
             levels = None if depth is None else depth - 2
             if (levels is None or levels >= 1) and isinstance(root, WpfElement):
                 child = replace(link, depth=levels, index=None, app_scope=False)
-                candidates.extend(wpf_query(root, child))
+                found_below = wpf_query(root, child)
+                unreadable.append(getattr(found_below, "unreadable", None))
+                candidates.extend(found_below)
         else:
             if root_matches(root, window, False):
                 candidates.append(root)
@@ -580,7 +611,9 @@ def _app_walk(scope: Scope, locator: Locator, final_all: bool) -> list[TargetEle
                     link, depth=None if depth is None else depth - 1, index=None, app_scope=False
                 )
                 if isinstance(root, WpfElement):
-                    candidates.extend(wpf_query(root, child))
+                    found_below = wpf_query(root, child)
+                    unreadable.append(getattr(found_below, "unreadable", None))
+                    candidates.extend(found_below)
                 else:
                     candidates.extend(query_all(root, child))
         for candidate in candidates:
@@ -605,30 +638,72 @@ def _app_walk(scope: Scope, locator: Locator, final_all: bool) -> list[TargetEle
         raise AmbiguousElementError(diagnose_ambiguous(found, locator, "application", locator))
     if not found:
         raise ElementNotFoundError(
-            Diagnostic(
-                kind="not_found",
-                message=f"No element matches {locator.describe()} in application",
-                locator=locator.describe(),
-                searched_in="application",
-                match_count=0,
+            with_unreadable(
+                Diagnostic(
+                    kind="not_found",
+                    message=f"No element matches {locator.describe()} in application",
+                    locator=locator.describe(),
+                    searched_in="application",
+                    match_count=0,
+                ),
+                merge_unreadable(unreadable),
             )
         )
     return [found[0].as_live()]
+
+
+def _hosting_window(scope: Scope, element: TargetElement) -> UIAElement:
+    """The top-level window that holds an element found at application level.
+
+    It is only needed for the diagnostics and hints of the links below the element; when it
+    cannot be found the application's main window stands in for it.
+    """
+    __tracebackhide__ = True
+    try:
+        peer = uia_of(element)
+    except NoUiaPeerError:
+        return resolve_window(scope.app, None)
+    try:
+        windows = scope.app.top_level_windows()
+        node: UIAElement | None = peer
+        while node is not None:
+            for window in windows:
+                if window.same_as(node):
+                    return window
+            node = node.parent()
+    except WtkError:
+        pass
+    return peer
 
 
 def _walk(scope: Scope, locator: Locator, final_all: bool) -> list[TargetElement]:
     __tracebackhide__ = True
     if locator.app_scope:
         return _app_walk(scope, locator, final_all)
-    window_root = resolve_window(scope.app, locator.window or scope.window)
     links = locator.chain()
-    root: TargetElement = route(window_root)
-    searched_in = window_root.info().short()
+    # A link found at application level (a dialog, a popup, any window's descendant) anchors the
+    # links below it: they resolve inside that element, whatever the page's own window is.
+    anchored = max((index for index, link in enumerate(links) if link.app_scope), default=-1)
+    root: TargetElement
+    if anchored >= 0:
+        anchor = links[anchored]
+        try:
+            root = _app_walk(scope, replace(anchor, within=None), False)[0]
+        except LocatorError as exc:
+            raise type(exc)(diagnose_within_failed(anchor, exc.diagnostic, locator)) from None
+        window_root = _hosting_window(scope, root)
+        searched_in = f"{root.info().short()} in application"
+    else:
+        window_root = resolve_window(scope.app, locator.window or scope.window)
+        root = route(window_root)
+        searched_in = window_root.info().short()
     missing = _missing_links.get()
     window_key = (
         (window_root.native_window_handle, window_root.runtime_id) if missing is not None else ()
     )
     for position, link in enumerate(links):
+        if position <= anchored:
+            continue
         last = position == len(links) - 1
         first = position == 0
         if last and final_all:
@@ -661,7 +736,7 @@ def wait_link(scope: Scope, locator: Locator, state: str) -> tuple[bool, TargetE
     links = locator.chain()
     link = links[-1]
     if (
-        locator.app_scope
+        any(candidate.app_scope for candidate in links)
         or state not in ("attached", "visible", "enabled")
         or link.item is not None
     ):

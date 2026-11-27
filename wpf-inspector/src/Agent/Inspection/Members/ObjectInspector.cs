@@ -323,7 +323,10 @@ namespace WinTestKit.Inspector.Agent.Inspection.Members
                     if (next == null && i < path.Count - 1) return new ValueDto { Status = "nullIntermediate", Kind = "unavailable", DeclaredType = Declaration.TypeName(declared), FailedSegment = i };
                     current = next;
                     bool typeNext = i + 1 < path.Count && path[i + 1].Kind == "type";
-                    if (current != null && !typeNext && !current.GetType().IsValueType && !(current is string))
+                    // A query path is finite, so an object met again is not a loop: DataContext = this and a view model that
+                    // points back at its view are ordinary. Cycles are reported only to readers that serialize the result, and a
+                    // memoized result is shared between roots, so it cannot depend on which root the walk started from.
+                    if (memo == null && current != null && !typeNext && !current.GetType().IsValueType && !(current is string))
                     {
                         if (ancestors == null) ancestors = new HashSet<object>(ReferenceComparer.Instance) { root };
                         if (ancestors.Contains(current)) return new ValueDto { Status = "cycle", Kind = "object", DeclaredType = Declaration.TypeName(declared), RuntimeType = Declaration.TypeName(current.GetType()), CycleTo = registry.Register(current, dispatcher, DescribeType(current.GetType())), DependencySource = dependencySource };

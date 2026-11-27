@@ -593,8 +593,9 @@ namespace WinTestKit.Inspector.Agent.Inspection
                 foreach (PathSegment segment in path) json.Add(segment.ToJson());
                 if (StrictJson.Serialize(json).Length > ProtocolLimits.MaxPathBytes)
                     throw new ProtocolException(ErrorCodes.LimitExceeded, "Path byte limit reached.");
-                if (path.Count > 1 && path.Any(segment => segment.Kind == SegmentKind.Type))
-                    throw new ProtocolException(ErrorCodes.InvalidParams, "Type path must contain one segment.");
+                // Type metadata describes the object a path reaches, so it can only end a path (type:Name@DataContext).
+                if (path.Count > 1 && path.Take(path.Count - 1).Any(segment => segment.Kind == SegmentKind.Type))
+                    throw new ProtocolException(ErrorCodes.InvalidParams, "Type metadata must be the final path segment.");
             }
         }
 

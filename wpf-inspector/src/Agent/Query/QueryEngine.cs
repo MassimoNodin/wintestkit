@@ -61,7 +61,8 @@ namespace WinTestKit.Inspector.Agent.Query
             {
                 Matches = result.Matches,
                 Complete = result.Finished && !result.Overflow,
-                Count = result.Finished ? (int?)Math.Min(locator.Index.HasValue ? result.Matches.Count : result.Count, 10000) : null
+                Count = result.Finished ? (int?)Math.Min(locator.Index.HasValue ? result.Matches.Count : result.Count, 10000) : null,
+                Unreadable = result.Summary
             };
         }
         private sealed class Search
@@ -72,6 +73,28 @@ namespace WinTestKit.Inspector.Agent.Query
             internal bool Finished;
             internal bool Overflow;
             internal string? Continuation;
+            /// <summary>Candidates a predicate could not read, by reason; they are non-matches, never failures.</summary>
+            internal int Unreadable;
+            internal readonly SortedDictionary<string, int> Reasons = new SortedDictionary<string, int>(StringComparer.Ordinal);
+            internal QueryUnreadable? Summary => Unreadable == 0 ? null : new QueryUnreadable { Count = Unreadable, Reasons = new Dictionary<string, int>(Reasons) };
+            internal void NoteUnreadable(string reason)
+            {
+                Unreadable++;
+                Reasons.TryGetValue(reason, out int seen);
+                Reasons[reason] = seen + 1;
+            }
+        }
+
+        /// <summary>
+        /// The reason a predicate could not read an element, or null when the error is something else. A search treats these
+        /// as a non-match: a window holds elements of every type, and one of them failing a read must not hide the others.
+        /// </summary>
+        private static string? UnreadableReason(ProtocolException error)
+        {
+            if (error.Code == ErrorCodes.MemberAmbiguous) return "ambiguous";
+            if (error.Code != ErrorCodes.ValueUnreadable) return null;
+            string status = error.Details != null && error.Details.TryGet("status", out JsonNode? node) && node is JsonStringNode text ? text.Value : "other";
+            return Array.IndexOf(QueryUnreadable.KnownReasons, status) >= 0 ? status : "other";
         }
         private sealed class Frame
         {
@@ -241,16 +264,16 @@ namespace WinTestKit.Inspector.Agent.Query
                             bool hasPeer = peerDepth && frame.Depth > 0 && PeerIdentity.GetPeer(current) != null;
                             int currentDepth = peerDepth && frame.Depth > 0 ? frame.Depth - 1 + (hasPeer ? 1 : 0) : frame.Depth;
                             if (currentDepth > locator.Depth) continue;
+                            // Predicates run cheapest first and stop at the first one that rejects the element: a mismatch, or a value
+                            // that cannot be read (never compared, so a redacted value cannot leak). The latter is counted for the result.
                             bool matches = true;
-                            foreach (IQueryPredicate predicate in scan.Cheap)
-                                if (!predicate.Matches(current, context)) { matches = false; break; }
-                            ProtocolException? unreadable = null;
-                            if (matches) foreach (IQueryPredicate predicate in scan.Deferred)
+                            string? unreadable = null;
+                            foreach (IQueryPredicate predicate in scan.Cheap.Concat(scan.Deferred))
                             {
-                                try { if (!predicate.Matches(current, context)) matches = false; }
-                                catch (ProtocolException error) when (error.Code == ErrorCodes.ValueUnreadable) { unreadable = unreadable ?? error; }
+                                try { if (!predicate.Matches(current, context)) { matches = false; break; } }
+                                catch (ProtocolException error) when (UnreadableReason(error) != null) { matches = false; unreadable = UnreadableReason(error); break; }
                             }
-                            if (unreadable != null) throw unreadable;
+                            if (unreadable != null) result.NoteUnreadable(unreadable);
                             if (matches)
                             {
                                 int matchIndex = result.Count++;

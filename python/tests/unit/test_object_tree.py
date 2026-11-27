@@ -135,7 +135,7 @@ class Client:
 
     def query_find_all(self, locator: Any, *, timeout_ms: int, deadline: float) -> Any:
         self.locators.append(locator)
-        return SimpleNamespace(matches=self.matches, complete=self.complete)
+        return SimpleNamespace(matches=self.matches, complete=self.complete, unreadable=None)
 
     def release(self, ids: Any, *, deadline: float) -> None:
         pass

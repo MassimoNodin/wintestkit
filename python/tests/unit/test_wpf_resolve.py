@@ -39,7 +39,7 @@ class Client:
 
     def query_find_all(self, locator, *, timeout_ms, deadline):
         self.locators.append(locator)
-        return SimpleNamespace(matches=self.matches, complete=self.complete)
+        return SimpleNamespace(matches=self.matches, complete=self.complete, unreadable=None)
 
     def query_find(self, locator, *, timeout_ms, deadline):
         self.locators.append(locator)
@@ -360,7 +360,7 @@ def test_within_chain_uses_previous_handle(setup, monkeypatch):
     def find(locator, *, timeout_ms, deadline):
         client.locators.append(locator)
         child = "container" if locator.scope.handle == root.ref else "inner"
-        return SimpleNamespace(matches=(ref(child),), complete=True)
+        return SimpleNamespace(matches=(ref(child),), complete=True, unreadable=None)
 
     monkeypatch.setattr(client, "query_find_all", find)
     scope = resolver.Scope(SimpleNamespace(top_level_windows=lambda: []))
@@ -408,7 +408,7 @@ def test_popup_uses_its_own_mapped_root(setup, monkeypatch):
     def find(locator, *, timeout_ms, deadline):
         client.locators.append(locator)
         matches = (ref("menuitem"),) if locator.scope.handle == popup_root.ref else ()
-        return SimpleNamespace(matches=matches, complete=True)
+        return SimpleNamespace(matches=matches, complete=True, unreadable=None)
 
     monkeypatch.setattr(client, "query_find_all", find)
     scope = resolver.Scope(SimpleNamespace(top_level_windows=lambda: [popup]))
@@ -420,6 +420,7 @@ def test_popup_uses_its_own_mapped_root(setup, monkeypatch):
         return SimpleNamespace(
             matches=matches if locator.scope.handle == popup_root.ref else (),
             complete=locator.scope.handle != popup_root.ref,
+            unreadable=None,
         )
 
     monkeypatch.setattr(client, "query_find_all", find_many)
@@ -510,10 +511,12 @@ def test_popup_index_after_capped_popup_and_out_of_range(setup, monkeypatch):
 
     def find_all(wire, **kw):
         if wire.scope.handle == root.ref:
-            return SimpleNamespace(matches=(), complete=True)
+            return SimpleNamespace(matches=(), complete=True, unreadable=None)
         if wire.scope.handle == roots[0].ref:
-            return SimpleNamespace(matches=tuple(ref(str(i)) for i in range(200)), complete=False)
-        return SimpleNamespace(matches=(ref("later"),), complete=True)
+            return SimpleNamespace(
+                matches=tuple(ref(str(i)) for i in range(200)), complete=False, unreadable=None
+            )
+        return SimpleNamespace(matches=(ref("later"),), complete=True, unreadable=None)
 
     def find(wire, **kw):
         if wire.index >= 220:
@@ -711,3 +714,94 @@ def test_route_wraps_without_mutating_original_error(setup, monkeypatch):
     assert str(original) == "expired"
     assert errors[0].busy and errors[0].details == original.details
     assert errors[0].method == original.method and errors[0].__cause__ is original
+
+
+def test_unreadable_candidates_are_reported_when_nothing_matches(setup, monkeypatch):
+    """A search skips candidates it cannot read; the not-found message says how many it skipped."""
+    from wintestkit.inspector.models import QueryUnreadable
+
+    _, client, window = setup
+    resolver = importlib.import_module("wintestkit.engine.resolve")
+    root = wpf_resolve.route(window)
+    window.info = lambda: SimpleNamespace(short=lambda: "window")
+    monkeypatch.setattr(resolver, "resolve_window", lambda *args: window)
+    monkeypatch.setattr(resolver, "route", lambda window: root)
+    monkeypatch.setattr(
+        resolver,
+        "diagnose_not_found",
+        lambda *args: resolver.Diagnostic("not_found", "No element matches x", "x", "window", 0),
+    )
+    scope = resolver.Scope(SimpleNamespace(top_level_windows=lambda: []))
+    client.matches = ()
+    unreadable = QueryUnreadable(3, (("exception", 2), ("notReadable", 1)))
+    monkeypatch.setattr(
+        client,
+        "query_find_all",
+        lambda locator, *, timeout_ms, deadline: SimpleNamespace(
+            matches=(), complete=True, unreadable=unreadable
+        ),
+    )
+    with pytest.raises(ElementNotFoundError) as raised:
+        resolver.resolve(scope, Locator(automation_id="missing"))
+    assert raised.value.diagnostic.message == (
+        "No element matches x; 3 candidates could not be read (exception: 2, notReadable: 1)"
+    )
+    # Without unreadable candidates the message is unchanged.
+    monkeypatch.setattr(
+        client,
+        "query_find_all",
+        lambda locator, *, timeout_ms, deadline: SimpleNamespace(
+            matches=(), complete=True, unreadable=None
+        ),
+    )
+    with pytest.raises(ElementNotFoundError) as raised:
+        resolver.resolve(scope, Locator(automation_id="missing"))
+    assert raised.value.diagnostic.message == "No element matches x"
+
+
+def test_unreadable_counts_merge_across_searches():
+    from wintestkit.inspector.models import QueryUnreadable
+
+    merged = wpf_resolve.merge_unreadable(
+        [
+            QueryUnreadable(2, (("exception", 2),)),
+            None,
+            QueryUnreadable(2, (("exception", 1), ("redacted", 1))),
+        ]
+    )
+    assert merged == QueryUnreadable(4, (("exception", 3), ("redacted", 1)))
+    assert wpf_resolve.merge_unreadable([None, None]) is None
+    assert QueryUnreadable(1, (("redacted", 1),)).describe() == (
+        "1 candidate could not be read (redacted: 1)"
+    )
+
+
+def test_grid_helper_roots_are_searched_through_their_wpf_object_for_managed_keys(
+    setup, monkeypatch
+):
+    """A row or cell comes from UI Automation; a managed ``where`` needs its WPF object."""
+    _, client, _window = setup
+    resolver = importlib.import_module("wintestkit.engine.resolve")
+    row = SimpleNamespace(framework_id="WPF", process_id=42, control_type="DataItem")
+    mapped = WpfElement(client, ref("row"), 42)
+    mapped_for: list[object] = []
+    monkeypatch.setattr(
+        resolver, "to_managed", lambda element: mapped_for.append(element) or mapped
+    )
+    monkeypatch.setattr(
+        resolver,
+        "wpf_query",
+        lambda root, link, **kwargs: [root] if root is mapped else pytest.fail("UIA query"),
+    )
+    scope = resolver.Scope(SimpleNamespace(top_level_windows=lambda: []))
+    managed = Locator(where=(("clr:DataContext.Label", "x"),))
+    assert resolver._match_link(scope, row, managed, managed, False) == [mapped]
+    assert mapped_for == [row]
+    # Links without managed keys keep the UI Automation search of their UIA root.
+    plain = Locator(name="plain")
+    monkeypatch.setattr(resolver, "query_all", lambda root, link: ["uia"])
+    assert resolver._match_link(scope, row, plain, plain, False) == ["uia"]
+    assert mapped_for == [row]
+    # So does a row of a window that is not WPF.
+    other = SimpleNamespace(framework_id="Win32", process_id=42)
+    assert resolver._match_link(scope, other, managed, managed, False) == ["uia"]

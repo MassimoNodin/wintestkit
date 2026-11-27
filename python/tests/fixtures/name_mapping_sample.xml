@@ -1,0 +1,122 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Root Signature="{863E28BD-F3E6-42F1-BC5B-18612FFE9CF2}" NameMappingVersion="7" SaveImages="0">
+	<Storages Current="0">
+		<Child Name="Default Configuration" />
+	</Storages>
+	<Nodes Name="NameMapping" Key="{8790747E-F961-41C6-92D2-0394EEBDA05A}">
+		<Children>
+			<Child Name="Sys" Key="{18B3BF28-6535-45AE-99CA-0AF876702A03}">
+				<Properties>
+					<Property Name="Name">
+						<Value Value="Sys" />
+					</Property>
+				</Properties>
+				<Children>
+					<Child Name="App" Key="{14A470F6-A936-414C-A7CE-159655FECC37}">
+						<Properties>
+							<Property Name="ProcessName">
+								<Value Value="App" />
+							</Property>
+						</Properties>
+						<Children>
+							<Child Name="MainWindow" Key="{2900CAC0-3C77-4332-8806-EB6E83645EE8}">
+								<Image FileName="-324024840" Left="0" Top="0" Right="800" Bottom="600" />
+								<Properties>
+									<Property Name="WinFormsControlName">
+										<Value Value="MainWindow" />
+									</Property>
+								</Properties>
+								<Children>
+									<Child Name="MainView" Key="{39F06490-1F01-4DAD-94E8-8D441AE286B2}" ExtendedFind="True">
+										<Image FileName="1195074341" Left="8" Top="31" Right="792" Bottom="592" />
+										<TypeInfo Item0="{54C60CDB-2780-45AF-82E7-FF175DA03698}" />
+										<Properties>
+											<Property Name="RootVisual.ClrClassName">
+												<Value Value="MainWindow" />
+											</Property>
+											<Property Name="WndCaption">
+												<Value Value="*" />
+											</Property>
+										</Properties>
+										<Children>
+											<Child Name="SaveButton" Key="{6DC771C7-A903-4F94-80A3-0D85564E8B96}" ExtendedFind="True">
+												<Image FileName="753282631" Left="612" Top="540" Right="712" Bottom="568" />
+												<TypeInfo Item0="{C9011BE2-AB9E-41A8-A77D-A549B059B6E3}" />
+												<Properties>
+													<Property Name="ClrFullClassName">
+														<Value Value="System.Windows.Controls.Button" />
+													</Property>
+													<Property Name="WPFControlText">
+														<Value Value="Save" />
+													</Property>
+													<Property Name="WPFControlOrdinalNo">
+														<Value Value="1" Type="0" />
+													</Property>
+												</Properties>
+											</Child>
+											<Child Name="NameBox" Key="{1E9D444E-BE1F-4AB4-A45B-DD2D843CD5A4}" ExtendedFind="True">
+												<Image FileName="2116336509" Left="24" Top="96" Right="324" Bottom="120" />
+												<Properties>
+													<Property Name="WPFControlName">
+														<Value Value="NameBox" />
+													</Property>
+													<Property Name="Visible">
+														<Value Value="True" Type="6" />
+													</Property>
+												</Properties>
+											</Child>
+										</Children>
+									</Child>
+								</Children>
+							</Child>
+							<Child Name="OrdersDialog" Key="{DBC88B47-AA44-48ED-B877-AB07945898C6}">
+								<Image FileName="-1978378708" Left="0" Top="0" Right="480" Bottom="360" />
+								<Properties>
+									<Property Name="WndClass">
+										<Value Value="#32770" />
+									</Property>
+									<Property Name="WndCaption">
+										<Value Value="Orders" />
+									</Property>
+								</Properties>
+								<Children>
+									<Child Name="OrdersGrid" Key="{AE391481-3193-43F2-B821-329BFFE2D3CF}">
+										<Image FileName="-1561988401" Left="12" Top="40" Right="468" Bottom="300" />
+										<Properties>
+											<Property Name="FrameworkId">
+												<Value Value="WPF" />
+											</Property>
+											<Property Name="ClassName">
+												<Value Value="Company.Controls.OrdersGrid" />
+											</Property>
+											<Property Name="LocalizedControlType">
+												<Value Value="table" />
+											</Property>
+											<Property Name="ObjectIdentifier">
+												<Value Value="OrdersGrid" />
+											</Property>
+											<Property Name="ObjectGroupIndex">
+												<Value Value="1" Type="0" />
+											</Property>
+										</Properties>
+									</Child>
+								</Children>
+							</Child>
+						</Children>
+					</Child>
+				</Children>
+			</Child>
+		</Children>
+	</Nodes>
+	<LogicalNodes Name="Aliases" Owner="{8790747E-F961-41C6-92D2-0394EEBDA05A}">
+		<Child Name="App" Owner="{14A470F6-A936-414C-A7CE-159655FECC37}">
+			<Child Name="MainWindow" Owner="{2900CAC0-3C77-4332-8806-EB6E83645EE8}">
+				<Child Name="SaveButton" Owner="{6DC771C7-A903-4F94-80A3-0D85564E8B96}" />
+				<Child Name="NameBox" Owner="{1E9D444E-BE1F-4AB4-A45B-DD2D843CD5A4}" />
+			</Child>
+			<Child Name="OrdersDialog" Owner="{DBC88B47-AA44-48ED-B877-AB07945898C6}">
+				<Child Name="OrdersGrid" Owner="{AE391481-3193-43F2-B821-329BFFE2D3CF}" />
+			</Child>
+		</Child>
+	</LogicalNodes>
+</Root>

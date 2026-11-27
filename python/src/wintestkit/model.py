@@ -1070,6 +1070,7 @@ class BoundControl(_BoundBase):
                         not isinstance(element, WpfElement)
                         and patterns.has_pattern(element, "VirtualizedItem")
                     )
+                    or actions.scrolls_through_agent(element)
                 ):
                     if strict:
                         unmet[0] = "to be visible"
@@ -1432,8 +1433,7 @@ class BoundControl(_BoundBase):
                 patterns.realize(element)
             if patterns.has_pattern(element, "ScrollItem"):
                 patterns.scroll_into_view(element)
-            else:
-                actions.ensure_visible(element)
+            actions.ensure_visible(element)
 
     # -- reads (wait for the element to exist only) ---------------------------------------------
 

@@ -7,9 +7,11 @@ from wintestkit import runtime
 from wintestkit.backends.element import TargetElement, WpfElement
 from wintestkit.engine.managed import operation_deadline
 from wintestkit.engine.properties import AsText, text_matches
+from wintestkit.engine.wpf_resolve import managed_capable, to_managed
 from wintestkit.errors import ActionError, InvalidLocatorError
 from wintestkit.inspector.models import Value
 from wintestkit.inspector.paths import is_managed_key, parse_managed_key
+from wintestkit.uia.element import UIAElement
 
 
 def read_property(element: TargetElement, name: str) -> Any:
@@ -17,6 +19,9 @@ def read_property(element: TargetElement, name: str) -> Any:
     target = config.property_aliases.get(name, name)
     if not is_managed_key(target):
         return element.get_property(target)
+    if managed_capable(element):
+        # A grid row or cell comes from UI Automation: read it through its WPF object.
+        element = to_managed(cast(UIAElement, element))
     if config.backend == "uia" or not isinstance(element, WpfElement):
         raise InvalidLocatorError(
             f"Managed key {target!r} requires the WPF backend; "

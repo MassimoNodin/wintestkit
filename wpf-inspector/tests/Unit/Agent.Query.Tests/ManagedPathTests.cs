@@ -392,6 +392,116 @@ namespace WinTestKit.Inspector.Agent.Query.Tests
             });
         }
 
+        // ------------------------------------------------------------------ unreadable candidates and revisited objects
+
+        /// <summary>An element that is its own DataContext, as in a window or user control that sets DataContext = this.</summary>
+        public sealed class SelfHostButton : Button
+        {
+            public SelfHostButton() { DataContext = this; }
+            public string Status => "Self";
+        }
+        /// <summary>A view model whose Status getter fails on its first read only.</summary>
+        public sealed class FlakyModel
+        {
+            public int Calls;
+            public string Status { get { if (Interlocked.Increment(ref Calls) == 1) throw new InvalidOperationException("first read"); return "Ready"; } }
+        }
+
+        [Trait("Category", "Unit")]
+        [Fact]
+        public void AnElementThatIsItsOwnDataContextDoesNotAbortAWholeTreeQuery()
+        {
+            OnSta(() =>
+            {
+                CountingModel[] contexts;
+                StackPanel root = Tree(30, 3, out contexts);
+                root.Children.Insert(0, new SelfHostButton());
+                root.Children.Add(new SelfHostButton());
+                var executor = new DispatcherExecutor();
+                using (var registry = new ObjectRegistry("selfhost", executor))
+                {
+                    var engine = new QueryEngine(executor, registry);
+                    // No type condition: every element is read, the self-hosting ones included (DataContext.Status is their own Status).
+                    Locator locator = Scoped(registry, root, Eq(Path("DataContext.Status"), new JsonStringNode("Ready")));
+                    QueryFindAllResult result = Pump(FindAll(engine, locator));
+                    Assert.True(result.Complete);
+                    Assert.Equal(33, result.Matches.Count);    // 3 panels and their 30 buttons
+                    Assert.Null(result.Unreadable);
+                    Locator own = Scoped(registry, root, Eq(Path("DataContext.Status"), new JsonStringNode("Self")));
+                    Assert.Equal(2, Pump(FindAll(engine, own)).Matches.Count);
+                    GC.KeepAlive(root);
+                }
+            });
+        }
+
+        [Trait("Category", "Unit")]
+        [Fact]
+        public void AGetterThatFailsOnceMakesItsCandidatesNonMatchesAndNeverBreaksTheOthers()
+        {
+            OnSta(() =>
+            {
+                var flaky = new FlakyModel();
+                var healthy = new CountingModel();
+                var root = new StackPanel();
+                foreach (object context in new object[] { flaky, healthy })
+                {
+                    var panel = new StackPanel { DataContext = context };
+                    for (int i = 0; i < 3; i++) panel.Children.Add(new ViewModelButton());
+                    root.Children.Add(panel);
+                }
+                var executor = new DispatcherExecutor();
+                using (var registry = new ObjectRegistry("flaky", executor))
+                {
+                    var engine = new QueryEngine(executor, registry);
+                    Locator locator = Scoped(registry, root, Eq(Path("DataContext.Status"), new JsonStringNode("Ready")));
+                    QueryFindAllResult result = Pump(FindAll(engine, locator));
+                    // The healthy panel and its three buttons match; the flaky panel and its three buttons are unreadable.
+                    Assert.True(result.Complete);
+                    Assert.Equal(4, result.Matches.Count);
+                    Assert.Equal(4, result.Unreadable!.Count);
+                    Assert.Equal(4, result.Unreadable.Reasons["exception"]);
+                    Assert.Single(result.Unreadable.Reasons);
+                    // The shared step was read once: the failed result is shared with the elements that reach the same object.
+                    Assert.Equal(1, flaky.Calls);
+                    Assert.Equal(1, healthy.Calls);
+                    GC.KeepAlive(root);
+                }
+            });
+        }
+
+        [Trait("Category", "Unit")]
+        [Fact]
+        public void UnreadableCandidatesAreCountedByReasonWhenNothingMatches()
+        {
+            OnSta(() =>
+            {
+                var root = new StackPanel();
+                root.Children.Add(new ViewModelButton { DataContext = new ViewModel() });
+                root.Children.Add(new ViewModelButton { DataContext = new ViewModel() });
+                root.Children.Add(new ViewModelButton());
+                var executor = new DispatcherExecutor();
+                using (var registry = new ObjectRegistry("reasons", executor))
+                {
+                    var engine = new QueryEngine(executor, registry);
+                    QueryFindAllResult result = Pump(FindAll(engine, Scoped(registry, root, Eq(Path("DataContext.Thrower"), new JsonNumberNode("1")))));
+                    Assert.True(result.Complete);
+                    Assert.Empty(result.Matches);
+                    Assert.Equal(2, result.Unreadable!.Count);
+                    Assert.Equal(2, result.Unreadable.Reasons["exception"]);
+                    // Whole-value text of a structured value is "unsupported"; a missing member, an index out of range and a null
+                    // intermediate are plain non-matches that are not reported.
+                    QueryFindAllResult rows = Pump(FindAll(engine, Scoped(registry, root, AsText(Path("DataContext.Rows"), "x"))));
+                    Assert.Equal(2, rows.Unreadable!.Reasons["unsupported"]);
+                    QueryFindAllResult absent = Pump(FindAll(engine, Scoped(registry, root, Eq(Path("DataContext.Absent"), new JsonNumberNode("1")))));
+                    Assert.Null(absent.Unreadable);
+                    QueryFindAllResult range = Pump(FindAll(engine, Scoped(registry, root, Eq(Path("DataContext.Rows[9].Value"), new JsonStringNode("x")))));
+                    Assert.Null(range.Unreadable);
+                    Assert.Throws<ProtocolException>(() => Pump(engine.FindAsync(Scoped(registry, root, Eq(Path("DataContext.Thrower"), new JsonNumberNode("1"))), DateTime.UtcNow.AddSeconds(60), CancellationToken.None)));
+                    GC.KeepAlive(root);
+                }
+            });
+        }
+
         // ------------------------------------------------------------------ large trees and continuation
 
         private static StackPanel LargeTree(int elements, int models, CountingModel[] contexts)

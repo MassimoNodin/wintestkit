@@ -2160,6 +2160,52 @@ class QueryFindResult(WireModel):
         return cls(ObjectRef.from_json(d["match"]), _optional(d, "warning", MatchWarning.from_json))
 
 
+UNREADABLE_REASONS = frozenset(
+    {
+        "unavailable",
+        "notRead",
+        "notReadable",
+        "exception",
+        "redacted",
+        "truncated",
+        "cycle",
+        "timeout",
+        "unsupported",
+        "ambiguous",
+        "other",
+    }
+)
+
+
+@dataclass(frozen=True)
+class QueryUnreadable(WireModel):
+    """Candidates a search could not read: each one is a non-match, counted by reason."""
+
+    count: int
+    reasons: tuple[tuple[str, int], ...]
+
+    @classmethod
+    def from_json(cls, value: object) -> QueryUnreadable:
+        d = _obj(value, "count reasons")
+        raw = d["reasons"]
+        if not isinstance(raw, dict) or not raw:
+            raise ValueError("Invalid unreadable reasons")
+        reasons = tuple(
+            (_choice(reason, UNREADABLE_REASONS), _int(number, 1, 2**31 - 1))
+            for reason, number in sorted(cast(dict[str, object], raw).items())
+        )
+        count = _int(d["count"], 1, 2**31 - 1)
+        if sum(number for _, number in reasons) != count:
+            raise ValueError("Unreadable reasons do not add up")
+        return cls(count, reasons)
+
+    def describe(self) -> str:
+        """``3 candidates could not be read (exception: 2, redacted: 1)``."""
+        noun = "candidate" if self.count == 1 else "candidates"
+        listed = ", ".join(f"{reason}: {number}" for reason, number in self.reasons)
+        return f"{self.count} {noun} could not be read ({listed})"
+
+
 @dataclass(frozen=True)
 class QueryFindAllResult(WireModel):
     matches: tuple[ObjectRef, ...]
@@ -2167,15 +2213,18 @@ class QueryFindAllResult(WireModel):
     count: int | None = None
     #: Present when the traversal stopped at a request budget and can be resumed.
     continuation: str | None = None
+    #: Present when candidates could not be read; they are counted as non-matches.
+    unreadable: QueryUnreadable | None = None
 
     @classmethod
     def from_json(cls, value: object) -> QueryFindAllResult:
-        d = _obj(value, "matches complete", "count continuation")
+        d = _obj(value, "matches complete", "count continuation unreadable")
         result = cls(
             _array(d["matches"], ObjectRef.from_json, 200),
             _bool(d["complete"]),
             _optional(d, "count", lambda x: _int(x, 0, 10000)),
             _optional(d, "continuation", _continuation),
+            _optional(d, "unreadable", QueryUnreadable.from_json),
         )
         if result.complete and result.continuation is not None:
             raise ValueError("A complete result has no continuation")

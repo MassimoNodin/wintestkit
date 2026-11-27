@@ -1,0 +1,14 @@
+{
+  "schema": "QueryFindAllResult",
+  "instance": {
+    "matches": [],
+    "complete": true,
+    "count": 0,
+    "unreadable": {
+      "count": 1,
+      "reasons": {
+        "mystery": 1
+      }
+    }
+  }
+}

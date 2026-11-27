@@ -2,3 +2,6 @@
 *.cs text eol=crlf
 *.xaml text eol=crlf
 *.png binary
+
+# The NameMapping fixture keeps the CRLF line endings of a real export.
+python/tests/fixtures/*.xml -text

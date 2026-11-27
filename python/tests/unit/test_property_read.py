@@ -63,10 +63,56 @@ def test_redacted_and_non_wpf(tmp_path: Any) -> None:
     try:
         with pytest.raises(ActionError, match="redacted"):
             read_property(element, "clr:Secret")
+        win32 = FakeElement("Button", "x")
+        win32.framework_id = "Win32"
+        with pytest.raises(InvalidLocatorError, match="requires the WPF backend"):
+            read_property(win32, "clr:Name")
+        runtime.set_config(load_config(tmp_path, {"backend": "uia"}))
         with pytest.raises(InvalidLocatorError, match="requires the WPF backend"):
             read_property(FakeElement("Button", "x"), "clr:Name")
     finally:
         runtime.reset()
+
+
+def test_managed_read_of_a_grid_helper_element_goes_through_its_wpf_object(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A cell or row comes from UI Automation; on a WPF window it reads like any WPF element."""
+    runtime.reset()
+    runtime.set_config(load_config(tmp_path))
+    client = FakeClient(Value("ok", "string", "T", "T", scalar="Row 4"))
+    mapped = object.__new__(WpfElement)
+    mapped.client = client
+    mapped.ref = ObjectRef(
+        "session", "object", 1, TypeInfo("T", "T", "A", "T, A", ()), "dispatcher"
+    )
+    seen: list[Any] = []
+
+    def to_managed(element: Any) -> WpfElement:
+        seen.append(element)
+        return mapped
+
+    monkeypatch.setattr("wintestkit.engine.property_read.to_managed", to_managed)
+    cell = FakeElement("DataItem", "cell")
+    try:
+        assert read_property(cell, "clr:DataContext.Label") == "Row 4"
+        assert type_facet_path(client) is None
+        assert seen == [cell]
+        client.value = Value("ok", "string", "T", "T", scalar="OrderViewModel")
+        assert read_property(cell, "type:Name@DataContext") == "OrderViewModel"
+        assert [(s.kind, s.name) for s in client.paths[0]] == [
+            ("property", "DataContext"),
+            ("type", "Name"),
+        ]
+    finally:
+        runtime.reset()
+
+
+def type_facet_path(client: FakeClient) -> None:
+    assert [(s.kind, s.name) for s in client.paths[0]] == [
+        ("property", "DataContext"),
+        ("property", "Label"),
+    ]
 
 
 def test_getter_error_includes_type_and_message() -> None:

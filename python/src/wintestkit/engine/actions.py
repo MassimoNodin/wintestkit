@@ -7,6 +7,7 @@ synthetic mouse and keyboard input.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import re
 import time
@@ -21,6 +22,7 @@ from wintestkit.engine.diagnose import Candidate, Diagnostic, quote
 from wintestkit.engine.locator import Locator
 from wintestkit.engine.managed import in_query_budget, operation_deadline
 from wintestkit.engine.query import query_all
+from wintestkit.engine.wpf_resolve import managed_capable, to_managed
 from wintestkit.errors import (
     ActionError,
     ElementNotFoundError,
@@ -184,7 +186,68 @@ def ensure_visible(el: TargetElement) -> None:
     if patterns.has_pattern(el, "ScrollItem"):
         patterns.scroll_into_view(el)
     if el.is_offscreen:
+        _scroll_realized_item(el)
+    if el.is_offscreen:
         raise ActionError(f"{_short(el)} is off-screen and cannot be scrolled into view")
+
+
+#: UI Automation item types that a scrolling container realizes and can scroll to.
+_SCROLLABLE_ITEMS = ("DataItem", "ListItem", "TreeItem")
+#: How far above a cell or item the ScrollItem pattern of its row is looked for.
+_SCROLL_ANCESTORS = 2
+_SETTLE_ATTEMPTS = 5
+
+
+def scrolls_through_agent(el: TargetElement) -> bool:
+    """Whether the agent can scroll an off-screen realized grid row, cell or list item into view.
+
+    Its container scrolls it into view even when its own UI Automation peer does not advertise
+    the ScrollItem pattern: the agent scrolls the WPF object.
+    """
+    __tracebackhide__ = True
+    return managed_capable(el) and getattr(el, "control_type", "") in _SCROLLABLE_ITEMS
+
+
+def _settled_visible(el: UIAElement) -> bool:
+    """Whether the element is on screen, allowing the layout a moment to follow a scroll."""
+    __tracebackhide__ = True
+    for attempt in range(_SETTLE_ATTEMPTS):
+        if not el.is_offscreen:
+            return True
+        if attempt + 1 < _SETTLE_ATTEMPTS:
+            time.sleep(0.05)
+    return False
+
+
+def _scroll_realized_item(el: UIAElement) -> None:
+    """Scroll an off-screen element that is realized (a grid row or cell, a list item).
+
+    First through UI Automation: the element's own ScrollItem pattern, then its row's. When the
+    element is still off-screen, through the agent, which scrolls the WPF object into view.
+    """
+    __tracebackhide__ = True
+    node: UIAElement | None = el
+    for _ in range(_SCROLL_ANCESTORS + 1):
+        if node is None or not patterns.has_pattern(node, "ScrollItem"):
+            node = node.parent() if node is not None else None
+            continue
+        with contextlib.suppress(UIAError):
+            patterns.scroll_into_view(node)
+        if _settled_visible(el):
+            return
+        node = node.parent()
+    if not managed_capable(el):
+        return
+    try:
+        managed = to_managed(el)
+        _wpf_act(
+            managed,
+            "scroll_into_view" if "ScrollItem" in _wpf_patterns(managed) else "bring_into_view",
+        )
+    except (InspectorError, ActionError, UIAError) as exc:
+        log.debug("managed scroll into view failed for %s: %s", _short(el), exc)
+        return
+    _settled_visible(el)
 
 
 def _top_level_hwnd(el: TargetElement) -> int:

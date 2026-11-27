@@ -1,5 +1,7 @@
+using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 namespace WinTestKit.Inspector.Protocol
 {
     internal static class QueryHelpers
@@ -50,10 +52,26 @@ namespace WinTestKit.Inspector.Protocol
         public JsonObjectNode ToJson() { var o = new JsonObjectNode(); o.Add("match",Match.ToJson()); if (Warning != null) o.Add("warning",Warning.ToJson()); FromJson(o); return o; }
         public static QueryFindResult FromJson(JsonNode n) { var o = DtoHelpers.Object(n,"match","warning"); return new QueryFindResult { Match = ObjectRef.FromJson(o.Get("match")), Warning = o.TryGet("warning",out var w) ? MatchWarning.FromJson(w) : null }; }
     }
+    /// <summary>Candidates whose value a search could not read; each counted as a non-match, by reason.</summary>
+    public sealed class QueryUnreadable
+    {
+        public static readonly string[] KnownReasons = { "unavailable", "notRead", "notReadable", "exception", "redacted", "truncated", "cycle", "timeout", "unsupported", "ambiguous", "other" };
+        public int Count { get; set; } public IReadOnlyDictionary<string, int> Reasons { get; set; } = new Dictionary<string, int>();
+        public JsonObjectNode ToJson() { var o = new JsonObjectNode(); o.Add("count",JsonNumberNode.From(Count)); var r = new JsonObjectNode(); foreach (var item in Reasons.OrderBy(x => x.Key, StringComparer.Ordinal)) r.Add(item.Key,JsonNumberNode.From(item.Value)); o.Add("reasons",r); FromJson(o); return o; }
+        public static QueryUnreadable FromJson(JsonNode n)
+        {
+            var o = DtoHelpers.Object(n,"count","reasons"); var x = new QueryUnreadable { Count = (int)DtoHelpers.Integer(o.Get("count"),1,int.MaxValue) };
+            if (!(o.Get("reasons") is JsonObjectNode reasons) || reasons.Members.Count == 0) throw DtoHelpers.Invalid("Invalid unreadable reasons");
+            var map = new Dictionary<string, int>(StringComparer.Ordinal); long total = 0;
+            foreach (var item in reasons.Members) { DtoHelpers.OneOf(item.Key,KnownReasons); int value = (int)DtoHelpers.Integer(item.Value,1,int.MaxValue); map.Add(item.Key,value); total += value; }
+            if (total != x.Count) throw DtoHelpers.Invalid("Unreadable reasons do not add up");
+            x.Reasons = map; return x;
+        }
+    }
     public sealed class QueryFindAllResult
     {
-        public IReadOnlyList<ObjectRef> Matches { get; set; } = new List<ObjectRef>(); public int? Count { get; set; } public bool Complete { get; set; } public string? Continuation { get; set; }
-        public JsonObjectNode ToJson() { var o = new JsonObjectNode(); var a = new JsonArrayNode(); foreach (var m in Matches) a.Add(m.ToJson()); o.Add("matches",a); DtoHelpers.Add(o,"count",Count); o.Add("complete",new JsonBoolNode(Complete)); DtoHelpers.Add(o,"continuation",Continuation); FromJson(o); return o; }
-        public static QueryFindAllResult FromJson(JsonNode n) { var o = DtoHelpers.Object(n,"matches","count","complete","continuation"); var ms = new List<ObjectRef>(); foreach (var m in DtoHelpers.Array(o.Get("matches"),200).Items) ms.Add(ObjectRef.FromJson(m)); var x = new QueryFindAllResult { Matches = ms, Complete = DtoHelpers.Boolean(o.Get("complete")), Continuation = DtoHelpers.Optional(o,"continuation",ProtocolLimits.MaxContinuationLength) }; if (x.Complete && x.Continuation != null) throw DtoHelpers.Invalid("A complete result has no continuation"); if (o.TryGet("count",out var c)) x.Count = (int)DtoHelpers.Integer(c,0,10000); if (x.Complete && x.Count.HasValue && x.Count.Value != ms.Count || x.Count.HasValue && x.Count.Value < ms.Count) throw DtoHelpers.Invalid("Invalid count"); return x; }
+        public IReadOnlyList<ObjectRef> Matches { get; set; } = new List<ObjectRef>(); public int? Count { get; set; } public bool Complete { get; set; } public string? Continuation { get; set; } public QueryUnreadable? Unreadable { get; set; }
+        public JsonObjectNode ToJson() { var o = new JsonObjectNode(); var a = new JsonArrayNode(); foreach (var m in Matches) a.Add(m.ToJson()); o.Add("matches",a); DtoHelpers.Add(o,"count",Count); o.Add("complete",new JsonBoolNode(Complete)); DtoHelpers.Add(o,"continuation",Continuation); if (Unreadable != null) o.Add("unreadable",Unreadable.ToJson()); FromJson(o); return o; }
+        public static QueryFindAllResult FromJson(JsonNode n) { var o = DtoHelpers.Object(n,"matches","count","complete","continuation","unreadable"); var ms = new List<ObjectRef>(); foreach (var m in DtoHelpers.Array(o.Get("matches"),200).Items) ms.Add(ObjectRef.FromJson(m)); var x = new QueryFindAllResult { Matches = ms, Complete = DtoHelpers.Boolean(o.Get("complete")), Continuation = DtoHelpers.Optional(o,"continuation",ProtocolLimits.MaxContinuationLength) }; if (x.Complete && x.Continuation != null) throw DtoHelpers.Invalid("A complete result has no continuation"); if (o.TryGet("count",out var c)) x.Count = (int)DtoHelpers.Integer(c,0,10000); if (x.Complete && x.Count.HasValue && x.Count.Value != ms.Count || x.Count.HasValue && x.Count.Value < ms.Count) throw DtoHelpers.Invalid("Invalid count"); if (o.TryGet("unreadable",out var u)) x.Unreadable = QueryUnreadable.FromJson(u); return x; }
     }
 }

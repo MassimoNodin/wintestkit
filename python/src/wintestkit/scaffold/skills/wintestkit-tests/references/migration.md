@@ -50,7 +50,11 @@ Use `where={"type:FullName": "Acme.Views.AddressBox"}` to preserve the namespace
 `type:Is` to include derived types. With `backend: auto`, WPF uses the managed tree; qualified
 keys fail under `backend: uia`. Confirm paths in Spy and never put secrets in `where`.
 Use `wtk import-namemapping NameMapping.xml pages/imported.py --managed-class-names` for
-managed class-name keys in generated skeletons.
+managed class-name keys in generated skeletons. The importer reads the real export (mapped objects under
+`Nodes`, `Property`/`Value Value` pairs typed by `Type`, aliases under `LogicalNodes`) and writes a `Page`
+per top-level window whose elements are named by alias; `# TODO` comments mark what it could not map
+(`ObjectIdentifier`, `ObjectGroupIndex`). An alias may skip mapped levels: the skipped nodes keep their
+mapped names, so keep only the containers that are boxes when you split the skeleton into components.
 
 ## Procedure
 

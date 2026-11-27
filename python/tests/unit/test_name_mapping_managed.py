@@ -1,44 +1,75 @@
-"""S8 golden importer output preserves the default and opts into runtime type matching."""
+"""Golden importer output with ``--managed-class-names`` uses the object-tree keys."""
+
+from pathlib import Path
 
 from wintestkit.cli import main
 from wintestkit.name_mapping import convert
 
+SAMPLE = Path(__file__).resolve().parents[1] / "fixtures" / "name_mapping_sample.xml"
 
-def test_managed_flag_and_default_output_are_golden(tmp_path):
-    source = tmp_path / "mapping.xml"
-    source.write_text(
-        '<Root><Item><Properties><Property Name="WPFControlName" Value="Address" />'
-        '<Property Name="ClrFullClassName" Value="Acme.AddressBox" />'
-        "</Properties></Item></Root>",
-        encoding="utf-8",
-    )
-    expected = '''"""Generated from NameMapping; review locators before use.
+EXPECTED = '''"""Generated from NameMapping; review locators before use.
 
-ClrFullClassName and ClrClassName require verified application-specific UIA property aliases.
+Processes: App. Attach or launch the application, then use these pages.
+
+Managed class names and the object tree (tree="objects", wpf:Text and wpf:Ordinal) require the WPF inspector.
 """
 
-from wintestkit import Element, Page
+import re
+
+from wintestkit import Element, Page, Window
 
 
-class ImportedPage(Page):
-    Address = Element(
-        automation_id="Address",
+class MainWindow(Page):
+    window = Window(automation_id="MainWindow")
+
+    MainView = Element(
+        name=re.compile("^.*\\\\Z", re.DOTALL),
         where={
-            "ClrFullClassName": "Acme.AddressBox",
+            "type:Name": "MainWindow",
         },
+        tree="objects",
+    )
+    SaveButton = Element(
+        where={
+            "type:FullName": "System.Windows.Controls.Button",
+            "wpf:Text": "Save",
+            "wpf:Ordinal": 1,
+        },
+        tree="objects",
+        within=MainView,
+    )
+    NameBox = Element(
+        automation_id="NameBox",
+        where={
+            "clr:IsVisible": True,
+        },
+        tree="objects",
+        within=MainView,
+    )
+
+
+class OrdersDialog(Page):
+    window = Window(
+        title="Orders",
+        class_name="#32770",
+    )
+
+    # TODO OrdersGrid: 'ObjectIdentifier' = 'OrdersGrid' (no equivalent; compare by hand)
+    # TODO OrdersGrid: 'ObjectGroupIndex' = 1 (no equivalent; compare by hand)
+    OrdersGrid = Element(
+        class_name="Company.Controls.OrdersGrid",
+        where={
+            "FrameworkId": "WPF",
+            "LocalizedControlType": "table",
+        },
+        tree="objects",
         depth=1,
     )
 '''
-    assert convert(source) == expected
-    managed = (
-        expected.replace(
-            "ClrFullClassName and ClrClassName require verified application-specific UIA property aliases.",
-            'Managed class names and the object tree (tree="objects", wpf:Text and wpf:Ordinal) require the WPF inspector.',
-        )
-        .replace('"ClrFullClassName"', '"type:FullName"')
-        .replace("        depth=1,", '        tree="objects",\n        depth=1,')
-    )
-    assert convert(source, managed_class_names=True) == managed
+
+
+def test_managed_flag_output_is_golden(tmp_path: Path) -> None:
+    assert convert(SAMPLE, managed_class_names=True) == EXPECTED
     target = tmp_path / "page.py"
-    assert main(["import-namemapping", str(source), str(target), "--managed-class-names"]) == 0
-    assert target.read_text(encoding="utf-8") == managed
+    assert main(["import-namemapping", str(SAMPLE), str(target), "--managed-class-names"]) == 0
+    assert target.read_text(encoding="utf-8") == EXPECTED
