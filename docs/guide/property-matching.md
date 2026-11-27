@@ -15,6 +15,20 @@ ready = Element(where={"clr:DataContext.Status": "Ready", "clr:IsEnabled": True}
 order = Element(where={"clr:DataContext.Number": re.compile(r"^ORD-")})
 ```
 
+Pass `tree="objects"` to any `Element`, `Elements` or typed element to search the migration
+[object tree](managed-inspection.md#the-object-tree) instead of the UIA-shaped one, and the keys
+`wpf:Text` (the element's text) and `wpf:Ordinal` (its same-type position among siblings, 1-based)
+to match on it:
+
+```python
+# pseudo-code
+save = Element(tree="objects", depth=3, where={"wpf:Text": "Save", "type:Name": "Button"})
+second = Element(tree="objects", where={"type:Name": "Button", "wpf:Ordinal": 2})
+```
+
+With it, `depth`, the first match and `index` follow that tree. It needs a WPF window; elsewhere
+the locator fails with a clear error.
+
 Strings match exactly; compiled regular expressions use `re.search`. Use actual booleans
 and numbers for scalar values: managed values are exactly typed, so `"15"` does not match
 the integer 15. `AsText("15")` compares the value's invariant text instead (`15`, `"True"`
@@ -54,11 +68,16 @@ A trailing `.OleValue` is removed from migration property paths. `VisibleOnScree
 
 Supply your own bound `page` or an `App`. An App search includes every top-level window at depth 1 and searches their descendants at greater depths, routing each window to its appropriate backend. `find_child` defaults to the first match; `strict=True`
 requires one. `find_all_children` returns indexed, re-resolving elements, so later tree
-reordering can change their identities. Depth counts automation-peer levels. The
+reordering can change their identities. On WPF windows the helpers search the
+[object tree](managed-inspection.md#the-object-tree): depth counts its levels, the first match is the
+pre-order one, `WPFControlText` is the element's text (`wpf:Text`, not the peer Name) and
+`WPFControlOrdinalNo` is its 1-based position among siblings of the same type (`wpf:Ordinal`).
+Other windows (Win32 dialogs, UIA-only matching) keep the UIA tree: there `WPFControlText` is the
+UIA Name, an ordinal is a zero-based index over all matches, and depth counts peer levels. The
 [migration guide](migrating-existing-suites.md) covers the NameMapping importer and
 helper semantics.
 
-Lazy first-match finders warn in the report and pytest when multiple elements match. Add identifying properties or scope, or use `strict=True`; explicit ordinals suppress the warning.
+Lazy first-match finders warn in the report and pytest when multiple elements match. Add identifying properties or scope, or use `strict=True`; an explicit `WPFControlOrdinalNo` suppresses the warning.
 
 
 ## Property aliases

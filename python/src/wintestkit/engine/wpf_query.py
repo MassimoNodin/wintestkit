@@ -80,7 +80,14 @@ def translate(
     locator: Locator,
     constraints: tuple[Condition | ManagedCondition, ...],
     handle: ObjectRef | None,
+    *,
+    root_level: bool = False,
 ) -> WireLocator:
+    """The wire query for one link.
+
+    ``root_level`` marks an object-tree search whose root is the window's root visual: the window
+    node above it is level 0, so the root visual is depth 1 and the agent's own depth is one less.
+    """
     if locator.any_of:
         raise UnsupportedQuery("any_of alternatives cannot be expressed as one query")
     if locator.has is not None:
@@ -104,6 +111,11 @@ def translate(
             predicates.append(predicate(condition.path.segments, condition.value))
     if len(predicates) > 32:
         raise UnsupportedQuery("more than 32 predicates")
+    if locator.tree == "objects":
+        depth = 256 if locator.depth is None else locator.depth - 1 if root_level else locator.depth
+        return WireLocator(
+            Scope("object", handle), "objects", tuple(predicates), depth, 200, "tree"
+        )
     return WireLocator(
         Scope("object", handle),
         "combined",

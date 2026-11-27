@@ -21,19 +21,29 @@ def test_mapped_properties():
         ["save", "Example.Button", "Button", "Save", 2, "True", False],
         depth=1,
     )
+    # The object tree of a WPF window: text and ordinal are the managed keys.
     assert (
         locator.automation_id,
         locator.class_name,
         locator.name,
         locator.index,
         locator.depth,
-    ) == ("save", None, "Save", 1, 1)
+        locator.tree,
+    ) == ("save", None, None, None, 1, "objects")
     assert dict(locator.where) == {
         "type:FullName": "Example.Button",
         "type:Name": "Button",
+        "wpf:Text": "Save",
+        "wpf:Ordinal": 2,
         "clr:IsVisible": True,
         "clr:IsEnabled": False,
     }
+    # Any other window keeps the UIA tree: the peer name and a zero-based global index.
+    uia = locator.uia_form
+    assert uia is not None
+    assert (uia.automation_id, uia.name, uia.index, uia.tree) == ("save", "Save", 1, None)
+    assert "wpf:Text" not in dict(uia.where)
+    assert dict(uia.where)["type:Name"] == "Button"
 
 
 def test_names_and_paths():
@@ -73,20 +83,24 @@ def test_invalid_boolean_and_ordinal():
     for value in (0, -1, True, "x"):
         with pytest.raises(ValueError, match="positive integer"):
             to_locator("WPFControlOrdinalNo", value)
-    assert to_locator("WPFControlOrdinalNo", 1).index == 0
+    ordinal = to_locator("WPFControlOrdinalNo", 1)
+    assert dict(ordinal.where) == {"wpf:Ordinal": 1}
+    assert ordinal.index is None
+    assert ordinal.uia_form is not None and ordinal.uia_form.index == 0
 
 
 def test_wildcards_and_wpf_translation():
     locator = to_locator("WPFControlText", r"a.[x]+(b)\?*z")
-    pattern = locator.name
+    pattern = dict(locator.where)["wpf:Text"]
     assert isinstance(pattern, re.Pattern)
     assert pattern.search("a.[x]+(b)\\Qanythingz")
     assert not pattern.search("prefixa.[x]+(b)\\Qanythingz")
     assert not pattern.search("aX[x]+(b)\\Qanythingz")
     assert not pattern.search("a.[x]+(b)\\z")
     assert not pattern.search("a.[x]+(b)\\Qanythingzsuffix")
-    assert translate(locator, (), None).predicates
-    assert to_locator("WPFControlText", "a.b").name == "a.b"
+    assert translate(locator, resolve_where(locator.where, "test"), None).predicates
+    assert dict(to_locator("WPFControlText", "a.b").where)["wpf:Text"] == "a.b"
+    assert to_locator("WPFControlText", "a.b").uia_form.name == "a.b"
 
 
 def test_depth_and_managed_wildcard_translation():
@@ -100,10 +114,12 @@ def test_depth_and_managed_wildcard_translation():
 
 def test_unicode_wildcard_strict_end():
     locator = to_locator("WPFControlText", "café?")
-    assert isinstance(locator.name, re.Pattern)
-    assert locator.name.search("café!")
-    assert not locator.name.search("café!\n")
-    assert translate(locator, (), None).predicates[0].pattern == r"^café.\z"
+    pattern = dict(locator.where)["wpf:Text"]
+    assert isinstance(pattern, re.Pattern)
+    assert pattern.search("café!")
+    assert not pattern.search("café!\n")
+    translated = translate(locator, resolve_where(locator.where, "test"), None)
+    assert translated.predicates[0].pattern == r"^café.\z"
 
 
 @pytest.fixture
@@ -290,7 +306,8 @@ def test_migration_edges():
         "clr:DataContext.LabelText": AsText("Pending")
     }
     assert dict(to_locator("IsChecked.olevalue", True).where) == {"clr:IsChecked": True}
-    assert to_locator("WPFControlOrdinalNo", "6").index == 5
+    assert dict(to_locator("WPFControlOrdinalNo", "6").where) == {"wpf:Ordinal": 6}
+    assert to_locator("WPFControlOrdinalNo", "6").uia_form.index == 5
     assert not to_locator("Exists", True).where
     for prop, value in [
         ("Exists", False),

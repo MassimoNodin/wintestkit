@@ -30,10 +30,14 @@ class ImportedPage(Page):
     )
 '''
     assert convert(source) == expected
-    managed = expected.replace(
-        "ClrFullClassName and ClrClassName require verified application-specific UIA property aliases.",
-        "Managed class names require the WPF inspector.",
-    ).replace('"ClrFullClassName"', '"type:FullName"')
+    managed = (
+        expected.replace(
+            "ClrFullClassName and ClrClassName require verified application-specific UIA property aliases.",
+            'Managed class names and the object tree (tree="objects", wpf:Text and wpf:Ordinal) require the WPF inspector.',
+        )
+        .replace('"ClrFullClassName"', '"type:FullName"')
+        .replace("        depth=1,", '        tree="objects",\n        depth=1,')
+    )
     assert convert(source, managed_class_names=True) == managed
     target = tmp_path / "page.py"
     assert main(["import-namemapping", str(source), str(target), "--managed-class-names"]) == 0

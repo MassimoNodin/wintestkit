@@ -29,6 +29,10 @@ from wintestkit.model import (
 from wintestkit.uia import input as keyboard
 
 # property (lowercase) -> locator field or qualified where key.
+#
+# Text and ordinal are keys of the object tree (see ``to_locator``). On a window that is not a
+# WPF window they have no object tree to read, so the same properties map to the UIA name and a
+# global index there (``_UIA_MAP``).
 PROPERTY_MAP = {
     "wpfcontrolname": "automation_id",
     "clrfullclassname": "type:FullName",
@@ -41,11 +45,14 @@ PROPERTY_MAP = {
     "frameworkid": "FrameworkId",
     "localizedcontroltype": "LocalizedControlType",
     "visibleonscreen": "VisibleOnScreen",
-    "wpfcontroltext": "name",
-    "wpfcontrolordinalno": "index",
+    "wpfcontroltext": "wpf:Text",
+    "wpfcontrolordinalno": "wpf:Ordinal",
     "visible": "clr:IsVisible",
     "enabled": "clr:IsEnabled",
 }
+
+
+_UIA_MAP = {"wpfcontroltext": "name", "wpfcontrolordinalno": "index"}
 
 
 def _matcher(value: Any) -> Any:
@@ -76,14 +83,18 @@ def to_locator(props: str | Sequence[str], values: Any, *, depth: int | None = N
     ``*`` and ``?`` match any run and one character, respectively. A plain
     string remains exact. WPFControlName uses AutomationId, whose WPF peer
     normally falls back to x:Name; an explicitly assigned AutomationId can
-    differ. WPFControlText uses the peer/UIA Name, which may differ from the
-    control's actual text. ClrClassName is the managed short type name.
-    ClassName is the peer's short class name. Visible and Enabled read managed WPF properties.
+    differ. ClrClassName is the managed short type name. ClassName is the peer's
+    short class name. Visible and Enabled read managed WPF properties.
 
-    Ordinals become zero-based indexes into all results of the locator in tree
-    order, not indexes among siblings of the same type. Depth 1 means direct
-    children; on WPF it counts automation-peer levels, not arbitrary
-    visual-tree levels. None leaves the library default in place.
+    On a WPF window the locator searches the object tree of the migration model
+    (``tree="objects"``): the visual tree without template parts and items-panel
+    elements. Depth counts its levels (1 means direct children; from an application,
+    1 is the window nodes), the first match is the pre-order one, WPFControlText
+    matches ``wpf:Text`` (the element's text, which is not the peer name) and
+    WPFControlOrdinalNo matches ``wpf:Ordinal`` (1-based among siblings of the same
+    runtime type). Windows that are not WPF windows keep the UIA tree: there WPFControlText
+    is the UIA Name and ordinals become zero-based indexes into all results in
+    tree order. None leaves the library default depth in place.
 
     Wildcard regexes use strict whole-value matching, including for Unicode text.
     """
@@ -98,8 +109,11 @@ def to_locator(props: str | Sequence[str], values: Any, *, depth: int | None = N
         if len(names) != len(items):
             raise ValueError("property names and values must have equal length")
 
-    fields: dict[str, Any] = {"depth": depth}
+    # The same properties twice: for the object tree of a WPF window, and for the UIA tree.
+    fields: dict[str, Any] = {}
     where: dict[str, Any] = {}
+    uia_fields: dict[str, Any] = {}
+    uia_where: dict[str, Any] = {}
     seen: set[str] = set()
     for prop, value in zip(names, items, strict=True):
         if not isinstance(prop, str) or not all(_name_part(part) for part in prop.split(".")):
@@ -115,46 +129,69 @@ def to_locator(props: str | Sequence[str], values: Any, *, depth: int | None = N
             raise ValueError(f"duplicate property: {prop!r}")
         seen.add(key)
         target = PROPERTY_MAP.get(key, f"clr:{prop}")
+        uia_target = _UIA_MAP.get(key, target)
         for suffix, facet in ((".clrclassname", "Name"), (".clrfullclassname", "FullName")):
             if key.endswith(suffix):
-                target = f"type:{facet}@{prop[: -len(suffix)]}"
+                target = uia_target = f"type:{facet}@{prop[: -len(suffix)]}"
                 break
+        uia_value: Any
         if key in {"visible", "enabled", "visibleonscreen", "exists"}:
             if isinstance(value, str) and value.casefold() in {"true", "false"}:
                 value = value.casefold() == "true"
             if not isinstance(value, bool):
                 raise ValueError(f"{prop} must be True or False")
+            uia_value = value
         elif key == "wpfcontrolordinalno":
             if isinstance(value, str) and value.isascii() and value.isdecimal():
                 value = int(value)
             if isinstance(value, bool) or not isinstance(value, int) or value < 1:
                 raise ValueError(f"{prop} must be a positive integer")
-            value -= 1
+            uia_value = value - 1  # a zero-based index into all UIA results
         elif key == "controlid":
             if isinstance(value, bool) or not (
                 isinstance(value, int)
                 or (isinstance(value, str) and value.isascii() and value.isdecimal())
             ):
                 raise ValueError("ControlId must be an integer or numeric string")
-            value = str(int(value))
+            value = uia_value = str(int(value))
         else:
             if key == "wndcaption" and isinstance(value, str):
                 value = re.sub(
                     r"&(&|.)?", lambda m: "&" if m.group(1) == "&" else (m.group(1) or ""), value
                 )
-            value = _matcher(value)
+            value = uia_value = _matcher(value)
             if isinstance(value, str) and target.startswith("clr:"):
                 # Migrated suites pass numbers and booleans as strings; compare by text.
-                value = AsText(value)
+                value = uia_value = AsText(value)
         if key == "exists":
             if not value:
                 raise ValueError("Exists=False cannot be used to find an absent element")
             continue
-        if ":" in target or target in {"FrameworkId", "LocalizedControlType", "VisibleOnScreen"}:
-            where[target] = value
-        else:
-            fields[target] = value
-    return Locator(**fields, where=tuple(where.items()), allow_empty=not where and len(fields) == 1)
+        for destination_fields, destination_where, destination_target, destination_value in (
+            (fields, where, target, value),
+            (uia_fields, uia_where, uia_target, uia_value),
+        ):
+            if ":" in destination_target or destination_target in {
+                "FrameworkId",
+                "LocalizedControlType",
+                "VisibleOnScreen",
+            }:
+                destination_where[destination_target] = destination_value
+            else:
+                destination_fields[destination_target] = destination_value
+    uia = Locator(
+        **uia_fields,
+        where=tuple(uia_where.items()),
+        allow_empty=not uia_where and not uia_fields,
+    )
+    return Locator(
+        **fields,
+        depth=depth,
+        where=tuple(where.items()),
+        tree="objects",
+        uia_form=uia,
+        allow_empty=not where and not fields,
+    )
 
 
 def _search(parent: BoundControl | PageObject | Scope | App, locator: Locator) -> BoundElements:
@@ -181,6 +218,24 @@ def _search(parent: BoundControl | PageObject | Scope | App, locator: Locator) -
         locator = replace(locator, within=replace(root, window=None), window=root.window)
     definition = Elements(automation_id="__finders_search__")
     return BoundElements(page, definition, locator)
+
+
+def _explicit_ordinal(locator: Locator) -> bool:
+    """Whether the properties name an ordinal, which already picks one of several matches."""
+    return (
+        locator.index is not None
+        or any(key == "wpf:Ordinal" for key, _ in locator.where)
+        or (locator.uia_form is not None and locator.uia_form.index is not None)
+    )
+
+
+def _first(locator: Locator) -> Locator:
+    """The locator with index 0 unless the ordinal already chose, in both of its forms."""
+    first = replace(locator, index=0) if locator.index is None else locator
+    uia = first.uia_form
+    if uia is not None and uia.index is None:
+        first = replace(first, uia_form=replace(uia, index=0))
+    return first
 
 
 class _FirstElement(BoundElement):
@@ -224,18 +279,23 @@ def find_child(
 ) -> BoundElement:
     """Find a descendant lazily; depth 1 means direct children, None unlimited.
 
-    By default the first match in tree order wins; strict requires one match.
-    An explicit WPFControlOrdinalNo takes precedence over the default first match.
+    On WPF windows the search runs in the object tree (see ``to_locator``): depth counts its
+    levels, and from an application depth 1 is the window nodes and depth 2 the root visuals.
+    From a window or a page without a root element, depth 1 is the window's root visual itself.
+    By default the first match in pre-order wins; strict requires one match. An explicit
+    WPFControlOrdinalNo is a same-type position among siblings, not a global index; matches that
+    share it are still ordered, so the first of them wins.
     """
     locator = to_locator(props, values, depth=depth)
     result = _search(parent, locator)
-    if not strict and locator.index is None:
-        locator = locator.with_index(0)
+    searched = result.locator
+    if not strict:
+        searched = _first(searched)
     return _FirstElement(
         result.page,
         result.definition,
-        replace(result.locator, index=locator.index),
-        warn=not strict and result.locator.index is None,
+        searched,
+        warn=not strict and not _explicit_ordinal(result.locator),
     )
 
 
@@ -256,7 +316,10 @@ def find_all_children(
 class _FindElement(_FirstElement):
     def __init__(self, parent: BoundControl, descendant: BoundElement, locator: Locator) -> None:
         super().__init__(
-            descendant.page, descendant.definition, descendant.locator, warn=locator.index is None
+            descendant.page,
+            descendant.definition,
+            descendant.locator,
+            warn=not _explicit_ordinal(locator),
         )
         self.parent = parent
         self.match_locator = locator
@@ -282,8 +345,9 @@ def find(
 ) -> BoundElement:
     """Find the parent or its descendants, defaulting to a depth of 1.
 
-    A bound parent is included. A Page or Scope without an element root starts at
-    its window; the window itself cannot be included by the descendant resolver.
+    A bound parent is included. A Page or Scope without an element root starts at its window; on a
+    WPF window the root visual is depth 1 of the object tree, so it can match; elsewhere the
+    window itself cannot be included by the descendant resolver.
     """
     child = find_child(parent, props, values, depth)
     if isinstance(parent, PageObject):

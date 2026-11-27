@@ -10,6 +10,7 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any, cast
 
+from wintestkit.engine.locator import Locator
 from wintestkit.engine.properties import AsText
 from wintestkit.finders import to_locator
 from wintestkit.model import PageObject
@@ -156,12 +157,15 @@ def convert(xml_path: Path, *, managed_class_names: bool = False) -> str:
             blocked = True
         else:
             locator = to_locator(names, values, depth=None if extended else 1)
+            # Managed output searches the object tree with the migration keys (wpf:Text and
+            # wpf:Ordinal); without the inspector it keeps the UIA form (name, global index).
+            form = locator if managed_class_names else cast(Locator, locator.uia_form)
             fields = [
-                (key, getattr(locator, key))
+                (key, getattr(form, key))
                 for key in ("automation_id", "name", "class_name", "index")
-                if getattr(locator, key) is not None
+                if getattr(form, key) is not None
             ]
-            where = list(locator.where)
+            where = list(form.where)
             if not managed_class_names:
                 where = [
                     (
@@ -182,6 +186,8 @@ def convert(xml_path: Path, *, managed_class_names: bool = False) -> str:
                 for key, value in where:
                     declarations.append(f"            {_literal(key)}: {_literal(value)},")
                 declarations.append("        },")
+            if managed_class_names:
+                declarations.append('        tree="objects",')
             if not extended:
                 declarations.append("        depth=1,")
             if parent is not None:
@@ -199,7 +205,8 @@ def convert(xml_path: Path, *, managed_class_names: bool = False) -> str:
     lines = [
         '"""Generated from NameMapping; review locators before use.',
         "",
-        "Managed class names require the WPF inspector."
+        'Managed class names and the object tree (tree="objects", wpf:Text and wpf:Ordinal)'
+        " require the WPF inspector."
         if managed_class_names
         else (
             "ClrFullClassName and ClrClassName require verified application-specific "

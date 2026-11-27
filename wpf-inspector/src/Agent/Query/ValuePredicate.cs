@@ -37,7 +37,7 @@ namespace WinTestKit.Inspector.Agent.Query
         }
 
         /// <summary>Cheapest first: type metadata, then one member, then paths through intermediate objects (indexers and regular expressions cost more).</summary>
-        public int Cost => (path[0].Kind == "type" ? 1 : path[0].Kind == "uia" ? 1 : 2 + path.Count) + (path.Any(segment => segment.Name.IndexOf('[') >= 0) ? 1 : 0) + (regex != null ? 1 : 0);
+        public int Cost => (path[0].Kind == "type" ? 1 : path[0].Kind == "uia" ? 1 : path[0].Kind == "object" ? 2 : 2 + path.Count) + (path.Any(segment => segment.Name.IndexOf('[') >= 0) ? 1 : 0) + (regex != null ? 1 : 0);
 
         public bool Matches(DependencyObject target, QueryPredicateContext context) => MatchesObject(target, target.Dispatcher, context);
 
@@ -51,6 +51,16 @@ namespace WinTestKit.Inspector.Agent.Query
                 return true;
             }
             PathSegment first = path[0];
+            if (first.Kind == "object")
+            {
+                ValueDto objectValue;
+                try { objectValue = inspector.ReadObjectKey(target, first, registry, dispatcher, context.Token, context.Objects); }
+                catch (OperationCanceledException) { throw ProtocolException.Deadline("Query deadline reached."); }
+                // A password field has no text to compare; it never matches instead of failing the whole search.
+                if (objectValue.Status == "redacted" && objectValue.RedactionRule == "identity") return false;
+                if (context.Remaining <= TimeSpan.Zero) throw ProtocolException.Deadline("Query deadline reached.");
+                return MatchesValue(objectValue, context);
+            }
             if ((first.Kind == "property" || first.Kind == "field") && first.Name.IndexOf('[') < 0)
             {
                 Type type = target.GetType();
@@ -164,7 +174,7 @@ namespace WinTestKit.Inspector.Agent.Query
         }
 
         // Identity reads and type metadata never depend on whether the element is protected, so they skip the (costly) peer check.
-        private static bool ProtectedRootNeeded(IReadOnlyList<PathSegment> path) => path[0].Kind != "uia" && !(path.Count == 1 && path[0].Kind == "type" && path[0].Name != "BaseTypes");
+        private static bool ProtectedRootNeeded(IReadOnlyList<PathSegment> path) => path[0].Kind != "uia" && path[0].Kind != "object" && !(path.Count == 1 && path[0].Kind == "type" && path[0].Name != "BaseTypes");
         private bool ProtectedRoot(object target, QueryPredicateContext context) => ProtectedRootNeeded(path) && context.IsProtected(target);
 
         private static string? NumberText(JsonNode? value) => value is JsonNumberNode number ? number.RawText : (value as JsonStringNode)?.Value;

@@ -32,13 +32,14 @@ This guide helps you migrate an existing **WPF desktop test suite** to WinTestKi
 | `VisibleOnScreen` | On-screen visibility condition |
 | `ClrFullClassName` | `where={"type:FullName": "Namespace.Type"}`; `type:Is` includes derived types |
 | `WPFControlName` | `automation_id`: peer or peerless attached AutomationId, falling back to `x:Name` with the WPF backend |
-| `WPFControlText` | `name` (peer Name, not necessarily actual text) |
+| `WPFControlText` | `wpf:Text`, the text the element shows, on WPF windows; the UIA Name on other windows |
+| `WPFControlOrdinalNo` | `wpf:Ordinal`: 1-based position among siblings of the same runtime type, on WPF windows; a zero-based index over all matches on other windows |
 | `Visible` / `Enabled` | `clr:IsVisible` / `clr:IsEnabled` via helpers or `where` |
 | `ObjectIdentifier` | No direct equivalent: inspect and choose stable properties, not an invented ID |
 | Conditional mapping (OR groups) | `any_of=[...]` |
 | Required child objects | `has=Element(...)` |
 | Wildcards | Helpers translate `*` and `?` to whole-value patterns; locators accept compiled regexes |
-| Extended find / depth | `depth` (automation-peer levels); extended find uses descendant search |
+| Extended find / depth | `depth` counts [object-tree](#the-object-tree-model) levels on WPF windows (peer levels elsewhere); extended find uses descendant search |
 | Direct property writes / method calls | Prefer UI actions; managed writes and calls are opt-in with an allowlist and audit (see [managed inspection](managed-inspection.md#writes-and-method-calls)) |
 | Reading object properties (e.g. `obj.DataContext.Name`) | `el.get("clr:DataContext.Name")` |
 | `WaitProperty` | `el.wait_for_property(name, expected)` |
@@ -69,7 +70,31 @@ This guide helps you migrate an existing **WPF desktop test suite** to WinTestKi
 - **Code review and version control.** Pages and tests are plain Python files that diff, review
   and merge like any other code.
 
-First-match finders warn on ambiguity in the report and pytest; use identifying properties, scope, or `strict=True` instead. Explicit ordinals suppress the warning.
+First-match finders warn on ambiguity in the report and pytest; use identifying properties, scope, or `strict=True` instead. An explicit `WPFControlOrdinalNo` suppresses the warning.
+
+## The object-tree model
+
+Existing suites search a particular tree, and `find_child`, `find_all_children`, `find` and the importer
+reproduce it on WPF windows (`tree="objects"`, see [the object tree](managed-inspection.md#the-object-tree)):
+
+- **Tree.** The WPF visual tree without the parts of control templates and items panels; their visible
+  descendants move up to the nearest visible ancestor. A grid cell is a direct child of its row, a combo
+  box item of its popup and a ribbon's tabs of the ribbon. Each popup is a root of its own.
+- **Depth** counts levels of that tree. From an `App`, depth 1 is the window nodes (`HwndSource: <type>`,
+  the window title as text), depth 2 the root visuals and depth 3 their children. From a window or a page
+  without a root element, depth 1 is the root visual itself.
+- **First match** is the depth-first pre-order one.
+- **Ordinal** (`WPFControlOrdinalNo`) is the 1-based position among object-tree siblings of the same type,
+  in visual order, whatever their text. It is a condition, not a global index.
+- **Text** (`WPFControlText`) follows the element's class: `Text` for text blocks and text boxes, `Title` for
+  a window, the first non-empty of `Content` and `Header` for headered content controls, `Header` for
+  headered items controls, `Content` for other content controls and presenters, and `''` for anything
+  else. An element value contributes its own text, and another object its `ToString()` when it overrides it.
+
+These searches need the inspector on WPF windows. On a window that is not a WPF window
+(a Win32 dialog) or with `backend: uia`, the same helper call keeps the UIA tree and the old mapping
+(`WPFControlText` is the UIA Name, an ordinal a zero-based index). Declared locators opt in with
+`Element(tree="objects", where={"wpf:Text": ..., "wpf:Ordinal": ...})`.
 
 
 ## Migrating FindChild
@@ -96,14 +121,18 @@ Import `find_child`, `find_all_children`, and `find` from `wintestkit.finders`.
 | `p.FindChild("ClrFullClassName", "WinTestKit.Fixture.PeerlessMarker", 20)` | `find_child(page, "ClrFullClassName", "WinTestKit.Fixture.PeerlessMarker", 20)` |
 
 The depth-one nested lookup deliberately does not find the deeper button. Depth counts
-automation-peer levels, not arbitrary WPF visual-tree levels; `None` means unlimited.
-`WPFControlText` matches the peer Name, which need not be the actual control text.
-`WPFControlOrdinalNo` accepts integers or numeric strings and is one-based and maps to a zero-based index over matches.
+[object-tree](#the-object-tree-model) levels; `None` means unlimited. From a page without a root
+element depth 1 is the window's root visual, so the button inside the group is found at depth 20 but
+not at depth 1; from `page.group` its content is a direct child.
+`WPFControlText` matches the element's text (`wpf:Text`), which need not be the peer Name.
+`WPFControlOrdinalNo` accepts integers or numeric strings, is one-based and is a position among
+same-type siblings (`wpf:Ordinal`), not an index over all matches; matches that still share it are
+ordered, and the first wins.
 `find_all_children` returns indexed, re-resolving results: later tree reordering can
-change their identities. `find` includes a bound parent, but rootless pages and scopes
-start at the window descendants and cannot include the window itself. Managed properties
+change their identities. `find` includes a bound parent; rootless pages and scopes start at their window, whose root
+visual is depth 1 on WPF windows and cannot be included elsewhere. Managed properties
 require inspector access, and UIA cannot discover elements without automation peers.
-An `App` parent searches all top-level windows and their descendants; depth 1 includes the windows. Window titles accept wildcards. `Exists=True` adds no condition and `Exists=False` raises an error. A trailing `.OleValue` is stripped from property paths. The NameMapping extended-find XML spellings accepted below are unconfirmed.
+An `App` parent searches all top-level windows and their descendants; depth 1 is the window nodes, depth 2 the root visuals. Window titles accept wildcards. `Exists=True` adds no condition and `Exists=False` raises an error. A trailing `.OleValue` is stripped from property paths. The NameMapping extended-find XML spellings accepted below are unconfirmed.
 
 ## NameMapping importer
 
@@ -119,7 +148,9 @@ It does not yet convert OR groups; add `any_of` manually. It does not migrate ac
 the managed alias described below when the inspector is enabled, or use
 `property_aliases: {ClrFullClassName: ItemStatus}` only if the application exposes the full
 name through UIA ItemStatus. Other properties use the same mapping as `to_locator`: text, ordinal, visible,
-and enabled become corresponding locator fields or managed conditions; unknown valid names become
+and enabled become corresponding locator fields or managed conditions (with `--managed-class-names`, text and
+ordinal become `wpf:Text` and `wpf:Ordinal` and the element declares `tree="objects"`; otherwise they stay
+the UIA `name` and a zero-based `index`); unknown valid names become
 `clr:` paths; their plain string values are generated as `AsText(...)` so that `"15"` matches the integer 15. `*` and `?` become compiled whole-value patterns. Unmappable properties appear as
 `# TODO` comments; an unmappable parent and its descendants require manual reconstruction.
 Review and validate every generated locator against the live app before using it.
@@ -127,7 +158,7 @@ Review and validate every generated locator against the live app before using it
 ## Managed class names
 
 With the [WPF backend](managed-inspection.md), use `wtk import-namemapping NameMapping.xml pages/imported.py --managed-class-names`
-to generate qualified managed class-name keys. Alternatively configure
+to generate qualified managed class-name keys and object-tree text and ordinal keys. Alternatively configure
 `property_aliases: {ClrFullClassName: 'type:FullName', ClrClassName: 'type:Name'}` in `wintestkit.yaml`. Both require
 authorized attachment. Confirm values in Spy; use the ItemStatus alias above as a fallback.
 

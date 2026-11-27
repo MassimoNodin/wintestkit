@@ -143,6 +143,7 @@ class ChildOptions(TypedDict, total=False):
     where: Mapping[str, WhereValue]
     any_of: Sequence[Mapping[str, Any]]
     has: Element[Any] | Locator
+    tree: Literal["objects"]
 
 
 class ChildGroupOptions(TypedDict, total=False):
@@ -156,6 +157,7 @@ class ChildGroupOptions(TypedDict, total=False):
     where: Mapping[str, WhereValue]
     any_of: Sequence[Mapping[str, Any]]
     has: Element[Any] | Locator
+    tree: Literal["objects"]
 
 
 _CHILD_FORBIDDEN = ("within", "depth", "window")
@@ -2035,6 +2037,7 @@ class Element(Generic[B]):  # noqa: UP046  (a type-parameter default needs Pytho
         where: Mapping[str, WhereValue] | None = None,
         any_of: Sequence[Mapping[str, Any]] | None = None,
         has: Element[Any] | Locator | None = None,
+        tree: Literal["objects"] | None = None,
     ) -> None:
         __tracebackhide__ = True
         self._init(
@@ -2051,6 +2054,7 @@ class Element(Generic[B]):  # noqa: UP046  (a type-parameter default needs Pytho
             where,
             any_of,
             has,
+            tree,
         )
 
     def _init(
@@ -2068,6 +2072,7 @@ class Element(Generic[B]):  # noqa: UP046  (a type-parameter default needs Pytho
         where: Mapping[str, WhereValue] | None = None,
         any_of: Sequence[Mapping[str, Any]] | None = None,
         has: Element[Any] | Locator | None = None,
+        tree: Literal["objects"] | None = None,
     ) -> None:
         __tracebackhide__ = True
         if within is not None and (
@@ -2095,6 +2100,7 @@ class Element(Generic[B]):  # noqa: UP046  (a type-parameter default needs Pytho
             where=normalize_where(where, {}),
             any_of=any_of_from_mappings(any_of),
             has=_has_locator(has),
+            tree=tree,
         )
         self.name: str | None = None
         self.owner: type | None = None
@@ -2216,6 +2222,7 @@ class Elements(Element[BoundElement]):
         where: Mapping[str, WhereValue] | None = None,
         any_of: Sequence[Mapping[str, Any]] | None = None,
         has: Element[Any] | Locator | None = None,
+        tree: Literal["objects"] | None = None,
     ) -> None:
         __tracebackhide__ = True
         self._init(
@@ -2231,6 +2238,7 @@ class Elements(Element[BoundElement]):
             where=where,
             any_of=any_of,
             has=has,
+            tree=tree,
         )
 
     @overload  # type: ignore[override]

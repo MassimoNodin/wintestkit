@@ -14,6 +14,7 @@ from dataclasses import dataclass, replace
 from typing import Any, Literal, cast
 
 from wintestkit.engine.properties import AsText, Where, normalize_where
+from wintestkit.errors import InvalidLocatorError
 from wintestkit.uia.constants import CONTROL_TYPES, normalize_control_type
 
 Matcher = str | re.Pattern[str]
@@ -273,11 +274,22 @@ class Locator:
     any_of: tuple[Locator, ...] = ()
     #: Keep only matches that contain a descendant matching this locator.
     has: Locator | None = None
+    #: ``"objects"`` searches the migration object tree of a WPF window: depth counts its levels,
+    #: the first match is the pre-order one and ``index`` counts in that order. ``None`` is the UIA
+    #: tree.
+    tree: Literal["objects"] | None = None
+    #: The same link as the UIA tree understands it, used when the target is not a WPF window. Only
+    #: its properties, ``where``, ``index``, ``any_of`` and ``has`` count; it is not serialized.
+    uia_form: Locator | None = None
     app_scope: bool = False
     allow_empty: bool = False
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "where", normalize_where(dict(self.where), self.taken()))
+        if self.tree not in (None, "objects"):
+            raise ValueError(f"tree must be 'objects' or None, got {self.tree!r}")
+        if self.uia_form is not None and not isinstance(self.uia_form, Locator):  # pyright: ignore[reportUnnecessaryIsInstance]
+            raise TypeError("uia_form must be a Locator")
         if self.control_type is not None:
             object.__setattr__(self, "control_type", normalize_control_type(self.control_type))
         _check_index("index", self.index)
@@ -326,6 +338,7 @@ class Locator:
             for name, value in (
                 ("index", self.index),
                 ("depth", self.depth),
+                ("tree", self.tree),
                 ("within", self.within),
                 ("window", self.window),
                 ("item", self.item),
@@ -368,10 +381,32 @@ class Locator:
         return links
 
     def with_index(self, index: int) -> Locator:
-        return replace(self, index=index)
+        """The same locator choosing match ``index``, in the UIA form too when it has one."""
+        uia = self.uia_form.with_index(index) if self.uia_form is not None else None
+        return replace(self, index=index, uia_form=uia)
 
     def with_item(self, item: ItemSelector) -> Locator:
         return replace(self, item=item)
+
+    def for_uia(self) -> Locator:
+        """This link as the UIA tree searches it: ``uia_form`` if it has one, else itself."""
+        __tracebackhide__ = True
+        if self.uia_form is None:
+            if self.tree is not None:
+                raise InvalidLocatorError(
+                    f"tree={self.tree!r} searches the WPF object tree: it needs a WPF window with "
+                    "the inspector, not a UIA-only window or backend: uia"
+                )
+            return self
+        return replace(
+            self.uia_form,
+            depth=self.depth,
+            within=self.within,
+            window=self.window,
+            item=self.item,
+            tree=None,
+            uia_form=None,
+        )
 
     def exact_props(self) -> dict[str, str | int]:
         """Properties usable directly in a UIA condition (string matchers and control type)."""
@@ -424,6 +459,8 @@ class Locator:
             parts.append(f"index={self.index}")
         if self.depth is not None:
             parts.append(f"depth={self.depth}")
+        if self.tree is not None:
+            parts.append(f"tree={self.tree}")
         parts.extend(describe_where(self.where))
         if self.any_of:
             alternatives = " | ".join(alt.describe_properties() for alt in self.any_of)
@@ -459,6 +496,8 @@ class Locator:
             data["index"] = self.index
         if self.depth is not None:
             data["depth"] = self.depth
+        if self.tree is not None:
+            data["tree"] = self.tree
         if self.within is not None:
             data["within"] = self.within.to_dict()
         if self.window is not None:
@@ -483,6 +522,7 @@ class Locator:
                 "className",
                 "index",
                 "depth",
+                "tree",
                 "within",
                 "window",
                 "item",
@@ -500,6 +540,7 @@ class Locator:
             class_name=matcher_from_data(data["className"]) if "className" in data else None,
             index=data.get("index"),
             depth=data.get("depth"),
+            tree=data.get("tree"),
             within=cls.from_dict(data["within"]) if "within" in data else None,
             window=WindowLocator.from_dict(data["window"]) if "window" in data else None,
             item=ItemSelector.from_dict(data["item"]) if "item" in data else None,

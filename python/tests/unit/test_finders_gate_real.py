@@ -202,3 +202,63 @@ def test_app_finder_managed_and_visibility(owned):
         assert match.resolve_once().same_as(
             resolve(scope, Locator(automation_id="FancyAutomationId"))
         )
+
+
+def test_object_tree_depth_text_and_ordinal(owned):
+    """The migration object tree on the owned fixture: levels, window nodes, text and ordinals."""
+    scope, path = owned
+    page = FixturePage(scope.app)
+    with runtime.config_scope(replace(config(path, "agent"), backend="auto")):
+        main = scope.app.main_window()
+        nested = resolve(scope, Locator(automation_id="NestedButton"))
+        # The group box's template parts are hidden: its content is a direct child.
+        direct = find_child(page.group, "WPFControlName", "NestedButton", 1)
+        assert direct.resolve_once().same_as(nested)
+        # The text is the T3 text (the button's content), not the peer name.
+        by_text = find_child(page.group, "WPFControlText", "Nested", 1)
+        assert by_text.resolve_once().same_as(nested)
+        assert by_text.get("wpf:Text") == "Nested"
+        # Ordinals are same-type positions among siblings, not global indexes.
+        duplicates = [
+            find_child(
+                page, ["WPFControlName", "WPFControlOrdinalNo"], ["Duplicate", ordinal], None
+            )
+            for ordinal in (1, 2)
+        ]
+        references = resolve_all(scope, Locator(automation_id="Duplicate"))
+        for found, reference in zip(duplicates, references, strict=True):
+            assert found.resolve_once().same_as(reference)
+        assert [item.get("wpf:Ordinal") for item in duplicates] == [1, 2]
+        # From an application: depth 1 is the window node, depth 2 its root visual, then children.
+        assert find_child(scope.app, "WPFControlText", main.name, 1).resolve_once().same_as(main)
+        assert not find_child(scope.app, "WPFControlName", "ParityGroup", 2).exists(timeout=1)
+        assert (
+            find_child(scope.app, "WPFControlName", "ParityGroup", None)
+            .resolve_once()
+            .same_as(resolve(scope, Locator(automation_id="ParityGroup")))
+        )
+        # From a window the root visual itself is depth 1.
+        assert find_child(scope, "WPFControlText", main.name, 1).resolve_once().same_as(main)
+        assert not find_child(scope, "WPFControlName", "NestedButton", 1).exists(timeout=1)
+
+
+def test_object_tree_keys_as_locator_options(owned):
+    scope, path = owned
+    with runtime.config_scope(replace(config(path, "agent"), backend="auto")):
+
+        class Tree(Page):
+            fancy = Element(
+                automation_id="FancyAutomationId",
+                tree="objects",
+                where={"wpf:Text": "Fancy action"},
+            )
+            second = Element(automation_id="Duplicate", tree="objects", where={"wpf:Ordinal": 2})
+
+        page = Tree(scope.app)
+        assert page.fancy.resolve_once().same_as(
+            resolve(scope, Locator(automation_id="FancyAutomationId"))
+        )
+        assert page.second.resolve_once().same_as(
+            resolve_all(scope, Locator(automation_id="Duplicate"))[1]
+        )
+        assert page.second.get("wpf:Ordinal") == 2

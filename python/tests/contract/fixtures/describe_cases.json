@@ -165,5 +165,14 @@
       "where": { "clr:PersistId": { "asText": "15" }, "clr:Name": "x" }
     },
     "describe": "*[clr:PersistId=AsText(\"15\"), clr:Name=\"x\"]"
+  },
+  {
+    "locator": {
+      "automationId": "Row",
+      "depth": 2,
+      "tree": "objects",
+      "where": { "wpf:Text": "OK", "wpf:Ordinal": 2 }
+    },
+    "describe": "*[id=\"Row\", depth=2, tree=objects, wpf:Text=\"OK\", wpf:Ordinal=2]"
   }
 ]

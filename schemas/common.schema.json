@@ -304,6 +304,9 @@
           "type": "integer",
           "minimum": 0
         },
+        "tree": {
+          "const": "objects"
+        },
         "within": {
           "$ref": "common.schema.json#/$defs/LocatorData"
         },

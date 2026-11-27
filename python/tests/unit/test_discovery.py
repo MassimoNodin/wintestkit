@@ -889,3 +889,23 @@ def test_a_component_mount_is_not_mistaken_for_an_element(tmp_path: Path) -> Non
     assert [c.name for c in home.children] == ["box"]
     box = next(p for p in result.pages if p.name == "Box")
     assert {e.name: e.element_type for e in box.elements} == {"root": "Element", "ok": "Button"}
+
+
+def test_object_tree_option_is_a_literal_locator_key(tmp_path: Path) -> None:
+    write(
+        tmp_path,
+        "pages/tree.py",
+        """
+        from wintestkit import Element, Page
+
+        class Tree(Page):
+            literal = Element(automation_id="a", tree="objects")
+            other = Element(automation_id="b", tree="uia")
+        """,
+    )
+    result = discover(tmp_path)
+    assert result.errors == ()
+    elements = {e.name: e for e in result.pages[0].elements}
+    assert elements["literal"].locator == {"automationId": "a", "tree": "objects"}
+    assert not elements["literal"].dynamic
+    assert elements["other"].dynamic

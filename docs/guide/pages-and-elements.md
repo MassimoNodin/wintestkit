@@ -65,6 +65,7 @@ An element is found by its locator in the WPF tree or, for a UIA window, by UI A
 | `has` | require a matching descendant; see [Alternatives and required children](locators-for-wpf.md#alternatives-and-required-children) |
 | `index` | the n-th match (0-based) when several elements match |
 | `depth` | maximum search depth below the container (`1`: direct children only) |
+| `tree` | `"objects"` searches the migration [object tree](managed-inspection.md#the-object-tree) of a WPF window: `depth`, the first match and `index` follow it, and `where={"wpf:Text": ..., "wpf:Ordinal": ...}` match its text and same-type position |
 | `within` | another `Element` to search inside instead of the whole window; see also [Direct children](#direct-children) |
 | `window` | a `Window` overriding the page's window for this element |
 | `timeout` | default auto-wait for this element, in seconds |

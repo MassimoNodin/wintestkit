@@ -347,6 +347,8 @@ Element(automation_id='Order', where={'clr:DataContext.PersistId': AsText('15')}
 
 `type:` accepts `Name`, `FullName`, `AssemblyName`, `AssemblyQualifiedName`, or `BaseTypes`.
 `type:Is` matches a loaded type or a derived type by its exact full name and requires an agent query.
+`wpf:Text` and `wpf:Ordinal` read the text and same-type position of an element in the
+[object tree](#the-object-tree).
 `clr:` traverses properties separated by dots; `field:` starts with a field and continues
 with properties. Escape a literal dot as `\.` and a backslash as `\\` in the key (double
 backslashes again in ordinary Python string literals). `dp:` uses
@@ -395,6 +397,49 @@ its integer text. A decimal or double also matches the same number with other tr
 (`AsText('1.5')` matches `1.50m`); integers do not (`'015'` is not 15). Null never matches, and
 objects, collections and truncated strings cannot be compared. It applies to `clr:`, `field:`,
 `dp:` and `type:` keys only.
+
+### The object tree
+
+The default search covers the combined WPF tree. Suites migrated from other tools expect a different
+tree, which `tree="objects"` selects for any locator (`Element`, `Elements`, typed elements,
+`parent.Button(...)`, and the `find_child` helpers do it for you on WPF windows):
+
+```python
+# pseudo-code
+Element(automation_id='Save', tree='objects', depth=2, where={'wpf:Text': 'Save', 'wpf:Ordinal': 2})
+```
+
+- **The tree.** The WPF visual tree, with every popup as a root of its own. An element is hidden when its
+  `TemplatedParent` is a `Control` (the parts of a `ControlTemplate`) or an `ItemsPresenter` (the
+  `ItemsPanel` instances). Elements created by a `DataTemplate` (their `TemplatedParent` is a
+  `ContentPresenter`) and elements without a `TemplatedParent` stay. The visible descendants of a
+  hidden element become children of the nearest visible ancestor, in visual order, so a `DataGridCell`
+  is a direct child of its `DataGridRow`, a `ComboBoxItem` of its popup's decorator and a ribbon's tabs
+  of the ribbon.
+- **Depth** counts levels of that tree below the search root, the first match is the depth-first
+  **pre-order** one, and `index` counts in the same order. Above each root visual sits a *window node*
+  (the `HwndSource` level, labelled `HwndSource: <root visual type>`, with the window title as its text). From
+  an `App`, depth 1 is the window nodes, depth 2 the root visuals and depth 3 their children. From a window or
+  a page without a root element, depth 1 is the root visual itself, so it can match. A window node matches
+  `type:Name`, `wpf:Text` and `wpf:Ordinal` (its place among the windows); any other managed key is a member of an
+  element, which a window node is not. A window node and the root visual below it are one element, counted
+  once.
+- **`wpf:Ordinal`** is the element's 1-based position among its object-tree siblings of the same runtime
+  type, in visual order. The text plays no part. It reads as an integer; `AsText('2')` and regular
+  expressions work as for any managed value.
+- **`wpf:Text`** is the text an element shows: a `TextBlock` (and subclasses) and `TextBoxBase`
+  descendants give their `Text`, a `Window` its `Title`, a `HeaderedContentControl` the first non-empty of
+  `Content` and `Header`, a `HeaderedItemsControl` its `Header`, a `ContentControl` or `ContentPresenter` its
+  `Content`; any other class gives `''`. A value becomes text like this: a string stays as it is, an element
+  contributes its own `wpf:Text` (never its `ToString`), null is `''`, and any other object is its
+  `ToString()` if its runtime type overrides it (declared on anything but `System.Object`) and `''` otherwise.
+
+Reading text runs application getters and `ToString` overrides, with the same safeguards as other managed
+reads: the per-request time limit, redaction (a protected identity such as a `PasswordBox`, or a member or
+type name matching a redaction rule, gives a redacted result instead of text), and exception capture (a throwing
+`ToString` is an unreadable value with the sanitized error). A password field never matches a `wpf:Text`
+condition, so it does not fail a search that passes it; any other unreadable value does. `wpf:Text` and
+`wpf:Ordinal` work in `where`, in `el.get(...)` and in aliases.
 
 Agent queries search the combined WPF tree, including elements without UIA peers.
 The agent returns at most 200 matches. A traversal that does not fit one request's time and

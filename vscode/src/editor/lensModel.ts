@@ -115,6 +115,7 @@ function describeLink(locator: LocatorData): string {
     parts.push("class=" + matcher(locator.className));
   if (locator.index !== undefined) parts.push("index=" + locator.index);
   if (locator.depth !== undefined) parts.push("depth=" + locator.depth);
+  if (locator.tree !== undefined) parts.push("tree=" + locator.tree);
   parts.push(...whereParts(locator.where));
   if (locator.anyOf?.length)
     parts.push("any_of=(" + locator.anyOf.map(alternativeParts).join(" | ") + ")");

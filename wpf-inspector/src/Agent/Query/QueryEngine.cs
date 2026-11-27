@@ -200,6 +200,7 @@ namespace WinTestKit.Inspector.Agent.Query
         {
             Search result = scan.Result;
             int roots = scan.Roots;
+            bool objectTree = locator.Tree == "objects";
             while (scan.RootIndex < roots)
             {
                 ct.ThrowIfCancellationRequested();
@@ -219,6 +220,7 @@ namespace WinTestKit.Inspector.Agent.Query
                             if (root != null) scan.Stack.Push(new Frame(Single(root).GetEnumerator(), 0));
                             scan.Initialized = true;
                         }
+                        context.Objects.Clear();
                         Stopwatch slice = Stopwatch.StartNew();
                         int steps = 0;
                         while (scan.Stack.Count > 0 && steps < ProtocolLimits.TraversalSliceObjects && slice.ElapsedMilliseconds < ProtocolLimits.TraversalSliceMs)
@@ -234,8 +236,10 @@ namespace WinTestKit.Inspector.Agent.Query
                             if (current.Dispatcher != dispatcher || !scan.Seen.Add(current)) continue;
                             result.Visited++;
                             scan.RequestVisited++;
-                            bool hasPeer = locator.DepthMode == "peers" && frame.Depth > 0 && PeerIdentity.GetPeer(current) != null;
-                            int currentDepth = locator.DepthMode == "peers" && frame.Depth > 0 ? frame.Depth - 1 + (hasPeer ? 1 : 0) : frame.Depth;
+                            // The object tree counts its own levels; peers and tree depth modes apply to the visual and logical trees.
+                            bool peerDepth = !objectTree && locator.DepthMode == "peers";
+                            bool hasPeer = peerDepth && frame.Depth > 0 && PeerIdentity.GetPeer(current) != null;
+                            int currentDepth = peerDepth && frame.Depth > 0 ? frame.Depth - 1 + (hasPeer ? 1 : 0) : frame.Depth;
                             if (currentDepth > locator.Depth) continue;
                             bool matches = true;
                             foreach (IQueryPredicate predicate in scan.Cheap)
@@ -254,7 +258,7 @@ namespace WinTestKit.Inspector.Agent.Query
                                     result.Matches.Add(registry.Register(current, dispatcher, TypeInfoBuilder.Build(current.GetType())));
                                 else if (!find && (!locator.Index.HasValue || locator.Index.Value == matchIndex)) result.Overflow = true;
                             }
-                            if (locator.DepthMode == "tree" ? currentDepth < locator.Depth : !(hasPeer && currentDepth == locator.Depth))
+                            if ((objectTree || locator.DepthMode == "tree") ? currentDepth < locator.Depth : !(hasPeer && currentDepth == locator.Depth))
                                 scan.Stack.Push(new Frame(Children(current, locator.Tree).GetEnumerator(), currentDepth + 1));
                         }
                         return scan.Stack.Count == 0 || scan.RequestVisited >= ProtocolLimits.ScanMaxObjects || DateTime.UtcNow >= budgetDeadline;
@@ -270,6 +274,11 @@ namespace WinTestKit.Inspector.Agent.Query
         private static IEnumerable<DependencyObject> Single(DependencyObject target) { yield return target; }
         private static IEnumerable<DependencyObject> Children(DependencyObject target, string tree)
         {
+            if (tree == "objects")
+            {
+                target.VerifyAccess();
+                foreach (DependencyObject child in ObjectTree.Children(target)) yield return child;
+            }
             if (tree == "visual" || tree == "combined")
                 foreach (DependencyObject child in TreeWalker.EnumerateChildren(target, TreeKind.Visual)) yield return child;
             if (tree == "logical" || tree == "combined")

@@ -21,10 +21,11 @@ namespace WinTestKit.Inspector.Protocol
         public static PathSegment FromJson(JsonNode node)
         {
             var o = DtoHelpers.Object(node, "kind", "name", "declaringType", "memberKey", "ownerType", "ownerAssembly"); var p = new PathSegment { Kind = DtoHelpers.Required(o, "kind"), Name = DtoHelpers.Required(o, "name", 1024), DeclaringType = DtoHelpers.Optional(o, "declaringType", 1024), MemberKey = DtoHelpers.Optional(o, "memberKey", 1024), OwnerType = DtoHelpers.Optional(o, "ownerType", 1024), OwnerAssembly = DtoHelpers.Optional(o, "ownerAssembly", 1024) };
-            DtoHelpers.OneOf(p.Kind, SegmentKind.Property, SegmentKind.Field, SegmentKind.Dependency, SegmentKind.Type, "uia");
+            DtoHelpers.OneOf(p.Kind, SegmentKind.Property, SegmentKind.Field, SegmentKind.Dependency, SegmentKind.Type, "uia", "object");
             if (p.Kind == SegmentKind.Dependency) { if (p.OwnerType == null || p.OwnerAssembly == null || p.DeclaringType != null || p.MemberKey != null) throw DtoHelpers.Invalid("Invalid dependency segment"); }
             else if (p.OwnerType != null || p.OwnerAssembly != null) throw DtoHelpers.Invalid("Invalid segment owner");
             if (p.Kind == "uia") { if (p.DeclaringType != null || p.MemberKey != null) throw DtoHelpers.Invalid("Invalid uia segment"); if (!System.Text.RegularExpressions.Regex.IsMatch(p.Name, @"^(selection|item)_name_(0|[1-9][0-9]{0,8})$")) DtoHelpers.OneOf(p.Name, "automation_id", "name", "class_name", "control_type", "supported_patterns", "value", "is_read_only", "toggle_state", "is_selected", "expand_state", "range_value", "document_text", "is_password", "selection_count", "item_count"); }
+            if (p.Kind == "object") { if (p.DeclaringType != null || p.MemberKey != null) throw DtoHelpers.Invalid("Invalid object segment"); DtoHelpers.OneOf(p.Name, "Text", "Ordinal"); }
             if (p.Kind == SegmentKind.Type) { if (p.DeclaringType != null || p.MemberKey != null) throw DtoHelpers.Invalid("Invalid type segment"); DtoHelpers.OneOf(p.Name, "Name", "FullName", "AssemblyName", "AssemblyQualifiedName", "BaseTypes"); }
             return p;
         }

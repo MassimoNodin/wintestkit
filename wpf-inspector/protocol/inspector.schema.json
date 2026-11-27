@@ -697,11 +697,30 @@
             "name"
           ],
           "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "object"
+            },
+            "name": {
+              "enum": [
+                "Text",
+                "Ordinal"
+              ]
+            }
+          },
+          "required": [
+            "kind",
+            "name"
+          ],
+          "additionalProperties": false
         }
       ]
     },
     "Path": {
-      "description": "A UIA segment must be alone. A type segment reads the runtime type of the value reached by the preceding segments, so it occurs at most once and only as the last segment. A property or field name may end in an indexer, Name[3]: a non-negative or negative 32-bit integer applied to the member's value (array, list, default int indexer, or enumerated sequence); the indexer is part of its segment. Serialized paths must not exceed 1024 UTF-8 bytes.",
+      "description": "A UIA or object-tree segment must be alone. A type segment reads the runtime type of the value reached by the preceding segments, so it occurs at most once and only as the last segment. A property or field name may end in an indexer, Name[3]: a non-negative or negative 32-bit integer applied to the member's value (array, list, default int indexer, or enumerated sequence); the indexer is part of its segment. Serialized paths must not exceed 1024 UTF-8 bytes.",
       "type": "array",
       "minItems": 1,
       "maxItems": 8,
@@ -714,7 +733,10 @@
             "contains": {
               "properties": {
                 "kind": {
-                  "const": "uia"
+                  "enum": [
+                    "uia",
+                    "object"
+                  ]
                 }
               },
               "required": [
@@ -2950,7 +2972,8 @@
           "enum": [
             "visual",
             "logical",
-            "combined"
+            "combined",
+            "objects"
           ]
         },
         "predicates": {

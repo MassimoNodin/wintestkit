@@ -53,6 +53,7 @@ namespace WinTestKit.Inspector.Agent.Query.Tests
         [InlineData("visual")]
         [InlineData("logical")]
         [InlineData("combined")]
+        [InlineData("objects")]
         public async Task OrderedTraversalDepthIndexAndLimit(string tree)
         {
             using (var ui = new Ui())

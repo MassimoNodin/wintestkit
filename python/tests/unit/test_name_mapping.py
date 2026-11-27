@@ -165,10 +165,16 @@ def test_generated_hierarchy_round_trips_shared_locators(tmp_path, managed):
         "DataContext.Title",
     ]
     values = ["Panel*", "App.Panel", "Panel", "Hello?", 2, True, False, '"Ready"']
-    expected = to_locator(properties, values, depth=1)
-    if not managed:
-        from dataclasses import replace
+    from dataclasses import replace
 
+    def declared(locator):
+        # A declaration holds one form: the object-tree one with the inspector, else the UIA one.
+        if managed:
+            return replace(locator, uia_form=None)
+        return replace(locator.uia_form, depth=locator.depth)
+
+    expected = declared(to_locator(properties, values, depth=1))
+    if not managed:
         expected = replace(
             expected,
             where=tuple(
@@ -182,9 +188,12 @@ def test_generated_hierarchy_round_trips_shared_locators(tmp_path, managed):
             ),
         )
     assert page.Parent._own == expected
-    assert page.Child._own == to_locator("WPFControlName", "Child")
+    assert page.Child._own == declared(to_locator("WPFControlName", "Child"))
     assert page.Child.within is page.Parent
-    assert page.Child_2._own == to_locator("WPFControlName", "Leaf")
+    assert page.Child_2._own == declared(to_locator("WPFControlName", "Leaf"))
+    assert ('tree="objects"' in generated) is managed
+    assert ('"wpf:Text"' in generated) is managed
+    assert ('"wpf:Ordinal": 2' in generated) is managed
     assert page.Child_2.within is page.Child
 
 

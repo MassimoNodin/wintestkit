@@ -140,7 +140,15 @@ def identity_value(element: WpfElement, name: str) -> str | None:
     raise InspectorReadError(f"Cannot read WPF Name: {result.status}", code="readFailed")
 
 
-def query(root: WpfElement, locator: Locator, *, use_index: bool = False) -> QueryMatches:
+def query(
+    root: WpfElement, locator: Locator, *, use_index: bool = False, root_level: bool = False
+) -> QueryMatches:
+    """Matches of ``locator`` below ``root`` (``root`` itself is never a match, except see below).
+
+    ``root_level`` is for an object-tree search from a window: the root visual is the window
+    node's child, so it counts as depth 1 and may match; it is ignored for the UIA-like trees.
+    """
+    root_level = root_level and locator.tree == "objects"
     constraints = resolve_where(locator.where, locator.describe_link(), locator.taken())
     pushed: list[Condition | ManagedCondition] = []
     local: list[Condition] = []
@@ -165,7 +173,7 @@ def query(root: WpfElement, locator: Locator, *, use_index: bool = False) -> Que
             else:
                 pushed.append(condition)
     stripped = replace(locator, **dict.fromkeys(identities), index=0)
-    wire = translate(stripped, tuple(pushed), root.ref)
+    wire = translate(stripped, tuple(pushed), root.ref, root_level=root_level)
     deadline = locator_deadline()
     timeout = max(1, min(2000, int((deadline - time.monotonic()) * 1000)))
     result = root.client.query_find_all(wire, timeout_ms=timeout, deadline=deadline)
@@ -177,7 +185,9 @@ def query(root: WpfElement, locator: Locator, *, use_index: bool = False) -> Que
             code="limitExceeded",
         )
     elements = [
-        WpfElement(root.client, ref, root.process_id) for ref in result.matches if ref != root.ref
+        WpfElement(root.client, ref, root.process_id)
+        for ref in result.matches
+        if root_level or ref != root.ref
     ]
 
     def accepts(element: WpfElement) -> bool:
@@ -208,7 +218,7 @@ def query(root: WpfElement, locator: Locator, *, use_index: bool = False) -> Que
         and locator.index >= len(filtered)
         and not result.complete
     ):
-        offset = int(root.ref in result.matches)
+        offset = int(root.ref in result.matches and not root_level)
         raw_index = len(result.matches) if local or identities else locator.index + offset
         extra_queries = 0
         while raw_index <= 9999:

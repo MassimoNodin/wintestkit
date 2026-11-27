@@ -25,10 +25,11 @@ scripts or test routines. Output: pages, components, flows, tests.
 | Alias | the attribute name (`customer.address.street`) |
 | `WPFControlName` | `automation_id` (peer or peerless attached ID, or `x:Name` when empty with `backend: auto`) |
 | `ClrFullClassName` | `where={"type:FullName": ...}`; `type:Is` includes derived types |
-| `WPFControlText`, `Content`, `Caption` | `name` |
+| `WPFControlText` | `where={"wpf:Text": ...}` with `tree="objects"`: the text the element shows (not the peer Name) |
+| `Content`, `Caption` | `name` |
 | Conditional mapping (OR groups) | `any_of=[...]` |
 | Required child objects | `has=Element(...)` |
-| ordinal number | `index` (0-based; avoid) |
+| `WPFControlOrdinalNo` | `where={"wpf:Ordinal": n}` with `tree="objects"`: 1-based position among same-type siblings (not a global `index`) |
 | mapped parent chain | the component root; never a `within=` chain |
 | script routine / reusable test routine | an intent method on the page or component, or a flow |
 | test or test routine | a pytest function using intent + `expect` |
@@ -81,8 +82,10 @@ Use `find_child(parent, props, values, depth=1)` for a lazy first match,
 `find_all_children(parent, props, values, depth=1)` for a snapshot, and
 `find(parent, props, values, depth=...)` for descendant searches. Use `strict=True` on
 `find_child` when ambiguity should fail. Property names use the shared existing mapping;
-`*` and `?` are whole-value wildcards. Depth counts WPF automation-peer levels, which can
-differ from the original visual tree. Verify AutomationId and text in Spy.
+`*` and `?` are whole-value wildcards. On WPF windows the helpers search the object tree (`tree="objects"`): depth
+counts its levels (from an `App`, 1 is window nodes and 2 root visuals; from a window, 1 is its root visual), the
+first match is the pre-order one, `WPFControlText` is `wpf:Text` and `WPFControlOrdinalNo` is `wpf:Ordinal`. Other
+windows keep UIA (`name`, zero-based global `index`, peer levels). Verify AutomationId and text in Spy.
 
 The importer does not yet convert OR groups; add `any_of` manually. Actions default to
 `actionability: exists`: disabled or hidden, unscrollable elements fail immediately. Use
@@ -92,7 +95,8 @@ The importer emits parent-scoped `Element` declarations with `within=` and `dept
 unlimited/default depth for extended find. It assumes nested mapped items and accepts either
 an `extendedFind="True"` attribute or an `ExtendedFind` property. Unmappable properties and
 unmappable parent chains are marked `# TODO`; review them before use. Full managed class names
-are emitted as qualified keys with `--managed-class-names`; review the generated skeleton.
+are emitted as qualified keys with `--managed-class-names`, which also emits `tree="objects"`, `wpf:Text` and
+`wpf:Ordinal`; review the generated skeleton.
 
 ## Things that differ
 

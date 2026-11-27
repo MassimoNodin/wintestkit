@@ -35,9 +35,15 @@ from wintestkit.engine.locator import (
     expand_alternatives,
     match_value,
 )
-from wintestkit.engine.managed import diagnostic_query_budget, locator_deadline, query_budget
+from wintestkit.engine.managed import (
+    ManagedCondition,
+    diagnostic_query_budget,
+    locator_deadline,
+    query_budget,
+)
 from wintestkit.engine.properties import Condition, read, resolve_where
 from wintestkit.engine.properties import matches as matches_property
+from wintestkit.engine.property_read import property_matches
 from wintestkit.engine.query import query_all, reject_managed
 from wintestkit.engine.wpf_query import UnsupportedQuery, translate
 from wintestkit.engine.wpf_resolve import identity_value, matches_root, route
@@ -156,7 +162,7 @@ def _popup_matches(
                     link.index - total_count if use_index and link.index is not None else None
                 )
                 popup_link = replace(link, index=local_index) if local_index is not None else link
-                results = wpf_query(popup, popup_link, use_index=use_index)
+                results = wpf_query(popup, popup_link, use_index=use_index, root_level=True)
                 if results.indexed:
                     return cast(list[TargetElement], results)
                 if local_index is not None and local_index < len(results):
@@ -173,7 +179,7 @@ def _popup_matches(
                         code="limitExceeded",
                     )
             else:
-                found.extend(query_all(window, link))
+                found.extend(query_all(window, link.for_uia()))
     if use_index and isinstance(window_root, WpfElement) and total_count != len(found):
         from wintestkit.engine.wpf_resolve import QueryMatches
 
@@ -199,9 +205,11 @@ def _match_link(
         return _match_alternatives(scope, root, link, full, first, use_index=use_index)
     matches: list[TargetElement]
     if isinstance(root, WpfElement):
-        matches = cast(list[TargetElement], wpf_query(root, link, use_index=use_index))
+        matches = cast(
+            list[TargetElement], wpf_query(root, link, use_index=use_index, root_level=first)
+        )
     else:
-        matches = list(query_all(uia_of(root), link))
+        matches = list(query_all(uia_of(root), link.for_uia()))
     if not matches and first and full.window is None and scope.window is None:
         matches = _popup_matches(scope, root, link, use_index=use_index)
     return matches
@@ -247,7 +255,7 @@ def _contains(candidate: TargetElement, child: Locator) -> bool:
         if isinstance(candidate, WpfElement):
             if len(wpf_query(candidate, alternative)):
                 return True
-        elif query_all(uia_of(candidate), alternative):
+        elif query_all(uia_of(candidate), alternative.for_uia()):
             return True
     return False
 
@@ -301,9 +309,9 @@ def _match_alternatives(
 
     for alternative in alternatives:
         if isinstance(root, WpfElement):
-            collect(cast(list[TargetElement], list(wpf_query(root, alternative))))
+            collect(cast(list[TargetElement], list(wpf_query(root, alternative, root_level=first))))
         else:
-            collect(list(query_all(uia_of(root), alternative)))
+            collect(list(query_all(uia_of(root), alternative.for_uia())))
     if not merged and first and full.window is None and scope.window is None:
         for alternative in alternatives:
             collect(_popup_matches(scope, root, alternative))
@@ -407,7 +415,9 @@ def _resolve_link(
 ) -> TargetElement:
     __tracebackhide__ = True
     matches = _match_link(scope, root, link, full, first, use_index=True)
-    if link.index is not None:
+    # A migrated locator carries its ordinal as an index only in the UIA form.
+    index = link.index if isinstance(root, WpfElement) else link.for_uia().index
+    if index is not None:
         if getattr(matches, "indexed", False):
             if matches:
                 return matches[0].as_live()
@@ -419,11 +429,11 @@ def _resolve_link(
                     diagnose_no_has_match(prefiltered, link, searched_in, full)
                 )
             raise ElementNotFoundError(diagnose_index_out_of_range(merged, link, searched_in, full))
-        if link.index >= len(matches):
+        if index >= len(matches):
             raise ElementNotFoundError(
                 diagnose_index_out_of_range(matches, link, searched_in, full)
             )
-        return matches[link.index].as_live()
+        return matches[index].as_live()
     if len(matches) == 1:
         return matches[0].as_live()
     if not matches and link.has is not None and getattr(matches, "prefiltered", None):
@@ -466,22 +476,67 @@ def shared_missing_scopes() -> Generator[None]:
         _missing_links.reset(token)
 
 
-def _app_walk(scope: Scope, locator: Locator, final_all: bool) -> list[TargetElement]:
-    """Search top-level windows and their descendants in window order."""
+def _window_node_matches(
+    link: Locator,
+    root: WpfElement,
+    managed: list[ManagedCondition],
+    position: int,
+) -> bool:
+    """Whether the window node (the HwndSource level above a root visual) matches the managed keys.
+
+    A window node is labelled ``HwndSource: <root visual type>``, its text is the window title and
+    its ordinal is its place among the application's windows. It has no other members, so any
+    other managed key cannot match it.
+    """
     __tracebackhide__ = True
-    constraints = resolve_where(locator.where, locator.describe_link(), locator.taken())
-    managed = [c for c in constraints if not isinstance(c, Condition)]
-    uia = [c for c in constraints if isinstance(c, Condition)]
+    rest: list[ManagedCondition] = []
+    for condition in managed:
+        if condition.key == "type:Name":
+            if not property_matches(f"HwndSource: {root.ref.type.name}", condition.value):
+                return False
+        elif condition.key == "wpf:Ordinal":
+            if not property_matches(position + 1, condition.value):
+                return False
+        elif condition.key == "wpf:Text":
+            rest.append(condition)
+        else:
+            return False
+    return not rest or matches_root(root, rest)
+
+
+def _app_walk(scope: Scope, locator: Locator, final_all: bool) -> list[TargetElement]:
+    """Search top-level windows and their descendants in window order.
+
+    The default trees count windows as depth 1. The object tree puts a window node (the HwndSource
+    level) at depth 1, the root visual at depth 2 and the root visual's object-tree children at 3.
+    """
+    __tracebackhide__ = True
     found: list[TargetElement] = []
-    for window in scope.app.top_level_windows():
-        if managed and (window.framework_id != "WPF" or runtime.get_config().backend != "auto"):
+    forms: set[bool] = set()
+    for position, window in enumerate(scope.app.top_level_windows()):
+        wpf_window = window.framework_id == "WPF" and runtime.get_config().backend == "auto"
+        forms.add(wpf_window)
+        link = locator if wpf_window else locator.for_uia()
+        constraints = resolve_where(link.where, link.describe_link(), link.taken())
+        managed = [c for c in constraints if not isinstance(c, Condition)]
+        uia = [c for c in constraints if isinstance(c, Condition)]
+        if managed and not wpf_window:
             continue
         root = route(window)
+        objects = link.tree == "objects"
 
-        def root_matches(root: TargetElement, window: UIAElement) -> bool:
+        def root_matches(
+            root: TargetElement,
+            window: UIAElement,
+            node: bool,
+            link: Locator = link,
+            managed: list[ManagedCondition] = managed,
+            uia: list[Condition] = uia,
+            position: int = position,
+        ) -> bool:
             __tracebackhide__ = True
             for name in ("automation_id", "name", "class_name", "control_type"):
-                expected = getattr(locator, name)
+                expected = getattr(link, name)
                 if expected is not None:
                     actual = (
                         identity_value(root, name)
@@ -490,8 +545,14 @@ def _app_walk(scope: Scope, locator: Locator, final_all: bool) -> list[TargetEle
                     )
                     if actual is None or not match_value(expected, actual):
                         return False
-            if managed and (not isinstance(root, WpfElement) or not matches_root(root, managed)):
-                return False
+            if managed:
+                if not isinstance(root, WpfElement):
+                    return False
+                if node:
+                    if not _window_node_matches(link, root, managed, position):
+                        return False
+                elif not matches_root(root, managed):
+                    return False
             return all(
                 matches_property(
                     c, read(root if c.spec.name == "VisibleOnScreen" else window, c.spec)
@@ -499,18 +560,29 @@ def _app_walk(scope: Scope, locator: Locator, final_all: bool) -> list[TargetEle
                 for c in uia
             )
 
-        candidates: list[TargetElement] = [root] if root_matches(root, window) else []
-        if locator.depth is None or locator.depth > 1:
-            child = replace(
-                locator,
-                depth=None if locator.depth is None else locator.depth - 1,
-                index=None,
-                app_scope=False,
-            )
-            if isinstance(root, WpfElement):
+        depth = link.depth
+        candidates: list[TargetElement] = []
+        if objects:
+            # Window node, then the root visual it holds, then the root visual's descendants.
+            if root_matches(root, window, True):
+                candidates.append(root)
+            if (depth is None or depth >= 2) and root_matches(root, window, False):
+                candidates.append(root)
+            levels = None if depth is None else depth - 2
+            if (levels is None or levels >= 1) and isinstance(root, WpfElement):
+                child = replace(link, depth=levels, index=None, app_scope=False)
                 candidates.extend(wpf_query(root, child))
-            else:
-                candidates.extend(query_all(root, child))
+        else:
+            if root_matches(root, window, False):
+                candidates.append(root)
+            if depth is None or depth > 1:
+                child = replace(
+                    link, depth=None if depth is None else depth - 1, index=None, app_scope=False
+                )
+                if isinstance(root, WpfElement):
+                    candidates.extend(wpf_query(root, child))
+                else:
+                    candidates.extend(query_all(root, child))
         for candidate in candidates:
             if not any(
                 other.same_as(cast(Any, candidate))
@@ -521,9 +593,11 @@ def _app_walk(scope: Scope, locator: Locator, final_all: bool) -> list[TargetEle
                 found.append(candidate)
     if final_all:
         return [element.as_live() for element in found]
-    if locator.index is not None:
-        if locator.index < len(found):
-            return [found[locator.index].as_live()]
+    # The index of the form the windows were searched with; WPF windows win in a mixed application.
+    index = locator.for_uia().index if forms == {False} else locator.index
+    if index is not None:
+        if index < len(found):
+            return [found[index].as_live()]
         raise ElementNotFoundError(
             diagnose_index_out_of_range(found, locator, "application", locator)
         )
@@ -598,7 +672,7 @@ def wait_link(scope: Scope, locator: Locator, state: str) -> tuple[bool, TargetE
     try:
         constraints = resolve_where(link.where, link.describe_link(), link.taken())
         # Probe translation before resolving the window; unsupported filters keep polling.
-        translate(link, tuple(constraints), None)
+        translate(link, tuple(constraints), None, root_level=len(links) == 1)
     except UnsupportedQuery:
         return False, None
     if runtime.get_config().backend == "auto" and locator_deadline() - time.monotonic() <= 0.2:
@@ -622,7 +696,9 @@ def wait_link(scope: Scope, locator: Locator, state: str) -> tuple[bool, TargetE
     if remaining <= 0.2:
         with diagnostic_query_budget():
             return True, resolve(scope, locator)
-    wire = replace(translate(link, tuple(constraints), root.ref), index=link.index)
+    wire = replace(
+        translate(link, tuple(constraints), root.ref, root_level=len(links) == 1), index=link.index
+    )
     # Outer links and implicit popup search must be revisited at the polling cadence.
     chunk_ms = 100 if len(links) > 1 or (locator.window is None and scope.window is None) else 2000
     try:

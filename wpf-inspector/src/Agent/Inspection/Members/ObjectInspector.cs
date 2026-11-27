@@ -136,6 +136,10 @@ namespace WinTestKit.Inspector.Agent.Inspection.Members
             return ReadPathCore(root, path, registry, dispatcher, ct, true, null, null);
         }
 
+        /// <summary>Reads <c>wpf:Text</c> or <c>wpf:Ordinal</c>; the cache lets a traversal share sibling ordinals.</summary>
+        internal ValueDto ReadObjectKey(object root, PathSegment segment, IObjectRegistry registry, Dispatcher dispatcher, CancellationToken ct, ObjectTreeCache? cache)
+            => ObjectTreeValues.Read(root, segment.Name, redaction, registry, dispatcher, ct, cache);
+
         /// <summary>Largest sequence position reachable by enumerating a collection that has no indexer.</summary>
         internal const int MaxEnumeratedIndex = 10000;
         internal const string IndexOutOfRangeText = "index out of range";
@@ -171,7 +175,7 @@ namespace WinTestKit.Inspector.Agent.Inspection.Members
         {
             if (memo == null)
             {
-                if (path.Count == 0 || path.Count > ProtocolLimits.MaxPathSegments || (path.Count != 1 && (path.Any(x => x.Kind == "uia") || path.Take(path.Count - 1).Any(x => x.Kind == "type")))) throw new ProtocolException(ErrorCodes.InvalidParams, "Invalid path");
+                if (path.Count == 0 || path.Count > ProtocolLimits.MaxPathSegments || (path.Count != 1 && (path.Any(x => x.Kind == "uia" || x.Kind == "object") || path.Take(path.Count - 1).Any(x => x.Kind == "type")))) throw new ProtocolException(ErrorCodes.InvalidParams, "Invalid path");
                 foreach (PathSegment segment in path) segment.ToJson();
             }
             PathSegment first = path[0];
@@ -180,6 +184,7 @@ namespace WinTestKit.Inspector.Agent.Inspection.Members
                 (first.MemberKey == null || first.MemberKey == declaration.Key) &&
                 (first.DeclaringType == null || first.DeclaringType == Declaration.TypeName(declaration.DeclaringType))))
                 return new ValueDto { Status = "redacted", Kind = "unavailable", RedactionRule = "identity" };
+            if (first.Kind == "object") return ReadObjectKey(root, first, registry, dispatcher, ct, null);
             foreach (PathSegment segment in path)
             {
                 string? rule = segment.Kind == "uia" && (segment.Name == "is_password" || segment.Name == "supported_patterns") ? null : redaction.Match(segment.Name);

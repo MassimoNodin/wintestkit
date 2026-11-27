@@ -16,6 +16,9 @@ namespace WinTestKit.Inspector.Agent.Query
         internal DateTime Deadline { get; }
         internal TimeSpan Remaining => Deadline - DateTime.UtcNow;
 
+        /// <summary>Sibling ordinals shared by the predicates of one traversal slice; the tree can change between slices.</summary>
+        internal ObjectTreeCache Objects { get; } = new ObjectTreeCache();
+
         /// <summary>A token that cancels when the request budget elapses; created once per request instead of once per element.</summary>
         internal CancellationToken Token
         {

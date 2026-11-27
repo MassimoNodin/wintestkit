@@ -332,7 +332,7 @@ def _property_aliases(value: Any) -> dict[str, str]:
             raise _fail(key, f"{alias!r} is a UIA property name and cannot be used as an alias")
         if target in value:
             raise _fail(key, f"{alias!r} chains to another alias {target!r}")
-        if target.startswith(("type:", "clr:", "field:", "dp:")):
+        if target.startswith(("type:", "clr:", "field:", "dp:", "wpf:")):
             from wintestkit.inspector.paths import parse_managed_key
 
             try:

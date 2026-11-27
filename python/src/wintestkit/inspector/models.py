@@ -879,7 +879,7 @@ class Value(WireModel):
 def parse_path(value: object) -> tuple[PathSegment, ...]:
     path = _array(value, PathSegment.from_json, 8, 1)
     if len(path) > 1 and (
-        any(segment.kind == "uia" for segment in path)
+        any(segment.kind in ("uia", "object") for segment in path)
         or any(segment.kind == "type" for segment in path[:-1])
     ):
         raise ValueError("Type metadata must be the final segment")
@@ -1994,7 +1994,7 @@ class Locator(WireModel):
         d = _obj(value, "scope tree predicates depth depthMode limit", "index")
         return cls(
             Scope.from_json(d["scope"]),
-            _choice(d["tree"], {"visual", "logical", "combined"}),
+            _choice(d["tree"], {"visual", "logical", "combined", "objects"}),
             _array(d["predicates"], Predicate.from_json, 32),
             _int(d["depth"], 0, 256),
             _int(d["limit"], 1, 200),

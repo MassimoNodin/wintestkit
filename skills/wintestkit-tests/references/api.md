@@ -71,13 +71,21 @@ class P(Page):
 ```
 
 Element options: `automation_id`, `name`, `control_type`, `class_name`, `index`, `depth`, `within`,
-`window`, `timeout`, `validate` (typed elements only), `where`, `any_of`, `has`. Windows and `Elements` also accept
+`window`, `timeout`, `validate` (typed elements only), `where`, `any_of`, `has`, `tree`. Windows and `Elements` also accept
 `where={"HelpText": "Save", "ItemStatus": re.compile(r"AddressBox$")}`. Entries AND together;
 boolean/numeric properties require boolean/numeric values. With `backend: auto`, WPF uses its
 managed tree; other windows use UIA. Qualified keys such as `type:FullName`, `type:Is`, `clr:`,
 `field:` and `dp:` require WPF and fail under `backend: uia`. `property_aliases` can map names
 to qualified or UIA keys. Use paths observed in Spy and never put secrets in `where`. Managed
 reads execute application code. Do not duplicate a property via a keyword and `where`.
+`tree="objects"` (any `Element`, `Elements`, typed element or child) searches the migration object tree of a
+WPF window instead: the visual tree without control-template parts and items-panel elements (their visible
+descendants move up to the nearest visible ancestor), each popup its own root. `depth`, the first match and
+`index` follow it (from an `App`, depth 1 is window nodes labelled `HwndSource: <type>` and depth 2 the root
+visuals; from a window, depth 1 is the root visual). `wpf:Text` (the element's text: `Text` of text blocks and
+text boxes, `Title` of windows, `Content` then `Header` of headered content controls, `Header` of headered
+items controls, `Content` of other content controls; else `''`) and `wpf:Ordinal` (1-based position among
+same-type object-tree siblings) match on it; both work in `where` and `el.get(...)`.
 Strings match exactly; a compiled regex
 matches with `re.search`. Managed values are exactly typed; `AsText("15")` compares a managed value's invariant text instead (15, `True`). Managed paths accept indexers (`clr:Rows[3].Value`) and `type:Name@DataContext` reads the runtime type of a nested value. `window = Window()` with no arguments means the application's main window.
 

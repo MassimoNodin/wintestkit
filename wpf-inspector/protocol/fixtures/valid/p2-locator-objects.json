@@ -1,0 +1,46 @@
+{
+  "schema": "Locator",
+  "instance": {
+    "scope": {
+      "kind": "object",
+      "handle": {
+        "sessionId": "s",
+        "objectId": "o",
+        "generation": 1,
+        "type": {
+          "name": "T",
+          "fullName": "Example.T",
+          "assemblyName": "A",
+          "assemblyQualifiedName": "Example.T, A",
+          "baseTypes": []
+        },
+        "dispatcherId": "d"
+      }
+    },
+    "tree": "objects",
+    "predicates": [
+      {
+        "kind": "equals",
+        "path": [
+          {
+            "kind": "object",
+            "name": "Text"
+          }
+        ],
+        "value": "OK"
+      },
+      {
+        "kind": "equals",
+        "path": [
+          {
+            "kind": "object",
+            "name": "Ordinal"
+          }
+        ],
+        "value": 2
+      }
+    ],
+    "depth": 3,"depthMode":"tree",
+    "limit": 100
+  }
+}

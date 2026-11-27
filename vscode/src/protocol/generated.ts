@@ -37,7 +37,7 @@ export type ItemMatch =
       flags: RegexFlags;
     };
 /**
- * A UIA segment must be alone. A type segment reads the runtime type of the value reached by the preceding segments, so it occurs at most once and only as the last segment. A property or field name may end in an indexer, Name[3]: a non-negative or negative 32-bit integer applied to the member's value (array, list, default int indexer, or enumerated sequence); the indexer is part of its segment. Serialized paths must not exceed 1024 UTF-8 bytes.
+ * A UIA or object-tree segment must be alone. A type segment reads the runtime type of the value reached by the preceding segments, so it occurs at most once and only as the last segment. A property or field name may end in an indexer, Name[3]: a non-negative or negative 32-bit integer applied to the member's value (array, list, default int indexer, or enumerated sequence); the indexer is part of its segment. Serialized paths must not exceed 1024 UTF-8 bytes.
  *
  * @minItems 1
  * @maxItems 8
@@ -132,6 +132,10 @@ export type PathSegment =
             | "selection_count"
             | "item_count"
           );
+    }
+  | {
+      kind: "object";
+      name: "Text" | "Ordinal";
     };
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
@@ -457,7 +461,7 @@ export type InspectManagedMembersResult = {
   nextToken?: Identifier;
 };
 /**
- * A UIA segment must be alone. A type segment reads the runtime type of the value reached by the preceding segments, so it occurs at most once and only as the last segment. A property or field name may end in an indexer, Name[3]: a non-negative or negative 32-bit integer applied to the member's value (array, list, default int indexer, or enumerated sequence); the indexer is part of its segment. Serialized paths must not exceed 1024 UTF-8 bytes.
+ * A UIA or object-tree segment must be alone. A type segment reads the runtime type of the value reached by the preceding segments, so it occurs at most once and only as the last segment. A property or field name may end in an indexer, Name[3]: a non-negative or negative 32-bit integer applied to the member's value (array, list, default int indexer, or enumerated sequence); the indexer is part of its segment. Serialized paths must not exceed 1024 UTF-8 bytes.
  *
  * @minItems 1
  * @maxItems 8
@@ -874,7 +878,7 @@ export type MemberPage2 = ManagedMemberPage1;
  */
 export type MethodPage2 = ManagedMethodPage1;
 /**
- * A UIA segment must be alone. A type segment reads the runtime type of the value reached by the preceding segments, so it occurs at most once and only as the last segment. A property or field name may end in an indexer, Name[3]: a non-negative or negative 32-bit integer applied to the member's value (array, list, default int indexer, or enumerated sequence); the indexer is part of its segment. Serialized paths must not exceed 1024 UTF-8 bytes.
+ * A UIA or object-tree segment must be alone. A type segment reads the runtime type of the value reached by the preceding segments, so it occurs at most once and only as the last segment. A property or field name may end in an indexer, Name[3]: a non-negative or negative 32-bit integer applied to the member's value (array, list, default int indexer, or enumerated sequence); the indexer is part of its segment. Serialized paths must not exceed 1024 UTF-8 bytes.
  *
  * @minItems 1
  * @maxItems 8
@@ -2103,6 +2107,7 @@ export interface LocatorData {
   className?: Matcher;
   index?: number;
   depth?: number;
+  tree?: "objects";
   within?: LocatorData;
   window?: WindowLocatorData;
   item?: ItemSelectorData;
@@ -3596,7 +3601,7 @@ export interface ItemsResult {
  */
 export interface Locator {
   scope: Scope;
-  tree: "visual" | "logical" | "combined";
+  tree: "visual" | "logical" | "combined" | "objects";
   /**
    * @maxItems 32
    */

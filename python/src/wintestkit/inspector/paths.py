@@ -8,12 +8,15 @@ from typing import Any, Literal, cast
 
 from wintestkit.errors import InvalidLocatorError
 
-MANAGED_PREFIXES = ("type:", "clr:", "field:", "dp:")
+MANAGED_PREFIXES = ("type:", "clr:", "field:", "dp:", "wpf:")
+
+#: The names ``wpf:`` reads: the migration text of an element and its same-type ordinal.
+OBJECT_NAMES = ("Text", "Ordinal")
 
 
 @dataclass(frozen=True)
 class PathSegment:
-    kind: Literal["property", "field", "dependency", "type", "uia"]
+    kind: Literal["property", "field", "dependency", "type", "uia", "object"]
     name: str
     declaring_type: str | None = None
     member_key: str | None = None
@@ -30,7 +33,7 @@ class PathSegment:
             required, allowed = {"kind", "name"}, {"kind", "name", "declaringType", "memberKey"}
         elif kind == "dependency":
             required = allowed = {"kind", "name", "ownerType", "ownerAssembly"}
-        elif kind in ("type", "uia"):
+        elif kind in ("type", "uia", "object"):
             required = allowed = {"kind", "name"}
         else:
             raise ValueError("Invalid path segment kind")
@@ -47,6 +50,8 @@ class PathSegment:
             "BaseTypes",
         }:
             raise ValueError("Invalid type metadata name")
+        if kind == "object" and data["name"] not in OBJECT_NAMES:
+            raise ValueError("Invalid object-tree name")
         if (
             kind == "uia"
             and not re.fullmatch(r"(?:selection|item)_name_(0|[1-9][0-9]{0,8})", data["name"])
@@ -175,6 +180,12 @@ def parse_managed_key(key: str) -> ManagedPath:
             segments.append(PathSegment("type", facet))
         else:
             segments = [PathSegment("type", facet)]
+    elif prefix == "wpf":
+        if body not in OBJECT_NAMES:
+            raise InvalidLocatorError(
+                f"Invalid wpf: name {body!r} at position {offset}; use wpf:Text or wpf:Ordinal"
+            )
+        segments = [PathSegment("object", body)]
     elif prefix == "dp":
         if body.count("|") != 1 or body.count("::") != 1:
             raise InvalidLocatorError(f"Invalid dependency path delimiters at position {offset}")

@@ -94,6 +94,7 @@ _LOCATOR_KEYS = {
     "class_name": "className",
     "index": "index",
     "depth": "depth",
+    "tree": "tree",
     "where": "where",
 }
 _WINDOW_KEYS = {
@@ -900,8 +901,10 @@ def _build(
         elif arg in _LOCATOR_KEYS:
             key = _LOCATOR_KEYS[arg]
             value = _locator_value(key, keyword.value)
-            if value is _NOT_LITERAL or (
-                key in ("index", "depth") and not isinstance(value, int | None)
+            if (
+                value is _NOT_LITERAL
+                or (key in ("index", "depth") and not isinstance(value, int | None))
+                or (key == "tree" and value not in ("objects", None))
             ):
                 built.dynamic = True
             elif value is not None:

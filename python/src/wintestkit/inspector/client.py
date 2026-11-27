@@ -699,6 +699,7 @@ class InspectorClient:
                         "dependency": "dependencyProperties",
                         "property": "clrMembers",
                         "field": "clrMembers",
+                        "object": "clrMembers",
                     }[segment.kind]
                 )
 

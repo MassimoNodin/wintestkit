@@ -99,8 +99,8 @@ Managed keys fail under `backend: uia`; keep secrets out of `where`. Reads run a
 |---|---|
 | `WPFControlName` | `automation_id`: peer or peerless attached ID, or `x:Name` when empty with `backend: auto` |
 | `ClrFullClassName` | `where={"type:FullName": "My.App.Views.AddressBox"}`; use `type:Is` to include derived types. `class_name` is only the short peer class name. |
-| `WPFControlText` / `Content` / `Caption` | `name` |
-| ordinal / index properties | `index` (0-based; check the base) |
+| `WPFControlText` | `where={"wpf:Text": ...}` with `tree="objects"` (the shown text, not the peer Name); `Content` / `Caption` map to `name` |
+| `WPFControlOrdinalNo` | `where={"wpf:Ordinal": n}` (1-based among same-type siblings); other index properties use `index` (0-based; check the base) |
 | the deep mapped parent chain | **not copied**. The component root replaces it |
 
 Never reproduce a deep mapped hierarchy as a `within=` chain. One component root says where

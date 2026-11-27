@@ -261,7 +261,7 @@ def normalize_where(where: Mapping[str, WhereValue] | None, taken: Mapping[str, 
         if key in taken:
             raise TypeError(f"{key} is set by both {taken[key]}= and where=; use only one of them")
         spec = SUPPORTED.get(key)
-        if key.startswith(("type:", "clr:", "field:", "dp:")):
+        if key.startswith(("type:", "clr:", "field:", "dp:", "wpf:")):
             from wintestkit.inspector.paths import parse_managed_key
 
             parse_managed_key(key)
@@ -318,11 +318,11 @@ def resolve_where(
     for key, value in where:
         spec = SUPPORTED.get(key)
         target = key
-        if spec is None and not key.startswith(("type:", "clr:", "field:", "dp:")):
+        if spec is None and not key.startswith(("type:", "clr:", "field:", "dp:", "wpf:")):
             if aliases is None:
                 aliases = runtime.get_config().property_aliases
             target = aliases.get(key, key)
-        if target.startswith(("type:", "clr:", "field:", "dp:")):
+        if target.startswith(("type:", "clr:", "field:", "dp:", "wpf:")):
             from wintestkit.engine.managed import ManagedCondition
             from wintestkit.inspector.paths import parse_managed_key
 

@@ -31,6 +31,9 @@ from wintestkit.inspector.paths import parse_managed_key
             ["property", "property", "type"],
             ["DataContext", "Items[0]", "FullName"],
         ),
+        # The object tree: migration text and the same-type ordinal.
+        ("wpf:Text", ["object"], ["Text"]),
+        ("wpf:Ordinal", ["object"], ["Ordinal"]),
     ],
 )
 def test_parse(key: str, kinds: list[str], names: list[str]) -> None:
@@ -58,6 +61,10 @@ def test_parse(key: str, kinds: list[str], names: list[str]) -> None:
         "type:nope",
         "type:Is@A",
         "type:Name@",
+        "wpf:",
+        "wpf:text",
+        "wpf:Text.Length",
+        "wpf:Items[0]",
         "dp:Asm|Owner::Prop/",
         "clr:" + ".".join(["a"] * 9),
         "clr:" + "x" * 1021,
