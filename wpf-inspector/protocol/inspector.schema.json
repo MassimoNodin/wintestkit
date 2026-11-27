@@ -4357,6 +4357,11 @@
         "generation": {
           "type": "integer",
           "minimum": 1
+        },
+        "tree": {
+          "enum": [
+            "objects"
+          ]
         }
       },
       "required": [

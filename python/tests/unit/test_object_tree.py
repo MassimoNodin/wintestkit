@@ -239,8 +239,9 @@ def test_window_node_matches_label_text_and_ordinal(app_walk):
     # The text is the window title, which the agent reads from the root visual.
     assert walk(app_walk, nodes(**{"wpf:Text": "Main title"})) == ["main", "dialog"]
     assert app_walk.checks[-1] == ["wpf:Text"]
-    # The ordinal is the node's place among the application's windows.
-    assert walk(app_walk, nodes(**{"wpf:Ordinal": 2})) == ["dialog"]
+    # The ordinal is the node's place among the window nodes of the same type.
+    assert walk(app_walk, nodes(**{"wpf:Ordinal": 2})) == []
+    assert walk(app_walk, nodes(**{"wpf:Ordinal": 1})) == ["main", "dialog"]
     # Any other managed key is a member of an element, which a window node is not.
     assert walk(app_walk, nodes(**{"clr:Title": "x"})) == []
     # The root visual (depth 2) is matched with the full predicate set.

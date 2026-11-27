@@ -19,6 +19,7 @@ from typing import Any, cast
 from wintestkit.engine.locator import Locator
 from wintestkit.engine.properties import AsText
 from wintestkit.finders import to_locator
+from wintestkit.labels import LabelSyntaxError
 from wintestkit.model import PageObject
 
 MAX_XML_BYTES = 10 * 1024 * 1024
@@ -324,6 +325,10 @@ def _translate(node: _Node, *, window: bool) -> _Declaration:
                 continue
         try:
             to_locator([*names, mapped], [*values, converted], depth=1)
+        except LabelSyntaxError as exc:
+            reason = f'Name takes a label step such as WPFObject("Button", "OK", 2): {exc.reason}'
+            todos.append((name, value, reason))
+            continue
         except ValueError as exc:
             todos.append((name, value, str(exc)))
             continue

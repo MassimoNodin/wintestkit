@@ -1266,8 +1266,18 @@ class InspectorClient:
             self._request("roots", params, deadline),
         )
 
-    def parent(self, object_id: str, generation: int, *, deadline: float) -> ObjectRef | None:
+    def parent(
+        self,
+        object_id: str,
+        generation: int,
+        *,
+        tree: Literal["objects"] | None = None,
+        deadline: float,
+    ) -> ObjectRef | None:
+        """The visual (else logical) parent; ``tree="objects"`` the object-tree parent instead."""
         self._feature("treeParent")
+        if tree not in (None, "objects"):
+            raise InspectorError("Invalid tree", code="invalidParams")
 
         def parse(value: object) -> ObjectRef | None:
             result = _obj(value, "handle")
@@ -1276,9 +1286,12 @@ class InspectorClient:
             self._object_ref(ref)
             return ref
 
+        params = self._object_params(object_id, generation)
+        if tree is not None:
+            params["tree"] = tree
         return self._parse(
             parse,
-            self._request("tree.parent", self._object_params(object_id, generation), deadline),
+            self._request("tree.parent", params, deadline),
         )
 
     def children(

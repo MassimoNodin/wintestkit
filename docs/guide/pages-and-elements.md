@@ -149,6 +149,36 @@ cover them; declare the child on the page when you want those. A grid row or cel
 tree: WPF layout containers are often not exposed. Check with `wtk inspect` before relying on it.
 Custom element types have no child method; use `MyType(..., within=panel, depth=1)`.
 
+## Label chains
+
+A suite migrated from another tool addresses elements by walking *object labels*: `WPFObject(type, text, index)` for a
+direct child in the WPF object tree and `Window(class, caption, index)` for a Win32 window. The same calls are methods
+of bound elements, bound windows and the `App`, and every result is a lazy element like any other:
+
+```python
+# pseudo-code
+class OrdersPage(Page):
+    window = Window(title="Orders")
+    grid = Element(automation_id="OrdersGrid")
+
+    def cell(self, row: int, column: int):
+        return self.grid.WPFObject("DataGridRow", "", row).WPFObject("DataGridCell", "*", column)
+
+def test_total(app):
+    root = app.WPFObject("HwndSource: OrdersView", "Orders*").WPFObject("OrdersView", "Orders*")
+    root.WPFObject("SaveButton").click()
+    save_as = app.Window("#32770", "Save As")
+    expect(save_as.Window("Edit", "", 1)).to_have_text("")
+```
+
+`.wpf_object(...)` and `.window(...)` are the same methods in Python spelling, `wintestkit.finders.from_label(parent,
+'WPFObject("A").Window("B", "x", 2)')` parses a whole chain (for example a label copied from the Spy), and
+`el.parent`, `el.children()`, `el.child_count`, `el.label` and `el.full_name` walk and name the tree. The arguments, the
+selection rules (`""` and `"*"` with and without an index, one-argument x:Name lookups, window nodes, the Win32 index
+rules) and the navigation are described in [migrating an existing suite](migrating-existing-suites.md#object-labels-wpfobject-and-window).
+Declared elements stay the primary way to build pages; label chains are for ported code and for places a chain is
+shorter than a locator, such as one row or cell of a grid or one item of a popup.
+
 ## `Elements`
 
 `Elements(...)` describes a group of elements matching one locator. It takes the same options as

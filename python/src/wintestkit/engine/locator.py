@@ -281,6 +281,10 @@ class Locator:
     #: The same link as the UIA tree understands it, used when the target is not a WPF window. Only
     #: its properties, ``where``, ``index``, ``any_of`` and ``has`` count; it is not serialized.
     uia_form: Locator | None = None
+    #: Checked on the element ``index`` picked, after it: a ``Window(cls, caption, index)`` counts
+    #: the sibling windows of its class and then requires this caption. Runtime-only, like
+    #: ``uia_form``; it is not serialized.
+    name_after_index: Matcher | None = None
     app_scope: bool = False
     allow_empty: bool = False
 
@@ -457,6 +461,8 @@ class Locator:
             parts.append(f"class={describe_matcher(self.class_name)}")
         if include_index and self.index is not None:
             parts.append(f"index={self.index}")
+        if self.name_after_index is not None:
+            parts.append(f"name_after_index={describe_matcher(self.name_after_index)}")
         if self.depth is not None:
             parts.append(f"depth={self.depth}")
         if self.tree is not None:
@@ -548,6 +554,21 @@ class Locator:
             any_of=tuple(cls.from_dict(alt) for alt in data.get("anyOf", ())),
             has=cls.from_dict(data["has"]) if "has" in data else None,
         )
+
+
+def is_window_node(link: Locator) -> bool:
+    """Whether this link selects window nodes: an application-level object-tree step on the
+    type ``"HwndSource: <root visual type>"``. The node's only child is its root visual."""
+    from wintestkit.labels import WINDOW_NODE_PREFIX
+
+    return (
+        link.app_scope
+        and link.tree == "objects"
+        and any(
+            key == "type:Name" and isinstance(value, str) and value.startswith(WINDOW_NODE_PREFIX)
+            for key, value in link.where
+        )
+    )
 
 
 def alternative_from_mapping(data: Mapping[str, Any]) -> Locator:

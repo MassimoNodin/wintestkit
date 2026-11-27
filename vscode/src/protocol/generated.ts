@@ -3792,6 +3792,7 @@ export interface ParentParams {
   sessionId: Identifier;
   objectId: Identifier;
   generation: number;
+  tree?: "objects";
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema

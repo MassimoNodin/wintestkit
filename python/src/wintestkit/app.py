@@ -9,7 +9,7 @@ import time
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from types import TracebackType
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from wintestkit.engine.diagnose import diagnose_window
 from wintestkit.engine.locator import WindowLocator
@@ -22,6 +22,9 @@ from wintestkit.errors import (
 )
 from wintestkit.uia import element, patterns, win32
 from wintestkit.uia.element import UIAElement
+
+if TYPE_CHECKING:
+    from wintestkit.model import BoundElement
 
 log = logging.getLogger("wintestkit.app")
 
@@ -125,6 +128,46 @@ class App:
         if not win32.pids_by_name(process):
             raise AppNotRunningError(f"No running process named {process}")
         return cls(process)
+
+    # -- label steps: ``app.WPFObject("HwndSource: MainView", "Title*").Window("Edit")`` ---------
+
+    def wpf_object(
+        self,
+        cls: str,
+        text: str | int | None = None,
+        index: int | None = None,
+        *,
+        strict: bool = False,
+    ) -> BoundElement:
+        """``WPFObject(cls, text, index)`` below the application: a window node.
+
+        ``cls`` is ``"HwndSource: <root visual type>"``, ``text`` the window title and ``index``
+        the 1-based position among the window nodes of that type. Chain the root visual and the
+        objects below it: ``app.wpf_object("HwndSource: MainView").wpf_object("MainView")``.
+        """
+        __tracebackhide__ = True
+        from wintestkit import finders
+
+        return finders.wpf_object(self, cls, text, index, strict=strict)
+
+    def window(
+        self,
+        cls: str,
+        caption: str | int | None = "*",
+        index: int | None = None,
+        *,
+        strict: bool = False,
+    ) -> BoundElement:
+        """``Window(cls, caption, index)``: a top-level window of the application."""
+        __tracebackhide__ = True
+        from wintestkit import finders
+
+        return finders.window(self, cls, caption, index, strict=strict)
+
+    #: The spelling of existing suites. An ``App`` also takes it because a ported chain starts at
+    #: the process (``Sys.Process("x").WPFObject(...)``), which this object stands for.
+    WPFObject = wpf_object
+    Window = window
 
     # -- state ----------------------------------------------------------------------------------
 

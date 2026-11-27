@@ -56,6 +56,30 @@ per top-level window whose elements are named by alias; `# TODO` comments mark w
 (`ObjectIdentifier`, `ObjectGroupIndex`). An alias may skip mapped levels: the skipped nodes keep their
 mapped names, so keep only the containers that are boxes when you split the skeleton into components.
 
+## Object labels (`WPFObject`, `Window`)
+
+Ported code and Spy labels share one grammar; use it where a chain is shorter than a locator (one grid cell, one popup item):
+
+    from wintestkit.finders import from_label, window, wpf_object   # also .wpf_object/.window and .WPFObject/.Window methods
+
+    root = app.WPFObject("HwndSource: MainView", "Orders*").WPFObject("MainView", "Orders*")  # window node, then its root visual
+    cell = root.WPFObject("DataGrid", "").WPFObject("DataGridRow", "", 2).WPFObject("DataGridCell", "*", 1)
+    item = app.WPFObject("HwndSource: PopupRoot", "").WPFObject("PopupRoot", "").WPFObject("ComboBoxItem", "Two")
+    edit = app.Window("#32770", "Save As").Window("Edit", "", 1)
+    same = from_label(app, 'Process("x.exe").WPFObject("HwndSource: MainView", "Orders*")')
+
+- `WPFObject(name)` is the x:Name of a direct object-tree child. `WPFObject(cls, text, index)`: `cls` is the runtime
+  type name; with `index` (1-based, `wpf:Ordinal`) it is the index-th child of that type and the text is checked unless `""` or `"*"`;
+  without it the first child of that type whose text matches (`"*"` any, `""` empty, `*`/`?` wildcards). `WPFObject(cls, 2)` is `(cls, "", 2)`.
+- `"HwndSource: X"` as `cls` is a window node (selected from an `App`; text is the title; index among window nodes of that type;
+  popups are `HwndSource: PopupRoot`); its only child is the root visual.
+- `Window(cls, caption, index)` is a Win32 child window (top-level from an `App`): class, caption (mnemonic `&` removed,
+  wildcards, `"*"` default) and 1-based index among same-class siblings; the caption is checked too unless `""`/`"*"`. UIA, not the managed tree.
+- Results are lazy elements; not-found errors list the type-matching siblings with texts and ordinals. `strict=True` fails on several matches.
+- `find_child(parent, "Name", 'WPFObject("Button", "OK", 2)', depth)` matches any object within `depth` by its label step.
+- `el.parent`, `el.children()`, `el.child_count`, `el.label` (only the arguments needed to tell siblings apart) and `el.full_name`
+  (`Process("x").WPFObject(...)...`, parsed back by `from_label`) walk the tree. A syntax error in a label string names its position.
+
 ## Procedure
 
 1. **Inventory.** List the windows (top-level nodes) and, for each, the boxes. A box is a component

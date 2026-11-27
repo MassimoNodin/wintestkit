@@ -21,6 +21,9 @@ This guide helps you migrate an existing **WPF desktop test suite** to WinTestKi
 | Table checks | `expect(grid).to_have_rows(...)` |
 | Extra control types | `Slider`, `ScrollBar`, `ProgressBar`, `DatePicker`, `Expander`, `ToggleButton`, `Hyperlink`, `ToolBar`, `StatusBar` |
 | `FindChild` / `FindAllChildren` / `Find` calls | `wintestkit.finders.find_child`, `find_all_children`, `find`, or declared locators |
+| `WPFObject(...)` / `Window(...)` call chains and `Sys.Process(...)` | `.WPFObject(...)` / `.Window(...)` on `App`, elements and windows (or `wpf_object`, `window`, `from_label`): see [object labels](#object-labels-wpfobject-and-window) |
+| A `Name` property in `FindChild`, holding an object label | `find_child(parent, "Name", 'WPFObject("Button", "OK", 2)', depth)` |
+| Walking to an object's parent or children, and naming an object | `el.parent`, `el.children()`, `el.child_count`, `el.label`, `el.full_name` |
 | `ClrClassName` | `where={"type:Name": "OrderWindow"}` (managed short type name) |
 | `<path>.ClrClassName` / `<path>.ClrFullClassName` | `where={"type:Name@DataContext": "OrderViewModel"}`: the type of the value at the path |
 | Numbers and booleans passed as strings | `AsText("15")`: compares the managed value's invariant text; `find_child` and the importer apply it to plain string values on property paths |
@@ -85,7 +88,8 @@ reproduce it on WPF windows (`tree="objects"`, see [the object tree](managed-ins
   without a root element, depth 1 is the root visual itself.
 - **First match** is the depth-first pre-order one.
 - **Ordinal** (`WPFControlOrdinalNo`) is the 1-based position among object-tree siblings of the same type,
-  in visual order, whatever their text. It is a condition, not a global index.
+  in visual order, whatever their text. It is a condition, not a global index. Window nodes count the window nodes
+  of the same type.
 - **Text** (`WPFControlText`) follows the element's class: `Text` for text blocks and text boxes, `Title` for
   a window, the first non-empty of `Content` and `Header` for headered content controls, `Header` for
   headered items controls, `Content` for other content controls and presenters, and `''` for anything
@@ -96,6 +100,80 @@ These searches need the inspector on WPF windows. On a window that is not a WPF 
 (`WPFControlText` is the UIA Name, an ordinal a zero-based index). Declared locators opt in with
 `Element(tree="objects", where={"wpf:Text": ..., "wpf:Ordinal": ...})`.
 
+
+## Object labels: `WPFObject` and `Window`
+
+Existing suites rarely search; they walk a chain of calls such as
+`grid.WPFObject("DataGridRow", "", row).WPFObject("DataGridCell", "*", col)`. The Spy tree labels objects in the same
+grammar, so a label copied from the Spy and the code of an existing suite are the same thing, and both work in Python.
+The grammar and its meaning live in one module, `wintestkit.labels`; `wintestkit.finders` turns it into lazy elements.
+
+```python
+# pseudo-code
+from wintestkit.finders import from_label, window, wpf_object
+
+main = app.WPFObject("HwndSource: MainView", "Orders*").WPFObject("MainView", "Orders*")
+cell = main.WPFObject("DataGrid", "").WPFObject("DataGridRow", "", 2).WPFObject("DataGridCell", "*", 1)
+combo_item = app.WPFObject("HwndSource: PopupRoot", "").WPFObject("PopupRoot", "").WPFObject("ComboBoxItem", "Two")
+edit = app.Window("#32770", "Save As").Window("Edit", "", 1)
+same = from_label(app, 'WPFObject("HwndSource: MainView", "Orders*").WPFObject("MainView", "Orders*")')
+```
+
+`wpf_object(parent, cls, text=None, index=None)`, `window(parent, cls, caption="*", index=None)` and
+`from_label(parent, label)` are in `wintestkit.finders`. `parent` is an `App`, a page, a bound element or a bound
+window. The same calls are methods of bound elements, bound windows and `App`, as `.wpf_object(...)` and `.window(...)`
+and under the names of existing suites, `.WPFObject(...)` and `.Window(...)`. `App` takes the aliases too because a
+ported chain starts at the process (`Sys.Process("x").WPFObject(...)`), which the `App` stands for. Every result is an
+ordinary lazy bound element: it re-resolves on each use and supports actions, `expect`, `get()` and further finders.
+
+**`WPFObject`** selects a *direct* object-tree child of its parent (see [the object tree](#the-object-tree-model)):
+
+| Call | Selects |
+|---|---|
+| `WPFObject(name)` | the direct child whose x:Name (`FrameworkElement.Name`) is `name` |
+| `WPFObject(cls, text, index)` | the `index`-th (1-based, `wpf:Ordinal`) child of runtime type `cls`; `text` is checked too unless it is `""` or `"*"` |
+| `WPFObject(cls, text)` | the first child of type `cls`, in object-tree order, whose text matches: `"*"` is any text, `""` empty text, anything else matches with `*` and `?` as wildcards |
+| `WPFObject(cls, index)` | an integer second argument is the Spy form of an empty text: `WPFObject(cls, "", index)` |
+
+`cls` is the runtime CLR short type name (`type:Name`). `"HwndSource: X"` as `cls` is a *window node*: a top-level
+WPF window of the application whose root visual's short type name is `X`, with the window title as its text (wildcards
+allowed) and the index among window nodes of the same type. Window nodes are selected from an `App`; popups are window
+nodes too (`"HwndSource: PopupRoot"`, text `""`). The only child of a window node is its root visual, so
+`app.WPFObject("HwndSource: MainView", "T*").WPFObject("MainView", "T*")` is the root visual. A lone argument is always an
+x:Name, never a type; use `("HwndSource: X", "*")` for a window of any title. Without an index the first match wins
+without a warning (the call defines that); pass `strict=True` to fail when several children match. When nothing
+matches, the error lists the parent's children of that type with their texts and ordinals.
+
+**`Window(cls, caption, index)`** is a Win32 child window, or a top-level window when written from an `App`. `cls` is the
+window class; `caption` the raw Win32 caption, mnemonic `&` removed, wildcards allowed, `"*"` by default (`""` is an
+empty caption). `index` is 1-based among the sibling windows *of the same class* in child (z) order; the caption is
+checked too unless it is `""` or `"*"`, and a mismatch is an error naming the window that was counted. `Window(cls, index)`
+is `Window(cls, "", index)`. It uses UI Automation, not the managed tree, so it works for Win32 dialogs and their
+controls; it does not look inside a WPF window's object tree.
+
+**`Process("name")`** and the prefix `Sys.Process("name")` start a label *string*: `from_label` uses the `parent` when it
+is that application and otherwise attaches to the process by name (`parent` may then be `None`). Quotes may be single
+or double, backslash escapes (`\"`, `\`, `\n`, `\uXXXX`) work, whitespace is free, and a mistake raises
+`LabelSyntaxError` with the position of the problem and a caret under it.
+
+**The `Name` property.** `find_child(parent, "Name", label_step, depth)` matches any object within `depth` whose own
+label step matches, with the semantics above: `find_child(app, "Name", 'WPFObject("HwndSource: MainView", "Orders*")', 2)`.
+It combines with other properties in a list (a clash such as `Name` with `ClrClassName` is an error). Only `WPFObject`
+steps are accepted; use `window()` for a `Window` step.
+
+**Navigation.** Bound elements know their neighbours, on the object tree for WPF and among child windows (windows with a
+handle) otherwise:
+
+| | |
+|---|---|
+| `el.parent` | the parent element, or `None` at the top; the parent of a root visual is its window node, and a window node has no parent |
+| `el.children()` | the children as bound elements that re-resolve by their label step |
+| `el.child_count` | how many children there are (a window node has one) |
+| `el.label` | the element's own label step: the x:Name when no sibling shares it, else the type and text (an empty text is written `""`, as a lone argument would be an x:Name), plus the ordinal among same-type siblings only when needed (`WPFObject("ListBoxItem", "Beta", 2)`, `WPFObject("ListBoxItem", 3)`, `Window("Edit", "", 2)`) |
+| `el.full_name` | the label chain from the process, `Process("x").WPFObject("HwndSource: …", "…").WPFObject(…)…`; `from_label` parses it back to the same element |
+
+An unreadable text (redacted or a throwing getter) is addressed by the ordinal alone. More than 200 object-tree children
+are not listed in one query; address the one you want with a label or `find_child`.
 
 ## Migrating FindChild
 

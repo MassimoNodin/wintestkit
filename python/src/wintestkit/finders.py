@@ -11,18 +11,22 @@ from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from typing import Any, cast
 
-from wintestkit import log, model, runtime
+from wintestkit import labels, log, model, runtime
 from wintestkit.app import App
-from wintestkit.backends.element import WpfElement, uia_of
-from wintestkit.engine import actions
-from wintestkit.engine.locator import Locator
+from wintestkit.backends.element import TargetElement, WpfElement, uia_of
+from wintestkit.engine import actions, objects
+from wintestkit.engine.diagnose import diagnostics_are_quiet
+from wintestkit.engine.locator import Locator, is_window_node
+from wintestkit.engine.managed import diagnostic_query_budget
 from wintestkit.engine.properties import AsText
-from wintestkit.engine.resolve import Scope, resolve_all
-from wintestkit.errors import AmbiguousMatchWarning
+from wintestkit.engine.resolve import Scope, resolve_all, resolve_window
+from wintestkit.engine.wpf_resolve import route
+from wintestkit.errors import AmbiguousMatchWarning, ElementNotFoundError, WtkError
 from wintestkit.model import (
     BoundControl,
     BoundElement,
     BoundElements,
+    BoundWindow,
     Elements,
     PageObject,
 )
@@ -56,15 +60,10 @@ _UIA_MAP = {"wpfcontroltext": "name", "wpfcontrolordinalno": "index"}
 
 
 def _matcher(value: Any) -> Any:
-    if not isinstance(value, str) or not any(c in value for c in "*?"):
+    if not isinstance(value, str):
         return value
-    # Only escape regex metacharacters: re.escape also escapes characters outside
-    # the agent's shared regex grammar, such as spaces and #.
-    special = r"\.^$|+()[]{}"
-    pattern = "".join(
-        ".*" if c == "*" else "." if c == "?" else "\\" + c if c in special else c for c in value
-    )
-    return re.compile(rf"^{pattern}\Z", re.DOTALL)
+    pattern = labels.wildcard_regex(value)
+    return value if pattern is None else pattern
 
 
 _INDEX_SUFFIX = re.compile(r"-?[0-9]{1,9}\]")
@@ -115,6 +114,7 @@ def to_locator(props: str | Sequence[str], values: Any, *, depth: int | None = N
     uia_fields: dict[str, Any] = {}
     uia_where: dict[str, Any] = {}
     seen: set[str] = set()
+    from_name: set[str] = set()  # keys the Name label step set; no other property may set them
     for prop, value in zip(names, items, strict=True):
         if not isinstance(prop, str) or not all(_name_part(part) for part in prop.split(".")):
             raise ValueError(f"invalid property name: {prop!r}")
@@ -123,11 +123,23 @@ def to_locator(props: str | Sequence[str], values: Any, *, depth: int | None = N
         if prop.casefold().endswith(".olevalue"):
             prop = prop[: -len(".OleValue")]
         key = prop.casefold()
-        if key == "name":
-            raise ValueError("Name is an object name; use mapped properties instead")
         if key in seen:
             raise ValueError(f"duplicate property: {prop!r}")
         seen.add(key)
+        if key == "name":
+            # The object's own label step, e.g. WPFObject("Button", "OK", 2): its conditions.
+            object_where, step_where, step_fields = _name_conditions(value)
+            for destination, extra in (
+                (where, object_where),
+                (uia_where, step_where),
+                (uia_fields, step_fields),
+            ):
+                for condition, expected in extra.items():
+                    if condition in destination:
+                        raise ValueError(f"Name and another property both set {condition}")
+                    destination[condition] = expected
+                    from_name.add(condition)
+            continue
         target = PROPERTY_MAP.get(key, f"clr:{prop}")
         uia_target = _UIA_MAP.get(key, target)
         for suffix, facet in ((".clrclassname", "Name"), (".clrfullclassname", "FullName")):
@@ -156,9 +168,7 @@ def to_locator(props: str | Sequence[str], values: Any, *, depth: int | None = N
             value = uia_value = str(int(value))
         else:
             if key == "wndcaption" and isinstance(value, str):
-                value = re.sub(
-                    r"&(&|.)?", lambda m: "&" if m.group(1) == "&" else (m.group(1) or ""), value
-                )
+                value = labels.strip_mnemonic(value)
             value = uia_value = _matcher(value)
             if isinstance(value, str) and target.startswith("clr:"):
                 # Migrated suites pass numbers and booleans as strings; compare by text.
@@ -171,6 +181,8 @@ def to_locator(props: str | Sequence[str], values: Any, *, depth: int | None = N
             (fields, where, target, value),
             (uia_fields, uia_where, uia_target, uia_value),
         ):
+            if destination_target in from_name:
+                raise ValueError(f"Name and {prop} both set {destination_target}")
             if ":" in destination_target or destination_target in {
                 "FrameworkId",
                 "LocalizedControlType",
@@ -194,11 +206,40 @@ def to_locator(props: str | Sequence[str], values: Any, *, depth: int | None = N
     )
 
 
-def _search(parent: BoundControl | PageObject | Scope | App, locator: Locator) -> BoundElements:
+def _name_conditions(value: Any) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+    """What a ``Name`` label step adds: ``where`` entries of the object-tree form, ``where``
+    entries of the UIA form and its locator fields."""
+    if not isinstance(value, str):
+        raise ValueError('Name takes a label step such as \'WPFObject("Button", "OK", 2)\'')
+    spec = labels.step_spec(labels.parse_step(value))
+    if not isinstance(spec, labels.ObjectSpec):
+        raise ValueError("Name takes a WPFObject step; use window() to find a Window step")
+    if spec.name is not None:
+        both = {"clr:Name": _matcher(spec.name)}
+        return both, dict(both), {}
+    where: dict[str, Any] = {"type:Name": spec.cls}
+    uia_fields: dict[str, Any] = {}
+    if spec.index is not None:
+        where["wpf:Ordinal"] = spec.index
+        uia_fields["index"] = spec.index - 1  # a zero-based index into all UIA results
+    if spec.text is not None:
+        where["wpf:Text"] = _matcher(spec.text)
+        uia_fields["name"] = _matcher(spec.text)
+    return where, {"type:Name": spec.cls}, uia_fields
+
+
+Parent = BoundControl | BoundWindow | PageObject | Scope | App
+
+
+def _search(parent: Parent, locator: Locator) -> BoundElements:
     if isinstance(parent, App):
         page = PageObject(parent)
         root = None
         locator = replace(locator, app_scope=True)
+    elif isinstance(parent, BoundWindow):
+        page = parent.page
+        root = None
+        locator = replace(locator, window=parent.locator)
     elif isinstance(parent, BoundControl):
         page = parent.page
         root = parent.locator
@@ -321,20 +362,20 @@ class _FindElement(_FirstElement):
             descendant.locator,
             warn=not _explicit_ordinal(locator),
         )
-        self.parent = parent
+        self.container = parent
         self.match_locator = locator
 
     def resolve_once(self) -> Any:
-        target = self.parent.resolve_once()
+        target = self.container.resolve_once()
         # A parent found at application level may be in any window: search where it was found.
         locator = replace(
             self.match_locator,
             depth=None,
             index=None,
-            window=self.parent.locator.window,
-            app_scope=self.parent.locator.app_scope,
+            window=self.container.locator.window,
+            app_scope=self.container.locator.app_scope,
         )
-        candidates = resolve_all(cast(Any, model)._scope(self.parent.page), locator)
+        candidates = resolve_all(cast(Any, model)._scope(self.container.page), locator)
         if any(cast(Any, target).same_as(candidate) for candidate in candidates):
             descendants = resolve_all(cast(Any, model)._scope(self.page), self.locator)
             self._warn(1 + len(descendants))
@@ -362,6 +403,330 @@ def find(
     if isinstance(parent, BoundControl):
         return _FindElement(parent, child, to_locator(props, values, depth=depth))
     return child
+
+
+# -- label steps: WPFObject(...) and Window(...) -------------------------------------------------
+#
+# The grammar and its semantics are defined in ``wintestkit.labels``; this section turns a step
+# into a lazy, re-resolving element and walks the tree for ``parent``, ``children`` and labels.
+
+#: How many siblings a not-found message lists.
+_LISTED = 10
+
+
+def _app_of(parent: Parent) -> App:
+    if isinstance(parent, App):
+        return parent
+    if isinstance(parent, Scope | PageObject):
+        return parent.app
+    return cast(App, parent.page.app)
+
+
+def _quoted(text: str | None) -> str:
+    return labels.quote(text) if text is not None else "(unreadable)"
+
+
+def _ordinals(names: list[str]) -> list[int]:
+    seen: dict[str, int] = {}
+    result: list[int] = []
+    for name in names:
+        seen[name] = seen.get(name, 0) + 1
+        result.append(seen[name])
+    return result
+
+
+class _StepElement(BoundElement):
+    """The element a ``WPFObject`` or ``Window`` step selects below its parent.
+
+    It resolves like any bound element; when the step finds nothing the error also lists the
+    parent's children of the same type with their texts and ordinals, which is what a label is
+    written from.
+    """
+
+    def __init__(
+        self,
+        page: Any,
+        definition: Any,
+        locator: Locator,
+        *,
+        origin: Parent | BoundControl | None = None,
+        spec: labels.ObjectSpec | labels.WindowSpec | None = None,
+    ) -> None:
+        super().__init__(page, definition, locator)
+        self.origin = origin
+        self.spec = spec
+
+    def resolve_once(self) -> Any:
+        __tracebackhide__ = True
+        try:
+            return super().resolve_once()
+        except ElementNotFoundError as error:
+            listing = self._siblings_text()
+            if listing:
+                diagnostic = replace(
+                    error.diagnostic, message=f"{error.diagnostic.message}; {listing}"
+                )
+                raise ElementNotFoundError(diagnostic) from None
+            raise
+
+    def _siblings_text(self) -> str | None:
+        if self.origin is None or self.spec is None or diagnostics_are_quiet():
+            return None
+        try:
+            with diagnostic_query_budget():
+                children = _children_of_parent(self.origin)
+        except WtkError:
+            return None
+        nodes = [child.node for child in children]
+        spec = self.spec
+        same: list[str]
+        if isinstance(spec, labels.WindowSpec):
+            windows = [n for n in nodes if isinstance(n, labels.WindowNode)]
+            ordinals = _ordinals([n.class_name for n in windows])
+            same = [
+                f"#{ordinals[i]} {_quoted(n.caption)}"
+                for i, n in enumerate(windows)
+                if n.class_name == spec.cls
+            ]
+            kind = f"windows of class {labels.quote(spec.cls)}"
+            present = sorted({n.class_name for n in windows})
+        else:
+            objs = [n for n in nodes if isinstance(n, labels.ObjectNode)]
+            ordinals = _ordinals([n.type_name for n in objs])
+            if spec.name is not None:
+                same = [labels.quote(n.name) for n in objs if n.name]
+                kind = "children with an x:Name"
+            else:
+                same = [
+                    f"#{ordinals[i]} {_quoted(n.text)}"
+                    for i, n in enumerate(objs)
+                    if n.type_name == spec.cls
+                ]
+                kind = f"children of type {labels.quote(spec.cls or '')}"
+            present = sorted({n.type_name for n in objs})
+        if not same:
+            shown = ", ".join(labels.quote(t) for t in present[:_LISTED]) or "none"
+            return f"the parent has no {kind}; its children have the types {shown}"
+        more = f" (+{len(same) - _LISTED} more)" if len(same) > _LISTED else ""
+        return f"{kind}: {', '.join(same[:_LISTED])}{more}"
+
+
+def _origin(parent: Parent) -> Parent:
+    """The parent as the walk needs it: a page with a root element stands for that root."""
+    if isinstance(parent, PageObject):
+        root = cast(Any, parent)._effective_root()
+        if root is not None:
+            return BoundElement(parent, root, cast(Any, model)._element_locator(parent, root))
+    return parent
+
+
+def _children_of_parent(parent: Parent) -> list[objects.Child]:
+    """The children of whatever a step is written below: the application, an element, a window."""
+    __tracebackhide__ = True
+    if isinstance(parent, App):
+        return objects.children_of(parent, None)
+    if isinstance(parent, BoundControl):
+        node = is_window_node(parent.locator)
+        return objects.children_of(_app_of(parent), parent.resolve_once(), window_node=node)
+    app = _app_of(parent)
+    if isinstance(parent, BoundWindow):
+        window_locator = parent.locator
+    elif isinstance(parent, PageObject):
+        window_locator = cast(Any, model).scope_window(parent)
+    else:
+        window_locator = parent.window
+    root = route(resolve_window(app, window_locator))
+    # On a WPF window the root visual is the (only) child of the window node.
+    return objects.children_of(app, root, window_node=isinstance(root, WpfElement))
+
+
+def _object_locator(spec: labels.ObjectSpec, *, strict: bool) -> Locator:
+    where: list[tuple[str, Any]] = []
+    if spec.name is not None:
+        where.append(("clr:Name", _matcher(spec.name)))
+    else:
+        where.append(("type:Name", spec.cls))
+        if spec.index is not None:
+            where.append(("wpf:Ordinal", spec.index))
+        if spec.text is not None:
+            where.append(("wpf:Text", _matcher(spec.text)))
+    # An ordinal already picks one child; otherwise the first match, in object-tree order, wins.
+    index = 0 if spec.index is None and not strict else None
+    return Locator(where=tuple(where), tree="objects", depth=1, index=index)
+
+
+def _window_locator(spec: labels.WindowSpec, *, strict: bool) -> Locator:
+    if spec.index is not None:
+        index: int | None = spec.index - 1
+    else:
+        index = None if strict else 0
+    caption = _matcher(spec.caption) if spec.caption is not None else None
+    return Locator(
+        class_name=spec.cls,
+        name=caption if spec.index is None else None,
+        name_after_index=caption if spec.index is not None else None,
+        depth=1,
+        index=index,
+    )
+
+
+def _bind(parent: Parent, locator: Locator, spec: labels.ObjectSpec | labels.WindowSpec) -> Any:
+    origin = _origin(parent)
+    result = _search(origin, locator)
+    return _StepElement(result.page, result.definition, result.locator, origin=origin, spec=spec)
+
+
+def _object_step(parent: Parent, spec: labels.ObjectSpec, *, strict: bool = False) -> Any:
+    __tracebackhide__ = True
+    at_app = isinstance(parent, App)
+    if at_app and not spec.is_window_node:
+        raise ValueError(
+            "From an application WPFObject selects a window node: its type is "
+            f'"{labels.WINDOW_NODE_PREFIX}<root visual type>" and the title is the second '
+            'argument ("*" for any); chain the objects below it. A lone argument is an x:Name'
+        )
+    if spec.is_window_node and not at_app:
+        raise ValueError("A window node can only be selected from an application")
+    return _bind(parent, _object_locator(spec, strict=strict), spec)
+
+
+def _window_step(parent: Parent, spec: labels.WindowSpec, *, strict: bool = False) -> Any:
+    __tracebackhide__ = True
+    return _bind(parent, _window_locator(spec, strict=strict), spec)
+
+
+def wpf_object(
+    parent: Parent,
+    cls: str,
+    text: str | int | None = None,
+    index: int | None = None,
+    *,
+    strict: bool = False,
+) -> BoundElement:
+    """``WPFObject(cls, text, index)``: a direct object-tree child of ``parent``.
+
+    ``cls`` is the runtime CLR short type name. With ``index`` (1-based) it is the ``index``-th
+    child of that type (``wpf:Ordinal``) and the text is checked unless it is ``""`` or ``"*"``.
+    Without it the first child of that type whose text matches wins: ``"*"`` is any text, ``""``
+    empty text, anything else matches with ``*`` and ``?`` as wildcards. ``wpf_object(parent,
+    name)`` alone selects by x:Name, and an integer ``text`` is ``text=""`` with that index.
+    ``cls="HwndSource: <root visual type>"`` is a window node, selected from an ``App`` (its text
+    is the window title); the node's child is the root visual itself.
+
+    The result is a lazy bound element that re-resolves on every use. Without an index it takes
+    the first match; ``strict=True`` fails when several children match. When nothing matches the
+    error lists the parent's children of that type with their texts and ordinals.
+    """
+    __tracebackhide__ = True
+    spec = labels.object_spec(cls, text, index)
+    return cast(BoundElement, _object_step(parent, spec, strict=strict))
+
+
+def window(
+    parent: Parent,
+    cls: str,
+    caption: str | int | None = "*",
+    index: int | None = None,
+    *,
+    strict: bool = False,
+) -> BoundElement:
+    """``Window(cls, caption, index)``: a Win32 child window of ``parent``, or a top-level window.
+
+    ``cls`` is the window class. ``caption`` is the raw Win32 caption (mnemonic ``&`` removed,
+    wildcards allowed, ``"*"`` by default). ``index`` is 1-based among the sibling windows of the
+    same class in child/z order; the caption is checked too unless it is ``""`` or ``"*"``.
+    Without an index the first window of that class whose caption matches wins. This uses UI
+    Automation, not the managed tree, so it works for Win32 dialogs and their controls.
+    """
+    __tracebackhide__ = True
+    spec = labels.window_spec(cls, caption, index)
+    return cast(BoundElement, _window_step(parent, spec, strict=strict))
+
+
+def _apply(parent: Parent, step: labels.Step) -> Any:
+    spec = labels.step_spec(step)
+    if isinstance(spec, labels.ObjectSpec):
+        return _object_step(parent, spec)
+    return _window_step(parent, spec)
+
+
+def _chain(parent: Parent, steps: Sequence[labels.Step]) -> Any:
+    result: Any = parent
+    for step in steps:
+        result = _apply(result, step)
+    return result
+
+
+def from_label(parent: Parent | None, label: str) -> BoundElement:
+    """Resolve a whole label chain below ``parent``, e.g. the text of a Spy label.
+
+    ``'WPFObject("A").WPFObject("B", "x", 2).Window("Edit")'`` is
+    ``parent.wpf_object("A").wpf_object("B", "x", 2).window("Edit")``. Quotes may be single or
+    double, escapes are the usual backslash ones and whitespace is free; a mistake raises
+    :class:`wintestkit.labels.LabelSyntaxError` with its position. A leading ``Process("name")``
+    or ``Sys.Process("name")`` starts at the application of that name: ``parent`` is used when it
+    is (in) that application and may be ``None`` (the process is then attached by name).
+    """
+    __tracebackhide__ = True
+    parsed = labels.parse_label(label)
+    start: Any = parent
+    if parsed.process is not None:
+        current = _app_of(parent) if parent is not None else None
+        if current is not None and current.process_name.casefold() == parsed.process.casefold():
+            start = current
+        else:
+            start = App.attach(process=parsed.process)
+    elif parent is None:
+        raise ValueError("from_label needs a parent unless the label starts with Process(...)")
+    return cast(BoundElement, _chain(start, parsed.steps))
+
+
+# -- navigation: parent, children, label, full_name ---------------------------------------------
+
+
+def _anchor(bound: BoundControl) -> tuple[App, TargetElement, bool]:
+    __tracebackhide__ = True
+    return _app_of(bound), bound.resolve(), is_window_node(bound.locator)
+
+
+def label_of(bound: BoundControl) -> str:
+    """The element's own label: the arguments that tell it apart from its siblings."""
+    __tracebackhide__ = True
+    app, element, node = _anchor(bound)
+    return labels.format_step(objects.own_step(app, element, window_node=node))
+
+
+def full_name_of(bound: BoundControl) -> str:
+    """The label chain from the process, which :func:`from_label` parses back to this element."""
+    __tracebackhide__ = True
+    app, element, node = _anchor(bound)
+    steps = objects.label_chain(app, element, window_node=node)
+    return labels.format_label(labels.Label(app.process_name, tuple(steps)))
+
+
+def parent_of(bound: BoundControl) -> BoundElement | None:
+    """The parent in the object tree (WPF) or the enclosing window (UIA); ``None`` at the top.
+
+    The parent of a WPF root visual is its window node, and a window node has no parent.
+    """
+    __tracebackhide__ = True
+    app, element, node = _anchor(bound)
+    if node:
+        return None
+    steps = objects.label_chain(app, element)
+    return cast(BoundElement, _chain(app, steps[:-1])) if len(steps) > 1 else None
+
+
+def children_of(bound: BoundControl) -> list[BoundElement]:
+    """The children as bound elements that re-resolve by their label step below ``bound``."""
+    __tracebackhide__ = True
+    children = _children_of_parent(bound)
+    return [cast(BoundElement, _apply(bound, step)) for step in objects.child_steps(children)]
+
+
+def child_count_of(bound: BoundControl) -> int:
+    __tracebackhide__ = True
+    return len(_children_of_parent(bound))
 
 
 @dataclass(frozen=True)

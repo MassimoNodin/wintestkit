@@ -1609,3 +1609,23 @@ def test_find_all_result_reports_unreadable_candidates() -> None:
     ):
         with pytest.raises(ValueError):
             QueryFindAllResult.from_json({"matches": [], "complete": True, "unreadable": bad})
+
+
+def test_parent_asks_for_the_object_tree_only_when_told_to() -> None:
+    seen: list[dict[str, Any]] = []
+
+    def handler(request: dict[str, Any]) -> object:
+        seen.append(request)
+        return {"id": request["id"], "result": {"handle": None}}
+
+    client = InspectorClient(ScriptedTransport(handler), session())
+    try:
+        assert client.parent("object", 1, deadline=time.monotonic() + 1) is None
+        assert client.parent("object", 1, tree="objects", deadline=time.monotonic() + 1) is None
+        with pytest.raises(InspectorError, match="Invalid tree"):
+            client.parent("object", 1, tree="visual", deadline=time.monotonic() + 1)  # type: ignore[arg-type]
+    finally:
+        client.close()
+    assert [request["method"] for request in seen][:2] == ["tree.parent", "tree.parent"]
+    assert "tree" not in seen[0]["params"]
+    assert seen[1]["params"]["tree"] == "objects"

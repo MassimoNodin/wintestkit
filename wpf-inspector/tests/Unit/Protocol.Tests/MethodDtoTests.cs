@@ -36,6 +36,12 @@ public class MethodDtoTests
         node.Add("unknown", JsonNullNode.Instance);
         Assert.Throws<ProtocolException>(() => read(node));
     }
+    [Fact] public void ParentTreeIsOptionalAndClosed()
+    {
+        Assert.Null(ParentParams.FromJson(Parse("{\"sessionId\":\"s\",\"objectId\":\"o\",\"generation\":1}")).Tree);
+        Assert.Equal("objects", ParentParams.FromJson(Parse("{\"sessionId\":\"s\",\"objectId\":\"o\",\"generation\":1,\"tree\":\"objects\"}")).Tree);
+        Assert.Throws<ProtocolException>(() => ParentParams.FromJson(Parse("{\"sessionId\":\"s\",\"objectId\":\"o\",\"generation\":1,\"tree\":\"visual\"}")));
+    }
     [Fact] public void EnforcesBoundsAndEnums()
     {
         Assert.Throws<ProtocolException>(() => RootsParams.FromJson(Parse("{\"sessionId\":\"s\",\"pageSize\":201}")));

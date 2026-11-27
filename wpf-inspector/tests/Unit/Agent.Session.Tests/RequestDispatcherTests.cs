@@ -532,6 +532,39 @@ public class RequestDispatcherTests
             return Task.FromResult(new WriteCallResult { Audit = audit, Result = new ValueDto { Status = "ok", Kind = "null", Scalar = JsonNullNode.Instance } });
         }
     }
+    [Fact]
+    public async Task ParentRoutesTheTreeOption()
+    {
+        var service = new ParentService();
+        var dispatcher = new RequestDispatcher(Session, service);
+        JsonObjectNode Params(string? tree)
+        {
+            var parameters = new JsonObjectNode();
+            parameters.Add("sessionId", new JsonStringNode(Session));
+            parameters.Add("objectId", new JsonStringNode("object"));
+            parameters.Add("generation", JsonNumberNode.From(1));
+            if (tree != null) parameters.Add("tree", new JsonStringNode(tree));
+            return parameters;
+        }
+        Assert.Null((await Dispatch(dispatcher, PipeMethods.Parent, Params(null))).Error);
+        Assert.Null(service.Tree);
+        Assert.Null((await Dispatch(dispatcher, PipeMethods.Parent, Params("objects"))).Error);
+        Assert.Equal("objects", service.Tree);
+        Assert.Equal(ErrorCodes.InvalidParams, (await Dispatch(dispatcher, PipeMethods.Parent, Params("visual"))).Error!.Code);
+        Assert.Equal(2, service.Calls);
+    }
+
+    private sealed class ParentService : RecordingService, IParentInspectionService
+    {
+        public string? Tree { get; private set; }
+        public int Calls { get; private set; }
+        public Task<ParentResult> ParentAsync(string objectId, long generation, string? tree, CancellationToken ct)
+        {
+            Calls++; Tree = tree;
+            return Task.FromResult(new ParentResult { Handle = null });
+        }
+    }
+
     private sealed class HitTestService : RecordingService, IHitTestInspectionService
     {
         public long Window { get; private set; }

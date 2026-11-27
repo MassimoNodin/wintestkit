@@ -271,12 +271,12 @@ namespace WinTestKit.Inspector.Agent.Inspection
             return NewPage("", 0, "roots", "", nodes, Array.Empty<Diagnostic>(), size, token);
         }, ct);
 
-        public Task<ParentResult> ParentAsync(string objectId, long generation, CancellationToken ct) => RunAsync(async token =>
+        public Task<ParentResult> ParentAsync(string objectId, long generation, string? tree, CancellationToken ct) => RunAsync(async token =>
         {
             object target = GetObject(objectId, generation, out Dispatcher dispatcher);
             return await executor.ExecuteAsync(dispatcher, () =>
             {
-                object? parent = target is DependencyObject dependency ? TreeWalker.Parent(dependency) : WinFormsNative.ParentOf(target);
+                object? parent = target is DependencyObject dependency ? (tree == "objects" ? ObjectTree.Parent(dependency) : TreeWalker.Parent(dependency)) : WinFormsNative.ParentOf(target);
                 return new ParentResult { Handle = parent == null ? null : registry.Register(parent, dispatcher, inspector.DescribeType(parent.GetType())) };
             }, token).ConfigureAwait(false);
         }, ct);

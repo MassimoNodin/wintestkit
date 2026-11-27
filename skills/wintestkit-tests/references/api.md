@@ -86,6 +86,7 @@ visuals; from a window, depth 1 is the root visual). `wpf:Text` (the element's t
 text boxes, `Title` of windows, `Content` then `Header` of headered content controls, `Header` of headered
 items controls, `Content` of other content controls; else `''`) and `wpf:Ordinal` (1-based position among
 same-type object-tree siblings) match on it; both work in `where` and `el.get(...)`.
+Object labels: `app.WPFObject(cls, text, index)`/`.Window(cls, caption, index)` (also `.wpf_object`/`.window`, `finders.from_label(parent, 'WPFObject("A").Window("B")')`) select direct object-tree children and Win32 child windows as migrated suites write them; `el.parent`, `el.children()`, `el.child_count`, `el.label`, `el.full_name` navigate (see references/migration.md).
 Strings match exactly; a compiled regex
 matches with `re.search`. Managed values are exactly typed; `AsText("15")` compares a managed value's invariant text instead (15, `True`). Managed paths accept indexers (`clr:Rows[3].Value`) and `type:Name@DataContext` reads the runtime type of a nested value. `window = Window()` with no arguments means the application's main window.
 

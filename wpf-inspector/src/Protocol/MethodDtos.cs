@@ -34,7 +34,15 @@ namespace WinTestKit.Inspector.Protocol
     public sealed class ParentParams
     {
         public string SessionId { get; set; } = ""; public string ObjectId { get; set; } = ""; public long Generation { get; set; }
-        public static ParentParams FromJson(JsonNode n) { var o = DtoHelpers.Object(n, "sessionId", "objectId", "generation"); return new ParentParams { SessionId = DtoHelpers.Required(o, "sessionId"), ObjectId = DtoHelpers.Required(o, "objectId"), Generation = DtoHelpers.Integer(o.Get("generation"), 1) }; }
+        /// <summary>Null asks for the visual (else logical) parent; "objects" for the parent in the object tree of the migration model.</summary>
+        public string? Tree { get; set; }
+        public static ParentParams FromJson(JsonNode n)
+        {
+            var o = DtoHelpers.Object(n, "sessionId", "objectId", "generation", "tree");
+            string? tree = null;
+            if (o.TryGet("tree", out var node)) { tree = DtoHelpers.String(node); DtoHelpers.OneOf(tree, "objects"); }
+            return new ParentParams { SessionId = DtoHelpers.Required(o, "sessionId"), ObjectId = DtoHelpers.Required(o, "objectId"), Generation = DtoHelpers.Integer(o.Get("generation"), 1), Tree = tree };
+        }
     }
     public sealed class ParentResult
     {

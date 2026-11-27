@@ -60,7 +60,8 @@ def test_invalid_names(name):
 
 
 def test_name_rejected_and_list_shape():
-    with pytest.raises(ValueError, match="mapped properties"):
+    # Name is a label step (see test_labels.py); anything else is a syntax error.
+    with pytest.raises(ValueError, match=r"expected '\('"):
         to_locator("nAmE", "WPFObject")
     assert to_locator("WPFControlName", "x") == to_locator(["WPFControlName"], ["x"])
     with pytest.raises(ValueError, match="equal length"):

@@ -405,6 +405,10 @@ objects, collections and truncated strings cannot be compared. It applies to `cl
 
 ### The object tree
 
+Migrated suites address this tree with `WPFObject(...)` calls; see [object labels](migrating-existing-suites.md#object-labels-wpfobject-and-window).
+A request for the parent of an object can ask for the object-tree parent (`tree.parent` with `tree: "objects"`), which
+is what `el.parent` and `el.full_name` use.
+
 The default search covers the combined WPF tree. Suites migrated from other tools expect a different
 tree, which `tree="objects"` selects for any locator (`Element`, `Elements`, typed elements,
 `parent.Button(...)`, and the `find_child` helpers do it for you on WPF windows):
@@ -426,8 +430,8 @@ Element(automation_id='Save', tree='objects', depth=2, where={'wpf:Text': 'Save'
   (the `HwndSource` level, labelled `HwndSource: <root visual type>`, with the window title as its text). From
   an `App`, depth 1 is the window nodes, depth 2 the root visuals and depth 3 their children. From a window or
   a page without a root element, depth 1 is the root visual itself, so it can match. A window node matches
-  `type:Name`, `wpf:Text` and `wpf:Ordinal` (its place among the windows); any other managed key is a member of an
-  element, which a window node is not. A window node and the root visual below it are one element, counted
+  `type:Name`, `wpf:Text` and `wpf:Ordinal` (its place among the window nodes of the same type); any other managed
+  key is a member of an element, which a window node is not. A window node and the root visual below it are one element, counted
   once.
 - **`wpf:Ordinal`** is the element's 1-based position among its object-tree siblings of the same runtime
   type, in visual order. The text plays no part. It reads as an integer; `AsText('2')` and regular

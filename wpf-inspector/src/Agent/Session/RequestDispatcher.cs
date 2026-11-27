@@ -170,7 +170,7 @@ namespace WinTestKit.Inspector.Agent.Session
                 case PipeMethods.Parent:
                     if (!(service is IParentInspectionService parentService)) throw new ProtocolException(ErrorCodes.UnsupportedTarget, "Feature not available.");
                     var parent = ParentParams.FromJson(request.Params); CheckSession(parent.SessionId);
-                    return (await parentService.ParentAsync(parent.ObjectId, parent.Generation, ct).ConfigureAwait(false)).ToJson();
+                    return (await parentService.ParentAsync(parent.ObjectId, parent.Generation, parent.Tree, ct).ConfigureAwait(false)).ToJson();
                 case PipeMethods.Children:
                     var children = ChildrenParams.FromJson(request.Params); CheckSession(children.SessionId);
                     return (await service.ChildrenAsync(children.ObjectId, children.Generation, children.Tree, children.PageSize, children.PageToken, ct).ConfigureAwait(false)).ToJson();

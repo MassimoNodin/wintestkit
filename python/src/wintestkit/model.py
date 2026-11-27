@@ -849,6 +849,40 @@ class BoundWindow(_BoundBase):
         __tracebackhide__ = True
         return self.resolve().name
 
+    # -- label steps: ``el.WPFObject("Button", "OK", 2).Window("Edit")`` ---------------------------
+
+    def wpf_object(
+        self,
+        cls: str,
+        text: str | int | None = None,
+        index: int | None = None,
+        *,
+        strict: bool = False,
+    ) -> BoundElement:
+        """``WPFObject(cls, text, index)``: a direct object-tree child (``finders.wpf_object``)."""
+        __tracebackhide__ = True
+        from wintestkit import finders
+
+        return finders.wpf_object(self, cls, text, index, strict=strict)
+
+    def window(
+        self,
+        cls: str,
+        caption: str | int | None = "*",
+        index: int | None = None,
+        *,
+        strict: bool = False,
+    ) -> BoundElement:
+        """``Window(cls, caption, index)``: a Win32 child window (see ``finders.window``)."""
+        __tracebackhide__ = True
+        from wintestkit import finders
+
+        return finders.window(self, cls, caption, index, strict=strict)
+
+    #: The spelling of existing suites, so that ported code reads unchanged.
+    WPFObject = wpf_object
+    Window = window
+
     def close(self, *, timeout: float | None = None) -> None:
         __tracebackhide__ = True
         with runtime.step("window.close", self.qualname, self.locator.describe()):
@@ -1492,6 +1526,81 @@ class BoundControl(_BoundBase):
         """The ``i``-th match (0-based) of this locator."""
         __tracebackhide__ = True
         return self._derive(self.locator.with_index(i))
+
+    # -- navigation in the object tree (WPF) or among child windows (UIA) -------------------------
+
+    @property
+    def parent(self) -> BoundElement | None:
+        """The parent element; ``None`` at the top (a root visual's parent is its window node)."""
+        __tracebackhide__ = True
+        from wintestkit import finders
+
+        return finders.parent_of(self)
+
+    def children(self) -> list[BoundElement]:
+        """The children as elements that re-resolve by their label step below this element."""
+        __tracebackhide__ = True
+        from wintestkit import finders
+
+        return finders.children_of(self)
+
+    @property
+    def child_count(self) -> int:
+        """How many children ``children()`` returns."""
+        __tracebackhide__ = True
+        from wintestkit import finders
+
+        return finders.child_count_of(self)
+
+    @property
+    def label(self) -> str:
+        """This element's own label step, with only the arguments that tell siblings apart."""
+        __tracebackhide__ = True
+        from wintestkit import finders
+
+        return finders.label_of(self)
+
+    @property
+    def full_name(self) -> str:
+        """The label chain from the process; ``from_label`` parses it back to this element."""
+        __tracebackhide__ = True
+        from wintestkit import finders
+
+        return finders.full_name_of(self)
+
+    # -- label steps: ``el.WPFObject("Button", "OK", 2).Window("Edit")`` ---------------------------
+
+    def wpf_object(
+        self,
+        cls: str,
+        text: str | int | None = None,
+        index: int | None = None,
+        *,
+        strict: bool = False,
+    ) -> BoundElement:
+        """``WPFObject(cls, text, index)``: a direct object-tree child (``finders.wpf_object``)."""
+        __tracebackhide__ = True
+        from wintestkit import finders
+
+        return finders.wpf_object(self, cls, text, index, strict=strict)
+
+    def window(
+        self,
+        cls: str,
+        caption: str | int | None = "*",
+        index: int | None = None,
+        *,
+        strict: bool = False,
+    ) -> BoundElement:
+        """``Window(cls, caption, index)``: a Win32 child window (see ``finders.window``)."""
+        __tracebackhide__ = True
+        from wintestkit import finders
+
+        return finders.window(self, cls, caption, index, strict=strict)
+
+    #: The spelling of existing suites, so that ported code reads unchanged.
+    WPFObject = wpf_object
+    Window = window
 
     # -- children: ``page.panel.Button(name="OK")`` searches the direct children of ``panel`` -----
 

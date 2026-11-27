@@ -43,7 +43,7 @@ namespace WinTestKit.Inspector.Agent.Contracts
 
     public interface IParentInspectionService
     {
-        Task<ParentResult> ParentAsync(string objectId, long generation, CancellationToken ct);
+        Task<ParentResult> ParentAsync(string objectId, long generation, string? tree, CancellationToken ct);
     }
 
     public interface ISpyFieldInspectionService
