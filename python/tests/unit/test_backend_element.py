@@ -61,8 +61,8 @@ class Client:
             raise self.error
         return self.state
 
-    def release(self, ids, *, deadline):
-        self.released.extend(ids)
+    def defer_release(self, object_id):
+        self.released.append(object_id)
 
 
 @pytest.fixture

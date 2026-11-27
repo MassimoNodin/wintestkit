@@ -220,6 +220,12 @@ class WindowsPipe:
                 return
             self._closing = True
             kernel.CancelIoEx(self._handle, None)
+            drain_deadline = time.monotonic() + 5.0
             while self._active:
-                self._condition.wait()
+                remaining = drain_deadline - time.monotonic()
+                if remaining <= 0:
+                    # An I/O call never left the kernel. Closing a handle it still uses is worse
+                    # than leaking it, and close must not hang its caller.
+                    return
+                self._condition.wait(remaining)
             kernel.CloseHandle(self._handle)

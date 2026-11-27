@@ -264,7 +264,58 @@ def _client_deadline(message: str) -> InspectorDeadlineError:
     return error
 
 
+class InspectorThreadError(RuntimeError):
+    """A pipe request was attempted on the inspector's own reader thread.
+
+    The reader thread is the only thread that can deliver a response, so a request issued from
+    it (a finalizer, ``__del__``, or an event callback) could never complete. This is a
+    programming error, not an inspector failure, so it is deliberately not an ``InspectorError``.
+    """
+
+
+MAX_RELEASE_BATCH = 256
+"""The protocol limit on object IDs in one ``release`` request."""
+
+_PENDING_RELEASE_LIMIT = 65_536
+"""Object IDs queued for release before the oldest are discarded (the agent expires them)."""
+
+_RELEASE_BATCH_TIMEOUT = 0.25
+_RELEASE_FLUSH_BUDGET = 0.25
+"""The most extra latency a flush adds after a caller's own request has finished."""
+_RELEASE_BACKOFF = 1.0
+"""How long flushing pauses after a failed batch, so a busy target is not pestered."""
+_ABANDONED_LIMIT = 256
+_TRACE_LOCK_WAIT = 0.05
+
+
 class InspectorClient:
+    """One authenticated pipe session.
+
+    When a session ends
+    --------------------
+    Only a lost or corrupted transport ends a session (``invalidate``):
+
+    * the pipe closes, errors or the idle read deadline passes (``sessionStale``);
+    * a frame, response or subscription is malformed, or a response carries an ID that was
+      never issued (a protocol violation);
+    * a request frame cannot be written (a partial frame would desynchronise the stream);
+    * a response fails validation in ``_parse``;
+    * the caller detaches, or the process exits or is reused (``close``, the registry).
+
+    Everything below is ordinary and leaves the session open: one request timing out (it is
+    cancelled and its ID abandoned), a *late* response to an abandoned request (matched by ID
+    and discarded, even after the abandoned-ID bookkeeping evicted the entry), an error response
+    of any code, and any failure of a deferred object release.
+
+    Threading rules
+    ---------------
+    The reader thread only reads, matches responses and hands events to subscriptions. It never
+    issues a request (``_request`` raises ``InspectorThreadError`` there), and no code that can
+    run inside garbage collection touches the pipe or a client lock: lease finalizers only call
+    ``defer_release``, which appends to a ``deque``. Queued IDs are sent in batches by
+    ``flush_releases`` on an ordinary caller's thread once its own request has finished.
+    """
+
     def __init__(
         self,
         transport: ByteTransport,
@@ -285,8 +336,19 @@ class InspectorClient:
         self._write_lock = threading.Lock()
         self._pending: dict[int, _Pending] = {}
         self._subscriptions: dict[str, EventSubscription] = {}
-        self._abandoned: set[int] = set()
+        # Request IDs whose caller gave up. Their late responses are matched by ID and dropped.
+        self._abandoned: dict[int, None] = {}
+        # Responses with an ID at or below this may belong to an evicted abandoned entry.
+        self._stale_through = 1
         self._next_id = 2
+        # Object IDs waiting for release. Filled from finalizers, so only deque.append touches it
+        # there: it is atomic and takes no lock, which makes it safe at any allocation point.
+        self._release_queue: deque[str] = deque(maxlen=_PENDING_RELEASE_LIMIT)
+        self._release_flush_lock = threading.Lock()
+        self._release_backoff_until = 0.0
+        self.releases_sent = 0
+        self.release_failures = 0
+        self.releases_dropped = 0
         self._closed = False
         self._closing_session = False
         self._reader = threading.Thread(
@@ -392,6 +454,9 @@ class InspectorClient:
                 return
             self._closed = True
             self.session = replace(self.session, state=state, error=error.code)
+            # The agent discards a session's leases with it, so queued releases are moot.
+            self.releases_dropped += len(self._release_queue)
+            self._release_queue.clear()
             pending = tuple(self._pending.values())
             self._pending.clear()
             for subscription in self._subscriptions.values():
@@ -420,10 +485,13 @@ class InspectorClient:
                 request_id, result, error = _response(cast(object, frame))
                 with self._lock:
                     if request_id in self._abandoned:
-                        self._abandoned.remove(request_id)
+                        # A late answer to a request whose caller timed out: not a desync.
+                        del self._abandoned[request_id]
                         continue
                     pending = self._pending.pop(request_id, None)
                     if pending is None:
+                        if 1 < request_id <= self._stale_through:
+                            continue  # late answer whose abandoned entry was evicted
                         raise ValueError("Response ID is not outstanding")
                     if pending.method == "events.subscribe" and error is None:
                         data = _obj(result, "subscriptionId")
@@ -466,18 +534,18 @@ class InspectorClient:
                     raise InspectorUnavailableError(
                         "Inspector session is not ready", code="sessionStale"
                     )
-                if len(self._pending) >= 16 or len(self._abandoned) >= 256:
+                if len(self._pending) >= 16:
                     raise InspectorLimitError("Inspector request queue is full", code="busy")
                 request_id = self._next_id
                 self._next_id += 1
                 if discard:
-                    self._abandoned.add(request_id)
+                    self._abandon(request_id)
                 else:
                     self._pending[request_id] = entry
             if deadline - time.monotonic() < 0.05:
                 with self._lock:
                     self._pending.pop(request_id, None)
-                    self._abandoned.discard(request_id)
+                    self._abandoned.pop(request_id, None)
                 raise _client_deadline("Inspector request deadline expired")
             try:
                 if "timeoutMs" in params:
@@ -510,6 +578,14 @@ class InspectorClient:
         finally:
             self._write_lock.release()
 
+    def _abandon(self, request_id: int) -> None:
+        """Remember an ID whose response is no longer awaited. Call with ``_lock`` held."""
+        self._abandoned[request_id] = None
+        while len(self._abandoned) > _ABANDONED_LIMIT:
+            evicted = next(iter(self._abandoned))
+            del self._abandoned[evicted]
+            self._stale_through = max(self._stale_through, evicted)
+
     def _cancel(self, request_id: int) -> None:
         with suppress(InspectorError):
             self._send(
@@ -517,6 +593,19 @@ class InspectorClient:
             )
 
     def _request(self, method: str, params: dict[str, object], deadline: float) -> object:
+        try:
+            return self._request_now(method, params, deadline)
+        finally:
+            if method not in ("release", "session.close"):
+                # After the caller's own answer is in hand, so its latency is unaffected.
+                self.flush_releases()
+
+    def _request_now(self, method: str, params: dict[str, object], deadline: float) -> object:
+        if threading.current_thread() is self._reader:
+            raise InspectorThreadError(
+                f"Inspector request {method} was issued on the inspector reader thread; "
+                "it can never be answered. Finalizers and callbacks must queue work instead."
+            )
         start = time.monotonic()
         trace_path = os.environ.get("WTK_INSPECTOR_TRACE")
         outcome = "ok"
@@ -552,7 +641,7 @@ class InspectorClient:
                     request_id = entry.request_id
                     with self._lock:
                         if self._pending.pop(request_id, None) is not None:
-                            self._abandoned.add(request_id)
+                            self._abandon(request_id)
                             threading.Thread(
                                 target=self._cancel,
                                 args=(request_id,),
@@ -624,20 +713,23 @@ class InspectorClient:
             outcome = "error"
             raise
         finally:
-            if trace_path:
-                with (
-                    suppress(OSError, csv.Error),
-                    _trace_lock,
-                    open(trace_path, "a", encoding="utf-8", newline="") as trace,
-                ):
-                    csv.writer(trace).writerow(
-                        (
-                            datetime.now(UTC).isoformat(),
-                            method,
-                            f"{time.monotonic() - start:.6f}",
-                            f"{outcome};retries={retries}" if retries else outcome,
+            if trace_path and _trace_lock.acquire(timeout=_TRACE_LOCK_WAIT):
+                # Bounded: a tracing hiccup must never stall or deadlock a request.
+                try:
+                    with (
+                        suppress(OSError, csv.Error),
+                        open(trace_path, "a", encoding="utf-8", newline="") as trace,
+                    ):
+                        csv.writer(trace).writerow(
+                            (
+                                datetime.now(UTC).isoformat(),
+                                method,
+                                f"{time.monotonic() - start:.6f}",
+                                f"{outcome};retries={retries}" if retries else outcome,
+                            )
                         )
-                    )
+                finally:
+                    _trace_lock.release()
 
     def _parse(self, parser: Callable[[object], Any], value: object) -> Any:
         try:
@@ -1532,16 +1624,84 @@ class InspectorClient:
         except ValueError as error:
             raise InspectorError("Invalid object ID", code="invalidParams") from error
 
+        return self._send_release(ids, deadline, self._request)
+
+    def _send_release(
+        self,
+        ids: list[str],
+        deadline: float,
+        request: Callable[[str, dict[str, object], float], object],
+    ) -> int:
         def parse(value: object) -> int:
             data = _obj(value, "releasedCount")
-            return _int(data["releasedCount"], 0, min(256, len(ids)))
+            return _int(data["releasedCount"], 0, min(MAX_RELEASE_BATCH, len(ids)))
 
-        return self._parse(
-            parse,
-            self._request(
-                "release", {"sessionId": self.session.session_id, "objectIds": ids}, deadline
-            ),
-        )
+        params: dict[str, object] = {"sessionId": self.session.session_id, "objectIds": ids}
+        return self._parse(parse, request("release", params, deadline))
+
+    def defer_release(self, object_id: str) -> None:
+        """Queue an object for release. Safe from a finalizer on any thread.
+
+        It never blocks, takes a lock or does I/O: a finalizer can run at any allocation, on the
+        reader thread or inside a request that holds a client lock, where a pipe request would
+        stall or deadlock. The ID is sent later by ``flush_releases``. Nothing is queued once the
+        session is closed, because its leases went with it.
+        """
+        if self._closed:
+            self.releases_dropped += 1
+            return
+        self._release_queue.append(object_id)
+
+    @property
+    def pending_releases(self) -> int:
+        return len(self._release_queue)
+
+    def flush_releases(self) -> int:
+        """Send queued releases in batches of at most 256; failures are counted, not raised.
+
+        Runs on the caller's own thread, outside the client lock, after its request finished. It
+        does nothing on the reader thread or for a closed session, at most one thread flushes at
+        a time, and it adds at most ``_RELEASE_FLUSH_BUDGET`` seconds. A failed batch is dropped
+        (the agent expires unreleased leases itself) and pauses flushing briefly. Returns the
+        number of IDs sent successfully.
+        """
+        if (
+            not self._release_queue
+            or self._closed
+            or threading.current_thread() is self._reader
+            or time.monotonic() < self._release_backoff_until
+            or not self._release_flush_lock.acquire(blocking=False)
+        ):
+            return 0
+        sent = 0
+        try:
+            budget = time.monotonic() + _RELEASE_FLUSH_BUDGET
+            while self._release_queue and not self._closed:
+                now = time.monotonic()
+                if now >= budget:
+                    break
+                batch: dict[str, None] = {}
+                while len(batch) < MAX_RELEASE_BATCH:
+                    try:
+                        batch[self._release_queue.popleft()] = None
+                    except IndexError:
+                        break
+                if not batch:
+                    break
+                ids = list(batch)
+                try:
+                    self._send_release(
+                        ids, min(budget, now + _RELEASE_BATCH_TIMEOUT), self._request_now
+                    )
+                except Exception:
+                    self.release_failures += 1
+                    self._release_backoff_until = time.monotonic() + _RELEASE_BACKOFF
+                    break
+                sent += len(ids)
+                self.releases_sent += len(ids)
+        finally:
+            self._release_flush_lock.release()
+        return sent
 
     def close(self) -> None:
         with self._lock:
@@ -1549,12 +1709,13 @@ class InspectorClient:
                 return
             self._closing_session = True
         try:
-            result = self._request(
-                "session.close", {}, time.monotonic() + min(self._request_timeout, 1.0)
-            )
-            data = _obj(result, "closed")
-            if not _bool(data["closed"]):
-                raise ValueError("Close was not acknowledged")
+            if threading.current_thread() is not self._reader:
+                result = self._request(
+                    "session.close", {}, time.monotonic() + min(self._request_timeout, 1.0)
+                )
+                data = _obj(result, "closed")
+                if not _bool(data["closed"]):
+                    raise ValueError("Close was not acknowledged")
         except (InspectorError, ValueError):
             pass
         finally:

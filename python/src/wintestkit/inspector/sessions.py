@@ -439,7 +439,12 @@ class SessionRegistry:
                 )
                 return None
         except InspectorUnavailableError as error:
-            client.invalidate(error, "exited" if error.code == "processExited" else "faulted")
+            if error.code != "processExited":
+                # The probe itself failed (access denied, a transient Win32 error). That says
+                # nothing about the pipe, so the working session stays; only the target's exit
+                # or reuse, or a transport failure, ends it.
+                return client
+            client.invalidate(error, "exited")
             return None
         return client
 

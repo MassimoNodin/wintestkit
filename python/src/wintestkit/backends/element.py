@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import time
 import weakref
 from contextlib import suppress
 from typing import Any, Protocol
@@ -63,8 +62,14 @@ class _Lease:
 
 
 def _release(client: InspectorClient, object_id: str) -> None:
+    """Queue the handle for release; this is a ``weakref.finalize`` callback.
+
+    A finalizer can run on any thread at any allocation, including the pipe reader thread and
+    inside a request that holds the client's locks, so it must not do I/O or take a lock. The
+    client sends queued IDs in batches later, on an ordinary caller's thread.
+    """
     with suppress(Exception):
-        client.release([object_id], deadline=time.monotonic() + 0.25)
+        client.defer_release(object_id)
 
 
 _leases: weakref.WeakKeyDictionary[

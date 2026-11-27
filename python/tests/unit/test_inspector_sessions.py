@@ -268,6 +268,32 @@ def test_status_rechecks_identity_after_pipe_closes_before_process_exit(
     assert entry.session.state == "exited"
 
 
+def test_a_failing_identity_probe_does_not_end_a_working_session(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    registry = sessions.SessionRegistry()
+    transport = ScriptedTransport(lambda request: {"id": request["id"], "result": {"closed": True}})
+    client = InspectorClient(transport, session())
+    registry._entries[IDENTITY] = sessions._Entry(session(), client=client)
+
+    def denied(pid: int) -> Any:
+        raise InspectorUnavailableError("Cannot open target process", code="accessDenied")
+
+    try:
+        monkeypatch.setattr(probe, "current_identity", denied)
+        assert registry.get(IDENTITY) is client
+        assert client.session.state == "ready"
+
+        def exited(pid: int) -> Any:
+            raise InspectorUnavailableError("Target exited", code="processExited")
+
+        monkeypatch.setattr(probe, "current_identity", exited)
+        assert registry.get(IDENTITY) is None
+        assert client.session.state == "exited"
+    finally:
+        client.close()
+
+
 def test_loaded_agent_mismatch_compares_image_content(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

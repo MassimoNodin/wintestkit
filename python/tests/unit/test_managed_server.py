@@ -146,6 +146,10 @@ class FakeClient:
         self.calls.append(("release", list(object_ids)))
         return len(object_ids)
 
+    def defer_release(self, object_id: str) -> None:
+        # A lease queues its release; the real client sends the queue after the next request.
+        self.calls.append(("release", [object_id]))
+
     def close(self) -> None:
         self.closed = True
 
