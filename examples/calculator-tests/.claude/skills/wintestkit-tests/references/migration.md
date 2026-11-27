@@ -50,6 +50,7 @@ scripts or test routines. Output: pages, components, flows, tests.
 | the clipboard text | `clipboard.get_text()` / `set_text(text)` / `clear()` |
 | another application in the same test | `apps.launch(path, args=[...])` / `apps.attach("x.exe")` and a page per `App` |
 | elevated launch | `App.launch(path, elevated=True)` or `app.elevated` in the configuration (needs an elevated runner to drive it) |
+| WebView2 web content: `Page(url)`, a find-all of `Page` objects, `FindElement`, `QuerySelector`, `ShadowRoot(0)`, `SetText`, `Click` | `app.web_page(url)` / `app.web_pages()`, `find_element`, `query_selector`, `shadow_root(0)`, `set_text`, `click` (`wintestkit[web]`; the debugging port from `webview_debug_port`; see docs/guide/webview2-content.md) |
 | `Sys.Process(name)`, `Sys.WaitProcess(name, ms)` | `finders.process(name)`, `finders.wait_process(name, ms)` (or `finders.Sys.Process(...)`) |
 | close with Alt+F4, answer a prompt, wait, force-kill | `app.request_close("alt_f4")`, `app.close_gracefully(on_prompt=fn, kill=True)`, `app.kill()` |
 | `OnUnexpectedWindow` and other event handlers | fixtures; for known dialogs, a page plus a flow step |

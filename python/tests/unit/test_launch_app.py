@@ -24,6 +24,7 @@ def _config(process: str | None = "Demo.exe", close_existing: bool = False) -> A
             close_timeout=3.0,
             close_existing=close_existing,
             elevated=False,
+            webview_debug_port=None,
         )
     )
 

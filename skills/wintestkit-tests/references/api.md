@@ -184,6 +184,21 @@ returns `"exited" | "killed" | "running"`, `app.kill()` (all processes of the ex
 Clipboard: `from wintestkit import clipboard`; `clipboard.get_text(secret=False, timeout=2)`, `set_text(text)`, `clear()`; report steps,
 `ClipboardError` when there is no text or the clipboard stays locked.
 
+## WebView2 content (`pip install "wintestkit[web]"`)
+
+Web pages hosted in the app, through its remote debugging port (Playwright attaches to the running WebView2; no browser download).
+Open the port: `App.launch(path, webview_debug_port=9223)` or `webview_debug_port = 9223` in `[tool.wintestkit.app]` (merged into
+`WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS`; an app that passes `--remote-debugging-port` itself needs only `port=` below). Loopback only, but any
+local process can drive the page while it is open: test machines only.
+`page = app.web_page(url="*", *, port=None, timeout=None)` (wildcards `*` `?`, any case, or a compiled regex; first match; waits) and
+`app.web_pages(url="*")` (list). `page.playwright_page` is the Playwright `Page`; `page.url`, `page.title`.
+`page.find_element(css, first=False, nth=None, timeout=None)` is strict (several matches: `AmbiguousElementError` at once; none: `ElementNotFoundError`
+after the wait), `page.find_elements(css)` is a list (no wait), `page.query_selector(css)` is the first match or `None` (no wait). Elements have the same
+lookups plus `shadow_root(0)` (0 is the only index; a plain CSS selector pierces open shadow roots too), `click()`, `set_text(text, secret=False)` (clears,
+then types), `text`, `get_attribute(name)`, `is_visible()` and `locator` (Playwright). Every lookup and action is a report step (`web.find`, `web.click`, ...);
+password inputs are masked. Connections are one per app and port, closed with the app and at the end of the test. Aliases for ported code: `app.Page`, `FindElement`,
+`FindElements`, `QuerySelector`, `ShadowRoot`, `Click`, `SetText`. Without the extra the first call raises `WebExtraMissingError`.
+
 ## Custom controls
 
 ```python

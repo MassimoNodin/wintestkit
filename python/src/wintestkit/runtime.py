@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import logging
 import re
+import sys
 import threading
 import time
 import weakref
@@ -520,6 +521,9 @@ def end_test() -> None:
     global _current_test
     with _lock:
         _current_test = None
+    web = sys.modules.get("wintestkit.web")
+    if web is not None:  # only a test that used WebView2 content has connections to close
+        web.close_all()
 
 
 def set_current_app(app: App | None) -> None:

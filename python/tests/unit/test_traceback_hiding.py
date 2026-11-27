@@ -19,6 +19,7 @@ MODULES = [
     "expect.py",
     "app.py",
     "runtime.py",
+    "web.py",
     "engine/resolve.py",
     "engine/query.py",
     "engine/waits.py",

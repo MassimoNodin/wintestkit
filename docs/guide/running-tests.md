@@ -69,6 +69,7 @@ app:
   close_timeout: 10
   close_existing: false
   elevated: false
+  webview_debug_port: 9223   # optional; see WebView2 content
 ```
 
 `backend: auto` selects the WPF tree for WPF windows and UI Automation for other windows.
@@ -130,6 +131,8 @@ launched is force-killed when its own graceful close is blocked. Every launch pa
 elevated: otherwise the consent prompt appears on the secure desktop, where a test cannot answer it, and an elevated
 application cannot be driven from a non-elevated runner (Windows blocks it; WinTestKit raises `ElevationError` that says so).
 `app.env` cannot be combined with it unless the runner is elevated. See [launch variants](migrating-existing-suites.md#launch-variants).
+`app.webview_debug_port` opens the remote debugging port of the application's WebView2 content for a launch and is the
+port `app.web_page()` connects to; see [WebView2 content](webview2-content.md), including its security note.
 Further applications of one test (a second app, Notepad) are started in the test with the `apps` fixture; see
 [several applications](migrating-existing-suites.md#several-applications-in-one-test).
 

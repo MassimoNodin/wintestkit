@@ -15,6 +15,7 @@ No application source changes or image matching are required.
 | [Property matching](property-matching.md) | WPF properties, `where={...}`, Property-name find helpers |
 | [Managed inspection](managed-inspection.md) | Agent attachment, managed properties, security and writes |
 | [Actions and assertions](actions-and-assertions.md) | Every action, auto-waiting, `expect`, timeouts |
+| [WebView2 content](webview2-content.md) | Pages, elements and shadow roots of web content hosted in the app (`wintestkit[web]`) |
 | [Running tests](running-tests.md) | `wtk run`, launch modes, fixtures, reports, JUnit, exit codes |
 | [Diagnostics](diagnostics.md) | Review and save a local troubleshooting bundle |
 | [VS Code](vscode.md) | CodeLens, Test Explorer, debugging, Explorer (Pages, Flows, Tests), Spy |

@@ -47,6 +47,9 @@ class FakeApp:
     def detach_inspector(self) -> None:
         pass
 
+    def close_web(self) -> None:
+        pass
+
 
 @pytest.fixture
 def fake_apps(monkeypatch: pytest.MonkeyPatch) -> list[str]:

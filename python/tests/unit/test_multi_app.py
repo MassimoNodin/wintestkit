@@ -99,6 +99,7 @@ def test_the_apps_group_closes_what_it_launched_and_releases_what_it_attached(
             launched=launched,
             close=lambda timeout: events.append(f"close {name} {timeout:g}"),
             detach_inspector=lambda: events.append(f"detach {name}"),
+            close_web=lambda: None,
         )
 
     monkeypatch.setattr(App, "launch", staticmethod(lambda path, args=(), **kw: fake("A", True)))

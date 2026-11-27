@@ -206,3 +206,23 @@ class InspectorDeadlineError(InspectorLimitError):
             "clientDeadline",
             "queryBudget",
         }
+
+
+class WebError(WtkError):
+    """A WebView2 content (browser protocol) operation failed."""
+
+
+class WebExtraMissingError(WebError):
+    """The optional ``wintestkit[web]`` extra (Playwright) is not installed."""
+
+
+class WebConnectionError(WebError):
+    """The WebView2 remote debugging port could not be reached."""
+
+
+class WebPageNotFoundError(WebError):
+    """The debugging port answered, but no page matched; ``targets`` lists the ones it has."""
+
+    def __init__(self, message: str, targets: tuple[str, ...] = ()) -> None:
+        super().__init__(message)
+        self.targets = targets

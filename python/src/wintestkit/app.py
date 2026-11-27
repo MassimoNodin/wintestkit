@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import subprocess
 import time
 import weakref
@@ -27,6 +28,7 @@ from wintestkit.uia.element import UIAElement
 
 if TYPE_CHECKING:
     from wintestkit.model import BoundElement
+    from wintestkit.web import Connection, WebPage
 
 log = logging.getLogger("wintestkit.app")
 
@@ -149,6 +151,9 @@ class App:
         self._startup_complete = False
         self._drivable: set[int] = set()
         self.elevated = False
+        #: The WebView2 debugging port this launch opened (see :meth:`launch`); ``None`` otherwise.
+        self.webview_debug_port: int | None = None
+        self._web_connections: dict[int, Connection] = {}
         _APPS.add(self)
 
     # -- construction ---------------------------------------------------------------------------
@@ -165,6 +170,7 @@ class App:
         progress: Callable[[str], None] | None = None,
         owned_only: bool = False,
         elevated: bool = False,
+        webview_debug_port: int | None = None,
     ) -> App:
         """Start ``path`` and wait until it shows a main window.
 
@@ -180,6 +186,14 @@ class App:
         cannot drive an elevated application (Windows blocks it, see :class:`ElevationError`),
         so that App is only a handle for waiting and for ``kill``/``close`` errors to say why.
         ``env`` cannot be passed to that kind of launch.
+
+        ``webview_debug_port`` makes the application open that remote debugging port for its
+        WebView2 content, which :meth:`web_page` then connects to. It adds
+        ``--remote-debugging-port=<port>`` to ``WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS`` and keeps
+        what the variable already holds. The port listens on ``127.0.0.1`` only, but any process
+        of this machine can drive the page while it is open, so use it for test runs. Leave it
+        out for an application that passes the switch itself and give ``port=`` to
+        :meth:`web_page`. It needs ``env``, so an elevated launch through the shell cannot take it.
         """
         __tracebackhide__ = True
         exe = Path(path)
@@ -188,6 +202,19 @@ class App:
         process_name = process or exe.name
         baseline = frozenset(win32.pids_by_name(process_name))
         through_shell = elevated and not win32.current_process_is_elevated()
+        environment: dict[str, str] = {**os.environ, **(env or {})}
+        if webview_debug_port is not None:
+            from wintestkit import web
+
+            webview_debug_port = web.check_port(webview_debug_port)
+            if through_shell:
+                raise AppError(
+                    "webview_debug_port sets an environment variable, which an elevated launch "
+                    "through the shell cannot take. Start the test runner elevated, or set "
+                    "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=<port> for "
+                    "the whole session and pass port= to web_page()."
+                )
+            web.apply_debug_port(environment, webview_debug_port)
         popen: _Process
         if through_shell:
             popen = cls._start_elevated(exe, args, cwd, env)
@@ -196,7 +223,7 @@ class App:
                 popen = subprocess.Popen(
                     [str(exe), *args],
                     cwd=str(cwd) if cwd is not None else None,
-                    env={**os.environ, **(env or {})},
+                    env=environment,
                     creationflags=0,
                 )
             except OSError as exc:
@@ -205,6 +232,7 @@ class App:
             process_name, launched=True, popen=popen, baseline=baseline, by_name=not owned_only
         )
         app.elevated = elevated
+        app.webview_debug_port = webview_debug_port
         _register(app)
         log.info("launched %s (pid %d)%s", exe, popen.pid, " elevated" if elevated else "")
         if progress is not None:
@@ -325,6 +353,59 @@ class App:
     #: the process (``Sys.Process("x").WPFObject(...)``), which this object stands for.
     WPFObject = wpf_object
     Window = window
+
+    # -- WebView2 content -----------------------------------------------------------------------
+
+    def web_page(
+        self,
+        url: str | re.Pattern[str] = "*",
+        *,
+        port: int | None = None,
+        timeout: float | None = None,
+    ) -> WebPage:
+        """The first page of the application's WebView2 content whose URL matches.
+
+        ``url`` is a URL with ``*`` and ``?`` wildcards (``"*"`` is any page) or a compiled regex
+        that is searched in it. It waits up to ``timeout`` seconds (default: the usual timeout)
+        for the debugging port and for a matching page, and says which pages the port has when
+        none matches. ``port`` defaults to the one given to :meth:`launch`, then to
+        ``webview_debug_port`` in the configuration. Needs ``pip install "wintestkit[web]"``.
+
+        The page is looked up again after a reload or when the application replaces its WebView.
+        The connection is made on first use, kept for this application and port, and closed with
+        the application or at the end of the test.
+        """
+        __tracebackhide__ = True
+        from wintestkit import web
+
+        return web.web_page(self, url, port=port, timeout=timeout)
+
+    def web_pages(
+        self,
+        url: str | re.Pattern[str] = "*",
+        *,
+        port: int | None = None,
+        timeout: float | None = None,
+    ) -> list[WebPage]:
+        """Every page of the WebView2 content whose URL matches (``"*"``: all), in browser order.
+
+        It waits for the port to answer, not for pages: an empty list means there are none now.
+        """
+        __tracebackhide__ = True
+        from wintestkit import web
+
+        return web.web_pages(self, url, port=port, timeout=timeout)
+
+    def close_web(self) -> None:
+        """Close the connections made by :meth:`web_page`; the application is left running."""
+        __tracebackhide__ = True
+        if self._web_connections:
+            from wintestkit import web
+
+            web.close_app(self)
+
+    #: The spelling of existing suites (``Sys.Process("x").Page("https://...")``).
+    Page = web_page
 
     # -- state ----------------------------------------------------------------------------------
 
@@ -486,6 +567,7 @@ class App:
         """
         __tracebackhide__ = True
         self._refuse_shell("close", force)
+        self.close_web()
         self.detach_inspector()
         windows = self.top_level_windows()
         windows.sort(key=lambda w: 0 if win32.window_owner(w.native_window_handle) else 1)
@@ -563,6 +645,7 @@ class App:
         self._refuse_shell("close_gracefully", force)
         args = {"method": method, "prompt_timeout": prompt_timeout, "exit_timeout": exit_timeout}
         with runtime.step("app.close", self.process_name, method, args) as record:
+            self.close_web()
             hwnd = self.main_window().native_window_handle
             before = set(win32.top_level_windows(set(self.pids)))
             self._post_close(hwnd, method)
@@ -624,6 +707,7 @@ class App:
             self._popen.poll()
         if pids and self.is_running():
             self.ensure_drivable()  # a refused kill of an elevated process says why
+        self.close_web()
         self.detach_inspector()
 
     def __enter__(self) -> App:
@@ -730,6 +814,7 @@ class Apps:
         startup_timeout: float = 30.0,
         owned_only: bool = True,
         elevated: bool = False,
+        webview_debug_port: int | None = None,
     ) -> App:
         """:meth:`App.launch` as a report step. ``owned_only`` defaults to ``True`` so that two
         launches of the same exe (with different ``args``) never see each other's processes."""
@@ -746,6 +831,7 @@ class Apps:
                 startup_timeout=startup_timeout,
                 owned_only=owned_only,
                 elevated=elevated,
+                webview_debug_port=webview_debug_port,
             )
         self._apps.append(app)
         return app
@@ -771,6 +857,7 @@ class Apps:
                 if app.launched:
                     app.close(timeout=self.close_timeout)
                 else:
+                    app.close_web()
                     app.detach_inspector()
             except Exception as exc:
                 log.warning("could not close %s: %s", app.process_name, exc)

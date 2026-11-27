@@ -119,6 +119,7 @@ def launch_app(config: WtkConfig, progress: Callable[[str], None] | None = None)
         progress=progress,
         owned_only=True,
         elevated=settings.elevated,
+        webview_debug_port=settings.webview_debug_port,
     )
 
 
@@ -777,6 +778,7 @@ def app(request: pytest.FixtureRequest) -> Generator[App, None, None]:
             yield attached
         finally:
             runtime.set_current_app(None)
+            attached.close_web()
             attached.detach_inspector()
     else:
         with runtime.step("app.start", name, _app_path(config)):
@@ -802,6 +804,8 @@ def app(request: pytest.FixtureRequest) -> Generator[App, None, None]:
             runtime.set_current_app(None)
             if launched.launched:
                 launched.close(timeout=config.app.close_timeout if config.app else 10.0)
+            else:
+                launched.close_web()
 
 
 def _announce(config: pytest.Config, message: str) -> None:

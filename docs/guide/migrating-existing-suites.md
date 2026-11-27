@@ -65,6 +65,7 @@ This guide helps you migrate an existing **WPF desktop test suite** to WinTestKi
 | The clipboard text | `clipboard.get_text()`, `set_text(text)`, `clear()`; see [clipboard](#clipboard) |
 | Another application in the same test (a second app, Notepad, a dialog of the shell) | `apps.launch(...)` / `apps.attach(...)` and a page per `App`; see [several applications](#several-applications-in-one-test) |
 | An elevated launch | `App.launch(path, elevated=True)`, `app.elevated` in the configuration; see [launch variants](#launch-variants) |
+| Web content in a WebView2 (`Page(url)`, `FindElement`, `ShadowRoot(0)`, `QuerySelector`) | `app.web_page(url)` and its elements, with `wintestkit[web]`; see [WebView2 content](#webview2-content) |
 | `Sys.Process(name)` / `Sys.WaitProcess(name, ms)` | `finders.process(name)` / `finders.wait_process(name, ms)` (and `finders.Sys`); see [processes](#processes-sysprocess-and-syswaitprocess) |
 | Closing the app (Alt+F4, a prompt, a forced stop) | `app.request_close()`, `app.close_gracefully(on_prompt=...)`, `app.kill()`; see [closing](#closing-an-application) |
 | Command-line runner | `wtk run` (or `pytest`) |
@@ -443,6 +444,38 @@ def test_export_opens_in_the_other_tool(app, apps):
   Automation from a lower integrity level. WinTestKit detects it: finding windows, `main_window()`, `close()` and `kill()` of
   such an app raise `ElevationError`, whose message names the process and says to start the runner elevated, instead of timeouts
   and "not found" errors. The returned `App` is then only good for `is_running()`, `wait_for_exit()` and similar process queries.
+
+### WebView2 content
+
+A suite that drives web pages embedded in the application through the browser's debugging port
+needs three things: the port opened, a page found by its address, and the elements in it. All are
+generic and described in [WebView2 content](webview2-content.md); install `wintestkit[web]`.
+
+| Existing suite | WinTestKit |
+|---|---|
+| The application started with WebView2 browser arguments that enable a debugging port | `App.launch(path, webview_debug_port=9223)`, or `webview_debug_port = 9223` under `[tool.wintestkit.app]`; it merges into `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` and keeps what is there. An application that passes the switch itself needs only `port=9223` in `web_page` |
+| `Page("<url>")` (wildcards) | `app.web_page("<url>")`, or the spelling `app.Page("<url>")` after `Sys.Process("x.exe")` |
+| A browser-level `Page("*")` with any URL | `app.web_page("*")` (the default): the first page |
+| Enumerating pages (find-all of objects whose type is `Page`) | `app.web_pages()`: a list of the same wrappers; filter by URL or loop over it |
+| `.FindElement("#id")` | `.find_element("#id")` (or `.FindElement`): waits, fails when nothing or several match; `first=True` / `nth=i` choose |
+| `page.QuerySelector(css)` | `page.query_selector(css)` (or `.QuerySelector`): the first match or `None`, no wait unless `timeout=` |
+| `.ShadowRoot(0).FindElement("[type='primary']").ShadowRoot(0)...` | The same chain with `.shadow_root(0).find_element(...)` (or the capitalised spellings); a plain selector reaches into open shadow roots as well |
+| `SetText(text)`, `Click()` | `set_text(text)` (clears, then types), `click()` |
+
+The capitalised spellings (`Page`, `FindElement`, `FindElements`, `QuerySelector`, `ShadowRoot`,
+`Click`, `SetText`) are aliases of the snake_case methods, in the same way as `app.WPFObject(...)`,
+so a ported chain reads as it did. Enumerating pages is `app.web_pages()` rather than a
+find-all of `ObjectType == "Page"` on purpose: `finders.find_all_children` returns desktop
+elements, and giving it a second return type for one property value would hide the difference
+from type checkers and readers.
+
+```python
+# pseudo-code
+def test_port(app):
+    for page in app.web_pages():
+        if "orders" in page.url:
+            page.find_element("#orderForm").shadow_root(0).find_element("[type='primary']").click()
+```
 
 ### Processes: `Sys.Process` and `Sys.WaitProcess`
 

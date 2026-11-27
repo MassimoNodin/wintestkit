@@ -107,6 +107,7 @@ _APP_KEYS = {
     "close_timeout",
     "close_existing",
     "elevated",
+    "webview_debug_port",
 }
 _INSPECTOR_KEYS = {
     "enabled",
@@ -147,6 +148,9 @@ class AppConfig:
     close_existing: bool = False
     #: Start the application with administrator rights (see ``App.launch(elevated=True)``).
     elevated: bool = False
+    #: Remote debugging port of the application's WebView2 content (see ``App.web_page``). Set,
+    #: it also makes a launch enable that port; unset, a port can still be given per call.
+    webview_debug_port: int | None = None
 
     @property
     def process_name(self) -> str:
@@ -276,6 +280,13 @@ def _non_negative_int(key: str, value: Any) -> int:
 def _positive_int(key: str, value: Any) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
         raise _fail(key, f"expected a positive integer, got {value!r}")
+    return value
+
+
+def _port(key: str, value: Any) -> int:
+    """A TCP port a browser can listen on; 0 (a random port) cannot be connected to later."""
+    if isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= 65535:
+        raise _fail(key, f"expected a port number from 1 to 65535, got {value!r}")
     return value
 
 
@@ -498,6 +509,7 @@ def _build_app(root: Path, values: Mapping[str, Any]) -> AppConfig | None:
         "app.close_timeout": lambda k, v: _number(k, v, positive=True),
         "app.close_existing": _boolean,
         "app.elevated": _boolean,
+        "app.webview_debug_port": _port,
     }
     converted = {key[4:]: converters[key](key, values[key]) for key in keys}
     return AppConfig(**converted)

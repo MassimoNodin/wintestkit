@@ -19,6 +19,8 @@ classifiers = [
 
 [project.optional-dependencies]
 inspector = ["wintestkit-inspector==0.1.1rc8"]
+# Optional WebView2 content support; it attaches to the running WebView2, no browser download.
+web = ["playwright==1.65.1"]
 
 [project.urls]
 Homepage = "https://github.com/MassimoNodin/wintestkit"
