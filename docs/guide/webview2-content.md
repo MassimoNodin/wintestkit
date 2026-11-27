@@ -69,8 +69,8 @@ people can sign in to, and pick a port that is not used for anything else.
 # pseudo-code
 def test_sign_in(app):
     page = app.web_page("https://app.example/*")
-    page.find_element("#Input_Username").set_text("alice")
-    page.find_element("#Input_Password").set_text("secret-value")
+    page.find_element("#userName").set_text("alice")
+    page.find_element("#password").set_text("secret-value")
     page.find_element("button[type=submit]").click()
 ```
 

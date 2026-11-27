@@ -68,8 +68,8 @@ def form_tree() -> Node:
     return Node(
         "html",
         children=[
-            Node("input", id="Input_Username", type="text"),
-            Node("input", id="Input_Password", type="password"),
+            Node("input", id="userName", type="text"),
+            Node("input", id="password", type="password"),
             Node("button", id="submit", text="Sign in"),
             Node("button", id="hidden", text="Hidden", visible=False),
             Node(
@@ -438,7 +438,7 @@ def test_a_listed_page_finds_itself_again_by_url_and_position(world: World, app:
 
 def test_the_login_form_forms_of_the_existing_suite(world: World, app: App, page: Page) -> None:
     web_page = app.web_page("*")
-    user = web_page.find_element("#Input_Username")
+    user = web_page.find_element("#userName")
     user.set_text("alice")
     web_page.find_element("#submit").click()
     assert user.text == "alice"
@@ -450,7 +450,7 @@ def test_the_login_form_forms_of_the_existing_suite(world: World, app: App, page
 
 
 def test_set_text_clears_before_it_types(world: World, app: App, page: Page) -> None:
-    field = app.web_page().find_element("#Input_Username")
+    field = app.web_page().find_element("#userName")
     field.set_text("first")
     field.set_text("second")
     assert field.text == "second"
@@ -463,7 +463,7 @@ def test_set_text_clears_before_it_types(world: World, app: App, page: Page) -> 
 
 
 def test_set_text_with_an_empty_string_only_clears(world: World, app: App, page: Page) -> None:
-    field = app.web_page().find_element("#Input_Username")
+    field = app.web_page().find_element("#userName")
     field.set_text("x")
     field.set_text("")
     assert field.text == ""
@@ -472,13 +472,13 @@ def test_set_text_with_an_empty_string_only_clears(world: World, app: App, page:
 def test_text_is_the_value_of_a_field_and_the_text_of_anything_else(app: App, page: Page) -> None:
     web_page = app.web_page()
     assert web_page.find_element("#submit").text == "Sign in"
-    assert web_page.find_element("#Input_Username").text == ""
+    assert web_page.find_element("#userName").text == ""
 
 
 def test_attributes_and_visibility(app: App, page: Page) -> None:
     web_page = app.web_page()
-    assert web_page.find_element("#Input_Username").get_attribute("type") == "text"
-    assert web_page.find_element("#Input_Username").get_attribute("missing") is None
+    assert web_page.find_element("#userName").get_attribute("type") == "text"
+    assert web_page.find_element("#userName").get_attribute("missing") is None
     assert web_page.find_element("#submit").is_visible() is True
     assert web_page.find_element("#hidden").is_visible() is False
 
@@ -555,7 +555,7 @@ def test_the_migration_spellings_chain_the_same_way(app: App, page: Page) -> Non
     )
     button.Click()
     assert app.Page("*").QuerySelector("#submit") is not None
-    assert app.Page("*").FindElement("#Input_Username").SetText("x") is None
+    assert app.Page("*").FindElement("#userName").SetText("x") is None
 
 
 def test_lookups_are_scoped_to_the_shadow_root_of_their_host(app: App, page: Page) -> None:
@@ -722,7 +722,7 @@ def test_every_lookup_and_action_is_a_step(
     app: App, page: Page, steps: list[runtime.StepRecord]
 ) -> None:
     web_page = app.web_page(ORDERS)
-    field = web_page.find_element("#Input_Username")
+    field = web_page.find_element("#userName")
     field.set_text("alice")
     assert field.text == "alice"
     assert field.get_attribute("type") == "text"
@@ -751,8 +751,8 @@ def test_every_lookup_and_action_is_a_step(
     assert all(s.status == "passed" for s in steps)
     page_step, find, set_text = steps[0], steps[1], steps[2]
     assert page_step.args == {"url": f'"{ORDERS}"', "port": PORT, "matched": ORDERS}
-    assert find.args["css"] == "#Input_Username" and find.args["page"] == ORDERS
-    assert find.locator == "#Input_Username"
+    assert find.args["css"] == "#userName" and find.args["page"] == ORDERS
+    assert find.locator == "#userName"
     assert find.target == f'web page "{ORDERS}" (port {PORT})'
     assert set_text.args == {"text": "alice"}
     assert steps[4].args == {"name": "type", "value": "text"}
@@ -784,7 +784,7 @@ def test_a_failed_lookup_is_a_failed_step_with_the_error(
 def test_a_password_is_never_in_the_report(
     app: App, page: Page, steps: list[runtime.StepRecord]
 ) -> None:
-    field = app.web_page().find_element("#Input_Password")
+    field = app.web_page().find_element("#password")
     field.set_text("hunter2")
     assert field.text == "hunter2"
     set_text, read = steps[-2], steps[-1]
@@ -795,21 +795,21 @@ def test_a_password_is_never_in_the_report(
 def test_secret_text_is_hidden_on_any_field(
     app: App, page: Page, steps: list[runtime.StepRecord]
 ) -> None:
-    app.web_page().find_element("#Input_Username").set_text("token-123", secret=True)
+    app.web_page().find_element("#userName").set_text("token-123", secret=True)
     assert steps[-1].args == {"text": "***"}
 
 
 def test_text_is_shown_for_an_ordinary_field(
     app: App, page: Page, steps: list[runtime.StepRecord]
 ) -> None:
-    app.web_page().find_element("#Input_Username").set_text("alice")
+    app.web_page().find_element("#userName").set_text("alice")
     assert steps[-1].args == {"text": "alice"}
 
 
 def test_a_missing_field_is_reported_even_when_typing_a_secret(
     app: App, page: Page, config: WtkConfig, steps: list[runtime.StepRecord]
 ) -> None:
-    field = app.web_page().find_element("#Input_Username")
+    field = app.web_page().find_element("#userName")
     page.root.children.clear()
     with pytest.raises(ElementNotFoundError):
         field.set_text("secret-value", timeout=0, secret=True)

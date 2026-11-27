@@ -4,7 +4,7 @@ These tests need a desktop application that embeds WebView2, and the ``wintestki
 They are skipped unless ``WTK_WEBVIEW_TEST_HOST`` is the path of that host's exe. The host must
 open a page whose address matches ``https://app.example/*`` or is a local ``file:`` URL, with:
 
-- ``<input id="Input_Username">`` and ``<input id="Input_Password" type="password">``;
+- ``<input id="userName">`` and ``<input id="password" type="password">``;
 - ``<button id="submit">`` that sets the text of ``<div id="result">`` to ``submitted`` on click;
 - ``<x-card id="orderForm">`` whose open shadow root holds ``<x-button type="primary">``, whose
   own open shadow root holds a ``<button>``.
@@ -61,9 +61,9 @@ def test_pages_are_listed_and_a_missing_url_lists_them(host: App) -> None:
 
 def test_the_login_form_is_filled_and_submitted(host: App) -> None:
     page = host.web_page("*")
-    user = page.find_element("#Input_Username")
+    user = page.find_element("#userName")
     user.set_text("alice")
-    page.find_element("#Input_Password").set_text("hunter2")
+    page.find_element("#password").set_text("hunter2")
     assert user.text == "alice"
     page.find_element("#submit").click()
     assert page.find_element("#result").text == "submitted"
@@ -87,7 +87,7 @@ def test_several_matches_are_ambiguous_unless_chosen(host: App) -> None:
     page = host.web_page("*")
     with pytest.raises(AmbiguousElementError):
         page.find_element("input")
-    assert page.find_element("input", first=True).get_attribute("id") == "Input_Username"
+    assert page.find_element("input", first=True).get_attribute("id") == "userName"
 
 
 def test_the_page_is_found_again_after_a_reload(host: App) -> None:
