@@ -1,0 +1,17 @@
+{
+  "schema": "Predicate",
+  "instance": {
+    "kind": "equals",
+    "path": [
+      {
+        "kind": "property",
+        "name": "DataContext"
+      },
+      {
+        "kind": "type",
+        "name": "Name"
+      }
+    ],
+    "value": "OrderViewModel"
+  }
+}

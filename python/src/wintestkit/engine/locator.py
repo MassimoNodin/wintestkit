@@ -13,7 +13,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from typing import Any, Literal, cast
 
-from wintestkit.engine.properties import Where, normalize_where
+from wintestkit.engine.properties import AsText, Where, normalize_where
 from wintestkit.uia.constants import CONTROL_TYPES, normalize_control_type
 
 Matcher = str | re.Pattern[str]
@@ -78,18 +78,35 @@ def _check_unknown_keys(kind: str, data: Mapping[str, Any], allowed: set[str]) -
 def describe_where(where: Where) -> list[str]:
     parts: list[str] = []
     for key, value in where:
-        rendered = (
-            describe_matcher(value) if isinstance(value, str | re.Pattern) else json.dumps(value)
-        )
+        if isinstance(value, AsText):
+            rendered = f"AsText({json.dumps(value.text, ensure_ascii=False)})"
+        elif isinstance(value, str | re.Pattern):
+            rendered = describe_matcher(value)
+        else:
+            rendered = json.dumps(value)
         parts.append(f"{key}={rendered}")
     return parts
 
 
 def where_to_data(where: Where) -> dict[str, Any]:
     return {
-        key: matcher_to_data(value) if isinstance(value, str | re.Pattern) else value
+        key: {"asText": value.text}
+        if isinstance(value, AsText)
+        else matcher_to_data(value)
+        if isinstance(value, str | re.Pattern)
+        else value
         for key, value in where
     }
+
+
+def _where_value_from_data(value: Any) -> Any:
+    if not isinstance(value, Mapping):
+        return value
+    mapping = cast("Mapping[str, Any]", value)
+    if "asText" in mapping:
+        _check_unknown_keys("asText matcher", mapping, {"asText"})
+        return AsText(mapping["asText"])
+    return matcher_from_data(mapping)
 
 
 def where_from_data(data: Any) -> Where:
@@ -97,7 +114,7 @@ def where_from_data(data: Any) -> Where:
         raise ValueError("where must be an object")
     return normalize_where(
         {
-            key: matcher_from_data(value) if isinstance(value, Mapping) else value
+            key: _where_value_from_data(value)
             for key, value in cast("Mapping[str, Any]", data).items()
         },
         {},
@@ -256,6 +273,8 @@ class Locator:
     any_of: tuple[Locator, ...] = ()
     #: Keep only matches that contain a descendant matching this locator.
     has: Locator | None = None
+    app_scope: bool = False
+    allow_empty: bool = False
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "where", normalize_where(dict(self.where), self.taken()))
@@ -275,7 +294,7 @@ class Locator:
             if not isinstance(self.has, Locator):  # pyright: ignore[reportUnnecessaryIsInstance]
                 raise TypeError("has= must be an Element or a Locator")
             self.has.check_has()
-        if self.is_empty() and self.index is None:
+        if self.is_empty() and self.index is None and not self.allow_empty:
             raise ValueError("locator needs at least one property")
 
     def check_has(self) -> None:

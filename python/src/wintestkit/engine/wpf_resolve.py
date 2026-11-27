@@ -188,7 +188,14 @@ def query(root: WpfElement, locator: Locator, *, use_index: bool = False) -> Que
             return False
         try:
             return all(
-                matches(condition, read(uia_of(element), condition.spec)) for condition in local
+                matches(
+                    condition,
+                    read(
+                        element if condition.spec.name == "VisibleOnScreen" else uia_of(element),
+                        condition.spec,
+                    ),
+                )
+                for condition in local
             )
         except NoUiaPeerError:
             return False

@@ -1,0 +1,17 @@
+{
+  "schema": "Path",
+  "instance": [
+    {
+      "kind": "property",
+      "name": "DataContext"
+    },
+    {
+      "kind": "property",
+      "name": "Rows[3]"
+    },
+    {
+      "kind": "property",
+      "name": "Value"
+    }
+  ]
+}

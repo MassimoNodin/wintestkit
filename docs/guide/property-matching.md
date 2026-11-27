@@ -16,7 +16,11 @@ order = Element(where={"clr:DataContext.Number": re.compile(r"^ORD-")})
 ```
 
 Strings match exactly; compiled regular expressions use `re.search`. Use actual booleans
-and numbers for scalar values. `type:Is` matches the named full type or a derived type.
+and numbers for scalar values: managed values are exactly typed, so `"15"` does not match
+the integer 15. `AsText("15")` compares the value's invariant text instead (`15`, `"True"`
+for a boolean), which suits migrated suites that pass numbers and booleans as strings.
+Paths can index (`clr:DataContext.Rows[3].Value`), and `type:Name@DataContext` matches the
+runtime type of a nested value. `type:Is` matches the named full type or a derived type.
 Managed paths can read application getters: see [security and path syntax](managed-inspection.md#managed-locators).
 Managed conditions require a WPF window with `backend: auto`; `backend: uia` and non-WPF
 windows reject them. UIA properties such as `HelpText`, `ItemStatus` and `IsEnabled` are
@@ -26,9 +30,14 @@ not the full CLR type. Do not place secrets in locators.
 ## Property-name find helpers
 
 `wintestkit.finders` provides `to_locator`, `find_child`, `find_all_children` and
-`find`. `ClrFullClassName` maps to `type:FullName`, `WPFControlName` to `automation_id`,
-and other property paths such as `DataContext.Status` to managed properties. The helper
-accepts `*` and `?` wildcards; ordinary `where` strings are exact. With `backend: auto`,
+`find`. `ClrFullClassName` maps to `type:FullName`, `ClrClassName` to `type:Name`, `WPFControlName` to `automation_id`,
+and other property paths such as `DataContext.Status` to managed properties. A path ending in
+`.ClrClassName` or `.ClrFullClassName` (for example `DataContext.ClrClassName`) matches the type
+of the value at that path (`type:Name@DataContext`). Paths accept indexers such as
+`Items.Item[0].Name` (the .NET `Item[n]` spelling) or `Rows[3].Value`. The helper
+accepts `*` and `?` wildcards; ordinary `where` strings are exact. A plain string given for
+a managed property path is compared with `AsText`, so `"15"` matches the integer 15 and
+`"True"` the boolean true; a wildcard string stays a pattern, which only matches string values. With `backend: auto`,
 `automation_id` uses the peer AutomationId, or the attached AutomationId for peerless elements, then falls back to `x:Name` when empty. UIA-only matching uses the provider's ID.
 
 ```python
@@ -41,7 +50,9 @@ matches = find_all_children(page, "DataContext.Status", "Ready", depth=20)
 parent_or_child = find(page.editor, "WPFControlName", "Editor", depth=1)
 ```
 
-Supply your own bound `page`. `find_child` defaults to the first match; `strict=True`
+A trailing `.OleValue` is removed from migration property paths. `VisibleOnScreen` matches the same on-screen state as `is_visible()`, while `Visible` matches WPF `IsVisible`. `Exists=True` adds no condition; `Exists=False` is invalid for a finder.
+
+Supply your own bound `page` or an `App`. An App search includes every top-level window at depth 1 and searches their descendants at greater depths, routing each window to its appropriate backend. `find_child` defaults to the first match; `strict=True`
 requires one. `find_all_children` returns indexed, re-resolving elements, so later tree
 reordering can change their identities. Depth counts automation-peer levels. The
 [migration guide](migrating-existing-suites.md) covers the NameMapping importer and

@@ -113,3 +113,43 @@ def test_removed_query_config_is_rejected(tmp_path):
 
     with pytest.raises(ConfigError, match=r"inspector\.query"):
         load_config(tmp_path, overrides={"inspector.query": "agent"})
+
+
+def test_as_text_translates_to_a_text_predicate():
+    from wintestkit.engine.properties import AsText
+
+    result = wire(Locator(where=(("clr:PersistId", AsText("15")),)))
+    assert [p.kind for p in result.predicates] == ["equalsText"]
+    assert result.predicates[0].value == "15"
+    assert result.predicates[0].path[0].name == "PersistId"
+    assert result.predicates[0].to_json()["kind"] == "equalsText"
+
+
+def test_as_text_is_for_managed_keys_only():
+    from wintestkit.engine.properties import AsText
+
+    with pytest.raises(TypeError):
+        Locator(where=(("HelpText", AsText("x")),))
+    with pytest.raises(TypeError):
+        AsText(15)  # type: ignore[arg-type]
+
+
+def test_indexed_and_nested_type_paths_translate():
+    result = wire(
+        Locator(
+            where=(
+                ("clr:Items.Item[0].Name", "x"),
+                ("type:Name@DataContext", re.compile("^Order")),
+                ("type:FullName@DataContext.Rows[2]", "A.B"),
+            )
+        )
+    )
+    first, nested, indexed = (p.path for p in result.predicates)
+    assert [(s.kind, s.name) for s in first] == [("property", "Items[0]"), ("property", "Name")]
+    assert [(s.kind, s.name) for s in nested] == [("property", "DataContext"), ("type", "Name")]
+    assert [(s.kind, s.name) for s in indexed] == [
+        ("property", "DataContext"),
+        ("property", "Rows[2]"),
+        ("type", "FullName"),
+    ]
+    assert result.predicates[1].kind == "regex"

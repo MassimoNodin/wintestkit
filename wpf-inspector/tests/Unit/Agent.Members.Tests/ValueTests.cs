@@ -514,9 +514,15 @@ namespace WinTestKit.Inspector.Agent.Members.Tests
                     if (name == "FullName") Assert.Equal(typeof(Sensitive).FullName, Text(value));
                     if (name == "BaseTypes") { Assert.Equal(ValueKind.Array, value.Kind); Assert.Equal(typeof(string[]).FullName, value.DeclaredType); }
                 }
-                foreach (PathSegment[] path in new[] { new[] { Property("Child"), new PathSegment { Kind = SegmentKind.Type, Name = "FullName" } }, new[] { new PathSegment { Kind = SegmentKind.Type, Name = "Name" }, Property("Child") } })
+                // Type metadata ends a path; it cannot lead one.
+                foreach (PathSegment[] path in new[] { new[] { new PathSegment { Kind = SegmentKind.Type, Name = "Name" }, Property("Child") } })
                     Assert.Equal(ErrorCodes.InvalidParams, Assert.Throws<ProtocolException>(() => reader.Read(path)).Code);
                 Assert.Equal(0, target.Calls);
+                // A type segment at the end reads the type of the value the path reaches.
+                ValueDto nested = reader.Read(Property("Child"), new PathSegment { Kind = SegmentKind.Type, Name = "FullName" });
+                Assert.Equal(ValueStatus.Ok, nested.Status);
+                Assert.Equal(typeof(Sensitive).FullName, Text(nested));
+                Assert.Equal(1, target.Calls);
             });
         }
 

@@ -749,18 +749,27 @@ class InspectorClient:
             raise _client_deadline("Inspector request deadline expired")
         return min(requested, remaining)
 
-    def _query(self, method: str, locator: Locator, timeout_ms: int, deadline: float) -> object:
+    def _query(
+        self,
+        method: str,
+        locator: Locator,
+        timeout_ms: int,
+        deadline: float,
+        continuation: str | None = None,
+    ) -> object:
         self._feature("query")
         self._object_ref(locator.scope.handle)
         try:
             wire = Locator.from_json(locator.to_json()).to_json()
         except (ValueError, TypeError) as error:
             raise InspectorError("Invalid query locator", code="invalidParams") from error
-        return self._request(
-            method,
-            {"locator": wire, "timeoutMs": self._timed_params(timeout_ms, deadline)},
-            deadline,
-        )
+        params: dict[str, object] = {
+            "locator": wire,
+            "timeoutMs": self._timed_params(timeout_ms, deadline),
+        }
+        if continuation is not None:
+            params["continuation"] = continuation
+        return self._request(method, params, deadline)
 
     def query_find(self, locator: Locator, *, timeout_ms: int, deadline: float) -> QueryFindResult:
         def parse(value: object) -> QueryFindResult:
@@ -773,6 +782,12 @@ class InspectorClient:
     def query_find_all(
         self, locator: Locator, *, timeout_ms: int, deadline: float
     ) -> QueryFindAllResult:
+        """Search the tree, resuming a traversal the agent had to pause until ``deadline``.
+
+        The result is complete, or holds the matches found up to the match limit, or (when the
+        deadline passed first) is incomplete and still carries its ``continuation`` token.
+        """
+
         def parse(value: object) -> QueryFindAllResult:
             result = QueryFindAllResult.from_json(value)
             if len(result.matches) > locator.limit:
@@ -781,7 +796,19 @@ class InspectorClient:
                 self._object_ref(match)
             return result
 
-        return self._parse(parse, self._query("query.findAll", locator, timeout_ms, deadline))
+        # Leave room for the reply: the agent stops at its own budget, which must end before
+        # the client gives up on the request.
+        limit_ms = int(self._request_timeout * 1000)
+        budget_ms = max(1, min(timeout_ms, max(limit_ms * 3 // 4, limit_ms - 500)))
+        continuation: str | None = None
+        while True:
+            result = self._parse(
+                parse,
+                self._query("query.findAll", locator, budget_ms, deadline, continuation),
+            )
+            continuation = result.continuation
+            if continuation is None or time.monotonic() >= deadline - 0.15:
+                return result
 
     def wait_until(
         self, condition: WaitCondition, *, timeout_ms: int, deadline: float

@@ -58,6 +58,7 @@ if TYPE_CHECKING:
     from wintestkit.controls import ToggleButton as ToggleButton
     from wintestkit.controls import ToolBar as ToolBar
     from wintestkit.controls import TreeView as TreeView
+    from wintestkit.engine.properties import AsText as AsText
     from wintestkit.expect import expect as expect
     from wintestkit.finders import find as find
     from wintestkit.finders import find_all_children as find_all_children
@@ -82,6 +83,7 @@ if TYPE_CHECKING:
 
 __all__ = [
     "App",
+    "AsText",
     "BoundButton",
     "BoundCheckBox",
     "BoundComboBox",
@@ -167,6 +169,7 @@ _LAZY: dict[str, tuple[str, str]] = {
     "Null": ("wintestkit.managed", "Null"),
     "step": ("wintestkit.runtime", "user_step"),
     "App": ("wintestkit.app", "App"),
+    "AsText": ("wintestkit.engine.properties", "AsText"),
     "BoundButton": ("wintestkit.controls", "BoundButton"),
     "BoundCheckBox": ("wintestkit.controls", "BoundCheckBox"),
     "BoundComboBox": ("wintestkit.controls", "BoundComboBox"),

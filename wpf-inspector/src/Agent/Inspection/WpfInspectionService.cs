@@ -231,8 +231,8 @@ namespace WinTestKit.Inspector.Agent.Inspection
         public Task<QueryFindResult> FindAsync(Locator locator, DateTime deadline, int timeoutMs, CancellationToken ct) =>
             RunAsync(token => query.FindAsync(locator, deadline, timeoutMs, token), ct);
 
-        public Task<QueryFindAllResult> FindAllAsync(Locator locator, DateTime deadline, int timeoutMs, CancellationToken ct) =>
-            RunAsync(token => query.FindAllAsync(locator, deadline, timeoutMs, token), ct);
+        public Task<QueryFindAllResult> FindAllAsync(Locator locator, DateTime deadline, int timeoutMs, string? continuation, CancellationToken ct) =>
+            RunAsync(token => query.FindAllAsync(locator, deadline, timeoutMs, continuation, token), ct);
 
         public Task<MappingDto> ResolveAsync(int[] runtimeId, long? nativeWindowHandle, CancellationToken ct) =>
             RunAsync(async token => await TryResolveWinFormsAsync(runtimeId, nativeWindowHandle, token).ConfigureAwait(false)

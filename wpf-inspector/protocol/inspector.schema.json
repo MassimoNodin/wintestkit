@@ -701,7 +701,7 @@
       ]
     },
     "Path": {
-      "description": "Type and UIA segments must be alone. Serialized paths must not exceed 1024 UTF-8 bytes.",
+      "description": "A UIA segment must be alone. A type segment reads the runtime type of the value reached by the preceding segments, so it occurs at most once and only as the last segment. A property or field name may end in an indexer, Name[3]: a non-negative or negative 32-bit integer applied to the member's value (array, list, default int indexer, or enumerated sequence); the indexer is part of its segment. Serialized paths must not exceed 1024 UTF-8 bytes.",
       "type": "array",
       "minItems": 1,
       "maxItems": 8,
@@ -714,10 +714,7 @@
             "contains": {
               "properties": {
                 "kind": {
-                  "enum": [
-                    "type",
-                    "uia"
-                  ]
+                  "const": "uia"
                 }
               },
               "required": [
@@ -727,6 +724,138 @@
           },
           "then": {
             "maxItems": 1
+          }
+        },
+        {
+          "not": {
+            "anyOf": [
+              {
+                "minItems": 2,
+                "prefixItems": [
+                  {
+                    "properties": {
+                      "kind": {
+                        "const": "type"
+                      }
+                    },
+                    "required": [
+                      "kind"
+                    ]
+                  }
+                ]
+              },
+              {
+                "minItems": 3,
+                "prefixItems": [
+                  {},
+                  {
+                    "properties": {
+                      "kind": {
+                        "const": "type"
+                      }
+                    },
+                    "required": [
+                      "kind"
+                    ]
+                  }
+                ]
+              },
+              {
+                "minItems": 4,
+                "prefixItems": [
+                  {},
+                  {},
+                  {
+                    "properties": {
+                      "kind": {
+                        "const": "type"
+                      }
+                    },
+                    "required": [
+                      "kind"
+                    ]
+                  }
+                ]
+              },
+              {
+                "minItems": 5,
+                "prefixItems": [
+                  {},
+                  {},
+                  {},
+                  {
+                    "properties": {
+                      "kind": {
+                        "const": "type"
+                      }
+                    },
+                    "required": [
+                      "kind"
+                    ]
+                  }
+                ]
+              },
+              {
+                "minItems": 6,
+                "prefixItems": [
+                  {},
+                  {},
+                  {},
+                  {},
+                  {
+                    "properties": {
+                      "kind": {
+                        "const": "type"
+                      }
+                    },
+                    "required": [
+                      "kind"
+                    ]
+                  }
+                ]
+              },
+              {
+                "minItems": 7,
+                "prefixItems": [
+                  {},
+                  {},
+                  {},
+                  {},
+                  {},
+                  {
+                    "properties": {
+                      "kind": {
+                        "const": "type"
+                      }
+                    },
+                    "required": [
+                      "kind"
+                    ]
+                  }
+                ]
+              },
+              {
+                "minItems": 8,
+                "prefixItems": [
+                  {},
+                  {},
+                  {},
+                  {},
+                  {},
+                  {},
+                  {
+                    "properties": {
+                      "kind": {
+                        "const": "type"
+                      }
+                    },
+                    "required": [
+                      "kind"
+                    ]
+                  }
+                ]
+              }
+            ]
           }
         }
       ]
@@ -2751,6 +2880,26 @@
           "type": "object",
           "properties": {
             "kind": {
+              "const": "equalsText"
+            },
+            "path": {
+              "$ref": "#/$defs/Path"
+            },
+            "value": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "path",
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
               "const": "regex"
             },
             "path": {
@@ -2789,7 +2938,7 @@
           "additionalProperties": false
         }
       ],
-      "description": "Validate the shared regex subset and bounds before matching; Python re.search semantics with ASCII-only case folding, multiline anchors and singleline dot; reject unsupported constructs and malformed patterns. Equality is type-aware; assignability uses already-loaded metadata. Unavailable, redacted, truncated or failed values cannot silently match."
+      "description": "Validate the shared regex subset and bounds before matching; Python re.search semantics with ASCII-only case folding, multiline anchors and singleline dot; reject unsupported constructs and malformed patterns. Equality is type-aware; equalsText compares the value's invariant-culture text (15 equals 15 as text, true equals True, numbers also equal the same number written with other trailing zeros; null never matches); assignability uses already-loaded metadata. Unavailable, redacted, truncated or failed values cannot silently match."
     },
     "Locator": {
       "type": "object",
@@ -3553,7 +3702,28 @@
       "additionalProperties": false
     },
     "QueryFindAllParams": {
-      "$ref": "#/$defs/QueryFindParams"
+      "type": "object",
+      "properties": {
+        "locator": {
+          "$ref": "#/$defs/Locator"
+        },
+        "timeoutMs": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2000
+        },
+        "continuation": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "locator",
+        "timeoutMs"
+      ],
+      "additionalProperties": false,
+      "description": "continuation resumes the traversal a previous incomplete result paused; it must be sent with the same locator."
     },
     "QueryFindAllResult": {
       "type": "object",
@@ -3572,6 +3742,11 @@
         },
         "complete": {
           "type": "boolean"
+        },
+        "continuation": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
         }
       },
       "required": [
@@ -3579,7 +3754,24 @@
         "complete"
       ],
       "additionalProperties": false,
-      "description": "Count only after full traversal; incomplete results may be capped or budget-limited."
+      "if": {
+        "properties": {
+          "complete": {
+            "const": true
+          }
+        },
+        "required": [
+          "complete"
+        ]
+      },
+      "then": {
+        "not": {
+          "required": [
+            "continuation"
+          ]
+        }
+      },
+      "description": "Count only after full traversal; incomplete results may be capped or budget-limited. A traversal that stopped at a request budget returns no matches, complete false and a continuation token for the next request; a complete result never has one."
     },
     "StateGetParams": {
       "type": "object",

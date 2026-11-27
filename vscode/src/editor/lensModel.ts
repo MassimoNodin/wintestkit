@@ -73,7 +73,9 @@ const whereParts = (where: LocatorData["where"]): string[] =>
       "=" +
       (typeof value === "boolean" || typeof value === "number"
         ? JSON.stringify(value)
-        : matcher(value)),
+        : typeof value === "object" && "asText" in value
+          ? "AsText(" + JSON.stringify(value.asText) + ")"
+          : matcher(value)),
   );
 export function describeWindow(window: WindowLocatorData): string {
   const parts: string[] = [];

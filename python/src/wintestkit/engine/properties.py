@@ -29,6 +29,7 @@ from wintestkit.uia.constants import (
 __all__ = [
     "BUILTIN_KWARGS",
     "SUPPORTED",
+    "AsText",
     "Condition",
     "PropertySpec",
     "Where",
@@ -41,7 +42,55 @@ __all__ = [
     "resolve_where",
 ]
 
-WhereValue = bool | int | float | str | re.Pattern[str]
+
+@dataclass(frozen=True, slots=True)
+class AsText:
+    """Match a managed value by its invariant-culture text instead of its exact type.
+
+    ``where={"clr:PersistId": AsText("15")}`` matches the integer 15, ``AsText("True")``
+    matches the boolean true and ``AsText("1.5")`` matches the double 1.5. Strings and enum
+    names compare as they are, null never matches, and a number also equals the same number
+    written with other trailing zeros. Ordinary ``where`` values stay exactly typed; use this
+    when a migrated suite supplies numbers and booleans as strings. It applies to managed
+    keys (``clr:``, ``field:``, ``dp:``, ``type:``) only.
+    """
+
+    text: str
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.text, str):  # pyright: ignore[reportUnnecessaryIsInstance]
+            raise TypeError(f"AsText requires a string, got {self.text!r}")
+
+
+def as_text(value: object) -> str | None:
+    """The invariant text :class:`AsText` compares: ``True``/``False``, plain number text."""
+    if isinstance(value, bool):
+        return "True" if value else "False"
+    if isinstance(value, str):
+        return value
+    if isinstance(value, int | float):
+        return repr(value)
+    return None
+
+
+def text_matches(expected: AsText, actual: object) -> bool:
+    """Whether a Python-side managed value equals ``expected`` by invariant text."""
+    text = as_text(actual)
+    if text is None:
+        return False
+    if isinstance(actual, bool):
+        return text.casefold() == expected.text.casefold()
+    if text == expected.text:
+        return True
+    if isinstance(actual, int | float):
+        try:
+            return float(expected.text) == float(actual)
+        except ValueError:
+            return False
+    return False
+
+
+WhereValue = bool | int | float | str | re.Pattern[str] | AsText
 Where = tuple[tuple[str, WhereValue], ...]
 Kind = Literal["str", "bool", "int", "number", "control_type"]
 
@@ -71,6 +120,7 @@ _ROWS: tuple[tuple[str, str, Kind, str], ...] = (
     ("Value", "ValueValue", "str", "value"),
     ("IsEnabled", "IsEnabled", "bool", "is_enabled"),
     ("IsOffscreen", "IsOffscreen", "bool", "is_offscreen"),
+    ("VisibleOnScreen", "IsOffscreen", "bool", "visible_on_screen"),
     ("IsPassword", "IsPassword", "bool", "is_password"),
     ("IsKeyboardFocusable", "IsKeyboardFocusable", "bool", "is_keyboard_focusable"),
     ("ProcessId", "ProcessId", "int", "process_id"),
@@ -178,7 +228,7 @@ def _value_problem(kind: Kind | None, value: Any) -> str | None:
     """Why ``value`` does not fit ``kind`` (``None`` kind = a not yet known alias target)."""
     __tracebackhide__ = True
     if kind is None:
-        ok = isinstance(value, bool | int | float | str | re.Pattern)
+        ok = isinstance(value, bool | int | float | str | re.Pattern | AsText)
     elif kind in ("str", "control_type"):
         ok = isinstance(value, str | re.Pattern)
     elif kind == "bool":
@@ -189,7 +239,7 @@ def _value_problem(kind: Kind | None, value: Any) -> str | None:
         ok = isinstance(value, int) and not isinstance(value, bool)
     if ok:
         return None
-    expected = _KIND_TEXT[kind] if kind is not None else "a string, regex, bool or number"
+    expected = _KIND_TEXT[kind] if kind is not None else "a string, regex, AsText, bool or number"
     return f"expects {expected}, got {value!r}"
 
 
@@ -218,7 +268,9 @@ def normalize_where(where: Mapping[str, WhereValue] | None, taken: Mapping[str, 
             if key == "type:Is" and (not isinstance(value, str) or not value or len(value) > 1024):
                 raise InvalidLocatorError("type:Is requires an exact type name string")
             if _value_problem(None, value) is not None:
-                raise InvalidLocatorError(f"where[{key!r}] expects a scalar or compiled regex")
+                raise InvalidLocatorError(
+                    f"where[{key!r}] expects a scalar, AsText or compiled regex"
+                )
         problem = _value_problem(spec.kind if spec else None, value)
         if problem is not None:
             raise TypeError(f"where[{key!r}] {problem}")
@@ -280,7 +332,9 @@ def resolve_where(
             ):
                 raise InvalidLocatorError("type:Is requires an exact type name string")
             if _value_problem(None, value) is not None:
-                raise InvalidLocatorError(f"where[{key!r}] expects a scalar or compiled regex")
+                raise InvalidLocatorError(
+                    f"where[{key!r}] expects a scalar, AsText or compiled regex"
+                )
             if target in seen:
                 raise InvalidLocatorError(
                     f"{owner} sets {target} twice (via {seen[target]!r} and {key!r})"
@@ -302,7 +356,7 @@ def resolve_where(
                 )
             if spec.kind == "control_type" and isinstance(value, str):
                 value = normalize_control_type(value)
-        identity = spec.uia_name
+        identity = spec.name if spec.name == "VisibleOnScreen" else spec.uia_name
         if identity in seen:
             raise InvalidLocatorError(
                 f"{owner} sets {identity} twice (via {seen[identity]!r} and {key!r})"
@@ -316,7 +370,7 @@ def native_value(condition: Condition) -> str | int | float | bool:
     """The value to put into a native UIA condition (exact, non-regex values only)."""
     __tracebackhide__ = True
     value = condition.value
-    assert not isinstance(value, re.Pattern)
+    assert not isinstance(value, re.Pattern | AsText)
     if condition.spec.kind == "control_type":
         return CONTROL_TYPES[str(value)]
     return value
@@ -325,6 +379,10 @@ def native_value(condition: Condition) -> str | int | float | bool:
 def read(element: Any, spec: PropertySpec) -> str | bool | int | float:
     """The element's current value of ``spec``, normalized to ``str``, ``bool`` or ``int``."""
     __tracebackhide__ = True
+    if spec.name == "VisibleOnScreen":
+        from wintestkit.engine.waits import element_state_ok
+
+        return element_state_ok(element, "visible")
     raw = element.get_property(spec.uia_name)
     if spec.kind == "control_type":
         return CONTROL_TYPE_NAMES.get(raw, "") if isinstance(raw, int) else ""

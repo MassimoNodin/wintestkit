@@ -75,7 +75,7 @@ def query_all(root: UIAElement, locator: Locator) -> list[UIAElement]:
         reject_managed(managed[0], root)
     props: dict[str, Any] = dict(locator.exact_props())
     for constraint in uia:
-        if not constraint.is_regex:
+        if not constraint.is_regex and constraint.spec.name != "VisibleOnScreen":
             props[constraint.spec.condition] = native_value(constraint)
     condition = make_condition(**props)
     depth = locator.depth
@@ -87,7 +87,7 @@ def query_all(root: UIAElement, locator: Locator) -> list[UIAElement]:
     if regexes:
         found = [e for e in found if all(r.search(getattr(e, attr)) for attr, r in regexes.items())]
     for constraint in uia:
-        if constraint.is_regex:
+        if constraint.is_regex or constraint.spec.name == "VisibleOnScreen":
             found = [e for e in found if matches(constraint, read(e, constraint.spec))]
     return _unique(found)
 

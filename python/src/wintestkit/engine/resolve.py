@@ -466,8 +466,86 @@ def shared_missing_scopes() -> Generator[None]:
         _missing_links.reset(token)
 
 
+def _app_walk(scope: Scope, locator: Locator, final_all: bool) -> list[TargetElement]:
+    """Search top-level windows and their descendants in window order."""
+    __tracebackhide__ = True
+    constraints = resolve_where(locator.where, locator.describe_link(), locator.taken())
+    managed = [c for c in constraints if not isinstance(c, Condition)]
+    uia = [c for c in constraints if isinstance(c, Condition)]
+    found: list[TargetElement] = []
+    for window in scope.app.top_level_windows():
+        if managed and (window.framework_id != "WPF" or runtime.get_config().backend != "auto"):
+            continue
+        root = route(window)
+
+        def root_matches(root: TargetElement, window: UIAElement) -> bool:
+            __tracebackhide__ = True
+            for name in ("automation_id", "name", "class_name", "control_type"):
+                expected = getattr(locator, name)
+                if expected is not None:
+                    actual = (
+                        identity_value(root, name)
+                        if isinstance(root, WpfElement)
+                        else getattr(root, name)
+                    )
+                    if actual is None or not match_value(expected, actual):
+                        return False
+            if managed and (not isinstance(root, WpfElement) or not matches_root(root, managed)):
+                return False
+            return all(
+                matches_property(
+                    c, read(root if c.spec.name == "VisibleOnScreen" else window, c.spec)
+                )
+                for c in uia
+            )
+
+        candidates: list[TargetElement] = [root] if root_matches(root, window) else []
+        if locator.depth is None or locator.depth > 1:
+            child = replace(
+                locator,
+                depth=None if locator.depth is None else locator.depth - 1,
+                index=None,
+                app_scope=False,
+            )
+            if isinstance(root, WpfElement):
+                candidates.extend(wpf_query(root, child))
+            else:
+                candidates.extend(query_all(root, child))
+        for candidate in candidates:
+            if not any(
+                other.same_as(cast(Any, candidate))
+                if isinstance(other, WpfElement)
+                else cast(Any, candidate).same_as(other)
+                for other in found
+            ):
+                found.append(candidate)
+    if final_all:
+        return [element.as_live() for element in found]
+    if locator.index is not None:
+        if locator.index < len(found):
+            return [found[locator.index].as_live()]
+        raise ElementNotFoundError(
+            diagnose_index_out_of_range(found, locator, "application", locator)
+        )
+    if len(found) > 1:
+        raise AmbiguousElementError(diagnose_ambiguous(found, locator, "application", locator))
+    if not found:
+        raise ElementNotFoundError(
+            Diagnostic(
+                kind="not_found",
+                message=f"No element matches {locator.describe()} in application",
+                locator=locator.describe(),
+                searched_in="application",
+                match_count=0,
+            )
+        )
+    return [found[0].as_live()]
+
+
 def _walk(scope: Scope, locator: Locator, final_all: bool) -> list[TargetElement]:
     __tracebackhide__ = True
+    if locator.app_scope:
+        return _app_walk(scope, locator, final_all)
     window_root = resolve_window(scope.app, locator.window or scope.window)
     links = locator.chain()
     root: TargetElement = route(window_root)
@@ -508,7 +586,11 @@ def wait_link(scope: Scope, locator: Locator, state: str) -> tuple[bool, TargetE
     __tracebackhide__ = True
     links = locator.chain()
     link = links[-1]
-    if state not in ("attached", "visible", "enabled") or link.item is not None:
+    if (
+        locator.app_scope
+        or state not in ("attached", "visible", "enabled")
+        or link.item is not None
+    ):
         return False, None
     if any(candidate.any_of or candidate.has is not None for candidate in links):
         # One wire query cannot express alternatives or has= filters: poll normally.

@@ -220,7 +220,7 @@ namespace WinTestKit.Inspector.Agent.Session
                 case PipeMethods.QueryFindAll:
                     if (!(service is IQueryInspectionService queryAllService)) throw new ProtocolException(ErrorCodes.UnsupportedTarget, "Feature not available.");
                     var findAll = QueryFindAllParams.FromJson(request.Params);
-                    return (await queryAllService.FindAllAsync(findAll.Locator, deadline, findAll.TimeoutMs, ct).ConfigureAwait(false)).ToJson();
+                    return (await queryAllService.FindAllAsync(findAll.Locator, deadline, findAll.TimeoutMs, findAll.Continuation, ct).ConfigureAwait(false)).ToJson();
                 case PipeMethods.StateGet:
                     if (!(service is IStateInspectionService stateService)) throw new ProtocolException(ErrorCodes.UnsupportedTarget, "Feature not available.");
                     var state = StateGetParams.FromJson(request.Params);

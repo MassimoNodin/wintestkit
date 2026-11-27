@@ -21,6 +21,15 @@ This guide helps you migrate an existing **WPF desktop test suite** to WinTestKi
 | Table checks | `expect(grid).to_have_rows(...)` |
 | Extra control types | `Slider`, `ScrollBar`, `ProgressBar`, `DatePicker`, `Expander`, `ToggleButton`, `Hyperlink`, `ToolBar`, `StatusBar` |
 | `FindChild` / `FindAllChildren` / `Find` calls | `wintestkit.finders.find_child`, `find_all_children`, `find`, or declared locators |
+| `ClrClassName` | `where={"type:Name": "OrderWindow"}` (managed short type name) |
+| `<path>.ClrClassName` / `<path>.ClrFullClassName` | `where={"type:Name@DataContext": "OrderViewModel"}`: the type of the value at the path |
+| Numbers and booleans passed as strings | `AsText("15")`: compares the managed value's invariant text; `find_child` and the importer apply it to plain string values on property paths |
+| `Items.Item[0].Name` | `clr:Items[0].Name` (both spellings are accepted) |
+| `WndClass` / `ClassName` | `class_name` (UIA peer class) |
+| `WndCaption` | `name`, with mnemonic ampersands removed |
+| `ControlId` / `WinFormsControlName` | `automation_id`; numeric IDs become decimal strings |
+| `FrameworkId` / `LocalizedControlType` | UIA `where` properties |
+| `VisibleOnScreen` | On-screen visibility condition |
 | `ClrFullClassName` | `where={"type:FullName": "Namespace.Type"}`; `type:Is` includes derived types |
 | `WPFControlName` | `automation_id`: peer or peerless attached AutomationId, falling back to `x:Name` with the WPF backend |
 | `WPFControlText` | `name` (peer Name, not necessarily actual text) |
@@ -89,12 +98,12 @@ Import `find_child`, `find_all_children`, and `find` from `wintestkit.finders`.
 The depth-one nested lookup deliberately does not find the deeper button. Depth counts
 automation-peer levels, not arbitrary WPF visual-tree levels; `None` means unlimited.
 `WPFControlText` matches the peer Name, which need not be the actual control text.
-`WPFControlOrdinalNo` is one-based and maps to a zero-based index over matches.
+`WPFControlOrdinalNo` accepts integers or numeric strings and is one-based and maps to a zero-based index over matches.
 `find_all_children` returns indexed, re-resolving results: later tree reordering can
 change their identities. `find` includes a bound parent, but rootless pages and scopes
 start at the window descendants and cannot include the window itself. Managed properties
 require inspector access, and UIA cannot discover elements without automation peers.
-The NameMapping extended-find XML spellings accepted below are unconfirmed.
+An `App` parent searches all top-level windows and their descendants; depth 1 includes the windows. Window titles accept wildcards. `Exists=True` adds no condition and `Exists=False` raises an error. A trailing `.OleValue` is stripped from property paths. The NameMapping extended-find XML spellings accepted below are unconfirmed.
 
 ## NameMapping importer
 
@@ -106,12 +115,12 @@ unverified flag forms `extendedFind="True"` on the object or an `ExtendedFind` p
 It does not yet convert OR groups; add `any_of` manually. It does not migrate actions or tests. Existing output is preserved; pass `--force` to replace it.
 
 `WPFControlName` becomes `automation_id` (verify the AutomationId or WPF x:Name fallback in Spy).
-`ClrFullClassName` is retained as `where={"ClrFullClassName": ...}`. Configure
+`ClrFullClassName` and `ClrClassName` are retained as corresponding `where` aliases by default. Configure
 the managed alias described below when the inspector is enabled, or use
 `property_aliases: {ClrFullClassName: ItemStatus}` only if the application exposes the full
-name through UIA ItemStatus. Other properties use the same mapping as `to_locator`: text, short class name, ordinal, visible,
+name through UIA ItemStatus. Other properties use the same mapping as `to_locator`: text, ordinal, visible,
 and enabled become corresponding locator fields or managed conditions; unknown valid names become
-`clr:` paths. `*` and `?` become compiled whole-value patterns. Unmappable properties appear as
+`clr:` paths; their plain string values are generated as `AsText(...)` so that `"15"` matches the integer 15. `*` and `?` become compiled whole-value patterns. Unmappable properties appear as
 `# TODO` comments; an unmappable parent and its descendants require manual reconstruction.
 Review and validate every generated locator against the live app before using it.
 
@@ -119,7 +128,7 @@ Review and validate every generated locator against the live app before using it
 
 With the [WPF backend](managed-inspection.md), use `wtk import-namemapping NameMapping.xml pages/imported.py --managed-class-names`
 to generate qualified managed class-name keys. Alternatively configure
-`property_aliases: {ClrFullClassName: 'type:FullName'}` in `wintestkit.yaml`. Both require
+`property_aliases: {ClrFullClassName: 'type:FullName', ClrClassName: 'type:Name'}` in `wintestkit.yaml`. Both require
 authorized attachment. Confirm values in Spy; use the ItemStatus alias above as a fallback.
 
 Input is limited to 10 MiB. DTD/entity declarations and malformed XML are rejected. This parser

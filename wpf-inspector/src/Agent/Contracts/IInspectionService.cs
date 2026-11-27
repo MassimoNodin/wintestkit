@@ -66,7 +66,7 @@ namespace WinTestKit.Inspector.Agent.Contracts
     public interface IQueryInspectionService
     {
         Task<QueryFindResult> FindAsync(Locator locator, DateTime deadline, int timeoutMs, CancellationToken ct);
-        Task<QueryFindAllResult> FindAllAsync(Locator locator, DateTime deadline, int timeoutMs, CancellationToken ct);
+        Task<QueryFindAllResult> FindAllAsync(Locator locator, DateTime deadline, int timeoutMs, string? continuation, CancellationToken ct);
     }
 
     public interface IStateInspectionService

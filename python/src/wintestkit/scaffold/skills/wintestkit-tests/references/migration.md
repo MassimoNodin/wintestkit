@@ -33,7 +33,9 @@ scripts or test routines. Output: pages, components, flows, tests.
 | script routine / reusable test routine | an intent method on the page or component, or a flow |
 | test or test routine | a pytest function using intent + `expect` |
 | checkpoint | `expect(...)` |
-| Reading object properties (e.g. `obj.DataContext.Name`) | `el.get("clr:DataContext.Name")` |
+| Reading object properties (e.g. `obj.DataContext.Name`) | `el.get("clr:DataContext.Name")`; indexers work: `clr:Rows[3].Value` (`Items.Item[0]` means `Items[0]`) |
+| `<path>.ClrClassName` / `.ClrFullClassName` | `type:Name@DataContext` / `type:FullName@DataContext`: the type of the value at the path |
+| Numbers/booleans passed as strings | `AsText("15")` compares a managed value's invariant text; `find_child` applies it to plain strings on property paths |
 | `WaitProperty` | `el.wait_for_property(name, expected)` |
 | `Delay`, `Sleep`, `WaitChild` | use `expect` or `wait_for()` for the required state; actions wait for existence by default |
 | data-driven loop / table | `@pytest.mark.parametrize` |

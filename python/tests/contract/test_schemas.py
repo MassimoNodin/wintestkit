@@ -126,6 +126,7 @@ def definition_examples() -> dict[str, dict[str, Any]]:
         "Rect": element["rect"],
         "ElementInfo": element,
         "Matcher": {"regex": "^WTK Demo", "flags": "im"},
+        "AsTextMatcher": {"asText": "15"},
         "WindowLocatorData": {"title": "WTK Demo", "process": "DemoApp.exe"},
         "ItemSelectorData": {"kind": "cell", "row": 2, "column": "Name"},
         "LocatorData": discovery["pages"][0]["elements"][0]["locator"],
@@ -454,6 +455,8 @@ def test_invalid_item_selectors(validate: Validate, data: Any) -> None:
     ("schema_file", "def_name", "data"),
     [
         ("common.schema.json", "Matcher", {"regex": "test", "flags": "g"}),
+        ("common.schema.json", "AsTextMatcher", {"asText": 15}),
+        ("common.schema.json", "LocatorData", {"where": {"clr:A": {"asText": "1", "x": 1}}}),
         ("common.schema.json", "Position", {"line": -1, "character": 0}),
         ("common.schema.json", "Position", {"line": 0, "character": 1.5}),
         ("common.schema.json", "Rect", {"left": -10, "top": 0, "width": -1, "height": 10}),

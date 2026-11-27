@@ -172,7 +172,12 @@ def test_generated_hierarchy_round_trips_shared_locators(tmp_path, managed):
         expected = replace(
             expected,
             where=tuple(
-                ("ClrFullClassName" if key == "type:FullName" else key, value)
+                (
+                    {"type:FullName": "ClrFullClassName", "type:Name": "ClrClassName"}.get(
+                        key, key
+                    ),
+                    value,
+                )
                 for key, value in expected.where
             ),
         )

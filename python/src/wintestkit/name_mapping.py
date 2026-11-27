@@ -10,6 +10,7 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any, cast
 
+from wintestkit.engine.properties import AsText
 from wintestkit.finders import to_locator
 from wintestkit.model import PageObject
 
@@ -62,6 +63,8 @@ def _properties(node: ET.Element) -> list[tuple[str, str]]:
 
 
 def _literal(value: Any) -> str:
+    if isinstance(value, AsText):
+        return f"AsText({_literal(value.text)})"
     if isinstance(value, re.Pattern):
         return f"re.compile({_literal(cast(re.Pattern[str], value).pattern)}, re.DOTALL)"
     if isinstance(value, str):
@@ -88,10 +91,11 @@ def convert(xml_path: Path, *, managed_class_names: bool = False) -> str:
     used: set[str] = set()
     has_properties = False
     needs_re = False
+    needs_as_text = False
     count = 0
 
     def visit(node: ET.Element, parent: str | None, blocked: bool = False) -> None:
-        nonlocal count, has_properties, needs_re
+        nonlocal count, has_properties, needs_re, needs_as_text
         if _local(node) not in _OBJECTS:
             for child in node:
                 visit(child, parent, blocked)
@@ -160,10 +164,16 @@ def convert(xml_path: Path, *, managed_class_names: bool = False) -> str:
             where = list(locator.where)
             if not managed_class_names:
                 where = [
-                    ("ClrFullClassName" if key == "type:FullName" else key, value)
+                    (
+                        {"type:FullName": "ClrFullClassName", "type:Name": "ClrClassName"}.get(
+                            key, key
+                        ),
+                        value,
+                    )
                     for key, value in where
                 ]
             needs_re |= any(isinstance(value, re.Pattern) for _, value in [*fields, *where])
+            needs_as_text |= any(isinstance(value, AsText) for _, value in where)
             declarations.append(f"    {alias} = Element(")
             for key, value in fields:
                 declarations.append(f"        {key}={_literal(value)},")
@@ -191,14 +201,18 @@ def convert(xml_path: Path, *, managed_class_names: bool = False) -> str:
         "",
         "Managed class names require the WPF inspector."
         if managed_class_names
-        else "ClrFullClassName requires a verified application-specific UIA property alias.",
+        else (
+            "ClrFullClassName and ClrClassName require verified application-specific "
+            "UIA property aliases."
+        ),
         '"""',
         "",
     ]
     if needs_re:
         lines.extend(["import re", ""])
     if count:
-        lines.extend(["from wintestkit import Element, Page", "", "", "class ImportedPage(Page):"])
+        names = "AsText, Element, Page" if needs_as_text else "Element, Page"
+        lines.extend([f"from wintestkit import {names}", "", "", "class ImportedPage(Page):"])
     else:
         lines.extend(
             ["from wintestkit import Page", "", "", "class ImportedPage(Page):", "    pass"]

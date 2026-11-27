@@ -574,7 +574,7 @@ public class RequestDispatcherTests
             if (Block) await Task.Delay(Timeout.Infinite, ct);
             return new QueryFindResult { Match = Match, Warning = new MatchWarning { Count = 2 } };
         }
-        public Task<QueryFindAllResult> FindAllAsync(Locator locator, DateTime deadline, int timeoutMs, CancellationToken ct) => Task.FromResult(new QueryFindAllResult { Matches = new[] { Match }, Count = 1, Complete = true });
+        public Task<QueryFindAllResult> FindAllAsync(Locator locator, DateTime deadline, int timeoutMs, string? continuation, CancellationToken ct) => Task.FromResult(new QueryFindAllResult { Matches = new[] { Match }, Count = 1, Complete = true });
     }
 
     private class RecordingService : IInspectionService

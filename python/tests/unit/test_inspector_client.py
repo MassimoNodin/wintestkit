@@ -1463,3 +1463,73 @@ def test_send_short_budget_preserves_session_and_write_has_floor(
         assert not client._closed
     finally:
         client.close()
+
+
+def test_find_all_resumes_a_suspended_traversal() -> None:
+    from pathlib import Path
+
+    from wintestkit.inspector.models import ElementState, Locator, Scope
+
+    fixture = json.loads(
+        (
+            Path(__file__).resolve().parents[3]
+            / "wpf-inspector/protocol/fixtures/valid/p2-state-runtime-id.json"
+        ).read_text(encoding="utf-8")
+    )["instance"]
+    fixture["handle"]["sessionId"] = "session"
+    handle = ElementState.from_json(fixture).handle
+    locator = Locator(Scope("object", handle), "combined", (), 256, 200, "tree")
+    pages = iter(
+        [
+            {"matches": [], "complete": False, "continuation": "one"},
+            {"matches": [], "complete": False, "continuation": "two"},
+            {"matches": [handle.to_json()], "complete": True, "count": 1},
+        ]
+    )
+
+    def handler(request: dict[str, Any]) -> object:
+        if request["method"] == "session.close":
+            return {"id": request["id"], "result": {"closed": True}}
+        return {"id": request["id"], "result": next(pages)}
+
+    transport = ScriptedTransport(handler)
+    client = InspectorClient(transport, session())
+    try:
+        deadline = time.monotonic() + 5
+        result = client.query_find_all(locator, timeout_ms=2000, deadline=deadline)
+        assert result.complete and result.matches == (handle,)
+        assert [r["params"].get("continuation") for r in transport.requests] == [
+            None,
+            "one",
+            "two",
+        ]
+        assert all(
+            r["params"]["locator"] == transport.requests[0]["params"]["locator"]
+            for r in transport.requests
+        )
+    finally:
+        client.close()
+
+
+def test_find_all_returns_the_incomplete_result_when_the_deadline_passes() -> None:
+    from wintestkit.inspector.models import Locator, Scope
+
+    transport = ScriptedTransport(
+        lambda request: {
+            "id": request["id"],
+            "result": {"closed": True}
+            if request["method"] == "session.close"
+            else {"matches": [], "complete": False, "continuation": "more"},
+        }
+    )
+    client = InspectorClient(transport, session())
+    try:
+        result = client.query_find_all(
+            Locator(Scope("allRoots"), "combined", (), 256, 200, "tree"),
+            timeout_ms=2000,
+            deadline=time.monotonic() + 0.3,
+        )
+        assert not result.complete and result.continuation == "more"
+        assert len(transport.requests) >= 1
+    finally:
+        client.close()

@@ -12,9 +12,11 @@ from dataclasses import dataclass, replace
 from typing import Any, cast
 
 from wintestkit import log, model, runtime
+from wintestkit.app import App
 from wintestkit.backends.element import WpfElement, uia_of
 from wintestkit.engine import actions
 from wintestkit.engine.locator import Locator
+from wintestkit.engine.properties import AsText
 from wintestkit.engine.resolve import Scope, resolve_all
 from wintestkit.errors import AmbiguousMatchWarning
 from wintestkit.model import (
@@ -30,7 +32,15 @@ from wintestkit.uia import input as keyboard
 PROPERTY_MAP = {
     "wpfcontrolname": "automation_id",
     "clrfullclassname": "type:FullName",
-    "clrclassname": "class_name",
+    "clrclassname": "type:Name",
+    "wndclass": "class_name",
+    "wndcaption": "name",
+    "controlid": "automation_id",
+    "winformscontrolname": "automation_id",
+    "classname": "class_name",
+    "frameworkid": "FrameworkId",
+    "localizedcontroltype": "LocalizedControlType",
+    "visibleonscreen": "VisibleOnScreen",
     "wpfcontroltext": "name",
     "wpfcontrolordinalno": "index",
     "visible": "clr:IsVisible",
@@ -50,6 +60,15 @@ def _matcher(value: Any) -> Any:
     return re.compile(rf"^{pattern}\Z", re.DOTALL)
 
 
+_INDEX_SUFFIX = re.compile(r"-?[0-9]{1,9}\]")
+
+
+def _name_part(part: str) -> bool:
+    """A property name, optionally indexed: ``Items``, ``Rows[3]`` or ``Item[0]``."""
+    name, bracket, index = part.partition("[")
+    return name.isidentifier() and (not bracket or _INDEX_SUFFIX.fullmatch(index) is not None)
+
+
 def to_locator(props: str | Sequence[str], values: Any, *, depth: int | None = None) -> Locator:
     """Convert a name/value pair or parallel sequences to a locator.
 
@@ -58,8 +77,8 @@ def to_locator(props: str | Sequence[str], values: Any, *, depth: int | None = N
     string remains exact. WPFControlName uses AutomationId, whose WPF peer
     normally falls back to x:Name; an explicitly assigned AutomationId can
     differ. WPFControlText uses the peer/UIA Name, which may differ from the
-    control's actual text. ClassName is the peer's short class name, which a
-    custom peer can override. Visible and Enabled read managed WPF properties.
+    control's actual text. ClrClassName is the managed short type name.
+    ClassName is the peer's short class name. Visible and Enabled read managed WPF properties.
 
     Ordinals become zero-based indexes into all results of the locator in tree
     order, not indexes among siblings of the same type. Depth 1 means direct
@@ -83,8 +102,12 @@ def to_locator(props: str | Sequence[str], values: Any, *, depth: int | None = N
     where: dict[str, Any] = {}
     seen: set[str] = set()
     for prop, value in zip(names, items, strict=True):
-        if not isinstance(prop, str) or not all(part.isidentifier() for part in prop.split(".")):
+        if not isinstance(prop, str) or not all(_name_part(part) for part in prop.split(".")):
             raise ValueError(f"invalid property name: {prop!r}")
+        if prop.casefold() == "olevalue":
+            raise ValueError("OleValue must follow a property path")
+        if prop.casefold().endswith(".olevalue"):
+            prop = prop[: -len(".OleValue")]
         key = prop.casefold()
         if key == "name":
             raise ValueError("Name is an object name; use mapped properties instead")
@@ -92,26 +115,54 @@ def to_locator(props: str | Sequence[str], values: Any, *, depth: int | None = N
             raise ValueError(f"duplicate property: {prop!r}")
         seen.add(key)
         target = PROPERTY_MAP.get(key, f"clr:{prop}")
-        if key in {"visible", "enabled"}:
+        for suffix, facet in ((".clrclassname", "Name"), (".clrfullclassname", "FullName")):
+            if key.endswith(suffix):
+                target = f"type:{facet}@{prop[: -len(suffix)]}"
+                break
+        if key in {"visible", "enabled", "visibleonscreen", "exists"}:
             if isinstance(value, str) and value.casefold() in {"true", "false"}:
                 value = value.casefold() == "true"
             if not isinstance(value, bool):
                 raise ValueError(f"{prop} must be True or False")
         elif key == "wpfcontrolordinalno":
+            if isinstance(value, str) and value.isascii() and value.isdecimal():
+                value = int(value)
             if isinstance(value, bool) or not isinstance(value, int) or value < 1:
                 raise ValueError(f"{prop} must be a positive integer")
             value -= 1
+        elif key == "controlid":
+            if isinstance(value, bool) or not (
+                isinstance(value, int)
+                or (isinstance(value, str) and value.isascii() and value.isdecimal())
+            ):
+                raise ValueError("ControlId must be an integer or numeric string")
+            value = str(int(value))
         else:
+            if key == "wndcaption" and isinstance(value, str):
+                value = re.sub(
+                    r"&(&|.)?", lambda m: "&" if m.group(1) == "&" else (m.group(1) or ""), value
+                )
             value = _matcher(value)
-        if ":" in target:
+            if isinstance(value, str) and target.startswith("clr:"):
+                # Migrated suites pass numbers and booleans as strings; compare by text.
+                value = AsText(value)
+        if key == "exists":
+            if not value:
+                raise ValueError("Exists=False cannot be used to find an absent element")
+            continue
+        if ":" in target or target in {"FrameworkId", "LocalizedControlType", "VisibleOnScreen"}:
             where[target] = value
         else:
             fields[target] = value
-    return Locator(**fields, where=tuple(where.items()))
+    return Locator(**fields, where=tuple(where.items()), allow_empty=not where and len(fields) == 1)
 
 
-def _search(parent: BoundControl | PageObject | Scope, locator: Locator) -> BoundElements:
-    if isinstance(parent, BoundControl):
+def _search(parent: BoundControl | PageObject | Scope | App, locator: Locator) -> BoundElements:
+    if isinstance(parent, App):
+        page = PageObject(parent)
+        root = None
+        locator = replace(locator, app_scope=True)
+    elif isinstance(parent, BoundControl):
         page = parent.page
         root = parent.locator
     elif isinstance(parent, PageObject):
@@ -164,7 +215,7 @@ class _FirstElement(BoundElement):
 
 
 def find_child(
-    parent: BoundControl | PageObject | Scope,
+    parent: BoundControl | PageObject | Scope | App,
     props: str | Sequence[str],
     values: Any,
     depth: int | None = 1,
@@ -189,7 +240,7 @@ def find_child(
 
 
 def find_all_children(
-    parent: BoundControl | PageObject | Scope,
+    parent: BoundControl | PageObject | Scope | App,
     props: str | Sequence[str],
     values: Any,
     depth: int | None = 1,
@@ -224,7 +275,7 @@ class _FindElement(_FirstElement):
 
 
 def find(
-    parent: BoundControl | PageObject | Scope,
+    parent: BoundControl | PageObject | Scope | App,
     props: str | Sequence[str],
     values: Any,
     depth: int | None = 1,

@@ -22,15 +22,22 @@ namespace WinTestKit.Inspector.Agent.Query
         private readonly ObjectRegistry registry;
         private readonly Dictionary<Type, Declaration[]> declarations = new Dictionary<Type, Declaration[]>();
         private readonly Dictionary<Type, bool> descriptorNames = new Dictionary<Type, bool>();
+        private readonly bool loose;
+        private readonly ObjectInspector.PathMemo? memo;
 
         internal ValuePredicate(Predicate predicate, ObjectInspector inspector, ObjectRegistry registry)
         {
             path = predicate.Path!;
             expected = predicate.Value;
             regex = predicate.Kind == "regex" ? new QueryRegex(predicate.Pattern!, predicate.Flags!) : null;
+            loose = predicate.Kind == "equalsText";
+            memo = path.Count > 1 ? new ObjectInspector.PathMemo() : null;
             this.inspector = inspector;
             this.registry = registry;
         }
+
+        /// <summary>Cheapest first: type metadata, then one member, then paths through intermediate objects (indexers and regular expressions cost more).</summary>
+        public int Cost => (path[0].Kind == "type" ? 1 : path[0].Kind == "uia" ? 1 : 2 + path.Count) + (path.Any(segment => segment.Name.IndexOf('[') >= 0) ? 1 : 0) + (regex != null ? 1 : 0);
 
         public bool Matches(DependencyObject target, QueryPredicateContext context) => MatchesObject(target, target.Dispatcher, context);
 
@@ -44,7 +51,7 @@ namespace WinTestKit.Inspector.Agent.Query
                 return true;
             }
             PathSegment first = path[0];
-            if (first.Kind == "property" || first.Kind == "field")
+            if ((first.Kind == "property" || first.Kind == "field") && first.Name.IndexOf('[') < 0)
             {
                 Type type = target.GetType();
                 if (!declarations.TryGetValue(type, out Declaration[]? found))
@@ -98,12 +105,11 @@ namespace WinTestKit.Inspector.Agent.Query
                 try { if (!(target is DependencyObject element) || PeerIdentity.GetPeer(element) == null) return false; }
                 catch (Exception) { throw Unreadable("exception"); }
             }
-            using (var cancellation = new CancellationTokenSource())
             {
-                cancellation.CancelAfter(context.Remaining > TimeSpan.Zero ? context.Remaining : TimeSpan.Zero);
                 ValueDto? value;
-                try { value = inspector.ReadPath(target, path, registry, dispatcher, cancellation.Token); }
+                try { value = memo != null ? inspector.ReadPath(target, path, registry, dispatcher, context.Token, ProtectedRoot(target, context), memo) : inspector.ReadPath(target, path, registry, dispatcher, context.Token, ProtectedRoot(target, context)); }
                 catch (ProtocolException error) when (error.Code == ErrorCodes.MemberNotFound) { return false; }
+                catch (OperationCanceledException) { throw ProtocolException.Deadline("Query deadline reached."); }
                 if (path.Count == 1 && path[0].Kind == "uia" && path[0].Name == "automation_id" &&
                     (value.Status == "unavailable" || value.Status == "ok" && value.Kind == "string" && value.Scalar is JsonStringNode id && id.Value.Length == 0) &&
                     (target is FrameworkElement || target is FrameworkContentElement))
@@ -115,6 +121,7 @@ namespace WinTestKit.Inspector.Agent.Query
                     value = new ValueDto { Status = "ok", Kind = "string", Scalar = new JsonStringNode(name) };
                 }
                 if (path[0].Kind == "uia" && value.Status == "unavailable") return false;
+                if (value.Status == "exception" && value.Message == "System.IndexOutOfRangeException" && value.ErrorMessage == ObjectInspector.IndexOutOfRangeText) return false;
                 return value != null && MatchesValue(value, context);
             }
         }
@@ -130,6 +137,7 @@ namespace WinTestKit.Inspector.Agent.Query
             if (regex != null)
                 return (value.Kind == "string" || value.Kind == "enum") && value.Scalar is JsonStringNode text &&
                     regex.IsMatch(text.Value, (int)Math.Max(0, Math.Min(int.MaxValue, context.Remaining.TotalMilliseconds)));
+            if (loose) return LooseEquals(value);
             if (value.Kind == "enum")
             {
                 if (expected is JsonStringNode enumName && value.Scalar is JsonStringNode name) return enumName.Value == name.Value;
@@ -140,6 +148,24 @@ namespace WinTestKit.Inspector.Agent.Query
             if (value.Kind == "boolean") return expected is JsonBoolNode wantedBool && value.Scalar is JsonBoolNode actualBool && wantedBool.Value == actualBool.Value;
             return expected is JsonNumberNode number && NumbersEqual(value.NumericValue ?? NumberText(value.Scalar), number.RawText);
         }
+
+        /// <summary>Compares the value's invariant text with the expected text: "15" matches 15 and "True" matches true; a decimal or double also matches the same number written with other trailing zeros ("1.5" matches 1.50m).</summary>
+        private bool LooseEquals(ValueDto value)
+        {
+            if (!(expected is JsonStringNode wanted)) return false;
+            string? text = value.Kind == "boolean" ? (value.Scalar is JsonBoolNode flag ? (flag.Value ? "True" : "False") : null) :
+                value.Kind == "string" || value.Kind == "enum" ? (value.Scalar as JsonStringNode)?.Value :
+                value.NumericValue ?? NumberText(value.Scalar);
+            if (text == null) return false;
+            if (value.Kind == "boolean") return string.Equals(text, wanted.Value, StringComparison.OrdinalIgnoreCase);
+            if (text == wanted.Value) return true;
+            if (value.Kind == "enum") return value.NumericValue != null && value.NumericValue == wanted.Value;
+            return value.Kind == "number" && NumbersEqual(text, wanted.Value);
+        }
+
+        // Identity reads and type metadata never depend on whether the element is protected, so they skip the (costly) peer check.
+        private static bool ProtectedRootNeeded(IReadOnlyList<PathSegment> path) => path[0].Kind != "uia" && !(path.Count == 1 && path[0].Kind == "type" && path[0].Name != "BaseTypes");
+        private bool ProtectedRoot(object target, QueryPredicateContext context) => ProtectedRootNeeded(path) && context.IsProtected(target);
 
         private static string? NumberText(JsonNode? value) => value is JsonNumberNode number ? number.RawText : (value as JsonStringNode)?.Value;
         private static bool NumbersEqual(string? left, string right)

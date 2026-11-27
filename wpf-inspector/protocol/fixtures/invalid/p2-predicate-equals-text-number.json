@@ -1,0 +1,13 @@
+{
+  "schema": "Predicate",
+  "instance": {
+    "kind": "equalsText",
+    "path": [
+      {
+        "kind": "property",
+        "name": "PersistId"
+      }
+    ],
+    "value": 15
+  }
+}

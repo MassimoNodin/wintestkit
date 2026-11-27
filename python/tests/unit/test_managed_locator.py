@@ -114,7 +114,7 @@ def test_managed_aliases_are_explicit_and_uia_aliases_unchanged(tmp_path):
         "clr:",
         "clr:A..B",
         r"clr:A\q",
-        "clr:A[0]",
+        "clr:A[x]",
         "clr:A()",
         "field:*",
         "field:0",

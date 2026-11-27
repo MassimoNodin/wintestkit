@@ -14,7 +14,7 @@ def test_managed_flag_and_default_output_are_golden(tmp_path):
     )
     expected = '''"""Generated from NameMapping; review locators before use.
 
-ClrFullClassName requires a verified application-specific UIA property alias.
+ClrFullClassName and ClrClassName require verified application-specific UIA property aliases.
 """
 
 from wintestkit import Element, Page
@@ -31,7 +31,7 @@ class ImportedPage(Page):
 '''
     assert convert(source) == expected
     managed = expected.replace(
-        "ClrFullClassName requires a verified application-specific UIA property alias.",
+        "ClrFullClassName and ClrClassName require verified application-specific UIA property aliases.",
         "Managed class names require the WPF inspector.",
     ).replace('"ClrFullClassName"', '"type:FullName"')
     assert convert(source, managed_class_names=True) == managed

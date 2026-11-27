@@ -6,6 +6,7 @@ from typing import Any, cast
 from wintestkit import runtime
 from wintestkit.backends.element import TargetElement, WpfElement
 from wintestkit.engine.managed import operation_deadline
+from wintestkit.engine.properties import AsText, text_matches
 from wintestkit.errors import ActionError, InvalidLocatorError
 from wintestkit.inspector.models import Value
 from wintestkit.inspector.paths import is_managed_key, parse_managed_key
@@ -57,6 +58,8 @@ def to_python(value: Value) -> Any:
 
 
 def property_matches(actual: Any, expected: Any) -> bool:
+    if isinstance(expected, AsText):
+        return text_matches(expected, actual)
     if isinstance(expected, re.Pattern):
         return (
             isinstance(actual, str) and cast(re.Pattern[str], expected).search(actual) is not None

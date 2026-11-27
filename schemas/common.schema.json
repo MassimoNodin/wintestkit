@@ -170,6 +170,16 @@
         }
       ]
     },
+    "AsTextMatcher": {
+      "type": "object",
+      "properties": {
+        "asText": {
+          "type": "string"
+        }
+      },
+      "required": ["asText"],
+      "additionalProperties": false
+    },
     "WindowLocatorData": {
       "type": "object",
       "properties": {
@@ -179,6 +189,7 @@
           "additionalProperties": {
             "anyOf": [
               { "$ref": "common.schema.json#/$defs/Matcher" },
+              { "$ref": "common.schema.json#/$defs/AsTextMatcher" },
               { "type": "boolean" },
               { "type": "number" }
             ]
@@ -267,6 +278,7 @@
           "additionalProperties": {
             "anyOf": [
               { "$ref": "common.schema.json#/$defs/Matcher" },
+              { "$ref": "common.schema.json#/$defs/AsTextMatcher" },
               { "type": "boolean" },
               { "type": "number" }
             ]

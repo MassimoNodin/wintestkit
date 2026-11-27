@@ -8,7 +8,7 @@ from typing import cast
 
 from wintestkit.engine.locator import Locator
 from wintestkit.engine.managed import ManagedCondition
-from wintestkit.engine.properties import Condition
+from wintestkit.engine.properties import AsText, Condition
 from wintestkit.inspector.models import Locator as WireLocator
 from wintestkit.inspector.models import ObjectRef, Predicate, Scope
 from wintestkit.inspector.paths import PathSegment
@@ -59,6 +59,13 @@ def predicate(path: tuple[PathSegment, ...], value: object) -> Predicate:
         ):
             raise UnsupportedQuery("unsupported regex quantifier")
         return result
+    if isinstance(value, AsText):
+        try:
+            return Predicate.from_json(
+                {"kind": "equalsText", "path": [p.to_json() for p in path], "value": value.text}
+            )
+        except ValueError as error:
+            raise UnsupportedQuery("unsupported text") from error
     if isinstance(value, Decimal):
         value = float(value)
     try:

@@ -175,6 +175,10 @@ def _type_name(value: object) -> str:
     return _str(value, 1024, empty=True)
 
 
+def _continuation(value: object) -> str:
+    return _str(value, 128)
+
+
 def _runtime_id(value: object) -> tuple[int, ...]:
     return _array(value, lambda item: _int(item, -2_147_483_648, 2_147_483_647), 1024, 1)
 
@@ -874,8 +878,11 @@ class Value(WireModel):
 
 def parse_path(value: object) -> tuple[PathSegment, ...]:
     path = _array(value, PathSegment.from_json, 8, 1)
-    if len(path) > 1 and any(segment.kind in {"type", "uia"} for segment in path):
-        raise ValueError("Type metadata must be the only segment")
+    if len(path) > 1 and (
+        any(segment.kind == "uia" for segment in path)
+        or any(segment.kind == "type" for segment in path[:-1])
+    ):
+        raise ValueError("Type metadata must be the final segment")
     if (
         len(
             json.dumps(
@@ -1918,13 +1925,19 @@ class Predicate(WireModel):
     @classmethod
     def from_json(cls, value: object) -> Predicate:
         data = _obj(value, "kind", "path value pattern flags fullName")
-        kind = _choice(data["kind"], {"equals", "regex", "assignableTo"})
+        kind = _choice(data["kind"], {"equals", "equalsText", "regex", "assignableTo"})
         if kind == "assignableTo":
             _obj(value, "kind fullName")
             return cls(kind, full_name=_key(data["fullName"]))
         if kind == "equals":
             _obj(value, "kind path value")
             return cls(kind, path=parse_path(data["path"]), value=_scalar(data["value"]))
+        if kind == "equalsText":
+            _obj(value, "kind path value")
+            text = _scalar(data["value"])
+            if not isinstance(text, str):
+                raise ValueError("equalsText requires a string value")
+            return cls(kind, path=parse_path(data["path"]), value=text)
         _obj(value, "kind path pattern flags")
         flags = _array(
             data["flags"], lambda x: _choice(x, {"ignoreCase", "multiline", "singleline"}), 3
@@ -2152,15 +2165,21 @@ class QueryFindAllResult(WireModel):
     matches: tuple[ObjectRef, ...]
     complete: bool
     count: int | None = None
+    #: Present when the traversal stopped at a request budget and can be resumed.
+    continuation: str | None = None
 
     @classmethod
     def from_json(cls, value: object) -> QueryFindAllResult:
-        d = _obj(value, "matches complete", "count")
-        return cls(
+        d = _obj(value, "matches complete", "count continuation")
+        result = cls(
             _array(d["matches"], ObjectRef.from_json, 200),
             _bool(d["complete"]),
             _optional(d, "count", lambda x: _int(x, 0, 10000)),
+            _optional(d, "continuation", _continuation),
         )
+        if result.complete and result.continuation is not None:
+            raise ValueError("A complete result has no continuation")
+        return result
 
 
 @dataclass(frozen=True)

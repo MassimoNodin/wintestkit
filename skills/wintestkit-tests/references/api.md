@@ -79,7 +79,7 @@ managed tree; other windows use UIA. Qualified keys such as `type:FullName`, `ty
 to qualified or UIA keys. Use paths observed in Spy and never put secrets in `where`. Managed
 reads execute application code. Do not duplicate a property via a keyword and `where`.
 Strings match exactly; a compiled regex
-matches with `re.search`. `window = Window()` with no arguments means the application's main window.
+matches with `re.search`. Managed values are exactly typed; `AsText("15")` compares a managed value's invariant text instead (15, `True`). Managed paths accept indexers (`clr:Rows[3].Value`) and `type:Name@DataContext` reads the runtime type of a nested value. `window = Window()` with no arguments means the application's main window.
 
 `any_of=[{"automation_id": "Save"}, {"name": "Save"}]` ORs non-empty
 property groups (at least two when provided), each merged with the element's properties; conflicts raise at definition time.

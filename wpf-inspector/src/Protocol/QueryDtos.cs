@@ -17,7 +17,7 @@ namespace WinTestKit.Inspector.Protocol
     {
         public string Kind { get; set; } = ""; public IReadOnlyList<PathSegment>? Path { get; set; } public JsonNode? Value { get; set; } public string? Pattern { get; set; } public IReadOnlyList<string>? Flags { get; set; } public string? FullName { get; set; }
         public JsonObjectNode ToJson() { var o = new JsonObjectNode(); DtoHelpers.Add(o,"kind",Kind); if (Path != null) o.Add("path",ResultHelpers.Path(Path)); if (Value != null) o.Add("value",Value); DtoHelpers.Add(o,"pattern",Pattern); if (Flags != null) o.Add("flags",DtoHelpers.Strings(Flags)); DtoHelpers.Add(o,"fullName",FullName); FromJson(o); return o; }
-        public static Predicate FromJson(JsonNode n) { var o = DtoHelpers.Object(n,"kind","path","value","pattern","flags","fullName"); var x = new Predicate { Kind = DtoHelpers.Required(o,"kind") }; DtoHelpers.OneOf(x.Kind,"equals","regex","assignableTo"); if (x.Kind == "assignableTo") { DtoHelpers.Object(n,"kind","fullName"); x.FullName = DtoHelpers.Required(o,"fullName",1024); } else { x.Path = ResultHelpers.Path(o.Get("path")); if (x.Kind == "equals") { DtoHelpers.Object(n,"kind","path","value"); x.Value = o.Get("value"); QueryHelpers.Scalar(x.Value); } else { DtoHelpers.Object(n,"kind","path","pattern","flags"); x.Pattern = DtoHelpers.Required(o,"pattern",1024,true); var flags = DtoHelpers.Strings(o.Get("flags"),3); var seen = new HashSet<string>(); foreach (var f in flags) { DtoHelpers.OneOf(f,"ignoreCase","multiline","singleline"); if (!seen.Add(f)) throw DtoHelpers.Invalid("Duplicate flag"); } x.Flags = flags; } } return x; }
+        public static Predicate FromJson(JsonNode n) { var o = DtoHelpers.Object(n,"kind","path","value","pattern","flags","fullName"); var x = new Predicate { Kind = DtoHelpers.Required(o,"kind") }; DtoHelpers.OneOf(x.Kind,"equals","equalsText","regex","assignableTo"); if (x.Kind == "assignableTo") { DtoHelpers.Object(n,"kind","fullName"); x.FullName = DtoHelpers.Required(o,"fullName",1024); } else { x.Path = ResultHelpers.Path(o.Get("path")); if (x.Kind == "equals" || x.Kind == "equalsText") { DtoHelpers.Object(n,"kind","path","value"); x.Value = o.Get("value"); QueryHelpers.Scalar(x.Value); if (x.Kind == "equalsText" && !(x.Value is JsonStringNode)) throw DtoHelpers.Invalid("equalsText requires a string value"); } else { DtoHelpers.Object(n,"kind","path","pattern","flags"); x.Pattern = DtoHelpers.Required(o,"pattern",1024,true); var flags = DtoHelpers.Strings(o.Get("flags"),3); var seen = new HashSet<string>(); foreach (var f in flags) { DtoHelpers.OneOf(f,"ignoreCase","multiline","singleline"); if (!seen.Add(f)) throw DtoHelpers.Invalid("Duplicate flag"); } x.Flags = flags; } } return x; }
     }
     public sealed class Locator
     {
@@ -33,9 +33,10 @@ namespace WinTestKit.Inspector.Protocol
     }
     public sealed class QueryFindAllParams
     {
-        public Locator Locator { get; set; } = new Locator(); public int TimeoutMs { get; set; }
-        public JsonObjectNode ToJson() => new QueryFindParams { Locator = Locator, TimeoutMs = TimeoutMs }.ToJson();
-        public static QueryFindAllParams FromJson(JsonNode n) { var x = QueryFindParams.FromJson(n); return new QueryFindAllParams { Locator = x.Locator, TimeoutMs = x.TimeoutMs }; }
+        public Locator Locator { get; set; } = new Locator(); public int TimeoutMs { get; set; } public string? Continuation { get; set; }
+        public JsonObjectNode ToJson() { var o = new QueryFindParams { Locator = Locator, TimeoutMs = TimeoutMs }.ToJson(); DtoHelpers.Add(o,"continuation",Continuation); FromJson(o); return o; }
+        public static QueryFindAllParams FromJson(JsonNode n) { var o = DtoHelpers.Object(n,"locator","timeoutMs","continuation"); var x = QueryFindParams.FromJson(Without(o,"continuation")); return new QueryFindAllParams { Locator = x.Locator, TimeoutMs = x.TimeoutMs, Continuation = DtoHelpers.Optional(o,"continuation",ProtocolLimits.MaxContinuationLength) }; }
+        private static JsonObjectNode Without(JsonObjectNode source, string key) { var copy = new JsonObjectNode(); foreach (var name in new[] { "locator", "timeoutMs" }) if (name != key && source.TryGet(name, out var value)) copy.Add(name, value); return copy; }
     }
     public sealed class MatchWarning
     {
@@ -51,8 +52,8 @@ namespace WinTestKit.Inspector.Protocol
     }
     public sealed class QueryFindAllResult
     {
-        public IReadOnlyList<ObjectRef> Matches { get; set; } = new List<ObjectRef>(); public int? Count { get; set; } public bool Complete { get; set; }
-        public JsonObjectNode ToJson() { var o = new JsonObjectNode(); var a = new JsonArrayNode(); foreach (var m in Matches) a.Add(m.ToJson()); o.Add("matches",a); DtoHelpers.Add(o,"count",Count); o.Add("complete",new JsonBoolNode(Complete)); FromJson(o); return o; }
-        public static QueryFindAllResult FromJson(JsonNode n) { var o = DtoHelpers.Object(n,"matches","count","complete"); var ms = new List<ObjectRef>(); foreach (var m in DtoHelpers.Array(o.Get("matches"),200).Items) ms.Add(ObjectRef.FromJson(m)); var x = new QueryFindAllResult { Matches = ms, Complete = DtoHelpers.Boolean(o.Get("complete")) }; if (o.TryGet("count",out var c)) x.Count = (int)DtoHelpers.Integer(c,0,10000); if (x.Complete && x.Count.HasValue && x.Count.Value != ms.Count || x.Count.HasValue && x.Count.Value < ms.Count) throw DtoHelpers.Invalid("Invalid count"); return x; }
+        public IReadOnlyList<ObjectRef> Matches { get; set; } = new List<ObjectRef>(); public int? Count { get; set; } public bool Complete { get; set; } public string? Continuation { get; set; }
+        public JsonObjectNode ToJson() { var o = new JsonObjectNode(); var a = new JsonArrayNode(); foreach (var m in Matches) a.Add(m.ToJson()); o.Add("matches",a); DtoHelpers.Add(o,"count",Count); o.Add("complete",new JsonBoolNode(Complete)); DtoHelpers.Add(o,"continuation",Continuation); FromJson(o); return o; }
+        public static QueryFindAllResult FromJson(JsonNode n) { var o = DtoHelpers.Object(n,"matches","count","complete","continuation"); var ms = new List<ObjectRef>(); foreach (var m in DtoHelpers.Array(o.Get("matches"),200).Items) ms.Add(ObjectRef.FromJson(m)); var x = new QueryFindAllResult { Matches = ms, Complete = DtoHelpers.Boolean(o.Get("complete")), Continuation = DtoHelpers.Optional(o,"continuation",ProtocolLimits.MaxContinuationLength) }; if (x.Complete && x.Continuation != null) throw DtoHelpers.Invalid("A complete result has no continuation"); if (o.TryGet("count",out var c)) x.Count = (int)DtoHelpers.Integer(c,0,10000); if (x.Complete && x.Count.HasValue && x.Count.Value != ms.Count || x.Count.HasValue && x.Count.Value < ms.Count) throw DtoHelpers.Invalid("Invalid count"); return x; }
     }
 }

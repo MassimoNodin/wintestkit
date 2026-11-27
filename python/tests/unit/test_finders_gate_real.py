@@ -188,3 +188,17 @@ def test_namemapping_round_trip(owned, tmp_path):
                 .same_as(resolve(scope, Locator(automation_id=automation_id)))
             )
         assert not page.missing.exists(timeout=1)
+
+
+@pytest.mark.integration
+def test_app_finder_managed_and_visibility(owned):
+    scope, path = owned
+    with runtime.config_scope(replace(config(path, "agent"), backend="auto")):
+        main = scope.app.main_window()
+        assert find_child(scope.app, "WndCaption", main.name, 1).resolve_once().same_as(main)
+        match = find_child(
+            scope.app, ["ClrClassName", "VisibleOnScreen"], ["FancyButton", True], 20
+        )
+        assert match.resolve_once().same_as(
+            resolve(scope, Locator(automation_id="FancyAutomationId"))
+        )

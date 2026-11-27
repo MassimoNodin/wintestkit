@@ -159,5 +159,11 @@
       }
     },
     "describe": "Group[name=\"Panel\", depth=1, has=*[depth=2, any_of=(id=\"A\" | name=\"B\", control_type=Button)]]"
+  },
+  {
+    "locator": {
+      "where": { "clr:PersistId": { "asText": "15" }, "clr:Name": "x" }
+    },
+    "describe": "*[clr:PersistId=AsText(\"15\"), clr:Name=\"x\"]"
   }
 ]

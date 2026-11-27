@@ -10,6 +10,7 @@ import wintestkit
 
 EXPECTED = {
     "App",
+    "AsText",
     "BoundButton",
     "BoundCheckBox",
     "BoundComboBox",

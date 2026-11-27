@@ -37,7 +37,7 @@ export type ItemMatch =
       flags: RegexFlags;
     };
 /**
- * Type and UIA segments must be alone. Serialized paths must not exceed 1024 UTF-8 bytes.
+ * A UIA segment must be alone. A type segment reads the runtime type of the value reached by the preceding segments, so it occurs at most once and only as the last segment. A property or field name may end in an indexer, Name[3]: a non-negative or negative 32-bit integer applied to the member's value (array, list, default int indexer, or enumerated sequence); the indexer is part of its segment. Serialized paths must not exceed 1024 UTF-8 bytes.
  *
  * @minItems 1
  * @maxItems 8
@@ -457,7 +457,7 @@ export type InspectManagedMembersResult = {
   nextToken?: Identifier;
 };
 /**
- * Type and UIA segments must be alone. Serialized paths must not exceed 1024 UTF-8 bytes.
+ * A UIA segment must be alone. A type segment reads the runtime type of the value reached by the preceding segments, so it occurs at most once and only as the last segment. A property or field name may end in an indexer, Name[3]: a non-negative or negative 32-bit integer applied to the member's value (array, list, default int indexer, or enumerated sequence); the indexer is part of its segment. Serialized paths must not exceed 1024 UTF-8 bytes.
  *
  * @minItems 1
  * @maxItems 8
@@ -585,7 +585,7 @@ export type Scope =
       handle: ObjectRef;
     };
 /**
- * Validate the shared regex subset and bounds before matching; Python re.search semantics with ASCII-only case folding, multiline anchors and singleline dot; reject unsupported constructs and malformed patterns. Equality is type-aware; assignability uses already-loaded metadata. Unavailable, redacted, truncated or failed values cannot silently match.
+ * Validate the shared regex subset and bounds before matching; Python re.search semantics with ASCII-only case folding, multiline anchors and singleline dot; reject unsupported constructs and malformed patterns. Equality is type-aware; equalsText compares the value's invariant-culture text (15 equals 15 as text, true equals True, numbers also equal the same number written with other trailing zeros; null never matches); assignability uses already-loaded metadata. Unavailable, redacted, truncated or failed values cannot silently match.
  *
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
  * via the `definition` "Predicate".
@@ -595,6 +595,11 @@ export type Predicate =
       kind: "equals";
       path: Path;
       value: Scalar;
+    }
+  | {
+      kind: "equalsText";
+      path: Path;
+      value: string;
     }
   | {
       kind: "regex";
@@ -869,7 +874,7 @@ export type MemberPage2 = ManagedMemberPage1;
  */
 export type MethodPage2 = ManagedMethodPage1;
 /**
- * Type and UIA segments must be alone. Serialized paths must not exceed 1024 UTF-8 bytes.
+ * A UIA segment must be alone. A type segment reads the runtime type of the value reached by the preceding segments, so it occurs at most once and only as the last segment. A property or field name may end in an indexer, Name[3]: a non-negative or negative 32-bit integer applied to the member's value (array, list, default int indexer, or enumerated sequence); the indexer is part of its segment. Serialized paths must not exceed 1024 UTF-8 bytes.
  *
  * @minItems 1
  * @maxItems 8
@@ -989,6 +994,7 @@ export interface ProtocolContracts {
   AppStartingNotification?: AppStartingNotification;
   AppStatusParams?: AppStatusParams;
   AppStatusResult?: AppStatusResult;
+  AsTextMatcher?: AsTextMatcher;
   AttributeInfo?: AttributeInfo;
   AttributeLiteral?: AttributeLiteral;
   BindingInfo?: BindingInfo;
@@ -1475,6 +1481,13 @@ export interface AppStatusResult {
   owned: boolean;
   pids: number[];
   mainWindowTitle?: string;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "AsTextMatcher".
+ */
+export interface AsTextMatcher {
+  asText: string;
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
@@ -2082,7 +2095,7 @@ export interface ElementEntry {
  */
 export interface LocatorData {
   where?: {
-    [k: string]: Matcher | boolean | number;
+    [k: string]: Matcher | AsTextMatcher | boolean | number;
   };
   automationId?: Matcher;
   name?: Matcher;
@@ -2105,7 +2118,7 @@ export interface LocatorData {
  */
 export interface WindowLocatorData {
   where?: {
-    [k: string]: Matcher | boolean | number;
+    [k: string]: Matcher | AsTextMatcher | boolean | number;
   };
   title?: Matcher;
   process?: string;
@@ -3781,12 +3794,19 @@ export interface ParentParams {
 export interface ParentResult {
   handle: ObjectRef | null;
 }
+/**
+ * continuation resumes the traversal a previous incomplete result paused; it must be sent with the same locator.
+ *
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "QueryFindAllParams".
+ */
 export interface QueryFindAllParams {
   locator: Locator;
   timeoutMs: number;
+  continuation?: string;
 }
 /**
- * Count only after full traversal; incomplete results may be capped or budget-limited.
+ * Count only after full traversal; incomplete results may be capped or budget-limited. A traversal that stopped at a request budget returns no matches, complete false and a continuation token for the next request; a complete result never has one.
  *
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
  * via the `definition` "QueryFindAllResult".
@@ -3798,6 +3818,7 @@ export interface QueryFindAllResult {
   matches: ObjectRef[];
   count?: number;
   complete: boolean;
+  continuation?: string;
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
@@ -5061,14 +5082,6 @@ export interface StateGetParams8 {
 export interface ActResult11 {
   outcome: "performed" | "noChange";
   handle: ObjectRef;
-}
-/**
- * This interface was referenced by `ProtocolContracts`'s JSON-Schema
- * via the `definition` "QueryFindAllParams".
- */
-export interface QueryFindParams1 {
-  locator: Locator;
-  timeoutMs: number;
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema

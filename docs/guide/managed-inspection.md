@@ -340,6 +340,9 @@ Element(where={'type:Is': 'Example.BaseView'})
 Element(automation_id='Order', where={'clr:DataContext.Status': 'Ready'})
 Element(automation_id='Order', where={'field:State': 'Ready'})
 Element(automation_id='Order', where={'dp:PresentationFramework|System.Windows.FrameworkElement::Tag': 'Ready'})
+Element(automation_id='Order', where={'clr:DataContext.Rows[3].Value': 'Ready'})
+Element(automation_id='Order', where={'type:Name@DataContext': 'OrderViewModel'})
+Element(automation_id='Order', where={'clr:DataContext.PersistId': AsText('15')})
 ```
 
 `type:` accepts `Name`, `FullName`, `AssemblyName`, `AssemblyQualifiedName`, or `BaseTypes`.
@@ -349,13 +352,60 @@ with properties. Escape a literal dot as `\.` and a backslash as `\\` in the key
 backslashes again in ordinary Python string literals). `dp:` uses
 `assembly|owner-type::property` followed optionally by slash-separated property segments;
 escape literal slashes as `\/` and backslashes as `\\` in those segments. Paths allow at
-most eight segments and 1,024 UTF-8 bytes; whitespace, indexers and method calls are not
+most eight segments and 1,024 UTF-8 bytes; whitespace and method calls are not
 supported. Do not guess paths or dependency owners.
 
+### Indexers
+
+A property or field name can end in an indexer, `Name[3]`: the integer applies to the member's
+value, and `el.get('clr:DataContext.Rows[3].Value')` and `where` conditions read through it.
+The index is a 32-bit integer of up to nine digits and counts as part of its segment, so it uses
+no extra segment and the eight-segment and 1,024-byte limits are unchanged. The .NET spelling
+`Items.Item[0].Name` means `Items[0].Name`. An indexer follows an ordinary member name and takes
+one index: `Item[0]` alone is a property named `Item`, and `A[0][1]` is not supported (name the
+intermediate member, `A[0].B[1]`).
+
+The value must be an array, an `IList`/`IList<T>`, an object with a default indexer taking one
+`int` (such as a `Dictionary<int, V>`), or any other `IEnumerable`, which is enumerated up to
+the index (at most 10,000 items, within the request deadline). Multidimensional arrays are not
+indexable. A negative or out-of-range index is a read error, `index out of range`, for
+`el.get(...)` and a non-match, not an error, inside `where`. A null collection is a
+`nullIntermediate` result in `get()` and a non-match in `where`. Redaction applies to the
+member name as before.
+
+### The type of a nested value
+
+`type:<Facet>@<path>` reads the runtime type of the value at a managed path, for example
+`type:Name@DataContext` (the short class name of the DataContext, such as `OrderViewModel`) or
+`type:FullName@DataContext.Items[0]`. `<Facet>` is one of `Name`, `FullName`, `AssemblyName`,
+`AssemblyQualifiedName` or `BaseTypes`; `<path>` uses the `clr:` syntax and counts towards the
+eight-segment limit together with the type segment (up to seven properties). It works in `where`
+(exact, regular expression, wildcards through the [find helpers](property-matching.md)) and in
+`el.get('type:Name@DataContext')`. The type is the runtime type, not the declared one. A null
+value has no type: the key is a non-match in `where` and `nullIntermediate` in `get()`.
+`type:Is` cannot be nested.
+
+### Comparing by text
+
+Ordinary `where` values are exactly typed: `15` matches an integer, `'15'` only a string.
+`AsText('15')` (`from wintestkit import AsText`) compares the managed value's invariant-culture
+text instead, for suites that supply numbers and booleans as strings: `AsText('15')` matches
+the integer 15, `AsText('True')` (any case) the boolean true, and an enum matches its name or
+its integer text. A decimal or double also matches the same number with other trailing zeros
+(`AsText('1.5')` matches `1.50m`); integers do not (`'015'` is not 15). Null never matches, and
+objects, collections and truncated strings cannot be compared. It applies to `clr:`, `field:`,
+`dp:` and `type:` keys only.
+
 Agent queries search the combined WPF tree, including elements without UIA peers.
-The agent returns at most 200 matches: if traversal
-is incomplete with fewer than 200, the query raises a limit error; 200 incomplete matches
-are returned because ambiguity is already evident. Managed keys require `backend: auto` and a WPF window; they are not supported by the UIA
+The agent returns at most 200 matches. A traversal that does not fit one request's time and
+object budget (2 s and 10,000 elements) pauses and WinTestKit resumes it with further requests,
+so very large trees are searched completely; the whole search stays within the locator
+timeout, and the agent stops a single search at 250,000 elements. A query therefore either
+completes, or raises a limit error when it runs out of time or elements; 200 incomplete matches
+are returned because ambiguity is already evident.
+Within one search a path such as `clr:DataContext.Status` is evaluated once per distinct
+intermediate object (elements sharing a DataContext read it once), type and identity conditions
+run before member reads, and per-type member lookups are cached. Managed keys require `backend: auto` and a WPF window; they are not supported by the UIA
 backend. Equality and regular expressions use the
 normal `where` matching rules; managed scalar comparison distinguishes booleans from numbers
 and supports enum names or integer values. Redacted, unsupported or ambiguous values cannot

@@ -121,7 +121,7 @@ def _split(text: str, separator: str, offset: int) -> list[str]:
                 raise InvalidLocatorError(f"Empty segment at position {offset + index}")
             parts.append(part)
             part = ""
-        elif char in "[]()*" or char.isspace():
+        elif char in "()*" or char.isspace():
             raise InvalidLocatorError(f"Invalid character {char!r} at position {offset + index}")
         else:
             part += char
@@ -132,7 +132,15 @@ def _split(text: str, separator: str, offset: int) -> list[str]:
     for part in parts:
         if part.isdecimal():
             raise InvalidLocatorError(f"Integer index {part!r} is not allowed")
-    return parts
+        if ("[" in part or "]" in part) and not re.fullmatch(r"[^\[\]]+\[-?[0-9]{1,9}\]", part):
+            raise InvalidLocatorError(f"Invalid indexer {part!r}")
+    normalized: list[str] = []
+    for part in parts:
+        if part.startswith("Item[") and normalized and "[" not in normalized[-1]:
+            normalized[-1] += part[4:]
+        else:
+            normalized.append(part)
+    return normalized
 
 
 def parse_managed_key(key: str) -> ManagedPath:
@@ -147,7 +155,8 @@ def parse_managed_key(key: str) -> ManagedPath:
     prefix, body = key.split(":", 1)
     offset = len(prefix) + 1
     if prefix == "type":
-        if body not in {
+        facet, marker, nested = body.partition("@")
+        if facet not in {
             "Name",
             "FullName",
             "AssemblyName",
@@ -155,8 +164,17 @@ def parse_managed_key(key: str) -> ManagedPath:
             "BaseTypes",
             "Is",
         }:
-            raise InvalidLocatorError(f"Invalid type name {body!r} at position {offset}")
-        segments = [PathSegment("type", body)]
+            raise InvalidLocatorError(f"Invalid type name {facet!r} at position {offset}")
+        if marker:
+            if facet == "Is":
+                raise InvalidLocatorError("type:Is cannot read a nested value")
+            segments = [
+                PathSegment("property", name)
+                for name in _split(nested, ".", offset + len(facet) + 1)
+            ]
+            segments.append(PathSegment("type", facet))
+        else:
+            segments = [PathSegment("type", facet)]
     elif prefix == "dp":
         if body.count("|") != 1 or body.count("::") != 1:
             raise InvalidLocatorError(f"Invalid dependency path delimiters at position {offset}")

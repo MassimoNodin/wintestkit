@@ -534,3 +534,47 @@ def test_resource_result_round_trips_and_is_empty_when_not_found() -> None:
     ):
         with pytest.raises(ValueError):
             ResourceResult.from_json(bad)
+
+
+def test_equals_text_predicate_and_nested_type_paths() -> None:
+    from wintestkit.inspector.models import Predicate
+
+    path = [{"kind": "property", "name": "DataContext"}, {"kind": "type", "name": "Name"}]
+    parsed = Predicate.from_json({"kind": "equalsText", "path": path, "value": "15"})
+    assert parsed.kind == "equalsText" and parsed.value == "15"
+    assert Predicate.from_json(parsed.to_json()) == parsed
+    for bad in (
+        {"kind": "equalsText", "path": path, "value": 15},
+        {"kind": "equalsText", "path": path, "value": True},
+        {"kind": "equalsText", "path": path},
+    ):
+        with pytest.raises(ValueError):
+            Predicate.from_json(bad)
+    # Type metadata ends a path; it cannot lead one, and UIA segments stay alone.
+    with pytest.raises(ValueError):
+        Predicate.from_json({"kind": "equals", "path": path[::-1], "value": "x"})
+    with pytest.raises(ValueError):
+        Predicate.from_json(
+            {
+                "kind": "equals",
+                "path": [{"kind": "uia", "name": "name"}, {"kind": "property", "name": "A"}],
+                "value": "x",
+            }
+        )
+    indexed = [{"kind": "property", "name": "Items[0]"}, {"kind": "property", "name": "Name"}]
+    assert Predicate.from_json({"kind": "equals", "path": indexed, "value": "x"}).path
+
+
+def test_find_all_result_continuation() -> None:
+    from wintestkit.inspector.models import QueryFindAllResult
+
+    parsed = QueryFindAllResult.from_json({"matches": [], "complete": False, "continuation": "abc"})
+    assert parsed.continuation == "abc" and not parsed.complete
+    assert QueryFindAllResult.from_json({"matches": [], "complete": True}).continuation is None
+    for bad in (
+        {"matches": [], "complete": True, "continuation": "abc"},
+        {"matches": [], "complete": False, "continuation": ""},
+        {"matches": [], "complete": False, "continuation": "x" * 129},
+    ):
+        with pytest.raises(ValueError):
+            QueryFindAllResult.from_json(bad)
