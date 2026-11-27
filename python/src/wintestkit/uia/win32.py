@@ -19,6 +19,7 @@ user32 = ctypes.WinDLL("user32", use_last_error=True)
 gdi32 = ctypes.WinDLL("gdi32", use_last_error=True)
 kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
 advapi32 = ctypes.WinDLL("advapi32", use_last_error=True)
+shell32 = ctypes.WinDLL("shell32", use_last_error=True)
 dwmapi = ctypes.WinDLL("dwmapi", use_last_error=True)
 dwmapi.DwmGetWindowAttribute.argtypes = [
     wintypes.HWND,
@@ -92,6 +93,11 @@ TOKEN_ELEVATION_CLASS = 20
 WAIT_OBJECT_0 = 0
 WAIT_TIMEOUT = 0x102
 STILL_ACTIVE = 259
+SEE_MASK_NOCLOSEPROCESS = 0x00000040
+SEE_MASK_NOASYNC = 0x00000100
+SEE_MASK_FLAG_NO_UI = 0x00000400
+SW_SHOWNORMAL = 1
+ERROR_CANCELLED = 1223
 INVALID_HANDLE_VALUE = ctypes.c_void_p(-1).value
 
 SRCCOPY = 0x00CC0020
@@ -259,6 +265,26 @@ class TOKEN_ELEVATION(ctypes.Structure):
     _fields_ = [("TokenIsElevated", wintypes.DWORD)]
 
 
+class SHELLEXECUTEINFOW(ctypes.Structure):
+    _fields_ = [
+        ("cbSize", wintypes.DWORD),
+        ("fMask", wintypes.ULONG),
+        ("hwnd", wintypes.HWND),
+        ("lpVerb", wintypes.LPCWSTR),
+        ("lpFile", wintypes.LPCWSTR),
+        ("lpParameters", wintypes.LPCWSTR),
+        ("lpDirectory", wintypes.LPCWSTR),
+        ("nShow", ctypes.c_int),
+        ("hInstApp", wintypes.HINSTANCE),
+        ("lpIDList", ctypes.c_void_p),
+        ("lpClass", wintypes.LPCWSTR),
+        ("hkeyClass", wintypes.HKEY),
+        ("dwHotKey", wintypes.DWORD),
+        ("hIconOrMonitor", wintypes.HANDLE),
+        ("hProcess", wintypes.HANDLE),
+    ]
+
+
 # -- function declarations -----------------------------------------------------------------------
 
 
@@ -408,6 +434,10 @@ QueryFullProcessImageNameW = _declare(
 )
 ProcessIdToSessionId = _declare(kernel32, "ProcessIdToSessionId", _B, _D, ctypes.POINTER(_D))
 GetModuleHandleW = _declare(kernel32, "GetModuleHandleW", wintypes.HMODULE, _S)
+GetProcessId = _declare(kernel32, "GetProcessId", _D, HANDLE)
+
+# shell32
+ShellExecuteExW = _declare(shell32, "ShellExecuteExW", _B, ctypes.POINTER(SHELLEXECUTEINFOW))
 
 # user32 (continued)
 WaitForInputIdle = _declare(user32, "WaitForInputIdle", _D, HANDLE, _D)
@@ -678,6 +708,39 @@ class Win32WindowBackend:
             enabled=bool(IsWindowEnabled(hwnd)),
             dpi=dpi or None,
         )
+
+
+def shell_execute(
+    path: str, parameters: str = "", directory: str | None = None, *, verb: str = "runas"
+) -> tuple[int, int]:
+    """Start ``path`` through the shell with ``verb``; returns ``(process handle, pid)``.
+
+    With ``runas`` the shell asks for elevation (UAC) unless the caller is already elevated. The
+    handle is the caller's to close. Raises ``OSError`` (``winerror`` 1223 when the prompt was
+    declined) and ``OSError`` without a code when the launch produced no process.
+    """
+    info = SHELLEXECUTEINFOW()
+    info.cbSize = ctypes.sizeof(SHELLEXECUTEINFOW)
+    info.fMask = SEE_MASK_NOCLOSEPROCESS | SEE_MASK_NOASYNC
+    info.lpVerb = verb
+    info.lpFile = path
+    info.lpParameters = parameters or None
+    info.lpDirectory = directory
+    info.nShow = SW_SHOWNORMAL
+    if not ShellExecuteExW(ctypes.byref(info)):
+        raise ctypes.WinError(ctypes.get_last_error())
+    handle = int(info.hProcess or 0)
+    if not handle:
+        raise OSError(f"{path} did not start a process that can be followed")
+    return handle, int(GetProcessId(handle))
+
+
+def process_exit_code(handle: int) -> int | None:
+    """The exit code of the process behind ``handle``; ``None`` while it is still running."""
+    code = wintypes.DWORD(0)
+    if not GetExitCodeProcess(handle, ctypes.byref(code)):
+        return None
+    return None if code.value == STILL_ACTIVE else int(code.value)
 
 
 def process_is_elevated(pid: int) -> bool | None:

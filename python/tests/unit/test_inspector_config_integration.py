@@ -152,6 +152,9 @@ class FakeRegistry:
     def get(self, identity: ProcessIdentity) -> Any:
         return self.client
 
+    def expired_by_idle(self, identity: ProcessIdentity) -> bool:
+        return False
+
     def attach(self, identity: ProcessIdentity, *, target_hwnd: int | None, deadline: float) -> Any:
         self.attempts += 1
         if self.fail:

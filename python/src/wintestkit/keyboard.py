@@ -20,16 +20,18 @@ _LOCATOR = "foreground window"
 def _check_foreground() -> None:
     """Refuse unless the foreground window belongs to the application under test."""
     __tracebackhide__ = True
-    app = runtime.current_app()
-    if app is None:
+    apps = runtime.known_apps()
+    if not apps:
         raise ActionError(
             "There is no application under test to send keys to: use wintestkit.keyboard in a "
             "test that uses the `app` fixture (or a page bound to an App)"
         )
     hwnd = win32.GetForegroundWindow()
-    if not hwnd or win32.window_pid(hwnd) not in set(app.pids):
+    owner = win32.window_pid(hwnd) if hwnd else 0
+    if not owner or not any(owner in app.pids for app in apps):
+        names = " or ".join(dict.fromkeys(app.process_name for app in apps))
         raise ActionError(
-            f"The foreground window does not belong to {app.process_name}; refusing to send keys. "
+            f"The foreground window does not belong to {names}; refusing to send keys. "
             "Activate one of its windows first (window.activate())"
         )
 

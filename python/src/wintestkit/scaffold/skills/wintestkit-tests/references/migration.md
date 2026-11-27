@@ -43,8 +43,14 @@ scripts or test routines. Output: pages, components, flows, tests.
 | `<path>.ClrClassName` / `.ClrFullClassName` | `type:Name@DataContext` / `type:FullName@DataContext`: the type of the value at the path |
 | Numbers/booleans passed as strings | `AsText("15")` compares a managed value's invariant text; `find_child` applies it to plain strings on property paths |
 | `WaitProperty(prop, value, timeout_ms)` | `finders.wait_property(el, prop, value, timeout_ms)`: returns `True`/`False`, never raises (`Exists` `False` waits for disappearance); `el.wait_for_property(name, expected)` raises on timeout |
-| `Delay`, `Sleep`, `WaitChild` | use `expect` or `wait_for()` for the required state; actions wait for existence by default |
-| data-driven loop / table | `@pytest.mark.parametrize` |
+| `Delay`, `Sleep`, `WaitChild` | use `expect` or `wait_for()` for the required state; actions wait for existence by default; a plain `Delay(ms)` is `time.sleep(ms / 1000)` |
+| data-driven loop / table / data dictionary | `@pytest.mark.parametrize` |
+| project variables (a Boolean) | configuration, an environment variable or a pytest option read by a fixture |
+| the clipboard text | `clipboard.get_text()` / `set_text(text)` / `clear()` |
+| another application in the same test | `apps.launch(path, args=[...])` / `apps.attach("x.exe")` and a page per `App` |
+| elevated launch | `App.launch(path, elevated=True)` or `app.elevated` in the configuration (needs an elevated runner to drive it) |
+| `Sys.Process(name)`, `Sys.WaitProcess(name, ms)` | `finders.process(name)`, `finders.wait_process(name, ms)` (or `finders.Sys.Process(...)`) |
+| close with Alt+F4, answer a prompt, wait, force-kill | `app.request_close("alt_f4")`, `app.close_gracefully(on_prompt=fn, kill=True)`, `app.kill()` |
 | `OnUnexpectedWindow` and other event handlers | fixtures; for known dialogs, a page plus a flow step |
 | test items / execution plan | files, folders and markers (`wtk run -m smoke`) |
 | Command-line runner | `wtk run` / `pytest` |

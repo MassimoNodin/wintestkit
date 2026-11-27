@@ -6,6 +6,7 @@ The search helpers use the same lazy locators as page objects.
 from __future__ import annotations
 
 import re
+import time
 import warnings
 from collections.abc import Callable, Sequence
 from dataclasses import replace
@@ -24,6 +25,7 @@ from wintestkit.engine.wpf_resolve import managed_capable, route
 from wintestkit.errors import (
     AmbiguousElementError,
     AmbiguousMatchWarning,
+    AppNotRunningError,
     ElementNotFoundError,
     LocatorError,
     UIAError,
@@ -686,13 +688,89 @@ def from_label(parent: Parent | None, label: str) -> BoundElement:
     start: Any = parent
     if parsed.process is not None:
         current = _app_of(parent) if parent is not None else None
-        if current is not None and current.process_name.casefold() == parsed.process.casefold():
+        if current is not None and current.matches_process(parsed.process):
             start = current
         else:
-            start = App.attach(process=parsed.process)
+            start = process(parsed.process)
     elif parent is None:
         raise ValueError("from_label needs a parent unless the label starts with Process(...)")
     return cast(BoundElement, _chain(start, parsed.steps))
+
+
+# -- processes: Sys.Process(name) and Sys.WaitProcess(name, ms) -----------------------------------
+#
+# A migrated suite starts at a process: ``Sys.Process("x.exe").WPFObject(...)``. These return the
+# ``App`` that stands for it. They work for any process with a window, also one this test did not
+# start (a second application, Notepad, a dialog owned by the shell): the App is found by exe name
+# and drives its windows through UI Automation, or through the inspector for a WPF one.
+
+_PROCESS_POLL = 0.1
+
+
+def process(name: str) -> App:
+    """``Sys.Process(name)``: the :class:`~wintestkit.app.App` of a running process.
+
+    ``name`` is the exe name; ``"notepad"`` and ``"notepad.exe"`` are the same. Raises
+    :class:`~wintestkit.errors.AppNotRunningError` when no process of that name is running; use
+    :func:`wait_process` to wait for one. Every call returns a fresh ``App`` bound to the processes
+    running now. Closing or killing it affects the processes of that exe only, never other apps.
+    """
+    __tracebackhide__ = True
+    if not isinstance(name, str) or not name.strip():  # pyright: ignore[reportUnnecessaryIsInstance]
+        raise ValueError(f"invalid process name: {name!r}")
+    return App.attach(process=name.strip())
+
+
+def wait_process(name: str, timeout_ms: float = 0) -> App | None:
+    """``Sys.WaitProcess(name, ms)``: wait up to ``timeout_ms`` for a process; ``None`` if none.
+
+    ``0`` (the default) looks once and returns at once. It never raises for a missing process, and
+    it is one report step with the name, the time allowed and whether the process was found. The
+    process is running, which is not the same as having a window yet: look for the window with a
+    finder or ``app.main_window(timeout)``.
+    """
+    __tracebackhide__ = True
+    if not isinstance(name, str) or not name.strip():  # pyright: ignore[reportUnnecessaryIsInstance]
+        raise ValueError(f"invalid process name: {name!r}")
+    budget = max(0.0, timeout_ms / 1000)
+    args = {"name": name, "timeout_ms": round(budget * 1000)}
+    with runtime.step("wait_process", name, "", args) as record:
+        deadline = time.monotonic() + budget
+        while True:
+            try:
+                found = App.attach(process=name.strip())
+            except AppNotRunningError:
+                found = None
+            if found is not None or time.monotonic() >= deadline:
+                break
+            time.sleep(_PROCESS_POLL)
+        record.args["found"] = found is not None
+    return found
+
+
+class _Sys:
+    """``Sys``: the system node of a migrated suite, so ported code reads as it did.
+
+    ``Sys.Process("x.exe")`` and ``Sys.WaitProcess("x.exe", 5000)`` are :func:`process` and
+    :func:`wait_process`; the snake_case names work too.
+    """
+
+    def process(self, name: str) -> App:
+        __tracebackhide__ = True
+        return process(name)
+
+    def wait_process(self, name: str, timeout_ms: float = 0) -> App | None:
+        __tracebackhide__ = True
+        return wait_process(name, timeout_ms)
+
+    Process = process
+    WaitProcess = wait_process
+
+    def __repr__(self) -> str:
+        return "Sys"
+
+
+Sys = _Sys()
 
 
 # -- navigation: parent, children, label, full_name ---------------------------------------------

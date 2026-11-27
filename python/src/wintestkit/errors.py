@@ -52,6 +52,14 @@ class AppNotRunningError(AppError):
     """The application under test is not running."""
 
 
+class ElevationError(AppError):
+    """The application runs elevated and the test runner does not, so Windows (UIPI) blocks it.
+
+    A process at a lower integrity level cannot send input or window messages to a higher one,
+    and cannot use UI Automation or the inspector on it. Start the runner elevated.
+    """
+
+
 class AttachNotRunningError(AppNotRunningError):
     """A test run in ``attach`` mode found the application not running, so it was never launched."""
 
@@ -102,6 +110,10 @@ class WaitTimeoutError(WtkError):
 
 class ActionError(WtkError):
     """The requested action is not possible on the element."""
+
+
+class ClipboardError(ActionError):
+    """The clipboard holds no text, or another process kept it locked."""
 
 
 class UIAError(WtkError):

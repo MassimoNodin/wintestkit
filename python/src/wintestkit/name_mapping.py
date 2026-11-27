@@ -45,6 +45,17 @@ _NO_EQUIVALENT = {
     "objectgroupindex": "no equivalent; compare by hand",
 }
 _TEXT_AND_ORDINAL = {"wpfcontroltext", "wpfcontrolordinalno"}
+#: Properties that hold a type or a name. A typed non-string value (the integer ``0`` that real
+#: exports store for a popup window whose root visual has no class name) can never equal one.
+_TEXT_PROPERTIES = {
+    "clrclassname",
+    "clrfullclassname",
+    "wpfcontrolname",
+    "winformscontrolname",
+    "wndclass",
+    "classname",
+    "wndcaption",
+}
 
 Value = str | int | bool
 
@@ -313,6 +324,13 @@ def _translate(node: _Node, *, window: bool) -> _Declaration:
             mapped = name[len("rootvisual.") :]
             if mapped.casefold() == "name":
                 mapped = "WPFControlName"
+        if not isinstance(value, str) and (
+            mapped.casefold() in _TEXT_PROPERTIES
+            or mapped.casefold().endswith((".clrclassname", ".clrfullclassname"))
+        ):
+            reason = f"a type or name holds the non-string value {value!r}; check it by hand"
+            todos.append((name, value, reason))
+            continue
         if window and mapped.casefold() in _TEXT_AND_ORDINAL:
             todos.append((name, value, "a window has no text or ordinal among its siblings"))
             continue

@@ -56,9 +56,16 @@ This guide helps you migrate an existing **WPF desktop test suite** to WinTestKi
 | Property checkpoints and region checks | `expect(...)` assertions; `finders.check_property` for the old names and conditions |
 | Property and child waits | Automatic waiting in actions and `expect`; `wait_for()`, `exists()` |
 | Auto-wait timeout | `timeout` setting, per-element `timeout=`, per-call `timeout=` |
-| Event handlers (`OnUnexpectedWindow`, …) | pytest fixtures (setup and teardown) |
+| Event handlers (`OnUnexpectedWindow`, stop-test handlers, …) | pytest fixtures (setup and teardown); see [closing](#closing-an-application) |
 | Test items / execution plan | Test files, folders and pytest markers (`wtk run -m smoke`) |
-| Data-driven loops | `@pytest.mark.parametrize` |
+| Data-driven loops, data dictionaries | `@pytest.mark.parametrize`; see [delays, loops and variables](#delays-data-driven-loops-and-project-variables) |
+| `Delay(ms)` | `time.sleep(ms / 1000)`, or better a wait for the condition |
+| Project variables | Configuration, an environment variable or a pytest option, read by a fixture |
+| The clipboard text | `clipboard.get_text()`, `set_text(text)`, `clear()`; see [clipboard](#clipboard) |
+| Another application in the same test (a second app, Notepad, a dialog of the shell) | `apps.launch(...)` / `apps.attach(...)` and a page per `App`; see [several applications](#several-applications-in-one-test) |
+| An elevated launch | `App.launch(path, elevated=True)`, `app.elevated` in the configuration; see [launch variants](#launch-variants) |
+| `Sys.Process(name)` / `Sys.WaitProcess(name, ms)` | `finders.process(name)` / `finders.wait_process(name, ms)` (and `finders.Sys`); see [processes](#processes-sysprocess-and-syswaitprocess) |
+| Closing the app (Alt+F4, a prompt, a forced stop) | `app.request_close()`, `app.close_gracefully(on_prompt=...)`, `app.kill()`; see [closing](#closing-an-application) |
 | Command-line runner | `wtk run` (or `pytest`) |
 | Test log messages, warnings, errors, checkpoints and pictures | `log.message`, `log.warning`, `log.error`, `log.checkpoint`, `log.picture` |
 | Log folders | Nested `step` contexts |
@@ -363,6 +370,159 @@ The failure message lists the errors, numbered, and the report shows each as an 
 Only assertions are soft: a click or lookup that fails still raises, because what follows would not mean anything.
 See [soft errors](actions-and-assertions.md#soft-errors).
 
+## Clipboard, processes, several apps and shutdown
+
+A suite that drives more than one program, compares clipboard text and closes the application with
+a key press needs a few more pieces. They are generic: none of them knows what is under test.
+
+### Clipboard
+
+```python
+# pseudo-code
+from wintestkit import clipboard
+
+clipboard.set_text("Order 42")          # Unicode, stored exactly as given
+assert clipboard.get_text() == "Order 42"
+clipboard.clear()                       # the next get_text() raises ClipboardError
+```
+
+Each call is a report step (`clipboard.get_text`, `clipboard.set_text`, `clipboard.clear`) with the text
+(shortened to 200 characters) and its length, so a comparison that fails shows what was on the
+clipboard. `secret=True` keeps the text out of the report. Another process may hold the clipboard for a
+moment (a clipboard manager, remote desktop); opening it is retried for `timeout` seconds (default 2) and then
+fails with `ClipboardError` naming the holder when Windows says who it is. Reading when the clipboard
+holds an image, files or nothing raises `ClipboardError("The clipboard holds no text...")` instead of
+returning an empty string, so a missing copy is not mistaken for an empty value. Line breaks come back as
+the application put them (usually `\r\n`).
+
+### Several applications in one test
+
+A test can launch or attach to any number of `App` objects. Each one has its own processes, its own pages and
+its own inspector session (one per process), and finders, `from_label` and actions work on each:
+
+```python
+# pseudo-code
+def test_export_opens_in_the_other_tool(app, apps):
+    tool = apps.launch(TOOL_EXE, args=["--profile", "b"])       # a second WPF app
+    viewer = apps.launch(NOTEPAD_EXE)                           # any app with a window
+    print_dialog = apps.attach("explorer.exe")                  # a dialog owned by the shell
+    MainPage(app).export.click()
+    ToolPage(tool).import_button.click()
+    expect(print_dialog.window("#32770", "Print*")).to_exist()
+```
+
+- The `apps` fixture (or `with Apps() as apps:`) closes what it launched and releases what it attached when the
+  test ends. It reports each start as an `app.start` / `app.attach` step.
+- The same exe may be launched again with other `args`: launches through `Apps` (and `App.launch(...,
+  owned_only=True)`) follow only the process they started, and instances launched by one test never see each
+  other's processes. Without `owned_only`, a launcher that hands over to another process is followed by exe name.
+- `from_label(None, 'Process("Tool.exe").WPFObject(...)')` and `finders.process("Tool.exe")` find a running app
+  by name. A UIA-only target (the shell's Print dialog, Notepad, a WinForms tool) is driven through UI Automation;
+  the inspector attaches only to WPF windows.
+- `wintestkit.keyboard` sends keys when the foreground window belongs to *any* application the test launched,
+  attached or bound a page to.
+- Do not call `close()` on an `App` attached to `explorer.exe`: it would close every shell window. Close the dialog
+  instead (`dialog.close()`), or just let the group release it.
+
+### Launch variants
+
+| Existing suite | WinTestKit |
+|---|---|
+| The same exe with different argument sets | `App.launch(path, args=[...])` once per set (see above); `[tool.wintestkit.app] args` for the main app |
+| A launch with administrator rights | `App.launch(path, elevated=True)`, or `elevated: true` under `app:` in the configuration |
+
+`elevated=True` uses the shell's `runas` verb and returns an `App` bound to the new process:
+
+- If the **test runner is already elevated**, nothing is prompted: the child simply inherits the rights, `env` applies and the
+  window is awaited as usual.
+- Otherwise Windows shows the consent prompt on the **secure desktop**, which no test can click. Someone has to approve it, or the
+  runner has to be started from an elevated terminal. A declined prompt raises `AppError` that says so. `env` cannot be passed to
+  such a launch (the shell starts the process with the user's own environment).
+- A **non-elevated runner cannot drive an elevated application**: Windows (UIPI) blocks input, window messages and UI
+  Automation from a lower integrity level. WinTestKit detects it: finding windows, `main_window()`, `close()` and `kill()` of
+  such an app raise `ElevationError`, whose message names the process and says to start the runner elevated, instead of timeouts
+  and "not found" errors. The returned `App` is then only good for `is_running()`, `wait_for_exit()` and similar process queries.
+
+### Processes: `Sys.Process` and `Sys.WaitProcess`
+
+| Existing suite | WinTestKit |
+|---|---|
+| `Sys.Process("x.exe")` / `Sys.Process(name_variable)` | `finders.process("x.exe")` or `finders.Sys.Process(...)`: the `App`; raises `AppNotRunningError` when no such process runs |
+| `Sys.WaitProcess("x.exe", ms)` | `finders.wait_process("x.exe", ms)`: the `App`, or `None` after `ms`; `0` checks once; a report step with the outcome |
+| `Sys.Process("x.exe").WPFObject(...)` | `finders.process("x.exe").wpf_object(...)`, or `from_label(None, 'Process("x.exe").WPFObject(...)')` |
+| A forced stop of a helper (`taskkill /f`) | `finders.process("helper.exe").kill()`: every process of that exe and its children |
+
+`"notepad"` and `"notepad.exe"` name the same process, in any case. `finders.Sys` exists so that ported code can keep its
+`Sys.Process(...)` / `Sys.WaitProcess(...)` spelling (both capitalisations work); it adds nothing else. A process that is running
+is not yet a process with a window: look for the window with a finder or `app.main_window(timeout)`.
+
+### Closing an application
+
+| Existing suite | WinTestKit |
+|---|---|
+| Alt+F4 on the main window | `app.request_close("alt_f4")` (activates the window and presses the keys; refuses if it cannot be brought forward) |
+| `Close()` on the main window | `app.request_close()` (`WM_CLOSE`, no focus needed) |
+| Wait up to 3 s for a "save changes" dialog, answer "No", wait up to 30 s for the exit | `app.close_gracefully(on_prompt=answer_no, prompt_timeout=3, exit_timeout=30)` |
+| `taskkill` when it does not close | `close_gracefully(..., kill=True)`, or `app.kill()` |
+
+`close_gracefully` returns `"exited"`, `"killed"` or `"running"` (nothing was forced), and is one `app.close` step:
+
+```python
+# pseudo-code
+def answer_no(app):
+    dialog = app.window("#32770", "Save*")
+    dialog.window("Button", "&No").click()
+
+assert main.close_gracefully(on_prompt=answer_no, prompt_timeout=3, exit_timeout=30) == "exited"
+```
+
+`on_prompt` is called once, when a window that was not open before the request appears (within `prompt_timeout`); it answers
+it with the usual finders and clicks. `App.close()` (also what the `app` fixture does at the end of a test for an app it launched)
+asks every window to close and kills a launched app that stays after `close_timeout`.
+
+A **stop-test event handler** ("close the app only when a flag is set or a watermark is not visible") is a fixture with a
+teardown, which runs whatever the outcome of the test:
+
+```python
+# pseudo-code
+@pytest.fixture
+def keep_open(request):
+    request.node.keep_open = False
+    return lambda: setattr(request.node, "keep_open", True)
+
+@pytest.fixture(autouse=True)
+def close_when_done(request, app, main_page):
+    yield
+    if request.node.keep_open:
+        return
+    watermark_visible = main_page.watermark.exists(timeout=0)
+    if not watermark_visible:
+        app.close_gracefully(on_prompt=answer_no, kill=True)
+```
+
+Fixtures that take `app` are torn down before it, so the application is still there when the teardown runs (list `app` as a
+parameter, as above). Nothing else is needed for the fixture to be the one that closes it: when `app` finishes it finds nothing left to
+close.
+
+### Idle sessions
+
+The inspector agent drops a session that receives no request for five minutes. A test may legitimately idle that long (a long
+`time.sleep`, a wait that only uses UI Automation). WinTestKit attaches again on the next managed lookup, automatically and
+only for that case (an idle drop is recognised by the time since the last request); a process that exited, a detach and a
+connection that failed while busy keep raising "explicitly attach again" (and `inspector.attach: manual` never attaches on its own).
+It chose this over a keepalive thread because the agent has no ping: a keepalive would have to issue real inspector requests (work on
+the target's UI thread) for the whole life of every session, to avoid a re-attach that costs a moment and only happens
+after a real idle period. Bound elements re-resolve on every use, so tests are not affected; only an object a test kept from before
+the drop (a raw `get` handle) must be read again.
+
+### Delays, data-driven loops and project variables
+
+| Existing suite | WinTestKit |
+|---|---|
+| `Delay(ms)` | `time.sleep(ms / 1000)`. Prefer a wait on the thing you wait for (`expect`, `wait_for`, `finders.wait_property`), which ends as soon as it is true |
+| A data dictionary with a loop over its rows | `@pytest.mark.parametrize(...)`, one test per row (with `ids=` for readable names); keep large tables in a CSV/JSON file read once into the list |
+| Project variables (a Boolean such as "close the app at the end") | `[tool.wintestkit]` / `wintestkit.yaml` for what WinTestKit reads, otherwise an environment variable read by a fixture (`os.environ.get("CLOSE_APP", "1") == "1"`) or a custom pytest option (`addoption` in `conftest.py`) |
+
 ## NameMapping importer
 
 Run `wtk import-namemapping NameMapping.xml pages/imported.py`. The command reads the export
@@ -393,6 +553,11 @@ The export is an XML file whose root is `Root`. The importer reads these parts a
   names and `within=` follows the mapped tree. A node with several aliases is named by the first. An alias
   whose `Owner` matches no node is skipped with a warning.
 - **Unknown** elements and attributes, malformed values and duplicate keys give warnings, not failures.
+
+A type or name property (`ClrClassName`, `ClrFullClassName`, `RootVisual.*`, `WPFControlName`, `WndClass`, `WndCaption` and
+their kin) that holds a value of a non-string type, such as the integer `0` that real exports store for the root visual of a
+popup window, can never equal a type or a name. The importer emits a `# TODO` with the raw value instead of a `where` entry
+that never matches; decide by hand what identifies that window.
 
 `ObjectIdentifier` and `ObjectGroupIndex` have no WinTestKit equivalent and are emitted as `# TODO`
 comments with their values; `FrameworkId`, `ClassName` and `LocalizedControlType` become UIA properties.

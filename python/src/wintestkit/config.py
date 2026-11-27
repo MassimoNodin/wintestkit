@@ -106,6 +106,7 @@ _APP_KEYS = {
     "startup_timeout",
     "close_timeout",
     "close_existing",
+    "elevated",
 }
 _INSPECTOR_KEYS = {
     "enabled",
@@ -144,6 +145,8 @@ class AppConfig:
     startup_timeout: float = 30.0
     close_timeout: float = 10.0
     close_existing: bool = False
+    #: Start the application with administrator rights (see ``App.launch(elevated=True)``).
+    elevated: bool = False
 
     @property
     def process_name(self) -> str:
@@ -494,6 +497,7 @@ def _build_app(root: Path, values: Mapping[str, Any]) -> AppConfig | None:
         "app.startup_timeout": lambda k, v: _number(k, v, positive=True),
         "app.close_timeout": lambda k, v: _number(k, v, positive=True),
         "app.close_existing": _boolean,
+        "app.elevated": _boolean,
     }
     converted = {key[4:]: converters[key](key, values[key]) for key in keys}
     return AppConfig(**converted)

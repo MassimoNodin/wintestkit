@@ -171,7 +171,17 @@ Timeout precedence: call `timeout=` > `Element(timeout=)` > `@pytest.mark.wtk(ti
 
 `App.attach(process="X.exe")`, `App.launch(path, process=...)`, `app.close()`, `app.launched`,
 `app.main_window(timeout=...)`. The plugin provides the fixtures `app` (launch mode from
-`[tool.wintestkit] launch = "attach" | "per-test"`), `page` and `wtk_config`.
+`[tool.wintestkit] launch = "attach" | "per-test"`), `page`, `apps` and `wtk_config`.
+
+Several apps in one test: `apps.launch(path, args=[...], elevated=False)` / `apps.attach("x.exe")` (the `apps` fixture, or
+`with Apps() as apps:`) return an `App`; bind a page to each (`ToolPage(tool)`), and the group closes or releases them at the end.
+`finders.process("x.exe")` (raises `AppNotRunningError`), `finders.wait_process("x.exe", ms)` (`App` or `None`, `0` checks once) and
+`finders.Sys.Process` / `Sys.WaitProcess` find a running process; `"x"` and `"x.exe"` are the same. `App.launch(..., elevated=True)` and
+`app.elevated` in `[tool.wintestkit.app]` start it with `runas`; a non-elevated runner cannot drive that app (`ElevationError`).
+Closing: `app.request_close("wm_close" | "alt_f4")`, `app.close_gracefully(on_prompt=fn, prompt_timeout=3, exit_timeout=30, kill=False)`
+returns `"exited" | "killed" | "running"`, `app.kill()` (all processes of the exe), `app.wait_for_exit(s)`.
+Clipboard: `from wintestkit import clipboard`; `clipboard.get_text(secret=False, timeout=2)`, `set_text(text)`, `clear()`; report steps,
+`ClipboardError` when there is no text or the clipboard stays locked.
 
 ## Custom controls
 

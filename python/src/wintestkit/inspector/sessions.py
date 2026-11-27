@@ -43,6 +43,7 @@ class _Entry:
     client: InspectorClient | None = None
     error: InspectorError | None = None
     waiter: EventWaiter | None = None
+    idle_expired: bool = False
 
 
 def _remaining(deadline: float, cancelled: threading.Event) -> None:
@@ -417,6 +418,7 @@ class SessionRegistry:
             if self._entries.get(identity) is entry:
                 entry.session = client.session
                 entry.client = None
+                entry.idle_expired = client.idle_expired
                 waiter, entry.waiter = entry.waiter, None
             else:
                 waiter = None
@@ -447,6 +449,22 @@ class SessionRegistry:
             client.invalidate(error, "exited")
             return None
         return client
+
+    def expired_by_idle(self, identity: ProcessIdentity) -> bool:
+        """Whether the last session of this process run ended because the agent dropped it for
+        being idle (and nothing since attached or detached it).
+
+        A session that ended for any other reason (the process exited, a transport failure, a
+        detach) is not idle expiry, so the runtime does not attach again behind the caller's back.
+        """
+        with self._lock:
+            entry = self._entries.get(identity)
+            return (
+                entry is not None
+                and entry.client is None
+                and entry.done.is_set()
+                and entry.idle_expired
+            )
 
     def event_waiter(self, client: InspectorClient) -> EventWaiter | None:
         if "events" not in client.session.features:

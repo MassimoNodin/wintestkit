@@ -287,6 +287,18 @@ _RELEASE_BACKOFF = 1.0
 _ABANDONED_LIMIT = 256
 _TRACE_LOCK_WAIT = 0.05
 
+IDLE_SESSION_SECONDS = 300.0
+"""How long the agent keeps a session that receives no request."""
+
+_IDLE_READ_SECONDS = IDLE_SESSION_SECONDS + 1
+"""The reader gives up a second after the agent would have dropped the session itself."""
+
+_IDLE_TOLERANCE = 10.0
+"""A pipe that closes this close to the idle limit, or later, is taken as the agent's drop."""
+
+# Patched by unit tests that fake the passing of minutes.
+_clock: Callable[[], float] = time.monotonic
+
 
 class InspectorClient:
     """One authenticated pipe session.
@@ -295,7 +307,9 @@ class InspectorClient:
     --------------------
     Only a lost or corrupted transport ends a session (``invalidate``):
 
-    * the pipe closes, errors or the idle read deadline passes (``sessionStale``);
+    * the pipe closes, errors or the idle read deadline passes (``sessionStale``). When that
+      happens after the session had no request for about ``IDLE_SESSION_SECONDS`` it is the
+      agent's own idle expiry: ``idle_expired`` is set and the runtime attaches again on demand;
     * a frame, response or subscription is malformed, or a response carries an ID that was
       never issued (a protocol violation);
     * a request frame cannot be written (a partial frame would desynchronise the stream);
@@ -351,6 +365,9 @@ class InspectorClient:
         self.releases_dropped = 0
         self._closed = False
         self._closing_session = False
+        self._last_request = _clock()
+        #: Set when the session ended because the agent dropped it for being idle.
+        self.idle_expired = False
         self._reader = threading.Thread(
             target=self._read_responses, name="WinTestKit inspector pipe", daemon=True
         )
@@ -472,7 +489,7 @@ class InspectorClient:
     def _read_responses(self) -> None:
         try:
             while True:
-                frame: object = read_frame(self._transport, time.monotonic() + 301)
+                frame: object = read_frame(self._transport, time.monotonic() + _IDLE_READ_SECONDS)
                 if isinstance(frame, dict) and "id" not in frame:
                     notification = EventsNotification.from_json(
                         cast(dict[str, object], frame)
@@ -505,10 +522,18 @@ class InspectorClient:
                     pending.error = error
                     pending.event.set()
         except TimeoutError:
+            self.idle_expired = True
             self.invalidate(
                 InspectorUnavailableError("Inspector session became idle", code="sessionStale")
             )
         except (ValueError, EOFError, OSError, UnicodeError):
+            # The agent drops an idle session by closing its pipe, which looks like any other
+            # lost connection; only the time since the last request tells the two apart.
+            if (
+                not self._closing_session
+                and _clock() - self._last_request >= IDLE_SESSION_SECONDS - _IDLE_TOLERANCE
+            ):
+                self.idle_expired = True
             if self._closing_session:
                 self.invalidate(
                     InspectorUnavailableError("Inspector session detached", code="notAttached"),
@@ -538,6 +563,7 @@ class InspectorClient:
                     raise InspectorLimitError("Inspector request queue is full", code="busy")
                 request_id = self._next_id
                 self._next_id += 1
+                self._last_request = _clock()
                 if discard:
                     self._abandon(request_id)
                 else:

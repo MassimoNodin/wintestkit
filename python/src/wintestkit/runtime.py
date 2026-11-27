@@ -9,6 +9,7 @@ import logging
 import re
 import threading
 import time
+import weakref
 from collections.abc import Callable, Generator, Iterable, Mapping
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -146,6 +147,7 @@ _scoped_config: ContextVar[WtkConfig | None] = ContextVar("wtk_config", default=
 _listeners: list[StepListener] = []
 _current_test: str | None = None
 _current_app: App | None = None
+_known_apps: weakref.WeakSet[App] = weakref.WeakSet()
 _seq = 0
 _inspector_registry: SessionRegistry | None = None
 _inspector_request_timeout: float | None = None
@@ -270,9 +272,15 @@ def _attach_managed(
                 )
                 raise fresh from cached
             if not explicit and identity in _inspector_attempted:
-                raise InspectorUnavailableError(
-                    "Inspector session ended; explicitly attach again", code="notAttached"
-                )
+                if not registry.expired_by_idle(identity):
+                    raise InspectorUnavailableError(
+                        "Inspector session ended; explicitly attach again", code="notAttached"
+                    )
+                # The agent drops a session that got no request for five minutes, which a test
+                # that only waits can legitimately cause. The process is still the same run (the
+                # attach checks its identity), so the lookup attaches again; a process that
+                # exited or a session that was detached never gets here.
+                log.info("inspector session of pid %d expired while idle", identity.pid)
             _inspector_attempted.add(identity)
         attach_limit = time.monotonic() + config.attach_timeout
         caller_limited = deadline < attach_limit
@@ -515,17 +523,40 @@ def end_test() -> None:
 
 
 def set_current_app(app: App | None) -> None:
-    """Record the application under test (what ``wintestkit.keyboard`` may send keys to)."""
+    """Record the application under test (what ``wintestkit.keyboard`` may send keys to).
+
+    An application that is set is also known: a test that drives several applications keeps
+    sending keys to each of them (see :func:`known_apps`).
+    """
     __tracebackhide__ = True
     global _current_app
     with _lock:
         _current_app = app
+        if app is not None:
+            _known_apps.add(app)
+
+
+def register_app(app: App) -> None:
+    """Make an application one that ``wintestkit.keyboard`` may send keys to, without making it
+    the current one. Launching or attaching an :class:`~wintestkit.app.App` does this."""
+    __tracebackhide__ = True
+    with _lock:
+        _known_apps.add(app)
 
 
 def current_app() -> App | None:
     __tracebackhide__ = True
     with _lock:
         return _current_app
+
+
+def known_apps() -> list[App]:
+    """The current application first, then every other one the test launched, attached or bound
+    a page to, while it is still referenced."""
+    __tracebackhide__ = True
+    with _lock:
+        others = [app for app in _known_apps if app is not _current_app]
+        return ([_current_app] if _current_app is not None else []) + others
 
 
 def current_test() -> str | None:
@@ -545,6 +576,7 @@ def reset() -> None:
         _config = None
         _current_test = None
         _current_app = None
+        _known_apps.clear()
         _seq = 0
         _listeners.clear()
         _log_listeners.clear()

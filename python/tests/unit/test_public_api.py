@@ -73,6 +73,7 @@ EXPECTED = {
     "Window",
     "WtkConfig",
     "__version__",
+    "clipboard",
     "errors",
     "expect",
     "find",

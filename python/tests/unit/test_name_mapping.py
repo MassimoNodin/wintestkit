@@ -456,3 +456,52 @@ def test_cli_reports_todos_and_warnings_and_refuses_overwrite(
     assert "0 TODO comments" in out.out
     empty = write(tmp_path, "<Root />", "empty.xml")
     assert main(["import-namemapping", str(empty), str(tmp_path / "z.py")]) == 2
+
+
+# -- typed non-string values for a type or a name -----------------------------------------------
+
+
+@pytest.mark.parametrize("managed", [False, True])
+def test_an_integer_class_name_is_a_todo_with_the_raw_value(tmp_path: Path, managed: bool) -> None:
+    windows = node(
+        "Popup",
+        "{W}",
+        ("WndCaption", "Popup"),
+        ("RootVisual.ClrClassName", "0", "0"),
+        ("RootVisual.ClrFullClassName", "0", "0"),
+        ("WndClass", "7", "0"),
+        children=node(
+            "Box",
+            "{B}",
+            ("WPFControlName", "Box"),
+            ("ClrClassName", "0", "0"),
+            ("DataContext.ClrClassName", "0", "0"),
+        ),
+    )
+    result = convert_detailed(write(tmp_path, export(windows)), managed_class_names=managed)
+    assert "# TODO Popup: 'RootVisual.ClrClassName' = 0 (a type or name holds" in result.code
+    assert "# TODO Popup: 'RootVisual.ClrFullClassName' = 0" in result.code
+    assert "# TODO Popup: 'WndClass' = 7" in result.code
+    assert "# TODO Box: 'ClrClassName' = 0" in result.code
+    assert "# TODO Box: 'DataContext.ClrClassName' = 0" in result.code
+    assert result.todos == 5
+    # Nothing is emitted that can never match.
+    assert ": 0," not in result.code and 'ClrClassName": 0' not in result.code
+    namespace = run(result.code, tmp_path)
+    window = namespace["Popup"].window.locator
+    assert window.title == "Popup" and window.where == ()
+    assert 'automation_id="Box"' in result.code
+
+
+def test_a_string_class_name_and_a_typed_non_name_property_are_unchanged(tmp_path: Path) -> None:
+    box = node(
+        "Box",
+        "{B}",
+        ("WPFControlName", "Box"),
+        ("ClrClassName", "Button"),
+        ("WPFControlOrdinalNo", "2", "0"),
+    )
+    windows = node("Main", "{W}", ("WndCaption", "Main"), children=box)
+    result = convert_detailed(write(tmp_path, export(windows)))
+    assert result.todos == 0
+    assert '"ClrClassName": "Button"' in result.code

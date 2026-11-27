@@ -68,6 +68,7 @@ app:
   startup_timeout: 30
   close_timeout: 10
   close_existing: false
+  elevated: false
 ```
 
 `backend: auto` selects the WPF tree for WPF windows and UI Automation for other windows.
@@ -124,6 +125,13 @@ fresh copy instead, set `app.close_existing: true`: a running copy is then asked
 save, the run fails with that message and the copy keeps running. Only an instance that WinTestKit
 launched is force-killed when its own graceful close is blocked. Every launch passes `app.args`
 (record them with `wtk init --app PATH --args "..."`).
+
+`app.elevated: true` starts the application with administrator rights (the `runas` verb). It needs a runner that is already
+elevated: otherwise the consent prompt appears on the secure desktop, where a test cannot answer it, and an elevated
+application cannot be driven from a non-elevated runner (Windows blocks it; WinTestKit raises `ElevationError` that says so).
+`app.env` cannot be combined with it unless the runner is elevated. See [launch variants](migrating-existing-suites.md#launch-variants).
+Further applications of one test (a second app, Notepad) are started in the test with the `apps` fixture; see
+[several applications](migrating-existing-suites.md#several-applications-in-one-test).
 
 The Test Target view offers exactly these two choices, and the setting it saves is the only one that decides how the app is obtained: **Attach** (use the app that is
 running) and **Launch for tests** (WinTestKit starts the app and closes it when the tests finish).

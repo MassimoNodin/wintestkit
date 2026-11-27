@@ -23,6 +23,7 @@ def _config(process: str | None = "Demo.exe", close_existing: bool = False) -> A
             startup_timeout=5.0,
             close_timeout=3.0,
             close_existing=close_existing,
+            elevated=False,
         )
     )
 

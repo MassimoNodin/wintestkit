@@ -45,7 +45,7 @@ from wintestkit.report.html import write_report
 from wintestkit.report.results import RunRecorder, prepare_directory
 
 if TYPE_CHECKING:
-    from wintestkit.app import App
+    from wintestkit.app import App, Apps
 
 log = logging.getLogger("wintestkit.pytest")
 
@@ -118,6 +118,7 @@ def launch_app(config: WtkConfig, progress: Callable[[str], None] | None = None)
         startup_timeout=settings.startup_timeout,
         progress=progress,
         owned_only=True,
+        elevated=settings.elevated,
     )
 
 
@@ -862,6 +863,20 @@ class _AttachNotRunning(AttachNotRunningError, pytest.fail.Exception):
 
     def to_dict(self) -> dict[str, Any]:
         return {"type": "AttachNotRunningError", "message": self.message}
+
+
+@pytest.fixture
+def apps(request: pytest.FixtureRequest) -> Generator[Apps, None, None]:
+    """Further applications of one test (a second app, Notepad, a dialog of the shell): launched
+    or attached through it, they are closed or released when the test ends."""
+    from wintestkit.app import Apps
+
+    config = _effective_config(request)
+    group = Apps(close_timeout=config.app.close_timeout if config.app else 10.0)
+    try:
+        yield group
+    finally:
+        group.close_all()
 
 
 @pytest.fixture

@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 __version__ = "0.1.1rc8"
 
 if TYPE_CHECKING:
+    from wintestkit import clipboard as clipboard
     from wintestkit import errors as errors
     from wintestkit import keyboard as keyboard
     from wintestkit import log as log
@@ -147,6 +148,7 @@ __all__ = [
     "Window",
     "WtkConfig",
     "__version__",
+    "clipboard",
     "errors",
     "expect",
     "find",
@@ -235,7 +237,7 @@ _LAZY: dict[str, tuple[str, str]] = {
 
 
 def __getattr__(name: str) -> Any:
-    if name in ("errors", "keyboard", "log", "soft"):
+    if name in ("clipboard", "errors", "keyboard", "log", "soft"):
         return importlib.import_module("wintestkit." + name)
     target = _LAZY.get(name)
     if target is None:
