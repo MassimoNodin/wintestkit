@@ -25,7 +25,7 @@
     "InspectManagedSpyInvokeResult": {"type":"object","properties":{"audit":{"$ref":"../wpf-inspector/protocol/inspector.schema.json#/$defs/WriteAudit"},"result":{"$ref":"../wpf-inspector/protocol/inspector.schema.json#/$defs/Value"}},"required":["audit","result"],"additionalProperties":false},
     "InspectManagedRootsParams": {"type":"object","properties":{"sessionId":{"type":"string","minLength":1,"maxLength":128},"pageSize":{"type":"integer","minimum":1,"maximum":200},"pageToken":{"type":"string","minLength":1,"maxLength":128}},"required":["sessionId"],"additionalProperties":false},
     "InspectManagedRootsResult": {"$ref":"common.schema.json#/$defs/ManagedInspectorNodePage"},
-    "InspectManagedChildrenParams": {"type":"object","properties":{"sessionId":{"type":"string","minLength":1,"maxLength":128},"objectId":{"type":"string","minLength":1,"maxLength":128},"generation":{"type":"integer","minimum":1},"tree":{"enum":["visual","logical"]},"pageSize":{"type":"integer","minimum":1,"maximum":200},"pageToken":{"type":"string","minLength":1,"maxLength":128}},"required":["sessionId","objectId","generation","tree"],"additionalProperties":false},
+    "InspectManagedChildrenParams": {"type":"object","properties":{"sessionId":{"type":"string","minLength":1,"maxLength":128},"objectId":{"type":"string","minLength":1,"maxLength":128},"generation":{"type":"integer","minimum":1},"tree":{"enum":["visual","logical","objects"]},"pageSize":{"type":"integer","minimum":1,"maximum":200},"pageToken":{"type":"string","minLength":1,"maxLength":128}},"required":["sessionId","objectId","generation","tree"],"additionalProperties":false},
     "InspectManagedChildrenResult": {"$ref":"common.schema.json#/$defs/ManagedInspectorNodePage"},
     "InspectManagedMembersParams": {"type":"object","properties":{"sessionId":{"type":"string","minLength":1,"maxLength":128},"objectId":{"type":"string","minLength":1,"maxLength":128},"generation":{"type":"integer","minimum":1},"pageSize":{"type":"integer","minimum":1,"maximum":200},"pageToken":{"type":"string","minLength":1,"maxLength":128}},"required":["sessionId","objectId","generation"],"additionalProperties":false},
     "InspectManagedMembersResult": {"$ref":"common.schema.json#/$defs/ManagedMemberPage"},
@@ -91,7 +91,10 @@
           "properties": {"type": {"type": "string"}, "xName": {"type": "string"}, "automationId": {"type": "string"}, "siblingIndex": {"type": "integer", "minimum": 0}},
           "required": ["type"],
           "additionalProperties": false
-        }
+        },
+        "wpfText": {"type": "string", "description": "The wpf:Text of a WPF object, the text a label step selects by; absent when it cannot be read. For a window node it is the window title."},
+        "wpfOrdinal": {"type": "integer", "minimum": 1, "description": "The wpf:Ordinal of a WPF object: its 1-based place among the object-tree siblings of the same type."},
+        "windowNode": {"const": true, "description": "A WPF window row: a window node whose only child is the root visual. identity describes that root visual (its type and x:Name), wpfText is the window title."}
       },
       "required": ["nodeId", "info", "hasChildren"],
       "additionalProperties": false
@@ -520,7 +523,7 @@
         "nodeId": {
           "type": "string"
         },
-        "tree": {"enum": ["visual", "logical"], "description": "Opt into the requested tree; omit for the legacy UIA array."},
+        "tree": {"enum": ["visual", "logical", "objects"], "description": "Opt into the requested tree; omit for the legacy UIA array. objects is the object tree of migrated suites: the visual tree without ControlTemplate parts and ItemsPanel instances."},
         "pageSize": {"type": "integer", "minimum": 1, "maximum": 200, "description": "Maximum children per page; defaults to 200."},
         "pageToken": {"type": "string", "minLength": 1, "maxLength": 128, "description": "Continuation token from the preceding page."}
       },
@@ -795,7 +798,7 @@
     },
     "SpyRepickParams": {
       "type": "object",
-      "properties": {"x": {"type": "integer"}, "y": {"type": "integer"}, "tree": {"enum": ["visual", "logical"]}},
+      "properties": {"x": {"type": "integer"}, "y": {"type": "integer"}, "tree": {"enum": ["visual", "logical", "objects"]}},
       "required": ["x", "y"],
       "additionalProperties": false
     },
@@ -804,7 +807,7 @@
       "type": "object",
       "properties": {
         "sessionId": {"type": "string", "minLength": 1},
-        "tree": {"enum": ["visual", "logical"]},
+        "tree": {"enum": ["visual", "logical", "objects"]},
         "foregroundForProcessId": {
           "type": "integer",
           "minimum": 1,

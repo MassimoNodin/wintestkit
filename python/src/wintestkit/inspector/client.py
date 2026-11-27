@@ -848,7 +848,10 @@ class InspectorClient:
         timeout_ms: int,
         deadline: float,
         include_path: bool = False,
+        tree: Literal["objects"] | None = None,
     ) -> HitTestResult | None:
+        """The object under a point; ``tree="objects"`` snaps a hit on a template part to its
+        nearest visible ancestor and walks the path in the object tree."""
         self._feature("hitTest")
 
         def parse(value: object) -> HitTestResult:
@@ -873,6 +876,7 @@ class InspectorClient:
                     "nativeWindowHandle": native_window_handle,
                     "point": {"x": x, "y": y},
                     **({"includePath": True} if include_path else {}),
+                    **({"tree": tree} if tree is not None else {}),
                     "timeoutMs": self._timed_params(timeout_ms, deadline),
                 },
                 deadline,
@@ -1298,13 +1302,14 @@ class InspectorClient:
         self,
         object_id: str,
         generation: int,
-        tree: Literal["visual", "logical"],
+        tree: Literal["visual", "logical", "objects"],
         *,
         page_size: int | None = None,
         page_token: str | None = None,
         deadline: float,
     ) -> Page[ManagedNode]:
-        if tree not in ("visual", "logical"):
+        """One page of children; ``tree="objects"`` hides template parts and items panels."""
+        if tree not in ("visual", "logical", "objects"):
             raise InspectorError("Invalid tree", code="invalidParams")
         params = self._page_params(page_size, page_token)
         params.update(self._object_params(object_id, generation))

@@ -35,6 +35,11 @@ describe("Spy message contract", () => {
       type: "bringToFront",
       enabled: true,
     });
+    expect(parseSpyRequest({ type: "showTemplateParts", enabled: true })).toEqual({
+      type: "showTemplateParts",
+      enabled: true,
+    });
+    expect(parseSpyRequest({ type: "showTemplateParts", enabled: "yes" })).toBeUndefined();
     expect(parseSpyRequest({ type: "showOtherApps", enabled: false })).toEqual({
       type: "showOtherApps",
       enabled: false,

@@ -141,9 +141,11 @@ class App:
     ) -> BoundElement:
         """``WPFObject(cls, text, index)`` below the application: a window node.
 
-        ``cls`` is ``"HwndSource: <root visual type>"``, ``text`` the window title and ``index``
-        the 1-based position among the window nodes of that type. Chain the root visual and the
-        objects below it: ``app.wpf_object("HwndSource: MainView").wpf_object("MainView")``.
+        ``cls`` is ``"HwndSource: <label>"`` where ``<label>`` is the root visual's x:Name (its
+        short type name when it has none); the type spelling of a window that has an x:Name
+        resolves it too. ``text`` is the window title and ``index`` the 1-based position among the
+        window nodes with that label. Chain the root visual and the objects below it:
+        ``app.wpf_object("HwndSource: MainView").wpf_object("MainView")``.
         """
         __tracebackhide__ = True
         from wintestkit import finders

@@ -188,6 +188,45 @@ namespace WinTestKit.Inspector.Agent.Mapping.Tests
         }
 
         [Fact]
+        public async Task ObjectTreeChildrenHideTemplatePartsAndTheHitTestSnapsToTheControl()
+        {
+            using (var window = new MappingWindow(1))
+            using (var service = new WpfInspectionService("objects", new FakeInspector()))
+            {
+                var registry = (ObjectRegistry)typeof(WpfInspectionService).GetField("registry", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(service)!;
+                ObjectRef button = await window.Thread.Dispatcher.InvokeAsync(() => registry.Register(window.Buttons[0], window.Thread.Dispatcher, new TypeInfoDto { Name = "Button" })).Task;
+                // The visual child of a button is its template (chrome); the object tree shows the content the presenter created.
+                var visual = await service.ChildrenAsync(button.ObjectId, button.Generation, TreeKind.Visual, null, null, None);
+                var objects = await service.ChildrenAsync(button.ObjectId, button.Generation, TreeKind.Objects, null, null, None);
+                Assert.NotEqual("TextBlock", Assert.Single(visual.Items).Label);
+                ManagedNodeDto content = Assert.Single(objects.Items);
+                Assert.Equal("TextBlock", content.Label);
+                Assert.False(content.HasVisualChildren);
+                Assert.False(content.HasLogicalChildren);
+                Assert.True(registry.TryGet(content.Object.ObjectId, content.Object.Generation, out object contentTarget, out _));
+                Assert.IsType<TextBlock>(contentTarget);
+                ObjectRef panel = await PanelHandle(service, window);
+                Assert.True(Assert.Single((await service.ChildrenAsync(panel.ObjectId, panel.Generation, TreeKind.Objects, null, null, None)).Items).HasVisualChildren);
+                // A hit on the chrome is a hit on the button in the object tree, and the path leaves the template out.
+                await window.Thread.Dispatcher.InvokeAsync(() => window.Window.UpdateLayout()).Task;
+                Point screen = await window.Thread.Dispatcher.InvokeAsync(() => window.Buttons[0].PointToScreen(new Point(3, 11))).Task;
+                await window.Thread.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle).Task;
+                var point = new PointDto { X = screen.X, Y = screen.Y };
+                var plain = await service.HitTestAsync(window.Handle.ToInt64(), point, DateTime.UtcNow.AddSeconds(60), 1000, None, true);
+                Assert.True(registry.TryGet(plain.Handle.ObjectId, plain.Handle.Generation, out object plainTarget, out _));
+                Assert.NotSame(window.Buttons[0], plainTarget);
+                var snapped = await service.HitTestAsync(window.Handle.ToInt64(), point, DateTime.UtcNow.AddSeconds(60), 1000, None, true, TreeKind.Objects);
+                Assert.True(registry.TryGet(snapped.Handle.ObjectId, snapped.Handle.Generation, out object snappedTarget, out _));
+                Assert.Same(window.Buttons[0], snappedTarget);
+                Assert.Equal(new[] { typeof(Window), typeof(StackPanel), typeof(Button) }, snapped.Path!.Select(node =>
+                {
+                    Assert.True(registry.TryGetWeak(node.Object.ObjectId, node.Object.Generation, out object item));
+                    return item.GetType();
+                }).ToArray());
+            }
+        }
+
+        [Fact]
         public async Task HitTestReturnsVisualHostForContentElement()
         {
             using (var window = new MappingWindow())

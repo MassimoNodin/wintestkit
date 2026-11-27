@@ -2467,8 +2467,10 @@
         "tree": {
           "enum": [
             "visual",
-            "logical"
-          ]
+            "logical",
+            "objects"
+          ],
+          "description": "objects is the object tree of migrated suites: the visual tree without ControlTemplate parts and ItemsPanel instances, whose visible descendants belong to their nearest visible ancestor. For it both hasVisualChildren and hasLogicalChildren say whether the object tree has children below the node."
         },
         "pageSize": {
           "type": "integer",
@@ -4093,6 +4095,12 @@
           "type": "integer",
           "minimum": 1,
           "maximum": 2000
+        },
+        "tree": {
+          "enum": [
+            "objects"
+          ],
+          "description": "Walk the path in the object tree: template parts are left out and a hit on one resolves to its nearest visible ancestor."
         }
       },
       "required": [

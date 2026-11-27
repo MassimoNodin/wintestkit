@@ -388,3 +388,59 @@ def test_every_generated_label_selects_its_node_and_only_it():
         step = window_step(windows, position)
         assert select_windows(step_spec(step), windows) == [position]
         assert parse_step(format_step(step)) == step
+
+
+# -- the conformance cases shared with the Spy ------------------------------------------------
+
+import json  # noqa: E402
+from pathlib import Path  # noqa: E402
+
+CONFORMANCE = json.loads(
+    (Path(__file__).parents[1] / "fixtures" / "label_conformance.json").read_text(encoding="utf-8")
+)["cases"]
+
+
+def conformance_labels(case: dict) -> list[str]:
+    kind = case["kind"]
+    if kind == "windows":
+        window_nodes = [WindowNode(n["class"], n["caption"]) for n in case["nodes"]]
+        return [format_step(window_step(window_nodes, i)) for i in range(len(window_nodes))]
+    if kind == "windowNodes":
+        object_nodes = [
+            ObjectNode(labels.window_node_type(n["rootType"], n["rootName"]), n["text"], "")
+            for n in case["nodes"]
+        ]
+    else:
+        object_nodes = [ObjectNode(n["type"], n["text"], n["name"]) for n in case["nodes"]]
+    return [format_step(object_step(object_nodes, i)) for i in range(len(object_nodes))]
+
+
+@pytest.mark.parametrize("case", CONFORMANCE, ids=[case["name"] for case in CONFORMANCE])
+def test_conformance_labels(case):
+    assert conformance_labels(case) == case["labels"]
+    # Every label is pasteable: it parses and the step stands for exactly that sibling.
+    for position, text in enumerate(case["labels"]):
+        step = parse_label(text).steps[0]
+        spec = step_spec(step)
+        if case["kind"] == "windows":
+            nodes = [WindowNode(n["class"], n["caption"]) for n in case["nodes"]]
+            assert select_windows(spec, nodes)[:1] == [position]  # type: ignore[arg-type]
+        else:
+            if case["kind"] == "windowNodes":
+                nodes = [
+                    ObjectNode(labels.window_node_type(n["rootType"], n["rootName"]), n["text"], "")
+                    for n in case["nodes"]
+                ]
+            else:
+                nodes = [ObjectNode(n["type"], n["text"], n["name"]) for n in case["nodes"]]
+            assert select_objects(spec, nodes)[:1] == [position]  # type: ignore[arg-type]
+
+
+def test_window_node_types():
+    assert labels.window_node_type("SettingsView", "SettingsViewWindow") == (
+        "HwndSource: SettingsViewWindow"
+    )
+    assert labels.window_node_type("SettingsView") == "HwndSource: SettingsView"
+    assert labels.window_node_type("SettingsView", "") == "HwndSource: SettingsView"
+    assert labels.window_node_types("View", "Named") == ("HwndSource: Named", "HwndSource: View")
+    assert labels.window_node_types("View", "") == ("HwndSource: View",)

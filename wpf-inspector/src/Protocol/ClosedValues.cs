@@ -10,6 +10,6 @@ namespace WinTestKit.Inspector.Protocol
     public static class MappingStatus { public const string Exact = "exact", NotFound = "notFound", Ambiguous = "ambiguous", UnsupportedPeer = "unsupportedPeer", Stale = "stale", LimitExceeded = "limitExceeded"; }
     public static class BindingKind { public const string None = "none", Binding = "binding", MultiBinding = "multiBinding", PriorityBinding = "priorityBinding"; }
     public static class SessionState { public const string Detached = "detached", Probing = "probing", Attaching = "attaching", Ready = "ready", Detaching = "detaching", Faulted = "faulted", Exited = "exited"; }
-    public static class TreeKind { public const string Visual = "visual", Logical = "logical"; }
+    public static class TreeKind { public const string Visual = "visual", Logical = "logical", Objects = "objects"; }
     public static class SegmentKind { public const string Property = "property", Field = "field", Dependency = "dependency", Type = "type"; }
 }

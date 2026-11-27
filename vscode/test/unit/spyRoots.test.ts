@@ -58,7 +58,7 @@ const render = (appState: unknown, info: Record<string, unknown>, root = true, e
     parent, WtkTreeLabels, hasDetails: false,
     values: [{ nodeId: "1", hasChildren: false, info, ...extra }],
     nodes,
-    appState,
+    appState, templateParts: false,
     selected: undefined,
     element: () => tree,
     document: { createElement: () => new FakeNode() },
@@ -134,8 +134,11 @@ describe("Spy root rows for the selected application", () => {
     expect(named.row.title).toContain("System.Windows.Controls.Button");
     expect(named.row.attributes.get("aria-label")).toBe('WPFObject("SaveButton")');
     expect(named.row.find("source-badge")).toBeUndefined();
-    const automation = render(undefined, { ...window, controlType: "Button" }, false, { source: "wpf", identity: { type: "Demo.Button", automationId: "save" } });
-    expect(automation.text.textContent).toBe('WPFObject("Button")');
+    const automation = render(undefined, { ...window, controlType: "Button" }, false, { source: "wpf", identity: { type: "Demo.Button", automationId: "save" }, wpfText: "", wpfOrdinal: 1 });
+    expect(automation.text.textContent).toBe('WPFObject("Button", "")');
+    // An unreadable text can only be told apart by its ordinal.
+    const unreadable = render(undefined, { ...window, controlType: "Button" }, false, { source: "wpf", identity: { type: "Demo.Button" }, wpfOrdinal: 3 });
+    expect(unreadable.text.textContent).toBe('WPFObject("Button", 3)');
     const uia = render(undefined, { ...window, name: "Main" }, true, { source: "uia" });
     expect(uia.text.textContent).toBe('Window("MainWindowFull")');
     expect(uia.row.find("source-badge")).toBeUndefined();
@@ -169,7 +172,7 @@ describe("the route to a selected row", () => {
     const info = (controlType: string, name: string, extra: Record<string, unknown> = {}) =>
       ({ controlType, name, automationId: "", className: "C", processId: 1, ...extra });
     const context = {
-      nodes, WtkTreeLabels, hasDetails: false, appState: undefined, selected: undefined, element: () => tree,
+      nodes, WtkTreeLabels, hasDetails: false, templateParts: false, appState: undefined, selected: undefined, element: () => tree,
       document: { createElement: () => new FakeNode() },
       setIcon: () => undefined, rootIcon: () => undefined, applyMarker: (entry: { text: FakeNode; name: string; row: FakeNode; baseTitle: string }) => { entry.text.textContent = entry.name; entry.row.title = entry.baseTitle; },
       filter: () => undefined, expand: () => undefined, choose: () => undefined, String, Number,

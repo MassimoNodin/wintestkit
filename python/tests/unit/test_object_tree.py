@@ -182,6 +182,8 @@ def app_walk(monkeypatch):
     )
     monkeypatch.setattr(resolver, "route", lambda window: roots[window.key])
     monkeypatch.setattr(resolver, "identity_value", lambda root, name: "x")
+    names = {"main": "", "dialog": ""}
+    monkeypatch.setattr(resolver, "x_name", lambda root: names[root.ref.object_id])
 
     def matches_root(root: WpfElement, conditions: list[ManagedCondition]) -> bool:
         root_checks.append([condition.key for condition in conditions])
@@ -195,7 +197,13 @@ def app_walk(monkeypatch):
     monkeypatch.setattr(resolver, "matches_root", matches_root)
     monkeypatch.setattr(resolver, "wpf_query", wpf_query)
     return SimpleNamespace(
-        app=app, scope=resolver.Scope(app), searched=searched, checks=root_checks, roots=roots
+        app=app,
+        scope=resolver.Scope(app),
+        searched=searched,
+        checks=root_checks,
+        roots=roots,
+        names=names,
+        windows=windows,
     )  # type: ignore[arg-type]
 
 
@@ -227,6 +235,43 @@ def test_depth_from_an_application_counts_window_nodes_then_root_visuals(app_wal
     app_walk.searched.clear()
     assert walk(app_walk, replace(plain, depth=None)) == ["main", "main-child", "dialog"]
     assert [link.depth for _, link in app_walk.searched] == [None, None]
+
+
+def test_window_node_label_is_the_x_name_else_the_type_and_either_resolves(app_walk):
+    app_walk.names["dialog"] = "DialogWindow"
+    nodes = lambda **where: Locator(  # noqa: E731
+        where=tuple(where.items()), tree="objects", depth=1
+    )
+    # The generated label is the root visual's x:Name; the type spelling still resolves it.
+    assert walk(app_walk, nodes(**{"type:Name": "HwndSource: DialogWindow"})) == ["dialog"]
+    assert walk(app_walk, nodes(**{"type:Name": "HwndSource: Dialog"})) == ["dialog"]
+    # A node without an x:Name is labelled by its type only.
+    assert walk(app_walk, nodes(**{"type:Name": "HwndSource: MainWindow"})) == ["main"]
+    assert walk(app_walk, nodes(**{"type:Name": re.compile("^HwndSource: Main")})) == ["main"]
+    assert walk(app_walk, nodes(**{"type:Name": "HwndSource: Other"})) == []
+
+
+def test_window_node_ordinals_count_the_nodes_with_the_same_label(app_walk):
+    nodes = lambda **where: Locator(  # noqa: E731
+        where=tuple(where.items()), tree="objects", depth=1
+    )
+    # Same root type for both windows; the second one has an x:Name.
+    app_walk.roots[2] = WpfElement(
+        app_walk.roots[2].client,  # type: ignore[arg-type]
+        ref("dialog", "MainWindow"),
+        1,
+    )
+    app_walk.names["dialog"] = "SecondWindow"
+    first = nodes(**{"type:Name": "HwndSource: MainWindow", "wpf:Ordinal": 1})
+    assert walk(app_walk, first) == ["main"]  # the type spelling counts the root type
+    second = nodes(**{"type:Name": "HwndSource: MainWindow", "wpf:Ordinal": 2})
+    assert walk(app_walk, second) == ["dialog"]
+    # The generated label of the second window has its own count.
+    named = nodes(**{"type:Name": "HwndSource: SecondWindow", "wpf:Ordinal": 1})
+    assert walk(app_walk, named) == ["dialog"]
+    assert (
+        walk(app_walk, nodes(**{"type:Name": "HwndSource: SecondWindow", "wpf:Ordinal": 2})) == []
+    )
 
 
 def test_window_node_matches_label_text_and_ordinal(app_walk):

@@ -1923,7 +1923,10 @@ export interface ChildrenParams {
   sessionId: Identifier;
   objectId: Identifier;
   generation: number;
-  tree: "visual" | "logical";
+  /**
+   * objects is the object tree of migrated suites: the visual tree without ControlTemplate parts and ItemsPanel instances, whose visible descendants belong to their nearest visible ancestor. For it both hasVisualChildren and hasLogicalChildren say whether the object tree has children below the node.
+   */
+  tree: "visual" | "logical" | "objects";
   pageSize?: number;
   pageToken?: Identifier;
 }
@@ -2398,6 +2401,10 @@ export interface HitTestParams {
     y: number;
   };
   timeoutMs: number;
+  /**
+   * Walk the path in the object tree: template parts are left out and a hit on one resolves to its nearest visible ancestor.
+   */
+  tree?: "objects";
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
@@ -2466,9 +2473,9 @@ export interface InitializeResult {
 export interface InspectChildrenParams {
   nodeId: string;
   /**
-   * Opt into the requested tree; omit for the legacy UIA array.
+   * Opt into the requested tree; omit for the legacy UIA array. objects is the object tree of migrated suites: the visual tree without ControlTemplate parts and ItemsPanel instances.
    */
-  tree?: "visual" | "logical";
+  tree?: "visual" | "logical" | "objects";
   /**
    * Maximum children per page; defaults to 200.
    */
@@ -2493,6 +2500,18 @@ export interface NodeInfo {
     automationId?: string;
     siblingIndex?: number;
   };
+  /**
+   * The wpf:Text of a WPF object, the text a label step selects by; absent when it cannot be read. For a window node it is the window title.
+   */
+  wpfText?: string;
+  /**
+   * The wpf:Ordinal of a WPF object: its 1-based place among the object-tree siblings of the same type.
+   */
+  wpfOrdinal?: number;
+  /**
+   * A WPF window row: a window node whose only child is the root visual. identity describes that root visual (its type and x:Name), wpfText is the window title.
+   */
+  windowNode?: true;
 }
 export interface ManagedProcessIdentity {
   pid: number;
@@ -2619,7 +2638,7 @@ export interface InspectManagedChildrenParams {
   sessionId: string;
   objectId: string;
   generation: number;
-  tree: "visual" | "logical";
+  tree: "visual" | "logical" | "objects";
   pageSize?: number;
   pageToken?: string;
 }
@@ -4236,7 +4255,7 @@ export interface Suggestion {
 export interface SpyRepickParams {
   x: number;
   y: number;
-  tree?: "visual" | "logical";
+  tree?: "visual" | "logical" | "objects";
 }
 export interface SpyRepickResult {
   innerElement?: {
@@ -4264,7 +4283,7 @@ export interface SpyRepickResult {
  */
 export interface SpyStartParams {
   sessionId?: string;
-  tree?: "visual" | "logical";
+  tree?: "visual" | "logical" | "objects";
   /**
    * Remember the foreground window belonging to this process or an ancestor and reactivate it after an element is picked.
    */

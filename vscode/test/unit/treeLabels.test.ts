@@ -2,12 +2,13 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { JSDOM } from "jsdom";
 import { expect, it } from "vitest";
-const { labelsFor, iconFor } = createRequire(import.meta.url)("../../media/spy/treeLabels.js");
-const w = (name: string, xName = "") => ({ source: "wpf", info: { controlType: "ListBoxItem", name }, identity: { type: "Controls.ListBoxItem", xName } });
+const { labelsFor, iconFor, kind, pasteable, processLabel, copyAsCode, pythonString } = createRequire(import.meta.url)("../../media/spy/treeLabels.js");
+const w = (name: string, xName = "") => ({ source: "wpf", info: { controlType: "ListBoxItem", name }, identity: { type: "Controls.ListBoxItem", xName }, wpfText: name });
 const u = (name: string, id = "") => ({ source: "uia", info: { controlType: "Button", name, automationId: id } });
 it("minimizes labels across pages and escapes arguments", () => {
   expect(labelsFor([w("Alpha", "item")])).toEqual(['WPFObject("item")']);
-  expect(labelsFor([w("Alpha"), w("Beta"), w("Beta"), w("Gamma")])).toEqual(['WPFObject("ListBoxItem", "Alpha")', 'WPFObject("ListBoxItem", "Beta", 1)', 'WPFObject("ListBoxItem", "Beta", 2)', 'WPFObject("ListBoxItem", "Gamma")']);
+  // The index is wpf:Ordinal: the place among the siblings of the same type, whatever their texts.
+  expect(labelsFor([w("Alpha"), w("Beta"), w("Beta"), w("Gamma")])).toEqual(['WPFObject("ListBoxItem", "Alpha")', 'WPFObject("ListBoxItem", "Beta", 2)', 'WPFObject("ListBoxItem", "Beta", 3)', 'WPFObject("ListBoxItem", "Gamma")']);
   expect(labelsFor([w(""), w("")])).toEqual(['WPFObject("ListBoxItem", 1)', 'WPFObject("ListBoxItem", 2)']);
   expect(labelsFor([w('\u96ea "a"')])[0]).toBe('WPFObject("ListBoxItem", "\u96ea \\"a\\"")');
   expect(labelsFor([u(""), u("")])).toEqual(['UIAObject("Button", "", 1)', 'UIAObject("Button", "", 2)']);
@@ -95,4 +96,42 @@ it("has WinForms badges and icons", () => {
   expect(badgeFor(w("A"), false)).toBe("WPF");
   expect(badgeFor(u("A"), false)).toBe("UIA");
   for (const type of ["Form", "Label", "GroupBox", "TabControl", "TabPage", "DataGridView", "MenuStrip", "ToolStripMenuItem", "Panel", "UserControl", "ListView", "TreeView"]) expect(iconFor(type), type).not.toBe("symbol-object");
+});
+
+// -- the label grammar shared with python/src/wintestkit/labels.py ---------------------------------------------
+interface ConformanceCase { name: string; kind: "objects" | "windows" | "windowNodes"; nodes: Record<string, string | null>[]; labels: string[] }
+const conformance: ConformanceCase[] = JSON.parse(readFileSync("../python/tests/fixtures/label_conformance.json", "utf8")).cases;
+// The siblings as the Spy receives them: wpf:Text and wpf:Ordinal come from the agent, never from the other siblings.
+const nodesOf = (item: ConformanceCase) => {
+  const seen = new Map<string, number>();
+  return item.nodes.map((node) => {
+    if (item.kind === "windows") return { source: "uia", info: { controlType: "Window", className: node.class, name: node.caption } };
+    if (item.kind === "windowNodes") return { source: "wpf", windowNode: true, info: { controlType: "Window", className: "HwndWrapper[App;;1]", name: "" }, identity: { type: "Fixture." + node.rootType, xName: node.rootName }, ...(node.text === null ? {} : { wpfText: node.text }) };
+    seen.set(node.type!, (seen.get(node.type!) ?? 0) + 1);
+    return { source: "wpf", info: { controlType: node.type, name: "" }, identity: { type: "Fixture." + node.type, xName: node.name }, wpfOrdinal: seen.get(node.type!), ...(node.text === null ? {} : { wpfText: node.text }) };
+  });
+};
+it.each(conformance.map((item) => [item.name, item] as const))("conformance: %s", (_name, item) => {
+  expect(labelsFor(nodesOf(item))).toEqual(item.labels);
+});
+it("takes the ordinal from the agent, not from the siblings that happen to be loaded", () => {
+  // Only the second page of a long list is loaded: its ordinals still count the first page.
+  const page = [{ ...w("Beta"), wpfOrdinal: 51 }, { ...w("Beta"), wpfOrdinal: 52 }];
+  expect(labelsFor(page)).toEqual(['WPFObject("ListBoxItem", "Beta", 51)', 'WPFObject("ListBoxItem", "Beta", 52)']);
+});
+it("knows which labels the Python library can read back", () => {
+  const [window, object, native, uia, forms] = [nodesOf({ name: "", labels: [], kind: "windowNodes", nodes: [{ rootType: "V", rootName: "", text: "" }] })[0], w("a"), { source: "uia", info: { controlType: "Window", className: "C", name: "x" } }, u("a"), f("a")];
+  expect([window, object, native].map(pasteable)).toEqual([true, true, true]);
+  expect([uia, forms].map(pasteable)).toEqual([false, false]);
+  expect(kind(window)).toBe("WindowNode");
+  // A WPF window row whose root visual is not described yet keeps its Win32 label.
+  expect(labelsFor([{ source: "wpf", info: { controlType: "Window", className: "HwndWrapper[App;;1]", name: "Main" } }])).toEqual(['Window("HwndWrapper[App;;1]")']);
+  // The root visual of a window is an object, even when its type is Window.
+  expect(labelsFor([{ source: "wpf", info: { controlType: "Window", name: "Main" }, identity: { type: "System.Windows.Window", xName: "" }, wpfText: "Main", wpfOrdinal: 1 }])).toEqual(['WPFObject("Window", "Main")']);
+});
+it("writes the process and a Python snippet that reads the chain back", () => {
+  expect(processLabel("app.exe")).toBe('Process("app.exe")');
+  const chain = 'Process("app.exe").WPFObject("HwndSource: Main", "say \\"hi\\"").Window("C:\\x")';
+  expect(copyAsCode(chain)).toBe("from_label(app, '" + chain.replace(/\\/g, "\\\\") + "')");
+  expect(pythonString("it's\n")).toBe("'it\\'s\\n'");
 });

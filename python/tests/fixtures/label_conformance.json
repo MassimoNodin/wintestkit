@@ -1,0 +1,227 @@
+{
+  "description": "Label conformance cases shared by python/src/wintestkit/labels.py and vscode/media/spy/treeLabels.js. Each case lists the siblings below one parent, in order, and the label step of every one of them. Both implementations must produce exactly these strings. For kind 'objects' a node is {type, text, name}: text is null when it cannot be read, name is the x:Name. Its wpf:Ordinal is its 1-based place among the siblings of the same type. For kind 'windows' a node is {class, caption}. For kind 'windowNodes' a node is {rootType, rootName, text}: the window title is the text of the root visual.",
+  "cases": [
+    {
+      "name": "a lone x:Name",
+      "kind": "objects",
+      "nodes": [{ "type": "Button", "text": "OK", "name": "okButton" }],
+      "labels": ["WPFObject(\"okButton\")"]
+    },
+    {
+      "name": "type and text when there is no name",
+      "kind": "objects",
+      "nodes": [
+        { "type": "Button", "text": "OK", "name": "" },
+        { "type": "Button", "text": "Cancel", "name": "" }
+      ],
+      "labels": ["WPFObject(\"Button\", \"OK\")", "WPFObject(\"Button\", \"Cancel\")"]
+    },
+    {
+      "name": "an empty text is written out",
+      "kind": "objects",
+      "nodes": [{ "type": "Grid", "text": "", "name": "" }],
+      "labels": ["WPFObject(\"Grid\", \"\")"]
+    },
+    {
+      "name": "the ordinal is added only when type and text repeat and counts the type",
+      "kind": "objects",
+      "nodes": [
+        { "type": "ListBoxItem", "text": "Alpha", "name": "" },
+        { "type": "ListBoxItem", "text": "Beta", "name": "" },
+        { "type": "ListBoxItem", "text": "Beta", "name": "" },
+        { "type": "ListBoxItem", "text": "Gamma", "name": "" }
+      ],
+      "labels": [
+        "WPFObject(\"ListBoxItem\", \"Alpha\")",
+        "WPFObject(\"ListBoxItem\", \"Beta\", 2)",
+        "WPFObject(\"ListBoxItem\", \"Beta\", 3)",
+        "WPFObject(\"ListBoxItem\", \"Gamma\")"
+      ]
+    },
+    {
+      "name": "repeated empty texts are told apart by the ordinal alone",
+      "kind": "objects",
+      "nodes": [
+        { "type": "Border", "text": "", "name": "" },
+        { "type": "Border", "text": "", "name": "" },
+        { "type": "Grid", "text": "", "name": "" }
+      ],
+      "labels": ["WPFObject(\"Border\", 1)", "WPFObject(\"Border\", 2)", "WPFObject(\"Grid\", \"\")"]
+    },
+    {
+      "name": "an unreadable text can only be told apart by the ordinal",
+      "kind": "objects",
+      "nodes": [
+        { "type": "TextBox", "text": null, "name": "" },
+        { "type": "TextBox", "text": "x", "name": "" }
+      ],
+      "labels": ["WPFObject(\"TextBox\", 1)", "WPFObject(\"TextBox\", \"x\")"]
+    },
+    {
+      "name": "a name shared by siblings falls back to type and text",
+      "kind": "objects",
+      "nodes": [
+        { "type": "Button", "text": "A", "name": "same" },
+        { "type": "Button", "text": "B", "name": "same" },
+        { "type": "Button", "text": "C", "name": "own" }
+      ],
+      "labels": ["WPFObject(\"Button\", \"A\")", "WPFObject(\"Button\", \"B\")", "WPFObject(\"own\")"]
+    },
+    {
+      "name": "a name shared by siblings of the same type and text falls back to the ordinal",
+      "kind": "objects",
+      "nodes": [
+        { "type": "Button", "text": "A", "name": "same" },
+        { "type": "Button", "text": "A", "name": "same" }
+      ],
+      "labels": ["WPFObject(\"Button\", \"A\", 1)", "WPFObject(\"Button\", \"A\", 2)"]
+    },
+    {
+      "name": "wildcard characters in a text are patterns",
+      "kind": "objects",
+      "nodes": [
+        { "type": "TextBlock", "text": "a*", "name": "" },
+        { "type": "TextBlock", "text": "ab", "name": "" },
+        { "type": "TextBlock", "text": "c?", "name": "" },
+        { "type": "TextBlock", "text": "cd", "name": "" }
+      ],
+      "labels": [
+        "WPFObject(\"TextBlock\", \"a*\", 1)",
+        "WPFObject(\"TextBlock\", \"ab\")",
+        "WPFObject(\"TextBlock\", \"c?\", 3)",
+        "WPFObject(\"TextBlock\", \"cd\")"
+      ]
+    },
+    {
+      "name": "a text that is only a star is any text",
+      "kind": "objects",
+      "nodes": [
+        { "type": "Label", "text": "*", "name": "" },
+        { "type": "Label", "text": "x", "name": "" }
+      ],
+      "labels": ["WPFObject(\"Label\", 1)", "WPFObject(\"Label\", \"x\")"]
+    },
+    {
+      "name": "quotes, backslashes, newlines and non-ASCII text",
+      "kind": "objects",
+      "nodes": [
+        { "type": "TextBlock", "text": "say \"hi\"", "name": "" },
+        { "type": "TextBlock", "text": "a\\b\nc", "name": "" },
+        { "type": "TextBlock", "text": "雪 é", "name": "" }
+      ],
+      "labels": [
+        "WPFObject(\"TextBlock\", \"say \\\"hi\\\"\")",
+        "WPFObject(\"TextBlock\", \"a\\\\b\\nc\")",
+        "WPFObject(\"TextBlock\", \"雪 é\")"
+      ]
+    },
+    {
+      "name": "different types do not share ordinals",
+      "kind": "objects",
+      "nodes": [
+        { "type": "Button", "text": "OK", "name": "" },
+        { "type": "CheckBox", "text": "OK", "name": "" },
+        { "type": "Button", "text": "OK", "name": "" }
+      ],
+      "labels": [
+        "WPFObject(\"Button\", \"OK\", 1)",
+        "WPFObject(\"CheckBox\", \"OK\")",
+        "WPFObject(\"Button\", \"OK\", 2)"
+      ]
+    },
+    {
+      "name": "a window whose root visual has an x:Name is labelled by it",
+      "kind": "windowNodes",
+      "nodes": [{ "rootType": "SettingsView", "rootName": "SettingsViewWindow", "text": "Options" }],
+      "labels": ["WPFObject(\"HwndSource: SettingsViewWindow\", \"Options\")"]
+    },
+    {
+      "name": "a window without an x:Name is labelled by the type of its root visual",
+      "kind": "windowNodes",
+      "nodes": [{ "rootType": "MainView", "rootName": "", "text": "Main title" }],
+      "labels": ["WPFObject(\"HwndSource: MainView\", \"Main title\")"]
+    },
+    {
+      "name": "window nodes with the same label are told apart by ordinal",
+      "kind": "windowNodes",
+      "nodes": [
+        { "rootType": "Dialog", "rootName": "", "text": "Same" },
+        { "rootType": "Dialog", "rootName": "", "text": "Same" },
+        { "rootType": "Dialog", "rootName": "", "text": "Other" },
+        { "rootType": "Dialog", "rootName": "Named", "text": "Same" }
+      ],
+      "labels": [
+        "WPFObject(\"HwndSource: Dialog\", \"Same\", 1)",
+        "WPFObject(\"HwndSource: Dialog\", \"Same\", 2)",
+        "WPFObject(\"HwndSource: Dialog\", \"Other\")",
+        "WPFObject(\"HwndSource: Named\", \"Same\")"
+      ]
+    },
+    {
+      "name": "window nodes: ordinals count the nodes with the same label, not the same root type",
+      "kind": "windowNodes",
+      "nodes": [
+        { "rootType": "Dialog", "rootName": "A", "text": "" },
+        { "rootType": "Dialog", "rootName": "B", "text": "" },
+        { "rootType": "Dialog", "rootName": "B", "text": "" }
+      ],
+      "labels": [
+        "WPFObject(\"HwndSource: A\", \"\")",
+        "WPFObject(\"HwndSource: B\", 1)",
+        "WPFObject(\"HwndSource: B\", 2)"
+      ]
+    },
+    {
+      "name": "a window node with an unreadable title",
+      "kind": "windowNodes",
+      "nodes": [
+        { "rootType": "Popup", "rootName": "", "text": null },
+        { "rootType": "Popup", "rootName": "", "text": null }
+      ],
+      "labels": ["WPFObject(\"HwndSource: Popup\", 1)", "WPFObject(\"HwndSource: Popup\", 2)"]
+    },
+    {
+      "name": "a Win32 window by class",
+      "kind": "windows",
+      "nodes": [{ "class": "#32770", "caption": "Open" }],
+      "labels": ["Window(\"#32770\")"]
+    },
+    {
+      "name": "Win32 windows of one class by caption",
+      "kind": "windows",
+      "nodes": [
+        { "class": "Button", "caption": "OK" },
+        { "class": "Button", "caption": "Cancel" },
+        { "class": "Edit", "caption": "text" }
+      ],
+      "labels": ["Window(\"Button\", \"OK\")", "Window(\"Button\", \"Cancel\")", "Window(\"Edit\")"]
+    },
+    {
+      "name": "Win32 windows with the same class and caption take the ordinal among the class",
+      "kind": "windows",
+      "nodes": [
+        { "class": "Edit", "caption": "y" },
+        { "class": "Edit", "caption": "x" },
+        { "class": "Edit", "caption": "x" },
+        { "class": "Edit", "caption": "" },
+        { "class": "Edit", "caption": "" }
+      ],
+      "labels": [
+        "Window(\"Edit\", \"y\")",
+        "Window(\"Edit\", \"x\", 2)",
+        "Window(\"Edit\", \"x\", 3)",
+        "Window(\"Edit\", \"\", 4)",
+        "Window(\"Edit\", \"\", 5)"
+      ]
+    },
+    {
+      "name": "Win32 captions with quotes",
+      "kind": "windows",
+      "nodes": [
+        { "class": "Say \"hi\"", "caption": "雪" },
+        { "class": "Other", "caption": "" }
+      ],
+      "labels": ["Window(\"Say \\\"hi\\\"\")", "Window(\"Other\")"]
+    }
+  ]
+}

@@ -81,7 +81,7 @@ reads execute application code. Do not duplicate a property via a keyword and `w
 `tree="objects"` (any `Element`, `Elements`, typed element or child) searches the migration object tree of a
 WPF window instead: the visual tree without control-template parts and items-panel elements (their visible
 descendants move up to the nearest visible ancestor), each popup its own root. `depth`, the first match and
-`index` follow it (from an `App`, depth 1 is window nodes labelled `HwndSource: <type>` and depth 2 the root
+`index` follow it (from an `App`, depth 1 is window nodes labelled `HwndSource: <root x:Name, else type>` and depth 2 the root
 visuals; from a window, depth 1 is the root visual). `wpf:Text` (the element's text: `Text` of text blocks and
 text boxes, `Title` of windows, `Content` then `Header` of headered content controls, `Header` of headered
 items controls, `Content` of other content controls; else `''`) and `wpf:Ordinal` (1-based position among

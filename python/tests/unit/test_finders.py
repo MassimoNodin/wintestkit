@@ -303,8 +303,8 @@ def test_migration_edges():
         "LocalizedControlType": "button"
     }
     assert dict(to_locator("VisibleOnScreen", "false").where) == {"VisibleOnScreen": False}
-    assert dict(to_locator("DataContext.LabelText.OleValue", "Pending").where) == {
-        "clr:DataContext.LabelText": AsText("Pending")
+    assert dict(to_locator("DataContext.Caption.OleValue", "Pending").where) == {
+        "clr:DataContext.Caption": AsText("Pending")
     }
     assert dict(to_locator("IsChecked.olevalue", True).where) == {"clr:IsChecked": True}
     assert dict(to_locator("WPFControlOrdinalNo", "6").where) == {"wpf:Ordinal": 6}

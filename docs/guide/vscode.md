@@ -193,17 +193,37 @@ workspace; the configured app under test attaches automatically, while expanding
 and its fix rather than silently falling back to UI Automation. See [Managed inspection](managed-inspection.md).
 
 - Expand windows and controls lazily. Selecting a control inspects it without highlighting.
-  For WPF, Spy uses the visual tree; labels show the type and available
-  `x:Name` or AutomationId. Use **Load more** for paged children.
+  For WPF, Spy shows the **object tree**, the tree the Python library's labels are written against: the
+  visual tree without the parts a control's template creates and the panels that hold items, whose visible
+  descendants move up to the control that owns them, in visual order. A WPF window is a *window node*
+  (`WPFObject("HwndSource: <x:Name of the root visual, else its type>", "<title>")`) whose only child is the
+  root visual, and each popup is a window node of its own. Win32 windows read `Window("<class>", "<caption>")`.
+  Use **Load more** for paged children.
   Native HWND content appears under its WPF host. UI Automation-only elements elsewhere
   outside the WPF visual tree are omitted.
   Use the **Highlight** button in the top-right corner to draw its outline above every
   window. The pin button after **Collapse all** (off by default; setting
   `wintestkit.spy.bringWindowToFront`) also brings the control's window to the front, without
   taking keyboard focus from VS Code when using **Highlight**.
+- **Labels are code.** A row's label is exactly what the Python library reads, so anything Spy shows can be
+  pasted into code and resolves to the same object. A lone argument is the object's `x:Name`; otherwise the
+  label is the runtime type and the text (`WPFObject("Button", "Save")`, with `""` written out for an empty
+  text), and an index (`wpf:Ordinal`, the 1-based place among siblings of the same type) is added only when
+  the type and text repeat among siblings. An unreadable text (redacted or a throwing getter) is told apart
+  by the index alone. The Properties view shows the label as **Name**, the label chain from the process as
+  **FullName** (`Process("app.exe").WPFObject(...)...`, which `from_label` reads back) and the parent's label
+  as **Parent**. The actions menu of the Properties view (the three dots) has **Copy label chain**, which
+  copies the **FullName** string, and **Copy as code**, which copies `from_label(app, '<chain>')`: one
+  statement that works with the `app` of any test and gives the same object as the chain.
+- **Show template parts** (the button after the pin button; setting `wintestkit.spy.showTemplateParts`, off by
+  default) shows the full WPF visual tree, template parts and items panels included, to inspect how a control
+  is built. Labels read there are dotted and marked "not pasteable": the siblings and ordinals differ from the
+  object tree the library searches, so the copy actions are off and the chain is only informative. Turn it
+  off to copy labels again. UI Automation and WinForms rows keep their own labels, which the library does not read.
 - The toolbar starts with **Pick element**, **Refresh objects**, **Collapse all** and the pin button. **Pick
   element** (or `wtk spy` in a terminal): hold **Ctrl** and click a control in the application.
-  The WPF picker also finds elements without automation peers and popup content. If the tree
+  The WPF picker also finds elements without automation peers and popup content; a hit on a part of a control's
+  template selects the control that owns it (with **Show template parts** on it selects the part). If the tree
   changes during a pick, Spy reveals the closest available row and keeps the picked properties
   visible with a note. Reveal details are recorded in the WinTestKit output channel.
   **Esc** cancels. **Refresh objects** reloads the tree. **Pick element** and **Refresh objects**

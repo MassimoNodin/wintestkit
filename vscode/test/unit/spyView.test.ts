@@ -23,6 +23,7 @@ const mocks = vi.hoisted(() => ({
   editorListeners: [] as Array<() => void>,
   markers: true,
   bringToFront: false,
+  templateParts: false,
   updateConfig: vi.fn<(key: string, value: unknown, target: number) => Promise<void>>(() => Promise.resolve()),
   configListeners: [] as Array<
     (event: { affectsConfiguration(key: string): boolean }) => void
@@ -69,7 +70,9 @@ vi.mock("vscode", () => ({
       get: (key: string, fallback: boolean) =>
         key === "bringWindowToFront"
           ? mocks.bringToFront
-          : key === "basicProperties"
+          : key === "showTemplateParts"
+            ? mocks.templateParts
+            : key === "basicProperties"
             ? mocks.basicProperties
             : mocks.markers && fallback,
       update: mocks.updateConfig,
@@ -153,6 +156,7 @@ describe("Spy view bridge", () => {
     mocks.activeEditor = undefined;
     mocks.markers = true;
     mocks.bringToFront = false;
+    mocks.templateParts = false;
     mocks.configListeners.splice(0, mocks.configListeners.length);
     mocks.editorListeners.splice(0, mocks.editorListeners.length);
     mocks.providerRegistrations.splice(0);
@@ -188,7 +192,7 @@ describe("Spy view bridge", () => {
     expect(recovery).toHaveBeenCalledOnce();
     expect(fixture.sent).toContainEqual(expect.objectContaining({ type: "children", blocked: expect.objectContaining({ code: "childrenUnavailable" }) }));
   });
-  it("uses the visual tree and handles paged, UIA, and blocked responses", async () => {
+  it("uses the object tree and handles paged, UIA, and blocked responses", async () => {
     const update = vi.fn(async () => {});
     const memory = { get: () => undefined, update };
     const first = { nodeId: "a", info: { controlType: "Button", name: "A" }, hasChildren: false, source: "wpf", identity: { type: "Demo.Button", xName: "A" } };
@@ -217,7 +221,7 @@ describe("Spy view bridge", () => {
     await vi.waitFor(() => expect(fixture.sent).toContainEqual({ type: "wpfDetails", nodeId: "attach", missing: true }));
     await vi.waitFor(() => expect(fixture.sent).toContainEqual(expect.objectContaining({ type: "children", nodeId: "blocked", blocked: { code: "policy", hint: "Enable it" } })));
     await vi.waitFor(() => expect(fixture.sent).toContainEqual(expect.objectContaining({ type: "children", nodeId: "uia", nodes: [first] })));
-    expect(mocks.request).toHaveBeenCalledWith("inspect.children", { nodeId: "wpf", tree: "visual", pageToken: "next" });
+    expect(mocks.request).toHaveBeenCalledWith("inspect.children", { nodeId: "wpf", tree: "objects", pageToken: "next" });
     fixture.provider.dispose();
   });
   it("shows a node-level error when fallback enumeration fails", async () => {
@@ -239,7 +243,7 @@ describe("Spy view bridge", () => {
     })));
     fixture.provider.dispose();
   });
-  it.each([true, false])("expands the visual tree after attach (app under test: %s)", async (appUnderTest) => {
+  it.each([true, false])("expands the object tree after attach (app under test: %s)", async (appUnderTest) => {
     const process = { pid: appUnderTest ? 99301 : 99302, creationTimeUtc: "run" };
     const child = { nodeId: "wpf-child", info: { name: "Save", controlType: "Button" }, hasChildren: false, source: "wpf" };
     let attached = false;
@@ -254,7 +258,7 @@ describe("Spy view bridge", () => {
     const fixture = await create(undefined, undefined, undefined, true);
     fixture.receive({ type: "expand", nodeId: "window" });
     await vi.waitFor(() => expect(fixture.sent).toContainEqual(expect.objectContaining({ type: "children", nodeId: "window", nodes: [child] })));
-    expect(mocks.request).toHaveBeenCalledWith("inspect.children", { nodeId: "window", tree: "visual" });
+    expect(mocks.request).toHaveBeenCalledWith("inspect.children", { nodeId: "window", tree: "objects" });
     expect(mocks.warning).toHaveBeenCalledTimes(appUnderTest ? 0 : 1);
     fixture.provider.dispose();
   });
@@ -271,7 +275,7 @@ describe("Spy view bridge", () => {
     await vi.waitFor(() => expect(latestSession()).toBeTypeOf("string"));
     mocks.notifications.get("spy.picked")?.({ sessionId: latestSession(), node: picked });
     await vi.waitFor(() => expect(fixture.sent).toContainEqual(expect.objectContaining({ type: "selected", nodeId: "picked" })));
-    expect(mocks.request).toHaveBeenCalledWith("inspect.children", { nodeId: "root", tree: "visual", pageToken: "page2" });
+    expect(mocks.request).toHaveBeenCalledWith("inspect.children", { nodeId: "root", tree: "objects", pageToken: "page2" });
     expect(fixture.sent.some((message) => message.type === "selected" && !!message.revealNote)).toBe(!found);
     fixture.provider.dispose();
   });
@@ -317,7 +321,7 @@ describe("Spy view bridge", () => {
     await vi.waitFor(() => expect(latestSession()).toBeTypeOf("string"));
     mocks.notifications.get("spy.picked")?.({ sessionId: latestSession(), node: picked });
     await vi.waitFor(() => expect(fixture.sent).toContainEqual(expect.objectContaining({ type: "selected", nodeId: "picked", treeNodeId: "picked" })));
-    expect(mocks.request).toHaveBeenCalledWith("inspect.children", { nodeId: "new", tree: "visual" });
+    expect(mocks.request).toHaveBeenCalledWith("inspect.children", { nodeId: "new", tree: "objects" });
     fixture.provider.dispose();
   });
   it("reveals a hosted UIA pick through paged WPF ancestors", async () => {
@@ -334,7 +338,7 @@ describe("Spy view bridge", () => {
     await vi.waitFor(() => expect(latestSession()).toBeTypeOf("string"));
     mocks.notifications.get("spy.picked")?.({ sessionId: latestSession(), node: picked });
     await vi.waitFor(() => expect(fixture.sent).toContainEqual(expect.objectContaining({ type: "selected", nodeId: "native" })));
-    expect(mocks.request).toHaveBeenCalledWith("inspect.children", { nodeId: "host", tree: "visual", pageToken: "uia:0" });
+    expect(mocks.request).toHaveBeenCalledWith("inspect.children", { nodeId: "host", tree: "objects", pageToken: "uia:0" });
     fixture.provider.dispose();
   });
   it("reveals a mixed picked path with diffs after a tree is loaded", async () => {
@@ -384,10 +388,10 @@ describe("Spy view bridge", () => {
     expect(mocks.request.mock.calls.filter(([method]) => method === "inspect.managed.attach")).toHaveLength(2);
     fixture.provider.dispose();
   });
-  it("uses the visual tree for the picker", async () => {
+  it("uses the object tree for the picker", async () => {
     const fixture = await create(undefined, undefined, { get: () => "logical", update: vi.fn() });
     fixture.receive({ type: "pick" });
-    await vi.waitFor(() => expect(mocks.request).toHaveBeenCalledWith("spy.start", expect.objectContaining({ tree: "visual" })));
+    await vi.waitFor(() => expect(mocks.request).toHaveBeenCalledWith("spy.start", expect.objectContaining({ tree: "objects" })));
     fixture.provider.dispose();
   });
   it("shows a blocked pick on its window instead of inspecting the UIA fallback", async () => {
@@ -1949,7 +1953,7 @@ describe("Spy view bridge", () => {
       const fixture = await setup("properties");
       const internal = fixture.provider as unknown as { loadAllProperties: (client: typeof fixture.client, nodeId: string, selection: number) => Promise<void>; selection: number };
       await internal.loadAllProperties(fixture.client, "old", internal.selection);
-      expect(mocks.request).toHaveBeenCalledWith("spy.repick", { ...point, tree: "visual" });
+      expect(mocks.request).toHaveBeenCalledWith("spy.repick", { ...point, tree: "objects" });
       expect(mocks.request).toHaveBeenCalledWith("inspect.properties", { nodeId: "new", full: true });
       expect(fixture.sent).toContainEqual(expect.objectContaining({ type: "selected", nodeId: "new" }));
       fixture.provider.dispose();
@@ -2126,7 +2130,7 @@ describe("Spy view bridge", () => {
       await vi.waitFor(() => expect(latestSession()).toBeTypeOf("string"));
       expect(mocks.request).toHaveBeenCalledWith("spy.start", {
         sessionId: latestSession(),
-        tree: "visual",
+        tree: "objects",
         foregroundForProcessId: process.pid,
       });
       mocks.notifications.get("spy.picked")?.({ sessionId: latestSession(), node: { nodeId: "picked", info: { controlType: "Button", name: "Save" } } });
@@ -2240,6 +2244,29 @@ describe("Spy view bridge", () => {
         });
       const states = fixture.sent.filter((message) => message.type === "state");
       expect(states.at(-1)).toMatchObject({ bringToFront: true });
+      fixture.provider.dispose();
+    });
+    it("shows the object tree unless template parts are shown, and reloads when that changes", async () => {
+      mocks.request.mockImplementation(async (method: string) =>
+        method === "inspect.refresh" ? { nodes: [], status: { running: false } } : method === "inspect.children" ? { nodes: [] } : [],
+      );
+      const fixture = await create();
+      await fixture.provider.refresh();
+      fixture.receive({ type: "expand", nodeId: "wpf" });
+      await vi.waitFor(() => expect(mocks.request).toHaveBeenCalledWith("inspect.children", { nodeId: "wpf", tree: "objects" }));
+      expect(fixture.sent.filter((message) => message.type === "state").at(-1)).toMatchObject({ showTemplateParts: false });
+      // The panel's toggle is saved to the user settings; the change of setting loads the full visual tree.
+      const refreshes = () => mocks.request.mock.calls.filter(([method]) => method === "inspect.refresh").length;
+      const before = refreshes();
+      fixture.receive({ type: "showTemplateParts", enabled: true });
+      await vi.waitFor(() => expect(mocks.updateConfig).toHaveBeenCalledWith("showTemplateParts", true, 1));
+      mocks.templateParts = true;
+      for (const listener of mocks.configListeners)
+        listener({ affectsConfiguration: (key) => key === "wintestkit.spy.showTemplateParts" });
+      await vi.waitFor(() => expect(refreshes()).toBeGreaterThan(before));
+      expect(fixture.sent.filter((message) => message.type === "state").at(-1)).toMatchObject({ showTemplateParts: true });
+      fixture.receive({ type: "expand", nodeId: "wpf" });
+      await vi.waitFor(() => expect(mocks.request).toHaveBeenCalledWith("inspect.children", { nodeId: "wpf", tree: "visual" }));
       fixture.provider.dispose();
     });
     it("tells the panel the option is off at first", async () => {
@@ -2966,7 +2993,7 @@ describe("Spy view bridge", () => {
     fixture.receive({ type: "expand", nodeId: "root" });
     await vi.waitFor(() =>
       expect(mocks.request).toHaveBeenCalledWith("inspect.children", {
-        nodeId: "root", tree: "visual",
+        nodeId: "root", tree: "objects",
       }),
     );
     fixture.receive({ type: "pick" });

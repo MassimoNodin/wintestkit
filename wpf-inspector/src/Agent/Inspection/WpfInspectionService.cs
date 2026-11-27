@@ -107,8 +107,9 @@ namespace WinTestKit.Inspector.Agent.Inspection
             return node;
         }
 
-        public Task<Protocol.HitTestResult> HitTestAsync(long nativeWindowHandle, PointDto point, DateTime deadline, int timeoutMs, CancellationToken ct, bool includePath = false) => RunAsync(async token =>
+        public Task<Protocol.HitTestResult> HitTestAsync(long nativeWindowHandle, PointDto point, DateTime deadline, int timeoutMs, CancellationToken ct, bool includePath = false, string? tree = null) => RunAsync(async token =>
         {
+            bool objectTree = tree == TreeKind.Objects;
             IntPtr hwnd;
             try { hwnd = new IntPtr(nativeWindowHandle); }
             catch (OverflowException) { throw new ProtocolException(ErrorCodes.MappingFailed, "Invalid window handle."); }
@@ -142,6 +143,7 @@ namespace WinTestKit.Inspector.Agent.Inspection
                         while (target != null && !(target is UIElement) && !(target is ContentElement))
                             target = VisualTreeHelper.GetParent(target);
                         if (target == null) throw new ProtocolException(ErrorCodes.NotFound, "No hit.");
+                        if (objectTree && ObjectTree.Hidden(target)) target = ObjectTree.Parent(target) ?? target;
                         Protocol.InnerElementDto? inner = null;
                         if (root is UIElement inputRoot && inputRoot.InputHitTest(local) is ContentElement content)
                         {
@@ -164,7 +166,7 @@ namespace WinTestKit.Inspector.Agent.Inspection
                             {
                                 timed.Token.ThrowIfCancellationRequested();
                                 if (path.Count >= 256) throw new ProtocolException(ErrorCodes.LimitExceeded, "Hit test path limit reached.");
-                                AddNode(path, current);
+                                AddNode(path, current, objectTree);
                                 var identity = new NodeIdentityDto { SiblingIndex = VisualSiblingIndex(current) };
                                 if (current is FrameworkElement || current is FrameworkContentElement)
                                 {
@@ -174,7 +176,7 @@ namespace WinTestKit.Inspector.Agent.Inspection
                                 identity.AutomationId = ReadIdentity(current, new PathSegment { Kind = "uia", Name = "automation_id" }, source.Dispatcher, timed.Token);
                                 path[path.Count - 1].Identity = identity;
                                 if (ReferenceEquals(current, root)) break;
-                                current = current is Visual || current is System.Windows.Media.Media3D.Visual3D ? VisualTreeHelper.GetParent(current) : LogicalTreeHelper.GetParent(current);
+                                current = objectTree ? ObjectTree.Parent(current) : current is Visual || current is System.Windows.Media.Media3D.Visual3D ? VisualTreeHelper.GetParent(current) : LogicalTreeHelper.GetParent(current);
                             }
                             if (current == null) throw new ProtocolException(ErrorCodes.MappingFailed, "Hit is not connected to the window root.");
                             path.Reverse();
@@ -285,7 +287,7 @@ namespace WinTestKit.Inspector.Agent.Inspection
             int? pageSize, string? pageToken, CancellationToken ct) => RunAsync(async token =>
         {
             int size = PageSize(pageSize);
-            if (tree != TreeKind.Visual && tree != TreeKind.Logical)
+            if (tree != TreeKind.Visual && tree != TreeKind.Logical && tree != TreeKind.Objects)
                 throw new ProtocolException(ErrorCodes.InvalidParams, "Unknown tree kind.");
             object target = GetObject(objectId, generation, out Dispatcher dispatcher);
             PageDto<ManagedNodeDto> page;
@@ -297,7 +299,7 @@ namespace WinTestKit.Inspector.Agent.Inspection
             var nodes = new List<ManagedNodeDto>();
             if (target is DependencyObject dependencyObject)
                 await CollectNodesAsync(dispatcher, () => TreeWalker.EnumerateChildren(dependencyObject, tree),
-                    nodes, new HashSet<object>(ReferenceComparer.Instance), walker.NewBudget(), token).ConfigureAwait(false);
+                    nodes, new HashSet<object>(ReferenceComparer.Instance), walker.NewBudget(), token, tree == TreeKind.Objects).ConfigureAwait(false);
             else if (WinFormsNative.IsWinFormsObject(target))
                 await CollectWinFormsChildrenAsync(target, dispatcher, nodes, token).ConfigureAwait(false);
             page = NewPage(objectId, generation, "children", tree, nodes, Array.Empty<Diagnostic>(), size, token);
@@ -457,7 +459,8 @@ namespace WinTestKit.Inspector.Agent.Inspection
             catch (Exception) { return null; }
         }
 
-        private void AddNode(List<ManagedNodeDto> nodes, DependencyObject target)
+        /// <summary>With <paramref name="objectTree"/> both child flags say whether the object tree (template parts hidden) has children below the node.</summary>
+        private void AddNode(List<ManagedNodeDto> nodes, DependencyObject target, bool objectTree = false)
         {
             if (nodes.Count >= ProtocolLimits.ScanMaxObjects)
                 throw new ProtocolException(ErrorCodes.LimitExceeded, "Tree scan limit reached.");
@@ -467,14 +470,14 @@ namespace WinTestKit.Inspector.Agent.Inspection
             {
                 Object = registry.Register(target, target.Dispatcher, inspector.DescribeType(target.GetType())),
                 Label = target.GetType().Name,
-                HasVisualChildren = TreeWalker.EnumerateChildren(target, TreeKind.Visual).Any(),
-                HasLogicalChildren = TreeWalker.EnumerateChildren(target, TreeKind.Logical).Any(),
+                HasVisualChildren = TreeWalker.EnumerateChildren(target, objectTree ? TreeKind.Objects : TreeKind.Visual).Any(),
+                HasLogicalChildren = TreeWalker.EnumerateChildren(target, objectTree ? TreeKind.Objects : TreeKind.Logical).Any(),
                 RuntimeId = runtimeId == null ? null : (int[])runtimeId.Clone()
             });
         }
 
         private async Task CollectNodesAsync(Dispatcher dispatcher, Func<IEnumerable<DependencyObject>> enumerate,
-            List<ManagedNodeDto> nodes, HashSet<object> seen, ScanBudget budget, CancellationToken ct)
+            List<ManagedNodeDto> nodes, HashSet<object> seen, ScanBudget budget, CancellationToken ct, bool objectTree = false)
         {
             IEnumerator<DependencyObject> iterator = await executor.ExecuteAsync(dispatcher, () => enumerate().GetEnumerator(), ct).ConfigureAwait(false);
             try
@@ -494,7 +497,7 @@ namespace WinTestKit.Inspector.Agent.Inspection
                             DependencyObject current = iterator.Current;
                             if (!seen.Add(current)) continue;
                             if (!budget.Take()) throw new ProtocolException(ErrorCodes.LimitExceeded, "Tree scan limit reached.");
-                            AddNode(nodes, current);
+                            AddNode(nodes, current, objectTree);
                         }
                         return false;
                     }, ct).ConfigureAwait(false);

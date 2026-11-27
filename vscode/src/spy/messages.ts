@@ -43,7 +43,7 @@ export type SpyRequest =
       showOtherApps?: boolean;
     }
   | {
-      type: "showOtherApps" | "bringToFront";
+      type: "showOtherApps" | "bringToFront" | "showTemplateParts";
       enabled: boolean;
     }
   | {
@@ -96,6 +96,8 @@ export type SpyResponse =
       hasProject: boolean;
       showOtherApps: boolean;
       bringToFront: boolean;
+      /** The full visual tree is shown, template parts included; labels read in it cannot be pasted into code. */
+      showTemplateParts?: boolean;
       /** The rows of the Basic view, as group-qualified keys (a user setting), and the list Reset restores. */
       basicProperties?: string[];
       basicDefaults?: string[];
@@ -173,7 +175,7 @@ export function parseSpyRequest(value: unknown): SpyRequest | undefined {
     return typeof message.showOtherApps === "boolean"
       ? { type: "ready", showOtherApps: message.showOtherApps }
       : { type: "ready" };
-  if (message.type === "showOtherApps" || message.type === "bringToFront")
+  if (message.type === "showOtherApps" || message.type === "bringToFront" || message.type === "showTemplateParts")
     return typeof message.enabled === "boolean"
       ? { type: message.type, enabled: message.enabled }
       : undefined;

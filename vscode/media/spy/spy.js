@@ -286,6 +286,10 @@
   const tasks = new Map();
   let appState;
   let bringToFront = false;
+  // The full visual tree is shown (template parts and items panels included): its labels are not pasteable.
+  let templateParts = false;
+  // What the copy actions of the selected object put on the clipboard; empty when it cannot be pasted.
+  let labelCopy = { chain: "", code: "" };
   // Every Spy session starts with all desktop windows; the button narrows it to the app.
   let showOtherApps = true;
   let rootsLoaded = false;
@@ -352,7 +356,7 @@
         " · UI name: " +
         entry.baseTitle
       : entry.baseTitle;
-    entry.row.setAttribute("aria-label", entry.name);
+    entry.row.setAttribute("aria-label", entry.name + (entry.unpasteable ? " (not pasteable: template parts are shown)" : ""));
     if (!info) {
       existing?.remove();
       return;
@@ -519,8 +523,17 @@
     element("bring-front-icon").className =
       "codicon codicon-" + (bringToFront ? "pinned" : "pin");
   };
+  const renderTemplateParts = () => {
+    const button = element("template-parts");
+    const text = "Show template parts: " + (templateParts ? "on (labels cannot be pasted into code)" : "off");
+    button.setAttribute("aria-pressed", String(templateParts));
+    button.title = text;
+    button.setAttribute("aria-label", text);
+    element("template-parts-icon").className = "codicon codicon-" + (templateParts ? "layers" : "type-hierarchy");
+  };
   const renderStatus = () => {
     renderBringToFront();
+    renderTemplateParts();
     const otherApps = element("other-apps");
     otherApps.hidden = false;
     otherApps.disabled = false;
@@ -1008,10 +1021,10 @@
     ChildCount: "How many direct children the object has in the tree.",
     Enabled: "Whether the control accepts input (UI Automation IsEnabled).",
     Exists: "True while the object is alive in the target application.",
-    FullName: "The locator path from the window down to this object.",
+    FullName: "The label chain from the process down to this object. Pass it to from_label to resolve this object in code.",
     Height: "Height of the bounding rectangle, in pixels.",
     Left: "Distance from the left edge of the containing window to this object's left edge, in pixels. A window reports its position on the screen.",
-    Name: "The x:Name of a WPF object or the Name of a WinForms control, otherwise its UI Automation name.",
+    Name: "The label of this object among its siblings: the arguments a WPFObject or Window step of the Python library needs to select it. Objects outside that grammar show their x:Name, Name or UI Automation name.",
     Parent: "The object this one belongs to in the tree.",
     ScreenLeft: "Distance from the left edge of the screen to the object's left edge, in pixels.",
     ScreenTop: "Distance from the top edge of the screen to the object's top edge, in pixels.",
@@ -1152,6 +1165,9 @@
     if (event.key === "Enter" || (event.ctrlKey && event.key.toLowerCase() === "c")) { event.preventDefault(); copyCell(item, row.cells[1]); }
   });
   const sidebarActions = element("sidebar-actions");
+  for (const [id, field] of [["sidebar-copy-chain", "chain"], ["sidebar-copy-code", "code"]]) {
+    element(id).addEventListener("click", () => { sidebarActions.open = false; sidebarActions.querySelector("summary").focus(); if (labelCopy[field]) post("copy", { text: labelCopy[field] }); });
+  }
   for (const [id, type, payload] of [["sidebar-detach", "managedDetach"], ["sidebar-refresh", "managedRefresh"], ["sidebar-export", "managedCopy", { kind: "export" }]]) {
     element(id).addEventListener("click", () => { sidebarActions.open = false; sidebarActions.querySelector("summary").focus(); post(type, payload); });
   }
@@ -1501,6 +1517,7 @@
     const formFocus = formField && { id: formField.id, caret: typeof formField.selectionStart === "number" ? [formField.selectionStart, formField.selectionEnd] : undefined };
     rowItems.clear();
     body.replaceChildren();
+    labelCopy = { chain: "", code: "" };
     sidebarTabs.forEach((button) => button.setAttribute("aria-selected", String(button.dataset.sidebarTab === sidebarTab)));
     element("sidebar-mode-toggle").hidden = sidebarTab !== "properties"; element("sidebar-mode").checked = sidebarShowAll;
     element("sidebar-mode-row").hidden = sidebarTab !== "properties";
@@ -1590,14 +1607,22 @@
       const fromHost = (p.ancestors || []).map((ancestor) => ({ nodeId: ancestor.nodeId, node: ancestor, label: WtkTreeLabels.labelsFor([ancestor])[0] }));
       const route = (entry && ancestry.length > 1 ? ancestry.slice(0, -1) : fromHost).filter((item) => item.node.info.controlType !== "Process");
       const actualParent = parent ? { nodeId: parent.node.nodeId, label: parent.name } : route.at(-1);
-      const ownLabel = entry?.name || WtkTreeLabels.labelsFor([{ nodeId: selected, source: p.source, info, identity: { type: raw.ClrFullClassName, xName: raw[nameKey(p.source)] } }])[0];
-      const locatorPath = suggestion?.unique && suggestion.window ? [suggestion.window.code, ...suggestion.helpers.map((helper) => helper.attributeName + " = " + helper.code), suggestion.code].join("\n") : [...route.map((item) => item.label), ownLabel].join(".");
+      const ownNode = entry?.node ?? { nodeId: selected, source: p.source, info, identity: { type: raw.ClrFullClassName, xName: raw[nameKey(p.source)] } };
+      const ownLabel = entry?.name || WtkTreeLabels.labelsFor([ownNode])[0];
+      // The chain is read by finders.from_label when every level is a WPFObject or Window step, below the process.
+      const processNode = ancestry.find((item) => item.node.info.controlType === "Process")?.node ?? nodes.get("process:" + info.processId)?.node;
+      // The executable name: from the process row, else from the window the host listed with the selection.
+      const exe = processNode ? processNode.info.processName || processNode.info.name : fromHost[0]?.node.info.processName;
+      const labelChain = exe && WtkTreeLabels.pasteable(ownNode) && route.every((item) => WtkTreeLabels.pasteable(item.node)) ? [WtkTreeLabels.processLabel(exe), ...route.map((item) => item.label), ownLabel].join(".") : "";
+      // Labels read in the full visual tree name objects the Python library cannot find by that label.
+      if (labelChain && !templateParts) labelCopy = { chain: labelChain, code: WtkTreeLabels.copyAsCode(labelChain) };
+      const locatorPath = labelChain || (suggestion?.unique && suggestion.window ? [suggestion.window.code, ...suggestion.helpers.map((helper) => helper.attributeName + " = " + helper.code), suggestion.code].join("\n") : [...route.map((item) => item.label), ownLabel].join("."));
       // Left and Top are measured from the containing window; a window reports its place on the screen.
       const windowRect = route[0]?.node?.info?.rect;
       const offset = (own, origin) => typeof own !== "number" ? undefined : typeof origin === "number" ? own - origin : own;
       const nameAlias = p.source === "winforms" ? "WinFormsControlName" : "WPFControlName";
       const lookAlikes = entry ? [...nodes.values()].filter((other) => other.parentId === entry.parentId && other.node.source === entry.node.source && (other.node.identity?.type || "") === (entry.node.identity?.type || "") && (other.node.info.name || "") === (entry.node.info.name || "")).sort((a, b) => a.index - b.index) : [];
-      const ordinal = lookAlikes.includes(entry) ? lookAlikes.indexOf(entry) + 1 : undefined;
+      const ordinal = Number.isInteger(entry?.node.wpfOrdinal) ? entry.node.wpfOrdinal : lookAlikes.includes(entry) ? lookAlikes.indexOf(entry) + 1 : undefined;
       const aliases = isManaged(p.source) ? ["ClrClassName", "ClrFullClassName", nameAlias, ...(p.source === "wpf" ? ["WPFControlOrdinalNo"] : []), textKey(p.source)] : [];
       // An object whose children were never listed (a picked leaf's sibling branches, a collapsed row) has them loaded
       // in the background, without opening its row, so ChildCount shows a number instead of Unknown.
@@ -1607,12 +1632,12 @@
         ChildCount: entry?.node.hasChildren === false ? 0 : entry?.loaded ? (entry.children.querySelector(":scope > .tree-message button") ? `${listed}+` : listed) : undefined,
         Enabled: info.isEnabled, Exists: true, FullName: locatorPath,
         Height: info.rect?.height, Left: offset(info.rect?.left, windowRect?.left),
-        Name: (isManaged(p.source) && raw[nameKey(p.source)]) || info.name, Parent: actualParent?.label, ScreenLeft: info.rect?.left, ScreenTop: info.rect?.top,
+        Name: WtkTreeLabels.pasteable(ownNode) ? ownLabel : (isManaged(p.source) && raw[nameKey(p.source)]) || info.name, Parent: actualParent?.label, ScreenLeft: info.rect?.left, ScreenTop: info.rect?.top,
         Top: offset(info.rect?.top, windowRect?.top), Visible: isManaged(p.source) ? raw.Visible : undefined, VisibleOnScreen: info.isOffscreen === undefined ? undefined : !info.isOffscreen, Width: info.rect?.width,
         ClrFullClassName: raw.ClrFullClassName, [textKey(p.source)]: raw[textKey(p.source)],
         ClrClassName: raw.ClrFullClassName ? String(raw.ClrFullClassName).split(/[.+]/).pop() : undefined, [nameAlias]: raw.AutomationId || info.automationId || raw[nameKey(p.source)] || "", WPFControlOrdinalNo: ordinal,
       };
-      const rowFor = (name) => ({ name, value: standard[name], description: standardDescription(name, standard[name]), ...(name === "Parent" && actualParent ? { select: actualParent.nodeId } : {}) });
+      const rowFor = (name) => ({ name, value: standard[name], description: [...standardDescription(name, standard[name]), ...(templateParts && labelChain && (name === "Name" || name === "FullName") ? [["Not pasteable", "Template parts are shown, so this label is read in the full visual tree. Turn Show template parts off to copy a label the Python library can resolve."]] : [])], ...(name === "Parent" && actualParent ? { select: actualParent.nodeId } : {}) });
       const names = ["ChildCount", "Enabled", "Exists", "FullName", "Height", "Left", "Name", "Parent", "ScreenLeft", "ScreenTop", "Top", "Visible", "VisibleOnScreen", "Width"];
       const sections = [["Standard", names.map(rowFor)]];
       if (p.window) sections.push(["Win32 Window", windowRows(p.window, false)]);
@@ -1655,6 +1680,10 @@
       empty.textContent = query ? "No matching properties." : !sidebarShowAll && basicProperties ? "Nothing in the Basic view applies to this object. Show all properties to pin rows, or reset the Basic view." : "No properties loaded.";
     }
     empty.hidden = count > 0;
+    for (const [id, field, title] of [["sidebar-copy-chain", "chain", "Copy the label chain from the process down to this object"], ["sidebar-copy-code", "code", "Copy a Python snippet that resolves this object with from_label"]]) {
+      element(id).disabled = !labelCopy[field];
+      element(id).title = labelCopy[field] ? title : templateParts ? "Labels read with template parts shown cannot be pasted into code" : "This object has no label the Python library can read";
+    }
     fitNameColumn();
     if (focusedKey !== undefined) rowByKey(focusedKey)?.focus({ preventScroll: true });
     const refocused = formFocus?.id ? element(formFocus.id) : undefined;
@@ -1928,10 +1957,13 @@
     const entries = Array.from(parent.children).map((item) => nodes.get(item.firstElementChild?.dataset.nodeId)).filter(Boolean);
     const labels = WtkTreeLabels.labelsFor(entries.map((entry) => entry.node));
     entries.forEach((entry, index) => {
-      entry.name = entry.root && entry.node.info.controlType === "Process" ? "Process(" + JSON.stringify(entry.node.info.name) + ")" : labels[index];
-      entry.row.setAttribute("aria-label", entry.name);
+      entry.name = entry.root && entry.node.info.controlType === "Process" ? WtkTreeLabels.processLabel(entry.node.info.processName || entry.node.info.name) : labels[index];
+      const unpasteable = templateParts && WtkTreeLabels.pasteable(entry.node);
+      entry.row.classList.toggle("unpasteable", unpasteable);
+      entry.unpasteable = unpasteable;
+      entry.row.setAttribute("aria-label", entry.name + (unpasteable ? " (not pasteable: template parts are shown)" : ""));
       entry.row.setAttribute("aria-setsize", String(entries.length));
-      entry.baseTitle = [entry.name, entry.node.info.controlType, entry.node.identity?.type || entry.node.info.className, entry.node.info.automationId, entry.node.info.name, entry.node.info.className, entry.root ? "PID " + entry.node.info.processId : ""].filter(Boolean).join(" \u00b7 ");
+      entry.baseTitle = [entry.name, entry.node.info.controlType, entry.node.identity?.type || entry.node.info.className, entry.node.info.automationId, entry.node.info.name, entry.node.info.className, entry.root ? "PID " + entry.node.info.processId : "", unpasteable ? "Template parts are shown: this label cannot be pasted into code" : ""].filter(Boolean).join(" \u00b7 ");
       applyMarker(entry);
     });
     if (selected && entries.some((entry) => entry.node.nodeId === selected) && hasDetails) {
@@ -1939,6 +1971,10 @@
       if (cell) cell.textContent = nodes.get(selected).name;
     }
     filter();
+  };
+  // Every loaded level is labelled again, e.g. when the template-parts setting changes the marks.
+  const relabelAll = () => {
+    for (const list of new Set([element("tree"), ...[...nodes.values()].map((entry) => entry.children)])) renderNodes(list, [], true);
   };
   const processName = (node) => node.info.processId ? (node.info.processName || node.info.name || "Process(" + node.info.processId + ")").replace(/\.exe$/i, "") : "unknown";
   const addWindowRow = (process, node) => renderNodes(process.children, [node], true);
@@ -2158,6 +2194,12 @@
     bringToFront = !bringToFront;
     renderBringToFront();
     post("bringToFront", { enabled: bringToFront });
+  });
+  element("template-parts").addEventListener("click", () => {
+    templateParts = !templateParts;
+    renderTemplateParts();
+    relabelAll();
+    post("showTemplateParts", { enabled: templateParts });
   });
   element("other-apps").addEventListener("click", () => {
     showOtherApps = !showOtherApps;
@@ -2397,6 +2439,10 @@
         showOtherApps = message.showOtherApps;
       if (typeof message.bringToFront === "boolean")
         bringToFront = message.bringToFront;
+      if (typeof message.showTemplateParts === "boolean" && message.showTemplateParts !== templateParts) {
+        templateParts = message.showTemplateParts;
+        relabelAll();
+      }
       picking = message.picking;
       element("pick-label").textContent = picking
         ? "Stop picking"
@@ -2445,7 +2491,7 @@
         const id = "process:" + pid;
         if (!nodes.has(id)) {
           const name = processName(windows[0]);
-          renderNodes(element("tree"), [{ nodeId: id, hasChildren: true, info: { controlType: "Process", name, processId: pid, automationId: "process:" + name.toLowerCase(), className: "" } }], true);
+          renderNodes(element("tree"), [{ nodeId: id, hasChildren: true, info: { controlType: "Process", name, processName: pid ? windows[0].info.processName : undefined, processId: pid, automationId: "process:" + name.toLowerCase(), className: "" } }], true);
           nodes.get(id).open = true;
         }
         const process = nodes.get(id);

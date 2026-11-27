@@ -76,7 +76,7 @@ namespace WinTestKit.Inspector.Agent.Contracts
 
     public interface IHitTestInspectionService
     {
-        Task<HitTestResult> HitTestAsync(long nativeWindowHandle, PointDto point, DateTime deadline, int timeoutMs, CancellationToken ct, bool includePath = false);
+        Task<HitTestResult> HitTestAsync(long nativeWindowHandle, PointDto point, DateTime deadline, int timeoutMs, CancellationToken ct, bool includePath = false, string? tree = null);
     }
 
     public interface IActionInspectionService

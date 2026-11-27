@@ -35,8 +35,11 @@ Whitespace is allowed between tokens. Step names are case-insensitive; the canon
     index)`` is ``Window(cls, "", index)``.
 
 Window nodes: below an application, the object tree starts with one node per top-level WPF window.
-Its type is ``"HwndSource: <root visual short type name>"``, its text is the window title and its
-ordinal counts the window nodes of the same type. The node's only child is the root visual.
+Its type is ``"HwndSource: <label>"``, where ``<label>`` is the root visual's x:Name when it has
+one and its short type name otherwise (``HwndSource: SettingsViewWindow`` for a window whose
+root type is ``SettingsView`` and whose x:Name is ``SettingsViewWindow``). Its text is
+the window title and its ordinal counts the window nodes with the same type. The node's only child
+is the root visual. A step may name either spelling: the x:Name form first, then the type form.
 """
 
 from __future__ import annotations
@@ -67,12 +70,27 @@ __all__ = [
     "strip_mnemonic",
     "text_matches",
     "wildcard_regex",
+    "window_node_type",
+    "window_node_types",
     "window_spec",
     "window_step",
 ]
 
-#: The type of a window node is this prefix followed by the root visual's short type name.
+#: The type of a window node is this prefix followed by the root visual's x:Name or type name.
 WINDOW_NODE_PREFIX = "HwndSource: "
+
+
+def window_node_type(root_type: str, root_name: str = "") -> str:
+    """The type of a window node: the root visual's x:Name, else its short type name."""
+    return WINDOW_NODE_PREFIX + (root_name or root_type)
+
+
+def window_node_types(root_type: str, root_name: str = "") -> tuple[str, ...]:
+    """Every spelling a step may use for a window node, the generated one first."""
+    generated = window_node_type(root_type, root_name)
+    legacy = WINDOW_NODE_PREFIX + root_type
+    return (generated,) if generated == legacy else (generated, legacy)
+
 
 OBJECT = "WPFObject"
 WINDOW = "Window"

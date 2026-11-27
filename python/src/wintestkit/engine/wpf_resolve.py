@@ -164,6 +164,18 @@ def matches_root(root: WpfElement, conditions: list[ManagedCondition]) -> bool:
     return root.ref in result.matches
 
 
+def x_name(element: WpfElement) -> str:
+    """The element's x:Name; empty when it has none or it cannot be read."""
+    values, _ = element.client.read(
+        element.ref.object_id,
+        element.ref.generation,
+        [(PathSegment("property", "Name"),)],
+        deadline=locator_deadline(),
+    )
+    value = values[0].value
+    return value.scalar if value.status == "ok" and isinstance(value.scalar, str) else ""
+
+
 def identity_value(element: WpfElement, name: str) -> str | None:
     value = getattr(element, name)
     if name != "automation_id" or value:

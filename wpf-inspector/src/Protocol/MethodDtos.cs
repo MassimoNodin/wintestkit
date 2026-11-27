@@ -133,7 +133,7 @@ namespace WinTestKit.Inspector.Protocol
     }
     internal static class MethodDtoHelpers
     {
-        internal static string Tree(JsonNode node) { var value = DtoHelpers.String(node); DtoHelpers.OneOf(value, "visual", "logical"); return value; }
+        internal static string Tree(JsonNode node) { var value = DtoHelpers.String(node); DtoHelpers.OneOf(value, "visual", "logical", "objects"); return value; }
         internal static bool True(JsonNode node) { if (!DtoHelpers.Boolean(node)) throw DtoHelpers.Invalid("Expected true"); return true; }
         internal static IReadOnlyList<CandidateRequestDto> Candidates(JsonNode node) { var values = new List<CandidateRequestDto>(); foreach (var item in DtoHelpers.Array(node, ProtocolLimits.MaxBatchCandidates).Items) values.Add(CandidateRequestDto.FromJson(item)); if (values.Count == 0) throw DtoHelpers.Invalid("Empty candidates"); return values; }
         internal static JsonArrayNode Candidates(IEnumerable<CandidateRequestDto> values) { var result = new JsonArrayNode(); foreach (var value in values) result.Add(value.ToJson()); return result; }

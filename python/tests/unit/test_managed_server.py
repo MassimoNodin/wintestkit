@@ -13,6 +13,7 @@ from jsonschema import Draft202012Validator
 from referencing import Registry, Resource
 
 from wintestkit import runtime
+from wintestkit.backends.element import WpfElement
 from wintestkit.config import load_config
 from wintestkit.errors import InspectorUnavailableError, NoUiaPeerError
 from wintestkit.inspector import payload, probe
@@ -37,7 +38,7 @@ from wintestkit.inspector.models import (
     TypeInfo,
     Value,
 )
-from wintestkit.server import Server
+from wintestkit.server import Server, _managed_node_id
 from wintestkit.targets import ModuleLoader
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -587,9 +588,8 @@ def test_spy_wpf_children_identity_and_failures(
         return (), "read"
 
     monkeypatch.setattr(client, "read", read)
-    window = SimpleNamespace(process_id=42)
-    server.nodes["window"] = window
-    server._wpf_windows.add("window")
+    parent_ref = ObjectRef("session", "parent", 1, TYPE, "dispatcher")
+    server.nodes["window"] = WpfElement(client, parent_ref, 42)
     result = request(server, output, "inspect.children", {"nodeId": "window", "tree": tree})[
         "result"
     ]
@@ -676,11 +676,16 @@ def test_picker_agent_resolution(managed_server: Any, monkeypatch: pytest.Monkey
         "inspect.properties",
         {"nodeId": picked.node["nodeId"], "includeAncestors": True},
     )["result"]
-    assert [ancestor["nodeId"] for ancestor in result["ancestors"]] == ["window"]
-    # A hit on RootVisual itself is represented by the existing UIA window row.
+    root_id = _managed_node_id(root)
+    # The window row is a window node; the root visual is its only child.
+    assert [ancestor["nodeId"] for ancestor in result["ancestors"]] == ["window", root_id]
+    assert server._wpf_descriptions["window"]["windowNode"] is True
+    assert server._wpf_descriptions["window"]["identity"]["type"] == "Test.Window"
+    # A hit on the root visual itself is the child of the window row.
     client.hit_test = lambda *a, **kw: HitTestResult(root, (path[0],))
     root_pick = server._spy_resolve(fallback, 10, 20, True, "visual")
-    assert root_pick.node["nodeId"] == "window"
+    assert root_pick.node["nodeId"] == root_id
+    assert server._wpf_parents[root_id] == "window"
     assert "window" in server._wpf_windows
     client.hit_test = lambda *a, **kw: None
     assert server._spy_resolve(fallback, 0, 0, False, "visual").extra == {"source": "uia"}
@@ -732,13 +737,13 @@ def test_spy_wpf_attach_required_and_blocked(
 def test_spy_wpf_eviction_releases_handle(
     managed_server: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from wintestkit.backends.element import WpfElement
 
     server, output, client = managed_server
     node = WpfElement(client, REF, 42)
     server.nodes["old"] = node
     server._managed_clients["session"] = client
     server._remember_managed("session", REF.to_json())
+    parent_ref = ObjectRef("session", "parent", 1, TYPE, "dispatcher")
     for index in range(4999):
         server.nodes[str(index)] = SimpleNamespace(process_id=42)
     new_ref = ObjectRef("session", "new", 1, TYPE, "dispatcher")
@@ -749,8 +754,7 @@ def test_spy_wpf_eviction_releases_handle(
             (ManagedNode(new_ref, "", False, False),), True, "snapshot", ()
         ),
     )
-    server.nodes["window"] = SimpleNamespace(process_id=42)
-    server._wpf_windows.add("window")
+    server.nodes["window"] = WpfElement(client, parent_ref, 42)
     request(server, output, "inspect.children", {"nodeId": "window", "tree": "visual"})
     assert "old" not in server.nodes
     assert ("release", ["object"]) in client.calls
@@ -827,8 +831,7 @@ def test_spy_wpf_pages(managed_server: Any, monkeypatch: pytest.MonkeyPatch) -> 
 
     monkeypatch.setattr(client, "children", children)
     monkeypatch.setattr(client, "read", read)
-    server.nodes["window"] = SimpleNamespace(process_id=42)
-    server._wpf_windows.add("window")
+    server.nodes["window"] = WpfElement(client, REF, 42)
     params = {"nodeId": "window", "tree": "visual", "pageSize": 2}
     first = request(server, output, "inspect.children", params)["result"]
     assert len(first["nodes"]) == 2 and reads == ["0", "1"]
@@ -844,7 +847,6 @@ def test_spy_wpf_pages(managed_server: Any, monkeypatch: pytest.MonkeyPatch) -> 
 def test_attached_wpf_window_properties_resolve_window_object(
     managed_server: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from wintestkit.backends.element import WpfElement
 
     server, output, client = managed_server
     live_window = SimpleNamespace(process_id=42)
@@ -895,7 +897,6 @@ def test_spy_wpf_geometry_routes(
     managed_server: Any, monkeypatch: pytest.MonkeyPatch, peer: bool
 ) -> None:
     from wintestkit import live_preview
-    from wintestkit.backends.element import WpfElement
     from wintestkit.uia import win32
     from wintestkit.uia.element import Rect
 
@@ -976,7 +977,6 @@ def test_wpf_control_text_prefers_non_empty_content_after_empty_header(managed_s
 def test_wpf_properties_and_managed_resolve(
     managed_server: Any, monkeypatch: pytest.MonkeyPatch, schema_registry: Registry[Any], case: str
 ) -> None:
-    from wintestkit.backends.element import WpfElement
 
     server, output, client = managed_server
     server._managed_clients["session"] = client
@@ -1046,7 +1046,6 @@ def test_wpf_properties_and_managed_resolve(
 def test_wpf_coverage_definitions_and_suggestion(
     managed_server: Any, monkeypatch: pytest.MonkeyPatch, mapped: bool
 ) -> None:
-    from wintestkit.backends.element import WpfElement
     from wintestkit.engine import suggest
     from wintestkit.errors import NoUiaPeerError
     from wintestkit.uia.element import ElementInfo
@@ -1109,7 +1108,6 @@ def test_wpf_coverage_definitions_and_suggestion(
 def test_wpf_ancestors_use_walked_nodes(
     managed_server: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from wintestkit.backends.element import WpfElement
     from wintestkit.uia.element import ElementInfo
 
     server, output, client = managed_server
@@ -1168,7 +1166,6 @@ def test_wpf_ancestors_use_walked_nodes(
 def test_hwnd_host_pages_and_mapping_failure(
     managed_server: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from wintestkit.backends.element import WpfElement
 
     server, _, client = managed_server
     host_type = TypeInfo(
@@ -1219,7 +1216,6 @@ def test_host_peer_mapping_failure_is_empty(managed_server: Any) -> None:
 def test_hwnd_host_advertises_children(
     managed_server: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from wintestkit.backends.element import WpfElement
 
     server, _, client = managed_server
     host_type = TypeInfo(
@@ -1245,7 +1241,6 @@ def test_hwnd_host_advertises_children(
 def test_picker_reveals_hosted_uia_under_wpf_host(
     managed_server: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from wintestkit.backends.element import WpfElement
     from wintestkit.uia import element as uia_element
     from wintestkit.uia import win32
 
@@ -1298,7 +1293,9 @@ def test_picker_reveals_hosted_uia_under_wpf_host(
     assert picked.node["nodeId"] == "native"
     host_id = server._wpf_parents["native"]
     assert server._wpf_descriptions[host_id]["identity"]["type"] == "Fixture.ChildHost"
-    assert server._wpf_parents[host_id] == "window"
+    root_id = server._wpf_parents[host_id]
+    assert server._wpf_descriptions[root_id]["identity"]["type"] == "Test.Window"
+    assert server._wpf_parents[root_id] == "window"
 
 
 def test_picker_uses_registered_hosted_node_before_window_hit_test(
@@ -1361,7 +1358,6 @@ def test_identify_names_the_process_of_a_node_whose_session_was_detached(
     managed_server: Any,
 ) -> None:
     """Attach identifies the selected node first: a closed session must not make that fail."""
-    from wintestkit.backends.element import WpfElement
 
     server, output, client = managed_server
     node = WpfElement(client, REF, 42)
@@ -1377,7 +1373,6 @@ def test_identify_names_the_process_of_a_node_whose_session_was_detached(
 def test_identify_keeps_asking_a_ready_session_whether_the_element_is_gone(
     managed_server: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from wintestkit.backends.element import WpfElement
 
     server, output, client = managed_server
     node = WpfElement(client, REF, 42)
@@ -1410,7 +1405,6 @@ def test_identify_keeps_asking_a_ready_session_whether_the_element_is_gone(
 def test_resolve_of_a_node_from_a_detached_session_is_stale_not_unavailable(
     managed_server: Any,
 ) -> None:
-    from wintestkit.backends.element import WpfElement
 
     server, output, _ = managed_server
     request(server, output, "inspect.managed.attach", {"process": IDENTITY.to_json()})
@@ -1558,8 +1552,7 @@ def test_winforms_children_get_winforms_ids_names_and_text(
         return (PathValue(paths[0], Value("ok", "string", "String", "String", "OK")),), "read"
 
     monkeypatch.setattr(client, "read", read)
-    server.nodes["window"] = SimpleNamespace(process_id=42)
-    server._wpf_windows.add("window")
+    server.nodes["window"] = WpfElement(client, REF, 42)
     item = request(server, output, "inspect.children", {"nodeId": "window", "tree": "visual"})[
         "result"
     ]["nodes"][0]
@@ -1640,7 +1633,6 @@ def test_picker_resolves_winforms_controls_through_the_agent(
 def test_winforms_properties_name_the_control_and_its_text(
     managed_server: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from wintestkit.backends.element import WpfElement
 
     server, output, client = managed_server
     node = WpfElement(client, WINFORMS_REF, 42)
@@ -1691,7 +1683,6 @@ def test_winforms_properties_name_the_control_and_its_text(
 
 
 def test_resolve_names_the_source_of_a_winforms_selection(managed_server: Any) -> None:
-    from wintestkit.backends.element import WpfElement
 
     server, output, client = managed_server
     request(server, output, "inspect.managed.attach", {"process": IDENTITY.to_json()})
@@ -1712,7 +1703,6 @@ def test_resolve_names_the_source_of_a_winforms_selection(managed_server: Any) -
 def test_peerless_element_highlight_rpc(managed_server, monkeypatch):
     from test_backend_element import Client
 
-    from wintestkit.backends.element import WpfElement
     from wintestkit.targets import ElementResult
     from wintestkit.uia.element import Rect
 
@@ -1918,7 +1908,6 @@ def test_managed_resource_rpc(managed_server: Any) -> None:
 
 
 def test_sidebar_release_preserves_tree_handles(managed_server: Any) -> None:
-    from wintestkit.backends.element import WpfElement
 
     server, output, client = managed_server
     request(server, output, "inspect.managed.attach", {"process": IDENTITY.to_json()})
@@ -1945,8 +1934,6 @@ def test_sidebar_release_preserves_tree_handles(managed_server: Any) -> None:
 def test_properties_repairs_managed_ancestors(
     managed_server: Any, monkeypatch: pytest.MonkeyPatch, caplog: Any, case: str
 ) -> None:
-    from wintestkit.backends.element import WpfElement
-    from wintestkit.server import _managed_node_id
     from wintestkit.uia import element as uia_element
     from wintestkit.uia import win32
 
@@ -2012,9 +1999,11 @@ def test_properties_repairs_managed_ancestors(
         assert [item["nodeId"] for item in ancestors] == [ids[1]]
         assert ids[0] in caplog.text and "WARNING" in caplog.text
     else:
-        assert [item["nodeId"] for item in ancestors] == ["window", ids[2], ids[1]]
+        root_id = _managed_node_id(root)
+        assert [item["nodeId"] for item in ancestors] == ["window", root_id, ids[2], ids[1]]
         assert isinstance(server.nodes[ids[1]], WpfElement)
-        assert server._wpf_parents[ids[2]] == "window"
+        assert server._wpf_parents[ids[2]] == root_id
+        assert server._wpf_parents[root_id] == "window"
 
 
 @pytest.mark.parametrize(
@@ -2039,7 +2028,6 @@ def test_process_row_preview_is_answered_with_a_reason(
 def test_coverage_maps_many_wpf_nodes_in_one_call(
     managed_server: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from wintestkit.backends.element import WpfElement
     from wintestkit.uia.element import ElementInfo
 
     server, output, client = managed_server
@@ -2098,3 +2086,147 @@ def test_identify_reads_a_listed_window_process_without_uia(
     monkeypatch.setattr(win32, "window_pid", lambda hwnd: 42 if hwnd == 77 else 0)
     result = request(server, output, "inspect.managed.identify", {"nodeId": "window"})
     assert result["result"]["process"]["pid"] == 42
+
+
+def _label_reads(client: FakeClient, monkeypatch: pytest.MonkeyPatch, **values: Any) -> None:
+    """Answer the reads a Spy label is made of: x:Name, wpf:Text and wpf:Ordinal by object id."""
+
+    def read(object_id: str, generation: int, paths: Any, **kwargs: Any) -> Any:
+        found = values.get(object_id, {})
+        out = []
+        for path in paths:
+            segment = path[0]
+            key = {"Name": "name", "Text": "text", "Ordinal": "ordinal"}[segment.name]
+            if key not in found:
+                out.append(PathValue(path, Value("redacted", "unavailable", "", "", None)))
+            elif key == "ordinal":
+                out.append(PathValue(path, Value("ok", "integer", "Int32", "Int32", found[key])))
+            else:
+                out.append(PathValue(path, Value("ok", "string", "String", "String", found[key])))
+        return tuple(out), "read"
+
+    monkeypatch.setattr(client, "read", read)
+
+
+@pytest.mark.parametrize("tree", ["objects", "visual"])
+def test_a_wpf_window_row_has_its_root_visual_as_the_only_child(
+    managed_server: Any, monkeypatch: pytest.MonkeyPatch, tree: str
+) -> None:
+    server, output, client = managed_server
+    requested: list[str] = []
+    probe_node = ManagedNode(replace(REF, object_id="below"), "", True, False)
+
+    def children(object_id: str, generation: int, tree: str, **kwargs: Any) -> Page[Any]:
+        requested.append(tree)
+        return Page((probe_node,), False, "snapshot", (), "more")
+
+    monkeypatch.setattr(client, "children", children)
+    _label_reads(
+        client,
+        monkeypatch,
+        object={"name": "SettingsViewWindow", "text": "Options", "ordinal": 1},
+    )
+    server.nodes["window"] = SimpleNamespace(process_id=42)
+    server._wpf_windows.add("window")
+    result = request(server, output, "inspect.children", {"nodeId": "window", "tree": tree})[
+        "result"
+    ]
+    (root,) = result["nodes"]
+    assert "nextPageToken" not in result and requested == [tree]
+    assert root["identity"] == {"type": "Test.Window", "xName": "SettingsViewWindow"}
+    assert root["wpfText"] == "Options" and root["wpfOrdinal"] == 1
+    assert root["hasChildren"] is True
+    assert server._wpf_parents[root["nodeId"]] == "window"
+    assert server._spy_tree == tree
+    server._release_managed_objects()
+
+
+def test_objects_children_carry_wpf_text_and_ordinal_and_unreadable_text_is_absent(
+    managed_server: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    server, output, client = managed_server
+    readable, hidden = replace(REF, object_id="readable"), replace(REF, object_id="hidden")
+    seen: list[str] = []
+
+    def children(object_id: str, generation: int, tree: str, **kwargs: Any) -> Page[Any]:
+        seen.append(tree)
+        nodes = (ManagedNode(readable, "", True, True), ManagedNode(hidden, "", False, False))
+        return Page(nodes, True, "snapshot", ())
+
+    monkeypatch.setattr(client, "children", children)
+    _label_reads(
+        client,
+        monkeypatch,
+        readable={"text": "", "ordinal": 2},
+        hidden={"ordinal": 1},  # a redacted text has no value
+    )
+    server.nodes["parent"] = WpfElement(client, replace(REF, object_id="parent"), 42)
+    nodes = request(server, output, "inspect.children", {"nodeId": "parent", "tree": "objects"})[
+        "result"
+    ]["nodes"]
+    assert seen == ["objects"]
+    assert nodes[0]["wpfText"] == "" and nodes[0]["wpfOrdinal"] == 2 and nodes[0]["hasChildren"]
+    assert "wpfText" not in nodes[1] and nodes[1]["wpfOrdinal"] == 1
+    assert [node["info"]["name"] for node in nodes] == ["", ""]
+    server._release_managed_objects()
+
+
+def test_roots_describe_wpf_window_nodes_when_the_inspector_is_attached(
+    managed_server: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    server, _output, client = managed_server
+    _label_reads(client, monkeypatch, object={"name": "MainWindowName", "text": "Main"})
+    window = SimpleNamespace(process_id=42)
+    server.nodes["window"] = window
+    other = SimpleNamespace(process_id=43)
+    server.nodes["other"] = other
+    nodes = [
+        {"nodeId": "window", "info": {}, "hasChildren": False, "source": "wpf"},
+        {"nodeId": "other", "info": {}, "hasChildren": False, "source": "uia"},
+    ]
+    server._describe_window_nodes(nodes)
+    assert nodes[0]["windowNode"] is True and nodes[0]["hasChildren"] is True
+    assert nodes[0]["identity"] == {"type": "Test.Window", "xName": "MainWindowName"}
+    assert nodes[0]["wpfText"] == "Main"
+    assert "windowNode" not in nodes[1]
+    # Without a session the window keeps its Win32 label.
+    client.closed = True
+    unattached = [{"nodeId": "window", "info": {}, "hasChildren": False, "source": "wpf"}]
+    server._describe_window_nodes(unattached)
+    assert "windowNode" not in unattached[0]
+
+
+def test_the_object_tree_reaches_the_agent_through_the_pick(
+    managed_server: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from wintestkit.uia import element as uia_element
+    from wintestkit.uia import win32
+
+    server, _, client = managed_server
+    window = SimpleNamespace(process_id=42, framework_id="WPF")
+    monkeypatch.setattr(win32, "WindowFromPoint", lambda point: 321)
+    monkeypatch.setattr(win32, "root_window", lambda hwnd: 999)
+    monkeypatch.setattr(uia_element, "from_handle", lambda hwnd: window)
+    monkeypatch.setattr(
+        server, "_register", lambda element, **kwargs: {"nodeId": "window", "info": {}}
+    )
+    trees: list[Any] = []
+    root = replace(REF, object_id="root")
+
+    def hit_test(hwnd: int, x: int, y: int, **kwargs: Any) -> HitTestResult:
+        trees.append(kwargs.get("tree"))
+        return HitTestResult(root, (ManagedNode(root, "", False, False),))
+
+    client.hit_test = hit_test
+    client.state_get = lambda *a, **kw: SimpleNamespace(
+        bounds=SimpleNamespace(x=1, y=2, width=3, height=4, to_json=lambda: {}),
+        enabled=True,
+        offscreen=False,
+        focused=False,
+        visible=True,
+        uia_runtime_id=None,
+        window_handle=321,
+    )
+    server._spy_resolve(SimpleNamespace(), 1, 1, True, "objects")
+    server._spy_resolve(SimpleNamespace(), 1, 1, True, "visual")
+    assert trees == ["objects", None]

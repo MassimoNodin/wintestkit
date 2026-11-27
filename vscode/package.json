@@ -437,6 +437,11 @@
           "scope": "machine",
           "description": "Developer diagnostics: append every message between the Spy panel and the extension to this file as JSON lines. Leave empty to disable."
         },
+        "wintestkit.spy.showTemplateParts": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Show the full WPF visual tree in the Spy, including the parts a control's template creates and the panels that hold items. By default the Spy shows the object tree: those parts are hidden and the objects below them move up to the control that owns them, which is the tree the Python library's labels (`WPFObject(...)`, `from_label`) are written against. Labels read with this option on cannot be pasted into code, and the Spy marks them."
+        },
         "wintestkit.spy.showRefreshCounts": {
           "type": "boolean",
           "default": false,

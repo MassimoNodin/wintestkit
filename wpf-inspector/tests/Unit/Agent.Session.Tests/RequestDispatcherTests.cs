@@ -437,13 +437,14 @@ public class RequestDispatcherTests
     {
         var service = new HitTestService();
         var response = await Dispatch(new RequestDispatcher(Session, service), PipeMethods.HitTest,
-            new HitTestParams { NativeWindowHandle = 42, Point = new PointDto { X = 10, Y = 20 }, TimeoutMs = 500, IncludePath = true }.ToJson());
+            new HitTestParams { NativeWindowHandle = 42, Point = new PointDto { X = 10, Y = 20 }, TimeoutMs = 500, IncludePath = true, Tree = "objects" }.ToJson());
         Assert.Null(response.Error);
         Assert.Equal(42, service.Window);
         Assert.Equal(10, service.Point!.X);
         Assert.Equal(20, service.Point.Y);
         Assert.Equal(500, service.Timeout);
         Assert.True(service.IncludePath);
+        Assert.Equal("objects", service.Tree);
         Assert.Equal(StateService.Handle.ObjectId, HitTestResult.FromJson(response.Result!).Handle.ObjectId);
     }
 
@@ -571,9 +572,10 @@ public class RequestDispatcherTests
         public PointDto? Point { get; private set; }
         public int Timeout { get; private set; }
         public bool IncludePath { get; private set; }
-        public Task<HitTestResult> HitTestAsync(long nativeWindowHandle, PointDto point, DateTime deadline, int timeoutMs, CancellationToken ct, bool includePath = false)
+        public string? Tree { get; private set; }
+        public Task<HitTestResult> HitTestAsync(long nativeWindowHandle, PointDto point, DateTime deadline, int timeoutMs, CancellationToken ct, bool includePath = false, string? tree = null)
         {
-            Window = nativeWindowHandle; Point = point; Timeout = timeoutMs; IncludePath = includePath;
+            Window = nativeWindowHandle; Point = point; Timeout = timeoutMs; IncludePath = includePath; Tree = tree;
             return Task.FromResult(new HitTestResult { Handle = StateService.Handle });
         }
     }

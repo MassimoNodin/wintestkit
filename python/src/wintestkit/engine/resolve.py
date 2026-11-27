@@ -15,7 +15,7 @@ from dataclasses import dataclass, replace
 from difflib import SequenceMatcher
 from typing import Any, cast
 
-from wintestkit import runtime
+from wintestkit import labels, runtime
 from wintestkit.app import App
 from wintestkit.backends.element import TargetElement, WpfElement, uia_of
 from wintestkit.engine.diagnose import (
@@ -56,6 +56,7 @@ from wintestkit.engine.wpf_resolve import (
     route,
     to_managed,
     with_unreadable,
+    x_name,
 )
 from wintestkit.engine.wpf_resolve import query as wpf_query
 from wintestkit.errors import (
@@ -550,30 +551,53 @@ def shared_missing_scopes() -> Generator[None]:
         _missing_links.reset(token)
 
 
+@dataclass(frozen=True)
+class _NodeOrdinals:
+    """A window node's place among the application's window nodes, in window order.
+
+    ``generated`` counts the nodes with the same generated label (x:Name, else type), which is the
+    ordinal of a generated label. ``by_type`` counts the nodes with the same root type, which is
+    what the type spelling of a step has always meant.
+    """
+
+    generated: int
+    by_type: int
+
+
 def _window_node_matches(
     link: Locator,
     root: WpfElement,
     managed: list[ManagedCondition],
-    ordinal: int,
+    name: str,
+    ordinals: _NodeOrdinals,
 ) -> bool:
     """Whether the window node (the HwndSource level above a root visual) matches the managed keys.
 
-    A window node is labelled ``HwndSource: <root visual type>``, its text is the window title and
-    its ordinal is its place among the application's window nodes of the same type. It has no
-    other members, so any other managed key cannot match it.
+    A window node is labelled ``HwndSource: <root visual x:Name>``, or ``HwndSource: <root visual
+    type>`` without an x:Name; a step may use either spelling, the x:Name first. Its text is the
+    window title and its ordinal is its place among the application's window nodes with the same
+    label (with the type spelling: with the same root type). It has no other members, so any other
+    managed key cannot match it.
     """
     __tracebackhide__ = True
     rest: list[ManagedCondition] = []
+    ordinal = ordinals.generated
     for condition in managed:
         if condition.key == "type:Name":
-            if not property_matches(f"HwndSource: {root.ref.type.name}", condition.value):
+            if name and property_matches(
+                labels.window_node_type(root.ref.type.name, name), condition.value
+            ):
+                continue
+            if not property_matches(labels.window_node_type(root.ref.type.name), condition.value):
                 return False
-        elif condition.key == "wpf:Ordinal":
+            ordinal = ordinals.by_type
+    for condition in managed:
+        if condition.key == "wpf:Ordinal":
             if not property_matches(ordinal, condition.value):
                 return False
         elif condition.key == "wpf:Text":
             rest.append(condition)
-        else:
+        elif condition.key != "type:Name":
             return False
     return not rest or matches_root(root, rest)
 
@@ -589,6 +613,7 @@ def _app_walk(scope: Scope, locator: Locator, final_all: bool) -> list[TargetEle
     forms: set[bool] = set()
     unreadable: list[Any] = []
     node_ordinals: dict[str, int] = {}
+    type_ordinals: dict[str, int] = {}
     for window in scope.app.top_level_windows():
         wpf_window = window.framework_id == "WPF" and runtime.get_config().backend == "auto"
         forms.add(wpf_window)
@@ -600,11 +625,15 @@ def _app_walk(scope: Scope, locator: Locator, final_all: bool) -> list[TargetEle
             continue
         root = route(window)
         objects = link.tree == "objects"
-        node_ordinal = 0
-        if isinstance(root, WpfElement):
+        node_name = ""
+        ordinals = _NodeOrdinals(0, 0)
+        if isinstance(root, WpfElement) and objects:
+            node_name = x_name(root)
+            key = labels.window_node_type(root.ref.type.name, node_name)
+            node_ordinals[key] = node_ordinals.get(key, 0) + 1
             type_name = root.ref.type.name
-            node_ordinals[type_name] = node_ordinals.get(type_name, 0) + 1
-            node_ordinal = node_ordinals[type_name]
+            type_ordinals[type_name] = type_ordinals.get(type_name, 0) + 1
+            ordinals = _NodeOrdinals(node_ordinals[key], type_ordinals[type_name])
 
         def root_matches(
             root: TargetElement,
@@ -613,7 +642,8 @@ def _app_walk(scope: Scope, locator: Locator, final_all: bool) -> list[TargetEle
             link: Locator = link,
             managed: list[ManagedCondition] = managed,
             uia: list[Condition] = uia,
-            node_ordinal: int = node_ordinal,
+            node_name: str = node_name,
+            ordinals: _NodeOrdinals = ordinals,
         ) -> bool:
             __tracebackhide__ = True
             for name in ("automation_id", "name", "class_name", "control_type"):
@@ -630,7 +660,7 @@ def _app_walk(scope: Scope, locator: Locator, final_all: bool) -> list[TargetEle
                 if not isinstance(root, WpfElement):
                     return False
                 if node:
-                    if not _window_node_matches(link, root, managed, node_ordinal):
+                    if not _window_node_matches(link, root, managed, node_name, ordinals):
                         return False
                 elif not matches_root(root, managed):
                     return False

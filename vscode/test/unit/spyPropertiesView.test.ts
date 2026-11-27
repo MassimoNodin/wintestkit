@@ -65,8 +65,8 @@ function open(surface: Surface, state: Record<string, unknown> = {}, options: { 
   return { dom, doc, posts, send, errors, hiddenReason, visible, text, names, headings, value, visibleButtons, type, state: () => saved };
 }
 
-const windowNode = { nodeId: "win", source: "wpf", hasChildren: true, info: { controlType: "Window", name: "Fixture", className: "FixtureWindow", processId: 42 } };
-const borderNode = { nodeId: "border", source: "wpf", hasChildren: true, info: { controlType: "Pane", name: "", className: "Border" }, identity: { type: "System.Windows.Controls.Border" } };
+const windowNode = { nodeId: "win", source: "wpf", hasChildren: true, info: { controlType: "Window", name: "Fixture", className: "FixtureWindow", processId: 42, processName: "Fixture.exe" } };
+const borderNode = { nodeId: "border", source: "wpf", hasChildren: true, info: { controlType: "Pane", name: "", className: "Border" }, identity: { type: "System.Windows.Controls.Border" }, wpfText: "", wpfOrdinal: 1 };
 const presenterNode = {
   nodeId: "presenter", source: "wpf", hasChildren: false,
   info: { controlType: "Pane", name: "", className: "ContentPresenter", isEnabled: true, isOffscreen: false, rect: { left: 10, top: 20, width: 30, height: 40 } },
@@ -358,9 +358,9 @@ describe("Properties sidebar acceptance", () => {
     expect(view.headings()).toEqual(["Standard", "Extended", ".NET", "UI Automation"]);
     const names = view.names();
     expect(new Set(names).size).toBe(names.length);
-    // Name is x:Name, Enabled is IsEnabled, the rectangle rows are Bounds, and the type is shown once.
+    // Name is the label (the x:Name is its argument), Enabled is IsEnabled, the rectangle rows are Bounds, and the type is shown once.
     for (const duplicate of ["x:Name", "IsEnabled", "Bounds", "Type", "Managed type", "CLR Name", "CLR IsEnabled"]) expect(names, duplicate).not.toContain(duplicate);
-    expect(view.value("Name")).toBe("contentSite");
+    expect(view.value("Name")).toBe('WPFObject("contentSite")');
     expect(names.filter((name) => name === "ClrFullClassName")).toHaveLength(1);
     expect(view.doc.body.textContent?.match(/System\.Windows\.Controls\.ContentPresenter/g)?.length).toBeGreaterThan(0);
     const classCells = [...view.doc.querySelectorAll<HTMLTableCellElement>("#sidebar-rows td")].filter((cell) => cell.textContent === "System.Windows.Controls.ContentPresenter");
@@ -432,18 +432,19 @@ describe("Properties sidebar acceptance", () => {
     expect(view.errors).toEqual([]);
   });
 
-  it("3.4 reports FullName as the locator path from the window, MappedName as the defining element and Parent as a link", () => {
+  it("3.4 reports FullName as the label chain from the process, MappedName as the defining element and Parent as a link", () => {
     const view = open("properties-view");
     view.send(...hostSession());
     expect(view.names()).not.toContain("MappedName");
     (view.doc.querySelector("#sidebar-mode") as HTMLInputElement).click();
     expect(view.posts).toContainEqual({ type: "generateLocator", nodeId: "presenter" });
-    // No unique locator yet: the path is built from the tree, window first.
-    expect(view.value("FullName")).toBe('Window("FixtureWindow").WPFObject("Border").WPFObject("contentSite")');
-    expect(view.value("Parent")).toBe('WPFObject("Border")');
-    // A unique locator from the host replaces the tree path.
+    // The chain is built from the tree, from the process down, and parses back with from_label.
+    const chain = 'Process("Fixture.exe").Window("FixtureWindow").WPFObject("Border", "").WPFObject("contentSite")';
+    expect(view.value("FullName")).toBe(chain);
+    expect(view.value("Parent")).toBe('WPFObject("Border", "")');
+    // A suggested locator is a different thing: it does not replace the label chain.
     view.send({ type: "suggestion", nodeId: "presenter", suggestion: { unique: true, strategy: "automationId", helpers: [], window: { code: "Window(title='Fixture')" }, code: "WPFObject('contentSite')" } });
-    expect(view.value("FullName")).toBe("Window(title='Fixture')\nWPFObject('contentSite')");
+    expect(view.value("FullName")).toBe(chain);
     (view.doc.querySelector('[data-name="Parent"] td button') as HTMLButtonElement).click();
     expect(view.posts).toContainEqual(expect.objectContaining({ type: "select", nodeId: "border" }));
     expect(view.errors).toEqual([]);
@@ -453,9 +454,9 @@ describe("Properties sidebar acceptance", () => {
     const view = open("properties-view");
     // The host sent no tree, only the selection and the ancestors it read with it.
     view.send(basicState, { type: "selected", nodeId: "presenter", properties: presenterProperties });
-    expect(view.value("Parent")).toBe('WPFObject("Border")');
+    expect(view.value("Parent")).toBe('WPFObject("Border", "")');
     (view.doc.querySelector("#sidebar-mode") as HTMLInputElement).click();
-    expect(view.value("FullName")).toBe('Window("FixtureWindow").WPFObject("Border").WPFObject("contentSite")');
+    expect(view.value("FullName")).toBe('Process("Fixture.exe").Window("FixtureWindow").WPFObject("Border", "").WPFObject("contentSite")');
     (view.doc.querySelector('[data-name="Parent"] td button') as HTMLButtonElement).click();
     expect(view.posts).toContainEqual({ type: "select", nodeId: "border" });
     expect(view.errors).toEqual([]);
@@ -2265,7 +2266,7 @@ describe("review fixes for the Spy and Properties webviews", () => {
   it("marks the actions menu items as menu items, moves between them with the arrow keys and styles them as menu entries", () => {
     const view = open("properties-view");
     const items = [...view.doc.querySelectorAll<HTMLButtonElement>(".sidebar-actions-menu button")];
-    expect(items.map((item) => item.getAttribute("role"))).toEqual(["menuitem", "menuitem", "menuitem"]);
+    expect(items.map((item) => item.getAttribute("role"))).toEqual(["menuitem", "menuitem", "menuitem", "menuitem", "menuitem"]);
     const actions = view.doc.querySelector<HTMLDetailsElement>("#sidebar-actions")!;
     for (let node: HTMLElement | null = actions; node; node = node.parentElement) node.hidden = false;
     const button = actions.querySelector<HTMLElement>("summary")!;

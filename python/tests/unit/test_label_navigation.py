@@ -184,3 +184,27 @@ def test_child_windows_are_labelled_by_class_caption_and_index(dialog):
         'Process("DemoApp.exe").Window("#32770", "Save As").Window("Edit", "hello", 3)'
     )
     assert window(app, "#32770", "Open").label == 'Window("#32770", "Open")'
+
+
+def test_a_window_node_is_labelled_by_the_x_name_of_its_root_visual(monkeypatch):
+    named = Node("SettingsView", "Options", "SettingsViewWindow", Node("Grid", ""))
+    plain = Node("SettingsView", "Other")
+    fake = FakeApp(monkeypatch, named, plain)
+    generated = 'WPFObject("HwndSource: SettingsViewWindow", "Options")'
+    node = fake.app.wpf_object("HwndSource: SettingsViewWindow", "*")
+    assert node.label == generated
+    assert node.full_name == f"{PROCESS}.{generated}"
+    # The type spelling of the same node keeps resolving it; the label is the generated one.
+    legacy = fake.app.wpf_object("HwndSource: SettingsView", "Options")
+    assert fake.resolve(legacy) is named
+    assert legacy.label == generated
+    assert fake.resolve(from_label(fake.app, f"{PROCESS}.{generated}")) is named
+    # The window without an x:Name is labelled by its type, with its own ordinal.
+    other = fake.app.wpf_object("HwndSource: SettingsView", "Other")
+    assert other.label == 'WPFObject("HwndSource: SettingsView", "Other")'
+    assert fake.resolve(other) is plain
+    # The root visual below the node is still addressed by its x:Name.
+    (root,) = node.children()
+    assert root.label == 'WPFObject("SettingsViewWindow")'
+    assert fake.resolve(from_label(fake.app, root.full_name)) is named
+    runtime.reset()

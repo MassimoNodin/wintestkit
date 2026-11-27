@@ -33,9 +33,10 @@ namespace WinTestKit.Inspector.Protocol
     }
     public sealed class HitTestParams
     {
-        public long NativeWindowHandle { get; set; } public PointDto Point { get; set; } = new PointDto(); public int TimeoutMs { get; set; } public bool IncludePath { get; set; }
-        public JsonObjectNode ToJson() { var o = new JsonObjectNode(); o.Add("nativeWindowHandle",JsonNumberNode.From(NativeWindowHandle)); o.Add("point",Point.ToJson()); o.Add("timeoutMs",JsonNumberNode.From(TimeoutMs)); if (IncludePath) o.Add("includePath",new JsonBoolNode(true)); FromJson(o); return o; }
-        public static HitTestParams FromJson(JsonNode n) { var o = DtoHelpers.Object(n,"nativeWindowHandle","point","timeoutMs","includePath"); return new HitTestParams { NativeWindowHandle = DtoHelpers.Integer(o.Get("nativeWindowHandle"),long.MinValue), Point = PointDto.FromJson(o.Get("point")), TimeoutMs = (int)DtoHelpers.Integer(o.Get("timeoutMs"),1,2000), IncludePath = o.TryGet("includePath",out var p) && DtoHelpers.Boolean(p) }; }
+        public long NativeWindowHandle { get; set; } public PointDto Point { get; set; } = new PointDto(); public int TimeoutMs { get; set; } /// <summary>Null walks the hit path in the visual tree; "objects" in the object tree (template parts hidden, a hit on one snaps to its nearest visible ancestor).</summary>
+        public bool IncludePath { get; set; } public string? Tree { get; set; }
+        public JsonObjectNode ToJson() { var o = new JsonObjectNode(); o.Add("nativeWindowHandle",JsonNumberNode.From(NativeWindowHandle)); o.Add("point",Point.ToJson()); o.Add("timeoutMs",JsonNumberNode.From(TimeoutMs)); if (IncludePath) o.Add("includePath",new JsonBoolNode(true)); DtoHelpers.Add(o,"tree",Tree); FromJson(o); return o; }
+        public static HitTestParams FromJson(JsonNode n) { var o = DtoHelpers.Object(n,"nativeWindowHandle","point","timeoutMs","includePath","tree"); string? tree = null; if (o.TryGet("tree",out var t)) { tree = DtoHelpers.String(t); DtoHelpers.OneOf(tree,"objects"); } return new HitTestParams { NativeWindowHandle = DtoHelpers.Integer(o.Get("nativeWindowHandle"),long.MinValue), Point = PointDto.FromJson(o.Get("point")), TimeoutMs = (int)DtoHelpers.Integer(o.Get("timeoutMs"),1,2000), IncludePath = o.TryGet("includePath",out var p) && DtoHelpers.Boolean(p), Tree = tree }; }
     }
     public sealed class InnerElementDto
     {

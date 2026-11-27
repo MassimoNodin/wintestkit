@@ -152,6 +152,7 @@ class FakeApp:
         monkeypatch.setattr(resolver, "wpf_query", self.query)
         monkeypatch.setattr(objects, "query", self.query)
         monkeypatch.setattr(resolver, "identity_value", lambda root, name: "")
+        monkeypatch.setattr(resolver, "x_name", lambda root: self.inspector.node_of(root).name)
         monkeypatch.setattr(resolver, "matches_root", self.matches_root)
         monkeypatch.setattr(resolver, "_hosting_window", lambda scope, element: _window())
         monkeypatch.setattr(

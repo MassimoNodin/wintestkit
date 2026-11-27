@@ -261,6 +261,8 @@ class Server:
         self._wpf_parents: dict[str, str] = {}
         self._wpf_descriptions: dict[str, dict[str, Any]] = {}
         self._wpf_text: dict[str, str | None] = {}
+        # The tree the Spy last asked for: ``objects`` hides template parts, ``visual`` shows them.
+        self._spy_tree = "visual"
         # Whether the agent can show a WinForms process's tree, by process id, for one refresh.
         self._winforms_support: dict[int, bool] = {}
         self.coverage: Coverage | None = None
@@ -367,8 +369,8 @@ class Server:
                 if not isinstance(value, bool):
                     raise RpcError(-32602, f"{key} must be a boolean")
             elif key == "tree":
-                if value not in ("visual", "logical"):
-                    raise RpcError(-32602, "tree must be visual or logical")
+                if value not in ("visual", "logical", "objects"):
+                    raise RpcError(-32602, "tree must be visual, logical or objects")
             elif key == "nodeIds":
                 if (
                     not isinstance(value, list)
@@ -433,7 +435,7 @@ class Server:
                 elif key == "pageSize":
                     integer_value(value, 1, 200)
                 elif key == "tree":
-                    if value not in ("visual", "logical"):
+                    if value not in ("visual", "logical", "objects"):
                         raise ValueError("invalid tree")
                 elif key == "scope":
                     if value not in ("local", "application"):
@@ -805,12 +807,8 @@ class Server:
             if not protected:
                 node.release()
 
-    def _wpf_control_text(
-        self, client: Any, ref: Any, names: tuple[str | None, ...], deadline: float
-    ) -> str | None:
-        """Read only the bounded text members used by the WPF tree labels."""
-        from wintestkit.inspector.paths import PathSegment
-
+    def _sensitive_names(self, names: tuple[str | None, ...]) -> bool:
+        """Whether a name marks an object whose text must not be read for a label."""
         assert self.cfg is not None
         sensitive = (
             "password",
@@ -824,9 +822,63 @@ class Server:
             "privatekey",
             *self.cfg.inspector.redact_names,
         )
-        if any(
+        return any(
             rule.lower() in name.lower() for rule in sensitive for name in names if rule and name
-        ):
+        )
+
+    def _wpf_label_data(
+        self, client: Any, ref: Any, names: tuple[str | None, ...], deadline: float
+    ) -> tuple[str | None, int | None]:
+        """The ``wpf:Text`` (``None`` when unreadable) and ``wpf:Ordinal`` of an object.
+
+        These are the two values a Spy label is made of, read the way a label step selects them. A
+        WinForms control has neither key: its text is the control text and it has no ordinal.
+        """
+        from wintestkit.inspector.paths import PathSegment
+
+        if ref.is_winforms:
+            return self._wpf_control_text(client, ref, names, deadline), None
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return None, None
+        sensitive = self._sensitive_names(names)
+        paths = [(PathSegment("object", "Ordinal"),)]
+        if not sensitive:
+            paths.append((PathSegment("object", "Text"),))
+        try:
+            values, _ = client.read(
+                ref.object_id,
+                ref.generation,
+                paths,
+                deadline=time.monotonic() + min(0.5, remaining),
+            )
+        except Exception:
+            log.debug("Unable to read WPF label data", exc_info=True)
+            return None, None
+        if len(values) != len(paths):
+            return None, None
+        ordinal_value = values[0].value
+        ordinal = (
+            ordinal_value.scalar
+            if ordinal_value.status == "ok"
+            and isinstance(ordinal_value.scalar, int)
+            and not isinstance(ordinal_value.scalar, bool)
+            else None
+        )
+        text = None
+        if not sensitive:
+            text_value = values[1].value
+            if text_value.status == "ok" and isinstance(text_value.scalar, str):
+                text = text_value.scalar
+        return text, ordinal
+
+    def _wpf_control_text(
+        self, client: Any, ref: Any, names: tuple[str | None, ...], deadline: float
+    ) -> str | None:
+        """Read only the bounded text members used by the WinForms tree labels."""
+        from wintestkit.inspector.paths import PathSegment
+
+        if self._sensitive_names(names):
             return None
         members = {
             "TextBlock": ("Text",),
@@ -940,12 +992,12 @@ class Server:
             text_cached = params["nodeId"] in self._wpf_text
             text = self._wpf_text.get(params["nodeId"])
         if not text_cached:
-            text = self._wpf_control_text(
+            text = self._wpf_label_data(
                 node.client,
                 node.ref,
                 (node.ref.type.full_name, x_name, automation_id),
                 time.monotonic() + 0.5,
-            )
+            )[0]
             with self._node_lock:
                 self._wpf_text[params["nodeId"]] = text
         if text is not None:
@@ -1006,7 +1058,6 @@ class Server:
         from wintestkit.backends.element import WpfElement
         from wintestkit.uia import element as uia_element
         from wintestkit.uia import win32
-        from wintestkit.uia.element import ElementInfo
 
         def walk() -> tuple[list[dict[str, Any]], str, Any, bool]:
             descriptions: list[dict[str, Any]] = []
@@ -1046,71 +1097,64 @@ class Server:
             deadline = time.monotonic() + self.cfg.inspector.request_timeout
             try:
                 window = uia_element.from_handle(win32.root_window(int(hwnd)))
-                root = self._register(window)
+                root = self._with_process_name(self._register(window))
                 root["source"] = self._managed_kind(window) or _ref_source(node.ref)
                 with self._node_lock:
                     self._wpf_windows.add(root["nodeId"])
                     self._wpf_descriptions[root["nodeId"]] = root
                 seen = {current.ref.object_id}
-                ref = node.client.parent(
-                    current.ref.object_id, current.ref.generation, deadline=deadline
-                )
+                objects = self._spy_tree == "objects"
+
+                def parent_of(target: Any) -> Any:
+                    extra: dict[str, Any] = {"tree": "objects"} if objects else {}
+                    return node.client.parent(
+                        target.object_id, target.generation, deadline=deadline, **extra
+                    )
+
+                ref = parent_of(current.ref)
                 for _ in range(63):
                     if ref is None:
-                        # The top managed element represents the UIA window row itself.
+                        # The top managed element is the root visual: its parent is the window row.
+                        with self._node_lock:
+                            self._wpf_parents[current_id] = root["nodeId"]
+                        if root["source"] == "wpf" and isinstance(current, WpfElement):
+                            self._describe_window_node(root, node.client, current.ref, None)
                         break
                     if ref.object_id in seen:
                         raise ValueError("cycle in managed parent chain")
                     seen.add(ref.object_id)
                     self._remember_managed(node.client.session.session_id, ref.to_json())
                     parent_id = _managed_node_id(ref)
-                    with self._node_lock:
-                        existing_parent = self.nodes.get(parent_id)
-                    # Ask whether this is the window object before adding it as a tree row.
                     if time.monotonic() >= deadline:
                         raise TimeoutError("parent lookup deadline expired")
-                    next_ref = node.client.parent(ref.object_id, ref.generation, deadline=deadline)
-                    if next_ref is None:
-                        with self._node_lock:
-                            self._wpf_parents[current_id] = root["nodeId"]
-                        break
-                    info = ElementInfo(
-                        "",
-                        "",
-                        ref.type.name,
-                        ref.type.full_name,
-                        "WinForms" if ref.is_winforms else "WPF",
-                        node.process_id,
-                        None,
-                        True,
-                        False,
-                        False,
-                        parent_id,
-                    )
+                    next_ref = None
+                    if ref.is_winforms:
+                        # A form is represented by the window row itself, not by a tree row.
+                        next_ref = parent_of(ref)
+                        if next_ref is None:
+                            with self._node_lock:
+                                self._wpf_parents[current_id] = root["nodeId"]
+                            break
                     with self._node_lock:
-                        if not isinstance(existing_parent, WpfElement):
-                            self.nodes[parent_id] = WpfElement(node.client, ref, node.process_id)
-                            self.node_infos[parent_id] = info
-                            self.nodes.move_to_end(parent_id)
-                            if len(self.nodes) > 5000:
-                                evicted, old = self.nodes.popitem(last=False)
-                                self.node_infos.pop(evicted, None)
-                                self._wpf_text.pop(evicted, None)
-                                self._wpf_windows.discard(evicted)
-                                self._release_tree_node(old)
-                        self._wpf_descriptions.setdefault(
-                            parent_id,
-                            {
-                                "nodeId": parent_id,
-                                "info": info.to_dict(),
-                                "hasChildren": True,
-                                "source": _ref_source(ref),
-                                "identity": {"type": ref.type.full_name},
-                            },
+                        known = (
+                            isinstance(self.nodes.get(parent_id), WpfElement)
+                            and parent_id in self._wpf_descriptions
                         )
+                    if not known:
+                        self._wpf_describe(
+                            node.client,
+                            ref,
+                            self._wpf_root_identity(node.client, ref),
+                            True,
+                            self._spy_tree,
+                            node.process_id,
+                            root["nodeId"],
+                            deadline,
+                        )
+                    with self._node_lock:
                         self._wpf_parents[current_id] = parent_id
                         current_id, current = parent_id, self.nodes[parent_id]
-                    ref = next_ref
+                    ref = next_ref if ref.is_winforms else parent_of(ref)
                 else:
                     raise ValueError("managed parent chain exceeds 64 levels")
             except Exception:
@@ -1166,6 +1210,7 @@ class Server:
             if kind is not None:
                 item["source"] = kind
                 self._wpf_windows.add(node_id)
+        self._describe_window_nodes(nodes)
 
     @staticmethod
     def _is_hwnd_host(ref: Any) -> bool:
@@ -1289,6 +1334,7 @@ class Server:
                     include_path=pick,
                     timeout_ms=max(1, int(self.cfg.inspector.request_timeout * 1000)),
                     deadline=deadline,
+                    tree="objects" if tree == "objects" else None,
                 )
                 if hit is None:
                     log.debug("WPF Spy hit test missed at %s, %s", x, y)
@@ -1314,7 +1360,7 @@ class Server:
                             identity_data["automationId"] = entry.identity.automation_id
                     if entry.identity is not None and entry.identity.sibling_index is not None:
                         identity_data["siblingIndex"] = entry.identity.sibling_index
-                    text = self._wpf_control_text(
+                    text, ordinal = self._wpf_label_data(
                         client,
                         ref,
                         (
@@ -1342,15 +1388,20 @@ class Server:
                         "nodeId": node_id,
                         "info": info.to_dict(),
                         "hasChildren": (
-                            entry.has_visual_children
-                            if tree == "visual"
-                            else entry.has_logical_children
+                            entry.has_logical_children
+                            if tree == "logical"
+                            else entry.has_visual_children
                         )
                         or (self._is_hwnd_host(ref) and bool(self._hosted_children(target))),
                         "source": _ref_source(ref),
                         "identity": identity_data,
                     }
+                    if text is not None:
+                        description["wpfText"] = text
+                    if ordinal is not None:
+                        description["wpfOrdinal"] = ordinal
                     with self._node_lock:
+                        self._wpf_text[node_id] = text
                         self.nodes[node_id] = target
                         self.node_infos[node_id] = info
                         self.nodes.move_to_end(node_id)
@@ -1367,21 +1418,21 @@ class Server:
                             self._release_tree_node(old)
                     parent_id = node_id
                 if pick:
-                    root_description = self._register(window)
+                    root_description = self._with_process_name(self._register(window))
                     root_description["source"] = self._managed_kind(window) or "wpf"
+                    if root_description["source"] == "wpf":
+                        # The window node: the root visual is its only child.
+                        self._describe_window_node(
+                            root_description,
+                            client,
+                            entries[0].object_ref,
+                            entries[0].identity,
+                        )
                     with self._node_lock:
                         self._wpf_windows.add(root_description["nodeId"])
                         self._wpf_descriptions[root_description["nodeId"]] = root_description
-                        if len(entries) > 1:
-                            first_id = _managed_node_id(entries[1].object_ref)
-                            self._wpf_parents[first_id] = root_description["nodeId"]
-                    if len(entries) == 1:
-                        return _SpyTarget(
-                            window,
-                            root_description,
-                            {"innerElement": hit.inner_element}
-                            if pick and hit.inner_element
-                            else {},
+                        self._wpf_parents[_managed_node_id(entries[0].object_ref)] = (
+                            root_description["nodeId"]
                         )
                 if self._is_hwnd_host(hit.handle):
                     # Only accept UIA hits below this host's peer, never its siblings.
@@ -1427,6 +1478,169 @@ class Server:
             fallback.extra = {"source": "uia"}
             return fallback
 
+    @staticmethod
+    def _with_process_name(item: dict[str, Any]) -> dict[str, Any]:
+        """The executable name of a window row: a label chain starts with Process(...)."""
+        from wintestkit.uia import win32
+
+        with contextlib.suppress(Exception):
+            name = dict(win32.list_processes()).get(item["info"].get("processId"))
+            if name:
+                item["info"]["processName"] = name
+        return item
+
+    def _describe_window_node(
+        self, item: dict[str, Any], client: Any, ref: Any, identity: Any | None
+    ) -> None:
+        """Describe a window row as a window node: its label comes from its root visual.
+
+        ``ref`` is the root visual. The row keeps its UIA identity; ``windowNode`` tells the tree
+        to label it ``HwndSource: <x:Name or type>`` with the visual's text as the window title.
+        """
+        known = identity if identity is not None else self._wpf_root_identity(client, ref)
+        x_name = known.x_name or ""
+        text, _ = self._wpf_label_data(
+            client, ref, (ref.type.full_name, x_name, ""), time.monotonic() + 1.0
+        )
+        item["windowNode"] = True
+        item["hasChildren"] = True
+        item["identity"] = {"type": ref.type.full_name, **({"xName": x_name} if x_name else {})}
+        if text is not None:
+            item["wpfText"] = text
+        else:
+            item.pop("wpfText", None)
+
+    def _describe_window_nodes(self, nodes: list[dict[str, Any]]) -> None:
+        """Window nodes for the WPF roots of attached processes; others keep their Win32 label."""
+        from wintestkit import runtime
+        from wintestkit.backends.element import WpfElement
+        from wintestkit.inspector.probe import current_identity
+
+        assert self.cfg is not None
+        if not self.cfg.inspector.enabled:
+            return
+        budget = time.monotonic() + 3.0
+        for item in nodes:
+            if item.get("source") != "wpf" or time.monotonic() >= budget:
+                continue
+            with self._node_lock:
+                window = self.nodes.get(item["nodeId"])
+            if window is None or isinstance(window, WpfElement):
+                continue
+            try:
+                with runtime.config_scope(self.cfg):
+                    client = runtime.inspector_sessions().get(current_identity(window.process_id))
+                    if client is None:
+                        continue
+                    rid, hwnd = runtime.managed_element_identity(cast("UIAElement", window))
+                    mapping = client.resolve(rid, hwnd, deadline=time.monotonic() + 1.0)
+                    if mapping.status == "exact" and mapping.object_ref is not None:
+                        self._describe_window_node(item, client, mapping.object_ref, None)
+            except Exception:
+                log.debug("Unable to describe the window node of %s", item["nodeId"], exc_info=True)
+
+    def _wpf_root_identity(self, client: Any, ref: Any) -> Any:
+        """The identity of a window's root visual: its x:Name, which names the window node."""
+        from types import SimpleNamespace
+
+        from wintestkit.inspector.paths import PathSegment
+
+        name = ""
+        try:
+            values, _ = client.read(
+                ref.object_id,
+                ref.generation,
+                [(PathSegment("property", "Name"),)],
+                deadline=time.monotonic() + 1.0,
+            )
+            value = values[0].value
+            if value.status == "ok" and isinstance(value.scalar, str):
+                name = value.scalar
+        except Exception:
+            log.debug("Unable to read the root visual's x:Name", exc_info=True)
+        return SimpleNamespace(x_name=name, automation_id="", sibling_index=None)
+
+    def _wpf_describe(
+        self,
+        client: Any,
+        ref: Any,
+        identity: Any,
+        has_children: bool,
+        tree: str,
+        process_id: int,
+        parent_id: str,
+        deadline: float,
+    ) -> dict[str, Any]:
+        """Register a managed object listed below ``parent_id`` and describe it for the tree.
+
+        The description carries what a label is made of: the type, the x:Name, ``wpf:Text`` and
+        ``wpf:Ordinal``.
+        """
+        from wintestkit.backends.element import WpfElement
+        from wintestkit.uia.element import ElementInfo
+
+        text, ordinal = self._wpf_label_data(
+            client,
+            ref,
+            (
+                ref.type.full_name,
+                identity.x_name if identity else "",
+                identity.automation_id if identity else "",
+            ),
+            deadline,
+        )
+        self._remember_managed(client.session.session_id, ref.to_json())
+        identity_data: dict[str, Any] = {"type": ref.type.full_name}
+        if identity is not None:
+            if identity.x_name:
+                identity_data["xName"] = identity.x_name
+            if identity.automation_id:
+                identity_data["automationId"] = identity.automation_id
+            if identity.sibling_index is not None:
+                identity_data["siblingIndex"] = identity.sibling_index
+        node_id = _managed_node_id(ref)
+        info = ElementInfo(
+            identity_data.get("automationId", ""),
+            (text or "")[:100],
+            ref.type.name,
+            ref.type.full_name,
+            "WinForms" if ref.is_winforms else "WPF",
+            process_id,
+            None,
+            True,
+            False,
+            False,
+            node_id,
+        )
+        element = WpfElement(client, ref, process_id)
+        with self._node_lock:
+            self.nodes[node_id] = element
+            self.node_infos[node_id] = info
+            self.nodes.move_to_end(node_id)
+            if len(self.nodes) > 5000:
+                evicted, evicted_node = self.nodes.popitem(last=False)
+                self.node_infos.pop(evicted, None)
+                self._wpf_text.pop(evicted, None)
+                self._wpf_windows.discard(evicted)
+                self._release_tree_node(evicted_node)
+        description: dict[str, Any] = {
+            "nodeId": node_id,
+            "info": info.to_dict(),
+            "hasChildren": has_children
+            or (self._is_hwnd_host(ref) and bool(self._hosted_children(element))),
+            "source": _ref_source(ref),
+            "identity": identity_data,
+        }
+        if text is not None:
+            description["wpfText"] = text
+        if ordinal is not None:
+            description["wpfOrdinal"] = ordinal
+        with self._node_lock:
+            self._wpf_parents[node_id] = parent_id
+            self._wpf_descriptions[node_id] = description
+            self._wpf_text[node_id] = text
+        return description
+
     def _wpf_children(
         self, node: TargetElement, tree: str, page_size: int, page_token: str | None, parent_id: str
     ) -> Any:
@@ -1435,9 +1649,9 @@ class Server:
         from wintestkit.errors import InspectorError
         from wintestkit.inspector.hints import inspector_error_hint
         from wintestkit.inspector.probe import current_identity
-        from wintestkit.uia.element import ElementInfo
 
         assert self.cfg is not None
+        self._spy_tree = tree
         with runtime.config_scope(self.cfg):
             if not self.cfg.inspector.enabled:
                 return {
@@ -1505,6 +1719,31 @@ class Server:
                 if end < len(hosted):
                     result["nextPageToken"] = f"uia:{end}"
                 return result
+            if not isinstance(node, WpfElement) and not ref.is_winforms:
+                # A WPF window row is a window node: its only child is the root visual.
+                root = self._wpf_root_identity(client, ref)
+                probe = client.children(
+                    ref.object_id,
+                    ref.generation,
+                    cast("Any", tree),
+                    page_size=1,
+                    deadline=time.monotonic() + self.cfg.inspector.request_timeout,
+                )
+                self._remember_managed(client.session.session_id, ref.to_json())
+                return {
+                    "nodes": [
+                        self._wpf_describe(
+                            client,
+                            ref,
+                            root,
+                            probe.items != (),
+                            tree,
+                            process_id,
+                            parent_id,
+                            time.monotonic() + 5.0,
+                        )
+                    ]
+                }
             page = client.children(
                 ref.object_id,
                 ref.generation,
@@ -1515,68 +1754,21 @@ class Server:
             )
             text_deadline = time.monotonic() + 5.0
             for child in page.items:
-                child_ref = child.object_ref
-                text = self._wpf_control_text(
-                    client,
-                    child_ref,
-                    (
-                        child_ref.type.full_name,
-                        child.identity.x_name if child.identity else "",
-                        child.identity.automation_id if child.identity else "",
-                    ),
-                    text_deadline,
+                has_children = (
+                    child.has_logical_children if tree == "logical" else child.has_visual_children
                 )
-                self._remember_managed(client.session.session_id, child_ref.to_json())
-                identity_data: dict[str, Any] = {"type": child_ref.type.full_name}
-                if child.identity is not None:
-                    if child.identity.x_name:
-                        identity_data["xName"] = child.identity.x_name
-                    if child.identity.automation_id:
-                        identity_data["automationId"] = child.identity.automation_id
-                node_id = _managed_node_id(child_ref)
-                if child.identity is not None and child.identity.sibling_index is not None:
-                    identity_data["siblingIndex"] = child.identity.sibling_index
-                info = ElementInfo(
-                    identity_data.get("automationId", ""),
-                    (text or "")[:100],
-                    child_ref.type.name,
-                    child_ref.type.full_name,
-                    "WinForms" if child_ref.is_winforms else "WPF",
-                    process_id,
-                    None,
-                    True,
-                    False,
-                    False,
-                    node_id,
-                )
-                element = WpfElement(client, child_ref, process_id)
-                with self._node_lock:
-                    self.nodes[node_id] = element
-                    self.node_infos[node_id] = info
-                    self.nodes.move_to_end(node_id)
-                    if len(self.nodes) > 5000:
-                        evicted, evicted_node = self.nodes.popitem(last=False)
-                        self.node_infos.pop(evicted, None)
-                        self._wpf_text.pop(evicted, None)
-                        self._wpf_windows.discard(evicted)
-                        self._release_tree_node(evicted_node)
-                description = {
-                    "nodeId": node_id,
-                    "info": info.to_dict(),
-                    "hasChildren": (
-                        child.has_visual_children
-                        if tree == "visual"
-                        else child.has_logical_children
+                output.append(
+                    self._wpf_describe(
+                        client,
+                        child.object_ref,
+                        child.identity,
+                        has_children,
+                        tree,
+                        process_id,
+                        parent_id,
+                        text_deadline,
                     )
-                    or (self._is_hwnd_host(child_ref) and bool(self._hosted_children(element))),
-                    "source": _ref_source(child_ref),
-                    "identity": identity_data,
-                }
-                with self._node_lock:
-                    self._wpf_parents[node_id] = parent_id
-                    self._wpf_descriptions[node_id] = description
-                    self._wpf_text[node_id] = text
-                output.append(description)
+                )
             result: dict[str, Any] = {"nodes": output}
             if page.next_token is not None:
                 result["nextPageToken"] = page.next_token
@@ -2500,8 +2692,9 @@ class Server:
             if any(type(value) is not int for value in (x, y)):
                 raise RpcError(-32602, "x and y must be integers")
             tree = params.get("tree", "visual")
-            if tree not in ("visual", "logical"):
+            if tree not in ("visual", "logical", "objects"):
                 raise RpcError(-32602, "invalid tree")
+            self._spy_tree = tree
             element = element_at(x, y)
             if element is None:
                 raise RpcError(-32005, "No element at the requested screen point")

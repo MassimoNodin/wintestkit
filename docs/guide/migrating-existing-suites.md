@@ -83,7 +83,7 @@ reproduce it on WPF windows (`tree="objects"`, see [the object tree](managed-ins
 - **Tree.** The WPF visual tree without the parts of control templates and items panels; their visible
   descendants move up to the nearest visible ancestor. A grid cell is a direct child of its row, a combo
   box item of its popup and a ribbon's tabs of the ribbon. Each popup is a root of its own.
-- **Depth** counts levels of that tree. From an `App`, depth 1 is the window nodes (`HwndSource: <type>`,
+- **Depth** counts levels of that tree. From an `App`, depth 1 is the window nodes (`HwndSource: <x:Name or type>`,
   the window title as text), depth 2 the root visuals and depth 3 their children. From a window or a page
   without a root element, depth 1 is the root visual itself.
 - **First match** is the depth-first pre-order one.
@@ -107,6 +107,15 @@ Existing suites rarely search; they walk a chain of calls such as
 `grid.WPFObject("DataGridRow", "", row).WPFObject("DataGridCell", "*", col)`. The Spy tree labels objects in the same
 grammar, so a label copied from the Spy and the code of an existing suite are the same thing, and both work in Python.
 The grammar and its meaning live in one module, `wintestkit.labels`; `wintestkit.finders` turns it into lazy elements.
+
+The Spy shows the same object tree, with the same rules: the label of a row is the lone `x:Name` when no sibling shares
+it, else the runtime type and the text (`""` for an empty text), plus the `wpf:Ordinal` only when type and text repeat
+among siblings. A WPF window is `HwndSource: <x:Name of the root visual>`, or `HwndSource: <root type>` when the root
+visual has no x:Name. The Properties view of the Spy shows the label as **Name**, the chain from the process as
+**FullName** and the parent's label as **Parent**, and its actions menu copies the chain (**Copy label chain**) or the
+statement `from_label(app, '<chain>')` (**Copy as code**). The Spy's *Show template parts* option shows the full
+visual tree instead; its labels are marked as not pasteable. The Spy and the library are held to one set of cases
+(`python/tests/fixtures/label_conformance.json`), so the two cannot drift apart.
 
 ```python
 # pseudo-code
@@ -136,8 +145,12 @@ ordinary lazy bound element: it re-resolves on each use and supports actions, `e
 | `WPFObject(cls, index)` | an integer second argument is the Spy form of an empty text: `WPFObject(cls, "", index)` |
 
 `cls` is the runtime CLR short type name (`type:Name`). `"HwndSource: X"` as `cls` is a *window node*: a top-level
-WPF window of the application whose root visual's short type name is `X`, with the window title as its text (wildcards
-allowed) and the index among window nodes of the same type. Window nodes are selected from an `App`; popups are window
+WPF window of the application whose root visual's x:Name is `X` (or, when that root visual has no x:Name, whose short type
+name is `X`), with the window title as its text (wildcards allowed) and the index among the window nodes with the same
+label. A window whose root type is `SettingsView` and whose x:Name is `SettingsViewWindow` is
+`HwndSource: SettingsViewWindow`; the type spelling `HwndSource: SettingsView` still resolves it (the x:Name is
+tried first, then the type; the index of the type spelling counts the windows of that root type). Labels are always
+generated with the x:Name form. Window nodes are selected from an `App`; popups are window
 nodes too (`"HwndSource: PopupRoot"`, text `""`). The only child of a window node is its root visual, so
 `app.WPFObject("HwndSource: MainView", "T*").WPFObject("MainView", "T*")` is the root visual. A lone argument is always an
 x:Name, never a type; use `("HwndSource: X", "*")` for a window of any title. Without an index the first match wins

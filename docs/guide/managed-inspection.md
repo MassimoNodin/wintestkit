@@ -427,10 +427,10 @@ Element(automation_id='Save', tree='objects', depth=2, where={'wpf:Text': 'Save'
   of the ribbon.
 - **Depth** counts levels of that tree below the search root, the first match is the depth-first
   **pre-order** one, and `index` counts in the same order. Above each root visual sits a *window node*
-  (the `HwndSource` level, labelled `HwndSource: <root visual type>`, with the window title as its text). From
+  (the `HwndSource` level, labelled `HwndSource: <root visual x:Name, else type>`, with the window title as its text). From
   an `App`, depth 1 is the window nodes, depth 2 the root visuals and depth 3 their children. From a window or
   a page without a root element, depth 1 is the root visual itself, so it can match. A window node matches
-  `type:Name`, `wpf:Text` and `wpf:Ordinal` (its place among the window nodes of the same type); any other managed
+  `type:Name`, `wpf:Text` and `wpf:Ordinal` (its place among the window nodes with the same label); any other managed
   key is a member of an element, which a window node is not. A window node and the root visual below it are one element, counted
   once.
 - **`wpf:Ordinal`** is the element's 1-based position among its object-tree siblings of the same runtime

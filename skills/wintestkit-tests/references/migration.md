@@ -71,8 +71,9 @@ Ported code and Spy labels share one grammar; use it where a chain is shorter th
 - `WPFObject(name)` is the x:Name of a direct object-tree child. `WPFObject(cls, text, index)`: `cls` is the runtime
   type name; with `index` (1-based, `wpf:Ordinal`) it is the index-th child of that type and the text is checked unless `""` or `"*"`;
   without it the first child of that type whose text matches (`"*"` any, `""` empty, `*`/`?` wildcards). `WPFObject(cls, 2)` is `(cls, "", 2)`.
-- `"HwndSource: X"` as `cls` is a window node (selected from an `App`; text is the title; index among window nodes of that type;
-  popups are `HwndSource: PopupRoot`); its only child is the root visual.
+- `"HwndSource: X"` as `cls` is a window node (selected from an `App`; `X` is the root visual's x:Name, else its type, and a
+  step may use either spelling; text is the title; index among window nodes with that label; popups are `HwndSource: PopupRoot`);
+  its only child is the root visual.
 - `Window(cls, caption, index)` is a Win32 child window (top-level from an `App`): class, caption (mnemonic `&` removed,
   wildcards, `"*"` default) and 1-based index among same-class siblings; the caption is checked too unless `""`/`"*"`. UIA, not the managed tree.
 - Results are lazy elements; not-found errors list the type-matching siblings with texts and ordinals. `strict=True` fails on several matches.

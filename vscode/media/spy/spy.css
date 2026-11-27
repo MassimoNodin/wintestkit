@@ -696,6 +696,13 @@ summary {
     color: inherit;
     opacity: 0.7;
 }
+/* A label read in the full visual tree (template parts shown): it names an object but cannot be pasted into code. */
+.node.unpasteable .label > span:not(.technology-badge):not(.control-icon) {
+  font-style: italic;
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+}
+
 .defined-marker {
     flex-shrink: 0;
     margin-left: 6px;

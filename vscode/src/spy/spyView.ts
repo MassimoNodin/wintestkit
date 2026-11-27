@@ -97,6 +97,8 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
   private loaded = false;
   private appPids: number[] = [];
   private showOtherApps = true;
+  /** The tree kind the loaded tree was read in; a different setting reloads it. */
+  private treeInUse: "objects" | "visual" = "objects";
   private treeProcesses = new Map<string, ManagedProcessIdentity>();
   private disconnectedProcess?: { project: string; process: ManagedProcessIdentity };
   private treeTokens = new Map<string, string>();
@@ -184,9 +186,12 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
         if (event.affectsConfiguration("wintestkit.spy.traceFile")) this.configureTrace();
         if (
           event.affectsConfiguration("wintestkit.spy.bringWindowToFront") ||
+          event.affectsConfiguration("wintestkit.spy.showTemplateParts") ||
           event.affectsConfiguration("wintestkit.spy." + BASIC_SETTING)
         )
           this.state();
+        if (event.affectsConfiguration("wintestkit.spy.showTemplateParts") && this.loaded && this.treeKind() !== this.treeInUse)
+          void this.safe(() => this.reloadTree());
       }),
       vscode.workspace.onDidSaveTextDocument((document) => {
         if (document.languageId === "python") this.scheduleCoverage();
@@ -681,6 +686,7 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
       hasProject: !!this.currentProject(),
       showOtherApps: this.showOtherApps,
       bringToFront: this.bringToFront(),
+      showTemplateParts: this.showTemplateParts(),
       basicProperties: this.basicProperties(),
       basicDefaults: [...DEFAULT_BASIC_PROPERTIES],
       ...(treeWidth === undefined ? {} : { treeWidth }),
@@ -912,6 +918,7 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
     return stale ? this.refresh() : Promise.resolve();
   }
   private async refreshTree(): Promise<void> {
+    this.treeInUse = this.treeKind();
     const scopeRevision = this.scopeRevision;
     const showOtherApps = this.showOtherApps;
     const restore = !this.skipRestore;
@@ -1190,7 +1197,7 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
         !((error as { code?: number })?.code === -32005 || code === "objectStale" || code === "mappingFailed")) throw error;
       let replacementId: string | undefined;
       try {
-        const picked = await client.request<SpyPickedNotification>("spy.repick", { x: point.x, y: point.y, tree: "visual" });
+        const picked = await client.request<SpyPickedNotification>("spy.repick", { x: point.x, y: point.y, tree: this.treeKind() });
         if (this.pickedPoint !== point || client !== this.client) throw new Error("Selection changed during re-pick.");
         if (picked.blocked || picked.attachRequired || !picked.node) throw new Error("Could not re-resolve the picked object.");
         replacementId = picked.node.nodeId;
@@ -1448,7 +1455,7 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
       this.trace.rpc("spy.start");
       await phase("Starting element picker", () => client.request("spy.start", {
         sessionId,
-        tree: "visual",
+        tree: this.treeKind(),
         foregroundForProcessId: process.pid,
       }));
       if (
@@ -1520,7 +1527,7 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
     return result.value;
   }
   private async childrenPageRaw(client: JsonRpcClient, nodeId: string, pageToken?: string, autoAttach = true, allowFallback = true): Promise<InspectChildrenResult> {
-    const params = { nodeId, tree: "visual" as const, ...(pageToken ? { pageToken } : {}) };
+    const params = { nodeId, tree: this.treeKind(), ...(pageToken ? { pageToken } : {}) };
     this.trace.rpc("inspect.children", nodeId);
     let result = await client.request<InspectChildrenResult>("inspect.children", params);
     if (!Array.isArray(result) && "attachRequired" in result) {
@@ -1794,6 +1801,14 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
           vscode.ConfigurationTarget.Global,
         );
       return this.state();
+    }
+    if (message.type === "showTemplateParts") {
+      await vscode.workspace
+        .getConfiguration("wintestkit.spy")
+        .update("showTemplateParts", message.enabled, vscode.ConfigurationTarget.Global);
+      this.state();
+      if (this.treeKind() !== this.treeInUse) await this.reloadTree();
+      return;
     }
     if (message.type === "showOtherApps") {
       if (this.showOtherApps === message.enabled) return;
@@ -2175,6 +2190,24 @@ export class SpyView implements vscode.WebviewViewProvider, vscode.Disposable {
   }
   private rememberTreeWidth(width: number | null): void {
     void this.memory?.update(SpyView.treeWidthKey, width ?? undefined);
+  }
+  /**
+   * The tree the Spy shows: the object tree of migrated suites (template parts and items panels
+   * hidden, so a label can be pasted into code) or, with Show template parts, the full visual tree.
+   */
+  private treeKind(): "objects" | "visual" {
+    return this.showTemplateParts() ? "visual" : "objects";
+  }
+  private showTemplateParts(): boolean {
+    return vscode.workspace.getConfiguration("wintestkit.spy").get<boolean>("showTemplateParts", false);
+  }
+  /** Loads the whole tree again in the other tree kind, keeping the selection when it can be found. */
+  private reloadTree(): Promise<void> {
+    const keep = !!this.selectedNodeId && !!this.recallSelection()?.length;
+    this.skipRestore = !keep;
+    this.restoreIfListed = keep;
+    this.invalidateScope();
+    return this.refresh();
   }
   private bringToFront(): boolean {
     return vscode.workspace

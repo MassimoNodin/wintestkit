@@ -610,8 +610,8 @@ def wpf_object(
     Without it the first child of that type whose text matches wins: ``"*"`` is any text, ``""``
     empty text, anything else matches with ``*`` and ``?`` as wildcards. ``wpf_object(parent,
     name)`` alone selects by x:Name, and an integer ``text`` is ``text=""`` with that index.
-    ``cls="HwndSource: <root visual type>"`` is a window node, selected from an ``App`` (its text
-    is the window title); the node's child is the root visual itself.
+    ``cls="HwndSource: <root visual x:Name or type>"`` is a window node, selected from an ``App``
+    (its text is the window title); the node's child is the root visual itself.
 
     The result is a lazy bound element that re-resolves on every use. Without an index it takes
     the first match; ``strict=True`` fails when several children match. When nothing matches the

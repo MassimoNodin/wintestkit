@@ -83,8 +83,9 @@ def window_nodes(app: App) -> list[Child]:
         root = route(window)
         if not isinstance(root, WpfElement):
             continue
-        title = read_node(root, labels.WINDOW_NODE_PREFIX + root.ref.type.name)
-        nodes.append(Child(root, labels.ObjectNode(title.type_name, title.text, "")))
+        title = read_node(root)
+        node_type = labels.window_node_type(title.type_name, title.name)
+        nodes.append(Child(root, labels.ObjectNode(node_type, title.text, "")))
     return nodes
 
 

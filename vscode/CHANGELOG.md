@@ -7,6 +7,11 @@ Unreleased changes must be moved to a dated candidate section before a release c
 
 ## [Unreleased]
 
+- **Spy labels are code:** For WPF the Spy shows the object tree the Python library's labels are written against: template parts and items panels are hidden and the objects below them move up to the control that owns them. A WPF window is a window node (`WPFObject("HwndSource: <x:Name of its root visual, else its type>", "<title>")`) whose only child is the root visual, each popup is a window node of its own, and Win32 windows read `Window("<class>", "<caption>")`. Labels follow the library exactly (a lone argument is the x:Name; otherwise the type and the text, `""` for an empty text, with the `wpf:Ordinal` only where type and text repeat), so anything Spy shows can be pasted into code and resolves to the same object. The Properties view shows the label as **Name**, the chain from the process as **FullName** and the parent's label as **Parent**; its actions menu has **Copy label chain** and **Copy as code** (`from_label(app, '<chain>')`).
+- **Show template parts:** A new Spy toolbar button and setting `wintestkit.spy.showTemplateParts` (off by default) show the full visual tree again. Its labels are dotted and marked as not pasteable, and the copy actions are off while it is on.
+- **Window labels:** A window whose root visual has an x:Name is labelled `HwndSource: <x:Name>` (otherwise by the root's type) in the library and the Spy. Steps written with the type spelling still resolve the window.
+- **Picking:** A pick on a part of a control's template selects the control that owns it unless template parts are shown.
+
 ## [0.1.1rc8] - 2026-11-27
 
 Eighth prerelease. Install the extension's pre-release channel together with `pip install --pre "wintestkit[inspector]==0.1.1rc8"`. The first upgrade from rc7 asks to close applications that still have the rc7 inspector loaded.

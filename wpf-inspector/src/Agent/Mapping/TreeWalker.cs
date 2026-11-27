@@ -11,6 +11,7 @@ using System.Windows.Interop;
 using System.Windows.Media.Media3D;
 using System.Windows.Threading;
 using WinTestKit.Inspector.Agent.Inspection;
+using WinTestKit.Inspector.Agent.Inspection.Members;
 using WinTestKit.Inspector.Protocol;
 
 namespace WinTestKit.Inspector.Agent.Mapping
@@ -148,6 +149,10 @@ namespace WinTestKit.Inspector.Agent.Mapping
             {
                 foreach (object child in LogicalTreeHelper.GetChildren(target))
                     if (child is DependencyObject dependencyObject) yield return dependencyObject;
+            }
+            else if (tree == TreeKind.Objects)
+            {
+                foreach (DependencyObject child in ObjectTree.Children(target)) yield return child;
             }
             else throw new ProtocolException(ErrorCodes.InvalidParams, "Unknown tree kind.");
         }

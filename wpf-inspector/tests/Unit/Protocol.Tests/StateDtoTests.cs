@@ -6,7 +6,7 @@ namespace Protocol.Tests;
 public class StateDtoTests
 {
     private static JsonNode Parse(string s) { var b = Encoding.UTF8.GetBytes(s); return StrictJson.Parse(b,0,b.Length); }
-    [Fact] public void HitTestRoundTrips() { var x = HitTestParams.FromJson(Parse("{\"nativeWindowHandle\":-1,\"point\":{\"x\":-2.5,\"y\":3},\"timeoutMs\":2000,\"includePath\":true}")); Assert.Equal(-2.5, HitTestParams.FromJson(x.ToJson()).Point.X); Assert.True(HitTestParams.FromJson(x.ToJson()).IncludePath); }
+    [Fact] public void HitTestRoundTrips() { var x = HitTestParams.FromJson(Parse("{\"nativeWindowHandle\":-1,\"point\":{\"x\":-2.5,\"y\":3},\"timeoutMs\":2000,\"includePath\":true,\"tree\":\"objects\"}")); Assert.Equal(-2.5, HitTestParams.FromJson(x.ToJson()).Point.X); Assert.True(HitTestParams.FromJson(x.ToJson()).IncludePath); Assert.Equal("objects", HitTestParams.FromJson(x.ToJson()).Tree); Assert.Null(HitTestParams.FromJson(Parse("{\"nativeWindowHandle\":1,\"point\":{\"x\":0,\"y\":0},\"timeoutMs\":1}")).Tree); Assert.ThrowsAny<System.Exception>(() => HitTestParams.FromJson(Parse("{\"nativeWindowHandle\":1,\"point\":{\"x\":0,\"y\":0},\"timeoutMs\":1,\"tree\":\"visual\"}"))); }
     [Theory]
     [InlineData("{\"x\":0,\"y\":0,\"width\":-1,\"height\":0}")]
     [InlineData("{\"x\":0,\"y\":0,\"width\":1,\"height\":0,\"extra\":1}")]

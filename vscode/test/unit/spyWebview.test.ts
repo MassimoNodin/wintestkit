@@ -116,7 +116,7 @@ it("groups windows and keeps process rows when windows change", () => {
   const a = win("a", 42, "First"), b = win("b", 42, "Second"), c = win("c", 9, "Other"), u = win("u", 0, "Unknown");
   send({ type: "roots", nodes: [a, b, c, u] });
   const process = doc.querySelector('[data-node-id="process:42"]')!;
-  expect(process.textContent).toContain('Process("Fixture")');
+  expect(process.textContent).toContain('Process("Fixture.exe")');
   expect(process.textContent).toContain("PID 42");
   expect(process.getAttribute("aria-level")).toBe("1");
   expect(doc.querySelector('[data-node-id="a"]')?.getAttribute("aria-level")).toBe("2");
@@ -308,9 +308,9 @@ it("reveals an in-place picked path without replacing other branches", () => {
   dom.window.eval(readFileSync("media/spy/treeLabels.js", "utf8") + "\n" + readFileSync("media/spy/spy.js", "utf8"));
   const send = (data: unknown) => dom.window.dispatchEvent(new dom.window.MessageEvent("message", { data }));
   const doc = dom.window.document;
-  const node = (nodeId: string, controlType: string, name: string, hasChildren: boolean) => ({ nodeId, source: "wpf", hasChildren, info: { controlType, name, processId: 42 }, identity: { type: controlType } });
+  const node = (nodeId: string, controlType: string, name: string, hasChildren: boolean, wpfOrdinal = 1) => ({ nodeId, source: "wpf", hasChildren, info: { controlType, name, processId: 42 }, identity: { type: controlType }, wpfText: name, wpfOrdinal });
   const main = node("main", "Window", "Main", true), duplicate = node("duplicate", "Window", "Duplicate items", true);
-  const other = node("other", "Border", "", true), first = node("first", "ListBoxItem", "Beta", true), second = node("second", "ListBoxItem", "Beta", true), text = node("text", "TextBlock", "Beta", false);
+  const other = node("other", "Border", "", true), first = node("first", "ListBoxItem", "Beta", true), second = node("second", "ListBoxItem", "Beta", true, 2), text = node("text", "TextBlock", "Beta", false);
   send({ type: "roots", nodes: [main, duplicate] });
   (doc.querySelector('[data-node-id="main"] .toggle') as HTMLButtonElement).click();
   send({ type: "children", nodeId: "main", nodes: [other] });
@@ -324,6 +324,7 @@ it("reveals an in-place picked path without replacing other branches", () => {
   expect(doc.querySelector('[data-node-id="duplicate"]')?.getAttribute("aria-expanded")).toBe("true");
   expect(doc.querySelector('[data-node-id="second"]')?.getAttribute("aria-expanded")).toBe("true");
   expect(doc.querySelector('[data-node-id="text"]')?.getAttribute("aria-selected")).toBe("true");
+  // The ordinal is wpf:Ordinal: the agent counted the siblings of the same type.
   expect(doc.querySelector('[data-node-id="first"]')?.textContent).toContain('"Beta", 1');
   expect(doc.querySelector('[data-node-id="second"]')?.textContent).toContain('"Beta", 2');
   dom.window.close();
@@ -390,7 +391,7 @@ it("renders searchable sidebar tabs and remembers the property mode", () => {
   const send = (data: unknown) => dom.window.dispatchEvent(new dom.window.MessageEvent("message", { data }));
   const doc = dom.window.document;
   const win = { nodeId: "win", source: "wpf", hasChildren: true, info: { controlType: "Window", name: "Fixture", processId: 1 } };
-  const child = { nodeId: "child", source: "wpf", hasChildren: false, info: { controlType: "Button", name: "Save", isEnabled: true, rect: { left: 10, top: 20, width: 30, height: 40 } } };
+  const child = { nodeId: "child", source: "wpf", hasChildren: false, wpfText: "Save", info: { controlType: "Button", name: "Save", isEnabled: true, rect: { left: 10, top: 20, width: 30, height: 40 } } };
   send({ type: "state", basicProperties: [...DEFAULT_BASIC_PROPERTIES], basicDefaults: [...DEFAULT_BASIC_PROPERTIES] });
   send({ type: "roots", nodes: [win] });
   send({ type: "children", nodeId: "win", nodes: [child], expanded: true });
@@ -405,16 +406,18 @@ it("renders searchable sidebar tabs and remembers the property mode", () => {
   send({ type: "selected", nodeId: "child", properties: { source: "wpf", info: child.info, properties: { ClrFullClassName: "Example.Button", Custom: "custom value" }, uiaMapped: false } });
   (doc.querySelector("#sidebar-mode") as HTMLInputElement).click();
   expect(state.sidebarShowAll).toBe(true);
-  // Until a unique locator arrives the path from the window is built from the tree.
-  expect(doc.querySelector('[data-name="FullName"] td')?.textContent).toBe('Window("").WPFObject("Button", "Save")');
+  // The label chain starts at the process and is built from the tree.
+  const chain = 'Process("Fixture").Window("").WPFObject("Button", "Save")';
+  expect(doc.querySelector('[data-name="FullName"] td')?.textContent).toBe(chain);
   expect(posts).toContainEqual({ type: "generateLocator", nodeId: "child" });
   const locator = { unique: true, strategy: "automationId", helpers: [], window: { code: "Window(title='Fixture')" }, code: "Button(automation_id='save')" };
   send({ type: "suggestion", nodeId: "child", suggestion: locator });
-  expect(doc.querySelector('[data-name="FullName"] td')?.textContent).toContain("Button(automation_id='save')");
+  // A suggested locator does not replace the label chain.
+  expect(doc.querySelector('[data-name="FullName"] td')?.textContent).toBe(chain);
   send({ type: "selectionPending", nodeId: "win" });
   send({ type: "suggestion", nodeId: "child", suggestion: locator });
   send({ type: "selected", nodeId: "win", properties: { source: "wpf", info: win.info, properties: { WPFControlText: "" }, uiaMapped: false } });
-  expect(doc.querySelector('[data-name="FullName"] td')?.textContent).toBe('Window("")');
+  expect(doc.querySelector('[data-name="FullName"] td')?.textContent).toBe('Process("Fixture").Window("")');
   (doc.querySelector("#sidebar-mode") as HTMLInputElement).click();
   expect(doc.querySelector('[data-name="WPFControlText"] td')?.textContent).toBe("(empty)");
   (doc.querySelector("#sidebar-mode") as HTMLInputElement).click();
@@ -489,4 +492,94 @@ it("offers managed row actions, tooltips, pins, and readiness controls", () => {
   expect(secret.textContent).not.toContain("secret");
   (doc.querySelector("#sidebar-export") as HTMLButtonElement).click(); expect(posts).toContainEqual({ type: "managedCopy", kind: "export" });
   dom.window.close();
+});
+
+const spyDom = (viewClass: "spy-view" | "properties-view") => {
+  const dom = new JSDOM(readFileSync("media/spy/spy.html", "utf8").replace("{{viewClass}}", viewClass), { runScripts: "outside-only" });
+  const posts: { type: string; [key: string]: unknown }[] = [];
+  Object.assign(dom.window, { acquireVsCodeApi: () => ({ postMessage: (message: { type: string }) => posts.push(message), getState: () => ({}), setState() {} }), matchMedia: () => ({ matches: false, addEventListener() {} }), requestAnimationFrame: (fn: () => void) => fn() });
+  dom.window.HTMLElement.prototype.scrollIntoView = () => {};
+  dom.window.eval(readFileSync("media/spy/treeLabels.js", "utf8") + "\n" + readFileSync("media/spy/spy.js", "utf8"));
+  const send = (data: unknown) => dom.window.dispatchEvent(new dom.window.MessageEvent("message", { data }));
+  return { dom, doc: dom.window.document, posts, send };
+};
+// A WPF window row as the host describes it once the agent knows its root visual, and nodes below it.
+const windowRow = (nodeId: string, rootType: string, xName: string, title: string, extra: Record<string, unknown> = {}) => ({ nodeId, source: "wpf", windowNode: true, hasChildren: true, info: { controlType: "Window", name: title, className: "HwndWrapper[App;;1]", processId: 42, processName: "App.exe" }, identity: { type: "Fixture." + rootType, ...(xName ? { xName } : {}) }, wpfText: title, ...extra });
+const wpfNode = (nodeId: string, type: string, text: string | undefined, wpfOrdinal: number, xName = "", hasChildren = true) => ({ nodeId, source: "wpf", hasChildren, info: { controlType: type, name: text ?? "", processId: 42 }, identity: { type: "System.Windows.Controls." + type, ...(xName ? { xName } : {}) }, ...(text === undefined ? {} : { wpfText: text }), wpfOrdinal });
+
+it("labels WPF windows as window nodes below the process and their root visual as the only child", () => {
+  const { doc, send } = spyDom("spy-view");
+  const options = windowRow("w1", "SettingsView", "SettingsViewWindow", "Options");
+  const plain = windowRow("w2", "MainView", "", "Main title");
+  const same = windowRow("w3", "MainView", "", "Other");
+  send({ type: "roots", nodes: [options, plain, same] });
+  const text = (id: string) => doc.querySelector(`[data-node-id="${id}"] .label`)?.textContent;
+  expect(text("process:42")).toContain('Process("App.exe")');
+  expect(text("w1")).toContain('WPFObject("HwndSource: SettingsViewWindow", "Options")');
+  expect(text("w2")).toContain('WPFObject("HwndSource: MainView", "Main title")');
+  expect(text("w3")).toContain('WPFObject("HwndSource: MainView", "Other")');
+  send({ type: "children", nodeId: "w1", nodes: [wpfNode("root", "Window", "Options", 1, "SettingsViewWindow")], expanded: true });
+  send({ type: "children", nodeId: "root", nodes: [wpfNode("save", "Button", "Save", 1), wpfNode("cancel", "Button", "Cancel", 2)], expanded: true });
+  expect(text("root")).toContain('WPFObject("SettingsViewWindow")');
+  expect(text("cancel")).toContain('WPFObject("Button", "Cancel")');
+  expect(doc.querySelector('[data-node-id="root"]')?.getAttribute("aria-level")).toBe("3");
+});
+
+it("marks labels read with template parts shown as not pasteable and tells the host about the toggle", () => {
+  const { doc, posts, send } = spyDom("spy-view");
+  send({ type: "roots", nodes: [windowRow("w1", "MainView", "", "Main")] });
+  send({ type: "children", nodeId: "w1", nodes: [wpfNode("root", "MainView", "Main", 1)], expanded: true });
+  const row = doc.querySelector('[data-node-id="root"]')!;
+  const button = doc.querySelector<HTMLButtonElement>("#template-parts")!;
+  expect(button.getAttribute("aria-pressed")).toBe("false");
+  expect(row.classList.contains("unpasteable")).toBe(false);
+  button.click();
+  expect(posts).toContainEqual({ type: "showTemplateParts", enabled: true });
+  send({ type: "state", showTemplateParts: true });
+  expect(button.getAttribute("aria-pressed")).toBe("true");
+  expect(row.classList.contains("unpasteable")).toBe(true);
+  expect(row.getAttribute("aria-label")).toContain("not pasteable");
+  // The process row is not part of the tree of objects: it stays as it is.
+  expect(doc.querySelector('[data-node-id="process:42"]')?.classList.contains("unpasteable")).toBe(false);
+  send({ type: "state", showTemplateParts: false });
+  expect(row.classList.contains("unpasteable")).toBe(false);
+});
+
+it("copies the label chain and a from_label snippet of the selected object", () => {
+  const { doc, posts, send } = spyDom("properties-view");
+  const win = windowRow("w1", "MainView", "MainWindow", 'Say "hi"');
+  const button = wpfNode("save", "Button", "it's", 2, "", false);
+  send({ type: "state", basicProperties: [...DEFAULT_BASIC_PROPERTIES], basicDefaults: [...DEFAULT_BASIC_PROPERTIES] });
+  send({ type: "roots", nodes: [win] });
+  send({ type: "children", nodeId: "w1", nodes: [wpfNode("root", "MainView", 'Say "hi"', 1, "MainWindow")], expanded: true });
+  send({ type: "children", nodeId: "root", nodes: [button, wpfNode("other", "Button", "it's", 1, "", false)], expanded: true });
+  send({ type: "selected", nodeId: "save", properties: { source: "wpf", info: button.info, properties: { ClrFullClassName: "System.Windows.Controls.Button" }, uiaMapped: false } });
+  (doc.querySelector("#sidebar-mode") as HTMLInputElement).click();
+  const chain = 'Process("App.exe").WPFObject("HwndSource: MainWindow", "Say \\"hi\\"").WPFObject("MainWindow").WPFObject("Button", "it\'s", 2)';
+  expect(doc.querySelector('[data-name="FullName"] td')?.textContent).toBe(chain);
+  expect(doc.querySelector('[data-name="Name"] td')?.textContent).toBe('WPFObject("Button", "it\'s", 2)');
+  expect(doc.querySelector('[data-name="Parent"] td')?.textContent).toBe('WPFObject("MainWindow")');
+  const chainItem = doc.querySelector<HTMLButtonElement>("#sidebar-copy-chain")!, codeItem = doc.querySelector<HTMLButtonElement>("#sidebar-copy-code")!;
+  expect([chainItem.disabled, codeItem.disabled]).toEqual([false, false]);
+  chainItem.click();
+  codeItem.click();
+  expect(posts).toContainEqual({ type: "copy", text: chain });
+  // The snippet is a Python literal that reads back as the same chain.
+  expect(posts).toContainEqual({ type: "copy", text: "from_label(app, '" + chain.replace(/\\/g, "\\\\").replace(/'/g, "\\'") + "')" });
+  // With template parts shown the same label cannot be pasted: nothing is offered.
+  send({ type: "state", showTemplateParts: true });
+  send({ type: "selected", nodeId: "save", properties: { source: "wpf", info: button.info, properties: { ClrFullClassName: "System.Windows.Controls.Button" }, uiaMapped: false } });
+  expect([chainItem.disabled, codeItem.disabled]).toEqual([true, true]);
+  expect(doc.querySelector('[data-name="FullName"] td')?.textContent).toBe(chain);
+});
+
+it("offers no copy actions for UI Automation objects", () => {
+  const { doc, send } = spyDom("properties-view");
+  const uia = { nodeId: "u", source: "uia", hasChildren: false, info: { controlType: "Button", name: "Save", processId: 42, processName: "App.exe" } };
+  send({ type: "state", basicProperties: [...DEFAULT_BASIC_PROPERTIES], basicDefaults: [...DEFAULT_BASIC_PROPERTIES] });
+  send({ type: "roots", nodes: [{ nodeId: "w", source: "uia", hasChildren: true, info: { controlType: "Window", name: "App", className: "C", processId: 42, processName: "App.exe" } }] });
+  send({ type: "children", nodeId: "w", nodes: [uia], expanded: true });
+  send({ type: "selected", nodeId: "u", properties: { source: "uia", info: uia.info, properties: {}, inspection: [] } });
+  expect(doc.querySelector<HTMLButtonElement>("#sidebar-copy-chain")!.disabled).toBe(true);
+  expect(doc.querySelector<HTMLButtonElement>("#sidebar-copy-code")!.disabled).toBe(true);
 });
