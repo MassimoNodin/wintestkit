@@ -81,6 +81,7 @@ EXPECTED = {
     "keyboard",
     "load_config",
     "log",
+    "soft",
     "step",
 }
 

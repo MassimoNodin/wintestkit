@@ -8,7 +8,10 @@ button="left", modifiers=None)`, `double_click(x=None, y=None, modifiers=None)` 
 offset and modifier options, `drag_to(target, source_offset=None, target_offset=None, button="left",
 modifiers=None)`, `drag_by(dx, dy, source_offset=None, button="left", modifiers=None)` and
 `scroll(clicks, x=None, y=None, horizontal=False)`. Offsets are physical pixels from the top-left;
-both coordinates are required, otherwise the center is used. Position, modifiers, or a non-left
+both coordinates are required, otherwise the center is used, and `-1` on an axis is the centre of
+that axis (`click(x=-1, y=-1, modifiers="Shift")`; compute offsets from `el.width`, `el.height`, `el.rect`).
+`drag(x, y, dx, dy, button="left", modifiers=None)` drags from a point by a delta. `activate()` and `close()` act on the
+window that holds an element; `refresh()` looks an element or window up again. Position, modifiers, or a non-left
 button force mouse input. Buttons are left, right or middle; modifiers include `"Ctrl+Shift"`.
 Wheel positive is up, or right horizontally. Drag releases input even on failure. Mouse targeting
 also accepts the app's owned popups.
@@ -153,7 +156,10 @@ the project setting for that test.
 
 `to_exist()`, `to_be_visible()`, `to_be_hidden()`, `to_be_enabled()`, `to_be_disabled()`,
 `to_be_checked()`, `to_be_selected()`, `to_have_text(str | regex)`, `to_contain_text(str)`,
-`to_have_value(str | regex)`, `to_have_count(n)`, `to_have_property(name, expected)` (UIA or managed, including regex); `.not_`
+`to_have_value(str | regex)`, `to_have_count(n)`, `to_have_property(name, expected, op="==")` (UIA, managed or pseudo-property; `op` is `==`, `!=`, `<`,
+`<=`, `>`, `>=`, `contains`, `not contains` or a name such as `lessOrEqual`; pseudo-properties are `exists`, `visible_on_screen`,
+`enabled`, `checked`, `text`, `name`, `value`, `items`, `item_list`, `item_count`, `child_count`); `expect(x, soft=True)` records a
+failure and lets the test continue; `.not_`
 negates: `expect(x).not_.to_be_checked()`. It retries until the timeout (default 10 s).
 Prefer `expect` to `assert` for anything asynchronous. Window targets: `expect(dialog.window).to_exist()`;
 windows also have `close()`, `maximize()`, `minimize()`, `restore()`, `title`.
@@ -208,11 +214,16 @@ intent methods like any other.
 
 `from wintestkit import log, step` exposes `with step(name, **details):` for
 nested groups, `log.message(text, **details)`, `log.warning(text, **details)`,
-and `log.picture(target=None, name="picture")`. Warnings do not fail tests.
+`log.error(text, **details)` (records an error: the test continues and fails when it ends, with every error listed),
+`log.checkpoint(text)` (a passed check) and `log.picture(target=None, name="picture")`. Warnings do not fail tests.
+`from wintestkit import soft`: `soft.continue_on_error()` makes every `expect` in a block soft, `@pytest.mark.wtk(soft=True)` a whole
+test or module; `soft.errors()` lists the recorded errors.
 Use `secret=True` to redact all step or message details; sensitive picture
 targets are skipped.
 
-`wintestkit.finders.send_keys(target, text, secret=False, timeout=None)` sends migrated key strings; `parse_keys(text)` parses segments and `to_keys(text)` converts key-only strings to `press()` syntax.
+`wintestkit.finders.send_keys(target, text, secret=False, timeout=None)` sends migrated key strings (`^a[Del]hello[Enter]`, `[Hold]^[Hold]![F8]`); `keyboard.keys(text, secret=False)` sends the same grammar to the foreground window; `parse_keys(text)` parses segments and `to_keys(text)` converts key-only strings to `press()` syntax.
+
+Migration helpers (`wintestkit.finders`): `check_property(el, prop, condition, value, timeout=None, soft=False) -> bool` runs an old property check (`WPFControlText`, `Exists`, `VisibleOnScreen`, `wText`, `wItemList`, `wItemCount`, `ChildCount`, `WndCaption`, `Enabled`, `DataContext.X`... with `equal`, `notEqual`, `contains`, `lessOrEqual`, `greaterOrEqual`) as an `expect` assertion; `wait_property(el, prop, value, timeout_ms=None, condition="equal") -> bool` waits and returns `True`/`False` without raising; `map_property(name, wpf=True)` shows what a name is read as.
 
 Managed calls accept `Int32`, `Int64`, `Single`, `Double`, `Decimal`, `Enum` and `Null` from `wintestkit` to select exact CLR overloads. For example, allowlist `Method(System.Int32)` for `Int32(1)`, `Method(Ns.Choice)` for `Enum("Ns.Choice", "First")`, and ``Method(System.Nullable`1[System.Int32])`` for ``Null("System.Nullable`1[System.Int32]")``. Plain `int`, `float`, `str`, `bool`, and `decimal.Decimal` map to Int64, Double, String, Boolean, and Decimal. Use `Null(type)` instead of `None` and explicit `Enum(...)` instead of Python enum members.
 

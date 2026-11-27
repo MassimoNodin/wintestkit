@@ -3636,7 +3636,7 @@ export interface Locator {
  * via the `definition` "LogEntry".
  */
 export interface LogEntry {
-  level: "info" | "warning";
+  level: "info" | "warning" | "error";
   text: string;
   details: {
     [k: string]: unknown;

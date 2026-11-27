@@ -16,6 +16,7 @@ generic actions; a
 | `double_click(x=None, y=None, modifiers=None)` / `right_click(x=None, y=None, modifiers=None)` | Mouse input | `Button`, `CheckBox`, `RadioButton`, `ListItem`, `ToggleButton`, `Hyperlink` |
 | `middle_click(x=None, y=None, modifiers=None)` | Middle mouse click | every element |
 | `drag_to(target, source_offset=None, target_offset=None, button="left", modifiers=None)` / `drag_by(dx, dy, source_offset=None, button="left", modifiers=None)` | Drag to an element or window / by pixels | every element |
+| `drag(x, y, dx, dy, button="left", modifiers=None)` | Drag from the point `x`, `y` of the element by `dx`, `dy` pixels | every element |
 | `scroll(clicks, x=None, y=None, horizontal=False)` | Turn the mouse wheel | every element |
 | `open_context_menu(mode=None)` | Open and return a context menu | every element |
 | `hover()` | Move the mouse over the element | every element |
@@ -33,6 +34,9 @@ generic actions; a
 | `click_button(name, mode=None)` | Click a toolbar button by name or automation ID, or regex | `ToolBar` |
 | `focus()` | Give the element keyboard focus | every element |
 | `scroll_into_view()` | Scroll a list or grid item into view | every element |
+| `activate()` / `close()` | Bring the window that holds the element to the foreground / ask it to close | every element (windows have their own) |
+| `refresh()` | Look the element up again and return it | every element and window |
+| `width` / `height` / `rect` | The current size and bounds in physical pixels, to compute offsets | every element and window |
 | `highlight(duration_ms=1500)` | Bring the owning window forward, then draw a frame around the element. The outline is still drawn if Windows denies foreground | every element |
 
 "every element" means the typed elements and the plain `Element`. A plain `Element` additionally
@@ -42,7 +46,10 @@ widget methods belong to their typed elements.
 ### Mouse details
 
 Offsets `x` and `y` must be supplied together, in physical pixels from the top-left; otherwise
-the center is used. Invalid or out-of-bounds offsets fail. `modifiers` accepts combinations such
+the center is used. `-1` on an axis is the centre of that axis, wherever an offset is taken
+(`click`, `double_click`, `right_click`, `middle_click`, `scroll`, `drag`, `drag_by`, `drag_to`):
+`click(x=-1, y=-1)` is the centre, `click(x=-1, y=4)` the middle of the top edge. Compute offsets from the
+element's size: `click(x=el.width - 320, y=40)`. Other invalid or out-of-bounds offsets fail. `modifiers` accepts combinations such
 as `"Ctrl+Shift"`. `click` accepts `left`, `right` or `middle`; a position, modifier or non-left
 button forces mouse input even in pattern mode. Double, right and middle clicks always use mouse input.
 Drag offsets are `(x, y)` pairs; drags move in steps across the system drag threshold and release
@@ -65,6 +72,8 @@ activates it. Foreground activation can fail; input is refused if the target los
 releases modifiers even on error. These calls do not activate a window: they require the foreground
 window to belong to the current app. The `app` fixture or a page bound to an `App` registers it;
 without one, or when another app is foreground, they raise an error. Use `secret=True` for sensitive input.
+
+`keyboard.keys(text, secret=False)` sends a [migrated key string](#migrated-key-strings) the same way.
 
 ### Menus and trees
 
@@ -139,7 +148,7 @@ def test_mouse_mode_and_nth(main: MainPage) -> None:
 
 ### Migrated key strings
 
-Use `wintestkit.finders.send_keys(target, "^a[Del]Hello~1[Enter]")` for mixed text and keys. Prefixes `^`, `!`, and `~` select Ctrl, Alt, and Shift; doubled prefixes or `[[` are literal. `[Hold]` and `[Release]` hold and release prefixed modifiers. `to_keys(text)` converts key-only strings to `press()` syntax, or returns `None` for mixed text. Use `secret=True` for sensitive input.
+Use `wintestkit.finders.send_keys(target, "^a[Del]Hello~1[Enter]")` for mixed text and keys. Prefixes `^`, `!`, and `~` select Ctrl, Alt, and Shift; doubled prefixes or `[[` are literal. `[Hold]` and `[Release]` hold and release modifiers, written after the prefix (`^[Hold]a[Release]`) or in front of it (`[Hold]^[Hold]![F8]` holds Ctrl and Alt for F8); held modifiers are released at the end of the string or on failure. The keys of the strings of migrated suites are listed in [migrating suites](migrating-existing-suites.md#keys). `to_keys(text)` converts key-only strings to `press()` syntax, or returns `None` for mixed text. Use `secret=True` for sensitive input.
 
 
 ## Auto-waiting
@@ -229,7 +238,7 @@ once, `expect` keeps checking until the timeout.
 | `to_contain_text(expected)` | its text contains `expected` |
 | `to_have_value(expected)` | its Value pattern value equals `expected` (or matches a regex) |
 | `to_have_count(n)` | an `Elements` collection has `n` members |
-| `to_have_property(name, expected)` | a UIA or managed property matches the expected value or compiled regex |
+| `to_have_property(name, expected, op="==")` | a UIA property, managed key (`clr:`, `wpf:Text`) or [pseudo-property](#property-conditions) meets the condition against `expected` (or matches a compiled regex) |
 | `to_have_rows(expected, columns=None, ordered=True)` | a grid has the expected rows and cells |
 
 ```python
@@ -245,6 +254,59 @@ def test_remember_me_can_be_checked_and_unchecked(main: MainPage) -> None:
 
 A failing assertion reports what was expected and the last value it saw; VS Code shows text
 mismatches as a diff.
+
+### Property conditions
+
+`to_have_property(name, expected, op=...)` compares with a condition: `"=="` (default), `"!="`, `"<"`, `"<="`, `">"`, `">="`,
+`"contains"` and `"not contains"` (the names `equal`, `notEqual`, `less`, `lessOrEqual`, `greater`, `greaterOrEqual`, `contains` and `notContains`
+work too). Order compares numbers numerically, also numeric text (`"10"` is greater than 9), and other strings alphabetically;
+`contains` looks for text in text or a member in a list. Values that cannot be ordered fail with the reason. Besides UIA
+properties and managed keys, `name` may be a pseudo-property:
+
+| Name | Reads |
+|---|---|
+| `exists` | whether the element is found (`False` is a valid answer for a missing element) |
+| `visible_on_screen` | whether it is found and on screen |
+| `enabled` / `checked` | the UIA enabled state / the toggle state (`True`, `False`, `None`) |
+| `text` / `name` / `value` | the element's text (value, document text or name) / the UIA name / the Value pattern value |
+| `items` / `item_list` / `item_count` | the item names of a list, combo box or tab control, as a list / joined one per line / counted |
+| `child_count` | the number of children in the object tree |
+
+```python
+# pseudo-code
+expect(main.orders).to_have_property("item_count", 3, op=">=")
+expect(main.total).to_have_property("clr:DataContext.Total", 100, op="<=")
+expect(main.title).to_have_property("wpf:Text", "Orders", op="contains")
+expect(main.dialog).to_have_property("exists", False)
+```
+
+A failed comparison is a failed step with the property, condition, expected and actual value.
+
+### Soft errors
+
+A failing `expect` raises and ends the test. To see every problem of a test instead, make the assertion *soft*: it is
+recorded (step and log entry) and the test carries on, then fails when it ends with all errors listed.
+
+```python
+# pseudo-code
+from wintestkit import expect, log, soft
+
+def test_orders(main: MainPage) -> None:
+    expect(main.title, soft=True).to_have_text("Orders")
+    with soft.continue_on_error():
+        expect(main.count).to_have_text("3")
+        expect(main.status).to_have_text("Ready")
+    if not main.grid.exists():
+        log.error("The order grid is missing")
+    log.checkpoint("Order list verified")
+```
+
+`expect(..., soft=True)` makes one assertion soft, `soft.continue_on_error()` every `expect` in the block, and the marker
+`@pytest.mark.wtk(soft=True)` (also as `pytestmark`) every `expect` of a test or module. Only assertions are soft: a failed
+click or lookup still raises. `log.error(text, **details)` records an error by hand, `log.checkpoint(text)` a passed check;
+`soft.errors()` lists what was recorded. The plugin fails the test when its body ends (`failed`, with a numbered list of
+every error in the message and each one as an error entry of the report) and again after teardown for errors recorded by
+fixture finalizers. A test that already fails keeps its own failure and gets the list as a note; a skipped test drops it.
 
 For grids, list rows contain every compared column; dict rows compare only their named columns
 (header names or zero-based indices). `columns=` selects and orders columns; without it list rows
@@ -304,6 +366,9 @@ with step("Sign in", account="operator"):
     log.warning("Using a temporary account")
     log.picture(name="Before sign-in")
 ```
+
+`log.error(text)` records an error that fails the test when it ends without stopping it (see [soft errors](#soft-errors)), and
+`log.checkpoint(text)` records a check that passed.
 
 `log.picture()` captures the desktop; pass a bound control or window to capture
 its area. Sensitive or unavailable targets are skipped. Warnings do not fail a test.

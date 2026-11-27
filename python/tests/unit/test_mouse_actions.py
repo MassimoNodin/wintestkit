@@ -209,12 +209,58 @@ def test_default_point_stays_the_centre(uia: Any) -> None:
     assert calls == [("click", (125, 220), {"button": "right", "count": 1})]
 
 
-@pytest.mark.parametrize("offset", [(50, 5), (5, 40), (-1, 5), (5, -1)])
+@pytest.mark.parametrize("offset", [(50, 5), (5, 40), (-2, 5), (5, -2), (-1, 40), (50, -1)])
 def test_offset_outside_the_element_is_rejected(uia: Any, offset: tuple[int, int]) -> None:
     control, calls = uia
     with pytest.raises(ActionError, match="outside"):
         actions.click(control, mode="mouse", offset=offset)
     assert calls == []
+
+
+@pytest.mark.parametrize(
+    ("offset", "point"),
+    [
+        ((-1, -1), (125, 220)),  # the centre
+        ((-1, 4), (125, 204)),  # the middle of the top edge
+        ((6, -1), (106, 220)),  # the middle of the left side
+        ((0, 0), (100, 200)),
+        ((49, 39), (149, 239)),
+    ],
+)
+def test_minus_one_is_the_centre_of_that_axis(
+    uia: Any, offset: tuple[int, int], point: tuple[int, int]
+) -> None:
+    control, calls = uia
+    actions.click(control, mode="mouse", offset=offset)
+    assert calls == [("click", point, {"button": "left", "count": 1})]
+
+
+def test_the_centre_is_inside_a_one_pixel_element(uia: Any) -> None:
+    control, calls = uia
+    control.rect = Rect(10, 20, 1, 1)
+    actions.click(control, mode="mouse", offset=(-1, -1))
+    assert calls[0][1] == (10, 20)
+
+
+def test_minus_one_applies_to_every_mouse_action(uia: Any) -> None:
+    control, calls = uia
+    actions.double_click(control, offset=(-1, -1), modifiers=(SHIFT,))
+    actions.right_click(control, offset=(-1, 10))
+    actions.scroll(control, 5, offset=(-1, -1))
+    actions.drag_by(control, 10, 0, source_offset=(-1, -1), modifiers=(SHIFT,))
+    assert calls == [
+        ("click", (125, 220), {"button": "left", "count": 2, "modifiers": (SHIFT,)}),
+        ("click", (125, 210), {"button": "right", "count": 1}),
+        ("scroll", (125, 220, 5), {"horizontal": False}),
+        ("drag", (125, 220, 135, 220), {"button": "left", "modifiers": (SHIFT,)}),
+    ]
+
+
+def test_drag_to_accepts_minus_one_on_both_ends(uia: Any) -> None:
+    control, calls = uia
+    other = FakeElement("ListItem", rect=Rect(400, 300, 100, 60))
+    actions.drag_to(control, other, source_offset=(-1, 0), target_offset=(-1, -1))
+    assert calls == [("drag", (125, 200, 450, 330), {"button": "left", "modifiers": ()})]
 
 
 def test_offset_needs_both_coordinates() -> None:

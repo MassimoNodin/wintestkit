@@ -11,6 +11,7 @@ if TYPE_CHECKING:
     from wintestkit import errors as errors
     from wintestkit import keyboard as keyboard
     from wintestkit import log as log
+    from wintestkit import soft as soft
     from wintestkit.app import App as App
     from wintestkit.config import WtkConfig as WtkConfig
     from wintestkit.config import load_config as load_config
@@ -154,6 +155,7 @@ __all__ = [
     "keyboard",
     "load_config",
     "log",
+    "soft",
     "step",
 ]
 
@@ -233,7 +235,7 @@ _LAZY: dict[str, tuple[str, str]] = {
 
 
 def __getattr__(name: str) -> Any:
-    if name in ("errors", "keyboard", "log"):
+    if name in ("errors", "keyboard", "log", "soft"):
         return importlib.import_module("wintestkit." + name)
     target = _LAZY.get(name)
     if target is None:

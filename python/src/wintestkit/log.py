@@ -15,6 +15,8 @@ _logger = logging.getLogger("wintestkit")
 def _entry(level: str, text: str, details: dict[str, Any], **extra: Any) -> None:
     if level == "warning":
         _logger.warning("%s", text)
+    elif level == "error":
+        _logger.error("%s", text)
     elif runtime.current_test() is None:
         _logger.info("%s", text)
     if runtime.current_test() is not None:
@@ -38,6 +40,28 @@ def message(text: str, **details: Any) -> None:
 def warning(text: str, **details: Any) -> None:
     """Record a warning without changing the test outcome."""
     _entry("warning", text, details)
+
+
+def error(text: str, **details: Any) -> None:
+    """Record an error: the test fails when it ends, but it carries on until then.
+
+    Every error is listed in the failure message and in the report. Use it where a check inside
+    your own code found a problem that should not stop the rest of the test.
+    """
+    from wintestkit import soft
+
+    soft.record(text, source="log.error", details=details)
+
+
+def checkpoint(text: str, **details: Any) -> None:
+    """Record a check that passed, as a step of the test (the counterpart of ``error``)."""
+    with runtime.step("checkpoint", text, "", details):
+        pass
+
+
+def report_error(text: str, source: str, details: dict[str, Any]) -> None:
+    """Write the log entry of a soft error (``soft.record`` calls this)."""
+    _entry("error", text, {**details, "source": source})
 
 
 def picture(target: Any = None, name: str = "picture") -> None:

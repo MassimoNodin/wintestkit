@@ -779,6 +779,38 @@ class _BoundBase:
             raise
         return self
 
+    def refresh(self, *, timeout: float | None = None) -> Self:
+        """Look the element up again and return it.
+
+        Bound elements and windows never cache what they found: every action and check resolves
+        them anew, so this is rarely needed. It is what a migrated ``Refresh()`` becomes: it waits
+        until the element exists, which also makes the next read start from fresh state.
+        """
+        __tracebackhide__ = True
+        self.resolve(timeout)
+        return self
+
+    @property
+    def rect(self) -> Rect:
+        """The current bounds in physical screen pixels."""
+        __tracebackhide__ = True
+        bounds = self.resolve().rect
+        if bounds is None:
+            raise ActionError(f"{self._description()} has no on-screen rectangle")
+        return bounds
+
+    @property
+    def width(self) -> int:
+        """The current width in physical pixels, for offsets such as ``click(x=el.width - 20)``."""
+        __tracebackhide__ = True
+        return round(self.rect.width)
+
+    @property
+    def height(self) -> int:
+        """The current height in physical pixels."""
+        __tracebackhide__ = True
+        return round(self.rect.height)
+
     def highlight(self, duration_ms: int = 1500, *, timeout: float | None = None) -> None:
         """Bring the owning window forward, then flash an outline (blocks for the duration)."""
         __tracebackhide__ = True
@@ -922,15 +954,6 @@ class BoundWindow(_BoundBase):
             return actions.window_is_active(self.resolve_once())
         except (LocatorError, UIAError):
             return False
-
-    @property
-    def rect(self) -> Rect:
-        """The window's current bounds in physical screen pixels."""
-        __tracebackhide__ = True
-        bounds = self.resolve().rect
-        if bounds is None:
-            raise ActionError(f"{self._description()} has no on-screen rectangle")
-        return bounds
 
     def move(self, x: int, y: int, *, timeout: float | None = None) -> None:
         """Move the window's top-left corner to physical screen coordinates ``(x, y)``."""
@@ -1433,6 +1456,27 @@ class BoundControl(_BoundBase):
                 ),
             )
 
+    def drag(
+        self,
+        x: int,
+        y: int,
+        dx: int,
+        dy: int,
+        *,
+        timeout: float | None = None,
+        button: actions.MouseButton = "left",
+        modifiers: str | None = None,
+    ) -> None:
+        """Drag from the point ``x``, ``y`` of the element by ``dx``, ``dy`` physical pixels.
+
+        ``x`` and ``y`` count from the top-left corner and ``-1`` is the centre of that axis, as
+        for ``click``. ``modifiers`` (``"Shift"``, ``"Ctrl+Shift"``) are held for the whole drag.
+        """
+        __tracebackhide__ = True
+        self.drag_by(
+            dx, dy, timeout=timeout, source_offset=(x, y), button=button, modifiers=modifiers
+        )
+
     def scroll(
         self,
         clicks: int,
@@ -1458,6 +1502,25 @@ class BoundControl(_BoundBase):
         __tracebackhide__ = True
         with self.step("focus"):
             self.perform(timeout, actions.focus)
+
+    def activate(self, *, timeout: float | None = None) -> None:
+        """Bring the window that holds the element to the foreground (``ActionError`` if refused).
+
+        For a window node found with ``app.WPFObject("HwndSource: ...")`` this is the window itself.
+        """
+        __tracebackhide__ = True
+        with self.step("activate"):
+            actions.activate_window(self.resolve(timeout))
+
+    def close(self, *, timeout: float | None = None) -> None:
+        """Ask the window that holds the element to close (the window of a window node).
+
+        This posts the close request and returns; it does not wait for the window to go away.
+        Use ``wait_for("detached")`` or ``expect(...).not_.to_exist()`` for that.
+        """
+        __tracebackhide__ = True
+        with self.step("close"):
+            actions.close_window_of(self.resolve(timeout))
 
     def scroll_into_view(self, *, timeout: float | None = None) -> None:
         __tracebackhide__ = True
@@ -1695,9 +1758,11 @@ class _Clickable(BoundControl):
     ) -> None:
         """Click the element.
 
-        ``x`` and ``y`` (together) click that many physical pixels from the top-left corner;
-        a position, a non-left ``button`` or ``modifiers`` (``"Ctrl"``, ``"Ctrl+Shift"``) always
-        use the mouse.
+        ``x`` and ``y`` (together) click that many physical pixels from the top-left corner,
+        where ``-1`` on an axis is the centre of that axis (``x=-1, y=-1`` is the centre, ``x=-1,
+        y=4`` the middle of the top edge); compute offsets from ``width`` and ``height``. A
+        position, a non-left ``button`` or ``modifiers`` (``"Ctrl"``, ``"Ctrl+Shift"``) always use
+        the mouse.
         """
         __tracebackhide__ = True
         offset, keys, args = _mouse_options(x, y, modifiers, button)

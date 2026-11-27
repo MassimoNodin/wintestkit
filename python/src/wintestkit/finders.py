@@ -7,21 +7,34 @@ from __future__ import annotations
 
 import re
 import warnings
-from collections.abc import Sequence
-from dataclasses import dataclass, replace
+from collections.abc import Callable, Sequence
+from dataclasses import replace
 from typing import Any, cast
 
 from wintestkit import labels, log, model, runtime
 from wintestkit.app import App
 from wintestkit.backends.element import TargetElement, WpfElement, uia_of
-from wintestkit.engine import actions, objects
+from wintestkit.engine import actions, conditions, objects, pseudo, waits
 from wintestkit.engine.diagnose import diagnostics_are_quiet
 from wintestkit.engine.locator import Locator, is_window_node
 from wintestkit.engine.managed import diagnostic_query_budget
 from wintestkit.engine.properties import AsText
 from wintestkit.engine.resolve import Scope, resolve_all, resolve_window
-from wintestkit.engine.wpf_resolve import route
-from wintestkit.errors import AmbiguousMatchWarning, ElementNotFoundError, WtkError
+from wintestkit.engine.wpf_resolve import managed_capable, route
+from wintestkit.errors import (
+    AmbiguousElementError,
+    AmbiguousMatchWarning,
+    ElementNotFoundError,
+    LocatorError,
+    UIAError,
+    WaitTimeoutError,
+    WtkError,
+)
+from wintestkit.expect import Expectation
+from wintestkit.keystrings import KeySegment as KeySegment  # the key grammar lives in keystrings
+from wintestkit.keystrings import parse_keys as parse_keys
+from wintestkit.keystrings import play_keys
+from wintestkit.keystrings import to_keys as to_keys
 from wintestkit.model import (
     BoundControl,
     BoundElement,
@@ -30,7 +43,8 @@ from wintestkit.model import (
     Elements,
     PageObject,
 )
-from wintestkit.uia import input as keyboard
+from wintestkit.uia import input as keyboard  # noqa: F401  # pyright: ignore[reportUnusedImport]
+from wintestkit.uia.constants import PROPERTY_IDS
 
 # property (lowercase) -> locator field or qualified where key.
 #
@@ -729,152 +743,6 @@ def child_count_of(bound: BoundControl) -> int:
     return len(_children_of_parent(bound))
 
 
-@dataclass(frozen=True)
-class KeySegment:
-    """A literal, key combination, or modifier hold/release command."""
-
-    kind: str
-    text: str = ""
-    combo: keyboard.KeyCombo | None = None
-    modifiers: tuple[int, ...] = ()
-
-
-_PREFIXES = {"^": 0x11, "!": 0x12, "~": 0x10}
-_KEY_NAMES = {
-    "bs": "Backspace",
-    "del": "Delete",
-    "ins": "Insert",
-    "esc": "Escape",
-    "prtsc": "PrintScreen",
-    "win": "Win",
-    "apps": "Apps",
-    "pause": "Pause",
-    "capslock": "CapsLock",
-    "numlock": "NumLock",
-    "scrolllock": "ScrollLock",
-}
-_EXTRA_KEYS = {
-    "PrintScreen": 0x2C,
-    "Pause": 0x13,
-    "CapsLock": 0x14,
-    "NumLock": 0x90,
-    "ScrollLock": 0x91,
-    "Win": 0x5B,
-}
-_ALLOWED_NAMES = {
-    "enter",
-    "tab",
-    "bs",
-    "del",
-    "ins",
-    "esc",
-    "home",
-    "end",
-    "pageup",
-    "pagedown",
-    "up",
-    "down",
-    "left",
-    "right",
-    "win",
-    "apps",
-    "pause",
-    "capslock",
-    "numlock",
-    "scrolllock",
-    "prtsc",
-    "space",
-}
-
-
-def parse_keys(text: str) -> list[KeySegment]:
-    """Parse migration key strings into text, key, and modifier segments."""
-    segments: list[KeySegment] = []
-    pending: list[int] = []
-    held: list[int] = []
-    position = 0
-    while position < len(text):
-        char = text[position]
-        if char in _PREFIXES and (position + 1 >= len(text) or text[position + 1] != char):
-            modifier = _PREFIXES[char]
-            if modifier not in pending and modifier not in held:
-                pending.append(modifier)
-            position += 1
-            continue
-        if char in "^!~[" and position + 1 < len(text) and text[position + 1] == char:
-            value = char
-            position += 2
-            named = False
-        elif char == "[":
-            end = text.find("]", position + 1)
-            if end < 0:
-                raise ValueError(f"unclosed bracket at position {position}")
-            value = text[position + 1 : end]
-            position = end + 1
-            named = True
-        else:
-            value = char
-            position += 1
-            named = False
-        if named and value.casefold() == "hold":
-            if not pending:
-                raise ValueError("[Hold] requires modifier prefixes")
-            held.extend(pending)
-            segments.append(KeySegment("hold", modifiers=tuple(pending)))
-            pending.clear()
-            continue
-        if named and value.casefold() == "release":
-            if pending:
-                raise ValueError("modifier prefix before [Release]")
-            segments.append(KeySegment("release", modifiers=tuple(held)))
-            held.clear()
-            continue
-        if named:
-            name = value.casefold()
-            if name not in _ALLOWED_NAMES and not (
-                name.startswith("f") and name[1:].isdigit() and 1 <= int(name[1:]) <= 24
-            ):
-                raise ValueError(f"unknown bracketed key [{value}]")
-            canonical = _KEY_NAMES.get(name, value.capitalize())
-            code = _EXTRA_KEYS.get(canonical) or cast(Any, keyboard)._key_code(canonical)
-            assert code is not None
-            segments.append(KeySegment("key", canonical, keyboard.KeyCombo(tuple(pending), code)))
-        elif pending or held:
-            code = cast(Any, keyboard)._key_code(value)
-            if code is None:
-                raise ValueError(f"modifier prefix cannot be applied to {value!r}")
-            segments.append(
-                KeySegment("key", value.upper(), keyboard.KeyCombo(tuple(pending), code))
-            )
-        elif segments and segments[-1].kind == "text":
-            segments[-1] = replace(segments[-1], text=segments[-1].text + value)
-        else:
-            segments.append(KeySegment("text", value))
-        pending.clear()
-    if pending:
-        raise ValueError("dangling modifier prefix at end of key string")
-    return segments
-
-
-def to_keys(text: str) -> str | None:
-    """Convert key-only input to press syntax, or return None for literal text."""
-    segments = parse_keys(text)
-    if any(segment.kind == "text" for segment in segments):
-        return None
-    names = {0x11: "Ctrl", 0x12: "Alt", 0x10: "Shift"}
-    held: list[int] = []
-    result: list[str] = []
-    for segment in segments:
-        if segment.kind == "hold":
-            held.extend(segment.modifiers)
-        elif segment.kind == "release":
-            held.clear()
-        elif segment.combo is not None:
-            modifiers = [*held, *segment.combo.modifiers]
-            result.append("+".join([*(names[modifier] for modifier in modifiers), segment.text]))
-    return " ".join(result)
-
-
 def send_keys(
     target: model.BoundControl | model.BoundWindow,
     text: str,
@@ -905,43 +773,210 @@ def send_keys(
                 element = uia_of(element)
                 actions.focus(element)
                 cast(Any, actions)._keyboard_target(element)
-            held: list[int] = []
-            try:
-                for segment in segments:
-                    if segment.kind == "text":
-                        keyboard.type_text(segment.text)
-                    elif segment.kind == "hold":
-                        for modifier in segment.modifiers:
-                            cast(Any, keyboard)._send(
-                                [cast(Any, keyboard)._key_event(modifier, up=False)]
-                            )
-                            held.append(modifier)
-                    elif segment.kind == "release":
-                        while held:
-                            cast(Any, keyboard)._send(
-                                [cast(Any, keyboard)._key_event(held.pop(), up=True)]
-                            )
-                    else:
-                        combo = segment.combo
-                        assert combo is not None
-                        events = [
-                            cast(Any, keyboard)._key_event(modifier, up=False)
-                            for modifier in combo.modifiers
-                        ]
-                        events += [
-                            cast(Any, keyboard)._key_event(combo.key, up=False),
-                            cast(Any, keyboard)._key_event(combo.key, up=True),
-                        ]
-                        events += [
-                            cast(Any, keyboard)._key_event(modifier, up=True)
-                            for modifier in reversed(combo.modifiers)
-                        ]
-                        cast(Any, keyboard)._send(events)
-            finally:
-                while held:
-                    cast(Any, keyboard)._send([cast(Any, keyboard)._key_event(held.pop(), up=True)])
+            play_keys(segments)
 
         if isinstance(target, model.BoundControl):
             target.perform(timeout, send)
         else:
             send(target.resolve(timeout))
+
+
+# -- property checks and waits of migrated suites -------------------------------------------------
+#
+# Existing suites check a property by an old name and a condition name (``Exists``, ``wItemCount``,
+# ``lessOrEqual``...) and wait for one with ``WaitProperty``. These helpers translate the names and
+# run the check as an ``expect`` assertion, so a failure is reported like one.
+
+# The old names whose property does not depend on the kind of element.
+_PROPERTY_NAMES = {
+    "exists": "exists",
+    "visibleonscreen": "visible_on_screen",
+    "wtext": "text",
+    "witemlist": "item_list",
+    "witemcount": "item_count",
+    "childcount": "child_count",
+    "wndcaption": "name",
+    "wpfcontrolname": "AutomationId",
+    "winformscontrolname": "AutomationId",
+    "controlid": "AutomationId",
+    "wndclass": "ClassName",
+    "classname": "ClassName",
+    "frameworkid": "FrameworkId",
+    "localizedcontroltype": "LocalizedControlType",
+    "clrclassname": "type:Name",
+    "clrfullclassname": "type:FullName",
+    "wpfcontrolordinalno": "wpf:Ordinal",
+}
+
+# The old names that mean a managed property on a WPF element and a UIA reading on any other.
+_PROPERTY_BY_KIND = {
+    "wpfcontroltext": ("wpf:Text", "name"),
+    "enabled": ("clr:IsEnabled", "enabled"),
+    "isenabled": ("clr:IsEnabled", "enabled"),
+    "visible": ("clr:IsVisible", "visible_on_screen"),
+    "isvisible": ("clr:IsVisible", "visible_on_screen"),
+    "ischecked": ("clr:IsChecked", "checked"),
+    "value": ("clr:Value", "value"),
+}
+
+
+def map_property(name: str, *, wpf: bool = True) -> str:
+    """The property a migrated name stands for: what ``expect(...).to_have_property`` reads.
+
+    ``WPFControlText`` is ``wpf:Text`` on a WPF element (``wpf=True``) and the UIA name on any
+    other; ``Exists`` is ``exists``; ``VisibleOnScreen`` ``visible_on_screen``; ``wText`` ``text``;
+    ``wItemList`` ``item_list`` (the items, one per line); ``wItemCount`` ``item_count``;
+    ``ChildCount`` ``child_count``; ``WndCaption`` ``name``; ``Enabled``/``IsEnabled``,
+    ``Visible``/``IsVisible``, ``IsChecked`` and ``Value`` their managed property on WPF
+    (``clr:IsEnabled``...) and a UIA reading elsewhere; the locator names (``WPFControlName``,
+    ``ClassName``, ``ClrClassName``...) their readable form. A trailing ``.OleValue`` is dropped,
+    a name with a ``:`` is taken as it is, and every other name, with or without a path
+    (``DataContext.Name``), is the managed property ``clr:<name>``.
+    """
+    if not isinstance(name, str) or not name.strip():  # pyright: ignore[reportUnnecessaryIsInstance]
+        raise ValueError(f"invalid property name: {name!r}")
+    text = name.strip()
+    if text.casefold() == "olevalue":
+        raise ValueError("OleValue must follow a property path")
+    if text.casefold().endswith(".olevalue"):
+        text = text[: -len(".OleValue")]
+    key = text.casefold()
+    if key in _PROPERTY_NAMES:
+        return _PROPERTY_NAMES[key]
+    if key in _PROPERTY_BY_KIND:
+        managed, other = _PROPERTY_BY_KIND[key]
+        return managed if wpf else other
+    if ":" in text or text in pseudo.PSEUDO:
+        return text
+    return f"clr:{text}"
+
+
+def _legacy_reader(prop: str) -> Callable[[Any, TargetElement | None], Any]:
+    """Read ``prop`` from whatever element is found, mapping its name for that kind of element."""
+    map_property(prop)  # validate the name once
+
+    def read(target: Any, element: TargetElement | None) -> Any:
+        __tracebackhide__ = True
+        wpf = element is None or isinstance(element, WpfElement) or managed_capable(element)
+        key = map_property(prop, wpf=wpf)
+        if not wpf and key.startswith("clr:") and key[4:] in PROPERTY_IDS:
+            key = key[4:]  # a UIA property of a window that is not WPF, by its own name
+        return pseudo.read_any(target, element, key)
+
+    return read
+
+
+def _allows_missing(prop: str) -> bool:
+    return map_property(prop) in pseudo.ALLOW_MISSING
+
+
+def check_property(
+    target: BoundControl | BoundWindow,
+    prop: str,
+    condition: str,
+    value: Any,
+    *,
+    timeout: float | None = None,
+    soft: bool = False,
+) -> bool:
+    """A migrated property check: ``prop`` of ``target`` must meet ``condition`` against ``value``.
+
+    ``prop`` is an old property name (see :func:`map_property`) and ``condition`` an old condition
+    name or a symbol: ``equal``, ``notEqual``, ``contains``, ``lessOrEqual``, ``greaterOrEqual``
+    (also ``less``, ``greater``, ``notContains``, ``==``, ``!=``, ``<=``...). Numbers and booleans
+    may be given as text: ``"15"`` equals 15 and ``"True"`` equals True, and order compares
+    numerically.
+
+    The check is an ``expect`` assertion: it waits up to ``timeout`` seconds (default: the usual
+    timeout; ``0`` looks once), and a failure is a failed step in the report with the expected
+    value, the actual one and the condition. It raises ``AssertionError``, unless ``soft`` (or
+    ``soft.continue_on_error()``) records it so that the test carries on and fails at its end;
+    the result is then ``False``. ``True`` means the check passed.
+    """
+    __tracebackhide__ = True
+    expectation = Expectation(target, timeout, soft=soft)
+    return cast(Any, expectation)._property(
+        prop,
+        value,
+        condition,
+        reader=_legacy_reader(prop),
+        lenient=True,
+        allow_missing=_allows_missing(prop),
+    )
+
+
+def wait_property(
+    target: BoundControl | BoundWindow,
+    prop: str,
+    value: Any,
+    timeout_ms: float | None = None,
+    *,
+    condition: str = "equal",
+) -> bool:
+    """Wait until ``prop`` of ``target`` equals ``value`` (or meets ``condition``): ``True`` when
+    it did, ``False`` when ``timeout_ms`` passed first; it never raises for a timeout.
+
+    ``prop`` is an old property name (see :func:`map_property`): ``wait_property(el, "Exists",
+    False, 5000)`` waits for the element to disappear and ``wait_property(el, "wItemCount", 3,
+    600_000)`` for a list to hold three items. A missing element is just not there yet, except for
+    ``Exists`` and ``VisibleOnScreen``, which have an answer for it. ``None`` waits for the usual
+    timeout.
+    """
+    __tracebackhide__ = True
+    op = conditions.parse_condition(condition)
+    read = _legacy_reader(prop)
+    allow_missing = _allows_missing(prop)
+    budget = cast(Any, target)._timeout(None) if timeout_ms is None else max(0.0, timeout_ms / 1000)
+    secret = isinstance(target, BoundControl) and model.is_password_locator(target.locator)
+    classifier = actions.PasswordClassifier()
+    args = {"name": prop, "expected": value, "condition": op, "timeout_ms": round(budget * 1000)}
+    latest: list[Any] = []
+    with runtime.step(
+        "wait_property", target.qualname, target.locator.describe(), args, secret=secret
+    ) as record:
+
+        def poll() -> bool | None:
+            __tracebackhide__ = True
+            nonlocal secret
+            element: TargetElement | None = None
+            try:
+                element = target.resolve_once()
+            except AmbiguousElementError:
+                if map_property(prop) != "exists":
+                    raise
+                latest[:] = [True]  # several matches still exist
+                return True if conditions.compare(True, value, op, lenient=True) else None
+            except LocatorError:
+                pass
+            except UIAError as exc:
+                if not exc.element_gone:
+                    raise
+            if element is None and not allow_missing:
+                return None
+            try:
+                if element is not None:
+                    record.sensitive = True
+                    secret = secret or classifier.is_password(element)
+                    record.set_arguments(args, secret=secret)
+                actual = read(target, element)
+            except UIAError as exc:
+                if not exc.element_gone:
+                    raise
+                return None
+            latest[:] = [actual]
+            try:
+                return True if conditions.compare(actual, value, op, lenient=True) else None
+            except conditions.ComparisonError:
+                return None
+
+        try:
+            waits.wait_until(
+                poll, budget, description=f"{target.qualname} property {prop}", retry_on=()
+            )
+            matched = True
+        except WaitTimeoutError:
+            matched = False
+        record.args["matched"] = matched
+        if not matched and latest and not secret:
+            record.args["last"] = runtime.redact_details({"last": latest[0]})["last"]
+    return matched

@@ -49,7 +49,7 @@ if TYPE_CHECKING:
 
 log = logging.getLogger("wintestkit.pytest")
 
-_MARKER_KEYS = {"launch", "timeout", "actionability"}
+_MARKER_KEYS = {"launch", "timeout", "actionability", "soft"}
 _MAX_MESSAGE = 2000
 _ENV_VARS = (
     "WTK_APP_PATH",
@@ -212,8 +212,9 @@ _EXISTING_APP = pytest.StashKey["App"]()
 def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line(
         "markers",
-        "wtk(launch=None, timeout=None, actionability=None): override the WinTestKit launch "
-        "mode, default timeout or action waiting for one test",
+        "wtk(launch=None, timeout=None, actionability=None, soft=False): override the WinTestKit "
+        "launch mode, default timeout or action waiting for one test; soft=True makes every "
+        "expect() failure soft (the test continues and fails at its end)",
     )
     if not _is_wintestkit_run(config):
         return  # not a WinTestKit project: stay inert
@@ -226,6 +227,71 @@ def pytest_unconfigure(config: pytest.Config) -> None:
     controller = config.stash.get(CONTROLLER_KEY, None)
     if controller is not None:
         controller.close()
+
+
+# -- soft errors: the test carries on after them and fails when it ends ---------------------------
+#
+# These hooks cost nothing when no error was recorded, so they run for every project.
+
+
+@pytest.hookimpl(tryfirst=True)
+def pytest_runtest_setup(item: pytest.Item) -> None:
+    from wintestkit import soft
+
+    soft.clear()
+
+
+def _soft_marker(item: pytest.Item) -> bool:
+    marker = item.get_closest_marker("wtk")
+    return marker is not None and bool(marker.kwargs.get("soft"))
+
+
+def _finish_soft(failure: BaseException | None) -> None:
+    """End of a phase: raise the soft errors, or list them on the failure the phase already has.
+
+    A phase that was skipped or interrupted drops them: they belong to a test that did not finish.
+    """
+    __tracebackhide__ = True
+    from wintestkit import soft
+
+    found = soft.drain()
+    if not found:
+        return
+    if failure is None:
+        raise soft.SoftErrorsFailure(found)
+    if isinstance(failure, Exception | pytest.fail.Exception):
+        failure.add_note(soft.failure_message(found))
+
+
+@pytest.hookimpl(wrapper=True)
+def pytest_runtest_call(item: pytest.Item) -> Generator[None, Any, Any]:
+    """Fail the test, with every soft error listed, when its body is done."""
+    __tracebackhide__ = True
+    from wintestkit import soft
+
+    try:
+        with soft.continue_on_error(_soft_marker(item)):
+            result = yield
+    except BaseException as exc:
+        _finish_soft(exc)
+        raise
+    _finish_soft(None)
+    return result
+
+
+@pytest.hookimpl(wrapper=True)
+def pytest_runtest_teardown(
+    item: pytest.Item, nextitem: pytest.Item | None
+) -> Generator[None, Any, Any]:
+    """Also fail for errors recorded after the body, by fixture finalizers."""
+    __tracebackhide__ = True
+    try:
+        result = yield
+    except BaseException as exc:
+        _finish_soft(exc)
+        raise
+    _finish_soft(None)
+    return result
 
 
 # -- the controller: per-run state and hook implementations ---------------------------------------

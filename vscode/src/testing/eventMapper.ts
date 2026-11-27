@@ -17,6 +17,9 @@ export type RunAction =
 export function terminalText(text: string): string {
   return text.replace(/\r?\n/g, "\r\n");
 }
+function logPrefix(level: "info" | "warning" | "error"): string {
+  return level === "warning" ? "Warning: " : level === "error" ? "Error: " : "";
+}
 export class EventMapper {
   private readonly pending = new Set<string>();
   private readonly known = new Set<string>();
@@ -73,7 +76,7 @@ export class EventMapper {
         });
         break;
       case "log":
-        actions.push({ kind: "output", id: event.id, text: terminalText((event.entry.level === "warning" ? "Warning: " : "") + event.entry.text + "\n") });
+        actions.push({ kind: "output", id: event.id, text: terminalText(logPrefix(event.entry.level) + event.entry.text + "\n") });
         break;
       case "test_output":
         actions.push({

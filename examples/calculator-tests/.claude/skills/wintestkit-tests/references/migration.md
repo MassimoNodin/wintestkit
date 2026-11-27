@@ -33,11 +33,16 @@ scripts or test routines. Output: pages, components, flows, tests.
 | mapped parent chain | the component root; never a `within=` chain |
 | script routine / reusable test routine | an intent method on the page or component, or a flow |
 | test or test routine | a pytest function using intent + `expect` |
-| checkpoint | `expect(...)` |
+| checkpoint | `expect(...)`; with an old property and condition name `finders.check_property(el, prop, condition, value)` |
+| log an error and continue ("on error: continue") | `log.error(text)`; `soft=True` on `expect` / `check_property`; `soft.continue_on_error()`; `@pytest.mark.wtk(soft=True)` |
+| `Click(-1, -1, Shift)`, `Click(width - 320, 40)` | `el.click(x=-1, y=-1, modifiers="Shift")`, `el.click(x=el.width - 320, y=40)`; `-1` is the centre of an axis |
+| `Drag(x, y, dx, dy, Shift)`, `MouseWheel(n)` | `el.drag(x, y, dx, dy, modifiers="Shift")`, `el.scroll(n)` |
+| `Keys(text)`, `Sys.Desktop.Keys(text)` | `finders.send_keys(el, text)`, `keyboard.keys(text)` (`[Hold]` before or after a prefix works) |
+| `Activate()`, `Close()`, `Refresh()` | `el.activate()`, `el.close()`, `el.refresh()` |
 | Reading object properties (e.g. `obj.DataContext.Name`) | `el.get("clr:DataContext.Name")`; indexers work: `clr:Rows[3].Value` (`Items.Item[0]` means `Items[0]`) |
 | `<path>.ClrClassName` / `.ClrFullClassName` | `type:Name@DataContext` / `type:FullName@DataContext`: the type of the value at the path |
 | Numbers/booleans passed as strings | `AsText("15")` compares a managed value's invariant text; `find_child` applies it to plain strings on property paths |
-| `WaitProperty` | `el.wait_for_property(name, expected)` |
+| `WaitProperty(prop, value, timeout_ms)` | `finders.wait_property(el, prop, value, timeout_ms)`: returns `True`/`False`, never raises (`Exists` `False` waits for disappearance); `el.wait_for_property(name, expected)` raises on timeout |
 | `Delay`, `Sleep`, `WaitChild` | use `expect` or `wait_for()` for the required state; actions wait for existence by default |
 | data-driven loop / table | `@pytest.mark.parametrize` |
 | `OnUnexpectedWindow` and other event handlers | fixtures; for known dialogs, a page plus a flow step |

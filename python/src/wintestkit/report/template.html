@@ -179,7 +179,7 @@ mark{background:#ffe58a;color:#000;border-radius:2px}
 .log{border:1px solid var(--line);border-radius:8px;font-family:var(--mono);font-size:12px;padding:6px 0;overflow:auto}
 .log div{display:grid;grid-template-columns:32px 1fr;padding:1px 10px 1px 0;white-space:pre-wrap;word-break:break-word}
 .log div::before{content:attr(data-n);color:var(--faint);text-align:right;padding-right:10px}
-tr.warning{color:#a46700;font-weight:600} tr.warning img,tbody img{max-width:180px;max-height:120px;display:block}
+tr.warning{color:#a46700;font-weight:600} tr.error{color:#b3261e;font-weight:600} tr.warning img,tbody img{max-width:180px;max-height:120px;display:block}
 .log .ERROR{color:var(--red)}.log .WARNING{font-weight:700}.log .DEBUG{color:var(--faint)}
 .noout{color:var(--muted);padding:16px 0}
 
@@ -420,7 +420,7 @@ function renderHeader(){
   $('#runinfo').textContent=`Run ${longDate(RUN.started)} \u00b7 ${fmt(RUN.duration)}`+(audits.length?` \u00b7 ${audits.length} writes: ${counts('performed')} performed, ${counts('denied')} denied, ${counts('failed')} failed`:'');
   const box=$('#counts');box.replaceChildren(
     ...['passed','failed','skipped'].map(k=>el('div',{class:'count'},svg(ICON[k]),el('div',{},el('small',{text:k[0].toUpperCase()+k.slice(1)}),el('b',{text:c[k]})))),
-    el('div',{class:'count'},el('div',{},el('small',{text:'Warnings'}),el('b',{text:TESTS.reduce((n,t)=>n+t.entries.filter(e=>e.level==='warning').length,0)}))),
+    el('div',{class:'count'},el('div',{},el('small',{text:'Warnings'}),el('b',{text:TESTS.reduce((n,t)=>n+t.entries.filter(e=>e.level==='warning').length,0)}))),el('div',{class:'count'},el('div',{},el('small',{text:'Logged errors'}),el('b',{text:TESTS.reduce((n,t)=>n+t.entries.filter(e=>e.level==='error').length,0)}))),
     el('div',{class:'count total'},el('div',{},el('small',{text:'Total'}),el('b',{text:TESTS.length}))))}
 
 /* ---------- sidebar ---------- */
@@ -433,7 +433,7 @@ function renderNav(){
     nav.append(el('button',{class:'file','aria-expanded':String(!!open),title:f.file,onclick:()=>{st.collapsed.has(f.file)?st.collapsed.delete(f.file):st.collapsed.add(f.file);renderNav()}},
       svg(CHEV),svg(PY),el('span',{text:f.file.split('/').pop()}),!open&&fails?el('span',{class:'fails',text:fails+' failed'}):null));
     if(open)tests.forEach(t=>nav.append(el('button',{class:'test'+(t.id===st.sel?' sel':''),'aria-current':t.id===st.sel?'true':null,onclick:()=>select(t.id)},
-      el('span',{class:'dot '+t.status,title:t.status}),el('span',{class:'nm',text:t.name}),t.entries.some(e=>e.level==='warning')?el('span',{class:'fails',text:t.entries.filter(e=>e.level==='warning').length+' warnings'}):null,el('span',{class:'dur',text:t.status==='skipped'?'–':fmt(t.dur)}))))});
+      el('span',{class:'dot '+t.status,title:t.status}),el('span',{class:'nm',text:t.name}),t.entries.some(e=>e.level==='warning')?el('span',{class:'fails',text:t.entries.filter(e=>e.level==='warning').length+' warnings'}):null,t.entries.some(e=>e.level==='error')?el('span',{class:'fails',text:t.entries.filter(e=>e.level==='error').length+' errors'}):null,el('span',{class:'dur',text:t.status==='skipped'?'–':fmt(t.dur)}))))});
   if(!any)nav.append(el('div',{class:'empty-nav',text:'No tests match.'}))}
 
 
@@ -467,7 +467,7 @@ function renderMain(){
  const timeline=[...test.steps.map((step,index)=>({step,index,time:step.start||0})),...test.entries.map(entry=>({entry,time:entry.timestamp||0}))].sort((a,b)=>a.time-b.time);
  timeline.forEach(({step,index,entry})=>{
   if(entry){const img=entry.picture?image(entry.picture,entry.text):null;const link=img?el('a',{href:img.getAttribute('src'),target:'_blank',rel:'noopener'},img):null;
-   body.append(el('tr',{class:entry.level==='warning'?'warning':''},el('td',{}),el('td',{}),el('td',{style:`padding-left:${12+depth(entry)*20}px`},el('span',{text:(entry.level==='warning'?'Warning: ':'')+entry.text}),entry.skipped?el('span',{class:'stepsub',text:'Picture skipped'}):null,Object.keys(entry.details||{}).length?el('span',{class:'stepsub',text:text(entry.details)}):null,link),el('td',{})));return}
+   body.append(el('tr',{class:entry.level==='warning'?'warning':entry.level==='error'?'error':''},el('td',{}),el('td',{}),el('td',{style:`padding-left:${12+depth(entry)*20}px`},el('span',{text:(entry.level==='warning'?'Warning: ':entry.level==='error'?'Error: ':'')+entry.text}),entry.skipped?el('span',{class:'stepsub',text:'Picture skipped'}):null,Object.keys(entry.details||{}).length?el('span',{class:'stepsub',text:text(entry.details)}):null,link),el('td',{})));return}
   body.append(el('tr',{class:step.status+(step.shot?' click':''),tabindex:step.shot?'0':null,onclick:step.shot?()=>openReplay(index):null},el('td',{class:'n',text:index+1}),el('td',{class:'st'},svg(ICON[step.status])),el('td',{style:`padding-left:${12+depth(step)*20}px`},step.name,step.loc?el('span',{class:'stepsub',text:step.loc}):null,...(step.audits||[]).map(audit=>el('span',{class:'stepsub',text:[audit.operation,audit.typeFullName,audit.memberKey,audit.outcome,audit.authorization||'',audit.reason||'',audit.timestampUtc].join(' | ')}))),el('td',{class:'d',text:step.status==='not_run'?'Not run':fmt(step.dur)})));
  });
  main.append(el('div',{class:'card'},el('h3',{text:'Test Steps'}),timeline.length?el('table',{},el('thead',{},el('tr',{},...['#','Status','Step','Duration'].map(label=>el('th',{text:label})))),body):el('div',{class:'passnote',text:'No steps were recorded.'})));

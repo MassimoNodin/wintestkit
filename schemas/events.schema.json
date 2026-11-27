@@ -9,7 +9,8 @@
         "level": {
           "enum": [
             "info",
-            "warning"
+            "warning",
+            "error"
           ]
         },
         "text": {

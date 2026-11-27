@@ -20,6 +20,7 @@ describe("test event mapping", () => {
       { kind: "output", id: "test", text: "Warning: take care\r\n" },
     ]);
     expect(mapper.consume({ event: "log", time: 2, id: "test", entry: { ...entry, level: "info" } })[0]).toMatchObject({ text: "take care\r\n" });
+    expect(mapper.consume({ event: "log", time: 3, id: "test", entry: { ...entry, level: "error" } })[0]).toMatchObject({ text: "Error: take care\r\n" });
   });
   it("replays Python events with parameterized children and millisecond durations", () => {
     const mapper = new EventMapper(["tests/test_login.py::test_sign_in"]);

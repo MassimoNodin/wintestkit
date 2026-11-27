@@ -11,8 +11,9 @@ from dataclasses import dataclass
 from typing import Any
 
 from wintestkit import runtime
+from wintestkit import soft as _soft
 from wintestkit.backends.element import TargetElement
-from wintestkit.engine import actions, table, waits
+from wintestkit.engine import actions, conditions, pseudo, table, waits
 from wintestkit.engine.resolve import wait_link
 from wintestkit.errors import (
     AmbiguousElementError,
@@ -95,19 +96,23 @@ class Expectation:
         negate: bool = False,
         *,
         secret: bool = False,
+        soft: bool = False,
     ) -> None:
         __tracebackhide__ = True
         self._target = target
         self._timeout = timeout
         self._negate = negate
         self._secret = secret
+        self._soft = soft
         self._locator_error: LocatorError | None = None
 
     @property
     def not_(self) -> Expectation:
         """The same assertions, but waiting for the opposite to hold."""
         __tracebackhide__ = True
-        return Expectation(self._target, self._timeout, not self._negate, secret=self._secret)
+        return Expectation(
+            self._target, self._timeout, not self._negate, secret=self._secret, soft=self._soft
+        )
 
     # -- target access --------------------------------------------------------------------------
 
@@ -143,6 +148,28 @@ class Expectation:
         evaluate: Callable[[TargetElement | None], _Outcome],
         *,
         wanted: str | None = None,
+        extra: dict[str, Any] | None = None,
+    ) -> bool:
+        """Run the assertion; ``True`` when it holds. A failure raises, unless the expectation is
+        soft (or inside ``soft.continue_on_error()``): it is then recorded, ``False`` returned."""
+        __tracebackhide__ = True
+        try:
+            self._assert_hard(method, expected, evaluate, wanted=wanted, extra=extra)
+        except AssertionError as failure:
+            if not (self._soft or _soft.is_continuing()):
+                raise
+            _soft.record(str(failure), source="expect")
+            return False
+        return True
+
+    def _assert_hard(
+        self,
+        method: str,
+        expected: Any,
+        evaluate: Callable[[TargetElement | None], _Outcome],
+        *,
+        wanted: str | None = None,
+        extra: dict[str, Any] | None = None,
     ) -> None:
         __tracebackhide__ = True
         target = self._target
@@ -155,7 +182,7 @@ class Expectation:
         secret = self._secret or (
             isinstance(target, BoundControl) and is_password_locator(target.locator)
         )
-        args = {"expected": expected} if has_argument else {}
+        args = {**(extra or {}), "expected": expected} if has_argument else {}
         latest: list[_Outcome] = []
         classifier = actions.PasswordClassifier()
 
@@ -386,28 +413,73 @@ class Expectation:
             "to_be_selected", _NO_ARGUMENT, lambda e: _needs(e, check), wanted="to be selected"
         )
 
-    def to_have_property(self, name: str, expected: Any) -> None:
+    def to_have_property(self, name: str, expected: Any, *, op: str = "==") -> None:
+        """Compare a property with ``expected``; ``op`` is the condition (default: equal).
+
+        ``name`` is a UIA property (``"AutomationId"``), a managed key (``"clr:DataContext.Count"``,
+        ``"wpf:Text"``) or a pseudo-property: ``exists``, ``visible_on_screen``, ``enabled``,
+        ``checked``, ``text``, ``name``, ``value``, ``items``, ``item_list``, ``item_count`` and
+        ``child_count``. ``op`` is ``"=="``, ``"!="``, ``"<"``, ``"<="``, ``">"``, ``">="``,
+        ``"contains"`` or ``"not contains"`` (or ``equal``, ``notEqual``, ``lessOrEqual``,
+        ``greaterOrEqual``, ``contains``). Order compares numbers, also numeric text, numerically.
+        """
         __tracebackhide__ = True
+        self._property(name, expected, op, reader=None)
 
-        def check(element: TargetElement) -> _Outcome:
+    def _property(
+        self,
+        name: str,
+        expected: Any,
+        op: str,
+        *,
+        reader: Callable[[Any, TargetElement | None], Any] | None,
+        lenient: bool = False,
+        allow_missing: bool | None = None,
+    ) -> bool:
+        """The core of ``to_have_property``; ``reader`` replaces the property read (the migration
+        helpers map old names per element) and ``allow_missing`` lets the read run without an
+        element, as ``exists`` does."""
+        __tracebackhide__ = True
+        condition = conditions.parse_condition(op)
+
+        def default_read(target: Any, element: TargetElement | None) -> Any:
             __tracebackhide__ = True
-            from wintestkit.engine.property_read import property_matches, read_property
+            return pseudo.read_any(target, element, name)
 
-            actual = read_property(element, name)
-            return _Outcome(property_matches(actual, expected), _describe(actual))
+        read = reader or default_read
+        if allow_missing is None:
+            allow_missing = name in pseudo.ALLOW_MISSING
 
-        self._assert(
+        def evaluate(element: TargetElement | None) -> _Outcome:
+            __tracebackhide__ = True
+            if element is None and not allow_missing:
+                return _Outcome(False, _NOT_FOUND, missing=True)
+            actual = read(self._target, element)
+            try:
+                ok = conditions.compare(actual, expected, condition, lenient=lenient)
+            except conditions.ComparisonError as exc:
+                return _Outcome(False, f"{_describe(actual)} ({exc})")
+            return _Outcome(ok, _describe(actual))
+
+        return self._assert(
             "to_have_property",
             expected,
-            lambda e: _needs(e, check),
-            wanted=f"{name} = {_describe(expected)}",
+            evaluate,
+            wanted=f"{name} {conditions.symbol(condition)} {_describe(expected)}",
+            extra={"name": name, "condition": condition},
         )
 
 
-def expect(target: Target, *, timeout: float | None = None, secret: bool = False) -> Expectation:
-    """Start an assertion; secret=True hides arguments and failure details for sensitive data."""
+def expect(
+    target: Target, *, timeout: float | None = None, secret: bool = False, soft: bool = False
+) -> Expectation:
+    """Start an assertion; secret=True hides arguments and failure details for sensitive data.
+
+    ``soft=True`` records a failure (it fails the test when it ends) and lets the test carry on
+    instead of raising; see ``wintestkit.soft``.
+    """
     __tracebackhide__ = True
-    return Expectation(target, timeout, secret=secret)
+    return Expectation(target, timeout, secret=secret, soft=soft)
 
 
 class _CallableModule(types.ModuleType):
@@ -419,10 +491,15 @@ class _CallableModule(types.ModuleType):
     """
 
     def __call__(
-        self, target: Target, *, timeout: float | None = None, secret: bool = False
+        self,
+        target: Target,
+        *,
+        timeout: float | None = None,
+        secret: bool = False,
+        soft: bool = False,
     ) -> Expectation:
         __tracebackhide__ = True
-        return expect(target, timeout=timeout, secret=secret)
+        return expect(target, timeout=timeout, secret=secret, soft=soft)
 
 
 sys.modules[__name__].__class__ = _CallableModule

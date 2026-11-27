@@ -355,6 +355,16 @@ def activate_window(el: TargetElement) -> None:
         raise ActionError("Windows refused to bring the window to the foreground")
 
 
+def close_window_of(el: TargetElement) -> None:
+    """Ask the window that holds ``el`` to close, like its close button (``WM_CLOSE``)."""
+    __tracebackhide__ = True
+    hwnd, process_id = _window_target(el)
+    if not hwnd or not win32.IsWindow(hwnd) or win32.window_pid(hwnd) != process_id:
+        raise ActionError("The window is no longer available to close")
+    if not win32.PostMessageW(hwnd, win32.WM_CLOSE, 0, 0):
+        raise ActionError("The window did not accept the close request")
+
+
 def window_is_active(el: TargetElement) -> bool:
     """Whether the window, or a window it owns, is the foreground window."""
     __tracebackhide__ = True
@@ -446,14 +456,23 @@ def parse_modifiers(text: str | None) -> tuple[int, ...]:
         raise ActionError(str(exc)) from exc
 
 
+#: An offset of ``-1`` on an axis stands for the centre of the element on that axis.
+CENTRE = -1
+
+
 def _offset_point(
     el_text: str, left: float, top: float, width: float, height: float, offset: Offset
 ) -> tuple[int, int]:
     __tracebackhide__ = True
     ox, oy = offset
+    shown = (ox, oy)
+    # The centre is floored, so a one-pixel element still has a point inside it.
+    ox = float(int(width // 2)) if ox == CENTRE else ox
+    oy = float(int(height // 2)) if oy == CENTRE else oy
     if not (0 <= ox < width and 0 <= oy < height):
         raise ActionError(
-            f"Offset ({ox}, {oy}) lies outside {el_text} ({round(width)}x{round(height)} px)"
+            f"Offset {shown} lies outside {el_text} ({round(width)}x{round(height)} px); "
+            f"-1 stands for the centre of an axis"
         )
     return round(left + ox), round(top + oy)
 

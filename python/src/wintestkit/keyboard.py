@@ -45,6 +45,26 @@ def press(keys: str, *, secret: bool = False) -> None:
         input.press(keys)
 
 
+def keys(text: str, *, secret: bool = False) -> None:
+    """Send a migrated key string (``"^s"``, ``"[Hold]![F5]"``) to the foreground window.
+
+    The grammar is the one of ``finders.send_keys`` (see ``wintestkit.keystrings``): ``^`` Ctrl,
+    ``!`` Alt, ``~`` Shift, ``[Enter]``-style names, ``[Hold]`` and ``[Release]``. This is the
+    global form: the keys go to whatever has focus in the foreground window, which must belong
+    to the application under test.
+    """
+    __tracebackhide__ = True
+    from wintestkit.keystrings import parse_keys, play_keys
+
+    segments = parse_keys(text)
+    args = {"keys": text}
+    with runtime.step("keys", _TARGET, _LOCATOR, args, secret=True) as record:
+        record.sensitive = True
+        record.set_arguments(args, secret=secret)
+        _check_foreground()
+        play_keys(segments)
+
+
 def type(text: str, *, secret: bool = False) -> None:
     """Type text into the foreground window."""
     __tracebackhide__ = True
