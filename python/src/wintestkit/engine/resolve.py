@@ -68,6 +68,7 @@ from wintestkit.errors import (
     InspectorDeadlineError,
     InspectorError,
     InspectorLimitError,
+    InspectorUnavailableError,
     LocatorError,
     NoUiaPeerError,
     UIAError,
@@ -670,12 +671,20 @@ def _app_walk(scope: Scope, locator: Locator, final_all: bool) -> list[TargetEle
     found: list[TargetElement] = []
     forms: set[bool] = set()
     unreadable: list[Any] = []
+    readiness_errors: list[InspectorUnavailableError] = []
     node_ordinals: dict[str, int] = {}
     type_ordinals: dict[str, int] = {}
     for window in scope.app.top_level_windows():
         wpf_window = window.framework_id == "WPF" and runtime.get_config().backend == "auto"
-        forms.add(wpf_window)
         link = locator if wpf_window else locator.for_uia()
+        if wpf_window and (locator.uia_form is not None or locator.tree is None):
+            uia_link = locator.for_uia()
+            uia_constraints = resolve_where(
+                uia_link.where, uia_link.describe_link(), uia_link.taken()
+            )
+            if all(isinstance(c, Condition) for c in uia_constraints):
+                link = uia_link
+        forms.add(wpf_window and link is locator)
         constraints = resolve_where(link.where, link.describe_link(), link.taken())
         managed = [c for c in constraints if not isinstance(c, Condition)]
         uia = [c for c in constraints if isinstance(c, Condition)]
@@ -688,7 +697,15 @@ def _app_walk(scope: Scope, locator: Locator, final_all: bool) -> list[TargetEle
         )
         if managed and not (wpf_window or winforms):
             continue
-        root = route(window, force=True) if winforms else route(window)
+        try:
+            root = (
+                (route(window, force=True) if winforms else route(window))
+                if managed or link.tree == "objects"
+                else window
+            )
+        except InspectorUnavailableError as error:
+            readiness_errors.append(error)
+            continue
         objects = link.tree == "objects"
         node_name = ""
         ordinals = _NodeOrdinals(0, 0)
@@ -771,6 +788,11 @@ def _app_walk(scope: Scope, locator: Locator, final_all: bool) -> list[TargetEle
                 for other in found
             ):
                 found.append(candidate)
+    readiness = ""
+    if readiness_errors:
+        readiness = "; inspector unavailable: " + "; ".join(
+            str(error) for error in readiness_errors
+        )
     if final_all:
         return [element.as_live() for element in found]
     # The index of the form the windows were searched with; WPF windows win in a mixed application.
@@ -782,7 +804,13 @@ def _app_walk(scope: Scope, locator: Locator, final_all: bool) -> list[TargetEle
             ]
         raise ElementNotFoundError(
             with_unreadable(
-                diagnose_index_out_of_range(found, locator, "application", locator),
+                replace(
+                    diagnose_index_out_of_range(found, locator, "application", locator),
+                    message=diagnose_index_out_of_range(
+                        found, locator, "application", locator
+                    ).message
+                    + readiness,
+                ),
                 merge_unreadable(unreadable),
             )
         )
@@ -793,7 +821,7 @@ def _app_walk(scope: Scope, locator: Locator, final_all: bool) -> list[TargetEle
             with_unreadable(
                 Diagnostic(
                     kind="not_found",
-                    message=f"No element matches {locator.describe()} in application",
+                    message=f"No element matches {locator.describe()} in application{readiness}",
                     locator=locator.describe(),
                     searched_in="application",
                     match_count=0,

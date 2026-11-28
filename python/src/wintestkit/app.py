@@ -146,6 +146,9 @@ class App:
         self._pinned_pid = pinned_pid
         self._by_name = by_name
         self._baseline = baseline
+        #: True when launch adopted a new window in a process that was already running.
+        self.new_windows_only = False
+        self._baseline_windows: frozenset[int] = frozenset()
         self._known_pids: set[int] = set()
         self._inspector_identities: set[Any] = set()
         self._startup_complete = False
@@ -177,7 +180,9 @@ class App:
         ``progress`` is called with ``"process"`` once the process has started and with
         ``"window"`` once it is waiting for the main window. Launch the same exe again with other
         ``args`` for a second instance; pass ``owned_only=True`` to follow only the process that
-        was started, not every process of that exe name.
+        was started, not every process of that exe name. If a launcher opens a new window in an
+        existing process, ``new_windows_only`` is true and searches and closing use only windows
+        opened after launch. A tab added to an existing window cannot be distinguished.
 
         ``elevated=True`` starts it with administrator rights. A runner that is already elevated
         starts it as usual (the child inherits the rights and ``env`` applies). Otherwise the
@@ -201,6 +206,11 @@ class App:
             raise AppError(f"Application executable not found: {exe}")
         process_name = process or exe.name
         baseline = frozenset(win32.pids_by_name(process_name))
+        baseline_windows: frozenset[int] = (
+            frozenset(win32.top_level_windows(set(baseline), visible_only=False))
+            if baseline
+            else frozenset()
+        )
         through_shell = elevated and not win32.current_process_is_elevated()
         environment: dict[str, str] = {**os.environ, **(env or {})}
         if webview_debug_port is not None:
@@ -231,6 +241,7 @@ class App:
         app = cls(
             process_name, launched=True, popen=popen, baseline=baseline, by_name=not owned_only
         )
+        app._baseline_windows = baseline_windows
         app.elevated = elevated
         app.webview_debug_port = webview_debug_port
         _register(app)
@@ -483,6 +494,8 @@ class App:
         self.ensure_drivable()
         windows: list[UIAElement] = []
         for hwnd in win32.top_level_windows(pids):
+            if self.new_windows_only and hwnd in self._baseline_windows:
+                continue
             try:
                 windows.append(element.from_handle(hwnd))
             except UIAError:
@@ -512,6 +525,8 @@ class App:
                 raise AppNotRunningError(f"{self.process_name} is not running")
             self.ensure_drivable()
             for hwnd in win32.top_level_windows(set(self.pids)):
+                if self.new_windows_only and hwnd in self._baseline_windows:
+                    continue
                 if win32.window_owner(hwnd) != 0:
                     continue
                 try:
@@ -540,6 +555,8 @@ class App:
         __tracebackhide__ = True
         deadline = time.monotonic() + timeout
         while self.is_running():
+            if self.new_windows_only and not self.top_level_windows():
+                return True
             if time.monotonic() >= deadline:
                 return False
             time.sleep(0.05)
@@ -578,7 +595,7 @@ class App:
                 win32.PostMessageW(window.native_window_handle, win32.WM_CLOSE, 0, 0)
             time.sleep(0.05)
         if not self.wait_for_exit(timeout):
-            if self.launched:
+            if self.launched and not self.new_windows_only:
                 log.warning("%s did not exit within %.1fs; killing it", self.process_name, timeout)
                 self.kill()
             else:
@@ -657,7 +674,7 @@ class App:
             outcome: CloseOutcome = "exited"
             if not self.wait_for_exit(exit_timeout):
                 outcome = "running"
-                if kill:
+                if kill and not self.new_windows_only:
                     self.kill()
                     outcome = "killed" if not self.is_running() else "running"
             record.args["outcome"] = outcome
@@ -695,6 +712,8 @@ class App:
         attached to by name (``finders.process("helper.exe").kill()``).
         """
         __tracebackhide__ = True
+        if self.new_windows_only:
+            raise ActionError("Cannot kill a shared process adopted for new windows only")
         pids = self.pids
         for pid in pids:
             subprocess.run(
@@ -740,19 +759,32 @@ class App:
         if progress is not None:
             progress("window")
         while True:
+            if self._popen.poll() is not None and not self.new_windows_only:
+                new_pids = (
+                    set(win32.pids_by_name(self.process_name)) - self._baseline - self._peer_pids()
+                )
+                if new_pids:
+                    self._by_name = True
+            if not self.new_windows_only and self._baseline:
+                current_pids = set(self.pids)
+                if not current_pids or not win32.top_level_windows(current_pids):
+                    for hwnd in win32.top_level_windows(set(self._baseline)):
+                        if hwnd not in self._baseline_windows:
+                            self._pinned_pid = win32.window_pid(hwnd)
+                            self._by_name = False
+                            self.new_windows_only = True
+                            break
             try:
                 window = self.main_window()
                 self._attach_window(window, deadline)
                 return
             except AppNotRunningError:
-                code = self._popen.poll()
-                raise AppError(
-                    f"{self.process_name} exited before showing a window (exit code {code})"
-                ) from None
+                pass
             except WindowNotFoundError:
                 pass
             if time.monotonic() >= deadline:
-                self.kill()
+                if not self.new_windows_only:
+                    self.kill()
                 raise AppError(
                     f"{self.process_name} did not show a window within {startup_timeout:g}s"
                 )

@@ -46,6 +46,7 @@ class Launcher:
         self.commands: list[list[str]] = []
         self.next_pid = 100
         monkeypatch.setattr(win32, "list_processes", lambda: list(self.table))
+        monkeypatch.setattr(win32, "top_level_windows", lambda pids=None, visible_only=True: [])
         monkeypatch.setattr("wintestkit.app.subprocess.Popen", self.popen)
         monkeypatch.setattr(App, "_wait_for_startup", lambda *args, **kwargs: None)
         monkeypatch.setattr(win32, "current_process_is_elevated", lambda: False)
@@ -297,3 +298,87 @@ def test_label_chains_and_finders_work_on_each_of_two_wpf_apps(
     assert fake_b.resolve(found_b) is run
     with pytest.raises(ElementNotFoundError):
         finders.find_child(fake_a.app, props, ["Button", "Run"], None).resolve_once()
+
+
+@pytest.mark.parametrize("shared", [False, True])
+def test_launcher_adopts_new_process_or_shared_window(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, shared: bool
+) -> None:
+    from wintestkit.uia import element, patterns
+
+    exe = tmp_path / "Demo.exe"
+    exe.write_bytes(b"")
+    table = [(5, "Demo.exe")]
+    handles = {5: [10]}
+    closed: list[int] = []
+    monkeypatch.setattr(win32, "list_processes", lambda: list(table))
+    monkeypatch.setattr(
+        win32,
+        "top_level_windows",
+        lambda pids=None, visible_only=True: [
+            h for pid, hs in handles.items() if pids is None or pid in pids for h in hs
+        ],
+    )
+    monkeypatch.setattr(
+        win32, "window_pid", lambda hwnd: next(pid for pid, hs in handles.items() if hwnd in hs)
+    )
+    monkeypatch.setattr(win32, "window_owner", lambda hwnd: 0)
+    monkeypatch.setattr(App, "ensure_drivable", lambda self: None)
+    monkeypatch.setattr(App, "_wait_for_input_idle", lambda *args: None)
+    monkeypatch.setattr(App, "_attach_window", lambda *args: None)
+    monkeypatch.setattr(App, "detach_inspector", lambda self: None)
+    monkeypatch.setattr(
+        element,
+        "from_handle",
+        lambda hwnd: SimpleNamespace(native_window_handle=hwnd, control_type="Window"),
+    )
+    monkeypatch.setattr(
+        patterns,
+        "window_close",
+        lambda window: (
+            closed.append(window.native_window_handle),
+            handles[5].remove(window.native_window_handle),
+        ),
+    )
+
+    def launch(*args, **kwargs):
+        if shared:
+            handles[5].append(11)
+        else:
+            table.append((6, "Demo.exe"))
+            handles[6] = [11]
+        return SimpleNamespace(pid=7, poll=lambda: 0)
+
+    monkeypatch.setattr("wintestkit.app.subprocess.Popen", launch)
+    app = Apps().launch(exe, startup_timeout=1)
+    assert app.pids == ([5] if shared else [6])
+    assert app.new_windows_only is shared
+    assert app.main_window().native_window_handle == 11
+    if shared:
+        assert [w.native_window_handle for w in app.top_level_windows()] == [11]
+        app.close(timeout=0)
+        assert closed == [11] and handles[5] == [10]
+        with pytest.raises(ActionError, match="shared process"):
+            app.kill()
+
+
+def test_shared_graceful_close_never_kills_process(monkeypatch: pytest.MonkeyPatch) -> None:
+    from wintestkit.uia import element
+
+    app = App("Demo.exe", launched=True, pinned_pid=5, by_name=False)
+    app.new_windows_only = True
+    app._baseline_windows = frozenset({10})
+    posted: list[int] = []
+    monkeypatch.setattr(win32, "list_processes", lambda: [(5, "Demo.exe")])
+    monkeypatch.setattr(win32, "top_level_windows", lambda pids=None: [10, 11])
+    monkeypatch.setattr(win32, "window_owner", lambda hwnd: 0)
+    monkeypatch.setattr(App, "ensure_drivable", lambda self: None)
+    monkeypatch.setattr(
+        element,
+        "from_handle",
+        lambda hwnd: SimpleNamespace(native_window_handle=hwnd, control_type="Window"),
+    )
+    monkeypatch.setattr(win32, "PostMessageW", lambda hwnd, *args: posted.append(hwnd))
+    monkeypatch.setattr(app, "kill", lambda: pytest.fail("shared process killed"))
+    assert app.close_gracefully(exit_timeout=0, kill=True) == "running"
+    assert posted == [11]

@@ -418,3 +418,12 @@ summary and the paths of the report and JUnit file.
 When an indexed WPF locator requires Python-side filtering beyond the first 200 raw matches,
 WinTestKit checks at most 50 more indexed candidates. The inspector protocol has no offset
 paging for `findAll`; if this bound is reached, narrow the locator to reduce the candidate set.
+
+### Launchers and shared processes
+
+A launcher may exit after starting another process, or open a new window in an already running
+process. `App.launch` and `apps.launch` follow a newly started process with the requested exe
+name (use `process=` when it differs from the launcher). If a new window appears in an existing
+process instead, `app.new_windows_only` is `True`: window searches and closing are limited to
+windows opened after launch, and the shared process is never killed by close. A tab added to an
+existing window cannot be distinguished from content that was already there.

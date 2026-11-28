@@ -445,3 +445,68 @@ def test_app_level_results_are_parents_that_resolve_in_their_own_window(monkeypa
     with pytest.raises(ElementNotFoundError, match="Nope"):
         find_child(gone, "WndClass", "Edit", 1).resolve_once()
     runtime.reset()
+
+
+def test_app_search_skips_unready_inspector(monkeypatch):
+    from fakes import FakeElement
+
+    from wintestkit import runtime
+    from wintestkit.app import App
+    from wintestkit.engine import query
+    from wintestkit.engine import resolve as resolver
+    from wintestkit.errors import ElementNotFoundError, InspectorUnavailableError
+    from wintestkit.finders import find_child
+
+    monkeypatch.setenv("WTK_BACKEND", "auto")
+    runtime.reset()
+    monkeypatch.setattr(query, "make_condition", lambda **props: props)
+    main = FakeElement("Window", "Main", class_name="Main")
+    dialog = FakeElement("Window", "Open", class_name="#32770")
+    dialog.framework_id = "Win32"
+    app = object.__new__(App)
+    monkeypatch.setattr(app, "top_level_windows", lambda: [main, dialog])
+    calls = []
+
+    def unready(*args, **kwargs):
+        calls.append(1)
+        raise InspectorUnavailableError("Inspector readiness deadline expired", code="timeout")
+
+    monkeypatch.setattr(resolver, "route", unready)
+    assert (
+        find_child(app, ["WndClass", "WndCaption"], ["#32770", "Open"], 1).resolve_once() is dialog
+    )
+    assert not calls
+    with pytest.raises(ElementNotFoundError, match="Inspector readiness deadline expired"):
+        find_child(app, "clr:Missing", "value", 1).resolve_once()
+    assert calls
+    runtime.reset()
+
+
+def test_app_wait_reenumerates_late_popup(monkeypatch):
+    from fakes import FakeElement
+
+    from wintestkit import runtime
+    from wintestkit.app import App
+    from wintestkit.engine import query
+    from wintestkit.finders import find_child
+
+    monkeypatch.setenv("WTK_BACKEND", "uia")
+    runtime.reset()
+    monkeypatch.setattr(query, "make_condition", lambda **props: props)
+    main = FakeElement("Window", "Main")
+    item = FakeElement("MenuItem", "Copy", class_name="MenuItem")
+    popup = FakeElement("Menu", "Menu", children=[item])
+    calls = []
+    app = object.__new__(App)
+
+    def windows():
+        calls.append(1)
+        return [main] if len(calls) == 1 else [main, popup]
+
+    monkeypatch.setattr(app, "top_level_windows", windows)
+    assert (
+        find_child(app, ["WndClass", "WndCaption"], ["MenuItem", "Copy"], 2).resolve(timeout=1)
+        is item
+    )
+    assert len(calls) >= 2
+    runtime.reset()

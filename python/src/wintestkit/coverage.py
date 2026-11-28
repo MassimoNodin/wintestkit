@@ -129,15 +129,13 @@ class _Placeholder:
 class _SnapshotApp:
     """Wraps an application so its processes and windows are listed once per batch.
 
-    Every resolution otherwise re-enumerates the application's processes and windows (and wraps
-    each window in a UIA element), which dominates the cost of resolving hundreds of definitions.
-    Everything else is delegated to the wrapped application.
+    Process enumeration is shared across resolutions. Window enumeration remains live so a popup
+    that appears during a wait can be found. Everything else is delegated to the wrapped app.
     """
 
     def __init__(self, app: Any) -> None:
         self._app = app
         self._pids: list[int] | None = None
-        self._windows: list[Any] | None = None
         self._main: Any = None
 
     def __getattr__(self, name: str) -> Any:
@@ -153,9 +151,7 @@ class _SnapshotApp:
         return bool(self.pids)
 
     def top_level_windows(self) -> list[Any]:
-        if self._windows is None:
-            self._windows = list(self._app.top_level_windows())
-        return list(self._windows)
+        return list(self._app.top_level_windows())
 
     def main_window(self, timeout: float = 0.0) -> Any:
         if self._main is None:
