@@ -5,6 +5,8 @@ using System.Windows;
 using System.Windows.Automation.Peers;
 using System.Windows.Automation.Provider;
 using System.Windows.Input;
+using System.Windows.Controls;
+using System.Windows.Media;
 using System.Windows.Threading;
 using WinTestKit.Inspector.Agent.Inspection;
 using WinTestKit.Inspector.Protocol;
@@ -37,11 +39,32 @@ namespace WinTestKit.Inspector.Agent.Actions
             finally { timed.Dispose(); }
         }
 
+        private static bool ScrollGridContent(DependencyObject element)
+        {
+            DataGridCell? cell = null;
+            DataGridRow? row = null;
+            for (DependencyObject? node = element; node != null; node = VisualTreeHelper.GetParent(node))
+            {
+                if (node is DataGridCell foundCell) cell = foundCell;
+                if (node is DataGridRow foundRow) { row = foundRow; break; }
+            }
+            if (row == null || !(ItemsControl.ItemsControlFromItemContainer(row) is DataGrid grid)) return false;
+            if (cell?.Column != null) grid.ScrollIntoView(row.Item, cell.Column);
+            else grid.ScrollIntoView(row.Item);
+            return true;
+        }
+
         private static string Perform(object target, string method, CancellationToken ct, object? parameters)
         {
             ct.ThrowIfCancellationRequested();
             if (!(target is UIElement element) || !element.IsEnabled) throw Unsupported();
             AutomationPeer? peer = PeerIdentity.GetPeer(element);
+            if (method == PipeMethods.ActBringIntoView && element is FrameworkElement bringElement)
+            {
+                bringElement.BringIntoView();
+                return ActionOutcome.Performed;
+            }
+            if (method == PipeMethods.ActScrollIntoView && ScrollGridContent(element)) return ActionOutcome.Performed;
             if (peer == null) throw Unsupported();
             if (method == PipeMethods.ActFocus)
             {

@@ -169,24 +169,38 @@ def ensure_visible(el: TargetElement) -> None:
         try:
             if not el.as_live().is_offscreen:
                 return
-            _wpf_act(
-                el, "scroll_into_view" if "ScrollItem" in _wpf_patterns(el) else "bring_into_view"
-            )
-            if el.as_live().is_offscreen:
-                raise ActionError(f"{_short(el)} is off-screen and cannot be scrolled into view")
+            try:
+                peer = el.as_uia()
+                _scroll_realized_item(peer, use_agent=False)
+                if _settled_visible(peer):
+                    return
+            except (InspectorError, UIAError, ActionError):
+                if "ScrollItem" in _wpf_patterns(el):
+                    _wpf_act(el, "scroll_into_view")
+                    if not el.as_live().is_offscreen:
+                        return
+            _wpf_act(el, "bring_into_view")
+            for attempt in range(_SETTLE_ATTEMPTS):
+                if not el.as_live().is_offscreen:
+                    return
+                if attempt + 1 < _SETTLE_ATTEMPTS:
+                    time.sleep(0.05)
+            _wpf_act(el, "scroll_into_view")
+            for attempt in range(_SETTLE_ATTEMPTS):
+                if not el.as_live().is_offscreen:
+                    return
+                if attempt + 1 < _SETTLE_ATTEMPTS:
+                    time.sleep(0.05)
+            raise ActionError(f"{_short(el)} is off-screen and cannot be scrolled into view")
         except InspectorError as exc:
             _translate_wpf_error(exc, "checking visibility")
             raise
-        return
     el = uia_of(el)
     if not el.is_offscreen:
         return
     if patterns.has_pattern(el, "VirtualizedItem"):
         patterns.realize(el)
-    if patterns.has_pattern(el, "ScrollItem"):
-        patterns.scroll_into_view(el)
-    if el.is_offscreen:
-        _scroll_realized_item(el)
+    _scroll_realized_item(el)
     if el.is_offscreen:
         raise ActionError(f"{_short(el)} is off-screen and cannot be scrolled into view")
 
@@ -205,7 +219,10 @@ def scrolls_through_agent(el: TargetElement) -> bool:
     the ScrollItem pattern: the agent scrolls the WPF object.
     """
     __tracebackhide__ = True
-    return wpf_capable(el) and getattr(el, "control_type", "") in _SCROLLABLE_ITEMS
+    return wpf_capable(el) and (
+        getattr(el, "control_type", "") in _SCROLLABLE_ITEMS
+        or getattr(el, "class_name", "") in ("DataGridCell", "DataGridRow")
+    )
 
 
 def _settled_visible(el: UIAElement) -> bool:
@@ -219,7 +236,7 @@ def _settled_visible(el: UIAElement) -> bool:
     return False
 
 
-def _scroll_realized_item(el: UIAElement) -> None:
+def _scroll_realized_item(el: UIAElement, *, use_agent: bool = True) -> None:
     """Scroll an off-screen element that is realized (a grid row or cell, a list item).
 
     First through UI Automation: the element's own ScrollItem pattern, then its row's. When the
@@ -236,18 +253,21 @@ def _scroll_realized_item(el: UIAElement) -> None:
         if _settled_visible(el):
             return
         node = node.parent()
-    if not wpf_capable(el):
+    if not use_agent or not wpf_capable(el):
         return
     try:
         managed = to_managed(el)
-        _wpf_act(
-            managed,
-            "scroll_into_view" if "ScrollItem" in _wpf_patterns(managed) else "bring_into_view",
-        )
     except (InspectorError, ActionError, UIAError) as exc:
-        log.debug("managed scroll into view failed for %s: %s", _short(el), exc)
+        log.debug("managed mapping failed for %s: %s", _short(el), exc)
         return
-    _settled_visible(el)
+    for verb in ("bring_into_view", "scroll_into_view"):
+        try:
+            _wpf_act(managed, verb)
+        except (InspectorError, ActionError, UIAError) as exc:
+            log.debug("managed %s failed for %s: %s", verb, _short(el), exc)
+            continue
+        if _settled_visible(el):
+            return
 
 
 def _top_level_hwnd(el: TargetElement) -> int:
@@ -1832,9 +1852,76 @@ def grid_headers(el: TargetElement) -> list[str]:
     """The column header names of a grid (empty when it exposes none)."""
     __tracebackhide__ = True
     try:
-        return [header.name for header in patterns.column_headers(el)]
+        names = [header.name for header in patterns.column_headers(el)]
+        count, columns = patterns.grid_size(el)
+        if len(names) >= columns and columns:
+            names = names[:columns]
+            if count:
+                available = grid_visible_columns(el)
+                if len(available) < columns:
+                    return [names[index] for index in available]
+        return names
     except (ActionError, UIAError):
         return []
+
+
+def grid_visible_columns(el: TargetElement) -> list[int]:
+    """Return GridPattern indexes for columns with cells, in visible order."""
+    __tracebackhide__ = True
+    count, columns = patterns.grid_size(el)
+    if not count:
+        return list(range(columns))
+    return [c for c in range(columns) if patterns.grid_item(el, 0, c) is not None]
+
+
+def grid_row_count(el: TargetElement) -> int:
+    """Prefer the managed data count on disagreement: it excludes the new-item placeholder.
+
+    GridPattern is authoritative when the agent is unavailable or agrees; a negative
+    GridPattern count is invalid and falls back to the managed count or row enumeration.
+    """
+    __tracebackhide__ = True
+    try:
+        count, _ = patterns.grid_size(el)
+    except (ActionError, UIAError):
+        count = -1
+    if wpf_capable(el):
+        try:
+            managed = el if isinstance(el, WpfElement) else to_managed(uia_of(el))
+            actual = int(str(_wpf_read(managed, "data_row_count")))
+            if actual >= 0:
+                return actual if count != actual else count
+        except (InspectorError, UIAError, ActionError, ValueError, TypeError):
+            pass
+    if count >= 0 and getattr(el, "framework_id", "") == "WPF":
+        return count
+    return len(grid_data_rows(el))
+
+
+def grid_header_index(el: TargetElement, name: str) -> int | None:
+    """Resolve a visible header to its underlying GridPattern column index."""
+    __tracebackhide__ = True
+    headers = grid_headers(el)
+    if not name or name not in headers:
+        return None
+    count, columns = patterns.grid_size(el)
+    index = headers.index(name)
+    try:
+        raw = [header.name for header in patterns.column_headers(el)]
+        if len(raw) >= columns and name in raw[:columns]:
+            candidate = raw.index(name)
+            if not count or candidate in grid_visible_columns(el):
+                return candidate
+    except (ActionError, UIAError):
+        pass
+    if count:
+        grid = uia_of(el)
+        available = grid_visible_columns(grid)
+        if len(headers) == len(available):
+            return available[index]
+        if index not in available:
+            return None
+    return index if index < columns else None
 
 
 def _is_grid(el: TargetElement) -> bool:
@@ -1854,6 +1941,7 @@ class GridRow:
         element: UIAElement,
         grid: UIAElement,
         first: UIAElement,
+        first_column: int,
         columns: int,
         hidden: set[int],
         headers: list[str],
@@ -1862,7 +1950,8 @@ class GridRow:
         self.raw_index = raw_index
         self.element = element
         self._grid = grid
-        self._cells: list[UIAElement | None] = [first, *([None] * (columns - 1))]
+        self._cells: list[UIAElement | None] = [None] * columns
+        self._cells[first_column] = first
         self._texts: list[str] | None = None
         self.hidden = hidden
         self.headers = headers
@@ -1878,6 +1967,8 @@ class GridRow:
         found = self._cells[column]
         if found is None:
             found = self._cells[column] = patterns.grid_item(self._grid, self.raw_index, column)
+        if found is None:
+            raise ActionError(f"Column {column} has no available cell")
         return found
 
     @property
@@ -1901,6 +1992,9 @@ class GridRow:
             if column >= len(self.headers) or not self.headers[column]:
                 cell.get_property("IsPassword")
             value = get_text(cell).strip()
+        except ActionError:
+            self.hidden.add(column)
+            return ""
         except UIAError as exc:
             if not exc.element_gone:
                 raise
@@ -1965,7 +2059,16 @@ def grid_data_rows(el: TargetElement, limit: int | None = None) -> list[GridRow]
     for index in range(count):
         for attempt in range(2):
             try:
-                first = patterns.grid_item(grid, index, 0)
+                first_column = next(
+                    (
+                        c
+                        for c in range(columns)
+                        if (first := patterns.grid_item(grid, index, c)) is not None
+                    ),
+                    None,
+                )
+                if first_column is None or first is None:
+                    break
                 row = first.parent()
                 if row is None or row.control_type in ("Group", "Header", "HeaderItem"):
                     break
@@ -1975,7 +2078,7 @@ def grid_data_rows(el: TargetElement, limit: int | None = None) -> list[GridRow]
                     break
                 if row.name in ("{NewItemPlaceholder}", "NewItemPlaceholder"):
                     break
-                candidate = GridRow(index, row, grid, first, columns, hidden, headers)
+                candidate = GridRow(index, row, grid, first, first_column, columns, hidden, headers)
                 managed_group = _managed_group_row(el, row) if isinstance(el, WpfElement) else None
                 if managed_group is True or (
                     managed_group is None

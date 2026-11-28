@@ -54,7 +54,11 @@ def target(monkeypatch):
     client = Client()
     ref = ObjectRef("s", "o", 1, TypeInfo("T", "T", "A", "T, A", ()), "d")
     el = WpfElement(client, ref, 42)
-    monkeypatch.setattr(el, "as_uia", lambda: pytest.fail("unexpected UIA mapping"))
+
+    def no_uia():
+        raise UIAError("no UIA mapping")
+
+    monkeypatch.setattr(el, "as_uia", no_uia)
     return client, el
 
 

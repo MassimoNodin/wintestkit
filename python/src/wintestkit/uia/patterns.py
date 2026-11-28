@@ -357,12 +357,13 @@ def grid_size(el: TargetElement) -> tuple[int, int]:
         return (int(pattern.CurrentRowCount), int(pattern.CurrentColumnCount))
 
 
-def grid_item(el: TargetElement, row: int, col: int) -> UIAElement:
+def grid_item(el: TargetElement, row: int, col: int) -> UIAElement | None:
     __tracebackhide__ = True
     el = uia_of(el)
     pattern = _pattern(el, "Grid")
     with com.wrap_com_errors:
-        return UIAElement(pattern.GetItem(row, col))
+        found = pattern.GetItem(row, col)
+        return UIAElement(found) if found else None
 
 
 def column_headers(el: TargetElement) -> list[UIAElement]:

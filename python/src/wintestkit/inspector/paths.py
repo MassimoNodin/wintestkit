@@ -72,6 +72,7 @@ class PathSegment:
                 "is_password",
                 "selection_count",
                 "item_count",
+                "data_row_count",
             }
         ):
             raise ValueError("Invalid UIA name")

@@ -616,7 +616,7 @@ def test_grouped_grid_rows_and_selection(page: Demo, grouped: GroupedGrid) -> No
 
     resolver = importlib.import_module("wintestkit.engine.resolve")
     grid = page.grid
-    assert grid.row_count() == 4
+    assert grid.row_count() == 7
     assert grid.find_row("Name", "Order 3").locator.item.row == 2
     assert (
         resolver._apply_item(grouped.grid, grid.cell(0, "Name").locator, "window", grid.locator)
@@ -843,7 +843,7 @@ def test_unavailable_columns_and_dataitem_groups(
     assert actions.get_text(rows[1].children()[0]) == ""
     monkeypatch.setattr(actions, "get_text", lambda cell: cell.name)
     bound = page.grid
-    assert bound.row_count() == 4
+    assert bound.row_count() == 6
     assert resolver._apply_item(grid, bound.row(0).locator, "window", bound.locator) is rows[1]
     assert (
         resolver._apply_item(grid, bound.cell(0, "Order Name").locator, "window", bound.locator)
@@ -935,3 +935,72 @@ def test_mouse_grid_removal_clicks_rows_for_cell_selection(
         actions.deselect_items(grouped.grid, [0, 1], mode="mouse")
     assert state == {1: "", 2: ""}
     assert clicks == [1, 1, 2, 2]
+
+
+def test_grid_rows_skip_null_first_column(monkeypatch: pytest.MonkeyPatch, page: Demo) -> None:
+    import importlib
+
+    resolver = importlib.import_module("wintestkit.engine.resolve")
+    big = BigGrid(monkeypatch)
+    monkeypatch.setattr(patterns, "grid_size", lambda el: (3, 2))
+    monkeypatch.setattr(
+        patterns, "grid_item", lambda el, r, c: None if c == 0 else big.item(el, r, c)
+    )
+    monkeypatch.setattr(resolver, "uia_of", lambda el: el)
+    assert page.grid.row_count() == 3
+    assert page.grid.column_count() == 2
+    assert page.grid.find_row(0, "value 1").locator.item.row == 1
+    locator = page.grid.cell(1, 0).locator
+    assert resolver._apply_item(big.grid, locator, "window", locator) is big.rows[1].children()[1]
+    assert actions._item_by_index(big.grid, 2) is big.rows[2]
+    assert actions.grid_data_rows(big.grid)[0].cell_text(0) == ""
+
+
+@pytest.mark.parametrize(
+    "uia_count,managed_count,expected", [(3, 3, 3), (4, 3, 3), (-1, 3, 3), (3, None, 3)]
+)
+def test_wpf_row_count_cross_checks_managed_data_count(
+    monkeypatch, uia_count, managed_count, expected
+):
+    grid = FakeElement("DataGrid")
+    monkeypatch.setattr(patterns, "grid_size", lambda el: (uia_count, 1))
+    monkeypatch.setattr(actions, "wpf_capable", lambda el: True)
+    monkeypatch.setattr(actions, "to_managed", lambda el: el)
+
+    def read(el, name):
+        assert name == "data_row_count"
+        if managed_count is None:
+            raise actions.UIAError("unavailable")
+        return managed_count
+
+    monkeypatch.setattr(actions, "_wpf_read", read)
+    assert actions.grid_row_count(grid) == expected
+
+
+def test_visible_columns_and_filler_header(monkeypatch, page):
+    import importlib
+
+    resolver = importlib.import_module("wintestkit.engine.resolve")
+    big = BigGrid(monkeypatch)
+    monkeypatch.setattr(patterns, "grid_size", lambda el: (3, 4))
+    monkeypatch.setattr(
+        patterns,
+        "column_headers",
+        lambda el: [
+            FakeElement("HeaderItem", name) for name in ("Hidden", "First", "Middle", "Last", "")
+        ],
+    )
+    monkeypatch.setattr(
+        patterns,
+        "grid_item",
+        lambda el, r, c: None if c in (0, 2) else big.item(el, r, 0 if c == 1 else 1),
+    )
+    monkeypatch.setattr(resolver, "uia_of", lambda el: el)
+    assert actions.grid_headers(big.grid) == ["First", "Last"]
+    assert actions.grid_header_index(big.grid, "Middle") is None
+    assert actions.grid_header_index(big.grid, "") is None
+    for column in (1, "Last"):
+        locator = page.grid.cell(1, column).locator
+        assert (
+            resolver._apply_item(big.grid, locator, "window", locator) is big.rows[1].children()[1]
+        )

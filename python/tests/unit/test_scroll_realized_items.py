@@ -76,7 +76,7 @@ def test_the_agent_scrolls_a_realized_item_whose_peer_has_no_scroll_pattern(
     assert acted == [(managed, "bring_into_view")]
 
 
-def test_the_agent_uses_the_scroll_item_pattern_when_the_object_has_it(
+def test_the_agent_tries_bring_into_view_before_grid_scroll(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     item = FakeElement("ListItem", "item", class_name="ListBoxItem")
@@ -92,7 +92,7 @@ def test_the_agent_uses_the_scroll_item_pattern_when_the_object_has_it(
         lambda element, verb, *a: (verbs.append(verb), setattr(item, "is_offscreen", False)),
     )
     actions.ensure_visible(item)
-    assert verbs == ["scroll_into_view"]
+    assert verbs == ["bring_into_view"]
 
 
 def test_an_item_that_cannot_be_scrolled_is_reported(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -140,3 +140,24 @@ def test_realized_item_types_scroll_through_the_agent(
     assert actions.scrolls_through_agent(FakeElement(control_type)) is expected
     monkeypatch.setattr(actions, "wpf_capable", lambda element: False)
     assert actions.scrolls_through_agent(FakeElement(control_type)) is False
+
+
+def test_grid_scroll_follows_unsuccessful_bring_into_view(monkeypatch: pytest.MonkeyPatch) -> None:
+    row, cell = _grid_cell()
+    calls: list[str] = []
+    _patterns(monkeypatch, cell, row)
+
+    def scroll(element: FakeElement) -> None:
+        calls.append("cell" if element is cell else "row")
+
+    def act(element: Any, verb: str, *args: Any) -> None:
+        calls.append(verb)
+        if verb == "scroll_into_view":
+            cell.is_offscreen = False
+
+    monkeypatch.setattr(actions.patterns, "scroll_into_view", scroll)
+    monkeypatch.setattr(actions, "wpf_capable", lambda element: True)
+    monkeypatch.setattr(actions, "to_managed", lambda element: object())
+    monkeypatch.setattr(actions, "_wpf_act", act)
+    actions.ensure_visible(cell)
+    assert calls == ["cell", "row", "bring_into_view", "scroll_into_view"]

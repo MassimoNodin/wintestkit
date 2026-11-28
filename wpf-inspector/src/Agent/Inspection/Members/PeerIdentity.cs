@@ -176,7 +176,14 @@ namespace WinTestKit.Inspector.Agent.Inspection.Members
                 }
                 if (target is ItemsControl itemControl && peer is ItemsControlAutomationPeer itemPeer)
                 {
-                    if (name == "item_count") result = itemControl.Items.Count;
+                    if (name == "data_row_count" && itemControl is System.Windows.Controls.DataGrid)
+                    {
+                        int count = 0;
+                        foreach (object item in itemControl.Items)
+                            if (!ReferenceEquals(item, System.Windows.Data.CollectionView.NewItemPlaceholder)) count++;
+                        result = count;
+                    }
+                    else if (name == "item_count") result = itemControl.Items.Count;
                     else if (name.StartsWith("item_name_", StringComparison.Ordinal) &&
                         int.TryParse(name.Substring("item_name_".Length), out int itemIndex) &&
                         itemIndex >= 0 && itemIndex < itemControl.Items.Count)

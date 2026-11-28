@@ -92,6 +92,38 @@ namespace WinTestKit.Inspector.Agent.Actions.Tests
             return await ActionEngine.ExecuteAsync(executor, ui.Dispatcher, target, new ObjectRef(), method, DateTime.UtcNow.AddSeconds(60), timeout, CancellationToken.None);
         }
 
+        [Fact]
+        public async Task ScrollsRealizedGridRowIntoViewport()
+        {
+            using (var ui = new Ui())
+            {
+                var setup = await ui.Dispatcher.InvokeAsync(() =>
+                {
+                    var grid = new DataGrid { AutoGenerateColumns = false, EnableRowVirtualization = false, CanUserAddRows = false };
+                    grid.Columns.Add(new DataGridTextColumn { Header = "Value", Binding = new System.Windows.Data.Binding(".") });
+                    for (int i = 0; i < 80; i++) grid.Items.Add("Item " + i);
+                    var window = new Window { Width = 240, Height = 160, Content = grid };
+                    window.Show();
+                    grid.UpdateLayout();
+                    var row = (DataGridRow)grid.ItemContainerGenerator.ContainerFromIndex(70);
+                    return (window, grid, row);
+                }).Task;
+                try
+                {
+                    Assert.NotNull(setup.row);
+                    await Act(ui, new DispatcherExecutor(), setup.row, PipeMethods.ActScrollIntoView);
+                    bool intersects = await ui.Dispatcher.InvokeAsync(() =>
+                    {
+                        setup.grid.UpdateLayout();
+                        var bounds = setup.row.TransformToAncestor(setup.grid).TransformBounds(new Rect(setup.row.RenderSize));
+                        return bounds.IntersectsWith(new Rect(setup.grid.RenderSize));
+                    }, DispatcherPriority.ApplicationIdle).Task;
+                    Assert.True(intersects);
+                }
+                finally { await ui.Dispatcher.InvokeAsync(() => setup.window.Close()).Task; }
+            }
+        }
+
         [Theory]
         [InlineData(PipeMethods.ActSetValue)]
         [InlineData(PipeMethods.ActSetRange)]
@@ -171,7 +203,6 @@ namespace WinTestKit.Inspector.Agent.Actions.Tests
         [InlineData(PipeMethods.ActCollapse)]
         [InlineData(PipeMethods.ActSelect)]
         [InlineData(PipeMethods.ActFocus)]
-        [InlineData(PipeMethods.ActBringIntoView)]
         [InlineData(PipeMethods.ActScrollIntoView)]
         public async Task MissingPatternsAreUnsupported(string method)
         {

@@ -1018,7 +1018,12 @@ def _apply_item(
     item: ItemSelector | None = link.item
     if item is None:
         return element
-    from wintestkit.engine.actions import grid_data_rows
+    from wintestkit.engine.actions import (
+        grid_data_rows,
+        grid_header_index,
+        grid_headers,
+        grid_visible_columns,
+    )
 
     data_rows = grid_data_rows(element, item.row + 1)
     element = uia_of(element)
@@ -1034,8 +1039,9 @@ def _apply_item(
 
     column = item.column
     if isinstance(column, str):
-        names = [header.name for header in patterns.column_headers(element)]
-        if column not in names:
+        names = grid_headers(element)
+        column_index = grid_header_index(element, column)
+        if column_index is None:
             listed = ", ".join(names) or "none"
             raise ElementNotFoundError(
                 Diagnostic(
@@ -1046,7 +1052,11 @@ def _apply_item(
                     match_count=0,
                 )
             )
-        column = names.index(column)
+        column = column_index
+    else:
+        assert column is not None
+        visible = grid_visible_columns(element)
+        column = visible[column] if 0 <= column < len(visible) else columns
     assert column is not None
     if column >= columns:
         raise _item_error(

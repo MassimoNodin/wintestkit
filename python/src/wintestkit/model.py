@@ -2035,7 +2035,7 @@ class _GridControl(BoundControl):
 
     def row_count(self) -> int:
         __tracebackhide__ = True
-        return len(actions.grid_data_rows(self.resolve()))
+        return actions.grid_row_count(self.resolve())
 
     def column_count(self) -> int:
         __tracebackhide__ = True
@@ -2055,12 +2055,14 @@ class _GridControl(BoundControl):
                 "narrow the grid or use row(i)"
             )
         if isinstance(column, str):
-            names = [header.name for header in patterns.column_headers(grid)]
-            if column not in names:
+            names = actions.grid_headers(grid)
+            found_index = actions.grid_header_index(grid, column)
+            if found_index is None:
                 raise ActionError(f"{self.qualname} has no column {column!r} (columns: {names})")
-            column_index = names.index(column)
+            column_index = found_index
         else:
-            column_index = column
+            visible = actions.grid_visible_columns(grid)
+            column_index = visible[column] if 0 <= column < len(visible) else columns
         if not 0 <= column_index < columns:
             raise ActionError(f"column {column!r} is out of range (grid has {columns} columns)")
         for index, row in enumerate(data_rows):
