@@ -333,6 +333,16 @@ export type Features = (
 )[];
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "FocusResult".
+ */
+export type FocusResult = null | {
+  ref: ObjectRef;
+  isPassword: boolean;
+  classified: boolean;
+  withinScope: boolean;
+};
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
  * via the `definition` "InspectChildrenResult".
  */
 export type InspectChildrenResult =
@@ -1050,6 +1060,9 @@ export interface ProtocolContracts {
   FlowEntry?: FlowEntry;
   FlowRunParams?: FlowRunParams;
   FlowRunResult?: FlowRunResult;
+  FocusParams?: FocusParams;
+  FocusResult?: FocusResult;
+  FocusScope?: FocusScope;
   HelloParams?: HelloParams;
   HelloResult?: HelloResult;
   HitTestParams?: HitTestParams;
@@ -2364,6 +2377,22 @@ export interface FlowRunResult {
   status: "passed" | "failed";
   message?: string;
   durationMs: number;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "FocusParams".
+ */
+export interface FocusParams {
+  sessionId: Identifier;
+  scope?: FocusScope;
+}
+/**
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "FocusScope".
+ */
+export interface FocusScope {
+  objectId: Identifier;
+  generation: number;
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
@@ -4014,6 +4043,7 @@ export interface RequestEnvelope {
     | "act.realizeItem"
     | "wait.until"
     | "hitTest"
+    | "focus.current"
     | "write.setProperty"
     | "write.call"
     | "spy.invoke"

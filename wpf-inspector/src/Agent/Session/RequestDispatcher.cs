@@ -270,6 +270,10 @@ namespace WinTestKit.Inspector.Agent.Session
                     if (!(service is IRealizeInspectionService realizeService)) throw new ProtocolException(ErrorCodes.UnsupportedTarget, "Feature not available.");
                     var realize = ActRealizeItemParams.FromJson(request.Params);
                     return (await realizeService.RealizeItemAsync(realize.Search, deadline, realize.TimeoutMs, ct).ConfigureAwait(false)).ToJson();
+                case PipeMethods.FocusCurrent:
+                    var focus = FocusParams.FromJson(request.Params); CheckSession(focus.SessionId);
+                    if (!(service is IFocusInspectionService focusService)) throw new ProtocolException(ErrorCodes.UnsupportedTarget, "Feature not available.");
+                    return (JsonNode?)(await focusService.FocusedAsync(focus.Scope, deadline, ct).ConfigureAwait(false))?.ToJson() ?? JsonNullNode.Instance;
                 case PipeMethods.HitTest:
                     if (!(service is IHitTestInspectionService hitTestService)) throw new ProtocolException(ErrorCodes.UnsupportedTarget, "Feature not available.");
                     var hitTest = HitTestParams.FromJson(request.Params);

@@ -1,0 +1,1 @@
+{"schema": "FocusResult", "instance": {"ref": {"sessionId": "s", "objectId": "o", "generation": 1, "type": {"name": "TextBox", "fullName": "TextBox", "assemblyName": "App", "assemblyQualifiedName": "TextBox, App", "baseTypes": []}, "dispatcherId": "d"}, "isPassword": false, "classified": true, "withinScope": true}}

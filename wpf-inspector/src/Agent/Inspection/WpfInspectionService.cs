@@ -22,7 +22,7 @@ using WinTestKit.Inspector.Protocol;
 
 namespace WinTestKit.Inspector.Agent.Inspection
 {
-    public sealed partial class WpfInspectionService : IInspectionService, IHandOutLedger, IItemsInspectionService, IStylingInspectionService, IResourceInspectionService, IMemberEventsInspectionService, IParentInspectionService, ISpyFieldInspectionService, ISpyMethodInspectionService, IExactMappingCapability, IQueryInspectionService, IStateInspectionService, IWaitInspectionService, IActionInspectionService, IRealizeInspectionService, IHitTestInspectionService, IWriteInspectionService, ISpyInvokeInspectionService, Events.IEventInspectionService
+    public sealed partial class WpfInspectionService : IInspectionService, IHandOutLedger, IItemsInspectionService, IStylingInspectionService, IResourceInspectionService, IMemberEventsInspectionService, IParentInspectionService, ISpyFieldInspectionService, ISpyMethodInspectionService, IExactMappingCapability, IQueryInspectionService, IStateInspectionService, IWaitInspectionService, IActionInspectionService, IRealizeInspectionService, IHitTestInspectionService, IFocusInspectionService, IWriteInspectionService, ISpyInvokeInspectionService, Events.IEventInspectionService
     {
         private readonly DispatcherExecutor executor;
         private readonly ObjectRegistry registry;

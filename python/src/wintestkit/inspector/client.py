@@ -79,6 +79,14 @@ from wintestkit.inspector.transport import ByteTransport, read_frame, write_fram
 
 
 @dataclass(frozen=True)
+class FocusResult:
+    ref: ObjectRef
+    is_password: bool
+    classified: bool
+    within_scope: bool
+
+
+@dataclass(frozen=True)
 class HitTestResult:
     handle: ObjectRef
     path: tuple[ManagedNode, ...] | None = None
@@ -999,6 +1007,27 @@ class InspectorClient:
                 deadline,
             ),
         )
+
+    def focused(self, scope: ObjectRef | None = None, *, deadline: float) -> FocusResult | None:
+        self._object_ref(scope)
+        params: dict[str, object] = {"sessionId": self.session.session_id}
+        if scope is not None:
+            params["scope"] = {"objectId": scope.object_id, "generation": scope.generation}
+
+        def parse(value: object) -> FocusResult | None:
+            if value is None:
+                return None
+            data = _obj(value, "ref isPassword classified withinScope")
+            ref = ObjectRef.from_json(data["ref"])
+            self._object_ref(ref)
+            return FocusResult(
+                ref,
+                _bool(data["isPassword"]),
+                _bool(data["classified"]),
+                _bool(data["withinScope"]),
+            )
+
+        return self._parse(parse, self._request("focus.current", params, deadline))
 
     def hit_test(
         self,

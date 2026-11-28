@@ -39,6 +39,8 @@ public class FixtureTests
         ["ElementState"] = n => ElementState.FromJson(n),
         ["ParentParams"] = n => ParentParams.FromJson(n),
         ["ParentResult"] = n => ParentResult.FromJson(n),
+        ["FocusParams"] = n => FocusParams.FromJson(n),
+        ["FocusResult"] = n => n is JsonNullNode ? n : FocusResult.FromJson(n),
         ["HitTestParams"] = n => HitTestParams.FromJson(n),
         ["HitTestResult"] = n => HitTestResult.FromJson(n),
         ["Locator"] = n => Locator.FromJson(n),

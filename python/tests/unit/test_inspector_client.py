@@ -129,6 +129,59 @@ def test_dispatcher_busy_stops_after_session_invalidation(monkeypatch: pytest.Mo
         client._request("state.get", {}, time.monotonic() + 1)
 
 
+def test_focused_result_and_scope_ownership() -> None:
+    from wintestkit.inspector.handouts import owner_of
+
+    ref = ObjectRef(
+        "session", "object", 1, TypeInfo("TextBox", "TextBox", "App", "TextBox", ()), "dispatcher"
+    )
+    requests: list[dict[str, Any]] = []
+
+    def handler(request: dict[str, Any]) -> object:
+        requests.append(request)
+        return {
+            "id": request["id"],
+            "result": {
+                "ref": ref.to_json(),
+                "isPassword": False,
+                "classified": True,
+                "withinScope": True,
+            },
+        }
+
+    client = InspectorClient(ScriptedTransport(handler), session())
+    try:
+        result = client.focused(ref, deadline=time.monotonic() + 1)
+        assert result is not None
+        assert result.ref == ref and owner_of(result.ref) is not None
+        assert not result.is_password and result.classified and result.within_scope
+        assert requests[0]["method"] == "focus.current"
+        assert requests[0]["params"] == {
+            "sessionId": "session",
+            "scope": {"objectId": "object", "generation": 1},
+        }
+    finally:
+        client.close()
+
+
+def test_focused_none_and_invalid_result() -> None:
+    client = InspectorClient(
+        ScriptedTransport(lambda r: {"id": r["id"], "result": None}), session()
+    )
+    try:
+        assert client.focused(deadline=time.monotonic() + 1) is None
+    finally:
+        client.close()
+    client = InspectorClient(
+        ScriptedTransport(lambda r: {"id": r["id"], "result": {"isPassword": 1}}), session()
+    )
+    try:
+        with pytest.raises(InspectorUnavailableError):
+            client.focused(deadline=time.monotonic() + 1)
+    finally:
+        client.close()
+
+
 def test_realize_item_wire_validation_and_gate() -> None:
     ref = ObjectRef(
         "session", "object", 1, TypeInfo("ListBox", "ListBox", "App", "ListBox", ()), "dispatcher"

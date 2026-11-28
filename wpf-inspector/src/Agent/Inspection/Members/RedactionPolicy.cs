@@ -61,6 +61,11 @@ namespace WinTestKit.Inspector.Agent.Inspection.Members
         /// <summary>Only password fields are protected: a PasswordBox, its template parts, an element whose own peer reports IsPassword, or a WinForms password text box.</summary>
         internal static bool IsProtectedIdentity(object target)
         {
+            try { return ReadProtectedIdentity(target); } catch (Exception) { return true; }
+        }
+
+        internal static bool ReadProtectedIdentity(object target)
+        {
             if (WinFormsNative.IsWinFormsObject(target)) return WinFormsNative.IsPasswordText(target);
             if (!(target is DependencyObject dependency)) return false;
             try
@@ -75,7 +80,7 @@ namespace WinTestKit.Inspector.Agent.Inspection.Members
                     peer is ContentElementAutomationPeer content && ReferenceEquals(content.Owner, dependency);
                 return owned && peer!.IsPassword();
             }
-            catch (Exception) { return true; }
+            catch (Exception) { throw; }
         }
 
         private static bool IsPasswordBoxOrTemplatePart(DependencyObject dependency)

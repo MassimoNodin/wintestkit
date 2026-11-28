@@ -2273,6 +2273,7 @@
             "act.realizeItem",
             "wait.until",
             "hitTest",
+            "focus.current",
             "write.setProperty",
             "write.call",
             "spy.invoke",
@@ -4093,6 +4094,9 @@
     "WaitUntilResult": {
       "$ref": "#/$defs/WaitResult"
     },
+    "FocusScope": {"type":"object","properties":{"objectId":{"$ref":"#/$defs/Identifier"},"generation":{"type":"integer","minimum":1}},"required":["objectId","generation"],"additionalProperties":false},
+    "FocusParams": {"type":"object","properties":{"sessionId":{"$ref":"#/$defs/Identifier"},"scope":{"$ref":"#/$defs/FocusScope"}},"required":["sessionId"],"additionalProperties":false},
+    "FocusResult": {"anyOf":[{"type":"null"},{"type":"object","properties":{"ref":{"$ref":"#/$defs/ObjectRef"},"isPassword":{"type":"boolean"},"classified":{"type":"boolean"},"withinScope":{"type":"boolean"}},"required":["ref","isPassword","classified","withinScope"],"additionalProperties":false}]},
     "HitTestParams": {
       "type": "object",
       "properties": {
