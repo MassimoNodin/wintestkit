@@ -193,7 +193,7 @@ namespace WinTestKit.Inspector.Agent.Inspection.Members
             if (first.Kind == "uia" && WinFormsNative.IsWinFormsObject(root)) return WinFormsNative.ReadUia(root, first.Name, registry, dispatcher);
             if (first.Kind == "uia")
             {
-                try { if (!(root is DependencyObject dependency) || (first.Name != "automation_id" && PeerIdentity.GetPeer(dependency) == null)) return new ValueDto { Status = "unavailable", Kind = "unavailable" }; }
+                try { if (!(root is DependencyObject dependency) || (first.Name != "automation_id" && first.Name != "is_password" && PeerIdentity.GetPeer(dependency) == null)) return new ValueDto { Status = "unavailable", Kind = "unavailable" }; }
                 catch (Exception) { return new ValueDto { Status = "exception", Kind = "unavailable", FailedSegment = 0 }; }
                 return PeerIdentity.Read(root, first.Name, registry, dispatcher);
             }

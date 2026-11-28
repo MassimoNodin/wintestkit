@@ -943,10 +943,15 @@ def type_text(el: TargetElement, text: str, *, clear: bool = True, keys: bool = 
     __tracebackhide__ = True
     if isinstance(el, WpfElement):
         password = is_password(el)
+        supported: set[str]
+        try:
+            supported = _wpf_patterns(el) if not keys and not password else set()
+        except UIAError:
+            supported = set()
         if (
             not keys
             and not password
-            and "Value" in _wpf_patterns(el)
+            and "Value" in supported
             and not _wpf_read(el, "is_read_only", "Value")
         ):
             value = text if clear else str(_wpf_read(el, "value", "Value")) + text

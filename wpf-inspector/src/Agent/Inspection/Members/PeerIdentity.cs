@@ -141,6 +141,8 @@ namespace WinTestKit.Inspector.Agent.Inspection.Members
                 AutomationPeer? peer = target is DependencyObject dependency ? GetPeer(dependency) : null;
                 if (peer == null)
                 {
+                    if (name == "is_password" && target is DependencyObject)
+                        return ValueSerializer.Serialize(RedactionPolicy.IsProtectedIdentity(target), typeof(bool), registry, dispatcher);
                     if (name == "automation_id" && target is DependencyObject element)
                     {
                         string attached = System.Windows.Automation.AutomationProperties.GetAutomationId(element);
@@ -157,7 +159,7 @@ namespace WinTestKit.Inspector.Agent.Inspection.Members
                     case "automation_id": result = peer.GetAutomationId(); break;
                     case "name": result = peer.GetName(); break;
                     case "control_type": result = Enum.GetName(typeof(AutomationControlType), peer.GetAutomationControlType()); break;
-                    case "is_password": result = peer.IsPassword(); break;
+                    case "is_password": result = RedactionPolicy.IsProtectedIdentity(target) || peer.IsPassword(); break;
                     case "supported_patterns":
                         var names = new List<string>();
                         foreach (PatternInterface pattern in new[] { PatternInterface.Invoke, PatternInterface.Toggle, PatternInterface.SelectionItem, PatternInterface.Selection, PatternInterface.ExpandCollapse, PatternInterface.Value, PatternInterface.RangeValue, PatternInterface.Scroll, PatternInterface.ScrollItem, PatternInterface.Text, PatternInterface.Grid })

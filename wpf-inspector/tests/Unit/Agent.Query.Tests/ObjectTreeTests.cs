@@ -82,6 +82,31 @@ namespace WinTestKit.Inspector.Agent.Query.Tests
             return ((JsonStringNode)value.Scalar!).Value;
         }
 
+        private sealed class NumericSpinner : Control { }
+
+        [Trait("Category", "Unit")]
+        [Fact]
+        public void PeerlessSpinnerAndPasswordTemplatePartHaveDistinctIdentities()
+        {
+            OnSta(() =>
+            {
+                var spinner = new NumericSpinner { Template = Chrome(typeof(NumericSpinner), typeof(TextBox)) };
+                Layout(spinner);
+                var text = Visual(spinner).OfType<TextBox>().First();
+                Assert.False(RedactionPolicy.IsProtectedIdentity(spinner));
+                Assert.False(RedactionPolicy.IsProtectedIdentity(text));
+                var password = new PasswordBox { Template = Chrome(typeof(PasswordBox), typeof(TextBox)) };
+                Layout(password);
+                Assert.True(RedactionPolicy.IsProtectedIdentity(Visual(password).OfType<TextBox>().First()));
+                using (var registry = new ObjectRegistry("password", new DispatcherExecutor()))
+                {
+                    var value = new ObjectInspector().ReadPath(spinner, new[] { new PathSegment { Kind = "uia", Name = "is_password" } }, registry, Dispatcher.CurrentDispatcher, CancellationToken.None);
+                    Assert.Equal("ok", value.Status);
+                    Assert.False(((JsonBoolNode)value.Scalar!).Value);
+                }
+            });
+        }
+
         // ------------------------------------------------------------------ the model
 
         [Trait("Category", "Unit")]

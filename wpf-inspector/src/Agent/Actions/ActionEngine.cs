@@ -58,20 +58,21 @@ namespace WinTestKit.Inspector.Agent.Actions
         {
             ct.ThrowIfCancellationRequested();
             if (!(target is UIElement element) || !element.IsEnabled) throw Unsupported();
-            AutomationPeer? peer = PeerIdentity.GetPeer(element);
             if (method == PipeMethods.ActBringIntoView && element is FrameworkElement bringElement)
             {
                 bringElement.BringIntoView();
                 return ActionOutcome.Performed;
             }
             if (method == PipeMethods.ActScrollIntoView && ScrollGridContent(element)) return ActionOutcome.Performed;
-            if (peer == null) throw Unsupported();
             if (method == PipeMethods.ActFocus)
             {
-                if (element.IsKeyboardFocused) return ActionOutcome.NoChange;
-                if (!element.Focus() && Keyboard.Focus(element) != element) throw Unsupported();
+                if (element.IsKeyboardFocusWithin) return ActionOutcome.NoChange;
+                if (!element.Focus()) Keyboard.Focus(element);
+                if (!element.IsKeyboardFocusWithin) throw Unsupported();
                 return ActionOutcome.Performed;
             }
+            AutomationPeer? peer = PeerIdentity.GetPeer(element);
+            if (peer == null) throw Unsupported();
             if (method == PipeMethods.ActBringIntoView)
             {
                 if (!(element is FrameworkElement framework)) throw Unsupported();
