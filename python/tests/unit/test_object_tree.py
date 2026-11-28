@@ -371,3 +371,29 @@ def test_with_index_chooses_the_match_in_both_forms():
     assert chosen.index == 3
     assert chosen.uia_form is not None and chosen.uia_form.index == 3
     assert dict(chosen.where)["wpf:Ordinal"] == 2
+
+
+@pytest.mark.parametrize(
+    "key", ["clr:DataContext.X", "type:Name", "wpf:Text", "field:x", "clr:X.OleValue"]
+)
+def test_finder_qualified_keys_are_preserved(key):
+    locator = to_locator(key, "value")
+    assert locator.where == ((key, "value"),)
+    assert locator.for_uia().where == ((key, "value"),)
+
+
+@pytest.mark.parametrize("index", [None, 0])
+def test_app_not_found_reports_unreadable_candidates(app_walk, monkeypatch, index):
+    from wintestkit.errors import ElementNotFoundError
+    from wintestkit.inspector.models import QueryUnreadable
+
+    def query(*args, **kwargs):
+        result = wpf_resolve.QueryMatches()
+        result.unreadable = QueryUnreadable(2, (("exception", 2),))
+        return result
+
+    monkeypatch.setattr(resolver, "wpf_query", query)
+    monkeypatch.setattr(resolver, "matches_root", lambda *args: False)
+    locator = Locator(where=(("clr:Name", "absent"),), depth=2, index=index, app_scope=True)
+    with pytest.raises(ElementNotFoundError, match="4 candidates could not be read"):
+        resolver._walk(app_walk.scope, locator, False)

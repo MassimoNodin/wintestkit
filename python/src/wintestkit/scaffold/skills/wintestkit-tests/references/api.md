@@ -134,7 +134,7 @@ shortcut: `page(CustomerPage)`. `Page.check()` returns `{path: error or None}`.
 | `Text` | `BoundText` | `text` |
 
 Common to every element: `exists()`, `is_visible()`, `is_enabled()`, `text`, `info()`,
-`get(name)` reads a UIA property or managed path; `wait_for_property(name, expected)` waits for a value or regex.
+`get(name)` reads a UIA property, managed path or pseudo-property; UIA names, configured aliases and qualified keys take precedence; `wait_for_property(name, expected)` waits for a value or regex.
 `wait_for(state)` (`attached`, `detached`, `visible`, `hidden`, `enabled`, `disabled`, `stable`),
 `focus()`, `scroll_into_view()`, `hover()`, `highlight()`, `nth(i)`, `resolve()`. Plain `Element`
 offers generic actions. `select(item)` takes a name, a 0-based index or a compiled regex.

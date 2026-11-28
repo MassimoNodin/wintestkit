@@ -239,7 +239,7 @@ def object_spec(cls: str, text: str | int | None = None, index: int | None = Non
     __tracebackhide__ = True
     if not isinstance(cls, str) or not cls:  # pyright: ignore[reportUnnecessaryIsInstance]
         raise ValueError(f"the type or name must be a non-empty string, got {cls!r}")
-    if text is None and index is None:
+    if text is None and index is None and not cls.startswith(WINDOW_NODE_PREFIX):
         return ObjectSpec(name=cls)
     checked_text, checked_index = _text_and_index("text", text, index, None)
     return ObjectSpec(cls=cls, text=checked_text, index=checked_index)

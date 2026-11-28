@@ -15,7 +15,7 @@ from wintestkit.backends.element import TargetElement, WpfElement
 from wintestkit.engine.locator import Locator
 from wintestkit.engine.managed import operation_deadline
 from wintestkit.engine.wpf_resolve import query, route
-from wintestkit.errors import InspectorLimitError, WtkError
+from wintestkit.errors import InspectorLimitError, UIAError, WtkError
 from wintestkit.inspector.paths import PathSegment
 from wintestkit.uia.element import UIAElement
 
@@ -70,7 +70,13 @@ def wpf_children(parent: WpfElement) -> list[Child]:
             "address the child you want with a label or find_child",
             code="limitExceeded",
         )
-    return [Child(element, read_node(element)) for element in found]
+    children: list[Child] = []
+    for element in found:
+        try:
+            children.append(Child(element, read_node(element)))
+        except (WtkError, UIAError):
+            continue
+    return children
 
 
 def window_nodes(app: App) -> list[Child]:
@@ -78,14 +84,17 @@ def window_nodes(app: App) -> list[Child]:
     __tracebackhide__ = True
     nodes: list[Child] = []
     for window in app.top_level_windows():
-        if window.framework_id != "WPF" or runtime.get_config().backend != "auto":
+        try:
+            if window.framework_id != "WPF" or runtime.get_config().backend != "auto":
+                continue
+            root = route(window)
+            if not isinstance(root, WpfElement):
+                continue
+            title = read_node(root)
+            node_type = labels.window_node_type(title.type_name, title.name)
+            nodes.append(Child(root, labels.ObjectNode(node_type, title.text, "")))
+        except (WtkError, UIAError):
             continue
-        root = route(window)
-        if not isinstance(root, WpfElement):
-            continue
-        title = read_node(root)
-        node_type = labels.window_node_type(title.type_name, title.name)
-        nodes.append(Child(root, labels.ObjectNode(node_type, title.text, "")))
     return nodes
 
 
@@ -96,19 +105,25 @@ def _is_window(element: UIAElement) -> bool:
 def uia_children(parent: UIAElement) -> list[Child]:
     """The child windows of a window: its children that own a window handle."""
     __tracebackhide__ = True
-    return [
-        Child(child, labels.WindowNode(child.class_name, child.name))
-        for child in parent.children()
-        if _is_window(child)
-    ]
+    children: list[Child] = []
+    for child in parent.children():
+        try:
+            if _is_window(child):
+                children.append(Child(child, labels.WindowNode(child.class_name, child.name)))
+        except (WtkError, UIAError):
+            continue
+    return children
 
 
 def top_level_windows(app: App) -> list[Child]:
     __tracebackhide__ = True
-    return [
-        Child(window, labels.WindowNode(window.class_name, window.name))
-        for window in app.top_level_windows()
-    ]
+    children: list[Child] = []
+    for window in app.top_level_windows():
+        try:
+            children.append(Child(window, labels.WindowNode(window.class_name, window.name)))
+        except (WtkError, UIAError):
+            continue
+    return children
 
 
 def children_of(

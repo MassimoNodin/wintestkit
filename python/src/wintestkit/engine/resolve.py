@@ -170,6 +170,7 @@ def _popup_matches(
     __tracebackhide__ = True
     found: list[TargetElement] = []
     total_count = 0
+    unreadable: list[Any] = []
     for window in scope.app.top_level_windows():
         if window_root.same_as(window):
             continue
@@ -182,7 +183,9 @@ def _popup_matches(
                 )
                 popup_link = replace(link, index=local_index) if local_index is not None else link
                 results = wpf_query(popup, popup_link, use_index=use_index, root_level=True)
+                unreadable.append(results.unreadable)
                 if results.indexed:
+                    results.unreadable = merge_unreadable(unreadable)
                     return cast(list[TargetElement], results)
                 if local_index is not None and local_index < len(results):
                     from wintestkit.engine.wpf_resolve import QueryMatches
@@ -204,7 +207,14 @@ def _popup_matches(
 
         counted = QueryMatches(cast(list[WpfElement], found))
         counted.total_count = total_count
+        counted.unreadable = merge_unreadable(unreadable)
         return cast(list[TargetElement], counted)
+    if unreadable:
+        from wintestkit.engine.wpf_resolve import QueryMatches
+
+        combined = QueryMatches(cast(list[WpfElement], found))
+        combined.unreadable = merge_unreadable(unreadable)
+        return cast(list[TargetElement], combined)
     return found
 
 
@@ -255,8 +265,18 @@ def _match_link(
     else:
         matches = list(query_all(uia_of(root), link.for_uia()))
     if not matches and first and full.window is None and scope.window is None:
-        # An empty popup search keeps the window's result, which knows the unreadable candidates.
-        matches = _popup_matches(scope, root, link, use_index=use_index) or matches
+        popup_matches = _popup_matches(scope, root, link, use_index=use_index)
+        unreadable = merge_unreadable(
+            [getattr(matches, "unreadable", None), getattr(popup_matches, "unreadable", None)]
+        )
+        if popup_matches:
+            matches = popup_matches
+        if unreadable is not None:
+            from wintestkit.engine.wpf_resolve import QueryMatches
+
+            if not isinstance(matches, QueryMatches):
+                matches = cast(list[TargetElement], QueryMatches(cast(list[WpfElement], matches)))
+            cast(QueryMatches, matches).unreadable = unreadable
     return matches
 
 
@@ -268,6 +288,7 @@ class _HasMatches(list[TargetElement]):
     """Matches that passed a ``has=`` filter; ``prefiltered`` holds the ones before it."""
 
     prefiltered: list[TargetElement]
+    unreadable: Any = None
 
     def __init__(self, kept: list[TargetElement], prefiltered: list[TargetElement]) -> None:
         __tracebackhide__ = True
@@ -279,6 +300,7 @@ class _IndexedMatches(list[TargetElement]):
     """The single element chosen by ``index`` from the union of ``any_of`` alternatives."""
 
     indexed = True
+    unreadable: Any = None
 
     def __init__(
         self,
@@ -320,7 +342,9 @@ def _match_has(
     __tracebackhide__ = True
     assert link.has is not None
     base = replace(link, has=None, index=None)
-    candidates = list(_match_link(scope, root, base, full, first, root_level=root_level))
+    queried = _match_link(scope, root, base, full, first, root_level=root_level)
+    unreadable = getattr(queried, "unreadable", None)
+    candidates = list(queried)
     if len(candidates) > MAX_HAS_CANDIDATES:
         raise InspectorLimitError(
             f"has= query exceeded {MAX_HAS_CANDIDATES} candidates for local filtering; "
@@ -330,8 +354,12 @@ def _match_has(
     kept = [candidate for candidate in candidates if _contains(candidate, link.has)]
     if use_index and link.index is not None:
         chosen = [kept[link.index]] if link.index < len(kept) else []
-        return _IndexedMatches(chosen, kept, candidates)
-    return _HasMatches(kept, candidates)
+        result = _IndexedMatches(chosen, kept, candidates)
+        result.unreadable = unreadable
+        return result
+    filtered = _HasMatches(kept, candidates)
+    filtered.unreadable = unreadable
+    return filtered
 
 
 def _match_alternatives(
@@ -348,9 +376,11 @@ def _match_alternatives(
     __tracebackhide__ = True
     alternatives = expand_alternatives(link)
     merged: list[TargetElement] = []
+    unreadable: list[Any] = []
 
     def collect(found: list[TargetElement]) -> None:
         __tracebackhide__ = True
+        unreadable.append(getattr(found, "unreadable", None))
         for element in found:
             if not any(cast(Any, element).same_as(known) for known in merged):
                 merged.append(element)
@@ -361,7 +391,7 @@ def _match_alternatives(
             collect(
                 cast(
                     list[TargetElement],
-                    list(wpf_query(searched, alternative, root_level=first or root_level)),
+                    wpf_query(searched, alternative, root_level=first or root_level),
                 )
             )
         else:
@@ -371,8 +401,14 @@ def _match_alternatives(
             collect(_popup_matches(scope, root, alternative))
     if use_index and link.index is not None:
         chosen = [merged[link.index]] if link.index < len(merged) else []
-        return _IndexedMatches(chosen, merged)
-    return merged
+        indexed = _IndexedMatches(chosen, merged)
+        indexed.unreadable = merge_unreadable(unreadable)
+        return indexed
+    from wintestkit.engine.wpf_resolve import QueryMatches
+
+    combined = QueryMatches(cast(list[WpfElement], merged))
+    combined.unreadable = merge_unreadable(unreadable)
+    return cast(list[TargetElement], combined)
 
 
 def _wpf_id_hint(
@@ -515,10 +551,18 @@ def _resolve_link(
                 raise ElementNotFoundError(
                     diagnose_no_has_match(prefiltered, link, searched_in, full)
                 )
-            raise ElementNotFoundError(diagnose_index_out_of_range(merged, link, searched_in, full))
+            raise ElementNotFoundError(
+                with_unreadable(
+                    diagnose_index_out_of_range(merged, link, searched_in, full),
+                    getattr(matches, "unreadable", None),
+                )
+            )
         if index >= len(matches):
             raise ElementNotFoundError(
-                diagnose_index_out_of_range(matches, link, searched_in, full)
+                with_unreadable(
+                    diagnose_index_out_of_range(matches, link, searched_in, full),
+                    getattr(matches, "unreadable", None),
+                )
             )
         return _named_after_index(matches[index].as_live(), link, index, searched_in, full)
     if len(matches) == 1:
@@ -737,7 +781,10 @@ def _app_walk(scope: Scope, locator: Locator, final_all: bool) -> list[TargetEle
                 _named_after_index(found[index].as_live(), locator, index, "application", locator)
             ]
         raise ElementNotFoundError(
-            diagnose_index_out_of_range(found, locator, "application", locator)
+            with_unreadable(
+                diagnose_index_out_of_range(found, locator, "application", locator),
+                merge_unreadable(unreadable),
+            )
         )
     if len(found) > 1:
         raise AmbiguousElementError(diagnose_ambiguous(found, locator, "application", locator))

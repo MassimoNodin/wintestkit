@@ -73,3 +73,14 @@ def test_managed_flag_output_is_golden(tmp_path: Path) -> None:
     target = tmp_path / "page.py"
     assert main(["import-namemapping", str(SAMPLE), str(target), "--managed-class-names"]) == 0
     assert target.read_text(encoding="utf-8") == EXPECTED
+
+
+def test_non_wpf_dialog_children_use_plain_locators(tmp_path: Path) -> None:
+    xml = SAMPLE.read_text(encoding="utf-8").replace(
+        '<Value Value="WPF" />', '<Value Value="Win32" />'
+    )
+    source = tmp_path / "mapping.xml"
+    source.write_text(xml, encoding="utf-8")
+    dialog = convert(source, managed_class_names=True).split("class OrdersDialog(Page):")[1]
+    assert 'tree="objects"' not in dialog
+    assert '"FrameworkId": "Win32"' in dialog

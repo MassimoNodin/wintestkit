@@ -1565,9 +1565,13 @@ class BoundControl(_BoundBase):
     def get(self, name: str) -> Any:
         """Read a UIA property or qualified managed path."""
         __tracebackhide__ = True
+        from wintestkit.engine import pseudo
         from wintestkit.engine.property_read import read_property
+        from wintestkit.uia.constants import PROPERTY_IDS
 
-        return self._read(lambda element: read_property(element, name))
+        if name in PROPERTY_IDS or ":" in name or name in runtime.get_config().property_aliases:
+            return self._read(lambda element: read_property(element, name))
+        return self._read(lambda element: pseudo.read_any(self, element, name))
 
     def wait_for_property(self, name: str, expected: Any, *, timeout: float | None = None) -> Self:
         """Wait for a property to match and return this element."""

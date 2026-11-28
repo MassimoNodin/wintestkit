@@ -132,11 +132,18 @@ def to_locator(props: str | Sequence[str], values: Any, *, depth: int | None = N
     seen: set[str] = set()
     from_name: set[str] = set()  # keys the Name label step set; no other property may set them
     for prop, value in zip(names, items, strict=True):
-        if not isinstance(prop, str) or not all(_name_part(part) for part in prop.split(".")):
+        if not isinstance(prop, str):
             raise ValueError(f"invalid property name: {prop!r}")
-        if prop.casefold() == "olevalue":
+        qualified = ":" in prop
+        if qualified:
+            from wintestkit.inspector.paths import parse_managed_key
+
+            parse_managed_key(prop)
+        elif not all(_name_part(part) for part in prop.split(".")):
+            raise ValueError(f"invalid property name: {prop!r}")
+        if not qualified and prop.casefold() == "olevalue":
             raise ValueError("OleValue must follow a property path")
-        if prop.casefold().endswith(".olevalue"):
+        if not qualified and prop.casefold().endswith(".olevalue"):
             prop = prop[: -len(".OleValue")]
         key = prop.casefold()
         if key in seen:
@@ -156,7 +163,7 @@ def to_locator(props: str | Sequence[str], values: Any, *, depth: int | None = N
                     destination[condition] = expected
                     from_name.add(condition)
             continue
-        target = PROPERTY_MAP.get(key, f"clr:{prop}")
+        target = prop if qualified else PROPERTY_MAP.get(key, f"clr:{prop}")
         uia_target = _UIA_MAP.get(key, target)
         for suffix, facet in ((".clrclassname", "Name"), (".clrfullclassname", "FullName")):
             if key.endswith(suffix):
@@ -186,7 +193,7 @@ def to_locator(props: str | Sequence[str], values: Any, *, depth: int | None = N
             if key == "wndcaption" and isinstance(value, str):
                 value = labels.strip_mnemonic(value)
             value = uia_value = _matcher(value)
-            if isinstance(value, str) and target.startswith("clr:"):
+            if not qualified and isinstance(value, str) and target.startswith("clr:"):
                 # Migrated suites pass numbers and booleans as strings; compare by text.
                 value = uia_value = AsText(value)
         if key == "exists":
@@ -914,6 +921,8 @@ def map_property(name: str, *, wpf: bool = True) -> str:
     if not isinstance(name, str) or not name.strip():  # pyright: ignore[reportUnnecessaryIsInstance]
         raise ValueError(f"invalid property name: {name!r}")
     text = name.strip()
+    if ":" in text:
+        return text
     if text.casefold() == "olevalue":
         raise ValueError("OleValue must follow a property path")
     if text.casefold().endswith(".olevalue"):

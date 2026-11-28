@@ -399,3 +399,12 @@ def test_steps_below_a_bound_window_or_a_page(fake, monkeypatch):
     assert 'no children of type "Nope"; its children have the types "MainView"' in str(raised.value)
     assert root.parent is not None and is_window_node(root.parent.locator)
     assert [child.label for child in root.children()] == ['WPFObject("Grid", "")']
+
+
+def test_single_argument_window_node_round_trip(fake):
+    from wintestkit import labels
+
+    text = 'WPFObject("HwndSource: MainView")'
+    assert fake.resolve(from_label(fake.app, text)) is fake.tree["main"]
+    assert labels.parse_step(labels.format_step(labels.parse_step(text))) == labels.parse_step(text)
+    assert labels.object_spec("MainView").name == "MainView"

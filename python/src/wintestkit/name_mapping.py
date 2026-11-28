@@ -459,7 +459,14 @@ class _Generator:
         parent: str | None,
         used: set[str],
         blocked: bool,
+        wpf: bool,
     ) -> None:
+        properties = {name.casefold(): value for name, value in node.properties}
+        framework = properties.get("frameworkid")
+        if isinstance(framework, str):
+            wpf = framework.casefold() == "wpf"
+        elif any(name.startswith(("wpfcontrol", "rootvisual.")) for name in properties):
+            wpf = True
         alias = _unique(_identifier(node.label), used)
         declaration = _translate(node, window=False)
         for todo in declaration.todos:
@@ -478,8 +485,9 @@ class _Generator:
             )
             # Managed output searches the object tree with the migration keys (wpf:Text and
             # wpf:Ordinal); without the inspector it keeps the UIA form (name, global index).
-            form = locator if self.managed else cast(Locator, locator.uia_form)
-            where = _where(form, self.managed)
+            managed = self.managed and wpf
+            form = locator if managed else cast(Locator, locator.uia_form)
+            where = _where(form, managed)
             self.note(form, where)
             lines.append(f"    {alias} = Element(")
             for key in ("automation_id", "name", "class_name", "index"):
@@ -492,7 +500,7 @@ class _Generator:
                     f"            {_literal(key)}: {_literal(value)}," for key, value in where
                 )
                 lines.append("        },")
-            if self.managed:
+            if managed:
                 lines.append('        tree="objects",')
             if not extended:
                 lines.append("        depth=1,")
@@ -503,7 +511,7 @@ class _Generator:
             self.declared += 1
             parent = alias
         for child in node.children:
-            self.elements(lines, child, parent, used, blocked)
+            self.elements(lines, child, parent, used, blocked, wpf)
 
     # the module ------------------------------------------------------------------------------
 
@@ -518,7 +526,7 @@ class _Generator:
             if node.children:
                 lines.append("")
             for child in node.children:
-                self.elements(lines, child, None, used, False)
+                self.elements(lines, child, None, used, False, False)
             classes.append(lines)
         if not classes:
             raise ValueError("no NameMapping windows were found below the process nodes")

@@ -372,3 +372,7 @@ with step("Sign in", account="operator"):
 
 `log.picture()` captures the desktop; pass a bound control or window to capture
 its area. Sensitive or unavailable targets are skipped. Warnings do not fail a test.
+
+`get(name)` also reads pseudo-properties such as `item_count`, `child_count`, `items`,
+`item_list`, `text`, `exists`, and `visible_on_screen`. Real UIA property names, configured
+property aliases, and qualified managed keys take precedence over pseudo-properties.

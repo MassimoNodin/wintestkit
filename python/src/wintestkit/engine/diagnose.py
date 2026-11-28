@@ -244,10 +244,22 @@ def quote(value: str) -> str:
     return json.dumps(value, ensure_ascii=False)
 
 
+def _safe_info(element: TargetElement) -> ElementInfo | None:
+    __tracebackhide__ = True
+    try:
+        return element.info()
+    except Exception:
+        return None
+
+
 def _window_label(window: UIAElement) -> str:
     """Quoted title, or ``<class>`` for windows without one (popups, tool windows)."""
     __tracebackhide__ = True
-    return quote(window.name) if window.name else f"<{window.class_name or 'untitled'}>"
+    try:
+        name = window.name
+        return quote(name) if name else f"<{window.class_name or 'untitled'}>"
+    except Exception:
+        return "<gone>"
 
 
 def diagnose_window(
@@ -272,11 +284,18 @@ def diagnose_window(
             searched_in=f"Application {wl.process or app.process_name}",
             match_count=0,
         )
-    examined = list(candidates) if candidates is not None else app.top_level_windows()
+    try:
+        examined = list(candidates) if candidates is not None else app.top_level_windows()
+    except Exception:
+        examined = []
     process = wl.process or app.process_name
     described = wl.describe()
     if len(matches) > 1:
-        shown = tuple(Candidate(w.info(), 4, ()) for w in matches[:MAX_CANDIDATES])
+        shown = tuple(
+            Candidate(info, 4, ())
+            for w in matches[:MAX_CANDIDATES]
+            if (info := _safe_info(w)) is not None
+        )
         return Diagnostic(
             kind="ambiguous",
             message=(
@@ -297,7 +316,9 @@ def diagnose_window(
     )
     scored: list[tuple[int, Candidate]] = []
     for window in examined:
-        info = window.info()
+        info = _safe_info(window)
+        if info is None:
+            continue
         score, mismatches = _score_window(wl, info)
         scored.append((score, Candidate(info, score, mismatches)))
     scored.sort(key=lambda pair: -pair[0])
@@ -406,8 +427,14 @@ def diagnose_not_found(
     scored: list[tuple[int, float, int, ElementInfo, tuple[Mismatch, ...]]] = []
     control_types = {alt.control_type for alt in expand_alternatives(link)}
     shared_type = control_types.pop() if len(control_types) == 1 else None
-    for order, element in enumerate(relaxed_descendants(root, shared_type)):
-        info = element.info()
+    try:
+        descendants = relaxed_descendants(root, shared_type)
+    except Exception:
+        descendants = []
+    for order, element in enumerate(descendants):
+        info = _safe_info(element)
+        if info is None:
+            continue
         score, mismatches = _best_score(link, info)
         if score >= 0:
             scored.append((score, _name_similarity(link, info), order, info, mismatches))
@@ -441,7 +468,11 @@ def diagnose_not_found(
 def _match_candidates(matches: Sequence[TargetElement], link: Locator) -> tuple[Candidate, ...]:
     __tracebackhide__ = True
     full_score = _specified_property_count(link)
-    return tuple(Candidate(m.info(), full_score, ()) for m in matches[:MAX_CANDIDATES])
+    return tuple(
+        Candidate(info, full_score, ())
+        for m in matches[:MAX_CANDIDATES]
+        if (info := _safe_info(m)) is not None
+    )
 
 
 def diagnose_ambiguous(

@@ -746,6 +746,8 @@ def test_unreadable_candidates_are_reported_when_nothing_matches(setup, monkeypa
     assert raised.value.diagnostic.message == (
         "No element matches x; 3 candidates could not be read (exception: 2, notReadable: 1)"
     )
+    with pytest.raises(ElementNotFoundError, match="3 candidates could not be read"):
+        resolver.resolve(scope, Locator(where=(("clr:Name", "missing"),), index=0))
     # Without unreadable candidates the message is unchanged.
     monkeypatch.setattr(
         client,
