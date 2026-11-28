@@ -18,7 +18,7 @@ also accepts the app's owned popups.
 
 Bound windows offer `activate()`, `is_active()`, `rect`, `move(x, y)`, `resize(width, height)`,
 `press(keys, secret=False)` and `type(text, secret=False)` as well as close/maximize/minimize/restore.
-Window keys activate the window and target its focused control; `finders.send_keys` accepts windows.
+Window keys activate the window and target its focused control; `finders.send_keys` accepts windows. WPF control typing accepts focus delegated to a descendant; it stops if focus leaves the control and redacts password parts.
 `from wintestkit import keyboard` provides `press(keys, secret=False)`, `type(text, secret=False)`
 and `hold(modifiers)` as a context manager. They do not activate a window: the app fixture or a
 bound page must register the current app, and its window must already own the foreground, otherwise

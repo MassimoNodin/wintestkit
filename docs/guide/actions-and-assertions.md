@@ -376,3 +376,5 @@ its area. Sensitive or unavailable targets are skipped. Warnings do not fail a t
 `get(name)` also reads pseudo-properties such as `item_count`, `child_count`, `items`,
 `item_list`, `text`, `exists`, and `visible_on_screen`. Real UIA property names, configured
 property aliases, and qualified managed keys take precedence over pseudo-properties.
+
+Typing into a WPF control that delegates keyboard focus works when focus moves to a part inside the control. Input stops if focus leaves the control, and password parts are redacted in reports.

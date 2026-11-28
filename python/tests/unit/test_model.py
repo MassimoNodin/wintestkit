@@ -448,11 +448,11 @@ def test_text_action_keeps_wpf_classification_on_later_deadline(
 
     monkeypatch.setattr(model.BoundControl, "perform", perform)
     monkeypatch.setattr(actions, "type_text" if method == "type" else "press", action)
-    expected = ActionError if password else InspectorDeadlineError
+    expected = ActionError if password or method == "type" else InspectorDeadlineError
     with pytest.raises(expected) as error:
         getattr(page.status, method)("private-value")
-    assert ("details redacted" in str(error.value)) is password
-    if password:
+    assert ("details redacted" in str(error.value)) is (password or method == "type")
+    if password or method == "type":
         assert "private-value" not in str(error.value)
         assert "private-value" not in str(runtime_setup[-1].to_dict())
     assert client.reads == 1
@@ -1135,3 +1135,62 @@ def test_exists_mode_acts_on_an_offscreen_item_the_agent_can_scroll(
     monkeypatch.setattr(actions, "click", lambda el, *, mode, **_kw: seen.append(el))
     page.sign_in.click(timeout=1)
     assert len(seen) == 1
+
+
+@pytest.mark.parametrize(
+    "change", ["normal", "password", "later_password", "outside", "later_outside", "unclassified"]
+)
+def test_delegated_typing_focus_and_report(page, monkeypatch, runtime_setup, change):
+    from wintestkit.backends.element import WpfElement
+    from wintestkit.inspector.client import FocusResult
+    from wintestkit.inspector.models import ObjectRef, TypeInfo
+    from wintestkit.uia import input as keyboard
+
+    info = TypeInfo("T", "T", "A", "T, A", ())
+    target_ref = ObjectRef("s", "target", 1, info, "d")
+    part_ref = ObjectRef("s", "part", 1, info, "d")
+
+    class Client:
+        calls = 0
+
+        def focused(self, scope, *, deadline):
+            assert scope == target_ref
+            self.calls += 1
+            later = self.calls >= 5
+            return FocusResult(
+                part_ref,
+                change == "password" or (change == "later_password" and later),
+                change != "unclassified",
+                change != "outside" and not (change == "later_outside" and later),
+            )
+
+        def release(self, *args, **kwargs):
+            pass
+
+    client = Client()
+    element = WpfElement(client, target_ref, 1)
+    monkeypatch.setattr(model.BoundControl, "perform", lambda self, timeout, fn: fn(element))
+    monkeypatch.setattr(actions.PasswordClassifier, "is_password", lambda self, el: False)
+    monkeypatch.setattr(actions, "focus", lambda el: None)
+    monkeypatch.setattr(actions, "_wpf_window", lambda el: 1)
+    monkeypatch.setattr(keyboard.win32, "MapVirtualKeyW", lambda *args: 0)
+    sent = []
+    monkeypatch.setattr(
+        keyboard.win32, "SendInput", lambda count, events, size: sent.append(count) or count
+    )
+    monkeypatch.setattr(keyboard.time, "sleep", lambda seconds: None)
+    if change in ("outside", "later_outside", "unclassified"):
+        with pytest.raises(ActionError) as error:
+            page.status.type("abc", keys=True, clear=False)
+        if change == "unclassified":
+            assert error.value.code == "focusUnclassified"
+            assert runtime_setup[-1].error["code"] == "focusUnclassified"
+        if change == "later_outside":
+            assert len(sent) == 2
+        else:
+            assert not sent
+    else:
+        page.status.type("abc", keys=True, clear=False)
+        expected = "***" if change in ("password", "later_password") else "abc"
+        assert runtime_setup[-1].args["text"] == expected
+        assert len(sent) == 4

@@ -710,6 +710,13 @@ class _StepContext:
             record.status = "failed"
             if record.sensitive:
                 record.args = _redact(record.args, True)
+                if isinstance(exc, ActionError) and (
+                    exc.code == "focusUnclassified"
+                    or str(exc) == "keyboard focus is outside the target"
+                ):
+                    record.error = _error_info(exc)
+                    _notify(record)
+                    return
                 label = _failure_label(exc)
                 safe_error = (
                     AssertionError(

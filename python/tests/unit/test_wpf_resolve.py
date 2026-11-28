@@ -554,6 +554,10 @@ def test_actions_and_patterns_accept_wpf_element(setup, monkeypatch):
     client.act_invoke = lambda ref, **kw: seen.append(("invoke", ref))
     client.act_set_value = lambda ref, value, **kw: seen.append((value, ref))
     assert actions.click(root) == "invoke"
+    monkeypatch.setattr(actions, "focus", lambda el: None)
+    monkeypatch.setattr(
+        actions, "_wpf_keyboard_target", lambda el: SimpleNamespace(ref=el.ref, is_password=False)
+    )
     assert actions.type_text(root, "hello") == "value"
     assert actions.get_text(root) == "value"
     assert seen == [("invoke", root.ref), ("hello", root.ref)]

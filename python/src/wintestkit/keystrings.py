@@ -213,5 +213,6 @@ def play_keys(segments: Sequence[KeySegment]) -> None:
                 ]
                 cast(Any, keyboard)._send(events)
     finally:
-        while held:
-            cast(Any, keyboard)._send([cast(Any, keyboard)._key_event(held.pop(), up=True)])
+        with keyboard.guard_input(None):
+            while held:
+                cast(Any, keyboard)._send([cast(Any, keyboard)._key_event(held.pop(), up=True)])

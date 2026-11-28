@@ -111,6 +111,16 @@ class WaitTimeoutError(WtkError):
 class ActionError(WtkError):
     """The requested action is not possible on the element."""
 
+    def __init__(self, message: str, *, code: str | None = None) -> None:
+        super().__init__(message)
+        self.code = code
+
+    def to_dict(self) -> dict[str, Any]:
+        result = super().to_dict()
+        if self.code is not None:
+            result["code"] = self.code
+        return result
+
 
 class ClipboardError(ActionError):
     """The clipboard holds no text, or another process kept it locked."""

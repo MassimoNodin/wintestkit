@@ -106,9 +106,13 @@ def test_states_and_actions(target):
     ]
 
 
-def test_value_and_document_reads(target):
+def test_value_and_document_reads(target, monkeypatch):
     client, el = target
     client.values["supported_patterns"] = "Value,Text"
+    monkeypatch.setattr(actions, "focus", lambda el: None)
+    monkeypatch.setattr(
+        actions, "_wpf_keyboard_target", lambda el: SimpleNamespace(ref=el.ref, is_password=False)
+    )
     assert actions.type_text(el, "new", clear=False) == "value"
     actions.clear(el)
     assert client.calls == [("act_set_value", "beforenew"), ("act_set_value", "")]
@@ -143,7 +147,9 @@ def test_password_uses_keys_without_sending_value(target, monkeypatch, caplog):
     client.values.update(supported_patterns="Value", is_password=True)
     keys = []
     monkeypatch.setattr(actions, "focus", lambda el: keys.append("focus"))
-    monkeypatch.setattr(actions, "_wpf_keyboard_target", lambda el: None)
+    monkeypatch.setattr(
+        actions, "_wpf_keyboard_target", lambda el: SimpleNamespace(ref=el.ref, is_password=True)
+    )
     monkeypatch.setattr(actions.input, "press", lambda text: keys.append(text))
     monkeypatch.setattr(actions.input, "type_text", lambda text: keys.append("typed"))
     assert actions.type_text(el, "private") == "keys"
@@ -391,11 +397,16 @@ def test_keyboard_entry_and_clear(target, monkeypatch, read_only, keys, password
     client.values.update(supported_patterns="Value", is_read_only=read_only, is_password=password)
     events = []
     monkeypatch.setattr(actions, "focus", lambda el: events.append("focus"))
-    monkeypatch.setattr(actions, "_wpf_keyboard_target", lambda el: events.append("guard"))
+    monkeypatch.setattr(
+        actions,
+        "_wpf_keyboard_target",
+        lambda el: (events.append("guard"), SimpleNamespace(ref=el.ref, is_password=password))[1],
+    )
+    monkeypatch.setattr(WpfElement, "as_uia", lambda el: (_ for _ in ()).throw(UIAError("no peer")))
     monkeypatch.setattr(actions.input, "press", lambda key: events.append(key))
     monkeypatch.setattr(actions.input, "type_text", lambda value: events.append(value))
     assert actions.type_text(el, "hello", clear=False, keys=keys) == "keys"
-    assert events == ["focus", "guard", "Ctrl+End", "guard", "hello"]
+    assert events == ["focus", "guard", "guard", "Ctrl+End", "hello"]
     events.clear()
     if read_only or password:
         actions.clear(el)
@@ -728,3 +739,53 @@ def test_wpf_drag_destination_skips_window_activation(mouse, monkeypatch):
     assert activated == []
     actions.drag_to(el, el, target_offset=(0, 0), source_offset=(10, 10))
     assert drags == [((20, 30, 10, 20), {"button": "left", "modifiers": ()})]
+
+
+def test_delegated_value_and_select_all(target, monkeypatch):
+    from types import SimpleNamespace
+
+    from wintestkit.backends.element import WpfElement
+    from wintestkit.errors import UIAError
+    from wintestkit.inspector.models import ObjectRef, TypeInfo
+
+    _client, el = target
+    ref = ObjectRef("s", "part", 1, TypeInfo("T", "T", "A", "T, A", ()), "d")
+    monkeypatch.setattr(actions, "focus", lambda el: None)
+    monkeypatch.setattr(
+        actions, "_wpf_keyboard_target", lambda el: SimpleNamespace(ref=ref, is_password=False)
+    )
+    peer = object()
+    monkeypatch.setattr(WpfElement, "as_uia", lambda self: peer)
+    monkeypatch.setattr(actions, "_can_set_value", lambda el: True)
+    values = []
+    monkeypatch.setattr(actions.patterns, "set_value", lambda el, text: values.append((el, text)))
+    assert actions.type_text(el, "abc") == "value"
+    assert values == [(peer, "abc")]
+    monkeypatch.setattr(
+        WpfElement, "as_uia", lambda self: (_ for _ in ()).throw(UIAError("no peer"))
+    )
+    keys = []
+    monkeypatch.setattr(actions.input, "press", lambda text: keys.append(text))
+    monkeypatch.setattr(actions.input, "type_text", lambda text: keys.append(text))
+    assert actions.type_text(el, "abc") == "keys"
+    assert keys == ["Ctrl+A Delete", "abc"]
+
+
+def test_delegated_password_focus_without_redaction_refuses(target, monkeypatch):
+    from types import SimpleNamespace
+
+    from wintestkit.inspector.models import ObjectRef, TypeInfo
+
+    _client, el = target
+    ref = ObjectRef("s", "part", 1, TypeInfo("T", "T", "A", "T, A", ()), "d")
+    monkeypatch.setattr(actions, "focus", lambda el: None)
+    monkeypatch.setattr(
+        actions, "_wpf_keyboard_target", lambda el: SimpleNamespace(ref=ref, is_password=True)
+    )
+    sent = []
+    monkeypatch.setattr(actions.input, "press", lambda text: sent.append(text))
+    monkeypatch.setattr(actions.input, "type_text", lambda text: sent.append(text))
+    with pytest.raises(ActionError) as error:
+        actions.type_text(el, "hunter2")
+    assert error.value.code == "focusPassword"
+    assert sent == []

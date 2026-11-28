@@ -12,7 +12,7 @@ import logging
 import re
 import time
 from collections import Counter
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from typing import Any, Literal
 
 from wintestkit import runtime
@@ -31,6 +31,7 @@ from wintestkit.errors import (
     NoUiaPeerError,
     UIAError,
 )
+from wintestkit.inspector.client import FocusResult
 from wintestkit.inspector.models import ElementState, ItemMatch
 from wintestkit.inspector.paths import PathSegment
 from wintestkit.uia import element, input, patterns, win32
@@ -151,12 +152,38 @@ def _wpf_window(el: WpfElement, *, activate: bool = False) -> int:
     return hwnd
 
 
-def _wpf_keyboard_target(el: WpfElement) -> None:
+def _wpf_keyboard_target(el: WpfElement) -> FocusResult:
     __tracebackhide__ = True
     _wpf_window(el)
-    state = el.client.state_get(el.ref, timeout_ms=2000, deadline=operation_deadline(2))
-    if not state.focused:
-        raise ActionError("Target control does not own keyboard focus; refusing global input")
+    result = el.client.focused(scope=el.ref, deadline=operation_deadline(2))
+    if result is None or not result.within_scope:
+        raise ActionError("keyboard focus is outside the target")
+    if not result.classified:
+        raise ActionError("keyboard focus could not be classified", code="focusUnclassified")
+    return result
+
+
+@contextlib.contextmanager
+def wpf_input_guard(el: WpfElement, on_password: Callable[[], None] | None = None):
+    __tracebackhide__ = True
+
+    def check() -> None:
+        __tracebackhide__ = True
+        result = _wpf_keyboard_target(el)
+        if result.is_password:
+            if on_password is None and result.ref != el.ref:
+                # Focus was delegated to a password part the caller can't redact (a target that
+                # is itself a password field is redacted by its own classification), so refuse.
+                raise ActionError(
+                    "keyboard focus is on a password field; type it as a secret",
+                    code="focusPassword",
+                )
+            if on_password is not None:
+                on_password()
+
+    check()
+    with input.guard_input(check):
+        yield
 
 
 # -- visibility and focus -------------------------------------------------------------------------
@@ -938,30 +965,40 @@ def _can_set_value(el: UIAElement) -> bool:
     return patterns.has_pattern(el, "Value") and not patterns.is_read_only(el)
 
 
-def type_text(el: TargetElement, text: str, *, clear: bool = True, keys: bool = False) -> str:
+def type_text(
+    el: TargetElement,
+    text: str,
+    *,
+    clear: bool = True,
+    keys: bool = False,
+    on_password: Callable[[], None] | None = None,
+) -> str:
     """Enter text; returns ``"value"`` (ValuePattern) or ``"keys"`` (keyboard input)."""
     __tracebackhide__ = True
     if isinstance(el, WpfElement):
-        password = is_password(el)
-        supported: set[str]
-        try:
-            supported = _wpf_patterns(el) if not keys and not password else set()
-        except UIAError:
-            supported = set()
-        if (
-            not keys
-            and not password
-            and "Value" in supported
-            and not _wpf_read(el, "is_read_only", "Value")
-        ):
-            value = text if clear else str(_wpf_read(el, "value", "Value")) + text
-            _wpf_act(el, "set_value", "Value", value)
-            return "value"
         focus(el)
-        _wpf_keyboard_target(el)
-        input.press("Ctrl+A Delete" if clear else "Ctrl+End")
-        _wpf_keyboard_target(el)
-        input.type_text(text)
+        with wpf_input_guard(el, on_password):
+            focused = _wpf_keyboard_target(el)
+            if focused.is_password and on_password is not None:
+                on_password()
+            if not keys and not focused.is_password:
+                try:
+                    if (
+                        focused.ref == el.ref
+                        and "Value" in _wpf_patterns(el)
+                        and not _wpf_read(el, "is_read_only", "Value")
+                    ):
+                        value = text if clear else str(_wpf_read(el, "value", "Value")) + text
+                        _wpf_act(el, "set_value", "Value", value)
+                        return "value"
+                    peer = WpfElement(el.client, focused.ref, el.process_id).as_uia()
+                    if _can_set_value(peer):
+                        patterns.set_value(peer, text if clear else patterns.get_value(peer) + text)
+                        return "value"
+                except (NoUiaPeerError, InspectorError, UIAError):
+                    log.debug("Focused element has no usable ValuePattern; falling back to keys")
+            input.press("Ctrl+A Delete" if clear else "Ctrl+End")
+            input.type_text(text)
         return "keys"
     el = uia_of(el)
     if not keys and _can_set_value(el) and (clear or not is_password(el)):

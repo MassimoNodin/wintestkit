@@ -1868,7 +1868,20 @@ class _TextEntry(_Valued):
                 nonlocal secret
                 secret = secret or classifier.is_password(el)
                 rec.sensitive = secret
-                rec.set_arguments(args, secret=secret)
+                rec.set_arguments(args, secret=secret or isinstance(el, WpfElement))
+
+                def mark_password() -> None:
+                    __tracebackhide__ = True
+                    nonlocal secret
+                    secret = True
+                    rec.set_arguments(args, secret=True)
+
+                if isinstance(el, WpfElement):
+                    result = actions.type_text(
+                        el, text, clear=clear, keys=keys, on_password=mark_password
+                    )
+                    rec.set_arguments(args, secret=secret)
+                    return result
                 return actions.type_text(el, text, clear=clear, keys=keys)
 
             rec.args["strategy"] = self.perform(timeout, enter)

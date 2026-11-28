@@ -848,12 +848,21 @@ def send_keys(
             nonlocal secret
             record.sensitive = True
             secret = secret or classifier.is_password(element)
-            record.set_arguments({"keys": text}, secret=secret)
+            record.set_arguments({"keys": text}, secret=secret or isinstance(element, WpfElement))
             if isinstance(target, model.BoundWindow):
                 actions.activate_for_keys(element)  # keys go to whatever has focus in the window
             elif isinstance(element, WpfElement):
                 actions.focus(element)
-                cast(Any, actions)._wpf_keyboard_target(element)
+
+                def mark_password() -> None:
+                    nonlocal secret
+                    secret = True
+                    record.set_arguments({"keys": text}, secret=True)
+
+                with actions.wpf_input_guard(element, mark_password):
+                    play_keys(segments)
+                record.set_arguments({"keys": text}, secret=secret)
+                return
             else:
                 element = uia_of(element)
                 actions.focus(element)

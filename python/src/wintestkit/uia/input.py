@@ -6,7 +6,8 @@ from __future__ import annotations
 import contextlib
 import ctypes
 import time
-from collections.abc import Generator
+from collections.abc import Callable, Generator
+from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import Literal
 
@@ -120,10 +121,26 @@ def parse_keys(keys: str) -> list[KeyCombo]:
 # -- SendInput plumbing --------------------------------------------------------------------------
 
 
+_input_guard: ContextVar[Callable[[], None] | None] = ContextVar("input_guard", default=None)
+
+
+@contextlib.contextmanager
+def guard_input(guard: Callable[[], None] | None) -> Generator[None]:
+    __tracebackhide__ = True
+    token = _input_guard.set(guard)
+    try:
+        yield
+    finally:
+        _input_guard.reset(token)
+
+
 def _send(events: list[win32.INPUT]) -> None:
     __tracebackhide__ = True
     if not events:
         return
+    guard = _input_guard.get()
+    if guard is not None:
+        guard()
     effects.mark()
     array = (win32.INPUT * len(events))(*events)
     sent = win32.SendInput(len(events), array, ctypes.sizeof(win32.INPUT))
