@@ -8,13 +8,16 @@ import os
 import queue
 import threading
 import time
+import weakref
 from collections import deque
 from collections.abc import Callable, Sequence
 from contextlib import suppress
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
+from itertools import islice
 from typing import Any, Literal, cast
 
+from wintestkit import effects
 from wintestkit.errors import (
     InspectorDeadlineError,
     InspectorError,
@@ -24,6 +27,7 @@ from wintestkit.errors import (
     WriteDeniedError,
     WriteRateExceededError,
 )
+from wintestkit.inspector.handouts import attach, object_refs, owner_of, wire_keys
 from wintestkit.inspector.models import (
     ERROR_CODES,
     ActResult,
@@ -48,6 +52,9 @@ from wintestkit.inspector.models import (
     QueryFindAllResult,
     QueryFindResult,
     RealizeResult,
+    ReleaseItem,
+    ReleaseParams,
+    ReleaseResult,
     ResourceResult,
     Session,
     StylingResult,
@@ -210,6 +217,14 @@ def _response(value: object) -> tuple[int, object, InspectorError | None]:
     return request_id, None, result
 
 
+@dataclass(frozen=True)
+class ReleaseOutcome:
+    """What a ``release`` did: objects whose lease ended, and objects released more than held."""
+
+    released: int
+    over_released: int
+
+
 @dataclass
 class _Pending:
     event: threading.Event
@@ -274,10 +289,13 @@ class InspectorThreadError(RuntimeError):
 
 
 MAX_RELEASE_BATCH = 256
-"""The protocol limit on object IDs in one ``release`` request."""
+"""The protocol limit on objects in one ``release`` request."""
+
+MAX_RELEASE_COUNT = 1_000_000
+"""The protocol limit on the hand-outs of one object in a ``release`` request."""
 
 _PENDING_RELEASE_LIMIT = 65_536
-"""Object IDs queued for release before the oldest are discarded (the agent expires them)."""
+"""Objects queued for release before the oldest are discarded (the agent expires them)."""
 
 _RELEASE_BATCH_TIMEOUT = 0.25
 _RELEASE_FLUSH_BUDGET = 0.25
@@ -326,7 +344,7 @@ class InspectorClient:
     The reader thread only reads, matches responses and hands events to subscriptions. It never
     issues a request (``_request`` raises ``InspectorThreadError`` there), and no code that can
     run inside garbage collection touches the pipe or a client lock: lease finalizers only call
-    ``defer_release``, which appends to a ``deque``. Queued IDs are sent in batches by
+    ``_hand_out_died``, which appends to a ``deque``. Queued counts are sent in batches by
     ``flush_releases`` on an ordinary caller's thread once its own request has finished.
     """
 
@@ -355,14 +373,25 @@ class InspectorClient:
         # Responses with an ID at or below this may belong to an evicted abandoned entry.
         self._stale_through = 1
         self._next_id = 2
-        # Object IDs waiting for release. Filled from finalizers, so only deque.append touches it
-        # there: it is atomic and takes no lock, which makes it safe at any allocation point.
-        self._release_queue: deque[str] = deque(maxlen=_PENDING_RELEASE_LIMIT)
+        # Hand-outs whose owner died, as ((object id, generation), count). Filled from finalizers,
+        # so only deque.append touches it there: it is atomic and takes no lock, which makes it
+        # safe at any allocation point. Ordinary threads fold it into ``_pending`` under
+        # ``_ledger_lock``; a finalizer never takes that lock.
+        self._dead: deque[tuple[tuple[str, int], int]] = deque(maxlen=_PENDING_RELEASE_LIMIT)
+        self._release_pending: dict[tuple[str, int], int] = {}
+        self._ledger_lock = threading.Lock()
+        # Queued releases that a response just handed out again, kept for the thread that is about
+        # to parse that response: its new references take them over (see ``_reserve``).
+        self._reserved = threading.local()
         self._release_flush_lock = threading.Lock()
         self._release_backoff_until = 0.0
         self.releases_sent = 0
         self.release_failures = 0
         self.releases_dropped = 0
+        #: Objects the agent reported as released more often than they were handed out.
+        self.over_releases = 0
+        #: Hand-outs this client took ownership of (every object handle it parsed).
+        self.hand_outs_owned = 0
         self._closed = False
         self._closing_session = False
         self._last_request = _clock()
@@ -472,8 +501,9 @@ class InspectorClient:
             self._closed = True
             self.session = replace(self.session, state=state, error=error.code)
             # The agent discards a session's leases with it, so queued releases are moot.
-            self.releases_dropped += len(self._release_queue)
-            self._release_queue.clear()
+            self.releases_dropped += len(self._dead) + len(self._release_pending)
+            self._dead.clear()
+            self._release_pending.clear()
             pending = tuple(self._pending.values())
             self._pending.clear()
             for subscription in self._subscriptions.values():
@@ -620,7 +650,10 @@ class InspectorClient:
 
     def _request(self, method: str, params: dict[str, object], deadline: float) -> object:
         try:
-            return self._request_now(method, params, deadline)
+            result = self._request_now(method, params, deadline)
+            if method not in ("release", "session.close"):
+                self._reserve(result)
+            return result
         finally:
             if method not in ("release", "session.close"):
                 # After the caller's own answer is in hand, so its latency is unaffected.
@@ -636,6 +669,11 @@ class InspectorClient:
         trace_path = os.environ.get("WTK_INSPECTOR_TRACE")
         outcome = "ok"
         retries = 0
+        # A request that may act on the application counts as an effect from the moment it is sent;
+        # an objectStale answer proves the agent refused it before doing anything.
+        side_effect = method.startswith(("act.", "write.")) or method == "spy.invoke"
+        if side_effect:
+            effects.mark()
         retryable = (
             method
             in {
@@ -734,6 +772,8 @@ class InspectorClient:
             raise wrapped from error
         except InspectorError as error:
             outcome = error.code if error.code in ERROR_CODES else "error"
+            if side_effect and error.code == "objectStale":
+                effects.unmark()
             raise
         except Exception:
             outcome = "error"
@@ -759,7 +799,7 @@ class InspectorClient:
 
     def _parse(self, parser: Callable[[object], Any], value: object) -> Any:
         try:
-            return parser(value)
+            result = parser(value)
         except (ValueError, TypeError, OverflowError, UnicodeError) as error:
             self.invalidate(
                 InspectorUnavailableError("Invalid inspector response", code="sessionStale")
@@ -767,6 +807,9 @@ class InspectorClient:
             raise InspectorUnavailableError(
                 "Invalid inspector response", code="sessionStale"
             ) from error
+        # Every object handle in the response was counted by the agent; own them before anyone
+        # else can see the result.
+        return self.own_hand_outs(result)
 
     def _feature(self, *names: str) -> None:
         if not set(names) <= set(self.session.features):
@@ -1642,45 +1685,193 @@ class InspectorClient:
 
         return self._parse(parse, self._request("bindings", params, deadline))
 
-    def release(self, object_ids: Sequence[str], *, deadline: float) -> int:
-        if len(object_ids) > 256:
+    def release(self, objects: Sequence[tuple[str, int]], *, deadline: float) -> ReleaseOutcome:
+        """Give back ``count`` hand-outs of each object. Nothing is freed while others remain."""
+        if len(objects) > MAX_RELEASE_BATCH:
             raise InspectorLimitError("At most 256 object IDs are allowed", code="limitExceeded")
         try:
-            ids = [_identifier(item) for item in object_ids]
+            merged: dict[str, int] = {}
+            for object_id, count in objects:
+                merged[_identifier(object_id)] = merged.get(object_id, 0) + _int(
+                    count, 1, MAX_RELEASE_COUNT
+                )
         except ValueError as error:
-            raise InspectorError("Invalid object ID", code="invalidParams") from error
+            raise InspectorError("Invalid object release", code="invalidParams") from error
+        return self._send_release(list(merged.items()), deadline, self._request)
 
-        return self._send_release(ids, deadline, self._request)
+    def release_refs(self, refs: Sequence[ObjectRef], *, deadline: float) -> ReleaseOutcome:
+        """Give back, now, the hand-outs that these references own.
+
+        Used by a holder that keeps references only for someone else (the VS Code spy). Each
+        reference's hand-out is detached from its finalizer first, so it is released exactly once.
+        """
+        counts: dict[str, int] = {}
+        for ref in refs:
+            owner = owner_of(ref)
+            detached = owner.detach() if owner is not None else None
+            if detached is not None:
+                (key, box) = detached[2]
+                counts[key[0]] = counts.get(key[0], 0) + box[0]
+        items = list(counts.items())
+        outcome = ReleaseOutcome(0, 0)
+        for offset in range(0, len(items), MAX_RELEASE_BATCH):
+            try:
+                batch = self._send_release(
+                    items[offset : offset + MAX_RELEASE_BATCH], deadline, self._request
+                )
+            except InspectorError:
+                # Not given back: queue them again for the next flush rather than lose them.
+                for object_id, count in items[offset:]:
+                    self._dead.append(((object_id, 0), count))
+                raise
+            outcome = ReleaseOutcome(
+                outcome.released + batch.released, outcome.over_released + batch.over_released
+            )
+        return outcome
 
     def _send_release(
         self,
-        ids: list[str],
+        items: list[tuple[str, int]],
         deadline: float,
         request: Callable[[str, dict[str, object], float], object],
-    ) -> int:
-        def parse(value: object) -> int:
-            data = _obj(value, "releasedCount")
-            return _int(data["releasedCount"], 0, min(MAX_RELEASE_BATCH, len(ids)))
+    ) -> ReleaseOutcome:
+        def parse(value: object) -> ReleaseOutcome:
+            result = ReleaseResult.from_json(value)
+            if max(result.released_count, result.over_released_count) > len(items):
+                raise ValueError("More objects released than requested")
+            return ReleaseOutcome(result.released_count, result.over_released_count)
 
-        params: dict[str, object] = {"sessionId": self.session.session_id, "objectIds": ids}
-        return self._parse(parse, request("release", params, deadline))
+        wire = ReleaseParams(
+            self.session.session_id,
+            tuple(ReleaseItem(object_id, count) for object_id, count in items),
+        )
+        params: dict[str, object] = wire.to_json()
+        outcome: ReleaseOutcome = self._parse(parse, request("release", params, deadline))
+        self.over_releases += outcome.over_released
+        return outcome
 
-    def defer_release(self, object_id: str) -> None:
-        """Queue an object for release. Safe from a finalizer on any thread.
+    # --- Hand-out ownership -------------------------------------------------------------------
+    #
+    # Memory-ordering argument. A hand-out is owned by the ``ObjectRef`` instance that was parsed
+    # for it; ``_own`` attaches a ``weakref.finalize`` to that instance *before the response is
+    # returned to anyone*, so no thread can hold a reference whose hand-out is not owned yet, and
+    # nothing but that instance's own death ever gives its hand-out back. There is no shared
+    # counter that a finalizer reads, so a hand-out parsed on one thread can never be given back
+    # by a finalizer that runs on another: a finalizer only describes its own instance, and
+    # appends to a ``deque``, which is atomic and takes no lock, so it is safe at any allocation
+    # point (on the reader thread, inside a request holding the client's locks, or mid-flush).
+    # Locks (``_ledger_lock``) are taken only by ordinary threads that never wait on a finalizer.
+    #
+    # The agent counts the same hand-outs before a response is written and subtracts a release
+    # by count, so a release that overtakes or trails any response can only leave it with
+    # outstanding hand-outs, never end a lease that something still holds.
+
+    def _own(self, ref: ObjectRef) -> None:
+        """Make ``ref`` own one hand-out of its object, to be given back when it dies."""
+        if owner_of(ref) is not None or self._closed:
+            return
+        key = (ref.object_id, ref.generation)
+        units = 1
+        reserved: dict[tuple[str, int], int] | None = getattr(self._reserved, "units", None)
+        if reserved and reserved.get(key):
+            # The response that handed this ID out again arrived while a release for it was still
+            # queued: the new owner takes over that hand-out too, so the release is never sent.
+            units += 1
+            if reserved[key] == 1:
+                del reserved[key]
+            else:
+                reserved[key] -= 1
+        self.hand_outs_owned += 1
+        box = [units]
+        owner = weakref.finalize(ref, self._hand_out_died, key, box)
+        owner.atexit = False
+        attach(ref, owner)
+
+    def own_hand_outs(self, result: Any) -> Any:
+        """Own every ``ObjectRef`` in a parsed response and return it."""
+        try:
+            for ref in object_refs(result):
+                self._own(ref)
+        finally:
+            self._return_reserved()
+        return result
+
+    def _reserve(self, result: object) -> None:
+        """Set aside the queued releases that ``result`` hands out again, for its parser.
+
+        Runs on the requesting thread when the answer arrives, before the flush that follows the
+        request. The counts stay exact: a queued hand-out moves from the queue to the reservation
+        and from there to the owner of the new reference, or back to the queue if none takes it.
+        An optimisation only; correctness never depends on it, because the agent counts.
+        """
+        if not (self._dead or self._release_pending) or self._closed:
+            return
+        keys = list(wire_keys(result))
+        if not keys:
+            return
+        with self._ledger_lock:
+            self._absorb()
+            reserved: dict[tuple[str, int], int] = self._reserved.__dict__.setdefault("units", {})
+            for key in keys:
+                queued = self._release_pending.get(key, 0)
+                if queued:
+                    if queued == 1:
+                        del self._release_pending[key]
+                    else:
+                        self._release_pending[key] = queued - 1
+                    reserved[key] = reserved.get(key, 0) + 1
+
+    def _return_reserved(self) -> None:
+        """Queue again what this thread reserved and no new reference took over."""
+        reserved: dict[tuple[str, int], int] | None = getattr(self._reserved, "units", None)
+        if reserved:
+            for key, units in reserved.items():
+                self._dead.append((key, units))
+            reserved.clear()
+
+    def _hand_out_died(self, key: tuple[str, int], box: list[int]) -> None:
+        """Queue a dead reference's hand-out for release. A finalizer: no I/O, no locks."""
+        if self._closed:
+            self.releases_dropped += box[0]
+            return
+        self._dead.append((key, box[0]))
+
+    def _absorb(self) -> None:
+        """Move finalizer output into the pending table. Call with ``_ledger_lock`` held."""
+        while True:
+            try:
+                key, units = self._dead.popleft()
+            except IndexError:
+                break
+            self._release_pending[key] = self._release_pending.get(key, 0) + units
+        while len(self._release_pending) > _PENDING_RELEASE_LIMIT:
+            del self._release_pending[next(iter(self._release_pending))]
+            self.releases_dropped += 1
+
+    def defer_release(self, object_id: str, generation: int = 1, count: int = 1) -> None:
+        """Queue hand-outs for release. Safe from a finalizer on any thread.
 
         It never blocks, takes a lock or does I/O: a finalizer can run at any allocation, on the
         reader thread or inside a request that holds a client lock, where a pipe request would
-        stall or deadlock. The ID is sent later by ``flush_releases``. Nothing is queued once the
-        session is closed, because its leases went with it.
+        stall or deadlock. The count is sent later by ``flush_releases``. Nothing is queued once
+        the session is closed, because its leases went with it.
         """
-        if self._closed:
-            self.releases_dropped += 1
-            return
-        self._release_queue.append(object_id)
+        self._hand_out_died((object_id, generation), [count])
 
     @property
     def pending_releases(self) -> int:
-        return len(self._release_queue)
+        """Hand-outs queued for release and not yet sent."""
+        with self._ledger_lock:
+            self._absorb()
+            return sum(self._release_pending.values())
+
+    def _take_batch(self) -> list[tuple[str, int]]:
+        with self._ledger_lock:
+            self._absorb()
+            merged: dict[str, int] = {}
+            for key in list(islice(self._release_pending, MAX_RELEASE_BATCH)):
+                merged[key[0]] = merged.get(key[0], 0) + self._release_pending.pop(key)
+            return list(merged.items())
 
     def flush_releases(self) -> int:
         """Send queued releases in batches of at most 256; failures are counted, not raised.
@@ -1689,10 +1880,10 @@ class InspectorClient:
         does nothing on the reader thread or for a closed session, at most one thread flushes at
         a time, and it adds at most ``_RELEASE_FLUSH_BUDGET`` seconds. A failed batch is dropped
         (the agent expires unreleased leases itself) and pauses flushing briefly. Returns the
-        number of IDs sent successfully.
+        number of objects sent successfully.
         """
         if (
-            not self._release_queue
+            not (self._dead or self._release_pending)
             or self._closed
             or threading.current_thread() is self._reader
             or time.monotonic() < self._release_backoff_until
@@ -1702,29 +1893,23 @@ class InspectorClient:
         sent = 0
         try:
             budget = time.monotonic() + _RELEASE_FLUSH_BUDGET
-            while self._release_queue and not self._closed:
+            while not self._closed:
                 now = time.monotonic()
                 if now >= budget:
                     break
-                batch: dict[str, None] = {}
-                while len(batch) < MAX_RELEASE_BATCH:
-                    try:
-                        batch[self._release_queue.popleft()] = None
-                    except IndexError:
-                        break
+                batch = self._take_batch()
                 if not batch:
                     break
-                ids = list(batch)
                 try:
                     self._send_release(
-                        ids, min(budget, now + _RELEASE_BATCH_TIMEOUT), self._request_now
+                        batch, min(budget, now + _RELEASE_BATCH_TIMEOUT), self._request_now
                     )
                 except Exception:
                     self.release_failures += 1
                     self._release_backoff_until = time.monotonic() + _RELEASE_BACKOFF
                     break
-                sent += len(ids)
-                self.releases_sent += len(ids)
+                sent += len(batch)
+                self.releases_sent += len(batch)
         finally:
             self._release_flush_lock.release()
         return sent

@@ -37,7 +37,7 @@ from typing import (
     overload,
 )
 
-from wintestkit import runtime
+from wintestkit import effects, runtime
 from wintestkit.app import App
 from wintestkit.backends.element import TargetElement, WpfElement
 from wintestkit.engine import actions, overlay, relocate, waits
@@ -67,6 +67,7 @@ from wintestkit.errors import (
     WindowNotFoundError,
     WriteDeniedError,
     WtkError,
+    is_stale,
 )
 from wintestkit.uia import patterns
 from wintestkit.uia.element import ElementInfo, Rect, UIAElement
@@ -722,6 +723,24 @@ class _BoundBase:
             self.explain_relocation(exc)
             raise
 
+    def _read[T](self, read: Callable[[TargetElement], T], timeout: float | None = None) -> T:
+        """Resolve the element and read from it.
+
+        The element is looked up anew on every access, but its handle can still go stale between
+        the lookup and the read (the object was replaced, or the agent dropped it). That is a
+        cue to resolve it again from its locator, once, and read again, rather than to fail or
+        to poll until the timeout. Only reads come through here: an action is retried by
+        ``perform``, and only while nothing it did had an effect.
+        """
+        __tracebackhide__ = True
+        element = self.resolve(timeout)
+        try:
+            return read(element)
+        except (InspectorError, UIAError) as exc:
+            if not is_stale(exc):
+                raise
+        return read(self.resolve(timeout))
+
     def exists(self, timeout: float = 0) -> bool:
         """Whether the element is found (``timeout`` > 0 waits for it to appear)."""
         __tracebackhide__ = True
@@ -748,7 +767,7 @@ class _BoundBase:
 
     def info(self) -> ElementInfo:
         __tracebackhide__ = True
-        return self.resolve().info(with_patterns=True)
+        return self._read(lambda element: element.info(with_patterns=True))
 
     def wait_for(self, state: State = "visible", *, timeout: float | None = None) -> Any:
         """Wait until the element reaches ``state`` and return ``self``."""
@@ -794,7 +813,7 @@ class _BoundBase:
     def rect(self) -> Rect:
         """The current bounds in physical screen pixels."""
         __tracebackhide__ = True
-        bounds = self.resolve().rect
+        bounds = self._read(lambda element: element.rect)
         if bounds is None:
             raise ActionError(f"{self._description()} has no on-screen rectangle")
         return bounds
@@ -1179,16 +1198,19 @@ class BoundControl(_BoundBase):
 
         This is the hook for writing actions: it auto-waits (for the element to exist, or with
         ``actionability: strict`` also to be enabled and visible), highlights
-        when configured, and resolves and acts once more if the element vanishes mid-action.
+        when configured, and resolves and acts once more if the element vanishes mid-action: but
+        only while nothing the action did had an effect (no input was sent, no pattern or agent
+        action ran), because repeating one that already typed or clicked would do it twice.
         """
         __tracebackhide__ = True
         for attempt in range(2):
             element = self._actionable(timeout)
             self._maybe_highlight(element)
+            acted = effects.count()
             try:
                 return act(element)
             except UIAError as exc:
-                if not exc.element_gone or attempt == 1:
+                if not exc.element_gone or attempt == 1 or effects.count() != acted:
                     raise
         raise AssertionError("unreachable")  # pragma: no cover
 
@@ -1545,7 +1567,7 @@ class BoundControl(_BoundBase):
         __tracebackhide__ = True
         from wintestkit.engine.property_read import read_property
 
-        return read_property(self.resolve(), name)
+        return self._read(lambda element: read_property(element, name))
 
     def wait_for_property(self, name: str, expected: Any, *, timeout: float | None = None) -> Self:
         """Wait for a property to match and return this element."""
@@ -1583,11 +1605,11 @@ class BoundControl(_BoundBase):
     def text(self) -> str:
         """The element's text: its value, document text or UIA name."""
         __tracebackhide__ = True
-        return actions.get_text(self.resolve())
+        return self._read(actions.get_text)
 
     def is_enabled(self) -> bool:
         __tracebackhide__ = True
-        return self.resolve().is_enabled
+        return self._read(lambda element: element.is_enabled)
 
     # -- derivation -----------------------------------------------------------------------------
 
@@ -1817,7 +1839,7 @@ class _Valued(BoundControl):
     def value(self) -> str:
         """The ValuePattern value (for a combo box, the text of its edit part)."""
         __tracebackhide__ = True
-        return actions.get_value(self.resolve())
+        return self._read(actions.get_value)
 
 
 class _TextEntry(_Valued):

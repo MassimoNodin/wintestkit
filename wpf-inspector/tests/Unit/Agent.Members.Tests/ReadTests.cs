@@ -39,7 +39,7 @@ namespace WinTestKit.Inspector.Agent.Members.Tests
                 return value;
             }
             public bool TryGet(string objectId, long generation, out object target, out Dispatcher dispatcher) { target = null!; dispatcher = null!; return false; }
-            public int Release(IEnumerable<string> objectIds) => 0;
+            public ReleaseResult Release(IReadOnlyList<ReleaseItem> items) => new ReleaseResult();
         }
         private sealed class ReferenceComparer : IEqualityComparer<object>
         {

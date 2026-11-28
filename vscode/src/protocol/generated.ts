@@ -1185,6 +1185,7 @@ export interface ProtocolContracts {
   Rect?: Rect;
   RegexFlags?: RegexFlags;
   RelativeSource?: RelativeSource;
+  ReleaseItem?: ReleaseItem;
   ReleaseParams?: ReleaseParams;
   ReleaseResult?: ReleaseResult;
   Relocation?: Relocation;
@@ -3928,6 +3929,16 @@ export interface ReadResult {
   readId: Identifier;
 }
 /**
+ * The number of hand-outs of one object that the client no longer holds. The agent counts every handle it sends, and an object's lease ends only when its count returns to zero.
+ *
+ * This interface was referenced by `ProtocolContracts`'s JSON-Schema
+ * via the `definition` "ReleaseItem".
+ */
+export interface ReleaseItem {
+  objectId: Identifier;
+  count: number;
+}
+/**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
  * via the `definition` "ReleaseParams".
  */
@@ -3936,14 +3947,21 @@ export interface ReleaseParams {
   /**
    * @maxItems 256
    */
-  objectIds: Identifier[];
+  objects: ReleaseItem[];
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema
  * via the `definition` "ReleaseResult".
  */
 export interface ReleaseResult {
+  /**
+   * Objects whose last outstanding hand-out was released, which ended their lease.
+   */
   releasedCount: number;
+  /**
+   * Objects for which more hand-outs were released than were outstanding, or that were unknown. The excess was ignored and nothing live was freed.
+   */
+  overReleasedCount: number;
 }
 /**
  * This interface was referenced by `ProtocolContracts`'s JSON-Schema

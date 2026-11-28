@@ -18,6 +18,7 @@ import sys
 import threading
 import time
 from collections import OrderedDict
+from collections.abc import Generator
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, BinaryIO, cast
@@ -278,6 +279,9 @@ class Server:
         self._managed_rpc_lock = threading.RLock()
         self._managed_clients: dict[str, InspectorClient] = {}
         self._managed_objects: dict[str, dict[str, int]] = {}
+        # The hand-outs behind managed_objects: the references the VS Code spy was given. They
+        # keep the agent's counted hand-outs alive until the spy releases them (or refreshes).
+        self._managed_holds: dict[str, dict[str, list[ObjectRef]]] = {}
         self._spy_selection: tuple[InspectorClient, ObjectRef] | None = None
         self._spy_retained_node: TargetElement | None = None
         self._spy_ticket: (
@@ -804,6 +808,7 @@ class Server:
                     self._spy_retained_node = node
                 if not protected:
                     self._managed_objects.get(node.ref.session_id, {}).pop(node.ref.object_id, None)
+                    self._managed_holds.get(node.ref.session_id, {}).pop(node.ref.object_id, None)
             if not protected:
                 node.release()
 
@@ -1780,6 +1785,26 @@ class Server:
                     result["nextPageToken"] = f"uia:{remaining}"
             return result
 
+    @contextlib.contextmanager
+    def _holding_hand_outs(self) -> Generator[None]:
+        """Keep the object references a managed request returned, for the spy that receives them.
+
+        The agent counted each hand-out. Left alone, a reference would give its hand-out back as
+        soon as the response had been serialised, while the spy still holds the handle; so the
+        server holds the references until the spy releases them. A request that fails returns
+        nothing to the spy, so its references are simply dropped.
+        """
+        from wintestkit.inspector.handouts import collect_hand_outs
+
+        with collect_hand_outs() as handed:
+            yield
+        if handed:
+            with self._managed_lock:
+                for ref in handed:
+                    self._managed_holds.setdefault(ref.session_id, {}).setdefault(
+                        ref.object_id, []
+                    ).append(ref)
+
     def _remember_managed(self, session_id: str, value: Any) -> None:
         """Remember only handles actually returned by this authenticated session."""
         if isinstance(value, list):
@@ -1813,6 +1838,7 @@ class Server:
                     self._clear_managed_spy()
                 self._managed_clients.pop(session_id, None)
                 self._managed_objects.pop(session_id, None)
+                self._managed_holds.pop(session_id, None)
             raise InspectorUnavailableError(
                 "Inspector session is no longer attached", code="sessionStale"
             )
@@ -1844,7 +1870,7 @@ class Server:
         with self._node_lock:
             for node_id, node in list(self.nodes.items()):
                 if isinstance(node, WpfElement):
-                    node.forget_release()
+                    node.release()
                     del self.nodes[node_id]
                     self.node_infos.pop(node_id, None)
             self._wpf_windows.clear()
@@ -1853,21 +1879,22 @@ class Server:
             self._wpf_text.clear()
         with self._managed_lock:
             if isinstance(self._spy_retained_node, WpfElement):
-                self._spy_retained_node.forget_release()
+                self._spy_retained_node.release()
             self._clear_managed_spy()
-            objects, self._managed_objects = self._managed_objects, {}
+            self._managed_objects = {}
+            holds, self._managed_holds = self._managed_holds, {}
             clients = dict(self._managed_clients)
-        for session_id, handles in objects.items():
+        # Dropped nodes give their own hand-outs back when they are collected; the spy's are
+        # released here, by count, so the next selection starts from nothing.
+        for session_id, held in holds.items():
             client = clients.get(session_id)
             if client is None:
                 continue
-            ids = list(handles)
-            for offset in range(0, len(ids), 256):
-                with contextlib.suppress(WtkError):
-                    client.release(
-                        ids[offset : offset + 256],
-                        deadline=time.monotonic() + self.cfg.inspector.request_timeout,
-                    )
+            with contextlib.suppress(WtkError):
+                client.release_refs(
+                    [ref for refs in held.values() for ref in refs],
+                    deadline=time.monotonic() + self.cfg.inspector.request_timeout,
+                )
 
     def _dispatch_managed(self, method: str, params: dict[str, Any]) -> Any:
         from wintestkit import runtime
@@ -1876,7 +1903,7 @@ class Server:
         from wintestkit.inspector.probe import current_identity, identify
 
         assert self.cfg is not None
-        with runtime.config_scope(self.cfg):
+        with runtime.config_scope(self.cfg), self._holding_hand_outs():
             if method == "inspect.managed.detach":
                 session_id = params["sessionId"]
                 with self._managed_lock:
@@ -1884,6 +1911,7 @@ class Server:
                         self._clear_managed_spy()
                     client = self._managed_clients.pop(session_id, None)
                     self._managed_objects.pop(session_id, None)
+                    self._managed_holds.pop(session_id, None)
                 if client is not None:
                     client.close()
                 return {"detached": True}
@@ -2098,10 +2126,14 @@ class Server:
                             if self._spy_selection[1].object_id in params["objectIds"]:
                                 self._spy_ticket = None
                         ids = [item for item in params["objectIds"] if item not in protected]
+                        held = self._managed_holds.get(session_id, {})
+                        refs = [ref for item in ids for ref in held.pop(item, [])]
                         for item in ids:
                             self._managed_objects.get(session_id, {}).pop(item, None)
-                    # Outside the locks: a busy target can take the whole request timeout.
-                    released = client.release(ids, deadline=deadline) if ids else 0
+                    # Outside the locks: a busy target can take the whole request timeout. Only
+                    # what the spy was handed is given back, so a wrapper that holds the same
+                    # object keeps its own hand-out.
+                    released = client.release_refs(refs, deadline=deadline).released if refs else 0
                     result = {"releasedCount": released}
                 else:
                     raise RpcError(-32601, "method not found")
@@ -2366,6 +2398,7 @@ class Server:
                 self._clear_managed_spy()
                 self._managed_clients.clear()
                 self._managed_objects.clear()
+                self._managed_holds.clear()
             self.stop_spy()
             self._stopping.set()
             return None

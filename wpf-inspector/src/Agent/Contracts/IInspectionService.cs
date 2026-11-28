@@ -16,7 +16,7 @@ namespace WinTestKit.Inspector.Agent.Contracts
         Task<PageDto<MemberInfo>> MembersAsync(string objectId, long generation, int? pageSize, string? pageToken, CancellationToken ct);
         Task<ReadResult> ReadAsync(string objectId, long generation, IReadOnlyList<IReadOnlyList<PathSegment>> paths, CancellationToken ct);
         Task<IReadOnlyList<BindingInfoDto>> BindingsAsync(string objectId, long generation, IReadOnlyList<string> memberKeys, CancellationToken ct);
-        Task<int> ReleaseAsync(IReadOnlyList<string> objectIds, CancellationToken ct);
+        Task<ReleaseResult> ReleaseAsync(IReadOnlyList<ReleaseItem> objects, CancellationToken ct);
     }
 
     public interface IItemsInspectionService

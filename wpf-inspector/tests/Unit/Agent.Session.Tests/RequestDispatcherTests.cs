@@ -219,8 +219,8 @@ public class RequestDispatcherTests
         Assert.Empty(ReadResult.FromJson(response.Result!).Values); Assert.Equal("read:object:2:Name", service.Call);
         response = await Dispatch(dispatcher, PipeMethods.Bindings, new BindingsParams { SessionId = Session, ObjectId = "object", Generation = 2, MemberKeys = new[] { "key" } }.ToJson());
         Assert.Empty(BindingsResult.FromJson(response.Result!).Bindings); Assert.Equal("bindings:object:2:key", service.Call);
-        response = await Dispatch(dispatcher, PipeMethods.Release, new ReleaseParams { SessionId = Session, ObjectIds = new[] { "object" } }.ToJson());
-        Assert.Equal(1, ReleaseResult.FromJson(response.Result!).ReleasedCount); Assert.Equal("release:object", service.Call);
+        response = await Dispatch(dispatcher, PipeMethods.Release, new ReleaseParams { SessionId = Session, Objects = new[] { new ReleaseItem { ObjectId = "object", Count = 3 } } }.ToJson());
+        Assert.Equal(1, ReleaseResult.FromJson(response.Result!).ReleasedCount); Assert.Equal(1, ReleaseResult.FromJson(response.Result!).OverReleasedCount); Assert.Equal("release:objectx3", service.Call);
         response = await Dispatch(dispatcher, PipeMethods.Close, new CloseParams().ToJson());
         Assert.True(CloseResult.FromJson(response.Result!).Closed);
     }
@@ -612,6 +612,57 @@ public class RequestDispatcherTests
         public Task<QueryFindAllResult> FindAllAsync(Locator locator, DateTime deadline, int timeoutMs, string? continuation, CancellationToken ct) => Task.FromResult(new QueryFindAllResult { Matches = new[] { Match }, Count = 1, Complete = true });
     }
 
+    private sealed class LedgerService : RecordingService, IHandOutLedger
+    {
+        public List<string> Events { get; } = new();
+        public Exception? Failure { get; set; }
+        public override Task<MappingDto> ResolveAsync(int[] runtimeId, long? nativeWindowHandle, CancellationToken ct)
+        {
+            lock (Events) Events.Add("resolve");
+            if (Failure != null) throw Failure;
+            var handle = new ObjectRef { SessionId = Session, ObjectId = "object", Generation = 4, DispatcherId = "dispatcher", Type = new TypeInfoDto() };
+            return Task.FromResult(new MappingDto { Status = MappingStatus.Exact, RuntimeId = runtimeId, Object = handle, Process = new ProcessIdentity { Pid = 1, CreationTimeUtc = "2026-01-01T00:00:00Z" } });
+        }
+        public long BeginRequest() { lock (Events) Events.Add("begin"); return 7; }
+        public void EndRequest(long token) { lock (Events) Events.Add("end:" + token); }
+        public void CountHandOuts(IReadOnlyList<KeyValuePair<string, long>> handles) { lock (Events) Events.Add("count:" + string.Join(",", handles.Select(item => item.Key + "@" + item.Value))); }
+    }
+
+    [Fact]
+    public async Task CountsEveryHandleInAResultBeforeTheResponseIsReturnedAndBracketsTheRequest()
+    {
+        var service = new LedgerService();
+        var dispatcher = new RequestDispatcher(Session, service);
+        var response = await Dispatch(dispatcher, PipeMethods.Resolve, new ResolveParams { RuntimeId = new[] { 3, 4 } }.ToJson());
+        Assert.Null(response.Error);
+        Assert.Equal(new[] { "begin", "resolve", "count:object@4", "end:7" }, service.Events);
+    }
+
+    [Fact]
+    public async Task CountsNothingForAFailedRequestButStillEndsIt()
+    {
+        var service = new LedgerService { Failure = new ProtocolException(ErrorCodes.ObjectStale, "gone") };
+        var dispatcher = new RequestDispatcher(Session, service);
+        var response = await Dispatch(dispatcher, PipeMethods.Resolve, new ResolveParams { RuntimeId = new[] { 3, 4 } }.ToJson());
+        Assert.Equal(ErrorCodes.ObjectStale, response.Error!.Code);
+        Assert.Equal(new[] { "begin", "resolve", "end:7" }, service.Events);
+    }
+
+    [Fact]
+    public void FindsHandlesOncePerOccurrenceAndIgnoresOtherObjects()
+    {
+        var handle = new ObjectRef { SessionId = Session, ObjectId = "object", Generation = 4, DispatcherId = "dispatcher", Type = new TypeInfoDto() }.ToJson();
+        var other = new ObjectRef { SessionId = Session, ObjectId = "other", Generation = 9, DispatcherId = "dispatcher", Type = new TypeInfoDto() }.ToJson();
+        var notHandle = new JsonObjectNode(); notHandle.Add("objectId", new JsonStringNode("not-a-handle")); notHandle.Add("generation", JsonNumberNode.From(1));
+        var list = new JsonArrayNode(); list.Add(handle); list.Add(other); list.Add(handle); list.Add(notHandle);
+        var root = new JsonObjectNode(); root.Add("matches", list); root.Add("nested", new ObjectRef { SessionId = Session, ObjectId = "object", Generation = 4, DispatcherId = "d", Type = new TypeInfoDto() }.ToJson());
+        var found = HandOuts.Find(root);
+        Assert.Equal(4, found.Count);
+        Assert.Equal(3, found.Count(item => item.Key == "object" && item.Value == 4));
+        Assert.Single(found, item => item.Key == "other" && item.Value == 9);
+        Assert.Empty(HandOuts.Find(new JsonObjectNode()));
+    }
+
     private class RecordingService : IInspectionService
     {
         public string? Call { get; private set; }
@@ -619,13 +670,13 @@ public class RequestDispatcherTests
         public void Dispose() { }
         private static MappingDto Mapping(int[] id) => new() { Status = MappingStatus.NotFound, RuntimeId = id, Process = new ProcessIdentity { Pid = 1, CreationTimeUtc = "2026-01-01T00:00:00Z" } };
         private static PageDto<T> Page<T>() => new() { Complete = true, SnapshotId = "snapshot" };
-        public Task<MappingDto> ResolveAsync(int[] runtimeId, long? nativeWindowHandle, CancellationToken ct) { Call = $"resolve:{string.Join(",", runtimeId)}:{nativeWindowHandle}"; return Task.FromResult(Mapping(runtimeId)); }
+        public virtual Task<MappingDto> ResolveAsync(int[] runtimeId, long? nativeWindowHandle, CancellationToken ct) { Call = $"resolve:{string.Join(",", runtimeId)}:{nativeWindowHandle}"; return Task.FromResult(Mapping(runtimeId)); }
         public Task<ReadBatchResult> ReadBatchAsync(IReadOnlyList<CandidateRequest> candidates, IReadOnlyList<IReadOnlyList<PathSegment>> paths, CancellationToken ct) { var candidate = candidates.Single(); Call = $"batch:{string.Join(",", candidate.RuntimeId)}:{candidate.NativeWindowHandle}:{paths[0][0].Name}"; return Task.FromResult(new ReadBatchResult { Candidates = new[] { new CandidateResult { RuntimeId = candidate.RuntimeId, Mapping = Mapping(candidate.RuntimeId) } } }); }
         public Task<PageDto<ManagedNodeDto>> RootsAsync(int? pageSize, string? pageToken, CancellationToken ct) { if (Error != null) throw Error; Call = $"roots:{pageSize}:{pageToken}"; return Task.FromResult(Page<ManagedNodeDto>()); }
         public Task<PageDto<ManagedNodeDto>> ChildrenAsync(string objectId, long generation, string tree, int? pageSize, string? pageToken, CancellationToken ct) { Call = $"children:{objectId}:{generation}:{tree}:{pageSize}:{pageToken}"; return Task.FromResult(Page<ManagedNodeDto>()); }
         public Task<PageDto<WinTestKit.Inspector.Protocol.MemberInfo>> MembersAsync(string objectId, long generation, int? pageSize, string? pageToken, CancellationToken ct) { Call = $"members:{objectId}:{generation}:{pageSize}:{pageToken}"; return Task.FromResult(Page<WinTestKit.Inspector.Protocol.MemberInfo>()); }
         public Task<ReadResult> ReadAsync(string objectId, long generation, IReadOnlyList<IReadOnlyList<PathSegment>> paths, CancellationToken ct) { Call = $"read:{objectId}:{generation}:{paths[0][0].Name}"; return Task.FromResult(new ReadResult { ReadId = "read" }); }
         public Task<IReadOnlyList<BindingInfoDto>> BindingsAsync(string objectId, long generation, IReadOnlyList<string> memberKeys, CancellationToken ct) { Call = $"bindings:{objectId}:{generation}:{string.Join(",", memberKeys)}"; return Task.FromResult<IReadOnlyList<BindingInfoDto>>(Array.Empty<BindingInfoDto>()); }
-        public Task<int> ReleaseAsync(IReadOnlyList<string> objectIds, CancellationToken ct) { Call = $"release:{string.Join(",", objectIds)}"; return Task.FromResult(objectIds.Count); }
+        public Task<ReleaseResult> ReleaseAsync(IReadOnlyList<ReleaseItem> objects, CancellationToken ct) { Call = $"release:{string.Join(",", objects.Select(item => item.ObjectId + "x" + item.Count))}"; return Task.FromResult(new ReleaseResult { ReleasedCount = objects.Count, OverReleasedCount = 1 }); }
     }
 }

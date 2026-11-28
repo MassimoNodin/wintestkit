@@ -10,6 +10,7 @@ from collections.abc import Generator
 from dataclasses import dataclass
 from typing import Literal
 
+from wintestkit import effects
 from wintestkit.errors import ActionError
 from wintestkit.uia import win32
 
@@ -123,6 +124,7 @@ def _send(events: list[win32.INPUT]) -> None:
     __tracebackhide__ = True
     if not events:
         return
+    effects.mark()
     array = (win32.INPUT * len(events))(*events)
     sent = win32.SendInput(len(events), array, ctypes.sizeof(win32.INPUT))
     if sent != len(events):

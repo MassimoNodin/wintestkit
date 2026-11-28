@@ -25,6 +25,8 @@ namespace WinTestKit.Inspector.Agent.Mapping.Tests
 
         private static readonly CancellationToken None = CancellationToken.None;
 
+        private static IReadOnlyList<KeyValuePair<string, long>> Hand(ObjectRef handle) => new[] { new KeyValuePair<string, long>(handle.ObjectId, handle.Generation) };
+        private static IReadOnlyList<ReleaseItem> Items(string objectId, int count = 1) => new[] { new ReleaseItem { ObjectId = objectId, Count = count } };
         private static IReadOnlyList<IReadOnlyList<PathSegment>> Paths(params string[] names) =>
             names.Select(name => (IReadOnlyList<PathSegment>)new[] { new PathSegment { Kind = SegmentKind.Property, Name = name } }).ToArray();
 
@@ -67,7 +69,8 @@ namespace WinTestKit.Inspector.Agent.Mapping.Tests
                     PageDto<MethodMetadataDto>.FromJson(all.ToJson(), MethodMetadataDto.FromJson);
                     await Error(ErrorCodes.InvalidPageToken, () => service.MembersAsync(handle.ObjectId, handle.Generation, 1, first.NextToken, None));
                     await Error(ErrorCodes.ObjectStale, () => service.SpyMethodsAsync(handle.ObjectId, handle.Generation + 1, 1, null, None));
-                    await service.ReleaseAsync(new[] { handle.ObjectId }, None);
+                    service.CountHandOuts(Hand(handle));
+                    await service.ReleaseAsync(Items(handle.ObjectId), None);
                     await Error(ErrorCodes.ObjectStale, () => service.SpyMethodsAsync(handle.ObjectId, handle.Generation, 1, first.NextToken, None));
                 }
             }
@@ -552,9 +555,14 @@ namespace WinTestKit.Inspector.Agent.Mapping.Tests
                 Assert.Same(second.Window, inspector.BindingTarget);
                 Assert.Equal(keys, inspector.BindingKeys);
                 await Error(ErrorCodes.ObjectStale, () => service.ReadAsync(root.ObjectId, root.Generation + 1, Paths("A"), None));
-                Assert.Equal(1, await service.ReleaseAsync(new[] { root.ObjectId, root.ObjectId, "unknown" }, None));
+                service.CountHandOuts(Hand(root));
+                var released = await service.ReleaseAsync(new[] { new ReleaseItem { ObjectId = root.ObjectId, Count = 1 }, new ReleaseItem { ObjectId = "unknown", Count = 1 } }, None);
+                Assert.Equal(1, released.ReleasedCount);
+                Assert.Equal(1, released.OverReleasedCount);
                 await Error(ErrorCodes.ObjectStale, () => service.ActAsync(PipeMethods.ActFocus, root, DateTime.UtcNow.AddSeconds(60), 2000, None));
-                Assert.Equal(0, await service.ReleaseAsync(new[] { root.ObjectId }, None));
+                released = await service.ReleaseAsync(Items(root.ObjectId), None);
+                Assert.Equal(0, released.ReleasedCount);
+                Assert.Equal(1, released.OverReleasedCount);
                 await Error(ErrorCodes.ObjectStale, () => service.ReadAsync(root.ObjectId, root.Generation, Paths("A"), None));
                 await Error(ErrorCodes.ObjectStale, () => service.BindingsAsync(root.ObjectId, root.Generation, keys, None));
                 await Error(ErrorCodes.ObjectStale, () => service.MembersAsync(root.ObjectId, root.Generation, null, null, None));
@@ -574,7 +582,7 @@ namespace WinTestKit.Inspector.Agent.Mapping.Tests
                 await Error(ErrorCodes.LimitExceeded, () => service.ReadBatchAsync(candidates, Paths("A"), None));
                 await Error(ErrorCodes.LimitExceeded, () => service.ReadAsync("unknown", 1, Paths(Enumerable.Repeat("A", 33).ToArray()), None));
                 await Error(ErrorCodes.LimitExceeded, () => service.BindingsAsync("unknown", 1, Enumerable.Repeat("A", 33).ToArray(), None));
-                await Error(ErrorCodes.LimitExceeded, () => service.ReleaseAsync(Enumerable.Repeat("A", 257).ToArray(), None));
+                await Error(ErrorCodes.LimitExceeded, () => service.ReleaseAsync(Enumerable.Repeat("A", 257).Select(id => new ReleaseItem { ObjectId = id, Count = 1 }).ToArray(), None));
                 Assert.Empty(inspector.Reads);
             }
         }
@@ -720,8 +728,11 @@ namespace WinTestKit.Inspector.Agent.Mapping.Tests
                 Assert.Equal(32, inspector.BindingKeys!.Count);
                 var candidates = Enumerable.Range(0, 32).Select(index => new CandidateRequest(new[] { index + 1 }, window.Handle.ToInt64())).ToArray();
                 Assert.Equal(32, (await service.ReadBatchAsync(candidates, Paths("A"), None)).Candidates.Count);
-                Assert.Equal(1, await service.ReleaseAsync(Enumerable.Repeat(root.ObjectId, 256).ToArray(), None));
-                Assert.Equal(0, await service.ReleaseAsync(Array.Empty<string>(), None));
+                service.CountHandOuts(Hand(root));
+                var all = await service.ReleaseAsync(Enumerable.Repeat(root.ObjectId, 256).Select(id => new ReleaseItem { ObjectId = id, Count = 1 }).ToArray(), None);
+                Assert.Equal(1, all.ReleasedCount);
+                Assert.Equal(1, all.OverReleasedCount);
+                Assert.Equal(0, (await service.ReleaseAsync(Array.Empty<ReleaseItem>(), None)).ReleasedCount);
             }
         }
 

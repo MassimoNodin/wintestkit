@@ -7,9 +7,10 @@ resolves again so elements are never stale.
 from __future__ import annotations
 
 import contextlib
+import logging
 import re
 import time
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 from contextvars import ContextVar
 from dataclasses import dataclass, replace
 from difflib import SequenceMatcher
@@ -65,17 +66,22 @@ from wintestkit.errors import (
     AmbiguousElementError,
     ElementNotFoundError,
     InspectorDeadlineError,
+    InspectorError,
     InspectorLimitError,
     LocatorError,
     NoUiaPeerError,
+    UIAError,
     WindowNotFoundError,
     WtkError,
+    is_stale,
 )
 from wintestkit.inspector.models import WaitCondition
 from wintestkit.uia import patterns
 from wintestkit.uia.element import UIAElement
 
 __all__ = ["Scope", "query_all", "resolve", "resolve_all", "resolve_window"]
+
+log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -838,8 +844,31 @@ def _walk(scope: Scope, locator: Locator, final_all: bool) -> list[TargetElement
     raise AssertionError("a locator chain always has at least one link")  # pragma: no cover
 
 
+def _again_if_stale[T](lookup: Callable[[], T]) -> T:
+    """Run a lookup; if a handle it used went stale, run it once more from the locator.
+
+    A lookup resolves its window and every link below it from scratch, so running it again
+    re-resolves the scope root and each link on fresh handles. It only reads, so repeating it is
+    safe; one repeat suffices, because a second stale handle in a row is a real failure, which
+    the caller's own polling reports with the element diagnostic instead of hiding.
+    """
+    __tracebackhide__ = True
+    try:
+        return lookup()
+    except (InspectorError, UIAError) as error:
+        if not is_stale(error):
+            raise
+        log.debug("A handle went stale during a lookup; resolving it again from its locator")
+    return lookup()
+
+
 def wait_link(scope: Scope, locator: Locator, state: str) -> tuple[bool, TargetElement | None]:
     """Try an agent wait for one bounded chunk; return (eligible, element)."""
+    __tracebackhide__ = True
+    return _again_if_stale(lambda: _wait_link(scope, locator, state))
+
+
+def _wait_link(scope: Scope, locator: Locator, state: str) -> tuple[bool, TargetElement | None]:
     __tracebackhide__ = True
     links = locator.chain()
     link = links[-1]
@@ -909,14 +938,14 @@ def wait_link(scope: Scope, locator: Locator, state: str) -> tuple[bool, TargetE
 def resolve(scope: Scope, locator: Locator) -> TargetElement:
     """Resolve ``locator`` to exactly one live element, or raise a ``LocatorError``."""
     __tracebackhide__ = True
-    return _walk(scope, locator, final_all=False)[0]
+    return _again_if_stale(lambda: _walk(scope, locator, final_all=False)[0])
 
 
 @query_budget()
 def resolve_all(scope: Scope, locator: Locator) -> list[TargetElement]:
     """All matches of the locator's final link (``index`` and ``item`` ignored); may be empty."""
     __tracebackhide__ = True
-    return _walk(scope, locator, final_all=True)
+    return _again_if_stale(lambda: _walk(scope, locator, final_all=True))
 
 
 # -- grid rows and cells --------------------------------------------------------------------------

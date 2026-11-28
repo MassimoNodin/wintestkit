@@ -92,7 +92,10 @@ def test_managed_metadata_is_lazy_and_read_is_explicit(
     assert data["managed"]["members"]["items"] == [] and "read" not in data["managed"]
     registry = CliRegistry.instances[-1]
     assert registry.timeout == 0.4 and registry.closed
-    assert [name for name, _ in registry.client.calls] == ["resolve", "members"]
+    assert [name for name, _ in registry.client.calls if name != "release"] == [
+        "resolve",
+        "members",
+    ]
     assert (
         main(
             [
@@ -110,7 +113,7 @@ def test_managed_metadata_is_lazy_and_read_is_explicit(
     data = json.loads(capsys.readouterr().out)
     assert data["managed"]["read"]["values"][0]["value"]["scalar"] == "Window"
     assert CliRegistry.instances[-1].closed
-    assert [name for name, _ in CliRegistry.instances[-1].client.calls] == [
+    assert [name for name, _ in CliRegistry.instances[-1].client.calls if name != "release"] == [
         "resolve",
         "members",
         "read",

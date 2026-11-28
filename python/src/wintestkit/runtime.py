@@ -650,6 +650,28 @@ def _notify(record: StepRecord) -> None:
             log.exception("step listener %r failed", listener)
 
 
+_PROTOCOL_CODE = re.compile(r"[A-Za-z][A-Za-z0-9_.]{0,63}")
+
+
+def _failure_label(exc: BaseException) -> str:
+    """The protocol error code behind a failure, which says what happened and carries no value.
+
+    A redacted failure still has to say *what* failed: ``objectStale`` and ``timeout`` are fixed
+    protocol identifiers, so they are kept (looking through the exceptions this one was raised
+    from), while the message, which may quote the text that was typed, is dropped.
+    """
+    __tracebackhide__ = True
+    current: BaseException | None = exc
+    for _ in range(4):
+        if current is None:
+            break
+        code = getattr(current, "code", None)
+        if isinstance(code, str) and _PROTOCOL_CODE.fullmatch(code):
+            return code
+        current = current.__cause__
+    return ""
+
+
 class _StepContext:
     """Context manager behind :func:`step`.
 
@@ -688,10 +710,16 @@ class _StepContext:
             record.status = "failed"
             if record.sensitive:
                 record.args = _redact(record.args, True)
+                label = _failure_label(exc)
                 safe_error = (
-                    AssertionError("Sensitive assertion failed (details redacted)")
+                    AssertionError(
+                        f"Sensitive assertion failed{': ' + label if label else ''} "
+                        "(details redacted)"
+                    )
                     if isinstance(exc, AssertionError)
-                    else ActionError("Sensitive action failed (details redacted)")
+                    else ActionError(
+                        f"Sensitive action failed: {label or type(exc).__name__} (details redacted)"
+                    )
                 )
                 record.error = _error_info(safe_error)
                 _notify(record)

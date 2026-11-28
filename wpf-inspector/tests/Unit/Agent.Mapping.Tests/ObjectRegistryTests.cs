@@ -135,20 +135,219 @@ namespace WinTestKit.Inspector.Agent.Mapping.Tests
         }
 
         [Fact]
-        public void ReleaseCountsDistinctKnownHandlesAndNeverReusesIds()
+        public void ReleaseCountsFreedObjectsAndNeverReusesIds()
         {
             using (var ui = new DispatcherThread())
             using (var registry = Registry())
             {
                 object target = new object();
                 ObjectRef first = registry.Register(target, ui.Dispatcher, new TypeInfoDto());
+                Hand(registry, first);
                 Assert.True(registry.TryGet(first.ObjectId, first.Generation, out _, out _));
-                Assert.Equal(1, registry.Release(new[] { first.ObjectId, first.ObjectId, "unknown" }));
+                ReleaseResult result = registry.Release(new[] { Item(first, 1), Item("unknown", 1) });
+                Assert.Equal(1, result.ReleasedCount);
+                Assert.Equal(1, result.OverReleasedCount);
                 Assert.False(registry.TryGet(first.ObjectId, first.Generation, out _, out _));
                 ObjectRef next = registry.Register(target, ui.Dispatcher, new TypeInfoDto());
                 Assert.NotEqual(first.ObjectId, next.ObjectId);
                 Assert.True(next.Generation > first.Generation);
-                Assert.Equal(0, registry.Release(new[] { first.ObjectId }));
+                result = registry.Release(new[] { Item(first, 1) });
+                Assert.Equal(0, result.ReleasedCount);
+                Assert.Equal(1, result.OverReleasedCount);
+            }
+        }
+
+        [Fact]
+        public void LeaseEndsOnlyWhenEveryHandOutIsReleased()
+        {
+            using (var ui = new DispatcherThread())
+            using (var registry = Registry())
+            {
+                object target = new object();
+                ObjectRef reference = registry.Register(target, ui.Dispatcher, new TypeInfoDto());
+                Hand(registry, reference, 3);
+                Assert.True(registry.TryGet(reference.ObjectId, reference.Generation, out _, out _));
+                ReleaseResult partial = registry.Release(new[] { Item(reference, 2) });
+                Assert.Equal(0, partial.ReleasedCount);
+                Assert.Equal(0, partial.OverReleasedCount);
+                Assert.True(registry.TryGet(reference.ObjectId, reference.Generation, out _, out _));
+                ReleaseResult last = registry.Release(new[] { Item(reference, 1) });
+                Assert.Equal(1, last.ReleasedCount);
+                Assert.Equal(0, last.OverReleasedCount);
+                Assert.False(registry.TryGet(reference.ObjectId, reference.Generation, out _, out _));
+                GC.KeepAlive(target);
+            }
+        }
+
+        [Fact]
+        public void ReleaseOfTheSameObjectInOneRequestIsSummed()
+        {
+            using (var ui = new DispatcherThread())
+            using (var registry = Registry())
+            {
+                object target = new object();
+                ObjectRef reference = registry.Register(target, ui.Dispatcher, new TypeInfoDto());
+                Hand(registry, reference, 3);
+                Assert.Equal(0, registry.Release(new[] { Item(reference, 1), Item(reference, 1) }).ReleasedCount);
+                Assert.True(registry.TryGet(reference.ObjectId, reference.Generation, out _, out _));
+                Assert.Equal(1, registry.Release(new[] { Item(reference, 1) }).ReleasedCount);
+                GC.KeepAlive(target);
+            }
+        }
+
+        [Fact]
+        public void OverReleaseIsClampedAndNeverFreesOtherLiveObjects()
+        {
+            using (var ui = new DispatcherThread())
+            using (var registry = Registry())
+            {
+                object first = new object(), second = new object(), unhanded = new object();
+                ObjectRef a = registry.Register(first, ui.Dispatcher, new TypeInfoDto());
+                ObjectRef b = registry.Register(second, ui.Dispatcher, new TypeInfoDto());
+                ObjectRef c = registry.Register(unhanded, ui.Dispatcher, new TypeInfoDto());
+                Hand(registry, a, 1);
+                Hand(registry, b, 2);
+                ReleaseResult result = registry.Release(new[] { Item(a, 500), Item(b, 1), Item(c, 4) });
+                Assert.Equal(1, result.ReleasedCount);
+                Assert.Equal(2, result.OverReleasedCount);
+                Assert.False(registry.TryGet(a.ObjectId, a.Generation, out _, out _));
+                Assert.True(registry.TryGet(b.ObjectId, b.Generation, out _, out _));
+                Assert.True(registry.TryGet(c.ObjectId, c.Generation, out _, out _));
+                GC.KeepAlive(first); GC.KeepAlive(second); GC.KeepAlive(unhanded);
+            }
+        }
+
+        [Fact]
+        public void LateReleaseDoesNotEndALeaseThatWasHandedOutAgain()
+        {
+            using (var ui = new DispatcherThread())
+            using (var registry = Registry())
+            {
+                object target = new object();
+                ObjectRef reference = registry.Register(target, ui.Dispatcher, new TypeInfoDto());
+                Hand(registry, reference);
+                Hand(registry, registry.Register(target, ui.Dispatcher, new TypeInfoDto()));
+                Assert.Equal(0, registry.Release(new[] { Item(reference, 1) }).ReleasedCount);
+                Assert.True(registry.TryGet(reference.ObjectId, reference.Generation, out _, out _));
+                GC.KeepAlive(target);
+            }
+        }
+
+        [Fact]
+        public void ReleaseBetweenRegisterAndCountDoesNotFreeTheObject()
+        {
+            using (var ui = new DispatcherThread())
+            using (var registry = Registry())
+            {
+                object target = new object();
+                ObjectRef held = registry.Register(target, ui.Dispatcher, new TypeInfoDto());
+                Hand(registry, held);
+                // The worst interleaving: a request registers the object, a release for the earlier hand-out then runs,
+                // and only afterwards is the request's response counted.
+                long ticket = registry.BeginRequest();
+                ObjectRef again = registry.Register(target, ui.Dispatcher, new TypeInfoDto());
+                Assert.Equal(1, registry.Release(new[] { Item(held, 1) }).ReleasedCount);
+                registry.CountHandOuts(new[] { new KeyValuePair<string, long>(again.ObjectId, again.Generation) });
+                registry.EndRequest(ticket);
+                Assert.True(registry.TryGet(again.ObjectId, again.Generation, out object found, out _));
+                Assert.Same(target, found);
+                Assert.Equal(1, registry.Release(new[] { Item(again, 1) }).ReleasedCount);
+                Assert.False(registry.TryGet(again.ObjectId, again.Generation, out _, out _));
+            }
+        }
+
+        [Fact]
+        public void ObjectKeptByARequestIsRemovedWhenItsResponseDoesNotHandItOut()
+        {
+            using (var ui = new DispatcherThread())
+            using (var registry = Registry())
+            {
+                object target = new object();
+                ObjectRef held = registry.Register(target, ui.Dispatcher, new TypeInfoDto());
+                Hand(registry, held);
+                long ticket = registry.BeginRequest();
+                registry.Register(target, ui.Dispatcher, new TypeInfoDto());
+                registry.Release(new[] { Item(held, 1) });
+                Assert.True(registry.TryGet(held.ObjectId, held.Generation, out _, out _));
+                registry.EndRequest(ticket);
+                Assert.False(registry.TryGet(held.ObjectId, held.Generation, out _, out _));
+                GC.KeepAlive(target);
+            }
+        }
+
+        [Fact]
+        public async Task ConcurrentHandOutAndReleaseNeverLeaveAHandedOutObjectStale()
+        {
+            using (var ui = new DispatcherThread())
+            using (var registry = Registry())
+            {
+                for (int round = 0; round < 500; round++)
+                {
+                    object target = new object();
+                    ObjectRef held = registry.Register(target, ui.Dispatcher, new TypeInfoDto());
+                    Hand(registry, held);
+                    ObjectRef handedOut = null!;
+                    using (var start = new System.Threading.ManualResetEventSlim())
+                    {
+                        var request = Task.Run(() =>
+                        {
+                            start.Wait();
+                            long ticket = registry.BeginRequest();
+                            handedOut = registry.Register(target, ui.Dispatcher, new TypeInfoDto());
+                            registry.CountHandOuts(new[] { new KeyValuePair<string, long>(handedOut.ObjectId, handedOut.Generation) });
+                            registry.EndRequest(ticket);
+                        });
+                        var release = Task.Run(() =>
+                        {
+                            start.Wait();
+                            long ticket = registry.BeginRequest();
+                            registry.Release(new[] { Item(held, 1) });
+                            registry.EndRequest(ticket);
+                        });
+                        start.Set();
+                        await Task.WhenAll(request, release);
+                    }
+                    Assert.True(registry.TryGet(handedOut.ObjectId, handedOut.Generation, out object found, out _), "round " + round);
+                    Assert.Same(target, found);
+                    registry.Release(new[] { Item(handedOut, 1) });
+                    GC.KeepAlive(target);
+                }
+            }
+        }
+
+        [Fact]
+        public void ZeroCountEntriesAreRemovedOnceNoRequestCouldHaveHandedThemOut()
+        {
+            using (var ui = new DispatcherThread())
+            using (var registry = Registry())
+            {
+                object target = new object();
+                long first = registry.BeginRequest();
+                ObjectRef reference = registry.Register(target, ui.Dispatcher, new TypeInfoDto());
+                registry.CountHandOuts(new[] { new KeyValuePair<string, long>(reference.ObjectId, reference.Generation) });
+                long second = registry.BeginRequest();
+                registry.Release(new[] { Item(reference, 1) });
+                Assert.True(registry.TryGet(reference.ObjectId, reference.Generation, out _, out _));
+                registry.EndRequest(second);
+                Assert.True(registry.TryGet(reference.ObjectId, reference.Generation, out _, out _));
+                registry.EndRequest(first);
+                Assert.False(registry.TryGet(reference.ObjectId, reference.Generation, out _, out _));
+                GC.KeepAlive(target);
+            }
+        }
+
+        [Fact]
+        public void CountingIgnoresUnknownIdsAndWrongGenerations()
+        {
+            using (var ui = new DispatcherThread())
+            using (var registry = Registry())
+            {
+                object target = new object();
+                ObjectRef reference = registry.Register(target, ui.Dispatcher, new TypeInfoDto());
+                registry.CountHandOuts(new[] { new KeyValuePair<string, long>("unknown", 1), new KeyValuePair<string, long>(reference.ObjectId, reference.Generation + 1) });
+                Assert.Equal(1, registry.Release(new[] { Item(reference, 1) }).OverReleasedCount);
+                Assert.True(registry.TryGet(reference.ObjectId, reference.Generation, out _, out _));
+                GC.KeepAlive(target);
             }
         }
 
@@ -194,7 +393,7 @@ namespace WinTestKit.Inspector.Agent.Mapping.Tests
                 Assert.False(weak.IsAlive);
                 Assert.Throws<ObjectDisposedException>(() => registry.Register(new object(), ui.Dispatcher, new TypeInfoDto()));
                 Assert.Throws<ObjectDisposedException>(() => registry.TryGet("unknown", 1, out _, out _));
-                Assert.Throws<ObjectDisposedException>(() => registry.Release(new[] { "unknown" }));
+                Assert.Throws<ObjectDisposedException>(() => registry.Release(new[] { Item("unknown", 1) }));
             }
         }
 
@@ -202,6 +401,11 @@ namespace WinTestKit.Inspector.Agent.Mapping.Tests
             new ObjectRegistry(Guid.NewGuid().ToString(), new DispatcherExecutor(), now ?? (() => DateTime.UtcNow));
 
         [MethodImpl(MethodImplOptions.NoInlining)]
+        private static ReleaseItem Item(ObjectRef reference, int count) => Item(reference.ObjectId, count);
+        private static ReleaseItem Item(string objectId, int count) => new ReleaseItem { ObjectId = objectId, Count = count };
+        private static void Hand(ObjectRegistry registry, ObjectRef reference, int times = 1) =>
+            registry.CountHandOuts(Enumerable.Repeat(new KeyValuePair<string, long>(reference.ObjectId, reference.Generation), times).ToArray());
+
         private static ObjectRef RegisterEphemeral(ObjectRegistry registry, Dispatcher dispatcher, bool lease, out WeakReference weak)
         {
             object target = new object();

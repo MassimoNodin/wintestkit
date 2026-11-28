@@ -3,6 +3,7 @@
 import io
 import json
 import time
+import weakref
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -18,6 +19,7 @@ from wintestkit.config import load_config
 from wintestkit.errors import InspectorUnavailableError, NoUiaPeerError
 from wintestkit.inspector import payload, probe
 from wintestkit.inspector.client import HitTestResult
+from wintestkit.inspector.handouts import attach, object_refs, owner_of
 from wintestkit.inspector.models import (
     EventHandler,
     Item,
@@ -76,11 +78,13 @@ class FakeClient:
 
     def resolve(self, runtime_id: Any, hwnd: Any, **kwargs: Any) -> Mapping:
         self.calls.append(("resolve", (runtime_id, hwnd)))
-        return Mapping("exact", IDENTITY, runtime_id, REF)
+        return self.own_hand_outs(Mapping("exact", IDENTITY, runtime_id, replace(REF)))
 
     def roots(self, **kwargs: Any) -> Page[ManagedNode]:
         self.calls.append(("roots", kwargs))
-        return Page((ManagedNode(REF, "Window", True, False),), True, "snapshot", ())
+        return self.own_hand_outs(
+            Page((ManagedNode(replace(REF), "Window", True, False),), True, "snapshot", ())
+        )
 
     def children(self, object_id: str, generation: int, tree: str, **kwargs: Any) -> Page[Any]:
         self.calls.append(("children", (object_id, generation, tree, kwargs)))
@@ -142,13 +146,32 @@ class FakeClient:
         self.calls.append(("bindings", (object_id, generation, keys)))
         return ()
 
-    def release(self, object_ids: Any, **kwargs: Any) -> int:
-        self.calls.append(("release", list(object_ids)))
-        return len(object_ids)
+    def release(self, objects: Any, **kwargs: Any) -> Any:
+        self.calls.append(("release", [object_id for object_id, _ in objects]))
+        return SimpleNamespace(released=len(objects), over_released=0)
 
-    def defer_release(self, object_id: str) -> None:
-        # A lease queues its release; the real client sends the queue after the next request.
-        self.calls.append(("release", [object_id]))
+    def own_hand_outs(self, result: Any) -> Any:
+        """Own the references of a result as the real client does: released when they die."""
+        for ref in object_refs(result):
+            if owner_of(ref) is None:
+                owner = weakref.finalize(ref, self.calls.append, ("release", [ref.object_id]))
+                owner.atexit = False
+                attach(ref, owner)
+        return result
+
+    def owned(self, ref: ObjectRef) -> ObjectRef:
+        """A fresh reference that owns a hand-out (a wrapper that dies releases it)."""
+        return self.own_hand_outs(replace(ref))
+
+    def release_refs(self, refs: Any, **kwargs: Any) -> Any:
+        ids = []
+        for ref in refs:
+            owner = owner_of(ref)
+            if owner is not None and owner.detach() is not None:
+                ids.append(ref.object_id)
+        if ids:
+            self.calls.append(("release", ids))
+        return SimpleNamespace(released=len(set(ids)), over_released=0)
 
     def close(self) -> None:
         self.closed = True
@@ -456,6 +479,7 @@ def test_agent_errors_are_exposed_with_protocol_code(
     server, output, client = managed_server
     server._managed_clients["session"] = client
     server._managed_objects["session"] = {"object": 1}
+    server._managed_holds["session"] = {"object": [client.owned(REF)]}
 
     def fail(*args: Any, **kwargs: Any) -> None:
         raise InspectorUnavailableError("Inspector operation failed", code="unsupportedTarget")
@@ -467,7 +491,7 @@ def test_agent_errors_are_exposed_with_protocol_code(
     elif target == "status":
         monkeypatch.setattr(runtime.inspector_sessions(), "status", fail)
     else:
-        monkeypatch.setattr(client, target, fail)
+        monkeypatch.setattr(client, "release_refs" if target == "release" else target, fail)
     error = request(server, output, f"inspect.managed.{method}", params)["error"]
     assert error["data"]["code"] == "unsupportedTarget"
     assert error["message"] == "Inspector operation failed"
@@ -585,7 +609,9 @@ def test_spy_wpf_children_identity_and_failures(
         )
     )
     monkeypatch.setattr(
-        client, "children", lambda *args, **kwargs: Page(nodes, True, "snapshot", ())
+        client,
+        "children",
+        lambda *args, **kwargs: client.own_hand_outs(Page(nodes, True, "snapshot", ())),
     )
 
     def read(*args: Any, **kwargs: Any) -> Any:
@@ -607,10 +633,8 @@ def test_spy_wpf_children_identity_and_failures(
     with pytest.raises(Exception, match="does not yet support WPF"):
         Server._node(server, result[0]["nodeId"])
     server._release_managed_objects()
-    assert any(
-        call[0] == "release" and set(call[1]) >= {"good", "peerless", "failed", "redacted"}
-        for call in client.calls
-    )
+    released = {item for call in client.calls if call[0] == "release" for item in call[1]}
+    assert released >= {"good", "peerless", "failed", "redacted"}
     assert result[0]["nodeId"] not in server.nodes
 
 
@@ -743,7 +767,7 @@ def test_spy_wpf_eviction_releases_handle(
 ) -> None:
 
     server, output, client = managed_server
-    node = WpfElement(client, REF, 42)
+    node = WpfElement(client, client.owned(REF), 42)
     server.nodes["old"] = node
     server._managed_clients["session"] = client
     server._remember_managed("session", REF.to_json())
@@ -1919,6 +1943,7 @@ def test_sidebar_release_preserves_tree_handles(managed_server: Any) -> None:
     server.nodes["wpf-node"] = node
     server._remember_managed("session", REF.to_json())
     server._managed_objects["session"]["other"] = 1
+    server._managed_holds["session"] = {"other": [client.owned(replace(REF, object_id="other"))]}
     response = request(
         server,
         output,
@@ -1982,7 +2007,7 @@ def test_properties_repairs_managed_ancestors(
     client.parent = parent
     if case != "missing":
         server._wpf_parents[ids[0]] = ids[1]
-        server.nodes[ids[1]] = WpfElement(client, middle, 42)
+        server.nodes[ids[1]] = WpfElement(client, client.owned(middle), 42)
         if case == "released":
             with server._node_lock:
                 server._release_tree_node(server.nodes.pop(ids[1]))

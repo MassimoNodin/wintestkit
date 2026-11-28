@@ -48,6 +48,7 @@ NAMES = [
     "ReadParams",
     "BindingsParams",
     "BindingsResult",
+    "ReleaseItem",
     "ReleaseParams",
     "ReleaseResult",
     "CancelParams",

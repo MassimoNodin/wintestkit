@@ -13,6 +13,7 @@ import comtypes
 import comtypes.automation
 
 from wintestkit.backends.element import TargetElement, WpfElement, uia_of
+from wintestkit.effects import effect
 from wintestkit.errors import ActionError
 from wintestkit.uia import com
 from wintestkit.uia.constants import PATTERN_IDS, PROPERTY_IDS, ExpandCollapseState, ToggleState
@@ -85,6 +86,7 @@ def has_pattern(el: TargetElement, name: str) -> bool:
 # -- Invoke / Value / Toggle ----------------------------------------------------------------------
 
 
+@effect
 def invoke(el: TargetElement) -> None:
     __tracebackhide__ = True
     el = uia_of(el)
@@ -101,6 +103,7 @@ def get_value(el: TargetElement) -> str:
         return pattern.CurrentValue or ""
 
 
+@effect
 def set_value(el: TargetElement, value: str) -> None:
     __tracebackhide__ = True
     el = uia_of(el)
@@ -117,6 +120,7 @@ def is_read_only(el: TargetElement) -> bool:
         return bool(pattern.CurrentIsReadOnly)
 
 
+@effect
 def toggle(el: TargetElement) -> None:
     __tracebackhide__ = True
     el = uia_of(el)
@@ -164,6 +168,7 @@ def range_info(el: TargetElement) -> RangeInfo:
         )
 
 
+@effect
 def set_range_value(el: TargetElement, value: float) -> None:
     __tracebackhide__ = True
     el = uia_of(el)
@@ -175,6 +180,7 @@ def set_range_value(el: TargetElement, value: float) -> None:
 # -- Selection ------------------------------------------------------------------------------------
 
 
+@effect
 def select_item(el: TargetElement) -> None:
     __tracebackhide__ = True
     el = uia_of(el)
@@ -183,6 +189,7 @@ def select_item(el: TargetElement) -> None:
         pattern.Select()
 
 
+@effect
 def add_to_selection(el: TargetElement) -> None:
     __tracebackhide__ = True
     el = uia_of(el)
@@ -191,6 +198,7 @@ def add_to_selection(el: TargetElement) -> None:
         pattern.AddToSelection()
 
 
+@effect
 def remove_from_selection(el: TargetElement) -> None:
     __tracebackhide__ = True
     el = uia_of(el)
@@ -231,6 +239,7 @@ def selection(el: TargetElement) -> list[UIAElement]:
 # -- ExpandCollapse -------------------------------------------------------------------------------
 
 
+@effect
 def expand(el: TargetElement) -> None:
     __tracebackhide__ = True
     el = uia_of(el)
@@ -239,6 +248,7 @@ def expand(el: TargetElement) -> None:
         pattern.Expand()
 
 
+@effect
 def collapse(el: TargetElement) -> None:
     __tracebackhide__ = True
     el = uia_of(el)
@@ -258,6 +268,7 @@ def expand_state(el: TargetElement) -> ExpandCollapseState:
 # -- Scrolling and virtualization -----------------------------------------------------------------
 
 
+@effect
 def scroll_into_view(el: TargetElement) -> None:
     __tracebackhide__ = True
     el = uia_of(el)
@@ -266,6 +277,7 @@ def scroll_into_view(el: TargetElement) -> None:
         pattern.ScrollIntoView()
 
 
+@effect
 def scroll(el: TargetElement, horizontal: str = "none", vertical: str = "none") -> None:
     """Scroll by ``none|small_inc|small_dec|large_inc|large_dec`` in each direction."""
     __tracebackhide__ = True
@@ -294,6 +306,7 @@ def scroll_percent(el: TargetElement) -> tuple[float, float]:
         )
 
 
+@effect
 def set_scroll_percent(el: TargetElement, h: float, v: float) -> None:
     __tracebackhide__ = True
     el = uia_of(el)
@@ -302,6 +315,7 @@ def set_scroll_percent(el: TargetElement, h: float, v: float) -> None:
         pattern.SetScrollPercent(h, v)
 
 
+@effect
 def realize(el: TargetElement) -> None:
     __tracebackhide__ = True
     el = uia_of(el)
@@ -374,6 +388,7 @@ def document_text(el: TargetElement) -> str:
 # -- Window and legacy ----------------------------------------------------------------------------
 
 
+@effect
 def window_close(el: TargetElement) -> None:
     __tracebackhide__ = True
     el = uia_of(el)
@@ -382,6 +397,7 @@ def window_close(el: TargetElement) -> None:
         pattern.Close()
 
 
+@effect
 def window_set_state(el: TargetElement, state: str) -> None:
     __tracebackhide__ = True
     el = uia_of(el)
@@ -417,6 +433,7 @@ def transform_can(el: TargetElement, what: str) -> bool:
         return bool(pattern.CurrentCanMove if what == "move" else pattern.CurrentCanResize)
 
 
+@effect
 def transform_move(el: TargetElement, x: int, y: int) -> None:
     __tracebackhide__ = True
     el = uia_of(el)
@@ -425,6 +442,7 @@ def transform_move(el: TargetElement, x: int, y: int) -> None:
         pattern.Move(float(x), float(y))
 
 
+@effect
 def transform_resize(el: TargetElement, width: int, height: int) -> None:
     __tracebackhide__ = True
     el = uia_of(el)
@@ -441,6 +459,7 @@ def window_is_modal(el: TargetElement) -> bool:
         return bool(pattern.CurrentIsModal)
 
 
+@effect
 def legacy_default_action(el: TargetElement) -> None:
     __tracebackhide__ = True
     el = uia_of(el)

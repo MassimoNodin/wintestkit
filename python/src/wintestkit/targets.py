@@ -506,11 +506,8 @@ def _not_responding(app: Any) -> bool:
             except Exception:
                 continue
             else:
-                with suppress(Exception):
-                    client.release(
-                        [node.object_ref.object_id for node in page.items],
-                        deadline=time.monotonic() + 1,
-                    )
+                # The page's handles give their hand-outs back when it is collected.
+                del page
             if busy:
                 break
     with suppress(AttributeError):

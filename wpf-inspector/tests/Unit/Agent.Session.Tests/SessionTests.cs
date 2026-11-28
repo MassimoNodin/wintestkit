@@ -353,6 +353,55 @@ public class SessionTests
         public IInspectionService Create(string sessionId, IReadOnlyList<string> redactNames) => Service;
     }
 
+    private sealed class CountingService : IInspectionService, IHandOutLedger
+    {
+        private readonly FakeService inner = new();
+        public List<string> Counted { get; } = new();
+        public void Dispose() => inner.Dispose();
+        public Task<MappingDto> ResolveAsync(int[] runtimeId, long? nativeWindowHandle, CancellationToken ct) => inner.ResolveAsync(runtimeId, nativeWindowHandle, ct);
+        public Task<ReadBatchResult> ReadBatchAsync(IReadOnlyList<CandidateRequest> candidates, IReadOnlyList<IReadOnlyList<PathSegment>> paths, CancellationToken ct) => inner.ReadBatchAsync(candidates, paths, ct);
+        public Task<PageDto<ManagedNodeDto>> RootsAsync(int? pageSize, string? pageToken, CancellationToken ct) => inner.RootsAsync(pageSize, pageToken, ct);
+        public Task<PageDto<ManagedNodeDto>> ChildrenAsync(string objectId, long generation, string tree, int? pageSize, string? pageToken, CancellationToken ct) => inner.ChildrenAsync(objectId, generation, tree, pageSize, pageToken, ct);
+        public Task<PageDto<WinTestKit.Inspector.Protocol.MemberInfo>> MembersAsync(string objectId, long generation, int? pageSize, string? pageToken, CancellationToken ct) => inner.MembersAsync(objectId, generation, pageSize, pageToken, ct);
+        public Task<ReadResult> ReadAsync(string objectId, long generation, IReadOnlyList<IReadOnlyList<PathSegment>> paths, CancellationToken ct) => inner.ReadAsync(objectId, generation, paths, ct);
+        public Task<IReadOnlyList<BindingInfoDto>> BindingsAsync(string objectId, long generation, IReadOnlyList<string> memberKeys, CancellationToken ct) => inner.BindingsAsync(objectId, generation, memberKeys, ct);
+        public Task<ReleaseResult> ReleaseAsync(IReadOnlyList<ReleaseItem> objects, CancellationToken ct) => inner.ReleaseAsync(objects, ct);
+        public long BeginRequest() => 1;
+        public void EndRequest(long token) { }
+        public void CountHandOuts(IReadOnlyList<KeyValuePair<string, long>> handles) { lock (Counted) foreach (var handle in handles) Counted.Add(handle.Key + "@" + handle.Value); }
+    }
+
+    [Trait("Category", "Unit")]
+    [Fact]
+    public async Task EventHandlesAreCountedBeforeTheyAreWritten()
+    {
+        var settings = Settings();
+        var service = new CountingService();
+        var dispatcher = new RequestDispatcher(settings.SessionId, service);
+        using var server = new PipeServer(settings, dispatcher, new Verifier(true), false, () => { });
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        var serving = server.RunAsync(timeout.Token);
+        using var client = new NamedPipeClientStream(".", settings.PipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
+        await client.ConnectAsync(timeout.Token);
+        await Send(client, new RequestEnvelope { Id = 1, Method = PipeMethods.Hello, Params = new HelloParams { ProtocolMajor = 2, ProtocolMinor = 0, SessionId = settings.SessionId, Token = settings.Token, Process = settings.Process }.ToJson() }, timeout.Token);
+        Assert.NotNull(await FrameCodec.ReadFrameAsync(client, timeout.Token));
+        await Send(client, new RequestEnvelope { Id = 2, Method = PipeMethods.EventsSubscribe, Params = new EventsSubscribeParams { Kinds = new[] { EventKind.TreeChanged } }.ToJson() }, timeout.Token);
+        Assert.NotNull(await FrameCodec.ReadFrameAsync(client, timeout.Token));
+        var publish = typeof(RequestDispatcher).GetMethod("Publish", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        var handle = new ObjectRef { SessionId = settings.SessionId, ObjectId = "object", Generation = 3, DispatcherId = "dispatcher", Type = new TypeInfoDto { FullName = "Example.Target" } };
+        publish.Invoke(dispatcher, new object?[] { EventKind.TreeChanged, handle });
+        publish.Invoke(dispatcher, new object?[] { EventKind.TreeChanged, handle });
+        for (int i = 0; i < 2; i++)
+        {
+            var data = (await FrameCodec.ReadFrameAsync(client, timeout.Token))!;
+            Assert.Equal("object", EventsNotification.FromJson(StrictJson.Parse(data, 0, data.Length)).Params.Handle!.ObjectId);
+            lock (service.Counted) Assert.True(service.Counted.Count >= i + 1); // counted before the frame could be read
+        }
+        Assert.All(service.Counted, item => Assert.Equal("object@3", item));
+        client.Dispose();
+        await serving.WaitAsync(timeout.Token);
+    }
+
     private sealed class FakeService : IInspectionService
     {
         public bool Disposed { get; private set; }
@@ -364,7 +413,7 @@ public class SessionTests
         public Task<PageDto<WinTestKit.Inspector.Protocol.MemberInfo>> MembersAsync(string objectId, long generation, int? pageSize, string? pageToken, CancellationToken ct) => throw new NotSupportedException();
         public Task<ReadResult> ReadAsync(string objectId, long generation, IReadOnlyList<IReadOnlyList<PathSegment>> paths, CancellationToken ct) => throw new NotSupportedException();
         public Task<IReadOnlyList<BindingInfoDto>> BindingsAsync(string objectId, long generation, IReadOnlyList<string> memberKeys, CancellationToken ct) => throw new NotSupportedException();
-        public Task<int> ReleaseAsync(IReadOnlyList<string> objectIds, CancellationToken ct) => throw new NotSupportedException();
+        public Task<ReleaseResult> ReleaseAsync(IReadOnlyList<ReleaseItem> objects, CancellationToken ct) => throw new NotSupportedException();
     }
 
     [Trait("Category", "Unit")]

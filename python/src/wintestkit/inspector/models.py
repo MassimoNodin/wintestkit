@@ -373,6 +373,45 @@ class ObjectRef(WireModel):
 
 
 @dataclass(frozen=True)
+class ReleaseItem(WireModel):
+    """How many hand-outs of one object the client gives back."""
+
+    object_id: str
+    count: int
+
+    @classmethod
+    def from_json(cls, value: object) -> ReleaseItem:
+        data = _obj(value, "objectId count")
+        return cls(_identifier(data["objectId"]), _int(data["count"], 1, 1_000_000))
+
+
+@dataclass(frozen=True)
+class ReleaseParams(WireModel):
+    session_id: str
+    objects: tuple[ReleaseItem, ...]
+
+    @classmethod
+    def from_json(cls, value: object) -> ReleaseParams:
+        data = _obj(value, "sessionId objects")
+        return cls(
+            _identifier(data["sessionId"]), _array(data["objects"], ReleaseItem.from_json, 256)
+        )
+
+
+@dataclass(frozen=True)
+class ReleaseResult(WireModel):
+    """Objects whose lease ended, and objects released more often than they were handed out."""
+
+    released_count: int
+    over_released_count: int
+
+    @classmethod
+    def from_json(cls, value: object) -> ReleaseResult:
+        data = _obj(value, "releasedCount overReleasedCount")
+        return cls(_int(data["releasedCount"], 0, 256), _int(data["overReleasedCount"], 0, 256))
+
+
+@dataclass(frozen=True)
 class AttributeLiteral(WireModel):
     kind: str
     value: object

@@ -130,6 +130,25 @@ class UIAError(WtkError):
         self.element_gone = element_gone
 
 
+def is_stale(error: BaseException) -> bool:
+    """Whether a failure means "the handle or element I was given no longer exists".
+
+    True for an inspector ``objectStale`` and for the UI Automation error a vanished element
+    raises, including the translation of the former into the latter. Such a failure is the cue
+    to resolve the element again from its locator.
+    """
+    seen = 0
+    current: BaseException | None = error
+    while current is not None and seen < 4:
+        if isinstance(current, InspectorError) and current.code == "objectStale":
+            return True
+        if isinstance(current, UIAError) and current.element_gone:
+            return True
+        current = current.__cause__
+        seen += 1
+    return False
+
+
 class NoUiaPeerError(UIAError):
     """An operation requires a UI Automation peer that is not available."""
 

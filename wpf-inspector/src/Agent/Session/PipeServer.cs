@@ -148,7 +148,9 @@ namespace WinTestKit.Inspector.Agent.Session
                 EventsEventParams? item;
                 while ((item = subscriptions.Take()) != null)
                 {
-                    var bytes = StrictJson.Serialize(new EventsNotification { Params = item }.ToJson());
+                    var notification = new EventsNotification { Params = item }.ToJson();
+                    (handler as Contracts.IHandOutLedger)?.CountHandOuts(HandOuts.Find(notification));
+                    var bytes = StrictJson.Serialize(notification);
                     await writer.WaitAsync(ct).ConfigureAwait(false);
                     try { ct.ThrowIfCancellationRequested(); await FrameCodec.WriteFrameAsync(pipe, bytes, ct).ConfigureAwait(false); }
                     finally { writer.Release(); }

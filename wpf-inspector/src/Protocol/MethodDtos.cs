@@ -95,18 +95,29 @@ namespace WinTestKit.Inspector.Protocol
         public JsonObjectNode ToJson() { var o = new JsonObjectNode(); o.Add("bindings", MethodDtoHelpers.Bindings(Bindings)); FromJson(o); return o; }
         public static BindingsResult FromJson(JsonNode node) { var o = DtoHelpers.Object(node, "bindings"); return new BindingsResult { Bindings = MethodDtoHelpers.Bindings(o.Get("bindings")) }; }
     }
+    /// <summary>One object to release: the number of hand-outs of the object the client no longer holds.</summary>
+    public sealed class ReleaseItem
+    {
+        public string ObjectId { get; set; } = "";
+        public int Count { get; set; }
+        public JsonObjectNode ToJson() { var o = new JsonObjectNode(); DtoHelpers.Add(o, "objectId", ObjectId); o.Add("count", JsonNumberNode.From(Count)); FromJson(o); return o; }
+        public static ReleaseItem FromJson(JsonNode node) { var o = DtoHelpers.Object(node, "objectId", "count"); return new ReleaseItem { ObjectId = DtoHelpers.Required(o, "objectId"), Count = (int)DtoHelpers.Integer(o.Get("count"), 1, ProtocolLimits.MaxReleaseCount) }; }
+    }
     public sealed class ReleaseParams
     {
         public string SessionId { get; set; } = "";
-        public IReadOnlyList<string> ObjectIds { get; set; } = new List<string>();
-        public JsonObjectNode ToJson() { var o = new JsonObjectNode(); DtoHelpers.Add(o, "sessionId", SessionId); o.Add("objectIds", DtoHelpers.Strings(ObjectIds)); FromJson(o); return o; }
-        public static ReleaseParams FromJson(JsonNode node) { var o = DtoHelpers.Object(node, "sessionId", "objectIds"); return new ReleaseParams { SessionId = DtoHelpers.Required(o, "sessionId"), ObjectIds = DtoHelpers.Strings(o.Get("objectIds"), ProtocolLimits.MaxReleaseIds, ProtocolLimits.MaxIdentifierLength) }; }
+        public IReadOnlyList<ReleaseItem> Objects { get; set; } = new List<ReleaseItem>();
+        public JsonObjectNode ToJson() { var o = new JsonObjectNode(); DtoHelpers.Add(o, "sessionId", SessionId); var items = new JsonArrayNode(); foreach (var item in Objects) items.Add(item.ToJson()); o.Add("objects", items); FromJson(o); return o; }
+        public static ReleaseParams FromJson(JsonNode node) { var o = DtoHelpers.Object(node, "sessionId", "objects"); var items = new List<ReleaseItem>(); foreach (var item in DtoHelpers.Array(o.Get("objects"), ProtocolLimits.MaxReleaseIds).Items) items.Add(ReleaseItem.FromJson(item)); return new ReleaseParams { SessionId = DtoHelpers.Required(o, "sessionId"), Objects = items }; }
     }
     public sealed class ReleaseResult
     {
+        /// <summary>Objects whose last hand-out was released, which ended their lease.</summary>
         public int ReleasedCount { get; set; }
-        public JsonObjectNode ToJson() { var o = new JsonObjectNode(); o.Add("releasedCount", JsonNumberNode.From(ReleasedCount)); FromJson(o); return o; }
-        public static ReleaseResult FromJson(JsonNode node) { var o = DtoHelpers.Object(node, "releasedCount"); return new ReleaseResult { ReleasedCount = (int)DtoHelpers.Integer(o.Get("releasedCount"), 0, ProtocolLimits.MaxReleaseIds) }; }
+        /// <summary>Objects for which more hand-outs were released than were outstanding (or that were unknown); the excess was ignored.</summary>
+        public int OverReleasedCount { get; set; }
+        public JsonObjectNode ToJson() { var o = new JsonObjectNode(); o.Add("releasedCount", JsonNumberNode.From(ReleasedCount)); o.Add("overReleasedCount", JsonNumberNode.From(OverReleasedCount)); FromJson(o); return o; }
+        public static ReleaseResult FromJson(JsonNode node) { var o = DtoHelpers.Object(node, "releasedCount", "overReleasedCount"); return new ReleaseResult { ReleasedCount = (int)DtoHelpers.Integer(o.Get("releasedCount"), 0, ProtocolLimits.MaxReleaseIds), OverReleasedCount = (int)DtoHelpers.Integer(o.Get("overReleasedCount"), 0, ProtocolLimits.MaxReleaseIds) }; }
     }
     public sealed class CancelParams
     {

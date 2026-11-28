@@ -394,12 +394,9 @@ def test_check_keeps_not_found_when_the_inspector_answers(
     monkeypatch.setattr(win32, "top_level_windows", lambda pids: [123])
     monkeypatch.setattr(win32, "is_hung_window", lambda hwnd: False)
     monkeypatch.setattr(probe, "current_identity", lambda pid: pid)
-    released: list[list[str]] = []
     node = SimpleNamespace(object_ref=SimpleNamespace(object_id="o1"))
-    client = SimpleNamespace(
-        roots=lambda **kwargs: SimpleNamespace(items=(node,)),
-        release=lambda ids, **kwargs: released.append(list(ids)),
-    )
+    # The probe's handles are owned by the page the client parsed, and go back when it is dropped.
+    client = SimpleNamespace(roots=lambda **kwargs: SimpleNamespace(items=(node,)))
     monkeypatch.setattr(
         targets.runtime, "inspector_sessions", lambda: SimpleNamespace(get=lambda i: client)
     )
@@ -409,7 +406,6 @@ def test_check_keeps_not_found_when_the_inspector_answers(
 
     bound = SimpleNamespace(resolve=fail, page=SimpleNamespace(app=SimpleNamespace(pids=[42])))
     assert targets.resolve_bound(bound, 0).status == "not_found"
-    assert released == [["o1"]]
 
 
 @pytest.mark.parametrize(("timeout", "expected"), [(0, True), (1, False)])

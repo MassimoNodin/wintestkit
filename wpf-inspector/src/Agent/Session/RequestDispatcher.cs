@@ -21,7 +21,7 @@ namespace WinTestKit.Inspector.Agent.Session
         public Task<JsonNode> ExecuteAsync(RequestEnvelope request, Func<CancellationToken, Task<JsonNode>> operation, CancellationToken ct) => operation(ct);
     }
 
-    public sealed class RequestDispatcher : ISessionRequestHandler
+    public sealed class RequestDispatcher : ISessionRequestHandler, IHandOutLedger
     {
         private readonly string sessionId;
         private readonly string? invokeCapability;
@@ -43,7 +43,19 @@ namespace WinTestKit.Inspector.Agent.Session
             (service as IEventInspectionService)?.SetEventSubscriptions(Subscriptions);
         }
 
+        long IHandOutLedger.BeginRequest() => (service as IHandOutLedger)?.BeginRequest() ?? 0;
+        void IHandOutLedger.EndRequest(long token) => (service as IHandOutLedger)?.EndRequest(token);
+        void IHandOutLedger.CountHandOuts(IReadOnlyList<KeyValuePair<string, long>> handles) => (service as IHandOutLedger)?.CountHandOuts(handles);
+
         public async Task<ResponseEnvelope> HandleAsync(RequestEnvelope request, CancellationToken ct)
+        {
+            var ledger = service as IHandOutLedger;
+            long ticket = ledger?.BeginRequest() ?? 0;
+            try { return await HandleCoreAsync(request, ledger, ct).ConfigureAwait(false); }
+            finally { ledger?.EndRequest(ticket); }
+        }
+
+        private async Task<ResponseEnvelope> HandleCoreAsync(RequestEnvelope request, IHandOutLedger? ledger, CancellationToken ct)
         {
             var deadline = DateTime.UtcNow.AddMilliseconds((scheduler as RequestScheduler)?.TimeoutMs ?? ProtocolLimits.RequestTimeoutMs);
             try
@@ -57,6 +69,8 @@ namespace WinTestKit.Inspector.Agent.Session
                     result = await RouteAsync(request, deadline, ct).ConfigureAwait(false);
                 else
                     result = await scheduler.ExecuteAsync(request, token => RouteAsync(request, deadline, token), ct).ConfigureAwait(false);
+                // Counted before the response can be written, so a release that races with it cannot end the lease.
+                ledger?.CountHandOuts(HandOuts.Find(result));
                 return new ResponseEnvelope { Id = request.Id, Result = result };
             }
             catch (ProtocolException error)
@@ -209,7 +223,7 @@ namespace WinTestKit.Inspector.Agent.Session
                     return new BindingsResult { Bindings = await service.BindingsAsync(bindings.ObjectId, bindings.Generation, bindings.MemberKeys, ct).ConfigureAwait(false) }.ToJson();
                 case PipeMethods.Release:
                     var release = ReleaseParams.FromJson(request.Params); CheckSession(release.SessionId);
-                    return new ReleaseResult { ReleasedCount = await service.ReleaseAsync(release.ObjectIds, ct).ConfigureAwait(false) }.ToJson();
+                    return (await service.ReleaseAsync(release.Objects, ct).ConfigureAwait(false)).ToJson();
                 case PipeMethods.Close:
                     CloseParams.FromJson(request.Params);
                     return new CloseResult { Closed = true }.ToJson();

@@ -200,7 +200,7 @@ namespace WinTestKit.Inspector.Agent.Query.Tests
                     locator.Predicates = new[] { new Predicate { Kind = "assignableTo", FullName = typeof(IDisposable).FullName } };
                     Assert.Equal(ErrorCodes.NotFound, (await Assert.ThrowsAsync<ProtocolException>(() => engine.FindAsync(locator, Deadline, CancellationToken.None))).Code);
                     GC.KeepAlive(button);
-                    registry.Release(new[] { handle.ObjectId });
+                    registry.CountHandOuts(new[] { new KeyValuePair<string, long>(handle.ObjectId, handle.Generation) }); registry.Release(new[] { new ReleaseItem { ObjectId = handle.ObjectId, Count = 1 } });
                     Assert.Equal(ErrorCodes.ObjectStale, (await Assert.ThrowsAsync<ProtocolException>(() => engine.FindAsync(locator, Deadline, CancellationToken.None))).Code);
                 }
             }

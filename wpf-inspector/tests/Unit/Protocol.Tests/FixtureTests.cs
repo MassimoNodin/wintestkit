@@ -109,6 +109,7 @@ public class FixtureTests
         ["ReadParams"] = n => ReadParams.FromJson(n),
         ["BindingsParams"] = n => BindingsParams.FromJson(n),
         ["BindingsResult"] = n => BindingsResult.FromJson(n),
+        ["ReleaseItem"] = n => ReleaseItem.FromJson(n),
         ["ReleaseParams"] = n => ReleaseParams.FromJson(n),
         ["ReleaseResult"] = n => ReleaseResult.FromJson(n),
         ["CancelParams"] = n => CancelParams.FromJson(n),

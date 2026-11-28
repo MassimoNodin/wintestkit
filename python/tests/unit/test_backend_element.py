@@ -1,4 +1,5 @@
 import gc
+import weakref
 from types import SimpleNamespace
 
 import pytest
@@ -6,6 +7,7 @@ import pytest
 from wintestkit.backends import WpfElement, uia_of
 from wintestkit.engine import actions
 from wintestkit.errors import InspectorError, NoUiaPeerError
+from wintestkit.inspector.handouts import attach
 from wintestkit.inspector.models import ObjectRef, TypeInfo
 from wintestkit.inspector.models import Rect as AgentRect
 from wintestkit.uia.element import Rect, UIAElement
@@ -138,17 +140,43 @@ def test_mapping_and_delegation(setup, monkeypatch):
         element.as_live().as_uia()
 
 
-def test_shared_lease_releases_once():
+def test_wrappers_sharing_a_reference_give_its_hand_out_back_once():
+    """The hand-out belongs to the reference the client parsed, whatever wraps it."""
     client = Client()
     ref = ObjectRef("session", "object", 1, TypeInfo("T", "T", "A", "T, A", ()), "dispatcher")
+    attach(ref, weakref.finalize(ref, client.defer_release, "object"))
     element = WpfElement(client, ref, 42)
     other = element.as_live()
-    del element
+    del element, ref
     gc.collect()
     assert client.released == []
     del other
     gc.collect()
     assert client.released == ["object"]
+
+
+def test_release_gives_the_hand_out_back_now_and_only_once():
+    client = Client()
+    ref = ObjectRef("session", "object", 1, TypeInfo("T", "T", "A", "T, A", ()), "dispatcher")
+    attach(ref, weakref.finalize(ref, client.defer_release, "object"))
+    element = WpfElement(client, ref, 42)
+    element.release()
+    element.release()
+    assert client.released == ["object"]
+    del element, ref
+    gc.collect()
+    assert client.released == ["object"]
+
+
+def test_forget_release_leaves_the_hand_out_to_its_new_holder():
+    client = Client()
+    ref = ObjectRef("session", "object", 1, TypeInfo("T", "T", "A", "T, A", ()), "dispatcher")
+    attach(ref, weakref.finalize(ref, client.defer_release, "object"))
+    element = WpfElement(client, ref, 42)
+    element.forget_release()
+    del element, ref
+    gc.collect()
+    assert client.released == []
 
 
 def test_password_reads_are_redacted_on_both_backends(setup, monkeypatch):

@@ -72,7 +72,7 @@ namespace WinTestKit.Inspector.Agent.Members.Tests
             }
             public bool TryGet(string objectId, long generation, out object target, out Dispatcher dispatcher)
             { target = null!; dispatcher = null!; return false; }
-            public int Release(IEnumerable<string> objectIds) => 0;
+            public ReleaseResult Release(IReadOnlyList<ReleaseItem> items) => new ReleaseResult();
             internal object Resolve(ObjectRef reference)
             {
                 foreach (KeyValuePair<object, ObjectRef> pair in references) if (pair.Value.ObjectId == reference.ObjectId) return pair.Key;

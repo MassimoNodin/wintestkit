@@ -1,8 +1,9 @@
-"""Lease releases must never do I/O or take locks from a finalizer.
+"""Hand-out releases must never do I/O or take locks from a finalizer.
 
 A finalizer runs at any allocation on any thread: on the pipe reader thread (where a request can
 never be answered) or inside a request that holds the client's locks (where it would stall). The
-client therefore queues object IDs and sends them in batches from an ordinary caller's thread.
+client therefore queues the count of each dead reference's hand-out and sends them in batches from
+an ordinary caller's thread.
 """
 
 from __future__ import annotations
@@ -11,7 +12,7 @@ import gc
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from test_inspector_client import ScriptedTransport, page, session
@@ -29,15 +30,22 @@ def ref(object_id: str, session_id: str = "session") -> ObjectRef:
     return ObjectRef(session_id, object_id, 1, TypeInfo("T", "T", "A", "T, A", ()), "dispatcher")
 
 
+def owned(client: InspectorClient, object_id: str) -> ObjectRef:
+    """A reference as a parsed response yields it: it owns one hand-out of its object."""
+    return cast(ObjectRef, client.own_hand_outs(ref(object_id)))
+
+
 class Agent:
     """A fake agent that answers everything promptly and records releases."""
 
     def __init__(self, *, release_reply: bool = True) -> None:
         self.batches: list[list[str]] = []
+        self.counts: list[dict[str, int]] = []
         self.release_threads: list[threading.Thread] = []
         self.release_reply = release_reply
         self.closed = False
         self.transport = ScriptedTransport(self.handle)
+        self.transport.answer_release = False
 
     @property
     def released(self) -> list[str]:
@@ -46,12 +54,18 @@ class Agent:
     def handle(self, request: dict[str, Any]) -> object | None:
         method = request["method"]
         if method == "release":
-            ids = request["params"]["objectIds"]
-            self.batches.append(list(ids))
+            ids = [item["objectId"] for item in request["params"]["objects"]]
+            self.counts.append(
+                {item["objectId"]: item["count"] for item in request["params"]["objects"]}
+            )
+            self.batches.append(ids)
             self.release_threads.append(threading.current_thread())
             if not self.release_reply:
                 return None
-            return {"id": request["id"], "result": {"releasedCount": len(ids)}}
+            return {
+                "id": request["id"],
+                "result": {"releasedCount": len(ids), "overReleasedCount": 0},
+            }
         if method == "session.close":
             self.closed = True
             return {"id": request["id"], "result": {"closed": True}}
@@ -104,7 +118,7 @@ def run_on_reader(monkeypatch: pytest.MonkeyPatch, action: Any) -> list[object]:
 def test_finalizer_on_the_reader_thread_neither_blocks_nor_ends_the_session(
     agent: Agent, client: InspectorClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    holder = [WpfElement(client, ref("a"), 1), WpfElement(client, ref("b"), 1)]
+    holder = [WpfElement(client, owned(client, "a"), 1), WpfElement(client, owned(client, "b"), 1)]
     seen: dict[str, object] = {}
 
     def drop_on_reader() -> None:
@@ -130,7 +144,7 @@ def test_finalizer_on_the_reader_thread_neither_blocks_nor_ends_the_session(
 def test_finalizer_while_a_request_holds_the_client_locks_does_not_block(
     agent: Agent, client: InspectorClient
 ) -> None:
-    holder = [WpfElement(client, ref("a"), 1), WpfElement(client, ref("b"), 1)]
+    holder = [WpfElement(client, owned(client, "a"), 1), WpfElement(client, owned(client, "b"), 1)]
     answer = threading.Event()
     original_handle = agent.handle
 
@@ -163,7 +177,7 @@ def test_finalizer_inside_the_callers_own_request_is_safe(
     agent: Agent, client: InspectorClient
 ) -> None:
     """The same thread, holding the write lock: a re-entrant request would time out."""
-    holder = [WpfElement(client, ref("a"), 1)]
+    holder = [WpfElement(client, owned(client, "a"), 1)]
     original_handle = agent.handle
 
     def drop_during_write(request: dict[str, Any]) -> object | None:
@@ -240,7 +254,7 @@ def test_a_request_on_the_reader_thread_is_rejected_at_once(
         before = len(agent.transport.requests)
         started = time.monotonic()
         try:
-            client.release(["x"], deadline=time.monotonic() + 1)
+            client.release([("x", 1)], deadline=time.monotonic() + 1)
         except InspectorThreadError as error:
             seen["error"] = str(error)
         seen["flushed"] = client.flush_releases()
@@ -290,7 +304,7 @@ def test_a_failed_release_is_counted_and_never_ends_the_session(
 
     def failing(request: dict[str, Any]) -> object | None:
         if request["method"] == "release":
-            agent.batches.append(list(request["params"]["objectIds"]))
+            agent.batches.append([item["objectId"] for item in request["params"]["objects"]])
             return {"id": request["id"], "error": {"code": "objectStale", "message": "gone"}}
         return original_handle(request)
 
@@ -324,7 +338,7 @@ def test_a_timed_out_release_is_swallowed_and_its_late_answer_discarded() -> Non
 
 def test_close_drops_pending_releases_and_later_ones(agent: Agent) -> None:
     client = InspectorClient(agent.transport, session(), request_timeout=1.0)
-    element = WpfElement(client, ref("a"), 1)
+    element = WpfElement(client, owned(client, "a"), 1)
     client.defer_release("b")
     client.close()
     assert not agent.requests("release")
@@ -342,7 +356,7 @@ def test_leases_of_a_replaced_session_do_not_reach_the_new_one() -> None:
     old = InspectorClient(old_agent.transport, session(), request_timeout=1.0)
     new = InspectorClient(new_agent.transport, session(), request_timeout=1.0)
     try:
-        element = WpfElement(old, ref("a"), 1)
+        element = WpfElement(old, owned(old, "a"), 1)
         old.close()
         del element
         gc.collect()
@@ -353,7 +367,10 @@ def test_leases_of_a_replaced_session_do_not_reach_the_new_one() -> None:
 
 
 def test_wrapper_release_and_collection_only_queue(agent: Agent, client: InspectorClient) -> None:
-    first, shared = WpfElement(client, ref("a"), 1), WpfElement(client, ref("b"), 1)
+    first, shared = (
+        WpfElement(client, owned(client, "a"), 1),
+        WpfElement(client, owned(client, "b"), 1),
+    )
     first.release()
     assert client.pending_releases == 1 and not agent.transport.requests
     clone = shared.as_live()
@@ -401,7 +418,7 @@ def stress(agent: Agent, client: InspectorClient) -> None:
     def churn(thread: int) -> None:
         try:
             for index in range(per_thread):
-                element = WpfElement(client, ref(f"t{thread}-{index}"), 1)
+                element = WpfElement(client, owned(client, f"t{thread}-{index}"), 1)
                 if index % 3 == 0:
                     element.as_live()  # a second wrapper sharing the lease
                 cycle: list[Any] = [element]

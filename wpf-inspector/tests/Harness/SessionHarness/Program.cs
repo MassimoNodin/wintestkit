@@ -39,5 +39,5 @@ sealed class FakeService : IInspectionService
     public Task<PageDto<WinTestKit.Inspector.Protocol.MemberInfo>> MembersAsync(string objectId, long generation, int? pageSize, string? pageToken, CancellationToken ct) => Task.FromResult(new PageDto<WinTestKit.Inspector.Protocol.MemberInfo> { Complete = true, SnapshotId = "fake" });
     public Task<ReadResult> ReadAsync(string objectId, long generation, IReadOnlyList<IReadOnlyList<PathSegment>> paths, CancellationToken ct) => Task.FromResult(new ReadResult { ReadId = "fake" });
     public Task<IReadOnlyList<BindingInfoDto>> BindingsAsync(string objectId, long generation, IReadOnlyList<string> memberKeys, CancellationToken ct) => Task.FromResult<IReadOnlyList<BindingInfoDto>>(Array.Empty<BindingInfoDto>());
-    public Task<int> ReleaseAsync(IReadOnlyList<string> objectIds, CancellationToken ct) => Task.FromResult(objectIds.Count);
+    public Task<ReleaseResult> ReleaseAsync(IReadOnlyList<ReleaseItem> objects, CancellationToken ct) => Task.FromResult(new ReleaseResult { ReleasedCount = objects.Count });
 }

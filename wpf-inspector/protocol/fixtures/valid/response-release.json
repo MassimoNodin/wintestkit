@@ -1,1 +1,1 @@
-{"schema":"ResponseEnvelope","instance":{"id":1,"result":{"releasedCount":1}}}
+{"schema":"ResponseEnvelope","instance":{"id":1,"result":{"releasedCount":1,"overReleasedCount":0}}}

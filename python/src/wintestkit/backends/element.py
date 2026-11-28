@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-import weakref
-from contextlib import suppress
 from typing import Any, Protocol
 
 from wintestkit.backends.mapping import map_runtime_ids, map_state_at_point
 from wintestkit.engine.managed import operation_deadline
 from wintestkit.errors import InspectorError, InspectorReadError, NoUiaPeerError
 from wintestkit.inspector.client import InspectorClient
+from wintestkit.inspector.handouts import owner_of
 from wintestkit.inspector.models import ElementState, ObjectRef
 from wintestkit.inspector.paths import PathSegment
 from wintestkit.uia.constants import CONTROL_TYPES
@@ -56,53 +55,34 @@ def check_uia_protocol(element: UIAElement) -> TargetElement:
     return element
 
 
-class _Lease:
-    def __init__(self, client: InspectorClient, ref: ObjectRef) -> None:
-        self.finalizer = weakref.finalize(self, _release, client, ref.object_id)
-
-
-def _release(client: InspectorClient, object_id: str) -> None:
-    """Queue the handle for release; this is a ``weakref.finalize`` callback.
-
-    A finalizer can run on any thread at any allocation, including the pipe reader thread and
-    inside a request that holds the client's locks, so it must not do I/O or take a lock. The
-    client sends queued IDs in batches later, on an ordinary caller's thread.
-    """
-    with suppress(Exception):
-        client.defer_release(object_id)
-
-
-_leases: weakref.WeakKeyDictionary[
-    InspectorClient, weakref.WeakValueDictionary[tuple[str, str, int], _Lease]
-] = weakref.WeakKeyDictionary()
-
-
 class WpfElement:
-    """Inspector snapshot; wrappers share a lease and release it when the last dies.
+    """Inspector snapshot of one object handle.
 
-    The agent expires strong leases after inactivity but keeps weak entries for live
-    objects. Explicit release prevents those entries accumulating across test runs.
-    Callers must not independently release a handle while a wrapper owns it.
+    The agent counts every hand-out of an object ID and ends the object's lease only when all of
+    them are given back. Each ``ObjectRef`` the client parsed owns the hand-out it arrived with
+    (see ``inspector.handouts``), so wrappers that share a reference keep it alive together and
+    it is released, by count, when the last of them dies. Releasing prevents the agent's weak
+    entries accumulating across test runs; it can never end a lease that a later response
+    handed out again, however the release and that response interleave.
     """
 
     def __init__(self, client: InspectorClient, ref: ObjectRef, process_id: int) -> None:
         self.client, self.ref, self._process_id = client, ref, process_id
-        key = (ref.session_id, ref.object_id, ref.generation)
-        leases = _leases.setdefault(client, weakref.WeakValueDictionary())
-        lease = leases.get(key)
-        if lease is None:
-            lease = _Lease(client, ref)
-            leases[key] = lease
-        self._lease = lease
         self._identity: dict[str, str] | None = None
         self._state: ElementState | None = None
         self._uia: UIAElement | None = None
 
     def release(self) -> None:
-        self._lease.finalizer()
+        """Queue this reference's hand-out for release now, instead of when it is collected."""
+        owner = owner_of(self.ref)
+        if owner is not None:
+            owner()
 
     def forget_release(self) -> None:
-        self._lease.finalizer.detach()
+        """Leave this reference's hand-out unreleased (the caller releases it itself)."""
+        owner = owner_of(self.ref)
+        if owner is not None:
+            owner.detach()
 
     def _get_identity(self) -> dict[str, str]:
         if self._identity is None:

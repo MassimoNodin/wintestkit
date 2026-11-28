@@ -21,8 +21,8 @@ public class MethodDtoTests
         yield return new object[] { "{\"sessionId\":\"s\",\"objectId\":\"o\",\"generation\":1,\"paths\":[[{\"kind\":\"property\",\"name\":\"X\"}]]}", (Func<JsonNode, JsonObjectNode>)(n => ReadParams.FromJson(n).ToJson()) };
         yield return new object[] { "{\"sessionId\":\"s\",\"objectId\":\"o\",\"generation\":1,\"memberKeys\":[]}", (Func<JsonNode, JsonObjectNode>)(n => BindingsParams.FromJson(n).ToJson()) };
         yield return new object[] { "{\"bindings\":[]}", (Func<JsonNode, JsonObjectNode>)(n => BindingsResult.FromJson(n).ToJson()) };
-        yield return new object[] { "{\"sessionId\":\"s\",\"objectIds\":[]}", (Func<JsonNode, JsonObjectNode>)(n => ReleaseParams.FromJson(n).ToJson()) };
-        yield return new object[] { "{\"releasedCount\":256}", (Func<JsonNode, JsonObjectNode>)(n => ReleaseResult.FromJson(n).ToJson()) };
+        yield return new object[] { "{\"sessionId\":\"s\",\"objects\":[{\"objectId\":\"o\",\"count\":2}]}", (Func<JsonNode, JsonObjectNode>)(n => ReleaseParams.FromJson(n).ToJson()) };
+        yield return new object[] { "{\"releasedCount\":256,\"overReleasedCount\":0}", (Func<JsonNode, JsonObjectNode>)(n => ReleaseResult.FromJson(n).ToJson()) };
         yield return new object[] { "{\"requestId\":1}", (Func<JsonNode, JsonObjectNode>)(n => CancelParams.FromJson(n).ToJson()) };
         yield return new object[] { "{\"accepted\":false}", (Func<JsonNode, JsonObjectNode>)(n => CancelResult.FromJson(n).ToJson()) };
         yield return new object[] { "{}", (Func<JsonNode, JsonObjectNode>)(n => CloseParams.FromJson(n).ToJson()) };
@@ -47,7 +47,13 @@ public class MethodDtoTests
         Assert.Throws<ProtocolException>(() => RootsParams.FromJson(Parse("{\"sessionId\":\"s\",\"pageSize\":201}")));
         Assert.Throws<ProtocolException>(() => ReadBatchParams.FromJson(Parse("{\"candidates\":[],\"paths\":[]}")));
         Assert.Throws<ProtocolException>(() => CloseResult.FromJson(Parse("{\"closed\":false}")));
-        Assert.Throws<ProtocolException>(() => ReleaseResult.FromJson(Parse("{\"releasedCount\":257}")));
+        Assert.Throws<ProtocolException>(() => ReleaseResult.FromJson(Parse("{\"releasedCount\":257,\"overReleasedCount\":0}")));
+        Assert.Throws<ProtocolException>(() => ReleaseResult.FromJson(Parse("{\"releasedCount\":1}")));
+        Assert.Throws<ProtocolException>(() => ReleaseParams.FromJson(Parse("{\"sessionId\":\"s\",\"objectIds\":[\"o\"]}")));
+        Assert.Throws<ProtocolException>(() => ReleaseParams.FromJson(Parse("{\"sessionId\":\"s\",\"objects\":[{\"objectId\":\"o\",\"count\":0}]}")));
+        Assert.Throws<ProtocolException>(() => ReleaseParams.FromJson(Parse("{\"sessionId\":\"s\",\"objects\":[{\"objectId\":\"o\"}]}")));
+        Assert.Equal(1000000, ReleaseItem.FromJson(Parse("{\"objectId\":\"o\",\"count\":1000000}")).Count);
+        Assert.Throws<ProtocolException>(() => ReleaseItem.FromJson(Parse("{\"objectId\":\"o\",\"count\":1000001}")));
         Assert.Equal(ErrorCodes.InvalidParams, Assert.Throws<ProtocolException>(() => RequestEnvelope.FromJson(Parse("{\"id\":1,\"method\":\"unknown\",\"params\":{}}"))).Code);
     }
     [Fact] public void RejectsUnknownFeatures()

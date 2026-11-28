@@ -90,7 +90,7 @@ namespace WinTestKit.Inspector.Agent.Mapping.Tests
                     using (var cancel = new CancellationTokenSource(50))
                         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => engine.UntilAsync(condition, DateTime.UtcNow.AddSeconds(60), 1000, cancel.Token));
                     GC.KeepAlive(root);
-                    registry.Release(new[] { handle.ObjectId });
+                    registry.CountHandOuts(new[] { new KeyValuePair<string, long>(handle.ObjectId, handle.Generation) }); registry.Release(new[] { new ReleaseItem { ObjectId = handle.ObjectId, Count = 1 } });
                     Assert.Equal(ErrorCodes.ObjectStale, (await Assert.ThrowsAsync<ProtocolException>(() => engine.UntilAsync(condition, DateTime.UtcNow.AddSeconds(60), 2000, CancellationToken.None))).Code);
                 }
             }

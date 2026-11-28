@@ -22,7 +22,7 @@ using WinTestKit.Inspector.Protocol;
 
 namespace WinTestKit.Inspector.Agent.Inspection
 {
-    public sealed partial class WpfInspectionService : IInspectionService, IItemsInspectionService, IStylingInspectionService, IResourceInspectionService, IMemberEventsInspectionService, IParentInspectionService, ISpyFieldInspectionService, ISpyMethodInspectionService, IExactMappingCapability, IQueryInspectionService, IStateInspectionService, IWaitInspectionService, IActionInspectionService, IRealizeInspectionService, IHitTestInspectionService, IWriteInspectionService, ISpyInvokeInspectionService, Events.IEventInspectionService
+    public sealed partial class WpfInspectionService : IInspectionService, IHandOutLedger, IItemsInspectionService, IStylingInspectionService, IResourceInspectionService, IMemberEventsInspectionService, IParentInspectionService, ISpyFieldInspectionService, ISpyMethodInspectionService, IExactMappingCapability, IQueryInspectionService, IStateInspectionService, IWaitInspectionService, IActionInspectionService, IRealizeInspectionService, IHitTestInspectionService, IWriteInspectionService, ISpyInvokeInspectionService, Events.IEventInspectionService
     {
         private readonly DispatcherExecutor executor;
         private readonly ObjectRegistry registry;
@@ -366,12 +366,16 @@ namespace WinTestKit.Inspector.Agent.Inspection
             return await executor.ExecuteAsync(dispatcher, () => inspector.GetBindings(target, memberKeys, registry, dispatcher), token).ConfigureAwait(false);
         }, ct);
 
-        public Task<int> ReleaseAsync(IReadOnlyList<string> objectIds, CancellationToken ct) => RunAsync(token =>
+        public Task<ReleaseResult> ReleaseAsync(IReadOnlyList<ReleaseItem> objects, CancellationToken ct) => RunAsync(token =>
         {
-            CheckCount(objectIds.Count, ProtocolLimits.MaxReleaseIds, true);
+            CheckCount(objects.Count, ProtocolLimits.MaxReleaseIds, true);
             token.ThrowIfCancellationRequested();
-            return Task.FromResult(registry.Release(objectIds));
+            return Task.FromResult(registry.Release(objects));
         }, ct);
+
+        public long BeginRequest() => registry.BeginRequest();
+        public void EndRequest(long token) => registry.EndRequest(token);
+        public void CountHandOuts(IReadOnlyList<KeyValuePair<string, long>> handles) => registry.CountHandOuts(handles);
 
         private async Task<IReadOnlyList<PathValue>> ReadValuesAsync(string objectId, long generation,
             IReadOnlyList<IReadOnlyList<PathSegment>> paths, CancellationToken ct)

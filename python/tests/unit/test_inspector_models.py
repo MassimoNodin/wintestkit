@@ -28,6 +28,9 @@ from wintestkit.inspector.models import (
     ObjectRef,
     Page,
     ProcessIdentity,
+    ReleaseItem,
+    ReleaseParams,
+    ReleaseResult,
     RequestEnvelope,
     ResourceResult,
     Session,
@@ -102,6 +105,9 @@ PARSERS: dict[str, Callable[[Any], Any]] = {
     "Path": parse_path,
     "PathSegment": PathSegment.from_json,
     "ProcessIdentity": ProcessIdentity.from_json,
+    "ReleaseItem": ReleaseItem.from_json,
+    "ReleaseParams": ReleaseParams.from_json,
+    "ReleaseResult": ReleaseResult.from_json,
     "ResponseEnvelope": _response,
     "RequestEnvelope": RequestEnvelope.from_json,
     "Session": Session.from_json,
@@ -578,3 +584,20 @@ def test_find_all_result_continuation() -> None:
     ):
         with pytest.raises(ValueError):
             QueryFindAllResult.from_json(bad)
+
+
+@pytest.mark.parametrize(
+    "path", [p for p in FIXTURES if p.parent.name == "valid"], ids=lambda p: p.name
+)
+def test_python_owns_exactly_the_handles_the_agent_counts(path: Path) -> None:
+    """Every handle on the wire is one ``ObjectRef`` the client owns, so release counts agree."""
+    from wintestkit.inspector.handouts import object_refs, wire_refs
+
+    fixture = json.loads(path.read_text(encoding="utf-8"))
+    parsed = PARSERS[fixture["schema"]](fixture["instance"])
+    if parsed is None or (isinstance(parsed, tuple) and not parsed):
+        return
+    owned = sum(1 for _ in object_refs(parsed))
+    if fixture["schema"] in {"RequestEnvelope", "ResponseEnvelope"}:
+        return  # envelopes are parsed in two steps; their results are covered by their own schemas
+    assert wire_refs(fixture["instance"]) == owned, path.name

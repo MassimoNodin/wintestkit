@@ -376,8 +376,8 @@ def query(
                                     raise
                                 high = middle
                             else:
-                                # Release the probe's lease through the normal wrapper lifecycle.
-                                WpfElement(root.client, probe.match, root.process_id)
+                                # The probe's handle is released when `probe` is collected.
+                                del probe
                                 low = middle + 1
                         filtered.total_count = low - offset
                     filtered.complete = True

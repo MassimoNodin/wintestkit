@@ -286,6 +286,9 @@ class ScriptedTransport:
         self.buffer = bytearray()
         self.requests: list[dict[str, Any]] = []
         self.closed = False
+        #: Answer ``release`` requests (the client gives parsed handles back as they die) without
+        #: involving the handler; a test that scripts releases itself turns this off.
+        self.answer_release = True
 
     def feed(self, value: object) -> None:
         data = json.dumps(value).encode()
@@ -312,6 +315,12 @@ class ScriptedTransport:
         request = json.loads(data[4:])
         with self.condition:
             self.requests.append(request)
+        if self.answer_release and request["method"] == "release":
+            count = len(request["params"]["objects"])
+            self.feed(
+                {"id": request["id"], "result": {"releasedCount": count, "overReleasedCount": 0}}
+            )
+            return
         response = self.handler(request)
         if response is not None:
             self.feed(response)
@@ -818,13 +827,18 @@ def test_protocol2_query_and_state_requests() -> None:
         assert client.wait_until(
             WaitCondition("exists", locator), timeout_ms=2000, deadline=deadline
         ).satisfied
-        assert [r["method"] for r in transport.requests] == [
+        # Handles dropped on the way are given back, after the request that follows them.
+        assert [r["method"] for r in transport.requests if r["method"] != "release"] == [
             "query.find",
             "query.findAll",
             "state.get",
             "wait.until",
         ]
-        assert all(1 <= r["params"]["timeoutMs"] <= 1000 for r in transport.requests)
+        assert all(
+            1 <= r["params"]["timeoutMs"] <= 1000
+            for r in transport.requests
+            if r["method"] != "release"
+        )
     finally:
         client.close()
 
